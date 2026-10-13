@@ -4,6 +4,7 @@ import {
   AggregateScope,
   Band,
   BandType,
+  ChartElement,
   CrosstabElement,
   PaperSpec,
   ReportElement,
@@ -13,19 +14,24 @@ import {
 import { ExpressionEvaluator } from '../expression/expression.evaluator';
 import { wrapText } from '../expression/transforms/text';
 import {
+  FontSpecResolved,
   LayoutPage,
   LayoutTree,
   LayoutWarning,
   Primitive,
+  RectPrimitive,
   TextPrimitive,
 } from './layout-tree.types';
+import { buildChart } from './chart';
+import { MarkupSegment, SHIFT_SCALE, StyledText, layoutRich, parseMarkup } from './markup';
+import { arrowHeadPath, ellipsePath, rhombusPath, trianglePath } from './shapes';
 import {
   GROUP_PATH_SEPARATOR,
   PageAggregates,
   PrecomputedAggregates,
   buildGroupPath,
 } from './aggregate.accumulator';
-import { MeasuredFont, TextMeasurer } from './text-measure';
+import { MM_PER_POINT, MeasuredFont, TextMeasurer } from './text-measure';
 import {
   CrosstabPlan,
   buildCrosstabModel,
@@ -85,11 +91,21 @@ export interface LayoutInput {
 interface DeferredText {
   readonly pageIndex: number;
   readonly primitiveIndex: number;
-  readonly template: string;
   readonly context: Record<string, unknown>;
-  readonly maxWidthMm: number;
-  readonly wrap: boolean;
-  readonly font: MeasuredFont;
+  /**
+   * Lays the element out again against a page context. A closure rather than
+   * the template and font, because rotation, justification, markup and
+   * conditional formatting all shape the primitive and all must be redone.
+   */
+  readonly rebuild: (context: Record<string, unknown>) => TextPrimitive | null;
+}
+
+/** A text element's resolved look, after conditional formatting. */
+interface TextLook {
+  readonly font: FontSpecResolved;
+  readonly color: string;
+  /** Background behind the box; null = none. */
+  readonly fill: string | null;
 }
 
 /** One repeating section: a DETAIL band, its rows, and its group bands. */
@@ -125,7 +141,46 @@ export class LayoutEngine {
 
   render(input: LayoutInput): LayoutTree {
     const startedAt = Date.now();
-    return new LayoutRun(this.measurer, input).run(startedAt);
+    const reportPages = [
+      ...new Set(input.definition.bands.map((band) => band.reportPage ?? 0)),
+    ].sort((left, right) => left - right);
+    if (reportPages.length <= 1) {
+      return new LayoutRun(this.measurer, input).run(startedAt);
+    }
+
+    // QtRPT's report pages: each is its own run -- its own page header and
+    // footer, its own numbering -- and the runs print one after another. A
+    // terms-and-conditions page is a separate document stapled behind the
+    // invoice, not a continuation of its item table.
+    const trees = reportPages.map((reportPage) =>
+      new LayoutRun(this.measurer, {
+        ...input,
+        definition: {
+          ...input.definition,
+          bands: input.definition.bands.filter((band) => (band.reportPage ?? 0) === reportPage),
+        },
+      }).run(startedAt),
+    );
+
+    const pages: LayoutPage[] = [];
+    for (const tree of trees) {
+      for (const page of tree.pages) {
+        pages.push({ index: pages.length, primitives: page.primitives });
+      }
+    }
+
+    return {
+      pageCount: pages.length,
+      paper: trees[0].paper,
+      layoutMode: trees[0].layoutMode,
+      pages,
+      warnings: trees.flatMap((tree) => tree.warnings),
+      stats: {
+        detailRows: trees.reduce((total, tree) => total + tree.stats.detailRows, 0),
+        bandsEmitted: trees.reduce((total, tree) => total + tree.stats.bandsEmitted, 0),
+        durationMs: Date.now() - startedAt,
+      },
+    };
   }
 }
 
@@ -178,6 +233,28 @@ class LayoutRun {
    * another.
    */
   private readonly crosstabPlans = new Map<string, CrosstabPlan>();
+
+  /**
+   * How many primitives the page header and footer put on each page.
+   *
+   * Recorded as they are drawn, so last-page suppression removes exactly what
+   * was drawn -- a frame, a background or an arrowhead is a primitive too, and
+   * a count derived from the element list would cut one short.
+   */
+  private readonly headerPrimitiveCounts: number[] = [];
+
+  private readonly footerPrimitiveCounts: number[] = [];
+
+  /**
+   * Per page, the index of the page its numbering run started on. Always 0
+   * unless a band restarts numbering (`startNewNumeration`).
+   */
+  private readonly numberingStarts: number[] = [];
+
+  private restartNumberingOnNextPage = false;
+
+  /** Parsed markup by template; a DETAIL band reuses the same few. */
+  private readonly markupCache = new Map<string, MarkupSegment[]>();
 
   private readonly bandsByType: Map<BandType, Band[]>;
 
@@ -269,6 +346,7 @@ class LayoutRun {
     }
 
     this.drawPageBorders();
+    this.drawWatermarks();
 
     for (const failure of this.evaluator.getFailures()) {
       this.warnings.push({
@@ -644,6 +722,8 @@ class LayoutRun {
       return;
     }
 
+    this.startFreshPageIfAsked(band);
+
     const heightMm = this.bandHeight(band, context);
     const reserveMm = options.reserveMm ?? 0;
     const flow = this.flowLayoutFor(band, context);
@@ -673,7 +753,10 @@ class LayoutRun {
     }
 
     const bandTopMm = this.bodyTopMm() + this.cursorMm;
-    this.drawBandElements(band, context, bandTopMm, { placed: flow?.elements });
+    this.drawBandElements(band, context, bandTopMm, {
+      placed: flow?.elements,
+      stretchMm: this.stretchOf(band, heightMm),
+    });
 
     this.cursorMm += heightMm;
     this.bandsEmitted += 1;
@@ -684,6 +767,33 @@ class LayoutRun {
       this.finishPage();
       this.startPage();
     }
+  }
+
+  /**
+   * QtRPT's "Start New Page" and "Start New Numeration": put this printing of
+   * the band at the top of a fresh page -- unless the page is still empty,
+   * where a break would only waste a sheet -- and, for numeration, number the
+   * pages from there as a run of their own.
+   */
+  private startFreshPageIfAsked(band: Band): void {
+    if ((!band.startNewPage && !band.startNewNumeration) || !this.currentPage) {
+      return;
+    }
+    if (this.cursorMm > FLOW_EPSILON_MM) {
+      this.restartNumberingOnNextPage = band.startNewNumeration;
+      this.finishPage();
+      this.startPage();
+    } else if (band.startNewNumeration) {
+      this.numberingStarts[this.currentPage.index] = this.currentPage.index;
+    }
+  }
+
+  /** How far a band grew past its design height -- what `stretchWithBand` adds. */
+  private stretchOf(band: Band, heightMm: number): number {
+    if (this.definition.layoutMode === 'GRID') {
+      return 0;
+    }
+    return Math.max(0, heightMm - this.spacingMm(band) - band.heightMm);
   }
 
   // ─── Crosstabs ─────────────────────────────────────────────────────────
@@ -813,6 +923,9 @@ class LayoutRun {
       textColour: this.resolveColour(element.style?.color, context, '#000000'),
       headerFill: element.headerFill
         ? this.resolveColour(element.headerFill, context, '#eeeeee')
+        : null,
+      totalsFill: element.totalsFill
+        ? this.resolveColour(element.totalsFill, context, '#eeeeee')
         : null,
     });
     this.currentPage.primitives.push(...primitives);
@@ -1086,9 +1199,11 @@ class LayoutRun {
         continue;
       }
 
-      const font = this.fontOf(element);
-      const wrapped = this.measurer.wrap(text, element.w ?? 0, font);
-      neededMm = Math.max(neededMm, element.y + wrapped.heightMm);
+      // Sideways text runs along a box whose height the designer fixed.
+      if (this.isSideways(element)) {
+        continue;
+      }
+      neededMm = Math.max(neededMm, element.y + this.wrappedTextHeightMm(element, context, text));
     }
 
     return neededMm + this.spacingMm(band);
@@ -1131,12 +1246,20 @@ class LayoutRun {
     this.cursorMm = 0;
     this.pageAggregates.reset();
 
+    const index = this.currentPage.index;
+    this.numberingStarts[index] =
+      index === 0 || this.restartNumberingOnNextPage
+        ? index
+        : (this.numberingStarts[index - 1] ?? 0);
+    this.restartNumberingOnNextPage = false;
+
     const pageHeader = this.firstBand('PAGE_HEADER');
-    if (pageHeader && this.shouldPrintOnPage(pageHeader, this.currentPage.index)) {
-      this.drawBandElements(
+    if (pageHeader && this.shouldPrintOnPage(pageHeader, index)) {
+      this.headerPrimitiveCounts[index] = this.drawBandElements(
         pageHeader,
-        this.pageContext(this.currentPage.index),
+        this.pageContext(index),
         this.definition.layoutMode === 'GRID' ? 0 : this.paper.margins.top,
+        { stretchMm: this.stretchOf(pageHeader, this.pageHeaderHeightMm) },
       );
       this.bandsEmitted += 1;
     }
@@ -1161,7 +1284,12 @@ class LayoutRun {
           ? this.pageHeaderHeightMm + this.bodyHeightMm
           : (this.paper.heightMm ?? 0) - this.paper.margins.bottom - this.pageFooterHeightMm;
 
-      this.drawBandElements(pageFooter, this.pageContext(this.currentPage.index), footerTopMm);
+      this.footerPrimitiveCounts[this.currentPage.index] = this.drawBandElements(
+        pageFooter,
+        this.pageContext(this.currentPage.index),
+        footerTopMm,
+        { stretchMm: this.stretchOf(pageFooter, this.pageFooterHeightMm) },
+      );
       this.bandsEmitted += 1;
     }
 
@@ -1209,7 +1337,88 @@ class LayoutRun {
         stroke,
         strokeWidthPt: border.widthPt,
         radiusMm: border.radiusMm,
+        ...(border.style && border.style !== 'SOLID' ? { dash: border.style } : {}),
       });
+    }
+  }
+
+  /**
+   * The definition's watermark, behind everything on every page.
+   *
+   * Added after last-page suppression and page-number resolution for the same
+   * reason as the page border: both address primitives by index. Centred on
+   * the printable area; skipped where the border is (GRID, continuous paper).
+   */
+  private drawWatermarks(): void {
+    const watermark = this.definition.watermark;
+    if (!watermark || this.definition.layoutMode === 'GRID' || this.paper.heightMm === null) {
+      return;
+    }
+
+    const { widthMm, heightMm, margins } = this.paper;
+    const x = margins.left;
+    const y = margins.top;
+    const w = widthMm - margins.left - margins.right;
+    const h = heightMm - margins.top - margins.bottom;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    const behind: Primitive[] = [];
+
+    const image = watermark.image
+      ? this.evaluator.evaluateText(watermark.image, this.rootContext)
+      : '';
+    if (image) {
+      const scale = watermark.imageScalePct / 100;
+      const imageW = w * scale;
+      const imageH = h * scale;
+      behind.push({
+        k: 'image',
+        x: x + (w - imageW) / 2,
+        y: y + (h - imageH) / 2,
+        w: imageW,
+        h: imageH,
+        src: image,
+        fit: 'CONTAIN',
+        opacity: watermark.opacity,
+      });
+    }
+
+    const text = watermark.text
+      ? this.evaluator.evaluateText(watermark.text, this.rootContext)
+      : '';
+    if (text) {
+      const font: FontSpecResolved = {
+        family: 'NotoSans',
+        sizePt: watermark.fontSizePt,
+        bold: watermark.bold,
+        italic: false,
+        underline: false,
+      };
+      behind.push({
+        k: 'text',
+        x,
+        y,
+        w,
+        h,
+        text,
+        font,
+        align: 'center',
+        vAlign: 'middle',
+        color: this.resolveColour(watermark.color, this.rootContext, '#808080'),
+        lines: [text],
+        lineHeightMm: this.measurer.lineHeightMm(this.measuredOf(font)),
+        opacity: watermark.opacity,
+        ...(watermark.rotationDeg ? { rotation: watermark.rotationDeg } : {}),
+      });
+    }
+
+    if (behind.length === 0) {
+      return;
+    }
+    for (const page of this.pages) {
+      page.primitives.unshift(...behind);
     }
   }
 
@@ -1245,14 +1454,21 @@ class LayoutRun {
     band: Band,
     context: Record<string, unknown>,
     bandTopMm: number,
-    options: { skipCrosstabId?: string; placed?: readonly ReportElement[] } = {},
-  ): void {
+    options: {
+      skipCrosstabId?: string;
+      placed?: readonly ReportElement[];
+      /** How far the band grew past its design height; drives `stretchWithBand`. */
+      stretchMm?: number;
+    } = {},
+  ): number {
     if (!this.currentPage) {
-      return;
+      return 0;
     }
 
     const page = this.currentPage;
+    const before = page.primitives.length;
     const { placed } = options;
+    const stretchMm = options.stretchMm ?? 0;
 
     // z-order within the band: a background rect must paint before the text
     // that sits on it, whatever order the designer happened to add them in.
@@ -1288,28 +1504,576 @@ class LayoutRun {
         continue;
       }
 
-      const primitive = this.buildPrimitive(element, context, bandTopMm);
-      if (!primitive) {
+      if (element.kind === 'CHART') {
+        this.drawChart(
+          element,
+          context,
+          this.elementX(element),
+          bandTopMm + this.elementY(element),
+        );
+        this.drawFrame(element, context, bandTopMm, stretchMm);
         continue;
       }
 
-      page.primitives.push(primitive);
+      // Background, content, frame -- in that order, so a frame is never
+      // painted over by its own element's fill.
+      const look = isTextLike(element) ? this.textLook(element, context) : null;
+      if (look?.fill && this.definition.layoutMode !== 'GRID') {
+        page.primitives.push(this.backgroundOf(element, look.fill, bandTopMm, stretchMm));
+      }
 
-      // Record a deferred re-evaluation if the text depends on the page total.
-      if (primitive.k === 'text' && isTextLike(element) && this.dependsOnPage(element.value)) {
-        this.deferred.push({
-          pageIndex: page.index,
-          primitiveIndex: page.primitives.length - 1,
-          template: element.value,
+      for (const primitive of this.buildPrimitives(element, context, bandTopMm, stretchMm, look)) {
+        page.primitives.push(primitive);
+
+        // Record a deferred re-evaluation if the text depends on the page total.
+        if (primitive.k === 'text' && isTextLike(element) && this.dependsOnPage(element.value)) {
+          this.deferred.push({
+            pageIndex: page.index,
+            primitiveIndex: page.primitives.length - 1,
+            context,
+            rebuild: (pageContext) =>
+              this.buildTextElement(
+                element,
+                pageContext,
+                bandTopMm,
+                stretchMm,
+                this.textLook(element, pageContext),
+              ),
+          });
+        }
+      }
+
+      this.drawFrame(element, context, bandTopMm, stretchMm);
+    }
+
+    return page.primitives.length - before;
+  }
+
+  /**
+   * The box an element's frame and background occupy, in page millimetres.
+   *
+   * A text element with no `h` takes one line of its own font: that is the
+   * height the canvas draws it at, and a frame that collapsed to a hairline
+   * would print nothing a designer could recognise.
+   */
+  private frameBox(
+    element: ReportElement,
+    bandTopMm: number,
+    stretchMm: number,
+  ): { x: number; y: number; w: number; h: number } {
+    const x = this.elementX(element);
+    const y = bandTopMm + this.elementY(element);
+    const grow = element.stretchWithBand ? stretchMm : 0;
+    if (element.kind === 'QRCODE') {
+      return { x, y, w: element.size, h: element.size + grow };
+    }
+    let h = element.h;
+    if (h === undefined) {
+      h = isTextLike(element) ? this.measurer.lineHeightMm(this.fontOf(element)) : 0;
+    }
+    return { x, y, w: element.w ?? 0, h: h + grow };
+  }
+
+  private backgroundOf(
+    element: ReportElement,
+    fill: string,
+    bandTopMm: number,
+    stretchMm: number,
+  ): RectPrimitive {
+    const box = this.frameBox(element, bandTopMm, stretchMm);
+    return { k: 'rect', ...box, fill, stroke: null, strokeWidthPt: 0, radiusMm: 0 };
+  }
+
+  /**
+   * An element's frame -- QtRPT's per-side field border.
+   *
+   * All four sides print as ONE rectangle so the corners join at any width.
+   * Fewer sides print as separate lines, each horizontal one stretched by half
+   * the line width at a corner it shares with a vertical one, so a top-and-left
+   * frame still meets in a clean corner instead of a notch.
+   */
+  private drawFrame(
+    element: ReportElement,
+    context: Record<string, unknown>,
+    bandTopMm: number,
+    stretchMm: number,
+  ): void {
+    const border = element.border;
+    if (
+      !border ||
+      !this.currentPage ||
+      this.definition.layoutMode === 'GRID' ||
+      element.kind === 'LINE' ||
+      element.kind === 'PAGEBREAK' ||
+      element.kind === 'CROSSTAB'
+    ) {
+      return;
+    }
+    if (!border.top && !border.right && !border.bottom && !border.left) {
+      return;
+    }
+
+    const { x, y, w, h } = this.frameBox(element, bandTopMm, stretchMm);
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    const color = this.resolveColour(border.color, context, '#000000');
+    const dash = border.style === 'SOLID' ? undefined : border.style;
+    const primitives = this.currentPage.primitives;
+
+    if (border.top && border.right && border.bottom && border.left) {
+      primitives.push({
+        k: 'rect',
+        x,
+        y,
+        w,
+        h,
+        fill: null,
+        stroke: color,
+        strokeWidthPt: border.widthPt,
+        radiusMm: 0,
+        ...(dash ? { dash } : {}),
+      });
+      return;
+    }
+
+    const half = (border.widthPt * MM_PER_POINT) / 2;
+    const side = (x1: number, y1: number, x2: number, y2: number): void => {
+      primitives.push({
+        k: 'line',
+        x1,
+        y1,
+        x2,
+        y2,
+        widthPt: border.widthPt,
+        color,
+        gridChar: '-',
+        ...(dash ? { dash } : {}),
+      });
+    };
+    const leftReach = border.left ? half : 0;
+    const rightReach = border.right ? half : 0;
+    if (border.top) {
+      side(x - leftReach, y, x + w + rightReach, y);
+    }
+    if (border.bottom) {
+      side(x - leftReach, y + h, x + w + rightReach, y + h);
+    }
+    if (border.left) {
+      side(x, y, x, y + h);
+    }
+    if (border.right) {
+      side(x + w, y, x + w, y + h);
+    }
+  }
+
+  /** A chart, expanded into primitives where it stands. */
+  private drawChart(
+    element: ChartElement,
+    context: Record<string, unknown>,
+    xMm: number,
+    yMm: number,
+  ): void {
+    if (!this.currentPage || this.definition.layoutMode === 'GRID') {
+      return;
+    }
+    const rows = this.rowsOf(element.dataset);
+    const built = buildChart(element, rows, context, xMm, yMm, {
+      measurer: this.measurer,
+      evaluate: (template, rowContext) => this.evaluator.evaluate(template, rowContext),
+      evaluateText: (template, rowContext) => this.evaluator.evaluateText(template, rowContext),
+      resolveColour: (value, rowContext, fallback) =>
+        this.resolveColour(value, rowContext, fallback),
+      rowContext: (row, index, total) => this.crosstabRowContext(context, row, index, total),
+    });
+    this.currentPage.primitives.push(...built.primitives);
+    for (const message of built.warnings) {
+      this.warnings.push({ kind: 'overflow', message });
+    }
+  }
+
+  /**
+   * A text element's font, colour and background after conditional
+   * formatting. Every matching rule applies, in order; a later rule wins.
+   */
+  private textLook(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    context: Record<string, unknown>,
+  ): TextLook {
+    let bold = element.font?.bold ?? false;
+    let italic = element.font?.italic ?? false;
+    let underline = element.font?.underline ?? false;
+    let strikeout = element.font?.strikeout ?? false;
+    let colour = element.style?.color;
+    let fill = element.style?.fill;
+
+    for (const rule of element.highlights ?? []) {
+      if (!this.evaluator.evaluateCondition(rule.when, context)) {
+        continue;
+      }
+      bold = rule.bold ?? bold;
+      italic = rule.italic ?? italic;
+      underline = rule.underline ?? underline;
+      strikeout = rule.strikeout ?? strikeout;
+      colour = rule.color ?? colour;
+      fill = rule.fill ?? fill;
+    }
+
+    return {
+      font: {
+        family: element.font?.family ?? 'NotoSans',
+        sizePt: element.font?.size ?? 9,
+        bold,
+        italic,
+        underline,
+        strikeout,
+      },
+      color: this.resolveColour(colour, context, '#000000'),
+      // An expression that resolves to nothing usable means "no background".
+      fill: fill ? this.resolveColour(fill, context, '') || null : null,
+    };
+  }
+
+  /**
+   * The primitives one element draws, frames and backgrounds aside.
+   *
+   * Usually one; a LINE with arrowheads is a line plus a path per head.
+   */
+  private buildPrimitives(
+    element: ReportElement,
+    context: Record<string, unknown>,
+    bandTopMm: number,
+    stretchMm: number,
+    look: TextLook | null,
+  ): Primitive[] {
+    switch (element.kind) {
+      case 'TEXT':
+      case 'FIELD': {
+        const primitive = this.buildTextElement(
+          element,
           context,
-          maxWidthMm: element.w ?? 0,
-          wrap: element.wrap,
-          font: this.fontOf(element),
-        });
+          bandTopMm,
+          stretchMm,
+          look ?? this.textLook(element, context),
+        );
+        return primitive ? [primitive] : [];
+      }
+      case 'LINE':
+        return this.buildLine(element, context, bandTopMm);
+      case 'RECT':
+        return [this.buildShape(element, context, bandTopMm, stretchMm)];
+      default: {
+        const primitive = this.buildPrimitive(element, context, bandTopMm);
+        return primitive ? [primitive] : [];
       }
     }
   }
 
+  private buildLine(
+    element: Extract<ReportElement, { kind: 'LINE' }>,
+    context: Record<string, unknown>,
+    bandTopMm: number,
+  ): Primitive[] {
+    const grid = this.definition.layoutMode === 'GRID';
+    const color = this.resolveColour(element.style?.stroke, context, '#000000');
+    const lineStyle = element.style?.lineStyle;
+    const dash = !grid && lineStyle && lineStyle !== 'SOLID' ? lineStyle : undefined;
+    const start = { x: element.x1, y: bandTopMm + element.y1 };
+    const end = { x: element.x2, y: bandTopMm + element.y2 };
+    const line = (from: { x: number; y: number }, to: { x: number; y: number }): Primitive => ({
+      k: 'line',
+      x1: from.x,
+      y1: from.y,
+      x2: to.x,
+      y2: to.y,
+      widthPt: element.widthPt,
+      color,
+      gridChar: element.gridChar,
+      ...(dash ? { dash } : {}),
+    });
+
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (grid || length === 0 || (!element.arrowStart && !element.arrowEnd)) {
+      return [line(start, end)];
+    }
+
+    // Pull the stroke back from an arrowed end, so a thick line's square end
+    // never pokes out past the arrow's tip.
+    const ux = (end.x - start.x) / length;
+    const uy = (end.y - start.y) / length;
+    const pull = Math.min(element.arrowSizeMm * 0.8, length / 2);
+    const lineStart = element.arrowStart
+      ? { x: start.x + ux * pull, y: start.y + uy * pull }
+      : start;
+    const lineEnd = element.arrowEnd ? { x: end.x - ux * pull, y: end.y - uy * pull } : end;
+    const widthMm = element.widthPt * MM_PER_POINT;
+
+    const primitives: Primitive[] = [line(lineStart, lineEnd)];
+    if (element.arrowStart) {
+      const head = arrowHeadPath(end, start, element.arrowSizeMm, widthMm, color);
+      if (head) {
+        primitives.push(head);
+      }
+    }
+    if (element.arrowEnd) {
+      const head = arrowHeadPath(start, end, element.arrowSizeMm, widthMm, color);
+      if (head) {
+        primitives.push(head);
+      }
+    }
+    return primitives;
+  }
+
+  /** RECT: a rectangle (rounded with a radius), ellipse, triangle or rhombus. */
+  private buildShape(
+    element: Extract<ReportElement, { kind: 'RECT' }>,
+    context: Record<string, unknown>,
+    bandTopMm: number,
+    stretchMm: number,
+  ): Primitive {
+    const grid = this.definition.layoutMode === 'GRID';
+    const style = element.style;
+    const x = this.elementX(element);
+    const y = bandTopMm + this.elementY(element);
+    const w = element.w;
+    const h = element.h + (element.stretchWithBand && !grid ? stretchMm : 0);
+    const fill = style?.fill ? this.resolveColour(style.fill, context, '#000000') : null;
+    const stroke = style?.stroke ? this.resolveColour(style.stroke, context, '#000000') : null;
+    const strokeWidthPt = style?.strokeWidthPt ?? 0.5;
+    const dash =
+      !grid && style?.lineStyle && style.lineStyle !== 'SOLID' ? style.lineStyle : undefined;
+    const shape = element.shape ?? 'RECT';
+
+    if (grid || shape === 'RECT') {
+      return {
+        k: 'rect',
+        x,
+        y,
+        w,
+        h,
+        fill,
+        stroke,
+        strokeWidthPt,
+        radiusMm: element.radiusMm,
+        ...(dash ? { dash } : {}),
+      };
+    }
+
+    // A rect with neither fill nor stroke prints a black hairline; a shape
+    // keeps that promise, or an ellipse dropped on the canvas prints nothing.
+    const pathStyle = { fill, stroke: stroke ?? (fill ? null : '#000000'), strokeWidthPt, dash };
+    switch (shape) {
+      case 'ELLIPSE':
+        return ellipsePath(x, y, w, h, pathStyle);
+      case 'TRIANGLE':
+        return trianglePath(x, y, w, h, pathStyle);
+      case 'RHOMBUS':
+      default:
+        return rhombusPath(x, y, w, h, pathStyle);
+    }
+  }
+
+  /**
+   * One text element's primitive, or null when it prints nothing.
+   *
+   * Also the pass-2 rebuild for page-number text, which is why it takes the
+   * band position rather than a precomputed box.
+   */
+  private buildTextElement(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    context: Record<string, unknown>,
+    bandTopMm: number,
+    stretchMm: number,
+    look: TextLook,
+  ): TextPrimitive | null {
+    const x = this.elementX(element);
+    const y = bandTopMm + this.elementY(element);
+    const grow = element.stretchWithBand && this.definition.layoutMode !== 'GRID' ? stretchMm : 0;
+
+    if (this.usesMarkup(element)) {
+      if (this.definition.layoutMode === 'GRID') {
+        // A character printer has no bold run to switch to mid-line; print the
+        // words and drop the tags.
+        const plain = this.markupRuns(element, context, look)
+          .map((run) => run.text)
+          .join('');
+        if (this.isBlankZero(element, plain)) {
+          return null;
+        }
+        return this.buildTextPrimitive(element, plain, x, y, look, grow);
+      }
+      return this.buildRichTextPrimitive(element, context, x, y, look, grow);
+    }
+
+    const raw = this.resolveTextValue(element, context);
+    if (raw === null) {
+      return null;
+    }
+    return this.buildTextPrimitive(element, raw, x, y, look, grow);
+  }
+
+  /** Markup applies to evaluated text only; an aggregate total is a number. */
+  private usesMarkup(element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>): boolean {
+    return element.markup === true && !(element.kind === 'FIELD' && element.aggregate);
+  }
+
+  private markupOf(template: string): MarkupSegment[] {
+    let segments = this.markupCache.get(template);
+    if (!segments) {
+      segments = parseMarkup(template);
+      this.markupCache.set(template, segments);
+    }
+    return segments;
+  }
+
+  /** The element's markup, evaluated and styled. */
+  private markupRuns(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    context: Record<string, unknown>,
+    look: TextLook,
+  ): StyledText[] {
+    return this.markupOf(element.value).map((segment) => {
+      const { style } = segment;
+      const sizePt = (style.sizePt ?? look.font.sizePt) * (style.shift ? SHIFT_SCALE : 1);
+      return {
+        text: this.evaluator.evaluateText(segment.template, context),
+        font: {
+          family: look.font.family,
+          sizePt,
+          bold: style.bold ?? look.font.bold,
+          italic: style.italic ?? look.font.italic,
+          underline: style.underline ?? look.font.underline,
+          strikeout: style.strikeout ?? look.font.strikeout ?? false,
+        },
+        color: style.color ?? look.color,
+        ...(style.shift ? { shift: style.shift } : {}),
+      };
+    });
+  }
+
+  private isBlankZero(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    text: string,
+  ): boolean {
+    if (!element.blankWhenZero) {
+      return false;
+    }
+    const numeric = Number(text.replace(/[^0-9.-]/g, ''));
+    return text.trim() === '' || (Number.isFinite(numeric) && numeric === 0);
+  }
+
+  /** At 90 and 270 degrees the lines run along the box's height. */
+  private isSideways(element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>): boolean {
+    return (
+      this.definition.layoutMode !== 'GRID' && (element.rotation === 90 || element.rotation === 270)
+    );
+  }
+
+  private buildRichTextPrimitive(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    context: Record<string, unknown>,
+    x: number,
+    y: number,
+    look: TextLook,
+    grow: number,
+  ): TextPrimitive | null {
+    const runs = this.markupRuns(element, context, look);
+    const plain = runs.map((run) => run.text).join('');
+    if (this.isBlankZero(element, plain)) {
+      return null;
+    }
+    const box = this.textBox(element, x, y, grow);
+    const wrapWidth = this.isSideways(element) ? box.sidewaysLengthMm : box.w;
+    const layout = layoutRich(
+      runs,
+      wrapWidth,
+      element.wrap,
+      this.measurer,
+      this.measuredOf(look.font),
+    );
+    const rotation = this.definition.layoutMode === 'GRID' ? 0 : (element.rotation ?? 0);
+
+    return {
+      k: 'text',
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h ?? layout.lines.length * layout.lineHeightMm + grow,
+      text: layout.plain.join('\n'),
+      font: look.font,
+      align: element.align,
+      vAlign: element.vAlign,
+      color: look.color,
+      lines: layout.plain,
+      lineHeightMm: layout.lineHeightMm,
+      rich: layout.lines,
+      ...(rotation ? { rotation } : {}),
+      ...(element.align === 'justify' ? { justify: layout.justify } : {}),
+    };
+  }
+
+  private measuredOf(font: FontSpecResolved): MeasuredFont {
+    return { family: font.family, sizePt: font.sizePt, bold: font.bold, italic: font.italic };
+  }
+
+  /**
+   * The box a text element's lines are laid out in: its own box inset by
+   * `style.padding` on every side (GRAPHIC only), which is what keeps text off
+   * the frame of a ruled cell. `h` is undefined when the element has none --
+   * the text then takes the height its lines need.
+   */
+  private textBox(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    x: number,
+    y: number,
+    grow: number,
+  ): {
+    x: number;
+    y: number;
+    w: number;
+    h: number | undefined;
+    pad: number;
+    sidewaysLengthMm: number;
+  } {
+    const pad = this.definition.layoutMode === 'GRID' ? 0 : (element.style?.padding ?? 0);
+    return {
+      x: x + pad,
+      y: y + pad,
+      w: Math.max(0, (element.w ?? 0) - pad * 2),
+      h: element.h === undefined ? undefined : Math.max(0, element.h + grow - pad * 2),
+      pad,
+      // Sideways lines run along the DESIGN height: a band stretching the box
+      // must not re-wrap the text it already measured.
+      sidewaysLengthMm: Math.max(0, (element.h ?? 0) - pad * 2),
+    };
+  }
+
+  /**
+   * Height wrapped text needs, for autoGrow. Measured with the font the text
+   * will actually print in -- a highlight that turns a line bold widens it.
+   */
+  private wrappedTextHeightMm(
+    element: Extract<ReportElement, { kind: 'TEXT' | 'FIELD' }>,
+    context: Record<string, unknown>,
+    text: string,
+  ): number {
+    const look = this.textLook(element, context);
+    const box = this.textBox(element, 0, 0, 0);
+    if (this.usesMarkup(element)) {
+      const layout = layoutRich(
+        this.markupRuns(element, context, look),
+        box.w,
+        true,
+        this.measurer,
+        this.measuredOf(look.font),
+      );
+      return layout.lines.length * layout.lineHeightMm + box.pad * 2;
+    }
+    return this.measurer.wrap(text, box.w, this.measuredOf(look.font)).heightMm + box.pad * 2;
+  }
+
+  /** IMAGE, BARCODE and QRCODE: one primitive each. */
   private buildPrimitive(
     element: ReportElement,
     context: Record<string, unknown>,
@@ -1319,44 +2083,6 @@ class LayoutRun {
     const baseY = bandTopMm + this.elementY(element);
 
     switch (element.kind) {
-      case 'TEXT':
-      case 'FIELD': {
-        const raw = this.resolveTextValue(element, context);
-        if (raw === null) {
-          return null;
-        }
-        return this.buildTextPrimitive(element, raw, baseX, baseY);
-      }
-
-      case 'LINE': {
-        const style = element.style;
-        return {
-          k: 'line',
-          x1: element.x1,
-          y1: bandTopMm + element.y1,
-          x2: element.x2,
-          y2: bandTopMm + element.y2,
-          widthPt: element.widthPt,
-          color: this.resolveColour(style?.stroke, context, '#000000'),
-          gridChar: element.gridChar,
-        };
-      }
-
-      case 'RECT': {
-        const style = element.style;
-        return {
-          k: 'rect',
-          x: baseX,
-          y: baseY,
-          w: element.w,
-          h: element.h,
-          fill: style?.fill ? this.resolveColour(style.fill, context, '#000000') : null,
-          stroke: style?.stroke ? this.resolveColour(style.stroke, context, '#000000') : null,
-          strokeWidthPt: style?.strokeWidthPt ?? 0.5,
-          radiusMm: element.radiusMm,
-        };
-      }
-
       case 'IMAGE': {
         const src = this.evaluator.evaluateText(element.source, context);
         if (!src) {
@@ -1495,12 +2221,21 @@ class LayoutRun {
     text: string,
     x: number,
     y: number,
+    look: TextLook,
+    grow = 0,
   ): TextPrimitive {
-    const font = this.fontOf(element);
-    const widthMm = element.w ?? 0;
+    const font = this.measuredOf(look.font);
+    const grid = this.definition.layoutMode === 'GRID';
+    const box = this.textBox(element, x, y, grow);
+    // GRID keeps its cell count in `w`; padding is a GRAPHIC idea.
+    const widthMm = grid ? (element.w ?? 0) : box.w;
+    // Sideways text runs along the box's height, so that is its line length.
+    const lineLengthMm = this.isSideways(element) ? box.sidewaysLengthMm : widthMm;
+    const justified = element.align === 'justify' && this.definition.layoutMode !== 'GRID';
 
     let lines: string[];
     let lineHeightMm: number;
+    let justify: boolean[] | undefined;
 
     if (this.definition.layoutMode === 'GRID') {
       // One line is one printer row, and the budget is a column count. Using
@@ -1512,36 +2247,47 @@ class LayoutRun {
       if (lines.length === 0) {
         lines = [''];
       }
-    } else if (element.wrap && widthMm > 0) {
-      const wrapped = this.measurer.wrap(text, widthMm, font);
-      lines = [...wrapped.lines];
-      lineHeightMm = wrapped.lineHeightMm;
+    } else if (element.wrap && lineLengthMm > 0) {
+      lineHeightMm = this.measurer.lineHeightMm(font);
+      lines = [];
+      justify = [];
+      // Paragraph by paragraph -- the same lines TextMeasurer.wrap produces --
+      // so justification knows which line ends a paragraph and stays ragged.
+      for (const paragraph of text.split(/\r?\n/)) {
+        const wrapped = paragraph.trim()
+          ? [...this.measurer.wrap(paragraph, lineLengthMm, font).lines]
+          : [''];
+        wrapped.forEach((line, index) => {
+          lines.push(line);
+          justify?.push(index < wrapped.length - 1);
+        });
+      }
     } else {
       lineHeightMm = this.measurer.lineHeightMm(font);
       lines = [
-        element.ellipsis && widthMm > 0 ? this.measurer.truncateToWidth(text, widthMm, font) : text,
+        element.ellipsis && lineLengthMm > 0
+          ? this.measurer.truncateToWidth(text, lineLengthMm, font)
+          : text,
       ];
     }
 
+    const rotation = this.definition.layoutMode === 'GRID' ? 0 : (element.rotation ?? 0);
+
     return {
       k: 'text',
-      x,
-      y,
+      x: box.x,
+      y: box.y,
       w: widthMm,
-      h: element.h ?? lines.length * lineHeightMm,
+      h: box.h ?? lines.length * lineHeightMm + grow,
       text: lines.join('\n'),
-      font: {
-        family: font.family,
-        sizePt: font.sizePt,
-        bold: font.bold,
-        italic: font.italic,
-        underline: element.font?.underline ?? false,
-      },
+      font: look.font,
       align: element.align,
       vAlign: element.vAlign,
-      color: this.resolveColour(element.style?.color, this.rootContext, '#000000'),
+      color: look.color,
       lines,
       lineHeightMm,
+      ...(rotation ? { rotation } : {}),
+      ...(justified && justify ? { justify } : {}),
     };
   }
 
@@ -1594,6 +2340,14 @@ class LayoutRun {
   private resolveDeferredText(): void {
     const total = this.pages.length;
 
+    // The last page of each numbering run. Without `startNewNumeration` there
+    // is one run, starting at page 0, and this is the document's last page.
+    const runEnds = new Map<number, number>();
+    for (const page of this.pages) {
+      const start = this.numberingStarts[page.index] ?? 0;
+      runEnds.set(start, Math.max(runEnds.get(start) ?? start, page.index));
+    }
+
     for (const entry of this.deferred) {
       const page = this.pages[entry.pageIndex];
       if (!page) {
@@ -1605,23 +2359,26 @@ class LayoutRun {
         continue;
       }
 
+      const start = this.numberingStarts[entry.pageIndex] ?? 0;
+      const end = runEnds.get(start) ?? total - 1;
       const context = {
         ...entry.context,
         page: {
-          number: entry.pageIndex + 1,
-          total,
-          isFirst: entry.pageIndex === 0,
-          isLast: entry.pageIndex === total - 1,
+          number: entry.pageIndex - start + 1,
+          total: end - start + 1,
+          isFirst: entry.pageIndex === start,
+          isLast: entry.pageIndex === end,
         },
       };
 
-      const text = this.evaluator.evaluateText(entry.template, context);
-      const lines =
-        entry.wrap && entry.maxWidthMm > 0
-          ? [...this.measurer.wrap(text, entry.maxWidthMm, entry.font).lines]
-          : [text];
-
-      page.primitives[entry.primitiveIndex] = { ...existing, text: lines.join('\n'), lines };
+      // Keep the slot even when the text now blanks: every later index on the
+      // page was counted with it there.
+      page.primitives[entry.primitiveIndex] = entry.rebuild(context) ?? {
+        ...existing,
+        text: '',
+        lines: [''],
+        rich: undefined,
+      };
     }
 
     this.suppressLastPageBands(total);
@@ -1652,44 +2409,18 @@ class LayoutRun {
 
     for (const page of this.pages) {
       if (suppressionNeeded(pageFooter, page.index)) {
-        const count = this.visibleElementCount(pageFooter as Band);
-        page.primitives.splice(page.primitives.length - count, count);
+        const count = this.footerPrimitiveCounts[page.index] ?? 0;
+        if (count > 0) {
+          page.primitives.splice(page.primitives.length - count, count);
+        }
       }
       if (suppressionNeeded(pageHeader, page.index)) {
-        const count = this.visibleElementCount(pageHeader as Band);
-        page.primitives.splice(0, count);
+        const count = this.headerPrimitiveCounts[page.index] ?? 0;
+        if (count > 0) {
+          page.primitives.splice(0, count);
+        }
       }
     }
-  }
-
-  /**
-   * How many primitives a band contributed.
-   *
-   * Counts the elements that produce a primitive at all: PAGEBREAK produces
-   * none, and a page header/footer is evaluated against the page context whose
-   * `visible` conditions do not vary per page in practice. An element that IS
-   * conditionally hidden would make this count wrong, so conditional visibility
-   * inside a LAST_PAGE-only band is the one combination not supported -- it is
-   * rejected below rather than silently mis-clipping the page.
-   */
-  private visibleElementCount(band: Band): number {
-    let count = 0;
-    for (const element of band.elements) {
-      if (element.kind === 'PAGEBREAK') {
-        continue;
-      }
-      if (element.visible) {
-        this.warnings.push({
-          kind: 'overflow',
-          message:
-            `A ${band.printOn} band has an element with a 'visible' condition, ` +
-            'which cannot be combined with last-page suppression',
-          detail: `element ${element.id}`,
-        });
-      }
-      count += 1;
-    }
-    return count;
   }
 
   // ─── Context construction ──────────────────────────────────────────────
@@ -1728,12 +2459,13 @@ class LayoutRun {
   }
 
   private pageContext(pageIndex: number): Record<string, unknown> {
+    const start = this.numberingStarts[pageIndex] ?? 0;
     return {
       ...this.rootContext,
       page: {
-        number: pageIndex + 1,
-        total: this.pages.length,
-        isFirst: pageIndex === 0,
+        number: pageIndex - start + 1,
+        total: this.pages.length - start,
+        isFirst: pageIndex === start,
         isLast: false,
       },
     };

@@ -110,6 +110,11 @@ function buildDefinition(version, datasets) {
             !Array.isArray(body.pageBorder)
             ? { pageBorder: body.pageBorder }
             : {}),
+        ...(typeof body.watermark === 'object' &&
+            body.watermark !== null &&
+            !Array.isArray(body.watermark)
+            ? { watermark: body.watermark }
+            : {}),
         datasets: datasetsFor(datasets),
         bands: (body.bands ?? []),
     };

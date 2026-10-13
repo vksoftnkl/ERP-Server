@@ -55,6 +55,7 @@ export const ELEMENT_KINDS = [
   'QRCODE',
   'PAGEBREAK',
   'CROSSTAB',
+  'CHART',
 ] as const;
 
 export const PRINT_ON = [
@@ -64,13 +65,49 @@ export const PRINT_ON = [
   'NOT_FIRST_PAGE',
   'NOT_LAST_PAGE',
 ] as const;
-export const H_ALIGN = ['left', 'center', 'right'] as const;
+export const H_ALIGN = ['left', 'center', 'right', 'justify'] as const;
 export const V_ALIGN = ['top', 'middle', 'bottom'] as const;
 export const IMAGE_FIT = ['CONTAIN', 'COVER', 'STRETCH'] as const;
 export const CARDINALITY = ['one', 'many'] as const;
 export const AGGREGATE_FUNCTIONS = ['sum', 'count', 'avg', 'min', 'max'] as const;
 export const AGGREGATE_SCOPES = ['GROUP', 'PAGE', 'REPORT'] as const;
-export const BARCODE_SYMBOLOGIES = ['code128', 'ean13', 'ean8', 'upca', 'code39', 'itf14'] as const;
+export const BARCODE_SYMBOLOGIES = [
+  'code128',
+  'ean13',
+  'ean8',
+  'upca',
+  'upce',
+  'code39',
+  'code93',
+  'codabar',
+  'itf14',
+  'interleaved2of5',
+  'gs1_128',
+  'pdf417',
+  'datamatrix',
+  'azteccode',
+] as const;
+
+/**
+ * How a stroke is drawn -- QtRPT's six pen styles.
+ *
+ * Shared by field frames, lines, rectangles/shapes and the page border, so a
+ * dotted frame and a dotted rule are the same dots. DOUBLE is two thin strokes
+ * where the renderer can draw them (frames, lines, rectangles) and a single
+ * stroke on curved shapes.
+ */
+export const LINE_STYLES = ['SOLID', 'DASH', 'DOT', 'DASH_DOT', 'DASH_DOT_DOT', 'DOUBLE'] as const;
+
+/** What a RECT element draws inside its box. RECT with a radius is QtRPT's rounded rectangle. */
+export const SHAPES = ['RECT', 'ELLIPSE', 'TRIANGLE', 'RHOMBUS'] as const;
+
+/** Clockwise, like Qt's QPainter::rotate and CSS rotate(). */
+export const TEXT_ROTATIONS = [0, 90, 180, 270] as const;
+
+/** QtRPT's diagram types. A PIE with a hole is a doughnut. */
+export const CHART_TYPES = ['BAR', 'STACKED_BAR', 'LINE', 'PIE'] as const;
+
+export const LEGEND_POSITIONS = ['BOTTOM', 'TOP', 'LEFT', 'RIGHT'] as const;
 
 /** Symbologies bwip-js knows and we have committed to supporting. */
 export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
@@ -123,6 +160,16 @@ export const CROSSTAB_BANDS: readonly string[] = [
   'REPORT_FOOTER',
   'NO_DATA',
 ];
+
+/**
+ * The bands a CHART may sit in. Same rule as a crosstab, for the same reason:
+ * a chart reads its WHOLE dataset, so a band that repeats would draw the same
+ * chart once per row.
+ */
+export const CHART_BANDS: readonly string[] = CROSSTAB_BANDS;
+
+/** Report pages a template may hold (QtRPT's "New Report Page"). */
+export const MAX_REPORT_PAGES = 20;
 
 // ─── Primitive field schemas ─────────────────────────────────────────────────
 
@@ -205,6 +252,7 @@ export const fontSchema = z.object({
   bold: z.boolean().default(false),
   italic: z.boolean().default(false),
   underline: z.boolean().default(false),
+  strikeout: z.boolean().default(false),
 });
 
 export const styleSchema = z.object({
@@ -215,6 +263,42 @@ export const styleSchema = z.object({
   strokeWidthPt: z.number().min(0).max(20).optional(),
   /** Padding inside the element box, millimetres. */
   padding: z.number().min(0).max(50).optional(),
+  /** LINE and RECT: how `stroke` is drawn. Absent = SOLID. */
+  lineStyle: z.enum(LINE_STYLES).optional(),
+});
+
+/**
+ * A frame around an element's box, one switch per side -- QtRPT's "Top line",
+ * "Bottom line", "Left line", "Right line", "All frame line" and "No frame".
+ *
+ * Drawn AFTER the element's content, so a frame is never hidden by its own
+ * fill. A box with every side on prints as one rectangle, which is what keeps
+ * its corners joined at any line width.
+ */
+export const borderSchema = z.object({
+  top: z.boolean().default(false),
+  right: z.boolean().default(false),
+  bottom: z.boolean().default(false),
+  left: z.boolean().default(false),
+  widthPt: z.number().min(0.1).max(10).default(0.5),
+  color: hexColour.default('#000000'),
+  style: z.enum(LINE_STYLES).default('SOLID'),
+});
+
+/**
+ * One conditional-formatting rule -- QtRPT's "Highlighting".
+ *
+ * Every rule whose `when` is truthy applies, in order, so a later rule wins a
+ * conflict. An absent property leaves the element's own value alone.
+ */
+export const highlightSchema = z.object({
+  when: expressionString.refine((value) => value.trim().length > 0, 'a rule needs a condition'),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  strikeout: z.boolean().optional(),
+  color: hexColour.optional(),
+  fill: hexColour.optional(),
 });
 
 // ─── Elements ────────────────────────────────────────────────────────────────
@@ -245,6 +329,19 @@ const elementBase = z.object({
    * span -- unless a visible element still occupies part of it.
    */
   removeLineWhenBlank: z.boolean().default(false),
+  /** GRAPHIC only. Absent = no frame. */
+  border: borderSchema.optional(),
+  /**
+   * Grow the element's frame, background and (for RECT) shape by however much
+   * its band grew past its design height. What keeps every cell of an invoice
+   * row the same height when one description wraps to three lines.
+   */
+  stretchWithBand: z.boolean().default(false),
+  /**
+   * Designer grouping (QtRPT "To group"): elements sharing a value select and
+   * move together. The engine ignores it.
+   */
+  group: z.string().min(1).max(60).optional(),
 });
 
 const textLikeElement = elementBase.extend({
@@ -257,6 +354,20 @@ const textLikeElement = elementBase.extend({
   ellipsis: z.boolean().default(false),
   /** Blank the element when the value evaluates to zero — common on ERP grids. */
   blankWhenZero: z.boolean().default(false),
+  /**
+   * Clockwise degrees. At 90 and 270 the text runs along the box's HEIGHT, so
+   * that is the width it wraps to.
+   */
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+  /**
+   * QtRPT's "HTML rendering": the LITERAL text may carry inline tags --
+   * <b> <i> <u> <s> <sup> <sub> <br> and <font color size> / <span style>.
+   * Tags are read from the template only, never from evaluated data, so a
+   * customer named "A<B" prints as typed.
+   */
+  markup: z.boolean().default(false),
+  /** Conditional formatting, applied in order. */
+  highlights: z.array(highlightSchema).max(10).default([]),
 });
 
 export const textElementSchema = textLikeElement.extend({ kind: z.literal('TEXT') });
@@ -297,6 +408,12 @@ export const lineElementSchema = elementBase.extend({
   widthPt: z.number().min(0).max(20).default(0.5),
   /** GRID mode: the character to repeat, e.g. '-' or '='. */
   gridChar: z.string().length(1).default('-'),
+  /** An arrowhead at (x1, y1). GRAPHIC only. */
+  arrowStart: z.boolean().default(false),
+  /** An arrowhead at (x2, y2). GRAPHIC only. */
+  arrowEnd: z.boolean().default(false),
+  /** Arrowhead length along the line. */
+  arrowSizeMm: z.number().min(0.5).max(20).default(2.5),
 });
 
 export const rectElementSchema = elementBase.extend({
@@ -304,6 +421,8 @@ export const rectElementSchema = elementBase.extend({
   w: millimetreSize,
   h: millimetreSize,
   radiusMm: z.number().min(0).max(50).default(0),
+  /** RECT, ELLIPSE, TRIANGLE (apex up) or RHOMBUS, inscribed in the box. */
+  shape: z.enum(SHAPES).default('RECT'),
 });
 
 export const imageElementSchema = elementBase.extend({
@@ -484,8 +603,71 @@ export const crosstabElementSchema = elementBase.extend({
   headerFont: fontSchema.partial().optional(),
   gridLines: z.boolean().default(true),
   headerFill: hexColour.optional(),
+  /** Background of the column-totals row (and of subtotal rows). */
+  totalsFill: hexColour.optional(),
+  /**
+   * QtRPT's "Sub Total row": with two or more row levels, a row after each
+   * outer group totalling that group. Ignored with a single row level.
+   */
+  showSubtotals: z.boolean().default(false),
+  subtotalLabel: z.string().max(60).default('Subtotal'),
   /** Reprint the column header at the top of each page the table spills onto. */
   repeatHeader: z.boolean().default(true),
+});
+
+/** One plotted series: a line, a bar colour, or (on a pie) the slice values. */
+export const chartSeriesSchema = z.object({
+  /** Legend caption. */
+  name: z.string().max(60).default(''),
+  /** Expression -> the number each source row contributes. */
+  value: expressionString,
+  /** Absent = the next colour of the built-in palette. */
+  color: hexColour.optional(),
+});
+
+/**
+ * A CHART -- QtRPT's "Diagram".
+ *
+ * Like a crosstab it owns a dataset and expands at layout time into ordinary
+ * rect, line, path and text primitives, so every renderer that can draw those
+ * prints a chart without knowing charts exist. Rows sharing a `category` label
+ * are aggregated with `fn`, in first-seen order -- the dataset's ORDER BY.
+ */
+export const chartElementSchema = elementBase.extend({
+  kind: z.literal('CHART'),
+  w: millimetreSize.positive(),
+  h: millimetreSize.positive(),
+  chartType: z.enum(CHART_TYPES).default('BAR'),
+  /** The repeating dataset the chart reads. */
+  dataset: identifier,
+  /** Expression -> the x-axis label (bars, line points) or slice label (pie). */
+  category: expressionString,
+  /** A pie plots the FIRST series only. */
+  series: z.array(chartSeriesSchema).min(1).max(8),
+  fn: z.enum(AGGREGATE_FUNCTIONS).default('sum'),
+  /** Caption above the plot. Expression-capable; empty = none. */
+  title: expressionString.default(''),
+  showLegend: z.boolean().default(true),
+  legendPosition: z.enum(LEGEND_POSITIONS).default('BOTTOM'),
+  /** Print each value on its bar, point or slice. */
+  showValues: z.boolean().default(false),
+  /** PIE: print slice percentages instead of values. */
+  showPercent: z.boolean().default(false),
+  /** Horizontal value gridlines behind bars and lines. */
+  showGrid: z.boolean().default(true),
+  /** PIE: the hole, as a percentage of the radius. 0 = a full pie. */
+  holeSizePct: z.number().min(0).max(90).default(0),
+  /** Categories past this are dropped (first-seen order). */
+  maxCategories: z.number().int().min(1).max(100).default(12),
+  /** Number pattern for axis and value labels. */
+  format: z.string().max(60).default('#,##0'),
+  background: hexColour.optional(),
+  /** Axis and value labels. */
+  font: fontSchema.partial().optional(),
+  titleFont: fontSchema.partial().optional(),
+  titleColor: hexColour.optional(),
+  legendFont: fontSchema.partial().optional(),
+  legendColor: hexColour.optional(),
 });
 
 export const elementSchema = z.discriminatedUnion('kind', [
@@ -498,6 +680,7 @@ export const elementSchema = z.discriminatedUnion('kind', [
   qrcodeElementSchema,
   pagebreakElementSchema,
   crosstabElementSchema,
+  chartElementSchema,
 ]);
 
 // ─── Page border ─────────────────────────────────────────────────────────────
@@ -519,6 +702,29 @@ export const pageBorderSchema = z.object({
   widthPt: z.number().min(0.1).max(10).default(0.75),
   color: hexColour.default('#000000'),
   radiusMm: z.number().min(0).max(50).default(0),
+  style: z.enum(LINE_STYLES).default('SOLID'),
+});
+
+// ─── Watermark ───────────────────────────────────────────────────────────────
+
+/**
+ * Text and/or an image printed faintly behind every page of a GRAPHIC report
+ * -- QtRPT's page "Watermark", plus the text form a DRAFT or COPY stamp needs.
+ * On the definition root for the same reason as the page border.
+ */
+export const watermarkSchema = z.object({
+  /** Expression-capable, e.g. `{{ ctx.copyLabel }}`. Empty = no text. */
+  text: expressionString.default(''),
+  /** Expression yielding a URL, a data: URI or an asset key. */
+  image: expressionString.optional(),
+  opacity: z.number().min(0.02).max(1).default(0.15),
+  /** Text only. Clockwise degrees; -45 runs bottom-left to top-right. */
+  rotationDeg: z.number().min(-90).max(90).default(-45),
+  fontSizePt: z.number().min(6).max(300).default(72),
+  color: hexColour.default('#808080'),
+  bold: z.boolean().default(true),
+  /** The image's size as a percentage of the printable area, centred. */
+  imageScalePct: z.number().min(5).max(100).default(60),
 });
 
 // ─── Bands ───────────────────────────────────────────────────────────────────
@@ -558,6 +764,24 @@ export const bandSchema = z.object({
   visible: expressionString.optional(),
   /** Blank lines to emit after the band. GRID mode readability. */
   spacingRows: z.number().int().min(0).max(20).default(0),
+  /**
+   * Which report page the band belongs to (QtRPT "New Report Page"). Page 0 is
+   * the report; each further page prints after it as its own run with its own
+   * page header, footer and numbering.
+   */
+  reportPage: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_REPORT_PAGES - 1)
+    .default(0),
+  /** Start every printing of this band on a fresh page, unless the page is still empty. */
+  startNewPage: z.boolean().default(false),
+  /**
+   * GROUP_HEADER: start each group on a fresh page and restart `page.number`
+   * and `page.total` there -- one numbered run per customer statement.
+   */
+  startNewNumeration: z.boolean().default(false),
   elements: z.array(elementSchema).max(500).default([]),
 });
 
@@ -575,6 +799,7 @@ export const templateDefinitionSchema = z
     meta: z.record(z.string(), z.unknown()).optional(),
     paper: paperSchema,
     pageBorder: pageBorderSchema.optional(),
+    watermark: watermarkSchema.optional(),
     datasets: z.array(datasetSchema).max(20).default([]),
     bands: z.array(bandSchema).min(1).max(60),
   })
@@ -681,7 +906,9 @@ export const templateDefinitionSchema = z
       }
     }
 
-    // ── At most one of each singleton band ──────────────────────────────
+    // ── At most one of each singleton band, per report page ─────────────
+    // Each report page is its own run, so each may carry its own page header
+    // and footer -- a terms page with no invoice header is the common case.
     const singletonBands = [
       'REPORT_HEADER',
       'PAGE_HEADER',
@@ -690,14 +917,52 @@ export const templateDefinitionSchema = z
       'REPORT_FOOTER',
       'NO_DATA',
     ];
-    for (const bandType of singletonBands) {
-      const occurrences = definition.bands.filter((band) => band.type === bandType);
-      if (occurrences.length > 1) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['bands'],
-          message: `${bandType} may appear at most once (found ${occurrences.length})`,
-        });
+    const reportPages = [...new Set(definition.bands.map((band) => band.reportPage))];
+    for (const reportPage of reportPages) {
+      for (const bandType of singletonBands) {
+        const occurrences = definition.bands.filter(
+          (band) => band.type === bandType && band.reportPage === reportPage,
+        );
+        if (occurrences.length > 1) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands'],
+            message:
+              reportPage === 0
+                ? `${bandType} may appear at most once (found ${occurrences.length})`
+                : `${bandType} may appear at most once on report page ${reportPage + 1} (found ${occurrences.length})`,
+          });
+        }
+      }
+    }
+
+    // ── Chart placement ─────────────────────────────────────────────────
+    for (const [bandIndex, band] of definition.bands.entries()) {
+      for (const [elementIndex, element] of band.elements.entries()) {
+        if (element.kind !== 'CHART') {
+          continue;
+        }
+        if (!CHART_BANDS.includes(band.type)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex],
+            message: `a CHART cannot sit in a ${band.type} band; use one of ${CHART_BANDS.join(', ')}`,
+          });
+        }
+        if (definition.layoutMode === 'GRID') {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex],
+            message: 'CHART is a GRAPHIC-mode element; GRID stationery cannot draw it',
+          });
+        }
+        if (!definition.datasets.some((dataset) => dataset.name === element.dataset)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex, 'dataset'],
+            message: `unknown dataset '${element.dataset}'`,
+          });
+        }
       }
     }
 
@@ -893,6 +1158,15 @@ export type ReportElement = z.infer<typeof elementSchema>;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 export type PaperSpec = z.infer<typeof paperSchema>;
 export type PageBorder = z.infer<typeof pageBorderSchema>;
+export type Watermark = z.infer<typeof watermarkSchema>;
+export type ElementBorder = z.infer<typeof borderSchema>;
+export type Highlight = z.infer<typeof highlightSchema>;
+export type LineStyle = (typeof LINE_STYLES)[number];
+export type Shape = (typeof SHAPES)[number];
+export type ChartType = (typeof CHART_TYPES)[number];
+export type LegendPosition = (typeof LEGEND_POSITIONS)[number];
+export type ChartElement = z.infer<typeof chartElementSchema>;
+export type ChartSeries = z.infer<typeof chartSeriesSchema>;
 export type Margins = z.infer<typeof marginsSchema>;
 export type DatasetBinding = z.infer<typeof datasetSchema>;
 export type FontSpec = z.infer<typeof fontSchema>;

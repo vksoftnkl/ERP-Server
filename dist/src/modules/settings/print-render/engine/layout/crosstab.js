@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.crosstabIsComplete = exports.crosstabMeasures = exports.crosstabColumnAxes = exports.crosstabRowAxes = exports.CROSSTAB_TOTALS_KEY = exports.CROSSTAB_FOLD_KEY = void 0;
+exports.crosstabIsComplete = exports.crosstabMeasures = exports.crosstabColumnAxes = exports.crosstabRowAxes = exports.CROSSTAB_SUBTOTAL_KEY = exports.CROSSTAB_TOTALS_KEY = exports.CROSSTAB_FOLD_KEY = void 0;
 exports.buildCrosstabModel = buildCrosstabModel;
 exports.planCrosstab = planCrosstab;
 exports.sliceCrosstab = sliceCrosstab;
@@ -9,6 +9,7 @@ const format_1 = require("../expression/transforms/format");
 const aggregate_accumulator_1 = require("./aggregate.accumulator");
 exports.CROSSTAB_FOLD_KEY = '\u001Fcrosstab-fold';
 exports.CROSSTAB_TOTALS_KEY = '\u001Fcrosstab-total';
+exports.CROSSTAB_SUBTOTAL_KEY = '\u001Fcrosstab-subtotal';
 const LEVEL_SEPARATOR = '\u001E';
 const joinKey = (labels) => labels.join(LEVEL_SEPARATOR);
 const crosstabRowAxes = (element) => [
@@ -251,6 +252,54 @@ function buildCrosstabModel(element, rows, reader) {
             total: totals[0] ?? null,
         };
     });
+    const groupValue = (rowKeys, leafKeys, measureIndex) => {
+        const merged = (0, aggregate_accumulator_1.emptyAccumulator)();
+        let seen = false;
+        for (const rowKey of rowKeys) {
+            const byLeaf = cells.get(rowKey);
+            if (!byLeaf) {
+                continue;
+            }
+            for (const leafKey of leafKeys) {
+                const cell = byLeaf.get(leafKey);
+                if (cell) {
+                    seen = true;
+                    mergeAccumulator(merged, cell[measureIndex]);
+                }
+            }
+        }
+        return seen ? (0, aggregate_accumulator_1.readAccumulator)(merged, measures[measureIndex].fn) : null;
+    };
+    const leafKeysOf = (leaf) => leaf.key === exports.CROSSTAB_FOLD_KEY ? folded.map((entry) => entry.key) : [leaf.key];
+    const rowsWithSubtotals = [];
+    if (element.showSubtotals && rowAxes.length > 1) {
+        const subtotalOf = (outer, rowKeys) => {
+            const totals = measures.map((_, measureIndex) => groupValue(rowKeys, printableLeaves.map((entry) => entry.key), measureIndex));
+            return {
+                key: `${exports.CROSSTAB_SUBTOTAL_KEY}${LEVEL_SEPARATOR}${outer}`,
+                labels: rowAxes.map((_, level) => level === 0 ? outer : level === 1 ? element.subtotalLabel : ''),
+                label: outer,
+                values: columns.map((column) => groupValue(rowKeys, leafKeysOf(leaves[column.leafIndex]), column.measureIndex)),
+                totals,
+                total: totals[0] ?? null,
+                subtotal: true,
+            };
+        };
+        let groupKeys = [];
+        let groupLabel = null;
+        for (const row of modelRows) {
+            if (groupLabel !== null && row.labels[0] !== groupLabel) {
+                rowsWithSubtotals.push(subtotalOf(groupLabel, groupKeys));
+                groupKeys = [];
+            }
+            groupLabel = row.labels[0] ?? '';
+            groupKeys.push(row.key);
+            rowsWithSubtotals.push(row);
+        }
+        if (groupLabel !== null) {
+            rowsWithSubtotals.push(subtotalOf(groupLabel, groupKeys));
+        }
+    }
     const columnTotals = columns.map((column) => {
         const leaf = leaves[column.leafIndex];
         const merged = (0, aggregate_accumulator_1.emptyAccumulator)();
@@ -299,7 +348,7 @@ function buildCrosstabModel(element, rows, reader) {
         measures,
         leaves,
         columns,
-        rows: modelRows,
+        rows: rowsWithSubtotals.length > 0 ? rowsWithSubtotals : modelRows,
         columnTotals,
         grandTotals,
         grandTotal: grandTotals[0] ?? null,
@@ -544,22 +593,51 @@ function emitCrosstab(plan, options) {
     for (let offset = 0; offset < slice.rowCount; offset += 1) {
         const row = model.rows[slice.fromRow + offset];
         const previous = offset > 0 ? model.rows[slice.fromRow + offset - 1] : null;
+        const rowFont = row.subtotal ? plan.headerFont : plan.bodyFont;
+        if (row.subtotal && options.totalsFill) {
+            const fill = {
+                k: 'rect',
+                x: xMm,
+                y: yMm + cursorMm,
+                w: widthMm,
+                h: plan.rowHeightMm,
+                fill: options.totalsFill,
+                stroke: null,
+                strokeWidthPt: 0,
+                radiusMm: 0,
+            };
+            primitives.push(fill);
+        }
         for (const rowColumn of plan.rowColumns) {
             const repeated = previous !== null &&
                 joinKey(previous.labels.slice(0, rowColumn.levelIndex + 1)) ===
                     joinKey(row.labels.slice(0, rowColumn.levelIndex + 1));
-            text(repeated ? '' : (row.labels[rowColumn.levelIndex] ?? ''), rowColumn.xMm, cursorMm, rowColumn.wMm, plan.rowHeightMm, plan.bodyFont, 'left');
+            text(repeated ? '' : (row.labels[rowColumn.levelIndex] ?? ''), rowColumn.xMm, cursorMm, rowColumn.wMm, plan.rowHeightMm, rowFont, 'left');
         }
         for (const column of plan.columns) {
             const value = column.modelIndex === null
                 ? (row.totals[column.measureIndex] ?? null)
                 : row.values[column.modelIndex];
-            text(cellText(value, column.measureIndex), column.xMm, cursorMm, column.wMm, plan.rowHeightMm, plan.bodyFont, 'right');
+            text(cellText(value, column.measureIndex), column.xMm, cursorMm, column.wMm, plan.rowHeightMm, rowFont, 'right');
         }
         cursorMm += plan.rowHeightMm;
     }
     const totalsTopMm = cursorMm;
     if (slice.withTotals) {
+        if (options.totalsFill) {
+            const fill = {
+                k: 'rect',
+                x: xMm,
+                y: yMm + cursorMm,
+                w: widthMm,
+                h: plan.totalsRowHeightMm,
+                fill: options.totalsFill,
+                stroke: null,
+                strokeWidthPt: 0,
+                radiusMm: 0,
+            };
+            primitives.push(fill);
+        }
         text(element.totalsLabel, 0, cursorMm, plan.rowHeaderWidthMm, plan.totalsRowHeightMm, plan.headerFont, 'left');
         for (const column of plan.columns) {
             const value = column.modelIndex === null

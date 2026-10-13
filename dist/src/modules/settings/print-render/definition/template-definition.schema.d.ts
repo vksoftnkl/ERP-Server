@@ -4,20 +4,27 @@ export declare const LAYOUT_MODES: readonly ["GRAPHIC", "GRID"];
 export declare const OUTPUT_MODES: readonly ["PDF", "ESCPOS", "ESCP_DOTMATRIX", "HTML"];
 export declare const ORIENTATIONS: readonly ["PORTRAIT", "LANDSCAPE"];
 export declare const BAND_TYPES: readonly ["REPORT_HEADER", "PAGE_HEADER", "GROUP_HEADER", "DETAIL", "GROUP_FOOTER", "SUMMARY", "PAGE_FOOTER", "REPORT_FOOTER", "NO_DATA"];
-export declare const ELEMENT_KINDS: readonly ["TEXT", "FIELD", "LINE", "RECT", "IMAGE", "BARCODE", "QRCODE", "PAGEBREAK", "CROSSTAB"];
+export declare const ELEMENT_KINDS: readonly ["TEXT", "FIELD", "LINE", "RECT", "IMAGE", "BARCODE", "QRCODE", "PAGEBREAK", "CROSSTAB", "CHART"];
 export declare const PRINT_ON: readonly ["ALL_PAGES", "FIRST_PAGE", "LAST_PAGE", "NOT_FIRST_PAGE", "NOT_LAST_PAGE"];
-export declare const H_ALIGN: readonly ["left", "center", "right"];
+export declare const H_ALIGN: readonly ["left", "center", "right", "justify"];
 export declare const V_ALIGN: readonly ["top", "middle", "bottom"];
 export declare const IMAGE_FIT: readonly ["CONTAIN", "COVER", "STRETCH"];
 export declare const CARDINALITY: readonly ["one", "many"];
 export declare const AGGREGATE_FUNCTIONS: readonly ["sum", "count", "avg", "min", "max"];
 export declare const AGGREGATE_SCOPES: readonly ["GROUP", "PAGE", "REPORT"];
-export declare const BARCODE_SYMBOLOGIES: readonly ["code128", "ean13", "ean8", "upca", "code39", "itf14"];
+export declare const BARCODE_SYMBOLOGIES: readonly ["code128", "ean13", "ean8", "upca", "upce", "code39", "code93", "codabar", "itf14", "interleaved2of5", "gs1_128", "pdf417", "datamatrix", "azteccode"];
+export declare const LINE_STYLES: readonly ["SOLID", "DASH", "DOT", "DASH_DOT", "DASH_DOT_DOT", "DOUBLE"];
+export declare const SHAPES: readonly ["RECT", "ELLIPSE", "TRIANGLE", "RHOMBUS"];
+export declare const TEXT_ROTATIONS: readonly [0, 90, 180, 270];
+export declare const CHART_TYPES: readonly ["BAR", "STACKED_BAR", "LINE", "PIE"];
+export declare const LEGEND_POSITIONS: readonly ["BOTTOM", "TOP", "LEFT", "RIGHT"];
 export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
 export declare const CROSSTAB_SORTS: readonly ["LABEL_ASC", "LABEL_DESC", "VALUE_DESC", "VALUE_ASC", "FIRST_SEEN"];
 export declare const CROSSTAB_OVERFLOWS: readonly ["FOLD", "CLIP"];
 export declare const POSITION_TYPES: readonly ["FIX", "FLOAT"];
 export declare const CROSSTAB_BANDS: readonly string[];
+export declare const CHART_BANDS: readonly string[];
+export declare const MAX_REPORT_PAGES = 20;
 export declare const marginsSchema: z.ZodObject<{
     top: z.ZodNumber;
     right: z.ZodNumber;
@@ -56,6 +63,7 @@ export declare const fontSchema: z.ZodObject<{
     bold: z.ZodDefault<z.ZodBoolean>;
     italic: z.ZodDefault<z.ZodBoolean>;
     underline: z.ZodDefault<z.ZodBoolean>;
+    strikeout: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>;
 export declare const styleSchema: z.ZodObject<{
     color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
@@ -63,6 +71,39 @@ export declare const styleSchema: z.ZodObject<{
     stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     strokeWidthPt: z.ZodOptional<z.ZodNumber>;
     padding: z.ZodOptional<z.ZodNumber>;
+    lineStyle: z.ZodOptional<z.ZodEnum<{
+        SOLID: "SOLID";
+        DASH: "DASH";
+        DOT: "DOT";
+        DASH_DOT: "DASH_DOT";
+        DASH_DOT_DOT: "DASH_DOT_DOT";
+        DOUBLE: "DOUBLE";
+    }>>;
+}, z.core.$strip>;
+export declare const borderSchema: z.ZodObject<{
+    top: z.ZodDefault<z.ZodBoolean>;
+    right: z.ZodDefault<z.ZodBoolean>;
+    bottom: z.ZodDefault<z.ZodBoolean>;
+    left: z.ZodDefault<z.ZodBoolean>;
+    widthPt: z.ZodDefault<z.ZodNumber>;
+    color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    style: z.ZodDefault<z.ZodEnum<{
+        SOLID: "SOLID";
+        DASH: "DASH";
+        DOT: "DOT";
+        DASH_DOT: "DASH_DOT";
+        DASH_DOT_DOT: "DASH_DOT_DOT";
+        DOUBLE: "DOUBLE";
+    }>>;
+}, z.core.$strip>;
+export declare const highlightSchema: z.ZodObject<{
+    when: z.ZodString;
+    bold: z.ZodOptional<z.ZodBoolean>;
+    italic: z.ZodOptional<z.ZodBoolean>;
+    underline: z.ZodOptional<z.ZodBoolean>;
+    strikeout: z.ZodOptional<z.ZodBoolean>;
+    color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
 }, z.core.$strip>;
 export declare const textElementSchema: z.ZodObject<{
     id: z.ZodString;
@@ -80,6 +121,14 @@ export declare const textElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -87,6 +136,24 @@ export declare const textElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -94,11 +161,13 @@ export declare const textElementSchema: z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -108,6 +177,17 @@ export declare const textElementSchema: z.ZodObject<{
     wrap: z.ZodDefault<z.ZodBoolean>;
     ellipsis: z.ZodDefault<z.ZodBoolean>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+    markup: z.ZodDefault<z.ZodBoolean>;
+    highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        when: z.ZodString;
+        bold: z.ZodOptional<z.ZodBoolean>;
+        italic: z.ZodOptional<z.ZodBoolean>;
+        underline: z.ZodOptional<z.ZodBoolean>;
+        strikeout: z.ZodOptional<z.ZodBoolean>;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>>;
     kind: z.ZodLiteral<"TEXT">;
 }, z.core.$strip>;
 export declare const fieldElementSchema: z.ZodObject<{
@@ -126,6 +206,14 @@ export declare const fieldElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -133,6 +221,24 @@ export declare const fieldElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -140,11 +246,13 @@ export declare const fieldElementSchema: z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -154,6 +262,17 @@ export declare const fieldElementSchema: z.ZodObject<{
     wrap: z.ZodDefault<z.ZodBoolean>;
     ellipsis: z.ZodDefault<z.ZodBoolean>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+    markup: z.ZodDefault<z.ZodBoolean>;
+    highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        when: z.ZodString;
+        bold: z.ZodOptional<z.ZodBoolean>;
+        italic: z.ZodOptional<z.ZodBoolean>;
+        underline: z.ZodOptional<z.ZodBoolean>;
+        strikeout: z.ZodOptional<z.ZodBoolean>;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>>;
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
@@ -188,6 +307,14 @@ export declare const lineElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -195,6 +322,24 @@ export declare const lineElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"LINE">;
     x1: z.ZodNumber;
     y1: z.ZodNumber;
@@ -202,6 +347,9 @@ export declare const lineElementSchema: z.ZodObject<{
     y2: z.ZodNumber;
     widthPt: z.ZodDefault<z.ZodNumber>;
     gridChar: z.ZodDefault<z.ZodString>;
+    arrowStart: z.ZodDefault<z.ZodBoolean>;
+    arrowEnd: z.ZodDefault<z.ZodBoolean>;
+    arrowSizeMm: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export declare const rectElementSchema: z.ZodObject<{
     id: z.ZodString;
@@ -217,6 +365,14 @@ export declare const rectElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -224,10 +380,34 @@ export declare const rectElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"RECT">;
     w: z.ZodNumber;
     h: z.ZodNumber;
     radiusMm: z.ZodDefault<z.ZodNumber>;
+    shape: z.ZodDefault<z.ZodEnum<{
+        RECT: "RECT";
+        ELLIPSE: "ELLIPSE";
+        TRIANGLE: "TRIANGLE";
+        RHOMBUS: "RHOMBUS";
+    }>>;
 }, z.core.$strip>;
 export declare const imageElementSchema: z.ZodObject<{
     id: z.ZodString;
@@ -243,6 +423,14 @@ export declare const imageElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -250,6 +438,24 @@ export declare const imageElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"IMAGE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -274,6 +480,14 @@ export declare const barcodeElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -281,6 +495,24 @@ export declare const barcodeElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"BARCODE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -289,8 +521,16 @@ export declare const barcodeElementSchema: z.ZodObject<{
         ean13: "ean13";
         ean8: "ean8";
         upca: "upca";
+        upce: "upce";
         code39: "code39";
+        code93: "code93";
+        codabar: "codabar";
         itf14: "itf14";
+        interleaved2of5: "interleaved2of5";
+        gs1_128: "gs1_128";
+        pdf417: "pdf417";
+        datamatrix: "datamatrix";
+        azteccode: "azteccode";
     }>>;
     value: z.ZodString;
     showText: z.ZodDefault<z.ZodBoolean>;
@@ -311,6 +551,14 @@ export declare const qrcodeElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -318,6 +566,24 @@ export declare const qrcodeElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"QRCODE">;
     size: z.ZodNumber;
     value: z.ZodString;
@@ -344,6 +610,14 @@ export declare const pagebreakElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -351,6 +625,24 @@ export declare const pagebreakElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
@@ -386,6 +678,14 @@ export declare const crosstabElementSchema: z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -393,6 +693,24 @@ export declare const crosstabElementSchema: z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"CROSSTAB">;
     w: z.ZodNumber;
     h: z.ZodDefault<z.ZodNumber>;
@@ -467,6 +785,7 @@ export declare const crosstabElementSchema: z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     headerFont: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -474,10 +793,131 @@ export declare const crosstabElementSchema: z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     gridLines: z.ZodDefault<z.ZodBoolean>;
     headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    totalsFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    showSubtotals: z.ZodDefault<z.ZodBoolean>;
+    subtotalLabel: z.ZodDefault<z.ZodString>;
     repeatHeader: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>;
+export declare const chartSeriesSchema: z.ZodObject<{
+    name: z.ZodDefault<z.ZodString>;
+    value: z.ZodString;
+    color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+}, z.core.$strip>;
+export declare const chartElementSchema: z.ZodObject<{
+    id: z.ZodString;
+    x: z.ZodDefault<z.ZodNumber>;
+    y: z.ZodDefault<z.ZodNumber>;
+    col: z.ZodOptional<z.ZodNumber>;
+    row: z.ZodOptional<z.ZodNumber>;
+    cols: z.ZodOptional<z.ZodNumber>;
+    visible: z.ZodOptional<z.ZodString>;
+    style: z.ZodOptional<z.ZodObject<{
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+        padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
+    kind: z.ZodLiteral<"CHART">;
+    w: z.ZodNumber;
+    h: z.ZodNumber;
+    chartType: z.ZodDefault<z.ZodEnum<{
+        LINE: "LINE";
+        BAR: "BAR";
+        STACKED_BAR: "STACKED_BAR";
+        PIE: "PIE";
+    }>>;
+    dataset: z.ZodString;
+    category: z.ZodString;
+    series: z.ZodArray<z.ZodObject<{
+        name: z.ZodDefault<z.ZodString>;
+        value: z.ZodString;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>;
+    fn: z.ZodDefault<z.ZodEnum<{
+        sum: "sum";
+        count: "count";
+        avg: "avg";
+        min: "min";
+        max: "max";
+    }>>;
+    title: z.ZodDefault<z.ZodString>;
+    showLegend: z.ZodDefault<z.ZodBoolean>;
+    legendPosition: z.ZodDefault<z.ZodEnum<{
+        BOTTOM: "BOTTOM";
+        TOP: "TOP";
+        LEFT: "LEFT";
+        RIGHT: "RIGHT";
+    }>>;
+    showValues: z.ZodDefault<z.ZodBoolean>;
+    showPercent: z.ZodDefault<z.ZodBoolean>;
+    showGrid: z.ZodDefault<z.ZodBoolean>;
+    holeSizePct: z.ZodDefault<z.ZodNumber>;
+    maxCategories: z.ZodDefault<z.ZodNumber>;
+    format: z.ZodDefault<z.ZodString>;
+    background: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    font: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    titleFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    titleColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    legendFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    legendColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
 }, z.core.$strip>;
 export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     id: z.ZodString;
@@ -495,6 +935,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -502,6 +950,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -509,11 +975,13 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -523,6 +991,17 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     wrap: z.ZodDefault<z.ZodBoolean>;
     ellipsis: z.ZodDefault<z.ZodBoolean>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+    markup: z.ZodDefault<z.ZodBoolean>;
+    highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        when: z.ZodString;
+        bold: z.ZodOptional<z.ZodBoolean>;
+        italic: z.ZodOptional<z.ZodBoolean>;
+        underline: z.ZodOptional<z.ZodBoolean>;
+        strikeout: z.ZodOptional<z.ZodBoolean>;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>>;
     kind: z.ZodLiteral<"TEXT">;
 }, z.core.$strip>, z.ZodObject<{
     id: z.ZodString;
@@ -540,6 +1019,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -547,6 +1034,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -554,11 +1059,13 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -568,6 +1075,17 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     wrap: z.ZodDefault<z.ZodBoolean>;
     ellipsis: z.ZodDefault<z.ZodBoolean>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+    markup: z.ZodDefault<z.ZodBoolean>;
+    highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        when: z.ZodString;
+        bold: z.ZodOptional<z.ZodBoolean>;
+        italic: z.ZodOptional<z.ZodBoolean>;
+        underline: z.ZodOptional<z.ZodBoolean>;
+        strikeout: z.ZodOptional<z.ZodBoolean>;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>>;
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
@@ -601,6 +1119,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -608,6 +1134,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"LINE">;
     x1: z.ZodNumber;
     y1: z.ZodNumber;
@@ -615,6 +1159,9 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     y2: z.ZodNumber;
     widthPt: z.ZodDefault<z.ZodNumber>;
     gridChar: z.ZodDefault<z.ZodString>;
+    arrowStart: z.ZodDefault<z.ZodBoolean>;
+    arrowEnd: z.ZodDefault<z.ZodBoolean>;
+    arrowSizeMm: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
     id: z.ZodString;
     x: z.ZodDefault<z.ZodNumber>;
@@ -629,6 +1176,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -636,10 +1191,34 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"RECT">;
     w: z.ZodNumber;
     h: z.ZodNumber;
     radiusMm: z.ZodDefault<z.ZodNumber>;
+    shape: z.ZodDefault<z.ZodEnum<{
+        RECT: "RECT";
+        ELLIPSE: "ELLIPSE";
+        TRIANGLE: "TRIANGLE";
+        RHOMBUS: "RHOMBUS";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     id: z.ZodString;
     x: z.ZodDefault<z.ZodNumber>;
@@ -654,6 +1233,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -661,6 +1248,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"IMAGE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -684,6 +1289,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -691,6 +1304,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"BARCODE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -699,8 +1330,16 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         ean13: "ean13";
         ean8: "ean8";
         upca: "upca";
+        upce: "upce";
         code39: "code39";
+        code93: "code93";
+        codabar: "codabar";
         itf14: "itf14";
+        interleaved2of5: "interleaved2of5";
+        gs1_128: "gs1_128";
+        pdf417: "pdf417";
+        datamatrix: "datamatrix";
+        azteccode: "azteccode";
     }>>;
     value: z.ZodString;
     showText: z.ZodDefault<z.ZodBoolean>;
@@ -720,6 +1359,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -727,6 +1374,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"QRCODE">;
     size: z.ZodNumber;
     value: z.ZodString;
@@ -752,6 +1417,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -759,6 +1432,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
@@ -775,6 +1466,14 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         strokeWidthPt: z.ZodOptional<z.ZodNumber>;
         padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
     positionType: z.ZodDefault<z.ZodEnum<{
@@ -782,6 +1481,24 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         FLOAT: "FLOAT";
     }>>;
     removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
     kind: z.ZodLiteral<"CROSSTAB">;
     w: z.ZodNumber;
     h: z.ZodDefault<z.ZodNumber>;
@@ -856,6 +1573,7 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     headerFont: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -863,16 +1581,149 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     }, z.core.$strip>>;
     gridLines: z.ZodDefault<z.ZodBoolean>;
     headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    totalsFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    showSubtotals: z.ZodDefault<z.ZodBoolean>;
+    subtotalLabel: z.ZodDefault<z.ZodString>;
     repeatHeader: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>, z.ZodObject<{
+    id: z.ZodString;
+    x: z.ZodDefault<z.ZodNumber>;
+    y: z.ZodDefault<z.ZodNumber>;
+    col: z.ZodOptional<z.ZodNumber>;
+    row: z.ZodOptional<z.ZodNumber>;
+    cols: z.ZodOptional<z.ZodNumber>;
+    visible: z.ZodOptional<z.ZodString>;
+    style: z.ZodOptional<z.ZodObject<{
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+        padding: z.ZodOptional<z.ZodNumber>;
+        lineStyle: z.ZodOptional<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+    border: z.ZodOptional<z.ZodObject<{
+        top: z.ZodDefault<z.ZodBoolean>;
+        right: z.ZodDefault<z.ZodBoolean>;
+        bottom: z.ZodDefault<z.ZodBoolean>;
+        left: z.ZodDefault<z.ZodBoolean>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+    group: z.ZodOptional<z.ZodString>;
+    kind: z.ZodLiteral<"CHART">;
+    w: z.ZodNumber;
+    h: z.ZodNumber;
+    chartType: z.ZodDefault<z.ZodEnum<{
+        LINE: "LINE";
+        BAR: "BAR";
+        STACKED_BAR: "STACKED_BAR";
+        PIE: "PIE";
+    }>>;
+    dataset: z.ZodString;
+    category: z.ZodString;
+    series: z.ZodArray<z.ZodObject<{
+        name: z.ZodDefault<z.ZodString>;
+        value: z.ZodString;
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    }, z.core.$strip>>;
+    fn: z.ZodDefault<z.ZodEnum<{
+        sum: "sum";
+        count: "count";
+        avg: "avg";
+        min: "min";
+        max: "max";
+    }>>;
+    title: z.ZodDefault<z.ZodString>;
+    showLegend: z.ZodDefault<z.ZodBoolean>;
+    legendPosition: z.ZodDefault<z.ZodEnum<{
+        BOTTOM: "BOTTOM";
+        TOP: "TOP";
+        LEFT: "LEFT";
+        RIGHT: "RIGHT";
+    }>>;
+    showValues: z.ZodDefault<z.ZodBoolean>;
+    showPercent: z.ZodDefault<z.ZodBoolean>;
+    showGrid: z.ZodDefault<z.ZodBoolean>;
+    holeSizePct: z.ZodDefault<z.ZodNumber>;
+    maxCategories: z.ZodDefault<z.ZodNumber>;
+    format: z.ZodDefault<z.ZodString>;
+    background: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    font: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    titleFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    titleColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    legendFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    legendColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
 }, z.core.$strip>], "kind">;
 export declare const pageBorderSchema: z.ZodObject<{
     insetMm: z.ZodDefault<z.ZodNullable<z.ZodNumber>>;
     widthPt: z.ZodDefault<z.ZodNumber>;
     color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     radiusMm: z.ZodDefault<z.ZodNumber>;
+    style: z.ZodDefault<z.ZodEnum<{
+        SOLID: "SOLID";
+        DASH: "DASH";
+        DOT: "DOT";
+        DASH_DOT: "DASH_DOT";
+        DASH_DOT_DOT: "DASH_DOT_DOT";
+        DOUBLE: "DOUBLE";
+    }>>;
+}, z.core.$strip>;
+export declare const watermarkSchema: z.ZodObject<{
+    text: z.ZodDefault<z.ZodString>;
+    image: z.ZodOptional<z.ZodString>;
+    opacity: z.ZodDefault<z.ZodNumber>;
+    rotationDeg: z.ZodDefault<z.ZodNumber>;
+    fontSizePt: z.ZodDefault<z.ZodNumber>;
+    color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    bold: z.ZodDefault<z.ZodBoolean>;
+    imageScalePct: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export declare const bandSchema: z.ZodObject<{
     type: z.ZodEnum<{
@@ -905,6 +1756,9 @@ export declare const bandSchema: z.ZodObject<{
     keepWithLastDetail: z.ZodDefault<z.ZodBoolean>;
     visible: z.ZodOptional<z.ZodString>;
     spacingRows: z.ZodDefault<z.ZodNumber>;
+    reportPage: z.ZodDefault<z.ZodNumber>;
+    startNewPage: z.ZodDefault<z.ZodBoolean>;
+    startNewNumeration: z.ZodDefault<z.ZodBoolean>;
     elements: z.ZodDefault<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         x: z.ZodDefault<z.ZodNumber>;
@@ -921,6 +1775,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -928,6 +1790,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         value: z.ZodString;
         font: z.ZodOptional<z.ZodObject<{
             family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -935,11 +1815,13 @@ export declare const bandSchema: z.ZodObject<{
             bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
             center: "center";
             right: "right";
+            justify: "justify";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -949,6 +1831,17 @@ export declare const bandSchema: z.ZodObject<{
         wrap: z.ZodDefault<z.ZodBoolean>;
         ellipsis: z.ZodDefault<z.ZodBoolean>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+        rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+        markup: z.ZodDefault<z.ZodBoolean>;
+        highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+            when: z.ZodString;
+            bold: z.ZodOptional<z.ZodBoolean>;
+            italic: z.ZodOptional<z.ZodBoolean>;
+            underline: z.ZodOptional<z.ZodBoolean>;
+            strikeout: z.ZodOptional<z.ZodBoolean>;
+            color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        }, z.core.$strip>>>;
         kind: z.ZodLiteral<"TEXT">;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
@@ -966,6 +1859,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -973,6 +1874,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         value: z.ZodString;
         font: z.ZodOptional<z.ZodObject<{
             family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -980,11 +1899,13 @@ export declare const bandSchema: z.ZodObject<{
             bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
             center: "center";
             right: "right";
+            justify: "justify";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -994,6 +1915,17 @@ export declare const bandSchema: z.ZodObject<{
         wrap: z.ZodDefault<z.ZodBoolean>;
         ellipsis: z.ZodDefault<z.ZodBoolean>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+        rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+        markup: z.ZodDefault<z.ZodBoolean>;
+        highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+            when: z.ZodString;
+            bold: z.ZodOptional<z.ZodBoolean>;
+            italic: z.ZodOptional<z.ZodBoolean>;
+            underline: z.ZodOptional<z.ZodBoolean>;
+            strikeout: z.ZodOptional<z.ZodBoolean>;
+            color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        }, z.core.$strip>>>;
         kind: z.ZodLiteral<"FIELD">;
         aggregate: z.ZodOptional<z.ZodObject<{
             fn: z.ZodEnum<{
@@ -1027,6 +1959,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1034,6 +1974,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"LINE">;
         x1: z.ZodNumber;
         y1: z.ZodNumber;
@@ -1041,6 +1999,9 @@ export declare const bandSchema: z.ZodObject<{
         y2: z.ZodNumber;
         widthPt: z.ZodDefault<z.ZodNumber>;
         gridChar: z.ZodDefault<z.ZodString>;
+        arrowStart: z.ZodDefault<z.ZodBoolean>;
+        arrowEnd: z.ZodDefault<z.ZodBoolean>;
+        arrowSizeMm: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         x: z.ZodDefault<z.ZodNumber>;
@@ -1055,6 +2016,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1062,10 +2031,34 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"RECT">;
         w: z.ZodNumber;
         h: z.ZodNumber;
         radiusMm: z.ZodDefault<z.ZodNumber>;
+        shape: z.ZodDefault<z.ZodEnum<{
+            RECT: "RECT";
+            ELLIPSE: "ELLIPSE";
+            TRIANGLE: "TRIANGLE";
+            RHOMBUS: "RHOMBUS";
+        }>>;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         x: z.ZodDefault<z.ZodNumber>;
@@ -1080,6 +2073,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1087,6 +2088,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"IMAGE">;
         w: z.ZodNumber;
         h: z.ZodNumber;
@@ -1110,6 +2129,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1117,6 +2144,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"BARCODE">;
         w: z.ZodNumber;
         h: z.ZodNumber;
@@ -1125,8 +2170,16 @@ export declare const bandSchema: z.ZodObject<{
             ean13: "ean13";
             ean8: "ean8";
             upca: "upca";
+            upce: "upce";
             code39: "code39";
+            code93: "code93";
+            codabar: "codabar";
             itf14: "itf14";
+            interleaved2of5: "interleaved2of5";
+            gs1_128: "gs1_128";
+            pdf417: "pdf417";
+            datamatrix: "datamatrix";
+            azteccode: "azteccode";
         }>>;
         value: z.ZodString;
         showText: z.ZodDefault<z.ZodBoolean>;
@@ -1146,6 +2199,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1153,6 +2214,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"QRCODE">;
         size: z.ZodNumber;
         value: z.ZodString;
@@ -1178,6 +2257,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1185,6 +2272,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"PAGEBREAK">;
         when: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>, z.ZodObject<{
@@ -1201,6 +2306,14 @@ export declare const bandSchema: z.ZodObject<{
             stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             strokeWidthPt: z.ZodOptional<z.ZodNumber>;
             padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
         positionType: z.ZodDefault<z.ZodEnum<{
@@ -1208,6 +2321,24 @@ export declare const bandSchema: z.ZodObject<{
             FLOAT: "FLOAT";
         }>>;
         removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
         kind: z.ZodLiteral<"CROSSTAB">;
         w: z.ZodNumber;
         h: z.ZodDefault<z.ZodNumber>;
@@ -1282,6 +2413,7 @@ export declare const bandSchema: z.ZodObject<{
             bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         }, z.core.$strip>>;
         headerFont: z.ZodOptional<z.ZodObject<{
             family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1289,10 +2421,125 @@ export declare const bandSchema: z.ZodObject<{
             bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
         }, z.core.$strip>>;
         gridLines: z.ZodDefault<z.ZodBoolean>;
         headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        totalsFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        showSubtotals: z.ZodDefault<z.ZodBoolean>;
+        subtotalLabel: z.ZodDefault<z.ZodString>;
         repeatHeader: z.ZodDefault<z.ZodBoolean>;
+    }, z.core.$strip>, z.ZodObject<{
+        id: z.ZodString;
+        x: z.ZodDefault<z.ZodNumber>;
+        y: z.ZodDefault<z.ZodNumber>;
+        col: z.ZodOptional<z.ZodNumber>;
+        row: z.ZodOptional<z.ZodNumber>;
+        cols: z.ZodOptional<z.ZodNumber>;
+        visible: z.ZodOptional<z.ZodString>;
+        style: z.ZodOptional<z.ZodObject<{
+            color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+            padding: z.ZodOptional<z.ZodNumber>;
+            lineStyle: z.ZodOptional<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+        border: z.ZodOptional<z.ZodObject<{
+            top: z.ZodDefault<z.ZodBoolean>;
+            right: z.ZodDefault<z.ZodBoolean>;
+            bottom: z.ZodDefault<z.ZodBoolean>;
+            left: z.ZodDefault<z.ZodBoolean>;
+            widthPt: z.ZodDefault<z.ZodNumber>;
+            color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            style: z.ZodDefault<z.ZodEnum<{
+                SOLID: "SOLID";
+                DASH: "DASH";
+                DOT: "DOT";
+                DASH_DOT: "DASH_DOT";
+                DASH_DOT_DOT: "DASH_DOT_DOT";
+                DOUBLE: "DOUBLE";
+            }>>;
+        }, z.core.$strip>>;
+        stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+        group: z.ZodOptional<z.ZodString>;
+        kind: z.ZodLiteral<"CHART">;
+        w: z.ZodNumber;
+        h: z.ZodNumber;
+        chartType: z.ZodDefault<z.ZodEnum<{
+            LINE: "LINE";
+            BAR: "BAR";
+            STACKED_BAR: "STACKED_BAR";
+            PIE: "PIE";
+        }>>;
+        dataset: z.ZodString;
+        category: z.ZodString;
+        series: z.ZodArray<z.ZodObject<{
+            name: z.ZodDefault<z.ZodString>;
+            value: z.ZodString;
+            color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        }, z.core.$strip>>;
+        fn: z.ZodDefault<z.ZodEnum<{
+            sum: "sum";
+            count: "count";
+            avg: "avg";
+            min: "min";
+            max: "max";
+        }>>;
+        title: z.ZodDefault<z.ZodString>;
+        showLegend: z.ZodDefault<z.ZodBoolean>;
+        legendPosition: z.ZodDefault<z.ZodEnum<{
+            BOTTOM: "BOTTOM";
+            TOP: "TOP";
+            LEFT: "LEFT";
+            RIGHT: "RIGHT";
+        }>>;
+        showValues: z.ZodDefault<z.ZodBoolean>;
+        showPercent: z.ZodDefault<z.ZodBoolean>;
+        showGrid: z.ZodDefault<z.ZodBoolean>;
+        holeSizePct: z.ZodDefault<z.ZodNumber>;
+        maxCategories: z.ZodDefault<z.ZodNumber>;
+        format: z.ZodDefault<z.ZodString>;
+        background: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        font: z.ZodOptional<z.ZodObject<{
+            family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+            size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+            bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        }, z.core.$strip>>;
+        titleFont: z.ZodOptional<z.ZodObject<{
+            family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+            size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+            bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        }, z.core.$strip>>;
+        titleColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        legendFont: z.ZodOptional<z.ZodObject<{
+            family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+            size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+            bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        }, z.core.$strip>>;
+        legendColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     }, z.core.$strip>], "kind">>>;
 }, z.core.$strip>;
 export declare const templateDefinitionSchema: z.ZodObject<{
@@ -1324,6 +2571,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
         widthPt: z.ZodDefault<z.ZodNumber>;
         color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         radiusMm: z.ZodDefault<z.ZodNumber>;
+        style: z.ZodDefault<z.ZodEnum<{
+            SOLID: "SOLID";
+            DASH: "DASH";
+            DOT: "DOT";
+            DASH_DOT: "DASH_DOT";
+            DASH_DOT_DOT: "DASH_DOT_DOT";
+            DOUBLE: "DOUBLE";
+        }>>;
+    }, z.core.$strip>>;
+    watermark: z.ZodOptional<z.ZodObject<{
+        text: z.ZodDefault<z.ZodString>;
+        image: z.ZodOptional<z.ZodString>;
+        opacity: z.ZodDefault<z.ZodNumber>;
+        rotationDeg: z.ZodDefault<z.ZodNumber>;
+        fontSizePt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        bold: z.ZodDefault<z.ZodBoolean>;
+        imageScalePct: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
     datasets: z.ZodDefault<z.ZodArray<z.ZodObject<{
         name: z.ZodString;
@@ -1365,6 +2630,9 @@ export declare const templateDefinitionSchema: z.ZodObject<{
         keepWithLastDetail: z.ZodDefault<z.ZodBoolean>;
         visible: z.ZodOptional<z.ZodString>;
         spacingRows: z.ZodDefault<z.ZodNumber>;
+        reportPage: z.ZodDefault<z.ZodNumber>;
+        startNewPage: z.ZodDefault<z.ZodBoolean>;
+        startNewNumeration: z.ZodDefault<z.ZodBoolean>;
         elements: z.ZodDefault<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
             id: z.ZodString;
             x: z.ZodDefault<z.ZodNumber>;
@@ -1381,6 +2649,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1388,6 +2664,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             value: z.ZodString;
             font: z.ZodOptional<z.ZodObject<{
                 family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1395,11 +2689,13 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
                 center: "center";
                 right: "right";
+                justify: "justify";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1409,6 +2705,17 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             wrap: z.ZodDefault<z.ZodBoolean>;
             ellipsis: z.ZodDefault<z.ZodBoolean>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+            rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+            markup: z.ZodDefault<z.ZodBoolean>;
+            highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+                when: z.ZodString;
+                bold: z.ZodOptional<z.ZodBoolean>;
+                italic: z.ZodOptional<z.ZodBoolean>;
+                underline: z.ZodOptional<z.ZodBoolean>;
+                strikeout: z.ZodOptional<z.ZodBoolean>;
+                color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            }, z.core.$strip>>>;
             kind: z.ZodLiteral<"TEXT">;
         }, z.core.$strip>, z.ZodObject<{
             id: z.ZodString;
@@ -1426,6 +2733,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1433,6 +2748,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             value: z.ZodString;
             font: z.ZodOptional<z.ZodObject<{
                 family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1440,11 +2773,13 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
                 center: "center";
                 right: "right";
+                justify: "justify";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1454,6 +2789,17 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             wrap: z.ZodDefault<z.ZodBoolean>;
             ellipsis: z.ZodDefault<z.ZodBoolean>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+            rotation: z.ZodDefault<z.ZodUnion<readonly [z.ZodLiteral<0>, z.ZodLiteral<90>, z.ZodLiteral<180>, z.ZodLiteral<270>]>>;
+            markup: z.ZodDefault<z.ZodBoolean>;
+            highlights: z.ZodDefault<z.ZodArray<z.ZodObject<{
+                when: z.ZodString;
+                bold: z.ZodOptional<z.ZodBoolean>;
+                italic: z.ZodOptional<z.ZodBoolean>;
+                underline: z.ZodOptional<z.ZodBoolean>;
+                strikeout: z.ZodOptional<z.ZodBoolean>;
+                color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            }, z.core.$strip>>>;
             kind: z.ZodLiteral<"FIELD">;
             aggregate: z.ZodOptional<z.ZodObject<{
                 fn: z.ZodEnum<{
@@ -1487,6 +2833,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1494,6 +2848,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"LINE">;
             x1: z.ZodNumber;
             y1: z.ZodNumber;
@@ -1501,6 +2873,9 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             y2: z.ZodNumber;
             widthPt: z.ZodDefault<z.ZodNumber>;
             gridChar: z.ZodDefault<z.ZodString>;
+            arrowStart: z.ZodDefault<z.ZodBoolean>;
+            arrowEnd: z.ZodDefault<z.ZodBoolean>;
+            arrowSizeMm: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             id: z.ZodString;
             x: z.ZodDefault<z.ZodNumber>;
@@ -1515,6 +2890,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1522,10 +2905,34 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"RECT">;
             w: z.ZodNumber;
             h: z.ZodNumber;
             radiusMm: z.ZodDefault<z.ZodNumber>;
+            shape: z.ZodDefault<z.ZodEnum<{
+                RECT: "RECT";
+                ELLIPSE: "ELLIPSE";
+                TRIANGLE: "TRIANGLE";
+                RHOMBUS: "RHOMBUS";
+            }>>;
         }, z.core.$strip>, z.ZodObject<{
             id: z.ZodString;
             x: z.ZodDefault<z.ZodNumber>;
@@ -1540,6 +2947,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1547,6 +2962,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"IMAGE">;
             w: z.ZodNumber;
             h: z.ZodNumber;
@@ -1570,6 +3003,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1577,6 +3018,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"BARCODE">;
             w: z.ZodNumber;
             h: z.ZodNumber;
@@ -1585,8 +3044,16 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 ean13: "ean13";
                 ean8: "ean8";
                 upca: "upca";
+                upce: "upce";
                 code39: "code39";
+                code93: "code93";
+                codabar: "codabar";
                 itf14: "itf14";
+                interleaved2of5: "interleaved2of5";
+                gs1_128: "gs1_128";
+                pdf417: "pdf417";
+                datamatrix: "datamatrix";
+                azteccode: "azteccode";
             }>>;
             value: z.ZodString;
             showText: z.ZodDefault<z.ZodBoolean>;
@@ -1606,6 +3073,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1613,6 +3088,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"QRCODE">;
             size: z.ZodNumber;
             value: z.ZodString;
@@ -1638,6 +3131,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1645,6 +3146,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"PAGEBREAK">;
             when: z.ZodOptional<z.ZodString>;
         }, z.core.$strip>, z.ZodObject<{
@@ -1661,6 +3180,14 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
                 strokeWidthPt: z.ZodOptional<z.ZodNumber>;
                 padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
             positionType: z.ZodDefault<z.ZodEnum<{
@@ -1668,6 +3195,24 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 FLOAT: "FLOAT";
             }>>;
             removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
             kind: z.ZodLiteral<"CROSSTAB">;
             w: z.ZodNumber;
             h: z.ZodDefault<z.ZodNumber>;
@@ -1742,6 +3287,7 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             }, z.core.$strip>>;
             headerFont: z.ZodOptional<z.ZodObject<{
                 family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1749,10 +3295,125 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
                 underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
             }, z.core.$strip>>;
             gridLines: z.ZodDefault<z.ZodBoolean>;
             headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            totalsFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            showSubtotals: z.ZodDefault<z.ZodBoolean>;
+            subtotalLabel: z.ZodDefault<z.ZodString>;
             repeatHeader: z.ZodDefault<z.ZodBoolean>;
+        }, z.core.$strip>, z.ZodObject<{
+            id: z.ZodString;
+            x: z.ZodDefault<z.ZodNumber>;
+            y: z.ZodDefault<z.ZodNumber>;
+            col: z.ZodOptional<z.ZodNumber>;
+            row: z.ZodOptional<z.ZodNumber>;
+            cols: z.ZodOptional<z.ZodNumber>;
+            visible: z.ZodOptional<z.ZodString>;
+            style: z.ZodOptional<z.ZodObject<{
+                color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+                padding: z.ZodOptional<z.ZodNumber>;
+                lineStyle: z.ZodOptional<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
+            border: z.ZodOptional<z.ZodObject<{
+                top: z.ZodDefault<z.ZodBoolean>;
+                right: z.ZodDefault<z.ZodBoolean>;
+                bottom: z.ZodDefault<z.ZodBoolean>;
+                left: z.ZodDefault<z.ZodBoolean>;
+                widthPt: z.ZodDefault<z.ZodNumber>;
+                color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                style: z.ZodDefault<z.ZodEnum<{
+                    SOLID: "SOLID";
+                    DASH: "DASH";
+                    DOT: "DOT";
+                    DASH_DOT: "DASH_DOT";
+                    DASH_DOT_DOT: "DASH_DOT_DOT";
+                    DOUBLE: "DOUBLE";
+                }>>;
+            }, z.core.$strip>>;
+            stretchWithBand: z.ZodDefault<z.ZodBoolean>;
+            group: z.ZodOptional<z.ZodString>;
+            kind: z.ZodLiteral<"CHART">;
+            w: z.ZodNumber;
+            h: z.ZodNumber;
+            chartType: z.ZodDefault<z.ZodEnum<{
+                LINE: "LINE";
+                BAR: "BAR";
+                STACKED_BAR: "STACKED_BAR";
+                PIE: "PIE";
+            }>>;
+            dataset: z.ZodString;
+            category: z.ZodString;
+            series: z.ZodArray<z.ZodObject<{
+                name: z.ZodDefault<z.ZodString>;
+                value: z.ZodString;
+                color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            }, z.core.$strip>>;
+            fn: z.ZodDefault<z.ZodEnum<{
+                sum: "sum";
+                count: "count";
+                avg: "avg";
+                min: "min";
+                max: "max";
+            }>>;
+            title: z.ZodDefault<z.ZodString>;
+            showLegend: z.ZodDefault<z.ZodBoolean>;
+            legendPosition: z.ZodDefault<z.ZodEnum<{
+                BOTTOM: "BOTTOM";
+                TOP: "TOP";
+                LEFT: "LEFT";
+                RIGHT: "RIGHT";
+            }>>;
+            showValues: z.ZodDefault<z.ZodBoolean>;
+            showPercent: z.ZodDefault<z.ZodBoolean>;
+            showGrid: z.ZodDefault<z.ZodBoolean>;
+            holeSizePct: z.ZodDefault<z.ZodNumber>;
+            maxCategories: z.ZodDefault<z.ZodNumber>;
+            format: z.ZodDefault<z.ZodString>;
+            background: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            font: z.ZodOptional<z.ZodObject<{
+                family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+                size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+                bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            }, z.core.$strip>>;
+            titleFont: z.ZodOptional<z.ZodObject<{
+                family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+                size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+                bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            }, z.core.$strip>>;
+            titleColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            legendFont: z.ZodOptional<z.ZodObject<{
+                family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+                size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+                bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                strikeout: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            }, z.core.$strip>>;
+            legendColor: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         }, z.core.$strip>], "kind">>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
@@ -1764,6 +3425,15 @@ export type ReportElement = z.infer<typeof elementSchema>;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 export type PaperSpec = z.infer<typeof paperSchema>;
 export type PageBorder = z.infer<typeof pageBorderSchema>;
+export type Watermark = z.infer<typeof watermarkSchema>;
+export type ElementBorder = z.infer<typeof borderSchema>;
+export type Highlight = z.infer<typeof highlightSchema>;
+export type LineStyle = (typeof LINE_STYLES)[number];
+export type Shape = (typeof SHAPES)[number];
+export type ChartType = (typeof CHART_TYPES)[number];
+export type LegendPosition = (typeof LEGEND_POSITIONS)[number];
+export type ChartElement = z.infer<typeof chartElementSchema>;
+export type ChartSeries = z.infer<typeof chartSeriesSchema>;
 export type Margins = z.infer<typeof marginsSchema>;
 export type DatasetBinding = z.infer<typeof datasetSchema>;
 export type FontSpec = z.infer<typeof fontSchema>;

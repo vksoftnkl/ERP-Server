@@ -14,6 +14,9 @@ const common_1 = require("@nestjs/common");
 const template_definition_schema_1 = require("../../definition/template-definition.schema");
 const expression_evaluator_1 = require("../expression/expression.evaluator");
 const text_1 = require("../expression/transforms/text");
+const chart_1 = require("./chart");
+const markup_1 = require("./markup");
+const shapes_1 = require("./shapes");
 const aggregate_accumulator_1 = require("./aggregate.accumulator");
 const text_measure_1 = require("./text-measure");
 const crosstab_1 = require("./crosstab");
@@ -27,7 +30,37 @@ let LayoutEngine = class LayoutEngine {
     }
     render(input) {
         const startedAt = Date.now();
-        return new LayoutRun(this.measurer, input).run(startedAt);
+        const reportPages = [
+            ...new Set(input.definition.bands.map((band) => band.reportPage ?? 0)),
+        ].sort((left, right) => left - right);
+        if (reportPages.length <= 1) {
+            return new LayoutRun(this.measurer, input).run(startedAt);
+        }
+        const trees = reportPages.map((reportPage) => new LayoutRun(this.measurer, {
+            ...input,
+            definition: {
+                ...input.definition,
+                bands: input.definition.bands.filter((band) => (band.reportPage ?? 0) === reportPage),
+            },
+        }).run(startedAt));
+        const pages = [];
+        for (const tree of trees) {
+            for (const page of tree.pages) {
+                pages.push({ index: pages.length, primitives: page.primitives });
+            }
+        }
+        return {
+            pageCount: pages.length,
+            paper: trees[0].paper,
+            layoutMode: trees[0].layoutMode,
+            pages,
+            warnings: trees.flatMap((tree) => tree.warnings),
+            stats: {
+                detailRows: trees.reduce((total, tree) => total + tree.stats.detailRows, 0),
+                bandsEmitted: trees.reduce((total, tree) => total + tree.stats.bandsEmitted, 0),
+                durationMs: Date.now() - startedAt,
+            },
+        };
     }
 };
 exports.LayoutEngine = LayoutEngine;
@@ -54,6 +87,11 @@ class LayoutRun {
     pageHeaderHeightMm = 0;
     pageFooterHeightMm = 0;
     crosstabPlans = new Map();
+    headerPrimitiveCounts = [];
+    footerPrimitiveCounts = [];
+    numberingStarts = [];
+    restartNumberingOnNextPage = false;
+    markupCache = new Map();
     bandsByType;
     rootContext;
     constructor(measurer, input) {
@@ -118,6 +156,7 @@ class LayoutRun {
             this.pages.push({ index: 0, primitives: [] });
         }
         this.drawPageBorders();
+        this.drawWatermarks();
         for (const failure of this.evaluator.getFailures()) {
             this.warnings.push({
                 kind: 'expression',
@@ -330,6 +369,7 @@ class LayoutRun {
         if (!this.evaluator.evaluateCondition(band.visible, context)) {
             return;
         }
+        this.startFreshPageIfAsked(band);
         const heightMm = this.bandHeight(band, context);
         const reserveMm = options.reserveMm ?? 0;
         const flow = this.flowLayoutFor(band, context);
@@ -344,13 +384,35 @@ class LayoutRun {
             this.startPage();
         }
         const bandTopMm = this.bodyTopMm() + this.cursorMm;
-        this.drawBandElements(band, context, bandTopMm, { placed: flow?.elements });
+        this.drawBandElements(band, context, bandTopMm, {
+            placed: flow?.elements,
+            stretchMm: this.stretchOf(band, heightMm),
+        });
         this.cursorMm += heightMm;
         this.bandsEmitted += 1;
         if (this.bandRequestsPageBreak(band, context)) {
             this.finishPage();
             this.startPage();
         }
+    }
+    startFreshPageIfAsked(band) {
+        if ((!band.startNewPage && !band.startNewNumeration) || !this.currentPage) {
+            return;
+        }
+        if (this.cursorMm > flow_layout_1.FLOW_EPSILON_MM) {
+            this.restartNumberingOnNextPage = band.startNewNumeration;
+            this.finishPage();
+            this.startPage();
+        }
+        else if (band.startNewNumeration) {
+            this.numberingStarts[this.currentPage.index] = this.currentPage.index;
+        }
+    }
+    stretchOf(band, heightMm) {
+        if (this.definition.layoutMode === 'GRID') {
+            return 0;
+        }
+        return Math.max(0, heightMm - this.spacingMm(band) - band.heightMm);
     }
     soleCrosstab(band, context) {
         const found = band.elements.filter((element) => element.kind === 'CROSSTAB' && this.evaluator.evaluateCondition(element.visible, context));
@@ -407,6 +469,9 @@ class LayoutRun {
             textColour: this.resolveColour(element.style?.color, context, '#000000'),
             headerFill: element.headerFill
                 ? this.resolveColour(element.headerFill, context, '#eeeeee')
+                : null,
+            totalsFill: element.totalsFill
+                ? this.resolveColour(element.totalsFill, context, '#eeeeee')
                 : null,
         });
         this.currentPage.primitives.push(...primitives);
@@ -583,9 +648,10 @@ class LayoutRun {
                 neededMm = Math.max(neededMm, (element.row ?? 0) + lineCount);
                 continue;
             }
-            const font = this.fontOf(element);
-            const wrapped = this.measurer.wrap(text, element.w ?? 0, font);
-            neededMm = Math.max(neededMm, element.y + wrapped.heightMm);
+            if (this.isSideways(element)) {
+                continue;
+            }
+            neededMm = Math.max(neededMm, element.y + this.wrappedTextHeightMm(element, context, text));
         }
         return neededMm + this.spacingMm(band);
     }
@@ -615,9 +681,15 @@ class LayoutRun {
         this.pages.push(this.currentPage);
         this.cursorMm = 0;
         this.pageAggregates.reset();
+        const index = this.currentPage.index;
+        this.numberingStarts[index] =
+            index === 0 || this.restartNumberingOnNextPage
+                ? index
+                : (this.numberingStarts[index - 1] ?? 0);
+        this.restartNumberingOnNextPage = false;
         const pageHeader = this.firstBand('PAGE_HEADER');
-        if (pageHeader && this.shouldPrintOnPage(pageHeader, this.currentPage.index)) {
-            this.drawBandElements(pageHeader, this.pageContext(this.currentPage.index), this.definition.layoutMode === 'GRID' ? 0 : this.paper.margins.top);
+        if (pageHeader && this.shouldPrintOnPage(pageHeader, index)) {
+            this.headerPrimitiveCounts[index] = this.drawBandElements(pageHeader, this.pageContext(index), this.definition.layoutMode === 'GRID' ? 0 : this.paper.margins.top, { stretchMm: this.stretchOf(pageHeader, this.pageHeaderHeightMm) });
             this.bandsEmitted += 1;
         }
     }
@@ -630,7 +702,7 @@ class LayoutRun {
             const footerTopMm = this.definition.layoutMode === 'GRID'
                 ? this.pageHeaderHeightMm + this.bodyHeightMm
                 : (this.paper.heightMm ?? 0) - this.paper.margins.bottom - this.pageFooterHeightMm;
-            this.drawBandElements(pageFooter, this.pageContext(this.currentPage.index), footerTopMm);
+            this.footerPrimitiveCounts[this.currentPage.index] = this.drawBandElements(pageFooter, this.pageContext(this.currentPage.index), footerTopMm, { stretchMm: this.stretchOf(pageFooter, this.pageFooterHeightMm) });
             this.bandsEmitted += 1;
         }
         this.currentPage = null;
@@ -662,7 +734,75 @@ class LayoutRun {
                 stroke,
                 strokeWidthPt: border.widthPt,
                 radiusMm: border.radiusMm,
+                ...(border.style && border.style !== 'SOLID' ? { dash: border.style } : {}),
             });
+        }
+    }
+    drawWatermarks() {
+        const watermark = this.definition.watermark;
+        if (!watermark || this.definition.layoutMode === 'GRID' || this.paper.heightMm === null) {
+            return;
+        }
+        const { widthMm, heightMm, margins } = this.paper;
+        const x = margins.left;
+        const y = margins.top;
+        const w = widthMm - margins.left - margins.right;
+        const h = heightMm - margins.top - margins.bottom;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        const behind = [];
+        const image = watermark.image
+            ? this.evaluator.evaluateText(watermark.image, this.rootContext)
+            : '';
+        if (image) {
+            const scale = watermark.imageScalePct / 100;
+            const imageW = w * scale;
+            const imageH = h * scale;
+            behind.push({
+                k: 'image',
+                x: x + (w - imageW) / 2,
+                y: y + (h - imageH) / 2,
+                w: imageW,
+                h: imageH,
+                src: image,
+                fit: 'CONTAIN',
+                opacity: watermark.opacity,
+            });
+        }
+        const text = watermark.text
+            ? this.evaluator.evaluateText(watermark.text, this.rootContext)
+            : '';
+        if (text) {
+            const font = {
+                family: 'NotoSans',
+                sizePt: watermark.fontSizePt,
+                bold: watermark.bold,
+                italic: false,
+                underline: false,
+            };
+            behind.push({
+                k: 'text',
+                x,
+                y,
+                w,
+                h,
+                text,
+                font,
+                align: 'center',
+                vAlign: 'middle',
+                color: this.resolveColour(watermark.color, this.rootContext, '#808080'),
+                lines: [text],
+                lineHeightMm: this.measurer.lineHeightMm(this.measuredOf(font)),
+                opacity: watermark.opacity,
+                ...(watermark.rotationDeg ? { rotation: watermark.rotationDeg } : {}),
+            });
+        }
+        if (behind.length === 0) {
+            return;
+        }
+        for (const page of this.pages) {
+            page.primitives.unshift(...behind);
         }
     }
     shouldPrintOnPage(band, pageIndex) {
@@ -680,10 +820,12 @@ class LayoutRun {
     }
     drawBandElements(band, context, bandTopMm, options = {}) {
         if (!this.currentPage) {
-            return;
+            return 0;
         }
         const page = this.currentPage;
+        const before = page.primitives.length;
         const { placed } = options;
+        const stretchMm = options.stretchMm ?? 0;
         const ordered = [...(placed ?? band.elements)].sort((left, right) => left.z - right.z);
         for (const element of ordered) {
             if (element.kind === 'PAGEBREAK') {
@@ -706,63 +848,375 @@ class LayoutRun {
                 });
                 continue;
             }
-            const primitive = this.buildPrimitive(element, context, bandTopMm);
-            if (!primitive) {
+            if (element.kind === 'CHART') {
+                this.drawChart(element, context, this.elementX(element), bandTopMm + this.elementY(element));
+                this.drawFrame(element, context, bandTopMm, stretchMm);
                 continue;
             }
-            page.primitives.push(primitive);
-            if (primitive.k === 'text' && (0, template_definition_schema_1.isTextLike)(element) && this.dependsOnPage(element.value)) {
-                this.deferred.push({
-                    pageIndex: page.index,
-                    primitiveIndex: page.primitives.length - 1,
-                    template: element.value,
-                    context,
-                    maxWidthMm: element.w ?? 0,
-                    wrap: element.wrap,
-                    font: this.fontOf(element),
-                });
+            const look = (0, template_definition_schema_1.isTextLike)(element) ? this.textLook(element, context) : null;
+            if (look?.fill && this.definition.layoutMode !== 'GRID') {
+                page.primitives.push(this.backgroundOf(element, look.fill, bandTopMm, stretchMm));
+            }
+            for (const primitive of this.buildPrimitives(element, context, bandTopMm, stretchMm, look)) {
+                page.primitives.push(primitive);
+                if (primitive.k === 'text' && (0, template_definition_schema_1.isTextLike)(element) && this.dependsOnPage(element.value)) {
+                    this.deferred.push({
+                        pageIndex: page.index,
+                        primitiveIndex: page.primitives.length - 1,
+                        context,
+                        rebuild: (pageContext) => this.buildTextElement(element, pageContext, bandTopMm, stretchMm, this.textLook(element, pageContext)),
+                    });
+                }
+            }
+            this.drawFrame(element, context, bandTopMm, stretchMm);
+        }
+        return page.primitives.length - before;
+    }
+    frameBox(element, bandTopMm, stretchMm) {
+        const x = this.elementX(element);
+        const y = bandTopMm + this.elementY(element);
+        const grow = element.stretchWithBand ? stretchMm : 0;
+        if (element.kind === 'QRCODE') {
+            return { x, y, w: element.size, h: element.size + grow };
+        }
+        let h = element.h;
+        if (h === undefined) {
+            h = (0, template_definition_schema_1.isTextLike)(element) ? this.measurer.lineHeightMm(this.fontOf(element)) : 0;
+        }
+        return { x, y, w: element.w ?? 0, h: h + grow };
+    }
+    backgroundOf(element, fill, bandTopMm, stretchMm) {
+        const box = this.frameBox(element, bandTopMm, stretchMm);
+        return { k: 'rect', ...box, fill, stroke: null, strokeWidthPt: 0, radiusMm: 0 };
+    }
+    drawFrame(element, context, bandTopMm, stretchMm) {
+        const border = element.border;
+        if (!border ||
+            !this.currentPage ||
+            this.definition.layoutMode === 'GRID' ||
+            element.kind === 'LINE' ||
+            element.kind === 'PAGEBREAK' ||
+            element.kind === 'CROSSTAB') {
+            return;
+        }
+        if (!border.top && !border.right && !border.bottom && !border.left) {
+            return;
+        }
+        const { x, y, w, h } = this.frameBox(element, bandTopMm, stretchMm);
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        const color = this.resolveColour(border.color, context, '#000000');
+        const dash = border.style === 'SOLID' ? undefined : border.style;
+        const primitives = this.currentPage.primitives;
+        if (border.top && border.right && border.bottom && border.left) {
+            primitives.push({
+                k: 'rect',
+                x,
+                y,
+                w,
+                h,
+                fill: null,
+                stroke: color,
+                strokeWidthPt: border.widthPt,
+                radiusMm: 0,
+                ...(dash ? { dash } : {}),
+            });
+            return;
+        }
+        const half = (border.widthPt * text_measure_1.MM_PER_POINT) / 2;
+        const side = (x1, y1, x2, y2) => {
+            primitives.push({
+                k: 'line',
+                x1,
+                y1,
+                x2,
+                y2,
+                widthPt: border.widthPt,
+                color,
+                gridChar: '-',
+                ...(dash ? { dash } : {}),
+            });
+        };
+        const leftReach = border.left ? half : 0;
+        const rightReach = border.right ? half : 0;
+        if (border.top) {
+            side(x - leftReach, y, x + w + rightReach, y);
+        }
+        if (border.bottom) {
+            side(x - leftReach, y + h, x + w + rightReach, y + h);
+        }
+        if (border.left) {
+            side(x, y, x, y + h);
+        }
+        if (border.right) {
+            side(x + w, y, x + w, y + h);
+        }
+    }
+    drawChart(element, context, xMm, yMm) {
+        if (!this.currentPage || this.definition.layoutMode === 'GRID') {
+            return;
+        }
+        const rows = this.rowsOf(element.dataset);
+        const built = (0, chart_1.buildChart)(element, rows, context, xMm, yMm, {
+            measurer: this.measurer,
+            evaluate: (template, rowContext) => this.evaluator.evaluate(template, rowContext),
+            evaluateText: (template, rowContext) => this.evaluator.evaluateText(template, rowContext),
+            resolveColour: (value, rowContext, fallback) => this.resolveColour(value, rowContext, fallback),
+            rowContext: (row, index, total) => this.crosstabRowContext(context, row, index, total),
+        });
+        this.currentPage.primitives.push(...built.primitives);
+        for (const message of built.warnings) {
+            this.warnings.push({ kind: 'overflow', message });
+        }
+    }
+    textLook(element, context) {
+        let bold = element.font?.bold ?? false;
+        let italic = element.font?.italic ?? false;
+        let underline = element.font?.underline ?? false;
+        let strikeout = element.font?.strikeout ?? false;
+        let colour = element.style?.color;
+        let fill = element.style?.fill;
+        for (const rule of element.highlights ?? []) {
+            if (!this.evaluator.evaluateCondition(rule.when, context)) {
+                continue;
+            }
+            bold = rule.bold ?? bold;
+            italic = rule.italic ?? italic;
+            underline = rule.underline ?? underline;
+            strikeout = rule.strikeout ?? strikeout;
+            colour = rule.color ?? colour;
+            fill = rule.fill ?? fill;
+        }
+        return {
+            font: {
+                family: element.font?.family ?? 'NotoSans',
+                sizePt: element.font?.size ?? 9,
+                bold,
+                italic,
+                underline,
+                strikeout,
+            },
+            color: this.resolveColour(colour, context, '#000000'),
+            fill: fill ? this.resolveColour(fill, context, '') || null : null,
+        };
+    }
+    buildPrimitives(element, context, bandTopMm, stretchMm, look) {
+        switch (element.kind) {
+            case 'TEXT':
+            case 'FIELD': {
+                const primitive = this.buildTextElement(element, context, bandTopMm, stretchMm, look ?? this.textLook(element, context));
+                return primitive ? [primitive] : [];
+            }
+            case 'LINE':
+                return this.buildLine(element, context, bandTopMm);
+            case 'RECT':
+                return [this.buildShape(element, context, bandTopMm, stretchMm)];
+            default: {
+                const primitive = this.buildPrimitive(element, context, bandTopMm);
+                return primitive ? [primitive] : [];
             }
         }
+    }
+    buildLine(element, context, bandTopMm) {
+        const grid = this.definition.layoutMode === 'GRID';
+        const color = this.resolveColour(element.style?.stroke, context, '#000000');
+        const lineStyle = element.style?.lineStyle;
+        const dash = !grid && lineStyle && lineStyle !== 'SOLID' ? lineStyle : undefined;
+        const start = { x: element.x1, y: bandTopMm + element.y1 };
+        const end = { x: element.x2, y: bandTopMm + element.y2 };
+        const line = (from, to) => ({
+            k: 'line',
+            x1: from.x,
+            y1: from.y,
+            x2: to.x,
+            y2: to.y,
+            widthPt: element.widthPt,
+            color,
+            gridChar: element.gridChar,
+            ...(dash ? { dash } : {}),
+        });
+        const length = Math.hypot(end.x - start.x, end.y - start.y);
+        if (grid || length === 0 || (!element.arrowStart && !element.arrowEnd)) {
+            return [line(start, end)];
+        }
+        const ux = (end.x - start.x) / length;
+        const uy = (end.y - start.y) / length;
+        const pull = Math.min(element.arrowSizeMm * 0.8, length / 2);
+        const lineStart = element.arrowStart
+            ? { x: start.x + ux * pull, y: start.y + uy * pull }
+            : start;
+        const lineEnd = element.arrowEnd ? { x: end.x - ux * pull, y: end.y - uy * pull } : end;
+        const widthMm = element.widthPt * text_measure_1.MM_PER_POINT;
+        const primitives = [line(lineStart, lineEnd)];
+        if (element.arrowStart) {
+            const head = (0, shapes_1.arrowHeadPath)(end, start, element.arrowSizeMm, widthMm, color);
+            if (head) {
+                primitives.push(head);
+            }
+        }
+        if (element.arrowEnd) {
+            const head = (0, shapes_1.arrowHeadPath)(start, end, element.arrowSizeMm, widthMm, color);
+            if (head) {
+                primitives.push(head);
+            }
+        }
+        return primitives;
+    }
+    buildShape(element, context, bandTopMm, stretchMm) {
+        const grid = this.definition.layoutMode === 'GRID';
+        const style = element.style;
+        const x = this.elementX(element);
+        const y = bandTopMm + this.elementY(element);
+        const w = element.w;
+        const h = element.h + (element.stretchWithBand && !grid ? stretchMm : 0);
+        const fill = style?.fill ? this.resolveColour(style.fill, context, '#000000') : null;
+        const stroke = style?.stroke ? this.resolveColour(style.stroke, context, '#000000') : null;
+        const strokeWidthPt = style?.strokeWidthPt ?? 0.5;
+        const dash = !grid && style?.lineStyle && style.lineStyle !== 'SOLID' ? style.lineStyle : undefined;
+        const shape = element.shape ?? 'RECT';
+        if (grid || shape === 'RECT') {
+            return {
+                k: 'rect',
+                x,
+                y,
+                w,
+                h,
+                fill,
+                stroke,
+                strokeWidthPt,
+                radiusMm: element.radiusMm,
+                ...(dash ? { dash } : {}),
+            };
+        }
+        const pathStyle = { fill, stroke: stroke ?? (fill ? null : '#000000'), strokeWidthPt, dash };
+        switch (shape) {
+            case 'ELLIPSE':
+                return (0, shapes_1.ellipsePath)(x, y, w, h, pathStyle);
+            case 'TRIANGLE':
+                return (0, shapes_1.trianglePath)(x, y, w, h, pathStyle);
+            case 'RHOMBUS':
+            default:
+                return (0, shapes_1.rhombusPath)(x, y, w, h, pathStyle);
+        }
+    }
+    buildTextElement(element, context, bandTopMm, stretchMm, look) {
+        const x = this.elementX(element);
+        const y = bandTopMm + this.elementY(element);
+        const grow = element.stretchWithBand && this.definition.layoutMode !== 'GRID' ? stretchMm : 0;
+        if (this.usesMarkup(element)) {
+            if (this.definition.layoutMode === 'GRID') {
+                const plain = this.markupRuns(element, context, look)
+                    .map((run) => run.text)
+                    .join('');
+                if (this.isBlankZero(element, plain)) {
+                    return null;
+                }
+                return this.buildTextPrimitive(element, plain, x, y, look, grow);
+            }
+            return this.buildRichTextPrimitive(element, context, x, y, look, grow);
+        }
+        const raw = this.resolveTextValue(element, context);
+        if (raw === null) {
+            return null;
+        }
+        return this.buildTextPrimitive(element, raw, x, y, look, grow);
+    }
+    usesMarkup(element) {
+        return element.markup === true && !(element.kind === 'FIELD' && element.aggregate);
+    }
+    markupOf(template) {
+        let segments = this.markupCache.get(template);
+        if (!segments) {
+            segments = (0, markup_1.parseMarkup)(template);
+            this.markupCache.set(template, segments);
+        }
+        return segments;
+    }
+    markupRuns(element, context, look) {
+        return this.markupOf(element.value).map((segment) => {
+            const { style } = segment;
+            const sizePt = (style.sizePt ?? look.font.sizePt) * (style.shift ? markup_1.SHIFT_SCALE : 1);
+            return {
+                text: this.evaluator.evaluateText(segment.template, context),
+                font: {
+                    family: look.font.family,
+                    sizePt,
+                    bold: style.bold ?? look.font.bold,
+                    italic: style.italic ?? look.font.italic,
+                    underline: style.underline ?? look.font.underline,
+                    strikeout: style.strikeout ?? look.font.strikeout ?? false,
+                },
+                color: style.color ?? look.color,
+                ...(style.shift ? { shift: style.shift } : {}),
+            };
+        });
+    }
+    isBlankZero(element, text) {
+        if (!element.blankWhenZero) {
+            return false;
+        }
+        const numeric = Number(text.replace(/[^0-9.-]/g, ''));
+        return text.trim() === '' || (Number.isFinite(numeric) && numeric === 0);
+    }
+    isSideways(element) {
+        return (this.definition.layoutMode !== 'GRID' && (element.rotation === 90 || element.rotation === 270));
+    }
+    buildRichTextPrimitive(element, context, x, y, look, grow) {
+        const runs = this.markupRuns(element, context, look);
+        const plain = runs.map((run) => run.text).join('');
+        if (this.isBlankZero(element, plain)) {
+            return null;
+        }
+        const box = this.textBox(element, x, y, grow);
+        const wrapWidth = this.isSideways(element) ? box.sidewaysLengthMm : box.w;
+        const layout = (0, markup_1.layoutRich)(runs, wrapWidth, element.wrap, this.measurer, this.measuredOf(look.font));
+        const rotation = this.definition.layoutMode === 'GRID' ? 0 : (element.rotation ?? 0);
+        return {
+            k: 'text',
+            x: box.x,
+            y: box.y,
+            w: box.w,
+            h: box.h ?? layout.lines.length * layout.lineHeightMm + grow,
+            text: layout.plain.join('\n'),
+            font: look.font,
+            align: element.align,
+            vAlign: element.vAlign,
+            color: look.color,
+            lines: layout.plain,
+            lineHeightMm: layout.lineHeightMm,
+            rich: layout.lines,
+            ...(rotation ? { rotation } : {}),
+            ...(element.align === 'justify' ? { justify: layout.justify } : {}),
+        };
+    }
+    measuredOf(font) {
+        return { family: font.family, sizePt: font.sizePt, bold: font.bold, italic: font.italic };
+    }
+    textBox(element, x, y, grow) {
+        const pad = this.definition.layoutMode === 'GRID' ? 0 : (element.style?.padding ?? 0);
+        return {
+            x: x + pad,
+            y: y + pad,
+            w: Math.max(0, (element.w ?? 0) - pad * 2),
+            h: element.h === undefined ? undefined : Math.max(0, element.h + grow - pad * 2),
+            pad,
+            sidewaysLengthMm: Math.max(0, (element.h ?? 0) - pad * 2),
+        };
+    }
+    wrappedTextHeightMm(element, context, text) {
+        const look = this.textLook(element, context);
+        const box = this.textBox(element, 0, 0, 0);
+        if (this.usesMarkup(element)) {
+            const layout = (0, markup_1.layoutRich)(this.markupRuns(element, context, look), box.w, true, this.measurer, this.measuredOf(look.font));
+            return layout.lines.length * layout.lineHeightMm + box.pad * 2;
+        }
+        return this.measurer.wrap(text, box.w, this.measuredOf(look.font)).heightMm + box.pad * 2;
     }
     buildPrimitive(element, context, bandTopMm) {
         const baseX = this.elementX(element);
         const baseY = bandTopMm + this.elementY(element);
         switch (element.kind) {
-            case 'TEXT':
-            case 'FIELD': {
-                const raw = this.resolveTextValue(element, context);
-                if (raw === null) {
-                    return null;
-                }
-                return this.buildTextPrimitive(element, raw, baseX, baseY);
-            }
-            case 'LINE': {
-                const style = element.style;
-                return {
-                    k: 'line',
-                    x1: element.x1,
-                    y1: bandTopMm + element.y1,
-                    x2: element.x2,
-                    y2: bandTopMm + element.y2,
-                    widthPt: element.widthPt,
-                    color: this.resolveColour(style?.stroke, context, '#000000'),
-                    gridChar: element.gridChar,
-                };
-            }
-            case 'RECT': {
-                const style = element.style;
-                return {
-                    k: 'rect',
-                    x: baseX,
-                    y: baseY,
-                    w: element.w,
-                    h: element.h,
-                    fill: style?.fill ? this.resolveColour(style.fill, context, '#000000') : null,
-                    stroke: style?.stroke ? this.resolveColour(style.stroke, context, '#000000') : null,
-                    strokeWidthPt: style?.strokeWidthPt ?? 0.5,
-                    radiusMm: element.radiusMm,
-                };
-            }
             case 'IMAGE': {
                 const src = this.evaluator.evaluateText(element.source, context);
                 if (!src) {
@@ -854,11 +1308,16 @@ class LayoutRun {
                 return 0;
         }
     }
-    buildTextPrimitive(element, text, x, y) {
-        const font = this.fontOf(element);
-        const widthMm = element.w ?? 0;
+    buildTextPrimitive(element, text, x, y, look, grow = 0) {
+        const font = this.measuredOf(look.font);
+        const grid = this.definition.layoutMode === 'GRID';
+        const box = this.textBox(element, x, y, grow);
+        const widthMm = grid ? (element.w ?? 0) : box.w;
+        const lineLengthMm = this.isSideways(element) ? box.sidewaysLengthMm : widthMm;
+        const justified = element.align === 'justify' && this.definition.layoutMode !== 'GRID';
         let lines;
         let lineHeightMm;
+        let justify;
         if (this.definition.layoutMode === 'GRID') {
             const columns = element.cols ?? element.w ?? 0;
             lineHeightMm = 1;
@@ -867,36 +1326,44 @@ class LayoutRun {
                 lines = [''];
             }
         }
-        else if (element.wrap && widthMm > 0) {
-            const wrapped = this.measurer.wrap(text, widthMm, font);
-            lines = [...wrapped.lines];
-            lineHeightMm = wrapped.lineHeightMm;
+        else if (element.wrap && lineLengthMm > 0) {
+            lineHeightMm = this.measurer.lineHeightMm(font);
+            lines = [];
+            justify = [];
+            for (const paragraph of text.split(/\r?\n/)) {
+                const wrapped = paragraph.trim()
+                    ? [...this.measurer.wrap(paragraph, lineLengthMm, font).lines]
+                    : [''];
+                wrapped.forEach((line, index) => {
+                    lines.push(line);
+                    justify?.push(index < wrapped.length - 1);
+                });
+            }
         }
         else {
             lineHeightMm = this.measurer.lineHeightMm(font);
             lines = [
-                element.ellipsis && widthMm > 0 ? this.measurer.truncateToWidth(text, widthMm, font) : text,
+                element.ellipsis && lineLengthMm > 0
+                    ? this.measurer.truncateToWidth(text, lineLengthMm, font)
+                    : text,
             ];
         }
+        const rotation = this.definition.layoutMode === 'GRID' ? 0 : (element.rotation ?? 0);
         return {
             k: 'text',
-            x,
-            y,
+            x: box.x,
+            y: box.y,
             w: widthMm,
-            h: element.h ?? lines.length * lineHeightMm,
+            h: box.h ?? lines.length * lineHeightMm + grow,
             text: lines.join('\n'),
-            font: {
-                family: font.family,
-                sizePt: font.sizePt,
-                bold: font.bold,
-                italic: font.italic,
-                underline: element.font?.underline ?? false,
-            },
+            font: look.font,
             align: element.align,
             vAlign: element.vAlign,
-            color: this.resolveColour(element.style?.color, this.rootContext, '#000000'),
+            color: look.color,
             lines,
             lineHeightMm,
+            ...(rotation ? { rotation } : {}),
+            ...(justified && justify ? { justify } : {}),
         };
     }
     elementX(element) {
@@ -928,6 +1395,11 @@ class LayoutRun {
     }
     resolveDeferredText() {
         const total = this.pages.length;
+        const runEnds = new Map();
+        for (const page of this.pages) {
+            const start = this.numberingStarts[page.index] ?? 0;
+            runEnds.set(start, Math.max(runEnds.get(start) ?? start, page.index));
+        }
         for (const entry of this.deferred) {
             const page = this.pages[entry.pageIndex];
             if (!page) {
@@ -937,20 +1409,23 @@ class LayoutRun {
             if (!existing || existing.k !== 'text') {
                 continue;
             }
+            const start = this.numberingStarts[entry.pageIndex] ?? 0;
+            const end = runEnds.get(start) ?? total - 1;
             const context = {
                 ...entry.context,
                 page: {
-                    number: entry.pageIndex + 1,
-                    total,
-                    isFirst: entry.pageIndex === 0,
-                    isLast: entry.pageIndex === total - 1,
+                    number: entry.pageIndex - start + 1,
+                    total: end - start + 1,
+                    isFirst: entry.pageIndex === start,
+                    isLast: entry.pageIndex === end,
                 },
             };
-            const text = this.evaluator.evaluateText(entry.template, context);
-            const lines = entry.wrap && entry.maxWidthMm > 0
-                ? [...this.measurer.wrap(text, entry.maxWidthMm, entry.font).lines]
-                : [text];
-            page.primitives[entry.primitiveIndex] = { ...existing, text: lines.join('\n'), lines };
+            page.primitives[entry.primitiveIndex] = entry.rebuild(context) ?? {
+                ...existing,
+                text: '',
+                lines: [''],
+                rich: undefined,
+            };
         }
         this.suppressLastPageBands(total);
     }
@@ -966,32 +1441,18 @@ class LayoutRun {
         };
         for (const page of this.pages) {
             if (suppressionNeeded(pageFooter, page.index)) {
-                const count = this.visibleElementCount(pageFooter);
-                page.primitives.splice(page.primitives.length - count, count);
+                const count = this.footerPrimitiveCounts[page.index] ?? 0;
+                if (count > 0) {
+                    page.primitives.splice(page.primitives.length - count, count);
+                }
             }
             if (suppressionNeeded(pageHeader, page.index)) {
-                const count = this.visibleElementCount(pageHeader);
-                page.primitives.splice(0, count);
+                const count = this.headerPrimitiveCounts[page.index] ?? 0;
+                if (count > 0) {
+                    page.primitives.splice(0, count);
+                }
             }
         }
-    }
-    visibleElementCount(band) {
-        let count = 0;
-        for (const element of band.elements) {
-            if (element.kind === 'PAGEBREAK') {
-                continue;
-            }
-            if (element.visible) {
-                this.warnings.push({
-                    kind: 'overflow',
-                    message: `A ${band.printOn} band has an element with a 'visible' condition, ` +
-                        'which cannot be combined with last-page suppression',
-                    detail: `element ${element.id}`,
-                });
-            }
-            count += 1;
-        }
-        return count;
     }
     rowContext(row, index, totalRows, keys) {
         const innermost = keys.length > 0 ? keys[keys.length - 1] : '';
@@ -1020,12 +1481,13 @@ class LayoutRun {
         };
     }
     pageContext(pageIndex) {
+        const start = this.numberingStarts[pageIndex] ?? 0;
         return {
             ...this.rootContext,
             page: {
-                number: pageIndex + 1,
-                total: this.pages.length,
-                isFirst: pageIndex === 0,
+                number: pageIndex - start + 1,
+                total: this.pages.length - start,
+                isFirst: pageIndex === start,
                 isLast: false,
             },
         };

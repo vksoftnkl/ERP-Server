@@ -213,11 +213,26 @@ describe('buildDefinition — the version wins', () => {
       widthPt: 1.5,
       color: '#000000',
       radiusMm: 0,
+      style: 'SOLID',
     });
   });
 
   it('has no page border when the body declares none', () => {
     expect(buildDefinition(version(), [dataset()]).definition.pageBorder).toBeUndefined();
+  });
+
+  it("carries the body's watermark, with the schema's defaults filled in", () => {
+    const built = buildDefinition(
+      version({ ptvBody: JSON.stringify({ bands: [DETAIL_BAND], watermark: { text: 'DRAFT' } }) }),
+      [dataset()],
+    );
+
+    expect(built.definition.watermark).toMatchObject({
+      text: 'DRAFT',
+      opacity: 0.15,
+      rotationDeg: -45,
+    });
+    expect(buildDefinition(version(), [dataset()]).definition.watermark).toBeUndefined();
   });
 });
 

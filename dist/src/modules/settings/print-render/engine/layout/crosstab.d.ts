@@ -4,6 +4,7 @@ import { MeasuredFont } from './text-measure';
 type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export declare const CROSSTAB_FOLD_KEY = "\u001Fcrosstab-fold";
 export declare const CROSSTAB_TOTALS_KEY = "\u001Fcrosstab-total";
+export declare const CROSSTAB_SUBTOTAL_KEY = "\u001Fcrosstab-subtotal";
 export interface CrosstabAxisLevel {
     readonly expression: string;
     readonly label: string;
@@ -37,6 +38,7 @@ export interface CrosstabModelRow {
     readonly values: readonly (number | null)[];
     readonly totals: readonly (number | null)[];
     readonly total: number | null;
+    readonly subtotal?: boolean;
 }
 export interface CrosstabModel {
     readonly rowAxes: readonly CrosstabAxisLevel[];
@@ -110,6 +112,7 @@ export interface CrosstabEmitOptions {
     readonly strokeColour: string;
     readonly textColour: string;
     readonly headerFill: string | null;
+    readonly totalsFill?: string | null;
 }
 export declare function emitCrosstab(plan: CrosstabPlan, options: CrosstabEmitOptions): Primitive[];
 export {};

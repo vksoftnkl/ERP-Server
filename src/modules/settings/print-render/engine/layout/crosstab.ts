@@ -74,6 +74,7 @@ type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
  */
 export const CROSSTAB_FOLD_KEY = '\u001Fcrosstab-fold';
 export const CROSSTAB_TOTALS_KEY = '\u001Fcrosstab-total';
+export const CROSSTAB_SUBTOTAL_KEY = '\u001Fcrosstab-subtotal';
 
 /**
  * Joins one axis's level labels into a single key.
@@ -184,6 +185,8 @@ export interface CrosstabModelRow {
   readonly totals: readonly (number | null)[];
   /** The first measure's row total, kept for callers that only have one. */
   readonly total: number | null;
+  /** A subtotal of the outer group above it, printed in the header font. */
+  readonly subtotal?: boolean;
 }
 
 export interface CrosstabModel {
@@ -509,6 +512,75 @@ export function buildCrosstabModel(
     };
   });
 
+  // ── Subtotals: one row after each outer group ──────────────────────────
+  // Re-aggregated from the group's source cells, never summed from its printed
+  // rows -- the same rule the fold and the row totals follow, so an 'avg'
+  // subtotal is an average and not a sum of averages.
+  const groupValue = (
+    rowKeys: readonly string[],
+    leafKeys: readonly string[],
+    measureIndex: number,
+  ) => {
+    const merged = emptyAccumulator();
+    let seen = false;
+    for (const rowKey of rowKeys) {
+      const byLeaf = cells.get(rowKey);
+      if (!byLeaf) {
+        continue;
+      }
+      for (const leafKey of leafKeys) {
+        const cell = byLeaf.get(leafKey);
+        if (cell) {
+          seen = true;
+          mergeAccumulator(merged, cell[measureIndex]);
+        }
+      }
+    }
+    return seen ? readAccumulator(merged, measures[measureIndex].fn) : null;
+  };
+  const leafKeysOf = (leaf: CrosstabLeafColumn): string[] =>
+    leaf.key === CROSSTAB_FOLD_KEY ? folded.map((entry) => entry.key) : [leaf.key];
+
+  const rowsWithSubtotals: CrosstabModelRow[] = [];
+  if (element.showSubtotals && rowAxes.length > 1) {
+    const subtotalOf = (outer: string, rowKeys: readonly string[]): CrosstabModelRow => {
+      const totals = measures.map((_, measureIndex) =>
+        groupValue(
+          rowKeys,
+          printableLeaves.map((entry) => entry.key),
+          measureIndex,
+        ),
+      );
+      return {
+        key: `${CROSSTAB_SUBTOTAL_KEY}${LEVEL_SEPARATOR}${outer}`,
+        labels: rowAxes.map((_, level) =>
+          level === 0 ? outer : level === 1 ? element.subtotalLabel : '',
+        ),
+        label: outer,
+        values: columns.map((column) =>
+          groupValue(rowKeys, leafKeysOf(leaves[column.leafIndex]), column.measureIndex),
+        ),
+        totals,
+        total: totals[0] ?? null,
+        subtotal: true,
+      };
+    };
+    let groupKeys: string[] = [];
+    let groupLabel: string | null = null;
+    for (const row of modelRows) {
+      if (groupLabel !== null && row.labels[0] !== groupLabel) {
+        rowsWithSubtotals.push(subtotalOf(groupLabel, groupKeys));
+        groupKeys = [];
+      }
+      groupLabel = row.labels[0] ?? '';
+      groupKeys.push(row.key);
+      rowsWithSubtotals.push(row);
+    }
+    if (groupLabel !== null) {
+      rowsWithSubtotals.push(subtotalOf(groupLabel, groupKeys));
+    }
+  }
+
   const columnTotals = columns.map((column) => {
     const leaf = leaves[column.leafIndex];
     const merged = emptyAccumulator();
@@ -559,7 +631,7 @@ export function buildCrosstabModel(
     measures,
     leaves,
     columns,
-    rows: modelRows,
+    rows: rowsWithSubtotals.length > 0 ? rowsWithSubtotals : modelRows,
     columnTotals,
     grandTotals,
     grandTotal: grandTotals[0] ?? null,
@@ -846,6 +918,8 @@ export interface CrosstabEmitOptions {
   readonly strokeColour: string;
   readonly textColour: string;
   readonly headerFill: string | null;
+  /** Background of the column-totals row. Absent/null = none. */
+  readonly totalsFill?: string | null;
 }
 
 /** A merged run of printed columns sharing one header cell. */
@@ -1040,6 +1114,22 @@ export function emitCrosstab(plan: CrosstabPlan, options: CrosstabEmitOptions): 
   for (let offset = 0; offset < slice.rowCount; offset += 1) {
     const row = model.rows[slice.fromRow + offset];
     const previous = offset > 0 ? model.rows[slice.fromRow + offset - 1] : null;
+    // A subtotal row reads as a total: header font, and the totals fill.
+    const rowFont = row.subtotal ? plan.headerFont : plan.bodyFont;
+    if (row.subtotal && options.totalsFill) {
+      const fill: RectPrimitive = {
+        k: 'rect',
+        x: xMm,
+        y: yMm + cursorMm,
+        w: widthMm,
+        h: plan.rowHeightMm,
+        fill: options.totalsFill,
+        stroke: null,
+        strokeWidthPt: 0,
+        radiusMm: 0,
+      };
+      primitives.push(fill);
+    }
     for (const rowColumn of plan.rowColumns) {
       // A repeated group label is printed once and then left blank until it
       // changes -- the whole point of nesting the row axis. `previous` is null
@@ -1055,7 +1145,7 @@ export function emitCrosstab(plan: CrosstabPlan, options: CrosstabEmitOptions): 
         cursorMm,
         rowColumn.wMm,
         plan.rowHeightMm,
-        plan.bodyFont,
+        rowFont,
         'left',
       );
     }
@@ -1070,7 +1160,7 @@ export function emitCrosstab(plan: CrosstabPlan, options: CrosstabEmitOptions): 
         cursorMm,
         column.wMm,
         plan.rowHeightMm,
-        plan.bodyFont,
+        rowFont,
         'right',
       );
     }
@@ -1080,6 +1170,20 @@ export function emitCrosstab(plan: CrosstabPlan, options: CrosstabEmitOptions): 
   // ── Column totals ─────────────────────────────────────────────────────
   const totalsTopMm = cursorMm;
   if (slice.withTotals) {
+    if (options.totalsFill) {
+      const fill: RectPrimitive = {
+        k: 'rect',
+        x: xMm,
+        y: yMm + cursorMm,
+        w: widthMm,
+        h: plan.totalsRowHeightMm,
+        fill: options.totalsFill,
+        stroke: null,
+        strokeWidthPt: 0,
+        radiusMm: 0,
+      };
+      primitives.push(fill);
+    }
     text(
       element.totalsLabel,
       0,

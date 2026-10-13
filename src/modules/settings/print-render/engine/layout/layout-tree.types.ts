@@ -1,6 +1,7 @@
 import {
   BarcodeSymbology,
   HorizontalAlign,
+  LineStyle,
   PaperSpec,
   VerticalAlign,
 } from '../../definition/template-definition.schema';
@@ -26,6 +27,17 @@ export interface FontSpecResolved {
   readonly bold: boolean;
   readonly italic: boolean;
   readonly underline: boolean;
+  /** Optional so the many primitives built before strikeout existed stay valid. */
+  readonly strikeout?: boolean;
+}
+
+/** One styled stretch of a markup line. */
+export interface RichRun {
+  readonly text: string;
+  readonly font: FontSpecResolved;
+  readonly color: string;
+  /** Superscript / subscript: a smaller face shifted off the baseline. */
+  readonly shift?: 'sup' | 'sub';
 }
 
 export interface TextPrimitive {
@@ -43,6 +55,23 @@ export interface TextPrimitive {
   /** Pre-wrapped lines when the element wrapped; single entry otherwise. */
   readonly lines: readonly string[];
   readonly lineHeightMm: number;
+  /**
+   * Clockwise degrees about the box centre. At 90/270 the lines run along the
+   * box's height and were wrapped to it. Absent = 0.
+   */
+  readonly rotation?: number;
+  /** 0..1. Absent = opaque. Watermarks only. */
+  readonly opacity?: number;
+  /**
+   * align 'justify': per line, whether to stretch it to the box width. The
+   * last line of each paragraph stays ragged, as in any justified text.
+   */
+  readonly justify?: readonly boolean[];
+  /**
+   * Markup text: the same lines as `lines`, split into styled runs. A renderer
+   * that cannot style text (GRID) prints `lines` and loses nothing but style.
+   */
+  readonly rich?: readonly (readonly RichRun[])[];
 }
 
 export interface LinePrimitive {
@@ -55,6 +84,8 @@ export interface LinePrimitive {
   readonly color: string;
   /** GRID mode: the character to repeat along the run. */
   readonly gridChar: string;
+  /** Absent = SOLID. */
+  readonly dash?: LineStyle;
 }
 
 export interface RectPrimitive {
@@ -67,6 +98,30 @@ export interface RectPrimitive {
   readonly stroke: string | null;
   readonly strokeWidthPt: number;
   readonly radiusMm: number;
+  /** Absent = SOLID. */
+  readonly dash?: LineStyle;
+}
+
+/**
+ * Any other outline: an ellipse, a triangle, an arrowhead, a pie slice, a
+ * chart's polyline.
+ *
+ * `d` is an SVG path in PAGE MILLIMETRES using only absolute M, L, C and Z, so
+ * a renderer converts it by scaling every number. x/y/w/h are its bounding box,
+ * for overflow checks and continuous-paper height. GRID renderers skip it.
+ */
+export interface PathPrimitive {
+  readonly k: 'path';
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly d: string;
+  readonly fill: string | null;
+  readonly stroke: string | null;
+  readonly strokeWidthPt: number;
+  /** Absent = SOLID. DOUBLE strokes once. */
+  readonly dash?: LineStyle;
 }
 
 /**
@@ -87,6 +142,8 @@ export interface ImagePrimitive {
   readonly h: number;
   readonly src: string;
   readonly fit: 'CONTAIN' | 'COVER' | 'STRETCH';
+  /** 0..1. Absent = opaque. Watermarks only. */
+  readonly opacity?: number;
 }
 
 export interface BarcodePrimitive {
@@ -113,6 +170,7 @@ export type Primitive =
   | TextPrimitive
   | LinePrimitive
   | RectPrimitive
+  | PathPrimitive
   | ImagePrimitive
   | BarcodePrimitive
   | QrCodePrimitive;

@@ -19,6 +19,13 @@ const units_1 = require("../units/units");
 const barcode_factory_1 = require("./barcode.factory");
 const image_cache_1 = require("./image.cache");
 const OVERFLOW_TOLERANCE_MM = 0.5;
+const DASH_PATTERNS = {
+    DASH: [4, 2],
+    DOT: [1, 1],
+    DASH_DOT: [4, 2, 1, 2],
+    DASH_DOT_DOT: [4, 2, 1, 2, 1, 2],
+};
+const doubleGapPt = (widthPt) => widthPt * 2 + 1;
 let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
     fonts;
     barcodes;
@@ -144,6 +151,9 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
                 case 'line':
                     this.drawLine(document, primitive);
                     break;
+                case 'path':
+                    this.drawPath(document, primitive);
+                    break;
                 case 'text':
                     this.drawText(document, primitive);
                     break;
@@ -169,38 +179,145 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
         if (width <= 0 || height <= 0) {
             return;
         }
-        if (primitive.radiusMm > 0) {
-            document.roundedRect(x, y, width, height, (0, units_1.mmToPoints)(primitive.radiusMm));
+        const outline = (inset) => {
+            const radius = Math.max(0, (0, units_1.mmToPoints)(primitive.radiusMm) - inset);
+            if (radius > 0) {
+                document.roundedRect(x + inset, y + inset, width - inset * 2, height - inset * 2, radius);
+            }
+            else {
+                document.rect(x + inset, y + inset, width - inset * 2, height - inset * 2);
+            }
+        };
+        if (primitive.dash === 'DOUBLE' && primitive.stroke) {
+            if (primitive.fill) {
+                outline(0);
+                document.fillColor(primitive.fill).fill();
+            }
+            const gap = doubleGapPt(primitive.strokeWidthPt);
+            outline(0);
+            document.strokeColor(primitive.stroke).lineWidth(primitive.strokeWidthPt).stroke();
+            if (width > gap * 2 && height > gap * 2) {
+                outline(gap);
+                document.stroke();
+            }
+            return;
         }
-        else {
-            document.rect(x, y, width, height);
-        }
+        outline(0);
         if (primitive.fill && primitive.stroke) {
-            document
+            this.withDash(document, primitive.dash, primitive.strokeWidthPt, () => document
                 .fillColor(primitive.fill)
                 .strokeColor(primitive.stroke)
                 .lineWidth(primitive.strokeWidthPt)
-                .fillAndStroke();
+                .fillAndStroke());
         }
         else if (primitive.fill) {
             document.fillColor(primitive.fill).fill();
         }
         else if (primitive.stroke) {
-            document.strokeColor(primitive.stroke).lineWidth(primitive.strokeWidthPt).stroke();
+            this.withDash(document, primitive.dash, primitive.strokeWidthPt, () => document
+                .strokeColor(primitive.stroke)
+                .lineWidth(primitive.strokeWidthPt)
+                .stroke());
         }
         else {
             document.strokeColor('#000000').lineWidth(0.5).stroke();
         }
     }
+    withDash(document, style, widthPt, draw) {
+        const pattern = style && style !== 'SOLID' && style !== 'DOUBLE' ? DASH_PATTERNS[style] : null;
+        if (!pattern) {
+            draw();
+            return;
+        }
+        const unit = Math.max(widthPt, 1);
+        document.dash(pattern.map((step) => step * unit));
+        draw();
+        document.undash();
+    }
+    drawPath(document, primitive) {
+        if (!primitive.fill && !primitive.stroke) {
+            return;
+        }
+        const d = primitive.d.replace(/-?\d+(?:\.\d+)?(?:e-?\d+)?/gi, (value) => String((0, units_1.mmToPoints)(Number(value))));
+        document.path(d);
+        if (primitive.fill && primitive.stroke) {
+            this.withDash(document, primitive.dash, primitive.strokeWidthPt, () => document
+                .fillColor(primitive.fill)
+                .strokeColor(primitive.stroke)
+                .lineWidth(primitive.strokeWidthPt)
+                .fillAndStroke());
+        }
+        else if (primitive.fill) {
+            document.fillColor(primitive.fill).fill();
+        }
+        else {
+            this.withDash(document, primitive.dash, primitive.strokeWidthPt, () => document
+                .strokeColor(primitive.stroke)
+                .lineWidth(primitive.strokeWidthPt)
+                .stroke());
+        }
+    }
     drawLine(document, primitive) {
-        document
-            .moveTo((0, units_1.mmToPoints)(primitive.x1), (0, units_1.mmToPoints)(primitive.y1))
-            .lineTo((0, units_1.mmToPoints)(primitive.x2), (0, units_1.mmToPoints)(primitive.y2))
+        const x1 = (0, units_1.mmToPoints)(primitive.x1);
+        const y1 = (0, units_1.mmToPoints)(primitive.y1);
+        const x2 = (0, units_1.mmToPoints)(primitive.x2);
+        const y2 = (0, units_1.mmToPoints)(primitive.y2);
+        if (primitive.dash === 'DOUBLE') {
+            const length = Math.hypot(x2 - x1, y2 - y1);
+            if (length === 0) {
+                return;
+            }
+            const offset = doubleGapPt(primitive.widthPt) / 2;
+            const nx = (-(y2 - y1) / length) * offset;
+            const ny = ((x2 - x1) / length) * offset;
+            document.strokeColor(primitive.color).lineWidth(primitive.widthPt);
+            document
+                .moveTo(x1 + nx, y1 + ny)
+                .lineTo(x2 + nx, y2 + ny)
+                .stroke();
+            document
+                .moveTo(x1 - nx, y1 - ny)
+                .lineTo(x2 - nx, y2 - ny)
+                .stroke();
+            return;
+        }
+        this.withDash(document, primitive.dash, primitive.widthPt, () => document
+            .moveTo(x1, y1)
+            .lineTo(x2, y2)
             .strokeColor(primitive.color)
             .lineWidth(primitive.widthPt)
-            .stroke();
+            .stroke());
     }
     drawText(document, primitive) {
+        const rotation = primitive.rotation ?? 0;
+        const opacity = primitive.opacity;
+        if (!rotation && opacity === undefined) {
+            this.drawTextBody(document, primitive);
+            return;
+        }
+        document.save();
+        if (opacity !== undefined) {
+            document.opacity(opacity);
+        }
+        let box = primitive;
+        if (rotation) {
+            const centreX = primitive.x + primitive.w / 2;
+            const centreY = primitive.y + primitive.h / 2;
+            document.rotate(rotation, { origin: [(0, units_1.mmToPoints)(centreX), (0, units_1.mmToPoints)(centreY)] });
+            if (Math.abs(rotation % 180) === 90) {
+                box = {
+                    ...primitive,
+                    x: centreX - primitive.h / 2,
+                    y: centreY - primitive.w / 2,
+                    w: primitive.h,
+                    h: primitive.w,
+                };
+            }
+        }
+        this.drawTextBody(document, box);
+        document.restore();
+    }
+    drawTextBody(document, primitive) {
         const lines = primitive.lines.length > 0 ? primitive.lines : [primitive.text];
         const lineHeightPt = (0, units_1.mmToPoints)(primitive.lineHeightMm);
         const boxWidthPt = (0, units_1.mmToPoints)(primitive.w);
@@ -213,16 +330,18 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
         else if (primitive.vAlign === 'bottom') {
             cursorYPt += Math.max(0, boxHeightPt - totalTextHeightPt);
         }
-        document.fillColor(primitive.color);
-        for (const line of lines) {
-            if (line !== '') {
-                this.drawTextLine(document, line, primitive, cursorYPt, boxWidthPt, lineHeightPt);
+        lines.forEach((line, index) => {
+            const rich = primitive.rich?.[index];
+            const pieces = rich ? this.richPieces(rich) : line ? this.plainPieces(line, primitive) : [];
+            if (pieces.length > 0) {
+                this.drawPieces(document, pieces, primitive, cursorYPt, boxWidthPt, lineHeightPt, primitive.align === 'justify' && primitive.justify?.[index] === true);
             }
             cursorYPt += lineHeightPt;
-        }
+        });
     }
-    drawTextLine(document, line, primitive, yPt, boxWidthPt, lineHeightPt) {
-        const runs = (0, script_runs_1.splitScriptRuns)(line).map((run) => {
+    plainPieces(line, primitive) {
+        const ascentPt = this.ascentPt(primitive.font, primitive.font.sizePt);
+        return (0, script_runs_1.splitScriptRuns)(line).map((run) => {
             const face = this.fonts.resolveForScript({
                 family: primitive.font.family,
                 bold: primitive.font.bold,
@@ -231,31 +350,97 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
             return {
                 text: run.text,
                 face,
+                sizePt: primitive.font.sizePt,
+                color: primitive.color,
                 widthPt: this.runWidthPt(run.text, face, primitive.font.sizePt),
+                underline: primitive.font.underline,
+                strikeout: primitive.font.strikeout === true,
+                ascentPt,
             };
         });
-        const totalWidthPt = runs.reduce((total, run) => total + run.widthPt, 0);
-        let xPt = (0, units_1.mmToPoints)(primitive.x);
-        if (primitive.align === 'right') {
-            xPt += boxWidthPt - totalWidthPt;
-        }
-        else if (primitive.align === 'center') {
-            xPt += (boxWidthPt - totalWidthPt) / 2;
-        }
+    }
+    richPieces(runs) {
+        const pieces = [];
         for (const run of runs) {
-            document.font(run.face.id).fontSize(primitive.font.sizePt);
-            document.text(run.text, xPt, yPt, { lineBreak: false, width: undefined });
-            xPt += run.widthPt;
+            const ascentPt = this.ascentPt(run.font, run.font.sizePt);
+            for (const scriptRun of (0, script_runs_1.splitScriptRuns)(run.text)) {
+                const face = this.fonts.resolveForScript({ family: run.font.family, bold: run.font.bold, italic: run.font.italic }, scriptRun.script);
+                pieces.push({
+                    text: scriptRun.text,
+                    face,
+                    sizePt: run.font.sizePt,
+                    color: run.color,
+                    widthPt: this.runWidthPt(scriptRun.text, face, run.font.sizePt),
+                    underline: run.font.underline,
+                    strikeout: run.font.strikeout === true,
+                    ...(run.shift ? { shift: run.shift } : {}),
+                    ascentPt,
+                });
+            }
         }
-        if (primitive.font.underline && totalWidthPt > 0) {
-            const startXPt = xPt - totalWidthPt;
-            const underlineYPt = yPt + lineHeightPt * 0.85;
-            document
-                .moveTo(startXPt, underlineYPt)
-                .lineTo(startXPt + totalWidthPt, underlineYPt)
-                .strokeColor(primitive.color)
-                .lineWidth(Math.max(0.3, primitive.font.sizePt / 18))
-                .stroke();
+        return pieces;
+    }
+    ascentPt(font, sizePt) {
+        const face = this.fonts.resolve({ family: font.family, bold: font.bold, italic: font.italic });
+        return (face.ascent / face.unitsPerEm) * sizePt;
+    }
+    drawPieces(document, pieces, primitive, yPt, boxWidthPt, lineHeightPt, justify) {
+        const totalWidthPt = pieces.reduce((total, piece) => total + piece.widthPt, 0);
+        const lineAscentPt = Math.max(...pieces.filter((piece) => !piece.shift).map((piece) => piece.ascentPt), pieces[0].ascentPt);
+        const baselinePt = yPt + lineAscentPt;
+        let extraPerSpacePt = 0;
+        if (justify) {
+            const spaces = pieces.reduce((count, piece) => count + (piece.text.match(/ /g)?.length ?? 0), 0);
+            if (spaces > 0 && boxWidthPt > totalWidthPt) {
+                extraPerSpacePt = (boxWidthPt - totalWidthPt) / spaces;
+            }
+        }
+        let xPt = (0, units_1.mmToPoints)(primitive.x);
+        if (!justify) {
+            if (primitive.align === 'right') {
+                xPt += boxWidthPt - totalWidthPt;
+            }
+            else if (primitive.align === 'center') {
+                xPt += (boxWidthPt - totalWidthPt) / 2;
+            }
+        }
+        for (const piece of pieces) {
+            const baseSizePt = piece.shift ? piece.sizePt / 0.7 : piece.sizePt;
+            const shiftPt = piece.shift === 'sup' ? -baseSizePt * 0.35 : piece.shift === 'sub' ? baseSizePt * 0.15 : 0;
+            const topPt = baselinePt - piece.ascentPt + shiftPt;
+            const startXPt = xPt;
+            document.font(piece.face.id).fontSize(piece.sizePt).fillColor(piece.color);
+            if (extraPerSpacePt > 0 && piece.text.includes(' ')) {
+                for (const token of piece.text.split(/( +)/)) {
+                    if (!token) {
+                        continue;
+                    }
+                    const tokenWidthPt = this.runWidthPt(token, piece.face, piece.sizePt);
+                    if (token.startsWith(' ')) {
+                        xPt += tokenWidthPt + extraPerSpacePt * token.length;
+                    }
+                    else {
+                        document.text(token, xPt, topPt, { lineBreak: false, width: undefined });
+                        xPt += tokenWidthPt;
+                    }
+                }
+            }
+            else {
+                document.text(piece.text, xPt, topPt, { lineBreak: false, width: undefined });
+                xPt += piece.widthPt;
+            }
+            if ((piece.underline || piece.strikeout) && xPt > startXPt) {
+                const ruleWidthPt = Math.max(0.3, piece.sizePt / 18);
+                document.strokeColor(piece.color).lineWidth(ruleWidthPt);
+                if (piece.underline) {
+                    const underlineYPt = yPt + lineHeightPt * 0.85 + shiftPt;
+                    document.moveTo(startXPt, underlineYPt).lineTo(xPt, underlineYPt).stroke();
+                }
+                if (piece.strikeout) {
+                    const strikeYPt = baselinePt + shiftPt - piece.sizePt * 0.28;
+                    document.moveTo(startXPt, strikeYPt).lineTo(xPt, strikeYPt).stroke();
+                }
+            }
         }
     }
     runWidthPt(text, face, sizePt) {
@@ -274,6 +459,11 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
         const y = (0, units_1.mmToPoints)(primitive.y);
         const width = (0, units_1.mmToPoints)(primitive.w);
         const height = (0, units_1.mmToPoints)(primitive.h);
+        const faded = primitive.opacity !== undefined;
+        if (faded) {
+            document.save();
+            document.opacity(primitive.opacity);
+        }
         try {
             switch (primitive.fit) {
                 case 'STRETCH':
@@ -294,6 +484,11 @@ let PdfKitRenderer = PdfKitRenderer_1 = class PdfKitRenderer {
         }
         catch (error) {
             this.logger.warn(`Image could not be embedded: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            if (faded) {
+                document.restore();
+            }
         }
     }
     drawBarcode(document, primitive, bytes) {

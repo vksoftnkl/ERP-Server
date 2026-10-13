@@ -6,7 +6,7 @@ import { Injectable, Logger } from '@nestjs/common';
 // and a default import yields undefined.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import PdfDocument = require('pdfkit');
-import { OutputMode } from '../../definition/template-definition.schema';
+import { LineStyle, OutputMode } from '../../definition/template-definition.schema';
 import { FontRegistry, LoadedFont } from '../fonts/font.registry';
 import { splitScriptRuns } from '../fonts/script-runs';
 import {
@@ -15,8 +15,10 @@ import {
   LayoutPage,
   LayoutTree,
   LinePrimitive,
+  PathPrimitive,
   QrCodePrimitive,
   RectPrimitive,
+  RichRun,
   TextPrimitive,
 } from '../layout/layout-tree.types';
 import { mmToPoints } from '../units/units';
@@ -43,6 +45,34 @@ import { IRenderer, RenderOptions, RenderResult } from './renderer.types';
 
 /** Millimetres of slack allowed before a primitive is reported as off-page. */
 const OVERFLOW_TOLERANCE_MM = 0.5;
+
+/**
+ * Dash patterns in multiples of the line width (never below 1pt, or a 0.5pt
+ * dotted frame becomes a grey smear). The names are QtRPT's pen styles.
+ */
+const DASH_PATTERNS: Record<Exclude<LineStyle, 'SOLID' | 'DOUBLE'>, number[]> = {
+  DASH: [4, 2],
+  DOT: [1, 1],
+  DASH_DOT: [4, 2, 1, 2],
+  DASH_DOT_DOT: [4, 2, 1, 2, 1, 2],
+};
+
+/** DOUBLE: two strokes of the line width, this far apart centre to centre. */
+const doubleGapPt = (widthPt: number): number => widthPt * 2 + 1;
+
+/** One drawable stretch of a text line: a script run in one face and style. */
+interface TextPiece {
+  readonly text: string;
+  readonly face: LoadedFont;
+  readonly sizePt: number;
+  readonly color: string;
+  readonly widthPt: number;
+  readonly underline: boolean;
+  readonly strikeout: boolean;
+  readonly shift?: 'sup' | 'sub';
+  /** Ascent of the run's primary (Latin) face, for baseline alignment. */
+  readonly ascentPt: number;
+}
 
 @Injectable()
 export class PdfKitRenderer implements IRenderer {
@@ -244,6 +274,9 @@ export class PdfKitRenderer implements IRenderer {
         case 'line':
           this.drawLine(document, primitive);
           break;
+        case 'path':
+          this.drawPath(document, primitive);
+          break;
         case 'text':
           this.drawText(document, primitive);
           break;
@@ -272,22 +305,50 @@ export class PdfKitRenderer implements IRenderer {
       return;
     }
 
-    if (primitive.radiusMm > 0) {
-      document.roundedRect(x, y, width, height, mmToPoints(primitive.radiusMm));
-    } else {
-      document.rect(x, y, width, height);
+    const outline = (inset: number) => {
+      const radius = Math.max(0, mmToPoints(primitive.radiusMm) - inset);
+      if (radius > 0) {
+        document.roundedRect(x + inset, y + inset, width - inset * 2, height - inset * 2, radius);
+      } else {
+        document.rect(x + inset, y + inset, width - inset * 2, height - inset * 2);
+      }
+    };
+
+    if (primitive.dash === 'DOUBLE' && primitive.stroke) {
+      // Fill once, then two outlines: the outer on the box, the inner inset.
+      if (primitive.fill) {
+        outline(0);
+        document.fillColor(primitive.fill).fill();
+      }
+      const gap = doubleGapPt(primitive.strokeWidthPt);
+      outline(0);
+      document.strokeColor(primitive.stroke).lineWidth(primitive.strokeWidthPt).stroke();
+      if (width > gap * 2 && height > gap * 2) {
+        outline(gap);
+        document.stroke();
+      }
+      return;
     }
 
+    outline(0);
+
     if (primitive.fill && primitive.stroke) {
-      document
-        .fillColor(primitive.fill)
-        .strokeColor(primitive.stroke)
-        .lineWidth(primitive.strokeWidthPt)
-        .fillAndStroke();
+      this.withDash(document, primitive.dash, primitive.strokeWidthPt, () =>
+        document
+          .fillColor(primitive.fill as string)
+          .strokeColor(primitive.stroke as string)
+          .lineWidth(primitive.strokeWidthPt)
+          .fillAndStroke(),
+      );
     } else if (primitive.fill) {
       document.fillColor(primitive.fill).fill();
     } else if (primitive.stroke) {
-      document.strokeColor(primitive.stroke).lineWidth(primitive.strokeWidthPt).stroke();
+      this.withDash(document, primitive.dash, primitive.strokeWidthPt, () =>
+        document
+          .strokeColor(primitive.stroke as string)
+          .lineWidth(primitive.strokeWidthPt)
+          .stroke(),
+      );
     } else {
       // A rect with neither fill nor stroke would leave the path open and the
       // next drawing operation would inherit it.
@@ -295,13 +356,94 @@ export class PdfKitRenderer implements IRenderer {
     }
   }
 
+  /** Run a stroke with a dash pattern set, and clear it after. */
+  private withDash(
+    document: PDFKit.PDFDocument,
+    style: LineStyle | undefined,
+    widthPt: number,
+    draw: () => void,
+  ): void {
+    const pattern = style && style !== 'SOLID' && style !== 'DOUBLE' ? DASH_PATTERNS[style] : null;
+    if (!pattern) {
+      draw();
+      return;
+    }
+    const unit = Math.max(widthPt, 1);
+    (document.dash as unknown as (length: number[]) => PDFKit.PDFDocument)(
+      pattern.map((step) => step * unit),
+    );
+    draw();
+    document.undash();
+  }
+
+  /**
+   * A `path` primitive: an ellipse, triangle, rhombus, arrowhead, pie slice or
+   * chart line. The path is in millimetres with absolute M/L/C/Z only, so
+   * converting it is scaling every number.
+   */
+  private drawPath(document: PDFKit.PDFDocument, primitive: PathPrimitive): void {
+    if (!primitive.fill && !primitive.stroke) {
+      return;
+    }
+    const d = primitive.d.replace(/-?\d+(?:\.\d+)?(?:e-?\d+)?/gi, (value) =>
+      String(mmToPoints(Number(value))),
+    );
+    document.path(d);
+    if (primitive.fill && primitive.stroke) {
+      this.withDash(document, primitive.dash, primitive.strokeWidthPt, () =>
+        document
+          .fillColor(primitive.fill as string)
+          .strokeColor(primitive.stroke as string)
+          .lineWidth(primitive.strokeWidthPt)
+          .fillAndStroke(),
+      );
+    } else if (primitive.fill) {
+      document.fillColor(primitive.fill).fill();
+    } else {
+      this.withDash(document, primitive.dash, primitive.strokeWidthPt, () =>
+        document
+          .strokeColor(primitive.stroke as string)
+          .lineWidth(primitive.strokeWidthPt)
+          .stroke(),
+      );
+    }
+  }
+
   private drawLine(document: PDFKit.PDFDocument, primitive: LinePrimitive): void {
-    document
-      .moveTo(mmToPoints(primitive.x1), mmToPoints(primitive.y1))
-      .lineTo(mmToPoints(primitive.x2), mmToPoints(primitive.y2))
-      .strokeColor(primitive.color)
-      .lineWidth(primitive.widthPt)
-      .stroke();
+    const x1 = mmToPoints(primitive.x1);
+    const y1 = mmToPoints(primitive.y1);
+    const x2 = mmToPoints(primitive.x2);
+    const y2 = mmToPoints(primitive.y2);
+
+    if (primitive.dash === 'DOUBLE') {
+      const length = Math.hypot(x2 - x1, y2 - y1);
+      if (length === 0) {
+        return;
+      }
+      // Two strokes, offset either side of the line's own centre.
+      const offset = doubleGapPt(primitive.widthPt) / 2;
+      const nx = (-(y2 - y1) / length) * offset;
+      const ny = ((x2 - x1) / length) * offset;
+      document.strokeColor(primitive.color).lineWidth(primitive.widthPt);
+      document
+        .moveTo(x1 + nx, y1 + ny)
+        .lineTo(x2 + nx, y2 + ny)
+        .stroke();
+      document
+        .moveTo(x1 - nx, y1 - ny)
+        .lineTo(x2 - nx, y2 - ny)
+        .stroke();
+      return;
+    }
+
+    this.withDash(document, primitive.dash, primitive.widthPt, () =>
+      document
+        .moveTo(x1, y1)
+        .lineTo(x2, y2)
+        .strokeColor(primitive.color)
+        .lineWidth(primitive.widthPt)
+        .stroke(),
+    );
   }
 
   /**
@@ -314,6 +456,39 @@ export class PdfKitRenderer implements IRenderer {
    * bilingual item name.
    */
   private drawText(document: PDFKit.PDFDocument, primitive: TextPrimitive): void {
+    const rotation = primitive.rotation ?? 0;
+    const opacity = primitive.opacity;
+    if (!rotation && opacity === undefined) {
+      this.drawTextBody(document, primitive);
+      return;
+    }
+
+    document.save();
+    if (opacity !== undefined) {
+      document.opacity(opacity);
+    }
+    let box = primitive;
+    if (rotation) {
+      const centreX = primitive.x + primitive.w / 2;
+      const centreY = primitive.y + primitive.h / 2;
+      document.rotate(rotation, { origin: [mmToPoints(centreX), mmToPoints(centreY)] });
+      // Quarter turns lay the text along the box's other side: draw it in a
+      // box with the sides swapped, centred on the same point.
+      if (Math.abs(rotation % 180) === 90) {
+        box = {
+          ...primitive,
+          x: centreX - primitive.h / 2,
+          y: centreY - primitive.w / 2,
+          w: primitive.h,
+          h: primitive.w,
+        };
+      }
+    }
+    this.drawTextBody(document, box);
+    document.restore();
+  }
+
+  private drawTextBody(document: PDFKit.PDFDocument, primitive: TextPrimitive): void {
     const lines = primitive.lines.length > 0 ? primitive.lines : [primitive.text];
     const lineHeightPt = mmToPoints(primitive.lineHeightMm);
     const boxWidthPt = mmToPoints(primitive.w);
@@ -328,25 +503,28 @@ export class PdfKitRenderer implements IRenderer {
       cursorYPt += Math.max(0, boxHeightPt - totalTextHeightPt);
     }
 
-    document.fillColor(primitive.color);
-
-    for (const line of lines) {
-      if (line !== '') {
-        this.drawTextLine(document, line, primitive, cursorYPt, boxWidthPt, lineHeightPt);
+    lines.forEach((line, index) => {
+      const rich = primitive.rich?.[index];
+      const pieces = rich ? this.richPieces(rich) : line ? this.plainPieces(line, primitive) : [];
+      if (pieces.length > 0) {
+        this.drawPieces(
+          document,
+          pieces,
+          primitive,
+          cursorYPt,
+          boxWidthPt,
+          lineHeightPt,
+          primitive.align === 'justify' && primitive.justify?.[index] === true,
+        );
       }
       cursorYPt += lineHeightPt;
-    }
+    });
   }
 
-  private drawTextLine(
-    document: PDFKit.PDFDocument,
-    line: string,
-    primitive: TextPrimitive,
-    yPt: number,
-    boxWidthPt: number,
-    lineHeightPt: number,
-  ): void {
-    const runs = splitScriptRuns(line).map((run) => {
+  /** One plain line, split into script runs in the primitive's own style. */
+  private plainPieces(line: string, primitive: TextPrimitive): TextPiece[] {
+    const ascentPt = this.ascentPt(primitive.font, primitive.font.sizePt);
+    return splitScriptRuns(line).map((run) => {
       const face = this.fonts.resolveForScript(
         {
           family: primitive.font.family,
@@ -358,38 +536,143 @@ export class PdfKitRenderer implements IRenderer {
       return {
         text: run.text,
         face,
+        sizePt: primitive.font.sizePt,
+        color: primitive.color,
         widthPt: this.runWidthPt(run.text, face, primitive.font.sizePt),
+        underline: primitive.font.underline,
+        strikeout: primitive.font.strikeout === true,
+        ascentPt,
       };
     });
+  }
 
-    const totalWidthPt = runs.reduce((total, run) => total + run.widthPt, 0);
+  /** One markup line: each styled run, split again by script. */
+  private richPieces(runs: readonly RichRun[]): TextPiece[] {
+    const pieces: TextPiece[] = [];
+    for (const run of runs) {
+      const ascentPt = this.ascentPt(run.font, run.font.sizePt);
+      for (const scriptRun of splitScriptRuns(run.text)) {
+        const face = this.fonts.resolveForScript(
+          { family: run.font.family, bold: run.font.bold, italic: run.font.italic },
+          scriptRun.script,
+        );
+        pieces.push({
+          text: scriptRun.text,
+          face,
+          sizePt: run.font.sizePt,
+          color: run.color,
+          widthPt: this.runWidthPt(scriptRun.text, face, run.font.sizePt),
+          underline: run.font.underline,
+          strikeout: run.font.strikeout === true,
+          ...(run.shift ? { shift: run.shift } : {}),
+          ascentPt,
+        });
+      }
+    }
+    return pieces;
+  }
+
+  /** Ascent of a style's PRIMARY face -- the same for every script run of it. */
+  private ascentPt(
+    font: { family: string; bold: boolean; italic: boolean },
+    sizePt: number,
+  ): number {
+    const face = this.fonts.resolve({ family: font.family, bold: font.bold, italic: font.italic });
+    return (face.ascent / face.unitsPerEm) * sizePt;
+  }
+
+  /**
+   * Draw one line of pieces, aligned in the box.
+   *
+   * Every piece sits on one shared baseline -- the tallest run's -- so a 14pt
+   * word in a 9pt line, or a bold run beside a regular one, lines up the way
+   * it would in a word processor. A plain line has one style, so its baseline
+   * offset is zero and it prints exactly as it always has.
+   *
+   * Justified lines are drawn word by word with the spare width shared out
+   * between the spaces, rather than through PDFKit's wordSpacing: that trims
+   * the spaces at the edges of each script run and would drift every word
+   * after a Latin/Tamil boundary.
+   */
+  private drawPieces(
+    document: PDFKit.PDFDocument,
+    pieces: readonly TextPiece[],
+    primitive: TextPrimitive,
+    yPt: number,
+    boxWidthPt: number,
+    lineHeightPt: number,
+    justify: boolean,
+  ): void {
+    const totalWidthPt = pieces.reduce((total, piece) => total + piece.widthPt, 0);
+    const lineAscentPt = Math.max(
+      ...pieces.filter((piece) => !piece.shift).map((piece) => piece.ascentPt),
+      pieces[0].ascentPt,
+    );
+    const baselinePt = yPt + lineAscentPt;
+
+    let extraPerSpacePt = 0;
+    if (justify) {
+      const spaces = pieces.reduce(
+        (count, piece) => count + (piece.text.match(/ /g)?.length ?? 0),
+        0,
+      );
+      if (spaces > 0 && boxWidthPt > totalWidthPt) {
+        extraPerSpacePt = (boxWidthPt - totalWidthPt) / spaces;
+      }
+    }
 
     let xPt = mmToPoints(primitive.x);
-    if (primitive.align === 'right') {
-      xPt += boxWidthPt - totalWidthPt;
-    } else if (primitive.align === 'center') {
-      xPt += (boxWidthPt - totalWidthPt) / 2;
+    if (!justify) {
+      if (primitive.align === 'right') {
+        xPt += boxWidthPt - totalWidthPt;
+      } else if (primitive.align === 'center') {
+        xPt += (boxWidthPt - totalWidthPt) / 2;
+      }
     }
 
-    for (const run of runs) {
-      document.font(run.face.id).fontSize(primitive.font.sizePt);
-      // lineBreak: false is essential -- PDFKit would otherwise re-wrap text
-      // the layout engine already wrapped, at a different width, and the two
-      // wraps would disagree.
-      document.text(run.text, xPt, yPt, { lineBreak: false, width: undefined });
-      xPt += run.widthPt;
-    }
+    for (const piece of pieces) {
+      const baseSizePt = piece.shift ? piece.sizePt / 0.7 : piece.sizePt;
+      const shiftPt =
+        piece.shift === 'sup' ? -baseSizePt * 0.35 : piece.shift === 'sub' ? baseSizePt * 0.15 : 0;
+      const topPt = baselinePt - piece.ascentPt + shiftPt;
+      const startXPt = xPt;
 
-    if (primitive.font.underline && totalWidthPt > 0) {
-      const startXPt = xPt - totalWidthPt;
-      // Just below the baseline, which sits at the line's ascent.
-      const underlineYPt = yPt + lineHeightPt * 0.85;
-      document
-        .moveTo(startXPt, underlineYPt)
-        .lineTo(startXPt + totalWidthPt, underlineYPt)
-        .strokeColor(primitive.color)
-        .lineWidth(Math.max(0.3, primitive.font.sizePt / 18))
-        .stroke();
+      document.font(piece.face.id).fontSize(piece.sizePt).fillColor(piece.color);
+      if (extraPerSpacePt > 0 && piece.text.includes(' ')) {
+        for (const token of piece.text.split(/( +)/)) {
+          if (!token) {
+            continue;
+          }
+          const tokenWidthPt = this.runWidthPt(token, piece.face, piece.sizePt);
+          if (token.startsWith(' ')) {
+            xPt += tokenWidthPt + extraPerSpacePt * token.length;
+          } else {
+            // lineBreak: false is essential -- PDFKit would otherwise re-wrap
+            // text the layout engine already wrapped, at a different width.
+            document.text(token, xPt, topPt, { lineBreak: false, width: undefined });
+            xPt += tokenWidthPt;
+          }
+        }
+      } else {
+        document.text(piece.text, xPt, topPt, { lineBreak: false, width: undefined });
+        xPt += piece.widthPt;
+      }
+
+      if ((piece.underline || piece.strikeout) && xPt > startXPt) {
+        const ruleWidthPt = Math.max(0.3, piece.sizePt / 18);
+        document.strokeColor(piece.color).lineWidth(ruleWidthPt);
+        if (piece.underline) {
+          // Just below the baseline: where a plain line has always put it,
+          // 85% down its line box.
+          const underlineYPt = yPt + lineHeightPt * 0.85 + shiftPt;
+          document.moveTo(startXPt, underlineYPt).lineTo(xPt, underlineYPt).stroke();
+        }
+        if (piece.strikeout) {
+          // Through the middle of the lowercase letters.
+          const strikeYPt = baselinePt + shiftPt - piece.sizePt * 0.28;
+          document.moveTo(startXPt, strikeYPt).lineTo(xPt, strikeYPt).stroke();
+        }
+      }
     }
   }
 
@@ -422,6 +705,12 @@ export class PdfKitRenderer implements IRenderer {
     const width = mmToPoints(primitive.w);
     const height = mmToPoints(primitive.h);
 
+    const faded = primitive.opacity !== undefined;
+    if (faded) {
+      document.save();
+      document.opacity(primitive.opacity as number);
+    }
+
     try {
       switch (primitive.fit) {
         case 'STRETCH':
@@ -445,6 +734,10 @@ export class PdfKitRenderer implements IRenderer {
       this.logger.warn(
         `Image could not be embedded: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      if (faded) {
+        document.restore();
+      }
     }
   }
 

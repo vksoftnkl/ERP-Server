@@ -17,9 +17,15 @@ export declare class PdfKitRenderer implements IRenderer {
     private prepareAssets;
     private drawPage;
     private drawRect;
+    private withDash;
+    private drawPath;
     private drawLine;
     private drawText;
-    private drawTextLine;
+    private drawTextBody;
+    private plainPieces;
+    private richPieces;
+    private ascentPt;
+    private drawPieces;
     private runWidthPt;
     private drawImage;
     private drawBarcode;

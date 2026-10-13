@@ -16,13 +16,27 @@ const BWIPP_NAMES = {
     ean13: 'ean13',
     ean8: 'ean8',
     upca: 'upca',
+    upce: 'upce',
     code39: 'code39',
+    code93: 'code93',
+    codabar: 'rationalizedCodabar',
     itf14: 'itf14',
+    interleaved2of5: 'interleaved2of5',
+    gs1_128: 'gs1-128',
+    pdf417: 'pdf417',
+    datamatrix: 'datamatrix',
+    azteccode: 'azteccode',
 };
+const TWO_DIMENSIONAL = new Set([
+    'pdf417',
+    'datamatrix',
+    'azteccode',
+]);
 const FIXED_LENGTH = {
     ean13: { digits: 13, label: 'EAN-13' },
     ean8: { digits: 8, label: 'EAN-8' },
     upca: { digits: 12, label: 'UPC-A' },
+    upce: { digits: 8, label: 'UPC-E' },
     itf14: { digits: 14, label: 'ITF-14' },
 };
 const MAX_CACHE_ENTRIES = 500;
@@ -52,12 +66,17 @@ let BarcodeFactory = BarcodeFactory_1 = class BarcodeFactory {
             return cached;
         }
         try {
+            const twoDimensional = TWO_DIMENSIONAL.has(symbology);
             const png = await bwipjs.toBuffer({
                 bcid: BWIPP_NAMES[symbology],
                 text: trimmed,
-                height: Math.max(4, heightMm),
-                includetext: showText,
-                textxalign: 'center',
+                ...(twoDimensional
+                    ? {}
+                    : {
+                        height: Math.max(4, heightMm),
+                        includetext: showText,
+                        textxalign: 'center',
+                    }),
                 paddingwidth: 0,
                 paddingheight: 0,
                 scale: 3,

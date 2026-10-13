@@ -219,6 +219,12 @@ export function buildDefinition(
     !Array.isArray(body.pageBorder)
       ? { pageBorder: body.pageBorder as TemplateDefinitionInput['pageBorder'] }
       : {}),
+    // Same trap, same fix: a watermark not named here never reaches the engine.
+    ...(typeof body.watermark === 'object' &&
+    body.watermark !== null &&
+    !Array.isArray(body.watermark)
+      ? { watermark: body.watermark as TemplateDefinitionInput['watermark'] }
+      : {}),
     datasets: datasetsFor(datasets),
     // The one thing the body owns. Left exactly as stored: the schema is what
     // decides whether it is a design, and repairing it here would hide the

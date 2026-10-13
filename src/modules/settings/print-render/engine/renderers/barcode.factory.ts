@@ -26,9 +26,27 @@ const BWIPP_NAMES: Record<BarcodeSymbology, string> = {
   ean13: 'ean13',
   ean8: 'ean8',
   upca: 'upca',
+  upce: 'upce',
   code39: 'code39',
+  code93: 'code93',
+  codabar: 'rationalizedCodabar',
   itf14: 'itf14',
+  interleaved2of5: 'interleaved2of5',
+  gs1_128: 'gs1-128',
+  pdf417: 'pdf417',
+  datamatrix: 'datamatrix',
+  azteccode: 'azteccode',
 };
+
+/**
+ * Two-dimensional symbologies. They have no bar height -- bwip-js sizes the
+ * whole symbol from the payload -- and no human-readable line under them.
+ */
+const TWO_DIMENSIONAL: ReadonlySet<BarcodeSymbology> = new Set<BarcodeSymbology>([
+  'pdf417',
+  'datamatrix',
+  'azteccode',
+]);
 
 /**
  * Symbologies with a fixed digit count and a check digit. bwip-js throws on a
@@ -39,6 +57,7 @@ const FIXED_LENGTH: Partial<Record<BarcodeSymbology, { digits: number; label: st
   ean13: { digits: 13, label: 'EAN-13' },
   ean8: { digits: 8, label: 'EAN-8' },
   upca: { digits: 12, label: 'UPC-A' },
+  upce: { digits: 8, label: 'UPC-E' },
   itf14: { digits: 14, label: 'ITF-14' },
 };
 
@@ -93,6 +112,7 @@ export class BarcodeFactory {
     }
 
     try {
+      const twoDimensional = TWO_DIMENSIONAL.has(symbology);
       const png = await bwipjs.toBuffer({
         bcid: BWIPP_NAMES[symbology],
         text: trimmed,
@@ -100,9 +120,13 @@ export class BarcodeFactory {
         // its own units; asking for the height in mm and letting it choose the
         // width keeps the bar module width legal for the symbology. A barcode
         // squeezed to an arbitrary box is a barcode a scanner refuses.
-        height: Math.max(4, heightMm),
-        includetext: showText,
-        textxalign: 'center',
+        ...(twoDimensional
+          ? {}
+          : {
+              height: Math.max(4, heightMm),
+              includetext: showText,
+              textxalign: 'center' as const,
+            }),
         paddingwidth: 0,
         paddingheight: 0,
         scale: 3,
