@@ -3,7 +3,40 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-export type TenderDetailErrorDetail = ModuleApiErrorDetail;
+/**
+ * Every refusal of /tender-details (notes 119): the client words the box by
+ * `code` alone. Prefixed TENDER_LINE_ (the tender master keeps TENDER_ for its
+ * own), never reused for a new meaning — add a code instead.
+ */
+export enum TenderDetailErrorCode {
+  NOT_FOUND = 'TENDER_LINE_NOT_FOUND',
+  LOOKUP_AMBIGUOUS = 'TENDER_LINE_LOOKUP_AMBIGUOUS',
+  LOOKUP_MISSING = 'TENDER_LINE_LOOKUP_MISSING',
+  ROW_NO_DUPLICATE = 'TENDER_LINE_ROW_NO_DUPLICATE',
+  /** An existing line's document (module / type / id) cannot change. */
+  DOCUMENT_IMMUTABLE = 'TENDER_LINE_DOCUMENT_IMMUTABLE',
+  /** A line saved with its document names another document. */
+  DOCUMENT_MISMATCH = 'TENDER_LINE_DOCUMENT_MISMATCH',
+  TENDER_NOT_FOUND = 'TENDER_LINE_TENDER_NOT_FOUND',
+  TENDER_TYPE_NOT_FOUND = 'TENDER_LINE_TENDER_TYPE_NOT_FOUND',
+  LEDGER_NOT_FOUND = 'TENDER_LINE_LEDGER_NOT_FOUND',
+  REFERENCE_INVALID = 'TENDER_LINE_REFERENCE_INVALID',
+  TOTAL_MISMATCH = 'TENDER_LINE_TOTAL_MISMATCH',
+  VALUE_REQUIRED = 'TENDER_LINE_VALUE_REQUIRED',
+  VALUE_NOT_ALLOWED = 'TENDER_LINE_VALUE_NOT_ALLOWED',
+  CHANGE_EXCEEDS_RECEIVED = 'TENDER_LINE_CHANGE_EXCEEDS_RECEIVED',
+  CONVERSION_RATE_INVALID = 'TENDER_LINE_CONVERSION_RATE_INVALID',
+  SETTLED_ON_REQUIRED = 'TENDER_LINE_SETTLED_ON_REQUIRED',
+  INSTRUMENT_DATE_REQUIRED = 'TENDER_LINE_INSTRUMENT_DATE_REQUIRED',
+  CARD_LAST4_INVALID = 'TENDER_LINE_CARD_LAST4_INVALID',
+  DATE_INVALID = 'TENDER_LINE_DATE_INVALID',
+  NUMBER_INVALID = 'TENDER_LINE_NUMBER_INVALID',
+  TENDER_TYPE_INVALID = 'TENDER_LINE_TENDER_TYPE_INVALID',
+  FIELD_REQUIRED = 'TENDER_LINE_FIELD_REQUIRED',
+}
+export interface TenderDetailErrorDetail extends ModuleApiErrorDetail {
+  code: TenderDetailErrorCode;
+}
 export type TenderDetailErrorResponse = ModuleApiErrorResponse<TenderDetailErrorDetail>;
 export type TenderDetailSuccessResponse<
   T,

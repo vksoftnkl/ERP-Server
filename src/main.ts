@@ -5,12 +5,13 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import * as compression from 'compression';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
+import { createHouseValidationPipe } from './common/validation/house-validation';
 import { PrismaService } from './database/prisma/prisma.service';
 import { runStartupDatabaseTasks } from './database/seed/startup-seed';
 import { swaggerModuleDocuments } from './utils/swaggerDocs';
@@ -184,16 +185,8 @@ async function bootstrap(): Promise<void> {
       ],
     });
   }
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  // Notes 119 §4: a DTO failure answers in the house shape, a `code` per field.
+  app.useGlobalPipes(createHouseValidationPipe());
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: process.env.API_VERSION ?? '1',

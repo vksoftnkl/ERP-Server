@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { resolveRoleLedgers } from '../../accountsModule/ledgerRole/ledger-map.helper';
+import { countedLegsSql, openingSetSql } from '../../reports/common/voucher-books.sql';
 import { throwTill } from '../till-errors';
 import {
   CASH_TENDER_TYPE_ID,
@@ -334,6 +335,34 @@ export class TillLedgerService {
       select: { tsfId: true, tsfLedgerId: true, tsfName: true },
     });
     return safe ? { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName } : null;
+  }
+
+  /**
+   * Ledgers' balances (signed: + DR) for a branch, up to a date, as the Ledger
+   * Statement reads them (reports/common: the year's opening set + POSTED /
+   * CANCELLED legs). The close-check's insured limit and the safe's book
+   * balance (notes 118) both read it.
+   */
+  async ledgerBalances(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    scope: { companyId: string; branchId: string; accYear: string; upTo: string },
+    ledgerIds: readonly string[],
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const ids = [...new Set(ledgerIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const books = { companyId: scope.companyId, accYear: scope.accYear, branchId: scope.branchId };
+    const ledgers = { ledgerIds: ids };
+    const rows = await client.$queryRaw<{ ledger_id: string; bal: Prisma.Decimal | null }[]>`
+      SELECT ledger_id::text, sum(amt) AS bal FROM (
+        ${openingSetSql(books, ledgers)}
+        UNION ALL
+        SELECT l.av_ledger_id AS ledger_id, sum(l.av_signed_amount) AS amt
+          FROM (${countedLegsSql(books, { upTo: scope.upTo, ledgers })}) l
+         GROUP BY l.av_ledger_id) b
+       GROUP BY ledger_id`;
+    return new Map(rows.map((r) => [r.ledger_id, new Prisma.Decimal(r.bal ?? 0)]));
   }
 
   /**

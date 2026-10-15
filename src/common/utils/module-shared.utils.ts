@@ -13,6 +13,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { frameworkValidationCode } from '../validation/house-validation';
+import { wordedResponse } from '../error-wording/error-wording';
 export const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_LIMIT = 20;
@@ -75,13 +77,17 @@ export function throwUnprocessable<
     buildErrorResponse<TErrorDetail, TErrorResponse>(message, errors),
   );
 }
+// `code` (notes 119): what the client switches its wording on — module-prefixed,
+// never reused for a new meaning. Optional only until every caller names one.
 export function throwNotFound<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
->(message: string, field: string, detailMessage: string): never {
+>(message: string, field: string, detailMessage: string, code?: string): never {
   throw new NotFoundException(
     buildErrorResponse<TErrorDetail, TErrorResponse>(message, [
-      { field, message: detailMessage } as TErrorDetail,
+      (code
+        ? { field, message: detailMessage, code }
+        : { field, message: detailMessage }) as TErrorDetail,
     ]),
   );
 }
@@ -227,11 +233,11 @@ export function isPrismaErrorCode(error: unknown, code: string): boolean {
 export function normalizeRequiredText<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
->(value: string, field: string, message = `${field} must not be empty`): string {
+>(value: string, field: string, message = `${field} must not be empty`, code?: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
     throwBadRequest<TErrorDetail, TErrorResponse>('Validation failed', [
-      { field, message } as TErrorDetail,
+      (code ? { field, message, code } : { field, message }) as TErrorDetail,
     ]);
   }
   return trimmed;
@@ -304,7 +310,12 @@ export abstract class ModuleExceptionFilter<
   protected constructor(private readonly fieldNamePattern: RegExp) {}
   catch(exception: unknown, host: ArgumentsHost): void {
     const httpContext = host.switchToHttp();
-    const response = httpContext.getResponse<Response>();
+    // Notes 120: every coded error goes out with its plain words (`user`), from
+    // the catalogue — whichever branch below writes the body.
+    const response = wordedResponse(
+      httpContext.getResponse<Response>(),
+      httpContext.getRequest<Request>(),
+    );
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const rawResponse = exception.getResponse();
@@ -336,20 +347,29 @@ export abstract class ModuleExceptionFilter<
     );
     // A number in the request outgrew its column. Nothing broke server-side,
     // so the client gets a 422 it can show rather than a bare 500.
+    // Notes 119: both carry a code, so the client can word them ("Something
+    // went wrong. Do: send a photo of this to support.").
     const overflow = numericOverflowOf(exception);
     if (overflow) {
+      const message = `A value is too large to save: ${overflow}`;
       response
         .status(HttpStatus.UNPROCESSABLE_ENTITY)
         .json(
-          buildErrorResponse<TErrorDetail, TErrorResponse>(
-            `A value is too large to save: ${overflow}`,
-          ),
+          buildErrorResponse<TErrorDetail, TErrorResponse>(message, [
+            { field: 'request', code: 'VALUE_TOO_LARGE', message } as unknown as TErrorDetail,
+          ]),
         );
       return;
     }
-    response
-      .status(HttpStatus.INTERNAL_SERVER_ERROR)
-      .json(buildErrorResponse<TErrorDetail, TErrorResponse>('Internal server error'));
+    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json(
+      buildErrorResponse<TErrorDetail, TErrorResponse>('Internal server error', [
+        {
+          field: 'request',
+          code: 'INTERNAL_ERROR',
+          message: 'Internal server error',
+        } as unknown as TErrorDetail,
+      ]),
+    );
   }
   private isErrorResponse(value: unknown): value is TErrorResponse {
     if (typeof value !== 'object' || value === null) {
@@ -377,8 +397,9 @@ export abstract class ModuleExceptionFilter<
         : ['Validation failed'];
     const errors = messages.map((message) => ({
       field: this.inferFieldName(message),
+      code: frameworkValidationCode(message),
       message,
-    })) as TErrorDetail[];
+    })) as unknown as TErrorDetail[];
     return buildErrorResponse<TErrorDetail, TErrorResponse>('Validation failed', errors);
   }
   private resolveErrorMessage(rawResponse: unknown, fallback: string): string {

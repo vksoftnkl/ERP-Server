@@ -12,6 +12,7 @@ import {
   throwSalesBadRequest,
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
+import type { SalesCodedErrorDetail } from './sales.errors';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import type { ChargeDocType } from '../../master/charge-master/types/charge-enum';
 import type { SaveChargeDetailDto } from '../../master/charge-detail/dto/save-charge-detail.dto';
@@ -171,6 +172,7 @@ export class SalesDocStore {
         `${this.spec.screenName} not found`,
         this.f('Id'),
         `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     return row;
@@ -190,6 +192,7 @@ export class SalesDocStore {
         `${this.spec.screenName} not found`,
         this.f('Id'),
         `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     return (await this.find(tx, keys))!;
@@ -299,9 +302,10 @@ export class SalesDocStore {
     if (!existing) {
       for (const k of this.spec.headerRequired) {
         if (dto[k] === undefined || dto[k] === null || dto[k] === '') {
-          throwSalesBadRequest(`${k} is required`, [
+          throwSalesBadRequest<SalesCodedErrorDetail>(`${k} is required`, [
             {
               field: k,
+              code: SALES_ERROR_CODES.FIELD_REQUIRED,
               message: `${k} must be provided when creating a ${this.spec.screenName.toLowerCase()}`,
             },
           ]);
@@ -484,8 +488,13 @@ export class SalesDocStore {
     }));
     for (const { it, lineNo } of resolved) {
       if (seen.has(lineNo)) {
-        throwSalesBadRequest('Duplicate line number', [
-          { field: this.fi('LineNo'), message: `Line ${lineNo} appears twice` },
+        throwSalesBadRequest<SalesCodedErrorDetail>('Duplicate line number', [
+          {
+            field: this.fi('LineNo'),
+            code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
+            line: lineNo,
+            message: `Line ${lineNo} appears twice`,
+          },
         ]);
       }
       seen.add(lineNo);
@@ -496,6 +505,7 @@ export class SalesDocStore {
             'Line not found',
             this.fi('Id'),
             `No active line ${id} on this document`,
+            SALES_ERROR_CODES.LINE_NOT_FOUND,
           );
         }
         keep.add(id);
@@ -559,8 +569,13 @@ export class SalesDocStore {
       }
       for (const r of this.spec.itemRequired) {
         if (!it[r]) {
-          throwSalesBadRequest(`${r} is required for a new line`, [
-            { field: r, message: `${r} must be provided when creating a line` },
+          throwSalesBadRequest<SalesCodedErrorDetail>(`${r} is required for a new line`, [
+            {
+              field: r,
+              code: SALES_ERROR_CODES.LINE_FIELD_REQUIRED,
+              line: lineNo,
+              message: `${r} must be provided when creating a line`,
+            },
           ]);
         }
         data[r] = it[r];

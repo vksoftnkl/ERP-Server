@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
 import { BatchPrefixErrorDetail, BatchPrefixErrorResponse } from './types/batch-prefix-api.types';
+import { wordedResponse } from '../../../common/error-wording/error-wording';
 
 type ValidationExceptionPayload = {
   message?: string | string[];
@@ -11,7 +12,11 @@ const KNOWN_FIELDS = ['id', 'prefixUsed', 'syncDate', 'search', 'page', 'limit']
 @Catch()
 export class BatchPrefixExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    // Notes 120: every coded error goes out with its plain words (`user`).
+    const response = wordedResponse(
+      host.switchToHttp().getResponse<Response>(),
+      host.switchToHttp().getRequest<unknown>(),
+    );
 
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();

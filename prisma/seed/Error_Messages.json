@@ -1,0 +1,886 @@
+{
+  "version": "2026-10-15.1",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15",
+  "rows": [
+    {
+      "code": "TILL_SESSION_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Till is not open.",
+      "todo": "Open Till first."
+    },
+    {
+      "code": "TILL_SESSION_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is closed.",
+      "todo": "Open a new till."
+    },
+    {
+      "code": "TILL_SESSION_DAY_ENDED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is from yesterday.",
+      "todo": "End Shift, then open a new till."
+    },
+    {
+      "code": "TILL_SESSION_WRONG_DEVICE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is open on another PC.",
+      "todo": "Bill on that PC."
+    },
+    {
+      "code": "TILL_SESSION_NOT_YOURS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "This till is another cashier's.",
+      "todo": "Log in as yourself."
+    },
+    {
+      "code": "TILL_SESSION_CLOSED_USE_RETURN",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot change bill",
+      "line": "This bill's till is closed.",
+      "todo": "Make a Sale Return."
+    },
+    {
+      "code": "TILL_CASH_BLOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much cash",
+      "line": "Drawer is over the cash limit.",
+      "todo": "Drop cash in safe, or call supervisor."
+    },
+    {
+      "code": "TILL_HOLDS_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot end shift",
+      "line": "You have held bills.",
+      "todo": "Finish or cancel them first."
+    },
+    {
+      "code": "TILL_DEVICE_UNSYNCED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot end shift",
+      "line": "Some bills are not sent yet.",
+      "todo": "Check network, try again."
+    },
+    {
+      "code": "TILL_CASH_LEDGER_DIRECT",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot save",
+      "line": "Till cash goes only through the till.",
+      "todo": "Use Cash Movement."
+    },
+    {
+      "code": "SALES_DAY_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Day closed",
+      "line": "Today is closed for billing.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_OPERATOR_BUSY",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "Your old till is not finished.",
+      "todo": "Finish it, or call supervisor."
+    },
+    {
+      "code": "TILL_COUNTER_BUSY",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This counter is in use.",
+      "todo": "Use another counter, or call supervisor."
+    },
+    {
+      "code": "TILL_COUNTER_NOT_YOURS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This counter is not for this PC.",
+      "todo": "Pick another counter."
+    },
+    {
+      "code": "TILL_NO_FREE_COUNTER",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "No counter is free.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_COUNTER_INACTIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This counter is switched off.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_COUNTER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "Wrong counter for this branch.",
+      "todo": "Pick another counter."
+    },
+    {
+      "code": "TILL_DEVICE_UNKNOWN",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This PC is not set up as a till.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_DEVICE_BLOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This PC is blocked.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_DEVICE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "This PC is not set up as a till.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_DAY_NOT_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "Today is not opened yet.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_DAY_CLOSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open till",
+      "line": "Today is being closed.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_FLOAT_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "Opening cash amount is wrong.",
+      "todo": "Check the amount."
+    },
+    {
+      "code": "TILL_NOT_COUNTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Count first",
+      "line": "Drawer is not counted.",
+      "todo": "Count the drawer."
+    },
+    {
+      "code": "TILL_COUNT_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong count",
+      "line": "Something in the count is wrong.",
+      "todo": "Check the count."
+    },
+    {
+      "code": "TILL_RECOUNT_LIMIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot count again",
+      "line": "Too many counts.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "TILL_APPROVAL_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cash short or extra",
+      "line": "Cash does not match.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "TILL_BLIND_CLOSE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "Cashier cannot see this before closing.",
+      "todo": "Just count the cash."
+    },
+    {
+      "code": "TILL_MOVEMENT_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot save",
+      "line": "Something in this entry is wrong.",
+      "todo": "Check the entry."
+    },
+    {
+      "code": "TILL_MOVEMENT_AT_COUNTER",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed here",
+      "line": "Do this at the cashier's counter.",
+      "todo": "Go to the counter."
+    },
+    {
+      "code": "TILL_SUPERVISOR_SELF",
+      "variant": "",
+      "lang": "en",
+      "title": "Need another person",
+      "line": "Supervisor and cashier must be different.",
+      "todo": "Pick another supervisor."
+    },
+    {
+      "code": "TILL_SUPERVISOR_RIGHT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "This supervisor has no right for this.",
+      "todo": "Pick another supervisor."
+    },
+    {
+      "code": "TILL_SUPERVISOR_NO_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "No PIN",
+      "line": "This supervisor has no PIN.",
+      "todo": "Pick another supervisor."
+    },
+    {
+      "code": "TILL_SUPERVISOR_PIN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Enter PIN",
+      "line": "Supervisor PIN is empty.",
+      "todo": "Supervisor types PIN."
+    },
+    {
+      "code": "TILL_SUPERVISOR_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong PIN",
+      "line": "Supervisor PIN is wrong.",
+      "todo": "Type again."
+    },
+    {
+      "code": "TILL_WITNESS_PIN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Enter PIN",
+      "line": "Witness PIN is empty.",
+      "todo": "Witness types PIN."
+    },
+    {
+      "code": "TILL_WITNESS_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong PIN",
+      "line": "Witness PIN is wrong.",
+      "todo": "Type again."
+    },
+    {
+      "code": "TILL_WITNESS_NO_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "No PIN",
+      "line": "This witness has no PIN.",
+      "todo": "Pick another witness."
+    },
+    {
+      "code": "TILL_NO_DROP_SAFE",
+      "variant": "",
+      "lang": "en",
+      "title": "No safe here",
+      "line": "This counter has no drop safe.",
+      "todo": "Give the cash to supervisor (Pickup)."
+    },
+    {
+      "code": "TILL_SAFE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "No safe",
+      "line": "This branch has no safe set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_MOVEMENT_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This entry is not there now.",
+      "todo": "Refresh and try again."
+    },
+    {
+      "code": "TILL_MOVEMENT_NOT_VOIDABLE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot cancel",
+      "line": "This entry cannot be cancelled.",
+      "todo": "Make a new entry to correct it."
+    },
+    {
+      "code": "TILL_MOVEMENT_SESSION_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot cancel",
+      "line": "That till is already counted.",
+      "todo": "Make a new entry in today's till."
+    },
+    {
+      "code": "TILL_REASON_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Reason needed",
+      "line": "Reason is missing or not complete.",
+      "todo": "Pick a reason and fill it."
+    },
+    {
+      "code": "TILL_APPROVER_SELF",
+      "variant": "",
+      "lang": "en",
+      "title": "Need another person",
+      "line": "You cannot OK your own till.",
+      "todo": "Ask another supervisor."
+    },
+    {
+      "code": "TILL_APPROVER_NO_GRANT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to OK this.",
+      "todo": "Ask another supervisor."
+    },
+    {
+      "code": "TILL_APPROVER_LIMIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Amount too big",
+      "line": "This is above your limit.",
+      "todo": "Ask a senior."
+    },
+    {
+      "code": "TILL_APPROVER_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong PIN",
+      "line": "PIN is empty or wrong.",
+      "todo": "Type again."
+    },
+    {
+      "code": "TILL_RECEIVER_SELF",
+      "variant": "",
+      "lang": "en",
+      "title": "Need another person",
+      "line": "You were this till's cashier.",
+      "todo": "Ask another supervisor."
+    },
+    {
+      "code": "TILL_RECEIVER_NO_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "No PIN",
+      "line": "You have no PIN.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_RECEIVER_PIN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Enter PIN",
+      "line": "Your PIN is empty.",
+      "todo": "Type your PIN."
+    },
+    {
+      "code": "TILL_RECEIVER_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong PIN",
+      "line": "Your PIN is wrong.",
+      "todo": "Type again."
+    },
+    {
+      "code": "TILL_RECEIPT_NOT_AWAITING",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "Someone already did this.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "TILL_VARIANCE_NOT_PENDING",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "Someone already did this.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "TILL_CASH_ALREADY_APPROVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "Cash is already in the safe.",
+      "todo": "Nothing to do."
+    },
+    {
+      "code": "TILL_SESSION_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This till is not there.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "TILL_REOPEN_BLOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot reopen",
+      "line": "This till cannot be opened again.",
+      "todo": "Correct it in today's till."
+    },
+    {
+      "code": "TILL_DAY_CLOSE_BLOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot close day",
+      "line": "Some work is not finished.",
+      "todo": "Finish the red items first."
+    },
+    {
+      "code": "TILL_FORCE_COUNT_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Count first",
+      "line": "A till is still open.",
+      "todo": "Count that till's cash."
+    },
+    {
+      "code": "TILL_DAY_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Day closed",
+      "line": "This day is already closed.",
+      "todo": "Reopen the day first."
+    },
+    {
+      "code": "TILL_DAY_NOT_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Not closed",
+      "line": "This day is still open.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "TILL_DAY_LATER_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot reopen",
+      "line": "A later day is closed.",
+      "todo": "Call head office."
+    },
+    {
+      "code": "TILL_LEDGER_UNMAPPED",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "An account is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_YEAR_NOT_SET_UP",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "This year is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TILL_MASTER_IN_USE",
+      "variant": "",
+      "lang": "en",
+      "title": "In use",
+      "line": "This is used by a till now.",
+      "todo": "Close that till first."
+    },
+    {
+      "code": "TILL_EVENT_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "This PC sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "TILL_SAFE_CHANGED",
+      "variant": "",
+      "lang": "en",
+      "title": "Count again",
+      "line": "Safe cash changed while you counted.",
+      "todo": "Count the safe again."
+    },
+    {
+      "code": "TILL_REMIT_OVER_BALANCE",
+      "variant": "",
+      "lang": "en",
+      "title": "Amount too big",
+      "line": "Safe does not have this much cash.",
+      "todo": "Send less, or count the safe first."
+    },
+    {
+      "code": "TILL_REMIT_NOT_IN_TRANSIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "This cash is not on the way any more.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "TILL_APPROVER_SECOND",
+      "variant": "",
+      "lang": "en",
+      "title": "Need second person",
+      "line": "This needs two people's PIN.",
+      "todo": "Another person types their PIN."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "variant": "",
+      "lang": "en",
+      "title": "Server problem",
+      "line": "The server had a problem.",
+      "todo": "Try again. If it repeats, send a photo to support."
+    },
+    {
+      "code": "HOLD_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This held bill is not there now.",
+      "todo": "Refresh the held bills list."
+    },
+    {
+      "code": "HOLD_LOCKED_ELSEWHERE",
+      "variant": "",
+      "lang": "en",
+      "title": "Open on another PC",
+      "line": "This held bill is open on another PC.",
+      "todo": "Finish it there, or wait a few minutes."
+    },
+    {
+      "code": "HOLD_NOT_RESUMABLE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot open",
+      "line": "This held bill is already billed or cancelled.",
+      "todo": "Refresh the held bills list."
+    },
+    {
+      "code": "HOLD_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "This held bill is already billed or cancelled.",
+      "todo": "Refresh the held bills list."
+    },
+    {
+      "code": "HOLD_NOT_LEASED_HERE",
+      "variant": "",
+      "lang": "en",
+      "title": "Open on another PC",
+      "line": "This held bill is open on another PC.",
+      "todo": "Finish it there."
+    },
+    {
+      "code": "HOLD_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Try again",
+      "line": "Two counters saved at the same time.",
+      "todo": "Save again."
+    },
+    {
+      "code": "HOLD_NO_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Try again",
+      "line": "Two counters saved at the same time.",
+      "todo": "Save again."
+    },
+    {
+      "code": "HOLD_SLNO_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Try again",
+      "line": "Two counters saved at the same time.",
+      "todo": "Save again."
+    },
+    {
+      "code": "HOLD_DEVICE_BLOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot hold",
+      "line": "This PC is blocked.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "HOLD_DEVICE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot hold",
+      "line": "This PC is not set up as a till.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "HOLD_DEVICE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot hold",
+      "line": "This PC is not set up as a till.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "HOLD_SESSION_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot hold",
+      "line": "Your till is not open.",
+      "todo": "Open Till first."
+    },
+    {
+      "code": "HOLD_AMOUNT_NEGATIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "An amount is below zero.",
+      "todo": "Check the amounts."
+    },
+    {
+      "code": "TENDER_LINE_CHANGE_EXCEEDS_RECEIVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong change",
+      "line": "Change is more than the cash received.",
+      "todo": "Check the cash received."
+    },
+    {
+      "code": "TENDER_LINE_TOTAL_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Amounts don't match",
+      "line": "Payments do not add up to the bill.",
+      "todo": "Check the payment amounts."
+    },
+    {
+      "code": "TENDER_LINE_CARD_LAST4_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Card number",
+      "line": "Card last 4 digits are wrong.",
+      "todo": "Type the last 4 digits again."
+    },
+    {
+      "code": "TENDER_LINE_INSTRUMENT_DATE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Date needed",
+      "line": "Cheque or card date is missing.",
+      "todo": "Fill in the date."
+    },
+    {
+      "code": "TENDER_LINE_REFERENCE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Reference needed",
+      "line": "Payment reference is missing or wrong.",
+      "todo": "Fill in the reference number."
+    },
+    {
+      "code": "TENDER_REF_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Reference needed",
+      "line": "Payment reference is missing or wrong.",
+      "todo": "Fill in the reference number."
+    },
+    {
+      "code": "TENDER_REF_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Already used",
+      "line": "This payment reference is already used.",
+      "todo": "Check the reference number."
+    },
+    {
+      "code": "TENDER_LINE_TENDER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TENDER_LINE_TENDER_TYPE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TENDER_LINE_LEDGER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VALIDATION_IS_NOT_EMPTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Fill it in",
+      "line": "Something needed is empty.",
+      "todo": "Fill in all the needed boxes."
+    },
+    {
+      "code": "VALIDATION_MIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "An amount is too small.",
+      "todo": "Check the amounts."
+    },
+    {
+      "code": "VALIDATION_IS_POSITIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "An amount is too small.",
+      "todo": "Check the amounts."
+    },
+    {
+      "code": "VALIDATION_MAX",
+      "variant": "",
+      "lang": "en",
+      "title": "Too long",
+      "line": "A value is too big or too long.",
+      "todo": "Make it shorter or smaller."
+    },
+    {
+      "code": "VALIDATION_MAX_LENGTH",
+      "variant": "",
+      "lang": "en",
+      "title": "Too long",
+      "line": "A value is too big or too long.",
+      "todo": "Make it shorter or smaller."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "status=PENDING_APPROVAL",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is waiting for supervisor OK.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "status=COUNTING",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is being counted.",
+      "todo": "Finish End Shift, then open a new till."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "status=SUSPENDED",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is paused.",
+      "todo": "Resume it in Open Till."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "status=CLOSED",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is closed.",
+      "todo": "Open a new till."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "status=*",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is not open.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot take payment",
+      "line": "Your till is not open.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "TILL_SESSION_NOT_OPEN",
+      "variant": "field=tssId",
+      "lang": "en",
+      "title": "Not now",
+      "line": "This till is not in the right state.",
+      "todo": "Refresh."
+    },
+    {
+      "code": "HOLD_*",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "TENDER_LINE_*",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "TENDER_REF_*",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VALIDATION_*",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TILL_ERROR_STATUS = exports.TillErrorCode = exports.TillSettingKey = exports.VARIANCE_STATUS_OF_TREATMENT = exports.APPROVABLE_TREATMENTS = exports.TillVarianceDecision = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
+exports.TILL_ERROR_STATUS = exports.TillErrorCode = exports.TillSettingKey = exports.VARIANCE_STATUS_OF_TREATMENT = exports.SAFE_GAP_TREATMENTS = exports.APPROVABLE_TREATMENTS = exports.TillVarianceDecision = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.TillVarianceStage = exports.TillHandoverReceipt = exports.CLOSE_EXCEPTION_CODES = exports.TillCloseCheckTone = exports.TillCloseCheckCode = exports.TillCashReceiptState = exports.TillReceiptStatus = exports.TillSafeGapOutcome = exports.CASH_IN_TRANSIT_ROLE = exports.TillRemitStatus = exports.TillRemitMode = exports.RECEIPT_MOVEMENTS = exports.TILL_CASH_AWAITING_ROLE = exports.RECEIVE_VOUCHER_TYPE = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
 exports.approverRoleRank = approverRoleRank;
 exports.TILL_MENU = {
     GROUP: 271,
@@ -14,6 +14,8 @@ exports.TILL_MENU = {
     DENOMINATIONS: 282,
     APPROVAL_RULES: 276,
     APPROVAL_AUTHORITY: 285,
+    CASH_OFFICE: 287,
+    RETIRED_CASH_OFFICE: 286,
 };
 exports.TILL_RIGHT_CODE_PREFIX = 'TILL';
 var TillSessionStatus;
@@ -77,6 +79,7 @@ var TillCountKind;
     TillCountKind["PICKUP"] = "PICKUP";
     TillCountKind["DROP_VERIFY"] = "DROP_VERIFY";
     TillCountKind["SAFE"] = "SAFE";
+    TillCountKind["REMIT"] = "REMIT";
 })(TillCountKind || (exports.TillCountKind = TillCountKind = {}));
 var TillMovementKind;
 (function (TillMovementKind) {
@@ -115,6 +118,78 @@ exports.VOIDABLE_MOVEMENTS = [
     ...exports.SUPERVISOR_MOVEMENTS,
 ];
 exports.VARIANCE_VOUCHER_TYPE = 'TVar';
+exports.RECEIVE_VOUCHER_TYPE = 'TRcv';
+exports.TILL_CASH_AWAITING_ROLE = 'TILL_CASH_AWAITING';
+exports.RECEIPT_MOVEMENTS = [
+    TillMovementKind.DROP,
+    TillMovementKind.CLOSE_HANDOVER,
+];
+var TillRemitMode;
+(function (TillRemitMode) {
+    TillRemitMode["BANK_DEPOSIT"] = "BANK_DEPOSIT";
+    TillRemitMode["CIT"] = "CIT";
+})(TillRemitMode || (exports.TillRemitMode = TillRemitMode = {}));
+var TillRemitStatus;
+(function (TillRemitStatus) {
+    TillRemitStatus["DEPOSITED"] = "DEPOSITED";
+    TillRemitStatus["IN_TRANSIT"] = "IN_TRANSIT";
+    TillRemitStatus["CONFIRMED"] = "CONFIRMED";
+})(TillRemitStatus || (exports.TillRemitStatus = TillRemitStatus = {}));
+exports.CASH_IN_TRANSIT_ROLE = 'CASH_IN_TRANSIT';
+var TillSafeGapOutcome;
+(function (TillSafeGapOutcome) {
+    TillSafeGapOutcome["EXACT"] = "EXACT";
+    TillSafeGapOutcome["WITHIN_TOLERANCE"] = "WITHIN_TOLERANCE";
+    TillSafeGapOutcome["DECIDED"] = "DECIDED";
+    TillSafeGapOutcome["SENT_FOR_APPROVAL"] = "SENT_FOR_APPROVAL";
+})(TillSafeGapOutcome || (exports.TillSafeGapOutcome = TillSafeGapOutcome = {}));
+var TillReceiptStatus;
+(function (TillReceiptStatus) {
+    TillReceiptStatus["AWAITING"] = "AWAITING";
+    TillReceiptStatus["RECEIVED"] = "RECEIVED";
+})(TillReceiptStatus || (exports.TillReceiptStatus = TillReceiptStatus = {}));
+var TillCashReceiptState;
+(function (TillCashReceiptState) {
+    TillCashReceiptState["AWAITING"] = "AWAITING";
+    TillCashReceiptState["APPROVED"] = "APPROVED";
+    TillCashReceiptState["DIFFERENCE"] = "DIFFERENCE";
+    TillCashReceiptState["NONE"] = "NONE";
+})(TillCashReceiptState || (exports.TillCashReceiptState = TillCashReceiptState = {}));
+var TillCloseCheckCode;
+(function (TillCloseCheckCode) {
+    TillCloseCheckCode["SESSIONS_LIVE"] = "SESSIONS_LIVE";
+    TillCloseCheckCode["SESSIONS_PENDING_APPROVAL"] = "SESSIONS_PENDING_APPROVAL";
+    TillCloseCheckCode["CASH_TO_APPROVE"] = "CASH_TO_APPROVE";
+    TillCloseCheckCode["VARIANCE_UNDECIDED"] = "VARIANCE_UNDECIDED";
+    TillCloseCheckCode["MOVEMENTS_UNPOSTED"] = "MOVEMENTS_UNPOSTED";
+    TillCloseCheckCode["SLIP_GAPS"] = "SLIP_GAPS";
+    TillCloseCheckCode["HELD_BILLS"] = "HELD_BILLS";
+    TillCloseCheckCode["SAFE_OVER_INSURED"] = "SAFE_OVER_INSURED";
+    TillCloseCheckCode["SAFE_NOT_COUNTED"] = "SAFE_NOT_COUNTED";
+})(TillCloseCheckCode || (exports.TillCloseCheckCode = TillCloseCheckCode = {}));
+var TillCloseCheckTone;
+(function (TillCloseCheckTone) {
+    TillCloseCheckTone["RED"] = "RED";
+    TillCloseCheckTone["AMBER"] = "AMBER";
+    TillCloseCheckTone["GREEN"] = "GREEN";
+})(TillCloseCheckTone || (exports.TillCloseCheckTone = TillCloseCheckTone = {}));
+exports.CLOSE_EXCEPTION_CODES = [
+    TillCloseCheckCode.SESSIONS_LIVE,
+    TillCloseCheckCode.SAFE_NOT_COUNTED,
+];
+var TillHandoverReceipt;
+(function (TillHandoverReceipt) {
+    TillHandoverReceipt["NONE"] = "NONE";
+    TillHandoverReceipt["REQUIRED"] = "REQUIRED";
+})(TillHandoverReceipt || (exports.TillHandoverReceipt = TillHandoverReceipt = {}));
+var TillVarianceStage;
+(function (TillVarianceStage) {
+    TillVarianceStage["OPEN"] = "OPEN";
+    TillVarianceStage["CLOSE"] = "CLOSE";
+    TillVarianceStage["RECEIVE"] = "RECEIVE";
+    TillVarianceStage["SAFE"] = "SAFE";
+    TillVarianceStage["REMIT"] = "REMIT";
+})(TillVarianceStage || (exports.TillVarianceStage = TillVarianceStage = {}));
 var TillVarianceTreatment;
 (function (TillVarianceTreatment) {
     TillVarianceTreatment["PENDING"] = "PENDING";
@@ -188,7 +263,14 @@ var TillEventCode;
     TillEventCode["SETTLEMENT_IMPORTED"] = "SETTLEMENT_IMPORTED";
     TillEventCode["SETTLEMENT_POSTED"] = "SETTLEMENT_POSTED";
     TillEventCode["NONCASH_WRITTEN_OFF"] = "NONCASH_WRITTEN_OFF";
+    TillEventCode["CASH_RECEIVED"] = "CASH_RECEIVED";
     TillEventCode["RETENDER"] = "RETENDER";
+    TillEventCode["DAY_CLOSE"] = "DAY_CLOSE";
+    TillEventCode["DAY_REOPEN"] = "DAY_REOPEN";
+    TillEventCode["SESSION_FORCE_CLOSE"] = "SESSION_FORCE_CLOSE";
+    TillEventCode["SESSION_REOPEN"] = "SESSION_REOPEN";
+    TillEventCode["SAFE_COUNT"] = "SAFE_COUNT";
+    TillEventCode["REMIT_CONFIRMED"] = "REMIT_CONFIRMED";
 })(TillEventCode || (exports.TillEventCode = TillEventCode = {}));
 exports.CLIENT_EVENT_CODES = [
     TillEventCode.DRAWER_OPEN_SALE,
@@ -223,6 +305,7 @@ exports.TILL_REASON_CATEGORIES = [
     'PRICE_OVERRIDE',
     'REFUND',
     'NONCASH',
+    'DAY_CLOSE',
 ];
 exports.TILL_APPROVAL_EVENTS = [
     'FLOAT_MISMATCH',
@@ -285,6 +368,10 @@ exports.APPROVABLE_TREATMENTS = [
     TillVarianceTreatment.RECOVER,
     TillVarianceTreatment.SUSPENSE,
 ];
+exports.SAFE_GAP_TREATMENTS = [
+    TillVarianceTreatment.EXPENSE,
+    TillVarianceTreatment.SUSPENSE,
+];
 exports.VARIANCE_STATUS_OF_TREATMENT = {
     [TillVarianceTreatment.EXPENSE]: TillSessionVarianceStatus.ACCEPTED,
     [TillVarianceTreatment.RECOVER]: TillSessionVarianceStatus.RECOVER,
@@ -307,6 +394,8 @@ var TillSettingKey;
     TillSettingKey["SINGLE_OPERATOR"] = "till.single_operator";
     TillSettingKey["MONEY_DOCS_IN_SESSION"] = "till.money_docs_in_session";
     TillSettingKey["BACKOFFICE_CASH_FROM"] = "till.backoffice_cash_from";
+    TillSettingKey["HANDOVER_RECEIPT"] = "till.handover_receipt";
+    TillSettingKey["DAY_CLOSE_SAFE_COUNT"] = "till.day_close_safe_count";
     TillSettingKey["CLOSE_BY_TERMINAL"] = "tender.close_by_terminal";
 })(TillSettingKey || (exports.TillSettingKey = TillSettingKey = {}));
 var TillErrorCode;
@@ -365,6 +454,23 @@ var TillErrorCode;
     TillErrorCode["SUPERVISOR_PIN_REQUIRED"] = "TILL_SUPERVISOR_PIN_REQUIRED";
     TillErrorCode["SUPERVISOR_PIN"] = "TILL_SUPERVISOR_PIN";
     TillErrorCode["NO_DROP_SAFE"] = "TILL_NO_DROP_SAFE";
+    TillErrorCode["RECEIPT_NOT_AWAITING"] = "TILL_RECEIPT_NOT_AWAITING";
+    TillErrorCode["RECEIVER_SELF"] = "TILL_RECEIVER_SELF";
+    TillErrorCode["RECEIVER_NO_PIN"] = "TILL_RECEIVER_NO_PIN";
+    TillErrorCode["RECEIVER_PIN_REQUIRED"] = "TILL_RECEIVER_PIN_REQUIRED";
+    TillErrorCode["RECEIVER_PIN"] = "TILL_RECEIVER_PIN";
+    TillErrorCode["VARIANCE_NOT_PENDING"] = "TILL_VARIANCE_NOT_PENDING";
+    TillErrorCode["CASH_ALREADY_APPROVED"] = "TILL_CASH_ALREADY_APPROVED";
+    TillErrorCode["DAY_CLOSE_BLOCKED"] = "TILL_DAY_CLOSE_BLOCKED";
+    TillErrorCode["DAY_CLOSED"] = "TILL_DAY_CLOSED";
+    TillErrorCode["DAY_NOT_CLOSED"] = "TILL_DAY_NOT_CLOSED";
+    TillErrorCode["DAY_LATER_CLOSED"] = "TILL_DAY_LATER_CLOSED";
+    TillErrorCode["REOPEN_BLOCKED"] = "TILL_REOPEN_BLOCKED";
+    TillErrorCode["FORCE_COUNT_REQUIRED"] = "TILL_FORCE_COUNT_REQUIRED";
+    TillErrorCode["SAFE_CHANGED"] = "TILL_SAFE_CHANGED";
+    TillErrorCode["REMIT_OVER_BALANCE"] = "TILL_REMIT_OVER_BALANCE";
+    TillErrorCode["REMIT_NOT_IN_TRANSIT"] = "TILL_REMIT_NOT_IN_TRANSIT";
+    TillErrorCode["APPROVER_SECOND"] = "TILL_APPROVER_SECOND";
 })(TillErrorCode || (exports.TillErrorCode = TillErrorCode = {}));
 exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SESSION_REQUIRED]: 409,
@@ -421,5 +527,22 @@ exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SUPERVISOR_PIN_REQUIRED]: 403,
     [TillErrorCode.SUPERVISOR_PIN]: 403,
     [TillErrorCode.NO_DROP_SAFE]: 422,
+    [TillErrorCode.RECEIPT_NOT_AWAITING]: 409,
+    [TillErrorCode.RECEIVER_SELF]: 403,
+    [TillErrorCode.RECEIVER_NO_PIN]: 422,
+    [TillErrorCode.RECEIVER_PIN_REQUIRED]: 403,
+    [TillErrorCode.RECEIVER_PIN]: 403,
+    [TillErrorCode.VARIANCE_NOT_PENDING]: 409,
+    [TillErrorCode.CASH_ALREADY_APPROVED]: 409,
+    [TillErrorCode.DAY_CLOSE_BLOCKED]: 409,
+    [TillErrorCode.DAY_CLOSED]: 409,
+    [TillErrorCode.DAY_NOT_CLOSED]: 409,
+    [TillErrorCode.DAY_LATER_CLOSED]: 409,
+    [TillErrorCode.REOPEN_BLOCKED]: 409,
+    [TillErrorCode.FORCE_COUNT_REQUIRED]: 422,
+    [TillErrorCode.SAFE_CHANGED]: 409,
+    [TillErrorCode.REMIT_OVER_BALANCE]: 422,
+    [TillErrorCode.REMIT_NOT_IN_TRANSIT]: 409,
+    [TillErrorCode.APPROVER_SECOND]: 403,
 };
 //# sourceMappingURL=till-enum.js.map

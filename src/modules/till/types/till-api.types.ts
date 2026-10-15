@@ -3,14 +3,23 @@ import type {
   ModuleErrorResponse,
 } from '../../../common/utils/module-shared.utils';
 import type {
+  TillCashReceiptState,
+  TillCloseCheckCode,
+  TillCloseCheckTone,
   TillCountKind,
   TillCountOutcome,
   TillDayStatus,
   TillFloatMode,
+  TillHandoverReceipt,
   TillMovementKind,
+  TillReceiptStatus,
+  TillRemitMode,
+  TillRemitStatus,
+  TillSafeGapOutcome,
   TillSessionStatus,
   TillSessionVarianceStatus,
   TillVarianceDecision,
+  TillVarianceStage,
   TillVarianceTreatment,
   TenderCloseMode,
 } from './till-enum';
@@ -51,10 +60,105 @@ export interface TillDayPayload {
   tbdOpenedOn: string;
   tbdOpenedBy: string;
   tbdClosedOn: string | null;
+  tbdClosedBy: string | null;
+  tbdClosedByName: string | null;
+  /** The store Z: issued at the first close, kept by every re-close (notes 117). */
   tbdZNo: number | null;
   tbdReopenCount: number;
+  /**
+   * Notes 117 — frozen at the close over the day's CLOSED sessions; 0 while
+   * the day is open (a reopen clears them).
+   */
+  totals: {
+    sessionCount: number;
+    billCount: number;
+    netSales: number;
+    cashExpected: number;
+    cashCounted: number;
+    cashVariance: number;
+    noncashVariance: number;
+  };
+  /** RED close-check items a DAY_CLOSE_EXCEPTION closed the day over (their counts). */
+  tbdExceptionCount: number;
+  tbdCloseApprovalId: string | null;
+  tbdPrintCount: number;
+  tbdNotes: string | null;
   /** Live, not frozen: the sessions hanging off the day right now, by status. */
   sessions: { status: TillSessionStatus; count: number }[];
+  /** Notes 113 — till.handover_receipt for the branch: NONE shows no receipt row. */
+  handoverReceipt: TillHandoverReceipt;
+  /**
+   * Notes 113 — the branch's hand-overs and drops no supervisor has received.
+   * No amount: the receive is blind. `thisDay` blocks the day close (phase 4).
+   */
+  awaitingReceipt: {
+    /** Of this business day. */
+    thisDay: number;
+    /** Of earlier business days, still unreceived. */
+    earlierDays: number;
+    /** When the oldest one was handed over; null when none waits. */
+    oldestOn: string | null;
+  };
+  /**
+   * Notes 118 — the safes of the day. `counted` / `expected`: over the safes
+   * counted that day, each by its last count (expected = what the count was
+   * judged against); `counted` null and `expected` the safes' expected balance
+   * when none was counted. `opening` (the safes' expected balance when the day
+   * opened) is written at the day close. `remitted`: the day's live REMITs.
+   * Kept current by every count / remittance; frozen at the close.
+   */
+  safe: {
+    opening: number;
+    expected: number;
+    counted: number | null;
+    remitted: number;
+  };
+}
+
+// ─── Day close (notes 117) ──────────────────────────────────────────────────
+
+/** One line of GET /till/days/close-check. */
+export interface TillCloseCheckItem {
+  code: TillCloseCheckCode;
+  /** RED blocks the close (unless an exception may cover it) · AMBER is shown · GREEN is clear. */
+  tone: TillCloseCheckTone;
+  count: number;
+  detail: string;
+  /** The sessions behind it, for the screen's jump buttons. */
+  sessionIds: string[];
+}
+
+/** GET /till/days/close-check — the day's checklist as the server sees it. */
+export interface TillDayCloseCheckPayload {
+  tbdId: string;
+  tbdAccYear: string;
+  tbdBusinessDate: string;
+  tbdStatus: TillDayStatus;
+  /** Every code, GREEN when clear. */
+  items: TillCloseCheckItem[];
+  /** The day is open and nothing is RED. */
+  canClose: boolean;
+  /** Something is RED, and every RED is of a kind an exception may cover (SESSIONS_LIVE). */
+  canCloseWithException: boolean;
+}
+
+/** POST /till/days/close. */
+export interface TillDayClosePayload {
+  day: TillDayPayload;
+  zNo: number;
+  /** The DAY_CLOSE_EXCEPTION till_approval row; null for a clean close. */
+  tapId: string | null;
+  /** The RED items the exception closed the day over. */
+  closedOver: TillCloseCheckItem[];
+  /** The live sessions the close force-closed (reason DAY_CLOSE), their hand-over received. */
+  forceClosed: { tssId: string; tssAccYear: string; sessionNo: string }[];
+}
+
+/** POST /till/days/reopen. */
+export interface TillDayReopenPayload {
+  day: TillDayPayload;
+  /** The DAY_REOPEN till_approval row. */
+  tapId: string;
 }
 
 // ─── Open check (plan-till-counter-claim §4) ────────────────────────────────
@@ -208,6 +312,12 @@ export interface TillSessionPayload {
   tssClosedOn: string | null;
   tssClosedBy: string | null;
   tssZNo: number | null;
+  /** Notes 117 — closed by a supervisor in the cashier's place, and why (a FORCE_CLOSE reason). */
+  tssForceClosed: boolean;
+  tssForceReasonId: string | null;
+  /** Notes 117 — times reopened; the Z number stays the first close's. */
+  tssReopenCount: number;
+  tssPrintCount: number;
   tssVarianceStatus: TillSessionVarianceStatus;
   /** Frozen at close; zero before it. Cash / non-cash figures are null when hidden. */
   totals: {
@@ -244,6 +354,21 @@ export interface TillSessionPayload {
   /** The vouchers this session posted itself (float, hand-over, variance). */
   movements: TillMovementPayload[];
   variances: TillVariancePayload[];
+  /**
+   * Notes 113 / 114 — the cash receipt over the session's hand-over and drops:
+   * NONE when none waited for a receipt (setting NONE, nothing handed over, or
+   * closed before notes 113); AWAITING while any is unreceived (the CASH TO
+   * APPROVE pill); DIFFERENCE when all are received and the total differs from
+   * what was handed over (decided, or pending — tssVarianceStatus and the
+   * RECEIVE-stage variances say which); else APPROVED.
+   */
+  receiptState: TillCashReceiptState;
+  /** Handed over (hand-over + drops) and not yet received; 0 when nothing waits. */
+  cashAwaiting: number;
+  /** The supervisor of the latest receipt; null until one. */
+  receivedBy: string | null;
+  receivedByName: string | null;
+  receivedOn: string | null;
 }
 
 export interface TillMovementPayload {
@@ -257,6 +382,11 @@ export interface TillMovementPayload {
   tcmVoucherId: string | null;
   tcmStatus: 'POSTED' | 'VOIDED';
   tcmCreatedOn: string;
+  /** Notes 113: null = straight into the safe; AWAITING a supervisor's receive; RECEIVED. */
+  tcmReceiptStatus: TillReceiptStatus | null;
+  /** What the receiver counted, once RECEIVED (≠ tcmAmount = a RECEIVE-stage variance). */
+  tcmReceivedAmount: number | null;
+  tcmReceivedOn: string | null;
 }
 
 /** GET /till/movements/supervisors — one person who can sign a pickup / top-up on the session (notes 110 §2). */
@@ -302,7 +432,20 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
   tcmVoidedBy: string | null;
   tcmVoidReasonId: string | null;
   tcmNotes: string | null;
-  /** The denominations that moved (an exchange has both sides). */
+  /** Notes 113: who received it into the safe, and the TRcv voucher (none for an empty bag). */
+  tcmReceivedBy: string | null;
+  tcmReceiveVoucherId: string | null;
+  /** Notes 118 — a REMIT: how it went, where it stands, the bank's confirmation of a CIT one. */
+  tcmRemitMode: TillRemitMode | null;
+  tcmRemitStatus: TillRemitStatus | null;
+  tcmCitAgency: string | null;
+  tcmBankDate: string | null;
+  tcmBankRef: string | null;
+  tcmBankAmount: number | null;
+  tcmConfirmedBy: string | null;
+  tcmConfirmedOn: string | null;
+  tcmConfirmVoucherId: string | null;
+  /** The denominations that moved (an exchange has both sides; a received bag adds its DROP_VERIFY count). */
   counts: {
     tctId: string;
     tctKind: TillCountKind;
@@ -320,7 +463,9 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
 export interface TillVariancePayload {
   tvrId: string;
   tvrAccYear: string;
-  tvrStage: 'OPEN' | 'CLOSE';
+  tvrStage: TillVarianceStage;
+  /** Stage RECEIVE (notes 113): the bag received. */
+  tvrMovementId: string | null;
   tvrTenderTypeId: number;
   tvrTenderId: string | null;
   tvrExpected: number;
@@ -338,6 +483,37 @@ export interface TillVariancePayload {
   tvrRecoveryLedgerId: string | null;
 }
 
+/** /till/sessions/force-close (notes 117). */
+export interface TillForceClosePayload {
+  /**
+   * CLOSED: the supervisor's count was within tolerance and the session is
+   * closed, its hand-over theirs · SENT_FOR_APPROVAL: out of tolerance, the
+   * session PENDING_APPROVAL for sessions/decide-variance, then /close.
+   */
+  outcome: 'CLOSED' | 'SENT_FOR_APPROVAL';
+  /** The FORCE_CLOSE till_approval row. */
+  tapId: string;
+  /** The supervisor's count. */
+  tctId: string;
+  session: TillSessionPayload;
+}
+
+/** /till/sessions/reopen (notes 117). */
+export interface TillSessionReopenPayload {
+  /** The SESSION_REOPEN till_approval row. */
+  tapId: string;
+  /** The Rev vouchers mirroring the close's hand-over and its posted variances. */
+  reversalVoucherIds: string[];
+  session: TillSessionPayload;
+}
+
+/** /till/sessions/x-report (notes 117): the sessions/expected payload, numbered. */
+export type TillXReportPayload = TillSessionPayload & {
+  /** 1, 2, … — the session's X reads (its X_REPORT events), this one included. */
+  xNo: number;
+  xReadOn: string;
+};
+
 /** /till/sessions/decide-variance (notes 105 A1): the decision as recorded, and the session after it. */
 export interface TillVarianceDecisionPayload {
   /** The till_approval row (A3). */
@@ -354,7 +530,110 @@ export interface TillVarianceDecisionPayload {
   channel: 'COUNTER' | 'REMOTE';
   /** APPROVE: the treatment the variances took; null on RECOUNT. */
   treatment: TillVarianceTreatment | null;
+  /** Notes 113: the bag whose receive difference was decided; null for a close variance. */
+  tcmId: string | null;
   session: TillSessionPayload;
+}
+
+/** /till/sessions/approve-cash (notes 114) — one hand-over / drop, as received. */
+export interface TillCashApprovalMovementPayload {
+  tcmId: string;
+  tcmAccYear: string;
+  tcmKind: TillMovementKind;
+  tcmDocNo: string;
+  handedOver: number;
+  /** Its share of the received total: a gap sits on the hand-over first. */
+  received: number;
+  /** The TRcv voucher; null when nothing of it was received. */
+  receiveVoucherId: string | null;
+  receiveVoucherNo: string | null;
+}
+
+/** /till/sessions/approve-cash (notes 114): the session's cash, as approved. */
+export interface TillCashApprovalPayload {
+  tssId: string;
+  tssAccYear: string;
+  sessionNo: string;
+  /** Σ of the hand-over and drops that were awaiting receipt. */
+  handedOver: number;
+  received: number;
+  /** received − handed over. */
+  difference: number;
+  /**
+   * APPROVED: no gap · WITHIN_TOLERANCE: posted at once to Cash short & excess ·
+   * DECIDED: beyond tolerance, decided in the same step by the caller's grant ·
+   * SENT_FOR_APPROVAL: a PENDING RECEIVE-stage variance for decide-variance
+   * with `tcmId`.
+   */
+  outcome: 'APPROVED' | 'WITHIN_TOLERANCE' | 'DECIDED' | 'SENT_FOR_APPROVAL';
+  /** The RECEIVE-stage variance raised, if any. */
+  tvrId: string | null;
+  /** The movement the variance names (the hand-over, else the latest drop) — decide-variance's tcmId. */
+  tcmId: string | null;
+  /** DECIDED: the treatment and the till_approval row. */
+  treatment: TillVarianceTreatment | null;
+  tapId: string | null;
+  /** The TVar of a WITHIN_TOLERANCE / DECIDED gap. */
+  varianceVoucherId: string | null;
+  varianceVoucherNo: string | null;
+  receivedOn: string;
+  movements: TillCashApprovalMovementPayload[];
+  session: TillSessionPayload;
+}
+
+/**
+ * GET /till/movements/awaiting-receipt (notes 113) — one bag no supervisor has
+ * received. No amount: the receive is blind, as the cashier's count is.
+ */
+export interface TillAwaitingReceiptPayload {
+  tcmId: string;
+  tcmAccYear: string;
+  tcmKind: TillMovementKind;
+  tcmDocNo: string;
+  tcmDocDate: string;
+  /** When the cashier parted with it (the close, or the drop). */
+  handedOverOn: string;
+  ageMinutes: number;
+  bagNo: string | null;
+  sealNo: string | null;
+  safeId: string | null;
+  safeName: string | null;
+  tssId: string;
+  sessionNo: string;
+  sessionStatus: TillSessionStatus;
+  counterCode: string;
+  counterName: string;
+  cashierId: string;
+  cashierName: string | null;
+  /** Whoever handed it over (the cashier, or a supervisor who closed for them). */
+  handedOverBy: string;
+  /** False when the caller was the session's cashier (and till.single_operator is off). */
+  canReceive: boolean;
+}
+
+/** POST /till/movements/receive (notes 113) — one bag, as received. Shown only after the count. */
+export interface TillReceivedPayload {
+  tcmId: string;
+  tcmAccYear: string;
+  tcmKind: TillMovementKind;
+  tcmDocNo: string;
+  tssId: string;
+  sessionNo: string;
+  handedOver: number;
+  received: number;
+  /** received − handed over. */
+  difference: number;
+  /**
+   * RECEIVED: nothing to decide (no difference) · WITHIN_TOLERANCE: posted at
+   * once to Cash short & excess · SENT_FOR_APPROVAL: a PENDING variance, decided
+   * on sessions/decide-variance with this tcmId.
+   */
+  outcome: 'RECEIVED' | 'WITHIN_TOLERANCE' | 'SENT_FOR_APPROVAL';
+  /** The RECEIVE-stage variance raised, if any. */
+  tvrId: string | null;
+  /** The TRcv voucher; null for an empty bag. */
+  receiveVoucherId: string | null;
+  receivedOn: string;
 }
 
 /** /till/sessions/count — what a (possibly blind) cashier is told. */
@@ -581,4 +860,182 @@ export interface TillSlipCheckResultPayload {
   noSlip: number;
   slipsWithoutRow: number;
   amountDiffers: number;
+}
+
+// ─── The safe (notes 118) ───────────────────────────────────────────────────
+
+/** One remittance, as the Cash Office lists the ones in transit (and the grid would). */
+export interface TillRemittancePayload {
+  tcmId: string;
+  tcmAccYear: string;
+  docNo: string;
+  /** The business date it left the safe. */
+  docDate: string;
+  safeId: string;
+  safeName: string | null;
+  mode: TillRemitMode;
+  status: TillRemitStatus;
+  amount: number;
+  bankLedgerId: string;
+  bankName: string | null;
+  bagNo: string | null;
+  sealNo: string | null;
+  citAgency: string | null;
+  slipNo: string | null;
+  slipDate: string | null;
+  /** Whole days since it left (IST). */
+  ageDays: number;
+  doneBy: string;
+  createdOn: string;
+}
+
+/**
+ * One safe's figures (GET /till/safes/balance). Money is null when the caller
+ * may not see it (`figuresVisible` false: till.blind_close, and no Cash Office
+ * (287) / Till Sessions (273) OVERRIDE) — the count is blind.
+ */
+export interface TillSafeStatePayload {
+  safeId: string;
+  code: string;
+  name: string;
+  ledgerId: string;
+  ledgerName: string | null;
+  isDefault: boolean;
+  isDropSafe: boolean;
+  isActive: boolean;
+  insuredLimit: number;
+  /** Expected over a non-zero insured limit (shown even when the figures are not). */
+  overInsured: boolean;
+  /**
+   * Another active safe of the branch posts to the same ledger (safes default to
+   * the SAFE_CASH role's): bookBalance / drift are the ledger's, not this safe's.
+   */
+  ledgerShared: boolean;
+  /**
+   * COUNT = the last safe count; BOOK = no count yet: the safe expects what its
+   * ledger holds; ZERO = no count yet and a shared ledger: 0.
+   */
+  openingFrom: 'COUNT' | 'BOOK' | 'ZERO';
+  opening: number | null;
+  /** Since the last count (or all time before one). */
+  in: {
+    /** Hand-overs straight into the safe, or received into it (notes 113/114). */
+    handOvers: number;
+    drops: number;
+    pickups: number;
+    transfersIn: number;
+    /** Back-office receipts in cash, posted to this safe's ledger (48 §2.3). */
+    receipts: number;
+    total: number;
+  } | null;
+  out: {
+    floatIssues: number;
+    topUps: number;
+    remittances: number;
+    transfersOut: number;
+    /** Back-office payments / expenses in cash, from this safe's ledger (48 §2.3). */
+    payments: number;
+    total: number;
+  } | null;
+  /** Notes for notes with a drawer: net zero, counted only. */
+  exchanges: number;
+  expected: number | null;
+  /** The safe ledger's balance (Ledger Statement), today. */
+  bookBalance: number | null;
+  /** bookBalance − expected: a journal, an opening balance, a gap not decided yet. */
+  drift: number | null;
+  lastCount: {
+    tctId: string;
+    tctAccYear: string;
+    countedOn: string;
+    countedBy: string;
+    countedByName: string | null;
+    witnessBy: string | null;
+    counted: number | null;
+    expected: number | null;
+    difference: number | null;
+  } | null;
+  /** Counted on today's business day. */
+  countedToday: boolean;
+  inTransit: { count: number; amount: number };
+  /** Safe gaps (stage SAFE / REMIT) still PENDING. */
+  pendingGaps: { tvrId: string; tvrAccYear: string; stage: TillVarianceStage; variance: number }[];
+}
+
+export interface TillSafeBalancePayload {
+  companyId: string;
+  branchId: string;
+  businessDate: string;
+  figuresVisible: boolean;
+  safes: TillSafeStatePayload[];
+  /** CIT remittances not yet confirmed by the bank, oldest first. */
+  inTransit: TillRemittancePayload[];
+}
+
+/** POST /till/safes/count — the count, then what it was judged against. */
+export interface TillSafeCountPayload {
+  tctId: string;
+  tctAccYear: string;
+  safeId: string;
+  safeName: string;
+  tbdId: string;
+  businessDate: string;
+  countedOn: string;
+  counted: number;
+  /** Shown only now, after the blind count. */
+  expected: number;
+  difference: number;
+  outcome: TillSafeGapOutcome;
+  tvrId: string | null;
+  treatment: TillVarianceTreatment | null;
+  tapId: string | null;
+  varianceVoucherId: string | null;
+  varianceVoucherNo: string | null;
+  witnessBy: string | null;
+  safe: TillSafeStatePayload;
+}
+
+/** POST /till/safes/decide-variance. */
+export interface TillSafeDecisionPayload {
+  tvrId: string;
+  tvrAccYear: string;
+  stage: TillVarianceStage;
+  safeId: string;
+  safeName: string | null;
+  expected: number;
+  counted: number;
+  variance: number;
+  treatment: TillVarianceTreatment;
+  tapId: string;
+  secondBy: string | null;
+  varianceVoucherId: string | null;
+  varianceVoucherNo: string | null;
+  decidedOn: string;
+}
+
+/** POST /till/movements/remit. */
+export interface TillRemitPayload {
+  movement: TillMovementDetailPayload;
+  tapId: string | null;
+  countId: string | null;
+  safe: TillSafeStatePayload;
+}
+
+/** POST /till/movements/remit-confirm. */
+export interface TillRemitConfirmPayload {
+  tcmId: string;
+  tcmAccYear: string;
+  docNo: string;
+  sent: number;
+  credited: number;
+  difference: number;
+  outcome: TillSafeGapOutcome;
+  confirmVoucherId: string | null;
+  confirmVoucherNo: string | null;
+  tvrId: string | null;
+  treatment: TillVarianceTreatment | null;
+  tapId: string | null;
+  varianceVoucherId: string | null;
+  varianceVoucherNo: string | null;
+  movement: TillMovementDetailPayload;
 }

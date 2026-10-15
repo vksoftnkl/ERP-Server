@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TillSlipCheckDto = exports.TillSlipWithoutRowDto = exports.TillSlipCheckQueryDto = exports.TillChangeDto = exports.VoidTillMovementDto = exports.TillMovementKeyDto = exports.CreateTillMovementDto = exports.TillEventBatchDto = exports.TillClientEventDto = exports.OpenTillDayDto = exports.TillDayGetQueryDto = exports.DecideTillVarianceDto = exports.CloseTillSessionDto = exports.CountTillSessionDto = exports.EndBillingTillSessionDto = exports.SuspendTillSessionDto = exports.OpenTillSessionDto = exports.TillOpenCheckQueryDto = exports.TillCountLineDto = exports.TillSessionKeyDto = exports.TillScopeDto = void 0;
+exports.TillSlipCheckDto = exports.TillSlipWithoutRowDto = exports.TillSlipCheckQueryDto = exports.TillChangeDto = exports.TillReceiveDto = exports.TillReceiveBagDto = exports.TillAwaitingReceiptQueryDto = exports.VoidTillMovementDto = exports.TillMovementKeyDto = exports.CreateTillMovementDto = exports.TillEventBatchDto = exports.TillClientEventDto = exports.OpenTillDayDto = exports.TillDayGetQueryDto = exports.ReopenTillDayDto = exports.CloseTillDayDto = exports.TillDayCloseExceptionDto = exports.TillDayCloseCountDto = exports.TillDayKeyDto = exports.ReopenTillSessionDto = exports.ForceCloseTillSessionDto = exports.ApproveTillCashDto = exports.DecideTillVarianceDto = exports.CloseTillSessionDto = exports.CountTillSessionDto = exports.EndBillingTillSessionDto = exports.SuspendTillSessionDto = exports.OpenTillSessionDto = exports.TillOpenCheckQueryDto = exports.TillCountLineDto = exports.TillSessionKeyDto = exports.TillScopeDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -311,6 +311,7 @@ class DecideTillVarianceDto extends TillSessionKeyDto {
     reasonId;
     note;
     approverPin;
+    tcmId;
 }
 exports.DecideTillVarianceDto = DecideTillVarianceDto;
 __decorate([
@@ -356,6 +357,283 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], DecideTillVarianceDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Notes 113: a received bag (the hand-over / drop, of this session) whose RECEIVE-stage difference is ' +
+            'PENDING. The session may be in any status. APPROVE only (400 on RECOUNT: the count stands); the TVar ' +
+            'posts at once, Dr / Cr Till cash awaiting receipt. Neither the receiver nor the bag’s cashier decides it. ' +
+            'Left out = the close variance of a PENDING_APPROVAL session, as before.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], DecideTillVarianceDto.prototype, "tcmId", void 0);
+class ApproveTillCashDto extends TillSessionKeyDto {
+    approverPin;
+    receivedAmount;
+    treatment;
+    reasonId;
+    notes;
+}
+exports.ApproveTillCashDto = ApproveTillCashDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The caller’s own till PIN (usr_pin_hash, notes 95). None set → 422 TILL_RECEIVER_NO_PIN; none typed → ' +
+            '403 TILL_RECEIVER_PIN_REQUIRED; wrong → 403 TILL_RECEIVER_PIN, journalled PIN_FAIL. May be left out only ' +
+            'under till.single_operator by the session’s own cashier.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], ApproveTillCashDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 500,
+        nullable: true,
+        description: 'What the supervisor received for the whole session (hand-over + drops awaiting receipt). Left out = ' +
+            'exactly what was handed over. A difference beyond till.cash_tolerance needs `treatment` to be decided ' +
+            'here, else it is sent for approval.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], ApproveTillCashDto.prototype, "receivedAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: till_enum_1.APPROVABLE_TREATMENTS,
+        nullable: true,
+        description: 'Only read for a gap beyond tolerance: decide it in this step (the caller’s Till Approval Authority grant ' +
+            'for CASH_VARIANCE must cover it — 403 TILL_APPROVER_NO_GRANT / TILL_APPROVER_LIMIT otherwise, nothing ' +
+            'written). Left out = SENT_FOR_APPROVAL. EXPENSE → Cash Short & Excess · RECOVER → the cashier’s staff ' +
+            'advance ledger · SUSPENSE → Tender suspense.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)([...till_enum_1.APPROVABLE_TREATMENTS]),
+    __metadata("design:type", Object)
+], ApproveTillCashDto.prototype, "treatment", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'With `treatment`: a till_reason of category VARIANCE (422 TILL_REASON_INVALID otherwise).',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], ApproveTillCashDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 500, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], ApproveTillCashDto.prototype, "notes", void 0);
+class ForceCloseTillSessionDto extends TillSessionKeyDto {
+    reasonId;
+    approverPin;
+    lines = [];
+    floatLeft;
+    notes;
+}
+exports.ForceCloseTillSessionDto = ForceCloseTillSessionDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'A FORCE_CLOSE reason (Cashier left, Shift over time, Device failure, Day close, Other).',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], ForceCloseTillSessionDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The caller’s till PIN for the FORCE_CLOSE rule (STORE_MANAGER, EITHER: a PIN, else remote authority). ' +
+            'Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], ForceCloseTillSessionDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: () => TillCountLineDto,
+        isArray: true,
+        description: 'The supervisor’s count of the drawer, as /count takes it.',
+    }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(200),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => TillCountLineDto),
+    __metadata("design:type", Array)
+], ForceCloseTillSessionDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'As /close: left out = the counter’s default float under CARRIED, else 0.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], ForceCloseTillSessionDto.prototype, "floatLeft", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Needed when the reason needs a note.' }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], ForceCloseTillSessionDto.prototype, "notes", void 0);
+class ReopenTillSessionDto extends TillSessionKeyDto {
+    reasonId;
+    approverPin;
+    notes;
+}
+exports.ReopenTillSessionDto = ReopenTillSessionDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'A REOPEN reason (Count keyed wrong, Transaction missed …).',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], ReopenTillSessionDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The caller’s till PIN for the SESSION_REOPEN rule (STORE_MANAGER, EITHER).',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], ReopenTillSessionDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Needed when the reason needs a note.' }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], ReopenTillSessionDto.prototype, "notes", void 0);
+class TillDayKeyDto extends TillScopeDto {
+    accYear;
+    tbdId;
+}
+exports.TillDayKeyDto = TillDayKeyDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    (0, dtoDecorators_1.UpperMaxString)(9),
+    __metadata("design:type", String)
+], TillDayKeyDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], TillDayKeyDto.prototype, "tbdId", void 0);
+class TillDayCloseCountDto {
+    tssId;
+    lines = [];
+    floatLeft;
+}
+exports.TillDayCloseCountDto = TillDayCloseCountDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], TillDayCloseCountDto.prototype, "tssId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: () => TillCountLineDto, isArray: true }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(200),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => TillCountLineDto),
+    __metadata("design:type", Array)
+], TillDayCloseCountDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], TillDayCloseCountDto.prototype, "floatLeft", void 0);
+class TillDayCloseExceptionDto {
+    reasonId;
+    approverId;
+    approverPin;
+    counts;
+}
+exports.TillDayCloseExceptionDto = TillDayCloseExceptionDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'A DAY_CLOSE reason (Cashier gone: drawer counted by the supervisor · Safe counted next morning · Other).',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], TillDayCloseExceptionDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Who approves (DAY_CLOSE_EXCEPTION, STORE_MANAGER): someone other than the caller, who types their own ' +
+            'till PIN here. Left out = the caller, refused (TILL_APPROVER_SELF) unless the rule allows self.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], TillDayCloseExceptionDto.prototype, "approverId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], TillDayCloseExceptionDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => TillDayCloseCountDto,
+        isArray: true,
+        description: 'One per live session (SESSIONS_LIVE): the supervisor’s count of its drawer. The session is force-closed ' +
+            '(reason “Day close”) and its hand-over received on that count. A live session left out → 422 ' +
+            'TILL_FORCE_COUNT_REQUIRED.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(50),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => TillDayCloseCountDto),
+    __metadata("design:type", Array)
+], TillDayCloseExceptionDto.prototype, "counts", void 0);
+class CloseTillDayDto extends TillDayKeyDto {
+    notes;
+    exception;
+}
+exports.CloseTillDayDto = CloseTillDayDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], CloseTillDayDto.prototype, "notes", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => TillDayCloseExceptionDto,
+        nullable: true,
+        description: 'Only to close over RED items an exception may cover (SESSIONS_LIVE).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => TillDayCloseExceptionDto),
+    __metadata("design:type", Object)
+], CloseTillDayDto.prototype, "exception", void 0);
+class ReopenTillDayDto extends TillDayKeyDto {
+    reasonId;
+    approverPin;
+    notes;
+}
+exports.ReopenTillDayDto = ReopenTillDayDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'A DAY_REOPEN reason (Correction, Late transaction).',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], ReopenTillDayDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The caller’s till PIN for the DAY_REOPEN rule (AREA_MANAGER, EITHER).',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], ReopenTillDayDto.prototype, "approverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Needed when the reason needs a note.' }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], ReopenTillDayDto.prototype, "notes", void 0);
 class TillDayGetQueryDto extends TillScopeDto {
     accYear;
     tbdId;
@@ -670,6 +948,88 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(500),
     __metadata("design:type", Object)
 ], VoidTillMovementDto.prototype, "notes", void 0);
+class TillAwaitingReceiptQueryDto extends TillScopeDto {
+    dayId;
+    accYear;
+}
+exports.TillAwaitingReceiptQueryDto = TillAwaitingReceiptQueryDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'One business day’s bags (with accYear); left out = every unreceived bag of the branch.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], TillAwaitingReceiptQueryDto.prototype, "dayId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '2026-2027', description: 'With dayId.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.UpperMaxString)(9),
+    __metadata("design:type", String)
+], TillAwaitingReceiptQueryDto.prototype, "accYear", void 0);
+class TillReceiveBagDto {
+    accYear;
+    tcmId;
+    lines = [];
+    notes;
+}
+exports.TillReceiveBagDto = TillReceiveBagDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    (0, dtoDecorators_1.UpperMaxString)(9),
+    __metadata("design:type", String)
+], TillReceiveBagDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The CLOSE_HANDOVER / DROP awaiting receipt.' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], TillReceiveBagDto.prototype, "tcmId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: () => TillCountLineDto,
+        isArray: true,
+        description: 'The receiver’s blind count of the bag, cash by denomination (loose coin as enteredAmount). Empty = an ' +
+            'empty bag: received 0.',
+    }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(50),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => TillCountLineDto),
+    __metadata("design:type", Array)
+], TillReceiveBagDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 500 }),
+    (0, dtoDecorators_1.NullableString)(500),
+    __metadata("design:type", Object)
+], TillReceiveBagDto.prototype, "notes", void 0);
+class TillReceiveDto extends TillScopeDto {
+    receiverPin;
+    bags;
+}
+exports.TillReceiveDto = TillReceiveDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The receiver’s own till PIN (usr_pin_hash, notes 95), once for the sitting. None set → 422 ' +
+            'TILL_RECEIVER_NO_PIN; none typed → 403 TILL_RECEIVER_PIN_REQUIRED; wrong → 403 TILL_RECEIVER_PIN, ' +
+            'journalled PIN_FAIL.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], TillReceiveDto.prototype, "receiverPin", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: () => TillReceiveBagDto,
+        isArray: true,
+        description: 'One or more bags, each with its own count. All are received, or none.',
+    }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1),
+    (0, class_validator_1.ArrayMaxSize)(50),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => TillReceiveBagDto),
+    __metadata("design:type", Array)
+], TillReceiveDto.prototype, "bags", void 0);
 class TillChangeDto extends TillScopeDto {
     accYear;
     fromTssId;

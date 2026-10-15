@@ -12,6 +12,7 @@ model TillCount {
   tctTenantId         String?   @db.Uuid                             @map("tct_tenant_id")
   tctAccYear          String    @db.Char(9)                          @map("tct_acc_year")
   /// OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE
+  /// | REMIT (notes 118: the cash a remittance took out of the safe)
   tctKind             String    @db.VarChar(12)                      @map("tct_kind")
   /// NULL for a SAFE count.
   tctSessionId        String?   @db.Uuid                             @map("tct_session_id")
@@ -35,6 +36,10 @@ model TillCount {
   tctSyncDate         DateTime? @db.Timestamptz(6)                   @map("tct_sync_date")
   tctCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_created_on")
   tctCreatedBy        String?   @db.VarChar(50)                      @map("tct_created_by")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// A SAFE count: the business day it counts for (till_business_day, same
+  /// acc year; ck_tct_safe). The day's last count of a safe is the day's. FK-less.
+  tctDayId            String?   @db.Uuid                             @map("tct_day_id")
 
   // Relations
   lines               TillCountLine[] @relation("TillCountLineCount")
@@ -44,11 +49,13 @@ model TillCount {
   // DB-only:
   //   ix_tct_session (tct_session_id, tct_acc_year, tct_kind, tct_attempt_no) WHERE tct_is_deleted = false
   //   ix_tct_safe    (tct_safe_id, tct_counted_on) WHERE tct_is_deleted = false AND tct_safe_id IS NOT NULL
+  //   ix_tct_safe_day (tct_day_id, tct_acc_year, tct_safe_id) WHERE tct_is_deleted = false AND tct_kind = 'SAFE'
   //   CREATE UNIQUE INDEX ux_tct_final ON accounts.till_count
   //       (tct_session_id, (CASE WHEN tct_kind = 'OPEN' THEN 'OPEN' ELSE 'CLOSE' END), tct_acc_year)
   //       WHERE tct_is_deleted = false AND tct_is_final AND tct_session_id IS NOT NULL
   //         AND tct_kind IN ('OPEN','CLOSE','RECOUNT');
-  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness.
+  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness,
+  //         ck_tct_safe (notes 118: a SAFE count names its safe and day, never a session).
   @@map("till_count")
   @@schema("accounts")
 }

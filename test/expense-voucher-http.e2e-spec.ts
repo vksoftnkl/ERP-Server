@@ -20,6 +20,7 @@ import {
   prisma,
 } from './helpers/payment-e2e';
 import { EXPENSE_PRINT_PURPOSE_CODE } from '../src/modules/accountsModule/expense/types/expense-enum';
+import { dropTestDay } from './helpers/till-cleanup';
 
 /**
  * The expense voucher (ExpV, /expenses/*) and the money documents of a till
@@ -259,14 +260,12 @@ afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_variance WHERE tvr_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ${session.tssId}::uuid`;
-    if (dayCreated) {
-      await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${session.tssDayId}::uuid`;
-      await prisma.$executeRaw`
-        DELETE FROM accounts.till_business_day d WHERE d.tbd_id = ${session.tssDayId}::uuid
-           AND NOT EXISTS (SELECT 1 FROM accounts.till_session s WHERE s.tss_day_id = d.tbd_id)`;
-    }
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_device_id IN (${tillPc ?? null}::uuid, ${officePc ?? null}::uuid)`;
+  // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
+  if (dayCreated && session) {
+    await dropTestDay(prisma, session.tssDayId);
+  }
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counterId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.till_safe WHERE tsf_id = ${safeId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM public.app_setting_value WHERE asv_created_by = 'e2e-expense'`;

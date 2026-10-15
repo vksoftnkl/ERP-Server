@@ -105,6 +105,9 @@ model AccTenderDetail {
   // Partial index (DB-only) for 40A(3), cash to one payee in a day (20261008180000):
   //   ix_td_cash_party_day (td_company_id, td_party_ledger_id, td_doc_date)
   //     WHERE td_tender_type_id = 1 AND live — payment/cash-payment-limit.ts.
+  // Partial index (DB-only) for the safe's balance (notes 118, 20261015100000):
+  //   ix_td_cash_tender_ledger (td_tender_ledger_id) WHERE td_tender_type_id = 1
+  //     — back-office cash routed to a safe's ledger (till-safe.service.ts).
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
   // REDEEM rows of one redemption share ONE tender, one per lot consumed —

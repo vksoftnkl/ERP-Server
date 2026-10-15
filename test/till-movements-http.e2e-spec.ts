@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import { hashSecret } from '../src/common/utils/secret-hash.utils';
 import { BEARER, BRANCH, COMPANY, bootApp, prisma } from './helpers/payment-e2e';
 import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from './helpers/menu-rights';
+import { dropTestDay } from './helpers/till-cleanup';
 
 /**
  * Till build phase 2 — the drawer movements (§5, S3), their vouchers, voids and
@@ -217,11 +218,9 @@ afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ${s}::uuid`;
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_device_id = ${device2Id}::uuid`;
+  // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
   if (dayCreated && session) {
-    await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${session.tssDayId}::uuid`;
-    await prisma.$executeRaw`
-      DELETE FROM accounts.till_business_day d WHERE d.tbd_id = ${session.tssDayId}::uuid
-         AND NOT EXISTS (SELECT 1 FROM accounts.till_session x WHERE x.tss_day_id = d.tbd_id)`;
+    await dropTestDay(prisma, session.tssDayId);
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counter2Id ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counterId ?? null}::uuid`;

@@ -1,11 +1,29 @@
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService } from '../till-context.service';
+import { TillApprovalService } from './till-approval.service';
 import { TillEventService } from './till-event.service';
 import { TillLedgerService } from './till-ledger.service';
 import { TillPostingService } from './till-posting.service';
 import { TillSessionService } from './till-session.service';
-import { TillMovementKind } from '../types/till-enum';
-import type { TillCountLineInput, TillMovementDetailPayload, TillSupervisorPayload } from '../types/till-api.types';
+import { TillMovementKind, TillVarianceTreatment } from '../types/till-enum';
+import type { TillAwaitingReceiptPayload, TillCashApprovalPayload, TillCountLineInput, TillMovementDetailPayload, TillReceivedPayload, TillSupervisorPayload } from '../types/till-api.types';
+export interface ReceiveBagInput {
+    tcmId: string;
+    accYear: string;
+    lines: TillCountLineInput[];
+    notes?: string | null;
+}
+export interface ApproveCashInput {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    tssId: string;
+    approverPin?: string | null;
+    receivedAmount?: number | null;
+    treatment?: TillVarianceTreatment | null;
+    reasonId?: string | null;
+    notes?: string | null;
+}
 export interface CreateMovementInput {
     companyId: string;
     branchId: string;
@@ -34,7 +52,8 @@ export declare class TillMovementService {
     private readonly posting;
     private readonly sessions;
     private readonly events;
-    constructor(prisma: PrismaService, context: TillContextService, ledger: TillLedgerService, posting: TillPostingService, sessions: TillSessionService, events: TillEventService);
+    private readonly approval;
+    constructor(prisma: PrismaService, context: TillContextService, ledger: TillLedgerService, posting: TillPostingService, sessions: TillSessionService, events: TillEventService, approval: TillApprovalService);
     create(input: CreateMovementInput): Promise<TillMovementDetailPayload>;
     change(input: {
         companyId: string;
@@ -77,6 +96,23 @@ export declare class TillMovementService {
         accYear: string;
         tssId: string;
     }): Promise<TillSupervisorPayload[]>;
+    awaitingReceipt(scope: {
+        companyId: string;
+        branchId: string;
+        dayId?: string | null;
+        accYear?: string | null;
+    }): Promise<TillAwaitingReceiptPayload[]>;
+    receive(input: {
+        companyId: string;
+        branchId: string;
+        receiverPin?: string | null;
+        bags: ReceiveBagInput[];
+    }): Promise<TillReceivedPayload[]>;
+    approveCash(input: ApproveCashInput): Promise<TillCashApprovalPayload>;
+    private awaitingOf;
+    private refuseNothingAwaiting;
+    private voucherNos;
+    private assertAwaiting;
     private proveSupervisor;
     private readonly signerScope;
     private checkWitnessPin;

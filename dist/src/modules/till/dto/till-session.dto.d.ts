@@ -53,6 +53,50 @@ export declare class DecideTillVarianceDto extends TillSessionKeyDto {
     reasonId?: string | null;
     note: string;
     approverPin?: string | null;
+    tcmId?: string | null;
+}
+export declare class ApproveTillCashDto extends TillSessionKeyDto {
+    approverPin?: string | null;
+    receivedAmount?: number | null;
+    treatment?: TillVarianceTreatment | null;
+    reasonId?: string | null;
+    notes?: string | null;
+}
+export declare class ForceCloseTillSessionDto extends TillSessionKeyDto {
+    reasonId: string;
+    approverPin?: string | null;
+    lines: TillCountLineDto[];
+    floatLeft?: number | null;
+    notes?: string | null;
+}
+export declare class ReopenTillSessionDto extends TillSessionKeyDto {
+    reasonId: string;
+    approverPin?: string | null;
+    notes?: string | null;
+}
+export declare class TillDayKeyDto extends TillScopeDto {
+    accYear: string;
+    tbdId: string;
+}
+export declare class TillDayCloseCountDto {
+    tssId: string;
+    lines: TillCountLineDto[];
+    floatLeft?: number | null;
+}
+export declare class TillDayCloseExceptionDto {
+    reasonId: string;
+    approverId?: string | null;
+    approverPin?: string | null;
+    counts?: TillDayCloseCountDto[];
+}
+export declare class CloseTillDayDto extends TillDayKeyDto {
+    notes?: string | null;
+    exception?: TillDayCloseExceptionDto | null;
+}
+export declare class ReopenTillDayDto extends TillDayKeyDto {
+    reasonId: string;
+    approverPin?: string | null;
+    notes?: string | null;
 }
 export declare class TillDayGetQueryDto extends TillScopeDto {
     accYear?: string;
@@ -102,6 +146,20 @@ export declare class TillMovementKeyDto extends TillScopeDto {
 export declare class VoidTillMovementDto extends TillMovementKeyDto {
     reasonId: string;
     notes?: string | null;
+}
+export declare class TillAwaitingReceiptQueryDto extends TillScopeDto {
+    dayId?: string;
+    accYear?: string;
+}
+export declare class TillReceiveBagDto {
+    accYear: string;
+    tcmId: string;
+    lines: TillCountLineDto[];
+    notes?: string | null;
+}
+export declare class TillReceiveDto extends TillScopeDto {
+    receiverPin?: string | null;
+    bags: TillReceiveBagDto[];
 }
 export declare class TillChangeDto extends TillScopeDto {
     accYear: string;

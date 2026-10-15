@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -307,6 +308,237 @@ export class DecideTillVarianceDto extends TillSessionKeyDto {
   })
   @NullableString(20)
   approverPin?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Notes 113: a received bag (the hand-over / drop, of this session) whose RECEIVE-stage difference is ' +
+      'PENDING. The session may be in any status. APPROVE only (400 on RECOUNT: the count stands); the TVar ' +
+      'posts at once, Dr / Cr Till cash awaiting receipt. Neither the receiver nor the bag’s cashier decides it. ' +
+      'Left out = the close variance of a PENDING_APPROVAL session, as before.',
+  })
+  @NullableUuid()
+  tcmId?: string | null;
+}
+
+/** POST /till/sessions/approve-cash (notes 114). */
+export class ApproveTillCashDto extends TillSessionKeyDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'The caller’s own till PIN (usr_pin_hash, notes 95). None set → 422 TILL_RECEIVER_NO_PIN; none typed → ' +
+      '403 TILL_RECEIVER_PIN_REQUIRED; wrong → 403 TILL_RECEIVER_PIN, journalled PIN_FAIL. May be left out only ' +
+      'under till.single_operator by the session’s own cashier.',
+  })
+  @NullableString(20)
+  approverPin?: string | null;
+
+  @ApiPropertyOptional({
+    example: 500,
+    nullable: true,
+    description:
+      'What the supervisor received for the whole session (hand-over + drops awaiting receipt). Left out = ' +
+      'exactly what was handed over. A difference beyond till.cash_tolerance needs `treatment` to be decided ' +
+      'here, else it is sent for approval.',
+  })
+  @NullableNumber(0)
+  receivedAmount?: number | null;
+
+  @ApiPropertyOptional({
+    enum: APPROVABLE_TREATMENTS,
+    nullable: true,
+    description:
+      'Only read for a gap beyond tolerance: decide it in this step (the caller’s Till Approval Authority grant ' +
+      'for CASH_VARIANCE must cover it — 403 TILL_APPROVER_NO_GRANT / TILL_APPROVER_LIMIT otherwise, nothing ' +
+      'written). Left out = SENT_FOR_APPROVAL. EXPENSE → Cash Short & Excess · RECOVER → the cashier’s staff ' +
+      'advance ledger · SUSPENSE → Tender suspense.',
+  })
+  @IsOptional()
+  @IsIn([...APPROVABLE_TREATMENTS])
+  treatment?: TillVarianceTreatment | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'With `treatment`: a till_reason of category VARIANCE (422 TILL_REASON_INVALID otherwise).',
+  })
+  @NullableUuid()
+  reasonId?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 500, nullable: true })
+  @NullableString(500)
+  notes?: string | null;
+}
+
+/** Notes 117 §4 — POST /till/sessions/force-close. */
+export class ForceCloseTillSessionDto extends TillSessionKeyDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A FORCE_CLOSE reason (Cashier left, Shift over time, Device failure, Day close, Other).',
+  })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'The caller’s till PIN for the FORCE_CLOSE rule (STORE_MANAGER, EITHER: a PIN, else remote authority). ' +
+      'Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+  })
+  @NullableString(20)
+  approverPin?: string | null;
+
+  @ApiProperty({
+    type: () => TillCountLineDto,
+    isArray: true,
+    description: 'The supervisor’s count of the drawer, as /count takes it.',
+  })
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => TillCountLineDto)
+  lines: TillCountLineDto[] = [];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'As /close: left out = the counter’s default float under CARRIED, else 0.',
+  })
+  @NullableNumber(0)
+  floatLeft?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Needed when the reason needs a note.' })
+  @NullableString(500)
+  notes?: string | null;
+}
+
+/** Notes 117 §5 — POST /till/sessions/reopen. */
+export class ReopenTillSessionDto extends TillSessionKeyDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'A REOPEN reason (Count keyed wrong, Transaction missed …).',
+  })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The caller’s till PIN for the SESSION_REOPEN rule (STORE_MANAGER, EITHER).',
+  })
+  @NullableString(20)
+  approverPin?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Needed when the reason needs a note.' })
+  @NullableString(500)
+  notes?: string | null;
+}
+
+/** The business day's key (notes 117): company · branch · year · id. */
+export class TillDayKeyDto extends TillScopeDto {
+  @ApiProperty({ example: '2026-2027' })
+  @UpperMaxString(9)
+  accYear!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  tbdId!: string;
+}
+
+/** One live session's drawer, counted by the supervisor closing the day over it. */
+export class TillDayCloseCountDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  tssId!: string;
+
+  @ApiProperty({ type: () => TillCountLineDto, isArray: true })
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => TillCountLineDto)
+  lines: TillCountLineDto[] = [];
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber(0)
+  floatLeft?: number | null;
+}
+
+export class TillDayCloseExceptionDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A DAY_CLOSE reason (Cashier gone: drawer counted by the supervisor · Safe counted next morning · Other).',
+  })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Who approves (DAY_CLOSE_EXCEPTION, STORE_MANAGER): someone other than the caller, who types their own ' +
+      'till PIN here. Left out = the caller, refused (TILL_APPROVER_SELF) unless the rule allows self.',
+  })
+  @NullableUuid()
+  approverId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString(20)
+  approverPin?: string | null;
+
+  @ApiPropertyOptional({
+    type: () => TillDayCloseCountDto,
+    isArray: true,
+    description:
+      'One per live session (SESSIONS_LIVE): the supervisor’s count of its drawer. The session is force-closed ' +
+      '(reason “Day close”) and its hand-over received on that count. A live session left out → 422 ' +
+      'TILL_FORCE_COUNT_REQUIRED.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => TillDayCloseCountDto)
+  counts?: TillDayCloseCountDto[];
+}
+
+/** Notes 117 §2 — POST /till/days/close. */
+export class CloseTillDayDto extends TillDayKeyDto {
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString(500)
+  notes?: string | null;
+
+  @ApiPropertyOptional({
+    type: () => TillDayCloseExceptionDto,
+    nullable: true,
+    description: 'Only to close over RED items an exception may cover (SESSIONS_LIVE).',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TillDayCloseExceptionDto)
+  exception?: TillDayCloseExceptionDto | null;
+}
+
+/** Notes 117 §3 — POST /till/days/reopen. */
+export class ReopenTillDayDto extends TillDayKeyDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'A DAY_REOPEN reason (Correction, Late transaction).',
+  })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The caller’s till PIN for the DAY_REOPEN rule (AREA_MANAGER, EITHER).',
+  })
+  @NullableString(20)
+  approverPin?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Needed when the reason needs a note.' })
+  @NullableString(500)
+  notes?: string | null;
 }
 
 export class TillDayGetQueryDto extends TillScopeDto {
@@ -554,6 +786,75 @@ export class VoidTillMovementDto extends TillMovementKeyDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
   notes?: string | null;
+}
+
+/** GET /till/movements/awaiting-receipt (notes 113). */
+export class TillAwaitingReceiptQueryDto extends TillScopeDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'One business day’s bags (with accYear); left out = every unreceived bag of the branch.',
+  })
+  @OptionalUuid()
+  dayId?: string;
+
+  @ApiPropertyOptional({ example: '2026-2027', description: 'With dayId.' })
+  @IsOptional()
+  @UpperMaxString(9)
+  accYear?: string;
+}
+
+/** One bag of POST /till/movements/receive (notes 113). */
+export class TillReceiveBagDto {
+  @ApiProperty({ example: '2026-2027' })
+  @UpperMaxString(9)
+  accYear!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'The CLOSE_HANDOVER / DROP awaiting receipt.' })
+  @RequiredUuid()
+  tcmId!: string;
+
+  @ApiProperty({
+    type: () => TillCountLineDto,
+    isArray: true,
+    description:
+      'The receiver’s blind count of the bag, cash by denomination (loose coin as enteredAmount). Empty = an ' +
+      'empty bag: received 0.',
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => TillCountLineDto)
+  lines: TillCountLineDto[] = [];
+
+  @ApiPropertyOptional({ nullable: true, maxLength: 500 })
+  @NullableString(500)
+  notes?: string | null;
+}
+
+/** POST /till/movements/receive (notes 113). */
+export class TillReceiveDto extends TillScopeDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'The receiver’s own till PIN (usr_pin_hash, notes 95), once for the sitting. None set → 422 ' +
+      'TILL_RECEIVER_NO_PIN; none typed → 403 TILL_RECEIVER_PIN_REQUIRED; wrong → 403 TILL_RECEIVER_PIN, ' +
+      'journalled PIN_FAIL.',
+  })
+  @NullableString(20)
+  receiverPin?: string | null;
+
+  @ApiProperty({
+    type: () => TillReceiveBagDto,
+    isArray: true,
+    description: 'One or more bags, each with its own count. All are received, or none.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => TillReceiveBagDto)
+  bags!: TillReceiveBagDto[];
 }
 
 /** POST /till/movements/change — change carried from one counter to another (REV 2 §2.14). */

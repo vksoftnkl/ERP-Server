@@ -15,6 +15,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const till_dates_1 = require("../till-dates");
 const till_errors_1 = require("../till-errors");
 const till_event_service_1 = require("./till-event.service");
+const till_settings_1 = require("../till.settings");
 const till_enum_1 = require("../types/till-enum");
 let TillDayService = class TillDayService {
     prisma;
@@ -61,7 +62,7 @@ let TillDayService = class TillDayService {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.DAY_CLOSING, `Business day ${businessDate} is closing: no new session may open`, 'businessDate', { businessDate });
         }
         if (status === till_enum_1.TillDayStatus.CLOSED) {
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SALES_DAY_CLOSED, `Business day ${businessDate} is closed`, 'businessDate', { businessDate });
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.DAY_NOT_OPEN, `Business day ${businessDate} is closed: a manager reopens it (days/reopen) before a session opens on it`, 'businessDate', { businessDate, status });
         }
         if (created) {
             await this.events.log(tx, {
@@ -109,6 +110,26 @@ let TillDayService = class TillDayService {
             where: { tssDayId: day.tbdId, tssAccYear: day.tbdAccYear, tssIsDeleted: false },
             _count: { _all: true },
         });
+        const awaiting = await this.prisma.tillCashMovement.findMany({
+            where: {
+                tcmCompanyId: day.tbdCompanyId,
+                tcmBranchId: day.tbdBranchId,
+                tcmIsDeleted: false,
+                tcmStatus: 'POSTED',
+                tcmReceiptStatus: till_enum_1.TillReceiptStatus.AWAITING,
+                tcmDocDate: { lte: day.tbdBusinessDate },
+            },
+            select: { tcmDayId: true, tcmCreatedOn: true },
+            orderBy: { tcmCreatedOn: 'asc' },
+        });
+        const thisDay = awaiting.filter((m) => m.tcmDayId === day.tbdId).length;
+        const closer = day.tbdClosedBy
+            ? await this.prisma.userMaster.findUnique({
+                where: { usrId: day.tbdClosedBy },
+                select: { usrLoginName: true, usrDisplayName: true },
+            })
+            : null;
+        const num = (v) => (v === null ? 0 : Number(v.toFixed(2)));
         return {
             tbdId: day.tbdId,
             tbdAccYear: day.tbdAccYear,
@@ -119,12 +140,39 @@ let TillDayService = class TillDayService {
             tbdOpenedOn: day.tbdOpenedOn.toISOString(),
             tbdOpenedBy: day.tbdOpenedBy,
             tbdClosedOn: day.tbdClosedOn ? day.tbdClosedOn.toISOString() : null,
+            tbdClosedBy: day.tbdClosedBy,
+            tbdClosedByName: closer ? closer.usrDisplayName?.trim() || closer.usrLoginName : null,
             tbdZNo: day.tbdZNo,
             tbdReopenCount: day.tbdReopenCount,
+            totals: {
+                sessionCount: day.tbdSessionCount,
+                billCount: day.tbdBillCount,
+                netSales: num(day.tbdNetSales),
+                cashExpected: num(day.tbdCashExpected),
+                cashCounted: num(day.tbdCashCounted),
+                cashVariance: num(day.tbdCashVariance),
+                noncashVariance: num(day.tbdNoncashVariance),
+            },
+            tbdExceptionCount: day.tbdExceptionCount,
+            tbdCloseApprovalId: day.tbdCloseApprovalId,
+            tbdPrintCount: day.tbdPrintCount,
+            tbdNotes: day.tbdNotes,
             sessions: counts.map((c) => ({
                 status: c.tssStatus,
                 count: c._count._all,
             })),
+            handoverReceipt: (settings ?? till_settings_1.TILL_SETTING_DEFAULTS).handoverReceipt,
+            awaitingReceipt: {
+                thisDay,
+                earlierDays: awaiting.length - thisDay,
+                oldestOn: awaiting[0]?.tcmCreatedOn.toISOString() ?? null,
+            },
+            safe: {
+                opening: num(day.tbdSafeOpening),
+                expected: num(day.tbdSafeExpected),
+                counted: day.tbdSafeCounted === null ? null : num(day.tbdSafeCounted),
+                remitted: num(day.tbdRemitted),
+            },
         };
     }
 };

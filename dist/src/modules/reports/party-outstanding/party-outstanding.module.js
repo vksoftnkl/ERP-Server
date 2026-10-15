@@ -17,6 +17,7 @@ exports.ReportsPartyOutstandingModule = ReportsPartyOutstandingModule = __decora
     (0, common_1.Module)({
         controllers: [party_outstanding_controller_1.PartyOutstandingController],
         providers: [party_outstanding_service_1.PartyOutstandingService],
+        exports: [party_outstanding_service_1.PartyOutstandingService],
     })
 ], ReportsPartyOutstandingModule);
 //# sourceMappingURL=party-outstanding.module.js.map

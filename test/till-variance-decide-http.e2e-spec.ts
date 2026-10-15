@@ -20,8 +20,9 @@ import { BRANCH, COMPANY, data, expectStatus, prisma } from './helpers/payment-e
  *       the gap (TILL_APPROVER_LIMIT); the EITHER channel with no remote
  *       authority wants the till PIN, and a wrong one is journalled PIN_FAIL
  *       (TILL_APPROVER_PIN)
- *   A1  RECOUNT by PIN: back to COUNTING with one more attempt, the next count
- *       replaces the variances; APPROVE EXPENSE remotely: the variances carry
+ *   A1  RECOUNT by PIN: back to COUNTING, uncounted, with one more attempt —
+ *       the close refused until the next count (notes 112), which replaces
+ *       the variances; APPROVE EXPENSE remotely: the variances carry
  *       it, the close posts TVar to Cash Short & Excess; RECOVER refused when
  *       the cashier has no staff ledger; SUSPENSE posts to Tender suspense
  *   A3  one till_approval row per decision (REJECTED for a recount, APPROVED)
@@ -138,11 +139,13 @@ async function sessionRow(s: Session) {
       status: string;
       variance_status: string;
       close_approval_id: string | null;
+      close_count_id: string | null;
       recounts_granted: number;
     }[]
   >`
     SELECT tss_status AS status, tss_variance_status AS variance_status,
-           tss_close_approval_id::text AS close_approval_id, tss_recounts_granted::int AS recounts_granted
+           tss_close_approval_id::text AS close_approval_id, tss_close_count_id::text AS close_count_id,
+           tss_recounts_granted::int AS recounts_granted
       FROM accounts.till_session WHERE tss_id = ${s.tssId}::uuid`;
   return row;
 }
@@ -307,12 +310,36 @@ describe('A2 · who may decide', () => {
         approverRole: 'SUPERVISOR',
         channel: 'COUNTER',
         treatment: null,
-        session: expect.objectContaining({ tssStatus: 'COUNTING' }),
+        session: expect.objectContaining({ tssStatus: 'COUNTING', tssCountedOn: null }),
       }),
     );
     expect(await sessionRow(s)).toEqual(
-      expect.objectContaining({ status: 'COUNTING', recounts_granted: 1, close_approval_id: null }),
+      expect.objectContaining({
+        status: 'COUNTING',
+        recounts_granted: 1,
+        close_approval_id: null,
+        close_count_id: null,
+      }),
     );
+
+    // Notes 112: the rejected count no longer stands behind a close …
+    const uncounted = await postAs('tester1', tillPc, 'sessions/close', key(s));
+    expectStatus(uncounted, 409);
+    expect(firstError(uncounted).code).toBe('TILL_NOT_COUNTED');
+    // … and were its id still on the session, the PENDING cash gap would refuse it.
+    await prisma.$executeRaw`
+      UPDATE accounts.till_session
+         SET tss_close_count_id = (SELECT tct_id FROM accounts.till_count
+                                    WHERE tct_session_id = ${s.tssId}::uuid AND tct_is_final
+                                      AND tct_kind IN ('CLOSE', 'RECOUNT'))
+       WHERE tss_id = ${s.tssId}::uuid`;
+    const undecided = await postAs('tester1', tillPc, 'sessions/close', key(s));
+    expectStatus(undecided, 409);
+    expect(firstError(undecided)).toEqual(
+      expect.objectContaining({ code: 'TILL_NOT_COUNTED', tenderTypeIds: [1] }),
+    );
+    await prisma.$executeRaw`
+      UPDATE accounts.till_session SET tss_close_count_id = NULL WHERE tss_id = ${s.tssId}::uuid`;
     expect(await approvalRows(s)).toEqual([
       expect.objectContaining({
         status: 'REJECTED',

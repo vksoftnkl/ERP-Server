@@ -37,6 +37,18 @@ export interface ApproverAsk {
   requesterId: string;
   /** The approver's till PIN as typed, when the channel wants one. */
   pin: string | null;
+  /**
+   * Notes 118 — a safe gap judges nobody else's cash: the requester (who
+   * counted) may decide it, the rule's no-self flag notwithstanding.
+   */
+  selfExempt?: boolean;
+  /**
+   * Notes 118 — the second signature a two-person rule asks for, its PIN
+   * already checked by the caller (a safe count's witness). Left out (undefined)
+   * = the caller has no way to take one, and a two-person rule is refused as
+   * "Part B" as before; null = it could have, and none came (APPROVER_SECOND).
+   */
+  second?: { userId: string } | null;
 }
 
 export interface ApproverVerdict {
@@ -47,6 +59,8 @@ export interface ApproverVerdict {
   /** The till_approval_authority row, or null for the implicit SUPER ADMIN grant. */
   grantId: string | null;
   implicit: boolean;
+  /** Notes 118 — the second signature of a two-person rule (tap_second_by); null otherwise. */
+  secondBy: string | null;
 }
 
 /** One till_approval row (A3): a decision taken, recorded once. */
@@ -73,6 +87,10 @@ export interface ApprovalRecordInput {
   decidedDeviceId: string | null;
   decisionNote: string;
   payload?: Record<string, unknown>;
+  /** Notes 118 — a safe gap decided by whoever counted it (ApproverAsk.selfExempt). */
+  selfAllowed?: boolean;
+  /** When the second signature was taken (with verdict.secondBy). */
+  secondOn?: Date | null;
 }
 
 interface Grant {
@@ -203,7 +221,7 @@ export class TillApprovalService {
    */
   async assertApprover(client: Client, ask: ApproverAsk): Promise<ApproverVerdict> {
     const { rule, event } = ask;
-    if (ask.approverId === ask.requesterId && !rule.tar_allow_self) {
+    if (ask.approverId === ask.requesterId && !rule.tar_allow_self && !ask.selfExempt) {
       throwTill(
         TillErrorCode.APPROVER_SELF,
         'The cashier of a session does not decide its own variance: the rule allows no self-approval',
@@ -211,14 +229,7 @@ export class TillApprovalService {
         { event, requiredRole: rule.tar_min_role },
       );
     }
-    if (rule.tar_two_person) {
-      throwTill(
-        TillErrorCode.APPROVER_NO_GRANT,
-        `The ${event} rule asks for two approvers; the two-person gate is Part B of the approvals work`,
-        'decision',
-        { event, requiredRole: rule.tar_min_role, twoPerson: true },
-      );
-    }
+    const second = rule.tar_two_person ? this.assertSecond(ask) : null;
 
     const user = await client.userMaster.findUnique({
       where: { usrId: ask.approverId },
@@ -334,7 +345,46 @@ export class TillApprovalService {
       channel,
       grantId: grant.id,
       implicit: grant.implicit,
+      secondBy: second,
     };
+  }
+
+  /**
+   * A two-person rule (notes 118: SAFE_VARIANCE as shipped). A caller that
+   * cannot take a second signature leaves `second` out and is refused as
+   * before; one that can must bring a person other than the approver and the
+   * requester (ck_tap_second), whose PIN it has already checked.
+   */
+  private assertSecond(ask: ApproverAsk): string {
+    const { rule, event } = ask;
+    if (ask.second === undefined) {
+      throwTill(
+        TillErrorCode.APPROVER_NO_GRANT,
+        `The ${event} rule asks for two approvers; the two-person gate is Part B of the approvals work`,
+        'decision',
+        { event, requiredRole: rule.tar_min_role, twoPerson: true },
+      );
+    }
+    if (ask.second === null) {
+      throwTill(
+        TillErrorCode.APPROVER_SECOND,
+        `The ${event} rule asks for two people: a second person signs with their till PIN`,
+        'secondId',
+        { event, requiredRole: rule.tar_min_role, twoPerson: true },
+      );
+    }
+    const by = ask.second.userId;
+    if (by === ask.approverId || by === ask.requesterId) {
+      throwTill(
+        TillErrorCode.APPROVER_SECOND,
+        by === ask.approverId
+          ? 'The second signature is another person than the one deciding'
+          : 'The second signature is another person than the one who raised it',
+        'secondId',
+        { event, requiredRole: rule.tar_min_role, twoPerson: true },
+      );
+    }
+    return by;
   }
 
   /** The till_approval row of a decision (A3). Returns `tap_id`. */
@@ -362,6 +412,7 @@ export class TillApprovalService {
         role: input.verdict.role,
         grantId: input.verdict.grantId,
         implicit: input.verdict.implicit,
+        secondBy: input.verdict.secondBy,
       },
       ...(input.payload ?? {}),
     };
@@ -382,8 +433,8 @@ export class TillApprovalService {
         tapRuleId: input.rule.tar_id,
         tapRuleSnapshot: snapshot,
         tapRequiredRole: input.rule.tar_min_role,
-        tapTwoPerson: false,
-        tapSelfAllowed: input.rule.tar_allow_self,
+        tapTwoPerson: input.rule.tar_two_person && input.verdict.secondBy !== null,
+        tapSelfAllowed: input.selfAllowed ?? input.rule.tar_allow_self,
         tapChannel: input.verdict.channel,
         tapRequestedBy: input.requestedBy,
         tapRequestedOn: input.requestedOn,
@@ -393,6 +444,8 @@ export class TillApprovalService {
         tapDecidedOn: input.decidedOn,
         tapDecidedDeviceId: input.decidedDeviceId,
         tapDecisionNote: input.decisionNote,
+        tapSecondBy: input.verdict.secondBy,
+        tapSecondOn: input.verdict.secondBy ? (input.secondOn ?? input.decidedOn) : null,
         tapDeviceId: input.decidedDeviceId,
       },
       select: { tapId: true },

@@ -25,6 +25,7 @@ import {
   type Item,
   type RightsMemo,
 } from './sales/sales-e2e.harness';
+import { dropTestDay } from './helpers/till-cleanup';
 
 /**
  * plan-till-counter-claim.md — how a session gets its counter, over HTTP against the dev database.
@@ -210,12 +211,10 @@ afterAll(async () => {
   }
   const devices = Object.values(dev).filter(Boolean);
   await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_device_id = ANY(${devices}::uuid[])`;
+  // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
   if (dayCreated) {
     for (const { d } of days) {
-      await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${d}::uuid`;
-      await prisma.$executeRaw`
-        DELETE FROM accounts.till_business_day x WHERE x.tbd_id = ${d}::uuid
-           AND NOT EXISTS (SELECT 1 FROM accounts.till_session s WHERE s.tss_day_id = x.tbd_id)`;
+      await dropTestDay(prisma, d);
     }
   }
   // The session row is gone, so the D7 guard no longer applies: cancel as the sales suites do.

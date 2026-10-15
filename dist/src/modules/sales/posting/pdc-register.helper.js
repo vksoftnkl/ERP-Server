@@ -9,6 +9,7 @@ exports.matchChequeDetails = matchChequeDetails;
 exports.readPdcChequeDetails = readPdcChequeDetails;
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const posting_types_1 = require("./types/posting.types");
 exports.CHEQUE_TENDER_TYPE_ID = 5;
 const CHEQUE_INSTRUMENT_TYPE = 'CHEQUE';
 const PDC_TRA_TYPE_RECEIVABLE = 'R';
@@ -151,16 +152,16 @@ function toRegistrableCheques(tenders) {
         (tender.tdTotalAmt ?? ZERO).greaterThan(0))
         .sort((left, right) => left.tdRowNo - right.tdRowNo);
 }
-function refuse(message) {
+function refuse(message, code) {
     (0, module_service_utils_1.throwSalesBadRequest)('Cheque cannot be registered', [
-        { field: 'tenders', message },
+        { field: 'tenders', message, code },
     ]);
 }
 function requireInstrumentNo(cheque, rules) {
     const instrumentNo = cheque.tdRefNo?.trim();
     if (!instrumentNo) {
         refuse(`Tender line ${cheque.tdRowNo} is a cheque but carries no cheque number. ` +
-            'Send it as tdRefNo — the cheque register is keyed by it.');
+            'Send it as tdRefNo — the cheque register is keyed by it.', posting_types_1.SALES_ERROR_CODES.CHEQUE_NUMBER_MISSING);
     }
     void rules;
     return instrumentNo.slice(0, INSTRUMENT_NO_MAX_LENGTH);
@@ -168,13 +169,13 @@ function requireInstrumentNo(cheque, rules) {
 function requireInstrumentDate(cheque, received, rules) {
     if (!cheque.tdInstrumentDate) {
         refuse(`Tender line ${cheque.tdRowNo} is a cheque but carries no cheque date. ` +
-            'Send it as tdInstrumentDate — it is the date the instrument matures on.');
+            'Send it as tdInstrumentDate — it is the date the instrument matures on.', posting_types_1.SALES_ERROR_CODES.CHEQUE_DATE_MISSING);
     }
     const instrumentDate = startOfUtcDay(cheque.tdInstrumentDate);
     if (rules.refuseBackdated && instrumentDate.getTime() < received.getTime()) {
         refuse(`Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, ` +
             `before the ${rules.label} date ${toDateText(received)}. A cheque cannot mature ` +
-            'before the day it was received.');
+            'before the day it was received.', posting_types_1.SALES_ERROR_CODES.CHEQUE_BACKDATED);
     }
     if (!rules.checkDateWindow) {
         return instrumentDate;
@@ -186,11 +187,11 @@ function requireInstrumentDate(cheque, received, rules) {
     if (instrumentDate.getTime() < earliest.getTime()) {
         refuse(`Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, more than three ` +
             `months before the ${rules.label} date ${toDateText(received)} — the bank would refuse ` +
-            'it as stale.');
+            'it as stale.', posting_types_1.SALES_ERROR_CODES.CHEQUE_STALE);
     }
     if (instrumentDate.getTime() > latest.getTime()) {
         refuse(`Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, more than a year ` +
-            `after the ${rules.label} date ${toDateText(received)}. Check the year on the cheque.`);
+            `after the ${rules.label} date ${toDateText(received)}. Check the year on the cheque.`, posting_types_1.SALES_ERROR_CODES.CHEQUE_DATE_TOO_FAR);
     }
     return instrumentDate;
 }
@@ -201,7 +202,7 @@ function ensureNoRepeatedInstrument(cheques, rules) {
         const firstRow = seen.get(instrumentNo);
         if (firstRow !== undefined) {
             refuse(`Cheque ${instrumentNo} is tendered twice on this ${rules.label} (lines ${firstRow} and ` +
-                `${cheque.tdRowNo}). One cheque can only be taken once.`);
+                `${cheque.tdRowNo}). One cheque can only be taken once.`, posting_types_1.SALES_ERROR_CODES.CHEQUE_REPEATED);
         }
         seen.set(instrumentNo, cheque.tdRowNo);
     }
@@ -229,7 +230,7 @@ async function ensureInstrumentsAreFree(tx, doc, rules, cheques) {
             continue;
         }
         refuse(`Cheque ${clash.apdInstrumentNo} is already registered for this customer in ` +
-            `${doc.accYear}. The same instrument cannot be taken twice.`);
+            `${doc.accYear}. The same instrument cannot be taken twice.`, posting_types_1.SALES_ERROR_CODES.CHEQUE_ALREADY_REGISTERED);
     }
 }
 function ensureInstrumentIsHeld(row, change, rules) {
@@ -242,6 +243,8 @@ function ensureInstrumentIsHeld(row, change, rules) {
     (0, module_service_utils_1.throwSalesBadRequest)(`Cheque cannot be ${change}`, [
         {
             field: 'tenders',
+            code: posting_types_1.SALES_ERROR_CODES.CHEQUE_LOCKED_IN_REGISTER,
+            status: row.apdStatus,
             message: `Cheque ${row.apdInstrumentNo} on this ${rules.label} is ${row.apdStatus} in the cheque ` +
                 `register, so it can no longer be ${change} from the ${rules.label}. ` +
                 'Settle it on the PDC screen first.',

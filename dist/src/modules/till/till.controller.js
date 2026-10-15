@@ -24,9 +24,11 @@ const till_context_service_1 = require("./till-context.service");
 const till_exception_filter_1 = require("./till-exception.filter");
 const till_errors_1 = require("./till-errors");
 const till_day_service_1 = require("./services/till-day.service");
+const till_day_close_service_1 = require("./services/till-day-close.service");
 const till_event_service_1 = require("./services/till-event.service");
 const till_session_service_1 = require("./services/till-session.service");
 const till_movement_service_1 = require("./services/till-movement.service");
+const till_safe_service_1 = require("./services/till-safe.service");
 const till_slip_check_service_1 = require("./services/till-slip-check.service");
 const till_session_dto_1 = require("./dto/till-session.dto");
 const till_response_dto_1 = require("./dto/till-response.dto");
@@ -35,18 +37,22 @@ let TillController = class TillController {
     prisma;
     context;
     days;
+    dayClose;
     sessions;
     events;
     movements;
     slipCheck;
-    constructor(prisma, context, days, sessions, events, movements, slipCheck) {
+    safes;
+    constructor(prisma, context, days, dayClose, sessions, events, movements, slipCheck, safes) {
         this.prisma = prisma;
         this.context = context;
         this.days = days;
+        this.dayClose = dayClose;
         this.sessions = sessions;
         this.events = events;
         this.movements = movements;
         this.slipCheck = slipCheck;
+        this.safes = safes;
     }
     async openDay(dto) {
         await this.context.requireRight(till_enum_1.TILL_MENU.BUSINESS_DAY, 'create', 'open the business day');
@@ -89,6 +95,61 @@ let TillController = class TillController {
             success: true,
             message: `Business day ${day.tbdBusinessDate} is ${day.tbdStatus}`,
             data: day,
+        };
+    }
+    async closeCheck(query) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.BUSINESS_DAY, 'view', 'check the business day');
+        const data = await this.dayClose.closeCheck(query);
+        return {
+            success: true,
+            message: data.canClose
+                ? `Business day ${data.tbdBusinessDate} can be closed`
+                : `Business day ${data.tbdBusinessDate} has items open`,
+            data,
+        };
+    }
+    async closeDay(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.BUSINESS_DAY, 'edit', 'close the business day');
+        const data = await this.dayClose.close({
+            companyId: dto.companyId,
+            branchId: dto.branchId,
+            accYear: dto.accYear,
+            tbdId: dto.tbdId,
+            notes: dto.notes ?? null,
+            exception: dto.exception
+                ? {
+                    reasonId: dto.exception.reasonId,
+                    approverId: dto.exception.approverId ?? null,
+                    approverPin: dto.exception.approverPin ?? null,
+                    counts: (dto.exception.counts ?? []).map((c) => ({
+                        tssId: c.tssId,
+                        lines: c.lines,
+                        floatLeft: c.floatLeft ?? null,
+                    })),
+                }
+                : null,
+        });
+        return {
+            success: true,
+            message: `Business day ${data.day.tbdBusinessDate} closed — store Z ${data.zNo}`,
+            data,
+        };
+    }
+    async reopenDay(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.BUSINESS_DAY, 'edit', 'reopen the business day');
+        const data = await this.dayClose.reopen({
+            companyId: dto.companyId,
+            branchId: dto.branchId,
+            accYear: dto.accYear,
+            tbdId: dto.tbdId,
+            reasonId: dto.reasonId,
+            approverPin: dto.approverPin ?? null,
+            notes: dto.notes ?? null,
+        });
+        return {
+            success: true,
+            message: `Business day ${data.day.tbdBusinessDate} reopened (×${data.day.tbdReopenCount})`,
+            data,
         };
     }
     async openCheck(query) {
@@ -215,14 +276,71 @@ let TillController = class TillController {
             reasonId: dto.reasonId ?? null,
             note: dto.note,
             approverPin: dto.approverPin ?? null,
+            tcmId: dto.tcmId ?? null,
         });
         return {
             success: true,
             message: data.decision === till_enum_1.TillVarianceDecision.APPROVE
-                ? `Session ${data.session.tssSessionNo}: ${data.event} ${data.amount.toFixed(2)} approved as ${data.treatment}`
+                ? `Session ${data.session.tssSessionNo}: ${data.tcmId ? 'receive difference' : data.event} ${data.amount.toFixed(2)} approved as ${data.treatment}`
                 : `Session ${data.session.tssSessionNo}: a recount granted`,
             data,
         };
+    }
+    async approveCash(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'approve a session’s cash');
+        const data = await this.movements.approveCash({
+            companyId: dto.companyId,
+            branchId: dto.branchId,
+            accYear: dto.accYear,
+            tssId: dto.tssId,
+            approverPin: dto.approverPin ?? null,
+            receivedAmount: dto.receivedAmount ?? null,
+            treatment: dto.treatment ?? null,
+            reasonId: dto.reasonId ?? null,
+            notes: dto.notes ?? null,
+        });
+        return {
+            success: true,
+            message: data.outcome === 'SENT_FOR_APPROVAL'
+                ? `Session ${data.sessionNo}: ${data.received.toFixed(2)} received, the difference ${data.difference.toFixed(2)} sent for approval`
+                : `Session ${data.sessionNo}: cash ${data.received.toFixed(2)} approved into the safe`,
+            data,
+        };
+    }
+    async forceClose(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'force-close a till session');
+        const data = await this.sessions.forceClose(dto, {
+            reasonId: dto.reasonId,
+            approverPin: dto.approverPin ?? null,
+            lines: dto.lines,
+            floatLeft: dto.floatLeft ?? null,
+            notes: dto.notes ?? null,
+        });
+        return {
+            success: true,
+            message: data.outcome === 'CLOSED'
+                ? `Session ${data.session.tssSessionNo} force-closed — Z ${data.session.tssZNo}`
+                : `Session ${data.session.tssSessionNo}: the count is out of tolerance and waits for a decision`,
+            data,
+        };
+    }
+    async reopenSession(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'reopen a till session');
+        const data = await this.sessions.reopen(dto, {
+            reasonId: dto.reasonId,
+            approverPin: dto.approverPin ?? null,
+            notes: dto.notes ?? null,
+        });
+        return {
+            success: true,
+            message: `Session ${data.session.tssSessionNo} reopened (×${data.session.tssReopenCount})`,
+            data,
+        };
+    }
+    async xReport(dto) {
+        await this.assertApprover(dto, 'take an X read');
+        const data = await this.sessions.xReport(dto);
+        return { success: true, message: `Session ${data.tssSessionNo} — X ${data.xNo}`, data };
     }
     async createMovement(dto) {
         const kind = dto.kind;
@@ -283,6 +401,12 @@ let TillController = class TillController {
         if (operator && operator === caller.userId) {
             await this.context.requireRight(till_enum_1.TILL_MENU.OPEN_TILL, 'view', 'view your till movements');
         }
+        else if (!operator && (await this.movementKind(query)) === till_enum_1.TillMovementKind.REMIT) {
+            await this.requireAny([
+                [till_enum_1.TILL_MENU.CASH_OFFICE, 'view'],
+                [till_enum_1.TILL_MENU.SESSIONS, 'view'],
+            ], 'view a remittance');
+        }
         else {
             await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'view', 'view till movements');
         }
@@ -290,6 +414,19 @@ let TillController = class TillController {
         return { success: true, message: `${data.tcmKind} ${data.tcmDocNo}`, data };
     }
     async voidMovement(dto) {
+        if ((await this.movementKind(dto)) === till_enum_1.TillMovementKind.REMIT) {
+            await this.context.requireRight(till_enum_1.TILL_MENU.CASH_OFFICE, 'override', 'void a remittance');
+            await this.safes.voidRemit({
+                companyId: dto.companyId,
+                branchId: dto.branchId,
+                accYear: dto.accYear,
+                tcmId: dto.tcmId,
+                reasonId: dto.reasonId,
+                notes: dto.notes ?? null,
+            });
+            const voided = await this.movements.get(dto);
+            return { success: true, message: `REMIT ${voided.tcmDocNo} voided`, data: voided };
+        }
         await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'void a till movement');
         const data = await this.movements.void({
             companyId: dto.companyId,
@@ -300,6 +437,40 @@ let TillController = class TillController {
             notes: dto.notes ?? null,
         });
         return { success: true, message: `${data.tcmKind} ${data.tcmDocNo} voided`, data };
+    }
+    async awaitingReceipt(query) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'view', 'see the cash awaiting receipt');
+        if (query.dayId && !query.accYear) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SESSION_NOT_FOUND, 'dayId travels with its accYear', 'accYear');
+        }
+        const data = await this.movements.awaitingReceipt({
+            companyId: query.companyId,
+            branchId: query.branchId,
+            dayId: query.dayId ?? null,
+            accYear: query.accYear ?? null,
+        });
+        return { success: true, message: `${data.length} bag(s) awaiting receipt`, data };
+    }
+    async receive(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'receive cash into the safe');
+        const data = await this.movements.receive({
+            companyId: dto.companyId,
+            branchId: dto.branchId,
+            receiverPin: dto.receiverPin ?? null,
+            bags: dto.bags.map((b) => ({
+                tcmId: b.tcmId,
+                accYear: b.accYear,
+                lines: b.lines,
+                notes: b.notes ?? null,
+            })),
+        });
+        const pending = data.filter((d) => d.outcome === 'SENT_FOR_APPROVAL').length;
+        return {
+            success: true,
+            message: `${data.length} bag(s) received` +
+                (pending > 0 ? `; ${pending} with a difference waiting for approval` : ''),
+            data,
+        };
     }
     async batch(dto) {
         await this.context.requireRight(till_enum_1.TILL_MENU.OPEN_TILL, 'view', 'report till events');
@@ -341,6 +512,19 @@ let TillController = class TillController {
         }
         const [menuId, right] = options[0];
         await this.context.requireRight(menuId, right, action);
+    }
+    async movementKind(key) {
+        const row = await this.prisma.tillCashMovement.findFirst({
+            where: {
+                tcmId: key.tcmId,
+                tcmAccYear: key.accYear,
+                tcmCompanyId: key.companyId,
+                tcmBranchId: key.branchId,
+                tcmIsDeleted: false,
+            },
+            select: { tcmKind: true },
+        });
+        return row?.tcmKind ?? null;
     }
     async requireSessionView(key) {
         const caller = await this.context.caller();
@@ -389,7 +573,7 @@ __decorate([
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiConflictResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
-        description: 'TILL_DAY_CLOSING · SALES_DAY_CLOSED · TILL_YEAR_NOT_SET_UP',
+        description: 'TILL_DAY_CLOSING · TILL_DAY_NOT_OPEN (today’s day is closed) · TILL_YEAR_NOT_SET_UP',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -411,6 +595,74 @@ __decorate([
     __metadata("design:paramtypes", [till_session_dto_1.TillDayGetQueryDto]),
     __metadata("design:returntype", Promise)
 ], TillController.prototype, "getDay", null);
+__decorate([
+    (0, common_1.Get)('days/close-check'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The day’s close checklist as the server sees it (notes 117)',
+        description: 'Every code, each { code, tone, count, detail, sessionIds }: RED SESSIONS_LIVE · SESSIONS_PENDING_APPROVAL · ' +
+            'CASH_TO_APPROVE (a hand-over / drop of the day awaiting approval) · VARIANCE_UNDECIDED (a closed ' +
+            'session’s cash difference still PENDING) · MOVEMENTS_UNPOSTED; AMBER SLIP_GAPS · HELD_BILLS · ' +
+            'SAFE_OVER_INSURED; GREEN when clear. canClose = the day is open and nothing is RED; ' +
+            'canCloseWithException = every RED is SESSIONS_LIVE. Business Day (274) VIEW.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.TillDayKeyDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "closeCheck", null);
+__decorate([
+    (0, common_1.Post)('days/close'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Close the business day — frozen totals and the store Z (notes 117)',
+        description: 'The close-check recomputed in the transaction: any RED → 409 TILL_DAY_CLOSE_BLOCKED with `items`, unless ' +
+            '`exception` is given and every RED is SESSIONS_LIVE. The exception: a DAY_CLOSE reason, the ' +
+            'DAY_CLOSE_EXCEPTION rule (STORE_MANAGER) with the caller as requester and `approverId` (another person ' +
+            'typing their PIN here) as approver, and one count per live session — each force-closed (reason “Day ' +
+            'close”) with its hand-over received on that count; a forced count out of tolerance rolls the whole close ' +
+            'back. Then the day’s totals frozen, CLOSED, the branch’s store Z (kept by a re-close), DAY_CLOSE ' +
+            'journalled. No session opens on a closed day (TILL_DAY_NOT_OPEN); sales documents dated it answer ' +
+            'SALES_DAY_CLOSED. Business Day (274) EDIT.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_DAY_CLOSE_BLOCKED · TILL_DAY_CLOSED',
+    }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_FORCE_COUNT_REQUIRED · TILL_REASON_INVALID',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.CloseTillDayDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "closeDay", null);
+__decorate([
+    (0, common_1.Post)('days/reopen'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Reopen a closed business day (notes 117)',
+        description: 'The DAY_REOPEN rule (AREA_MANAGER): the caller approves with their PIN (or remote authority), never the ' +
+            'one who closed the day unless the rule allows self; a DAY_REOPEN reason. Refused while a later business ' +
+            'day of the branch is CLOSED (409 TILL_DAY_LATER_CLOSED). Back to OPEN, reopen count + 1, frozen totals ' +
+            'cleared, the store Z kept. DAY_REOPEN journalled. Business Day (274) EDIT.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_DAY_NOT_CLOSED · TILL_DAY_LATER_CLOSED',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.ReopenTillDayDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "reopenDay", null);
 __decorate([
     (0, common_1.Get)('sessions/open-check'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -636,7 +888,9 @@ __decorate([
             'either. APPROVE: every PENDING variance takes the treatment and reason, the session returns to COUNTING ' +
             'and /close posts the TVar (RECOVER to the cashier’s staff ledger, SUSPENSE to Tender suspense). RECOUNT: ' +
             'back to COUNTING with one more count attempt. One till_approval row per decision, a VARIANCE_DECIDED ' +
-            'event. Till Sessions (273) OVERRIDE.',
+            'event. Notes 113: with tcmId, a received bag’s PENDING receive difference instead — any session status, ' +
+            'APPROVE only, the TVar posted at once against Till cash awaiting receipt, neither the receiver nor the ' +
+            'cashier deciding. Till Sessions (273) OVERRIDE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiResponse)({
@@ -646,7 +900,8 @@ __decorate([
     }),
     (0, swagger_1.ApiConflictResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
-        description: 'TILL_SESSION_NOT_OPEN — the session is not PENDING_APPROVAL',
+        description: 'TILL_SESSION_NOT_OPEN — the session is not PENDING_APPROVAL · TILL_VARIANCE_NOT_PENDING — the bag ' +
+            '(tcmId) has no receive difference waiting',
     }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
@@ -657,6 +912,106 @@ __decorate([
     __metadata("design:paramtypes", [till_session_dto_1.DecideTillVarianceDto]),
     __metadata("design:returntype", Promise)
 ], TillController.prototype, "decideVariance", null);
+__decorate([
+    (0, common_1.Post)('sessions/approve-cash'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Approve a closed session’s cash into the safe — one step for its hand-over and drops (notes 114)',
+        description: 'Under till.handover_receipt REQUIRED the close hand-over and a cashier’s drop wait in Till cash awaiting ' +
+            'receipt. A supervisor approves every one of them still waiting, for one total: receivedAmount (left out = ' +
+            'exactly what was handed over). Per movement a TRcv Dr its safe / Cr awaiting, the row RECEIVED. A gap is ' +
+            'one RECEIVE-stage variance naming the hand-over (else the latest drop): within till.cash_tolerance it ' +
+            'posts at once (WITHIN_TOLERANCE); beyond it, with treatment + reasonId, it is decided here when the ' +
+            'caller’s Till Approval Authority grant for CASH_VARIANCE covers it (DECIDED; 403 TILL_APPROVER_NO_GRANT / ' +
+            'TILL_APPROVER_LIMIT otherwise, nothing written); without treatment it is PENDING for ' +
+            'sessions/decide-variance with the answer’s tcmId, by another approver (SENT_FOR_APPROVAL). The caller is ' +
+            'never the session’s cashier (403 TILL_RECEIVER_SELF) unless till.single_operator — the supervisor who ' +
+            'closed it for the cashier may approve it (notes 116) — and types their till PIN ' +
+            '(the owner approving their own session under single_operator may leave it out). Till Sessions (273) ' +
+            'OVERRIDE.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_RIGHT_OVERRIDE · TILL_RECEIVER_SELF · TILL_RECEIVER_PIN_REQUIRED · TILL_RECEIVER_PIN · ' +
+            'TILL_APPROVER_SELF · TILL_APPROVER_NO_GRANT · TILL_APPROVER_LIMIT',
+    }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_CASH_ALREADY_APPROVED · TILL_RECEIPT_NOT_AWAITING (nothing ever waited, or it changed meanwhile) · ' +
+            'TILL_SESSION_NOT_OPEN (the session is not CLOSED)',
+    }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_RECEIVER_NO_PIN · TILL_REASON_INVALID · TILL_LEDGER_UNMAPPED (RECOVER with no staff ledger)',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.ApproveTillCashDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "approveCash", null);
+__decorate([
+    (0, common_1.Post)('sessions/force-close'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Force-close a session whose cashier has gone — the supervisor counts the drawer (notes 117)',
+        description: 'OPEN, SUSPENDED or COUNTING. The FORCE_CLOSE rule (STORE_MANAGER): the caller approves with their PIN, ' +
+            'never the session’s cashier. One transaction: end billing (holds per till.close_with_holds), the caller’s ' +
+            'count at CASH_OFFICE (final, no recount), then within tolerance the close — the hand-over the caller’s, ' +
+            'which they may approve (notes 116) — or beyond it PENDING_APPROVAL for decide-variance and /close. ' +
+            'tss_force_closed + the reason stay; SESSION_FORCE_CLOSE journalled. Till Sessions (273) OVERRIDE.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_SESSION_NOT_OPEN · TILL_HOLDS_OPEN',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.ForceCloseTillSessionDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "forceClose", null);
+__decorate([
+    (0, common_1.Post)('sessions/reopen'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Reopen a session closed by mistake (notes 117)',
+        description: 'A CLOSED session back to COUNTING under the SESSION_REOPEN rule (STORE_MANAGER; the caller’s PIN, never ' +
+            'its cashier) with a REOPEN reason. Refused while its business day is CLOSED (TILL_DAY_CLOSED), once its ' +
+            'hand-over is approved into the safe (TILL_CASH_ALREADY_APPROVED), and while a later session carries its ' +
+            'float or its counter is busy (TILL_REOPEN_BLOCKED). The close’s vouchers are mirrored, never deleted: the ' +
+            'hand-over voided, every posted CLOSE-stage TVar REVERSED; the close count cleared, one more attempt ' +
+            'granted, the Z kept. SESSION_REOPEN journalled. Till Sessions (273) OVERRIDE.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_SESSION_NOT_OPEN · TILL_DAY_CLOSED · TILL_CASH_ALREADY_APPROVED · TILL_REOPEN_BLOCKED',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.ReopenTillSessionDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "reopenSession", null);
+__decorate([
+    (0, common_1.Post)('sessions/x-report'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'X read — a supervisor’s mid-shift reading of a live session (notes 117)',
+        description: 'The sessions/expected payload plus xNo (the session’s server X reads, this one included) and xReadOn; ' +
+            'X_REPORT journalled. Till Sessions (273) OVERRIDE; refused to the session’s own cashier before it ' +
+            'closes (TILL_BLIND_CLOSE), as /expected is. A CLOSED session prints its Z instead.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.TillSessionKeyDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "xReport", null);
 __decorate([
     (0, common_1.Post)('movements/create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -753,18 +1108,70 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Void a movement — its voucher mirrored (Rev), the row VOIDED with a MOVEMENT_VOID reason',
         description: 'Only a hand-posted movement, and only while its session still takes money. Till Sessions (273) OVERRIDE ' +
-            '(MOVEMENT_VOID is ALWAYS a supervisor’s).',
+            '(MOVEMENT_VOID is ALWAYS a supervisor’s). Notes 118: a REMIT (no session) is voided here too — its CRem ' +
+            'mirrored — unless the bank confirmed it, its business day is CLOSED (409 TILL_DAY_CLOSED) or the safe has ' +
+            'been counted since; Cash Office (287) OVERRIDE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiConflictResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
-        description: 'TILL_MOVEMENT_NOT_VOIDABLE · TILL_SESSION_NOT_OPEN',
+        description: 'TILL_MOVEMENT_NOT_VOIDABLE · TILL_SESSION_NOT_OPEN · TILL_DAY_CLOSED (a REMIT)',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [till_session_dto_1.VoidTillMovementDto]),
     __metadata("design:returntype", Promise)
 ], TillController.prototype, "voidMovement", null);
+__decorate([
+    (0, common_1.Get)('movements/awaiting-receipt'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The hand-overs and drops no supervisor has received yet (notes 113)',
+        description: 'Under till.handover_receipt REQUIRED a close hand-over and a cashier’s drop post to Till cash awaiting ' +
+            'receipt, not the safe, and wait here, oldest first. dayId (+ accYear) narrows to one business day. No ' +
+            'amount: the receive is blind; movements/receive answers with it. canReceive = false on the caller’s own ' +
+            'bags. Till Sessions (273) VIEW (Cash Office 286 until notes 114 retired it; the screen approves on ' +
+            'sessions/approve-cash now).',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.TillAwaitingReceiptQueryDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "awaitingReceipt", null);
+__decorate([
+    (0, common_1.Post)('movements/receive'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Receive bags into the safe — a blind count each, signed with the receiver’s PIN (notes 113)',
+        description: 'Per bag: TRcv Dr the safe / Cr Till cash awaiting receipt for what was counted (none for an empty bag), ' +
+            'the movement RECEIVED, CASH_RECEIVED journalled. received ≠ handed over is the bag’s session’s ' +
+            'RECEIVE-stage variance: within till.cash_tolerance it posts at once (WITHIN_TOLERANCE); beyond it it is ' +
+            'PENDING (SENT_FOR_APPROVAL, tss_variance_status PENDING) until sessions/decide-variance with the tcmId. ' +
+            'The receiver is anyone but the bag’s session’s cashier (403 TILL_RECEIVER_SELF), unless ' +
+            'till.single_operator. One transaction: all bags or none. Till Sessions (273) OVERRIDE (Cash Office 286 ' +
+            'CREATE until notes 114 retired it; the screen approves on sessions/approve-cash now).',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_RIGHT_OVERRIDE · TILL_RECEIVER_SELF · TILL_RECEIVER_PIN_REQUIRED · TILL_RECEIVER_PIN',
+    }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_RECEIPT_NOT_AWAITING — already received, voided, or never waiting',
+    }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_RECEIVER_NO_PIN · TILL_MOVEMENT_INVALID (a non-cash line) · TILL_LEDGER_UNMAPPED',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.TillReceiveDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "receive", null);
 __decorate([
     (0, common_1.Post)('events/batch'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -790,9 +1197,11 @@ exports.TillController = TillController = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         till_context_service_1.TillContextService,
         till_day_service_1.TillDayService,
+        till_day_close_service_1.TillDayCloseService,
         till_session_service_1.TillSessionService,
         till_event_service_1.TillEventService,
         till_movement_service_1.TillMovementService,
-        till_slip_check_service_1.TillSlipCheckService])
+        till_slip_check_service_1.TillSlipCheckService,
+        till_safe_service_1.TillSafeService])
 ], TillController);
 //# sourceMappingURL=till.controller.js.map

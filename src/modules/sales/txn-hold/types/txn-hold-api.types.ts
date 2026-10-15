@@ -5,7 +5,58 @@ import type {
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
 import type { ModuleListMeta } from 'src/common/types/module-list.types';
-export type TxnHoldErrorDetail = ModuleApiErrorDetail;
+/**
+ * Every refusal of /txn-holds (notes 119): the client words the box by `code`
+ * alone; the message stays the developer's sentence. Prefixed HOLD_, never
+ * reused for a new meaning — add a code instead.
+ */
+export enum TxnHoldErrorCode {
+  NOT_FOUND = 'HOLD_NOT_FOUND',
+  /** resume: another device holds the lease (`lockedDeviceId`, `lockExpiresOn`). */
+  LOCKED_ELSEWHERE = 'HOLD_LOCKED_ELSEWHERE',
+  /** resume: not HELD (`status`). */
+  NOT_RESUMABLE = 'HOLD_NOT_RESUMABLE',
+  /** release / convert / a save reopening it: CONVERTED, EXPIRED, CANCELLED or ABANDONED (`status`). */
+  CLOSED = 'HOLD_CLOSED',
+  /** release / convert by a device that does not hold the lease (`status`, `lockedDeviceId`). */
+  NOT_LEASED_HERE = 'HOLD_NOT_LEASED_HERE',
+  TEMPLATE_NOT_LEASABLE = 'HOLD_TEMPLATE_NOT_LEASABLE',
+  DEVICE_REQUIRED = 'HOLD_DEVICE_REQUIRED',
+  DEVICE_INVALID = 'HOLD_DEVICE_INVALID',
+  OPERATOR_REQUIRED = 'HOLD_OPERATOR_REQUIRED',
+  CONVERSION_INVALID = 'HOLD_CONVERSION_INVALID',
+  SCOPE_IMMUTABLE = 'HOLD_SCOPE_IMMUTABLE',
+  HOLD_NO_DUPLICATE = 'HOLD_NO_DUPLICATE',
+  SLNO_DUPLICATE = 'HOLD_SLNO_DUPLICATE',
+  /** The unique index caught what the checks above did not (two tills racing). */
+  DUPLICATE = 'HOLD_DUPLICATE',
+  COMPANY_NOT_FOUND = 'HOLD_COMPANY_NOT_FOUND',
+  BRANCH_NOT_FOUND = 'HOLD_BRANCH_NOT_FOUND',
+  DEVICE_NOT_FOUND = 'HOLD_DEVICE_NOT_FOUND',
+  DEVICE_BLOCKED = 'HOLD_DEVICE_BLOCKED',
+  USER_NOT_FOUND = 'HOLD_USER_NOT_FOUND',
+  SESSION_NOT_FOUND = 'HOLD_SESSION_NOT_FOUND',
+  STAFF_NOT_FOUND = 'HOLD_STAFF_NOT_FOUND',
+  VALUE_REQUIRED = 'HOLD_VALUE_REQUIRED',
+  VALUE_NOT_ALLOWED = 'HOLD_VALUE_NOT_ALLOWED',
+  PAYLOAD_INVALID = 'HOLD_PAYLOAD_INVALID',
+  PARTY_TYPE_REQUIRED = 'HOLD_PARTY_TYPE_REQUIRED',
+  AMOUNT_NEGATIVE = 'HOLD_AMOUNT_NEGATIVE',
+  EXPIRY_BEFORE_HOLD = 'HOLD_EXPIRY_BEFORE_HOLD',
+  PRINT_STAMP_INVALID = 'HOLD_PRINT_STAMP_INVALID',
+  /** LOCKED / CONVERTED are set by resume / convert, never by a save. */
+  STATUS_NOT_SETTABLE = 'HOLD_STATUS_NOT_SETTABLE',
+  DATE_INVALID = 'HOLD_DATE_INVALID',
+  FIELD_REQUIRED = 'HOLD_FIELD_REQUIRED',
+  ACC_YEAR_INVALID = 'HOLD_ACC_YEAR_INVALID',
+}
+export interface TxnHoldErrorDetail extends ModuleApiErrorDetail {
+  code: TxnHoldErrorCode;
+  /** The hold's status, when the refusal is about it. */
+  status?: string;
+  lockedDeviceId?: string | null;
+  lockExpiresOn?: string | null;
+}
 export type TxnHoldErrorResponse = ModuleApiErrorResponse<TxnHoldErrorDetail>;
 export type TxnHoldSuccessResponse<
   T,

@@ -1,9 +1,10 @@
 import '../../src/env.preload';
 
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import { AppModule } from '../../src/app.module';
+import { createHouseValidationPipe } from '../../src/common/validation/house-validation';
 import { AuthSessionService } from '../../src/modules/auth/auth-session.service';
 import { TokenService, type AccessTokenPayload } from '../../src/modules/auth/token.service';
 import { BRANCH, COMPANY } from './payment-e2e';
@@ -63,14 +64,7 @@ export async function bootIdentityApp(
     .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
     .compile();
   const app = moduleRef.createNestApplication();
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+  app.useGlobalPipes(createHouseValidationPipe());
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: process.env.API_VERSION ?? '1',

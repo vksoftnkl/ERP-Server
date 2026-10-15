@@ -2,12 +2,13 @@
 // etc. are present before the AppModule graph (and API-version decorators) load.
 import '../../src/env.preload';
 
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Prisma, PrismaClient } from '@prisma/client';
 import * as request from 'supertest';
 
 import { AppModule } from '../../src/app.module';
+import { createHouseValidationPipe } from '../../src/common/validation/house-validation';
 import { TokenService, type AccessTokenPayload } from '../../src/modules/auth/token.service';
 import { AuthSessionService } from '../../src/modules/auth/auth-session.service';
 import { grantMenuRights, restoreMenuRights, type MenuRightsMemo } from './menu-rights';
@@ -117,14 +118,7 @@ export async function bootApp(
 
   const app = moduleRef.createNestApplication();
   // Mirror src/main.ts so the route, validation and errors behave as live.
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+  app.useGlobalPipes(createHouseValidationPipe());
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: process.env.API_VERSION ?? '1',

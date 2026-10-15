@@ -23,17 +23,13 @@ const save_account_ledger_master_dto_1 = require("./dto/save-account-ledger-mast
 const save_bulk_account_ledger_master_dto_1 = require("./dto/save-bulk-account-ledger-master.dto");
 const account_ledger_masters_service_1 = require("./account-ledger-masters.service");
 const api_version_1 = require("../../../common/constants/api-version");
+const house_validation_1 = require("../../../common/validation/house-validation");
 let AccountLedgerMastersController = class AccountLedgerMastersController {
     accountLedgerMastersService;
     constructor(accountLedgerMastersService) {
         this.accountLedgerMastersService = accountLedgerMastersService;
     }
-    bodyValidationPipe = new common_1.ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-    });
+    bodyValidationPipe = (0, house_validation_1.createHouseValidationPipe)();
     async save(body) {
         if (this.isBulkPayload(body)) {
             const { data: dtos } = await this.validateBody(body, save_bulk_account_ledger_master_dto_1.SaveBulkAccountLedgerMasterDto);

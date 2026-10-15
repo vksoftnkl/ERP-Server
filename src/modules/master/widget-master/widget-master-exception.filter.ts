@@ -4,13 +4,18 @@ import {
   WidgetMasterErrorDetail,
   WidgetMasterErrorResponse,
 } from './types/widget-master-api.types';
+import { wordedResponse } from '../../../common/error-wording/error-wording';
 type ValidationExceptionPayload = {
   message?: string | string[];
 };
 @Catch()
 export class WidgetMasterExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    // Notes 120: every coded error goes out with its plain words (`user`).
+    const response = wordedResponse(
+      host.switchToHttp().getResponse<Response>(),
+      host.switchToHttp().getRequest<unknown>(),
+    );
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const rawResponse = exception.getResponse();

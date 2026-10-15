@@ -88,7 +88,11 @@ function toDateOrNull(value, field) {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
         (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
-            { field, message: `${field} must be a valid ISO date` },
+            {
+                field,
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DATE_INVALID,
+                message: `${field} must be a valid ISO date`,
+            },
         ]);
     }
     return parsed;
@@ -128,6 +132,7 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsBadRequest)('Ambiguous tender line lookup', [
                 {
                     field: 'tdId',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.LOOKUP_AMBIGUOUS,
                     message: 'Send either tdId or the tdSrcModule + tdSrcDocType + tdSrcDocId triple, not both',
                 },
             ]);
@@ -141,6 +146,7 @@ let TenderDetailService = class TenderDetailService {
         (0, module_service_utils_1.throwAccountsBadRequest)('Missing tender line lookup', [
             {
                 field: 'tdId',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.LOOKUP_MISSING,
                 message: 'Either tdId, or all of tdSrcModule, tdSrcDocType and tdSrcDocId, is required',
             },
         ]);
@@ -189,6 +195,7 @@ let TenderDetailService = class TenderDetailService {
                 (0, module_service_utils_1.throwAccountsConflict)('Duplicate tender line number', [
                     {
                         field: 'tdRowNo',
+                        code: tender_detail_api_types_1.TenderDetailErrorCode.ROW_NO_DUPLICATE,
                         message: `A tender line with number ${rowNo} already exists on this document`,
                     },
                 ]);
@@ -240,7 +247,7 @@ let TenderDetailService = class TenderDetailService {
             tdCompanyId: this.requireField(saveTenderDetailDto.tdCompanyId, 'tdCompanyId'),
             tdBranchId: this.requireField(saveTenderDetailDto.tdBranchId, 'tdBranchId'),
             tdTenantId: saveTenderDetailDto.tdTenantId ?? null,
-            tdAccYear: (0, module_service_utils_1.normalizeRequiredText)(this.requireField(saveTenderDetailDto.tdAccYear, 'tdAccYear'), 'tdAccYear'),
+            tdAccYear: (0, module_service_utils_1.normalizeRequiredText)(this.requireField(saveTenderDetailDto.tdAccYear, 'tdAccYear'), 'tdAccYear', undefined, tender_detail_api_types_1.TenderDetailErrorCode.FIELD_REQUIRED),
             tdDocDate: toDateOrNull(this.requireField(saveTenderDetailDto.tdDocDate, 'tdDocDate'), 'tdDocDate'),
             tdPartyLedgerId: this.requireField(saveTenderDetailDto.tdPartyLedgerId, 'tdPartyLedgerId'),
             tdUserId: this.requireField(saveTenderDetailDto.tdUserId, 'tdUserId'),
@@ -317,7 +324,7 @@ let TenderDetailService = class TenderDetailService {
                 : saveTenderDetailDto.tdTenantId,
             tdAccYear: saveTenderDetailDto.tdAccYear === undefined
                 ? scope.tdAccYear
-                : (0, module_service_utils_1.normalizeRequiredText)(saveTenderDetailDto.tdAccYear, 'tdAccYear'),
+                : (0, module_service_utils_1.normalizeRequiredText)(saveTenderDetailDto.tdAccYear, 'tdAccYear', undefined, tender_detail_api_types_1.TenderDetailErrorCode.FIELD_REQUIRED),
             tdDocDate: saveTenderDetailDto.tdDocDate === undefined
                 ? scope.tdDocDate
                 : toDateOrNull(saveTenderDetailDto.tdDocDate, 'tdDocDate'),
@@ -507,6 +514,7 @@ let TenderDetailService = class TenderDetailService {
             saveTenderDetailDto.tdSrcModule !== existing.tdSrcModule) {
             details.push({
                 field: 'tdSrcModule',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
                 message: `tdSrcModule cannot be changed (stored value is ${existing.tdSrcModule})`,
             });
         }
@@ -514,12 +522,14 @@ let TenderDetailService = class TenderDetailService {
             saveTenderDetailDto.tdSrcDocType !== existing.tdSrcDocType) {
             details.push({
                 field: 'tdSrcDocType',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
                 message: `tdSrcDocType cannot be changed (stored value is ${existing.tdSrcDocType})`,
             });
         }
         if (saveTenderDetailDto.tdSrcDocId && saveTenderDetailDto.tdSrcDocId !== existing.tdSrcDocId) {
             details.push({
                 field: 'tdSrcDocId',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
                 message: 'tdSrcDocId cannot be changed; delete the line and create it on the other document',
             });
         }
@@ -532,6 +542,7 @@ let TenderDetailService = class TenderDetailService {
         if (saveTenderDetailDto.tdSrcModule && saveTenderDetailDto.tdSrcModule !== scope.tdSrcModule) {
             details.push({
                 field: 'tdSrcModule',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_MISMATCH,
                 message: `tdSrcModule must be ${scope.tdSrcModule} on this document`,
             });
         }
@@ -539,12 +550,14 @@ let TenderDetailService = class TenderDetailService {
             saveTenderDetailDto.tdSrcDocType !== scope.tdSrcDocType) {
             details.push({
                 field: 'tdSrcDocType',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_MISMATCH,
                 message: `tdSrcDocType must be ${scope.tdSrcDocType} on this document`,
             });
         }
         if (saveTenderDetailDto.tdSrcDocId && saveTenderDetailDto.tdSrcDocId !== scope.tdSrcDocId) {
             details.push({
                 field: 'tdSrcDocId',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.DOCUMENT_MISMATCH,
                 message: 'tdSrcDocId must be the parent document; a tender line cannot be moved off it',
             });
         }
@@ -683,7 +696,11 @@ let TenderDetailService = class TenderDetailService {
         });
         if (!tender) {
             (0, module_service_utils_1.throwAccountsBadRequest)('Tender does not exist', [
-                { field: 'tdTenderId', message: `No active tender found with id ${tenderId}` },
+                {
+                    field: 'tdTenderId',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.TENDER_NOT_FOUND,
+                    message: `No active tender found with id ${tenderId}`,
+                },
             ]);
         }
         return tender;
@@ -697,6 +714,7 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsBadRequest)('Tender type does not exist', [
                 {
                     field: 'tdTenderTypeId',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.TENDER_TYPE_NOT_FOUND,
                     message: `No active tender type found with id ${tenderTypeId.toString()}`,
                 },
             ]);
@@ -709,7 +727,11 @@ let TenderDetailService = class TenderDetailService {
         });
         if (!ledger) {
             (0, module_service_utils_1.throwAccountsBadRequest)('Ledger does not exist', [
-                { field, message: `No active account ledger found with id ${ledgerId}` },
+                {
+                    field,
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.LEDGER_NOT_FOUND,
+                    message: `No active account ledger found with id ${ledgerId}`,
+                },
             ]);
         }
         return ledger.ledName;
@@ -740,6 +762,7 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsConflict)('Duplicate tender line number', [
                 {
                     field: 'tdRowNo',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.ROW_NO_DUPLICATE,
                     message: `A tender line with number ${requested} already exists on this document`,
                 },
             ]);
@@ -758,6 +781,7 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsBadRequest)('Invalid tender line value', [
                 {
                     field: 'tdTotalAmt',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.TOTAL_MISMATCH,
                     message: `tdTotalAmt must equal tdAmount + tdSurchargeAmt (${computed.toString()})`,
                 },
             ]);
@@ -778,12 +802,17 @@ let TenderDetailService = class TenderDetailService {
                 continue;
             }
             if (value === null) {
-                details.push({ field: guard.field, message: `${guard.field} is required` });
+                details.push({
+                    field: guard.field,
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.VALUE_REQUIRED,
+                    message: `${guard.field} is required`,
+                });
                 continue;
             }
             if (!guard.allowed.includes(value)) {
                 details.push({
                     field: guard.field,
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.VALUE_NOT_ALLOWED,
                     message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
                 });
             }
@@ -793,6 +822,7 @@ let TenderDetailService = class TenderDetailService {
         if (!received.isZero() && received.lessThan(change)) {
             details.push({
                 field: 'tdChangeAmt',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.CHANGE_EXCEEDS_RECEIVED,
                 message: 'tdChangeAmt cannot exceed tdReceivedAmt',
             });
         }
@@ -800,6 +830,7 @@ let TenderDetailService = class TenderDetailService {
         if (conversionRate.lessThanOrEqualTo(0)) {
             details.push({
                 field: 'tdConversionRate',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.CONVERSION_RATE_INVALID,
                 message: 'tdConversionRate must be greater than 0',
             });
         }
@@ -810,6 +841,7 @@ let TenderDetailService = class TenderDetailService {
         if (settleStatus === String(tender_detail_api_types_1.TenderSettleStatus.SETTLED) && !settledOn) {
             details.push({
                 field: 'tdSettledOn',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.SETTLED_ON_REQUIRED,
                 message: 'tdSettledOn is required when tdSettleStatus is SETTLED',
             });
         }
@@ -820,6 +852,7 @@ let TenderDetailService = class TenderDetailService {
         if (isPdc && !instrumentDate) {
             details.push({
                 field: 'tdInstrumentDate',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.INSTRUMENT_DATE_REQUIRED,
                 message: 'tdInstrumentDate is required when tdIsPdc is true',
             });
         }
@@ -829,6 +862,7 @@ let TenderDetailService = class TenderDetailService {
         if (cardLast4 && !CARD_LAST4_PATTERN.test(cardLast4)) {
             details.push({
                 field: 'tdCardLast4',
+                code: tender_detail_api_types_1.TenderDetailErrorCode.CARD_LAST4_INVALID,
                 message: 'tdCardLast4 must be exactly 4 digits',
             });
         }
@@ -851,7 +885,11 @@ let TenderDetailService = class TenderDetailService {
         }
         catch {
             return (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
-                { field, message: `${field} must be a valid number` },
+                {
+                    field,
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.NUMBER_INVALID,
+                    message: `${field} must be a valid number`,
+                },
             ]);
         }
     }
@@ -859,7 +897,11 @@ let TenderDetailService = class TenderDetailService {
         const parsed = typeof value === 'number' ? value : Number(value);
         if (!Number.isInteger(parsed)) {
             return (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
-                { field: 'tdTenderTypeId', message: 'tdTenderTypeId must be an integer' },
+                {
+                    field: 'tdTenderTypeId',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.TENDER_TYPE_INVALID,
+                    message: 'tdTenderTypeId must be an integer',
+                },
             ]);
         }
         return parsed;
@@ -867,7 +909,11 @@ let TenderDetailService = class TenderDetailService {
     requireField(value, field) {
         if (!value) {
             (0, module_service_utils_1.throwAccountsBadRequest)(`${field} is required`, [
-                { field, message: `${field} must be provided when creating a tender line` },
+                {
+                    field,
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.FIELD_REQUIRED,
+                    message: `${field} must be provided when creating a tender line`,
+                },
             ]);
         }
         return value;
@@ -883,13 +929,14 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsBadRequest)('Invalid relation reference', [
                 {
                     field: 'request',
+                    code: tender_detail_api_types_1.TenderDetailErrorCode.REFERENCE_INVALID,
                     message: 'One of the referenced tender / ledger / company / branch / user records does not exist',
                 },
             ]);
         }
     }
     throwNotFound(tdId) {
-        (0, module_service_utils_1.throwAccountsNotFound)('Tender line not found', 'tdId', `No active tender line found with id ${tdId}`);
+        (0, module_service_utils_1.throwAccountsNotFound)('Tender line not found', 'tdId', `No active tender line found with id ${tdId}`, tender_detail_api_types_1.TenderDetailErrorCode.NOT_FOUND);
     }
     displayName(record, tenderName) {
         return tenderName || `Tender ${record.tdRowNo}`;

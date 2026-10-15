@@ -4,6 +4,7 @@ export interface SalesCodedErrorDetail extends SalesErrorDetail {
     code: SalesErrorCodeLike;
     line?: number;
     statutory?: SalesStatutoryRef;
+    status?: string;
 }
 export declare function throwSalesLocked(message: string, code: SalesErrorCodeLike, field: string, detail?: Partial<SalesCodedErrorDetail>): never;
 export declare function throwSalesRefused(message: string, code: SalesErrorCodeLike, field: string, detail?: Partial<SalesCodedErrorDetail>): never;

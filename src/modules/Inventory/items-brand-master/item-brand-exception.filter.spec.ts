@@ -6,6 +6,7 @@ const createHost = (response: Response) =>
   ({
     switchToHttp: () => ({
       getResponse: () => response,
+      getRequest: () => ({ method: 'POST', url: '/test' }),
     }),
   }) as never;
 
@@ -55,7 +56,7 @@ describe('ItemBrandExceptionFilter', () => {
       errors: [
         {
           field: 'brand_name',
-          message: 'brand_name should not be empty',
+          code: 'VALIDATION_FAILED', message: 'brand_name should not be empty',
         },
       ],
     });
@@ -68,7 +69,7 @@ describe('ItemBrandExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   });
 });

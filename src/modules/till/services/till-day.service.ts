@@ -10,9 +10,15 @@ import {
 } from '../till-dates';
 import { throwTill, throwTillNotFound } from '../till-errors';
 import type { TillCaller } from '../till-context.service';
-import type { TillSettings } from '../till.settings';
 import { TillEventService } from './till-event.service';
-import { TillDayStatus, TillErrorCode, TillEventCode, TillSessionStatus } from '../types/till-enum';
+import { TILL_SETTING_DEFAULTS, type TillSettings } from '../till.settings';
+import {
+  TillDayStatus,
+  TillErrorCode,
+  TillEventCode,
+  TillReceiptStatus,
+  TillSessionStatus,
+} from '../types/till-enum';
 import type { TillDayPayload } from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
@@ -28,7 +34,8 @@ export interface OpenDay {
  * The business day (§5.3, D2): one per branch per trading date, above every
  * session. Phase 1 owns opening it — automatically with the first session
  * (till.day_auto_open) or by a manager's Day Open — and reading it. The day
- * close, its checklist and the store Z are phase 4.
+ * close, its checklist and the store Z are phase 4; the day already reports
+ * the bags no supervisor has received (notes 113), which that close refuses on.
  */
 @Injectable()
 export class TillDayService {
@@ -40,7 +47,8 @@ export class TillDayService {
   /**
    * The OPEN day for the current business date, opening it when the setting
    * allows. A day already CLOSING takes no new session; a CLOSED one takes no
-   * money at all (SALES_DAY_CLOSED — the error /bills/retender already speaks).
+   * session (TILL_DAY_NOT_OPEN, notes 117) and no money (SALES_DAY_CLOSED from
+   * the sales guards).
    *
    * Race-free without a lock: ux_tbd_date is the arbiter. Two counters opening
    * their first sessions together both INSERT … ON CONFLICT DO NOTHING; one
@@ -103,11 +111,13 @@ export class TillDayService {
       );
     }
     if (status === TillDayStatus.CLOSED) {
+      // Notes 117: no session opens on a closed day (bills into it answer
+      // SALES_DAY_CLOSED from the sales guards, which read this table).
       throwTill(
-        TillErrorCode.SALES_DAY_CLOSED,
-        `Business day ${businessDate} is closed`,
+        TillErrorCode.DAY_NOT_OPEN,
+        `Business day ${businessDate} is closed: a manager reopens it (days/reopen) before a session opens on it`,
         'businessDate',
-        { businessDate },
+        { businessDate, status },
       );
     }
 
@@ -169,6 +179,28 @@ export class TillDayService {
       where: { tssDayId: day.tbdId, tssAccYear: day.tbdAccYear, tssIsDeleted: false },
       _count: { _all: true },
     });
+    // Notes 113: every unreceived bag of the branch, this day's apart. A bag's
+    // doc date is its session's business date, so "earlier" is by that date.
+    const awaiting = await this.prisma.tillCashMovement.findMany({
+      where: {
+        tcmCompanyId: day.tbdCompanyId,
+        tcmBranchId: day.tbdBranchId,
+        tcmIsDeleted: false,
+        tcmStatus: 'POSTED',
+        tcmReceiptStatus: TillReceiptStatus.AWAITING,
+        tcmDocDate: { lte: day.tbdBusinessDate },
+      },
+      select: { tcmDayId: true, tcmCreatedOn: true },
+      orderBy: { tcmCreatedOn: 'asc' },
+    });
+    const thisDay = awaiting.filter((m) => m.tcmDayId === day.tbdId).length;
+    const closer = day.tbdClosedBy
+      ? await this.prisma.userMaster.findUnique({
+          where: { usrId: day.tbdClosedBy },
+          select: { usrLoginName: true, usrDisplayName: true },
+        })
+      : null;
+    const num = (v: Prisma.Decimal | null) => (v === null ? 0 : Number(v.toFixed(2)));
     return {
       tbdId: day.tbdId,
       tbdAccYear: day.tbdAccYear,
@@ -179,12 +211,39 @@ export class TillDayService {
       tbdOpenedOn: day.tbdOpenedOn.toISOString(),
       tbdOpenedBy: day.tbdOpenedBy,
       tbdClosedOn: day.tbdClosedOn ? day.tbdClosedOn.toISOString() : null,
+      tbdClosedBy: day.tbdClosedBy,
+      tbdClosedByName: closer ? closer.usrDisplayName?.trim() || closer.usrLoginName : null,
       tbdZNo: day.tbdZNo,
       tbdReopenCount: day.tbdReopenCount,
+      totals: {
+        sessionCount: day.tbdSessionCount,
+        billCount: day.tbdBillCount,
+        netSales: num(day.tbdNetSales),
+        cashExpected: num(day.tbdCashExpected),
+        cashCounted: num(day.tbdCashCounted),
+        cashVariance: num(day.tbdCashVariance),
+        noncashVariance: num(day.tbdNoncashVariance),
+      },
+      tbdExceptionCount: day.tbdExceptionCount,
+      tbdCloseApprovalId: day.tbdCloseApprovalId,
+      tbdPrintCount: day.tbdPrintCount,
+      tbdNotes: day.tbdNotes,
       sessions: counts.map((c) => ({
         status: c.tssStatus as TillSessionStatus,
         count: c._count._all,
       })),
+      handoverReceipt: (settings ?? TILL_SETTING_DEFAULTS).handoverReceipt,
+      awaitingReceipt: {
+        thisDay,
+        earlierDays: awaiting.length - thisDay,
+        oldestOn: awaiting[0]?.tcmCreatedOn.toISOString() ?? null,
+      },
+      safe: {
+        opening: num(day.tbdSafeOpening),
+        expected: num(day.tbdSafeExpected),
+        counted: day.tbdSafeCounted === null ? null : num(day.tbdSafeCounted),
+        remitted: num(day.tbdRemitted),
+      },
     };
   }
 }

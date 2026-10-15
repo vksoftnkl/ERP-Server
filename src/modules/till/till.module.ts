@@ -4,15 +4,19 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CommonPostingModule } from '../../common/posting/posting.module';
 import { TillController } from './till.controller';
 import { TillMastersController } from './till-masters.controller';
+import { TillSafeController } from './till-safe.controller';
 import { TillExceptionFilter } from './till-exception.filter';
 import { TillContextService } from './till-context.service';
 import { TillApprovalService } from './services/till-approval.service';
 import { TillDayService } from './services/till-day.service';
+import { TillDayCloseService } from './services/till-day-close.service';
 import { TillEventService } from './services/till-event.service';
 import { TillLedgerService } from './services/till-ledger.service';
 import { TillMastersService } from './services/till-masters.service';
 import { TillMovementService } from './services/till-movement.service';
 import { TillPostingService } from './services/till-posting.service';
+import { TillPrintService } from './services/till-print.service';
+import { TillSafeService } from './services/till-safe.service';
 import { TillSessionService } from './services/till-session.service';
 import { TillSlipCheckService } from './services/till-slip-check.service';
 
@@ -23,24 +27,29 @@ import { TillSlipCheckService } from './services/till-slip-check.service';
  * TDrp / TVar go through VoucherPostingService like every other voucher), and
  * the audit log for the masters. TillSessionService is exported for the money
  * paths' `resolveForMoney` check (§7.4); TillApprovalService for the rules a
- * payment or an expense reports (plan-till-receipt-payment-expense §3.3 / §4.3).
+ * payment or an expense reports (plan-till-receipt-payment-expense §3.3 / §4.3);
+ * TillPrintService for the print module's till.* providers (notes 117 §7).
+ * TillSafeController / TillSafeService are the safe (notes 118, Cash Office 287).
  */
 @Module({
   imports: [AppSettingsModule, AuditLogModule, CommonPostingModule],
-  controllers: [TillController, TillMastersController],
+  controllers: [TillController, TillMastersController, TillSafeController],
   providers: [
     TillApprovalService,
     TillContextService,
     TillDayService,
+    TillDayCloseService,
     TillEventService,
     TillLedgerService,
     TillPostingService,
+    TillPrintService,
+    TillSafeService,
     TillSessionService,
     TillMastersService,
     TillMovementService,
     TillSlipCheckService,
     TillExceptionFilter,
   ],
-  exports: [TillSessionService, TillApprovalService, TillEventService],
+  exports: [TillSessionService, TillApprovalService, TillEventService, TillPrintService],
 })
 export class TillModule {}

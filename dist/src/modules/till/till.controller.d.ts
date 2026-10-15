@@ -1,23 +1,30 @@
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { TillContextService } from './till-context.service';
 import { TillDayService } from './services/till-day.service';
+import { TillDayCloseService } from './services/till-day-close.service';
 import { TillEventService } from './services/till-event.service';
 import { TillSessionService } from './services/till-session.service';
 import { TillMovementService } from './services/till-movement.service';
+import { TillSafeService } from './services/till-safe.service';
 import { TillSlipCheckService } from './services/till-slip-check.service';
-import { CloseTillSessionDto, CountTillSessionDto, DecideTillVarianceDto, EndBillingTillSessionDto, OpenTillDayDto, OpenTillSessionDto, SuspendTillSessionDto, TillDayGetQueryDto, TillEventBatchDto, TillOpenCheckQueryDto, TillScopeDto, TillSessionKeyDto, CreateTillMovementDto, TillMovementKeyDto, VoidTillMovementDto, TillChangeDto, TillSlipCheckDto, TillSlipCheckQueryDto } from './dto/till-session.dto';
-import type { TillCountResultPayload, TillDayPayload, TillEventBatchPayload, TillMovementDetailPayload, TillOpenCheckPayload, TillSessionPayload, TillSlipCheckPayload, TillSlipCheckResultPayload, TillSuccessResponse, TillSupervisorPayload, TillVarianceDecisionPayload } from './types/till-api.types';
+import { CloseTillSessionDto, CountTillSessionDto, DecideTillVarianceDto, EndBillingTillSessionDto, OpenTillDayDto, OpenTillSessionDto, SuspendTillSessionDto, TillDayGetQueryDto, TillEventBatchDto, TillOpenCheckQueryDto, TillScopeDto, TillSessionKeyDto, CreateTillMovementDto, TillMovementKeyDto, VoidTillMovementDto, TillChangeDto, TillSlipCheckDto, TillSlipCheckQueryDto, TillAwaitingReceiptQueryDto, TillReceiveDto, ApproveTillCashDto, CloseTillDayDto, ForceCloseTillSessionDto, ReopenTillDayDto, ReopenTillSessionDto, TillDayKeyDto } from './dto/till-session.dto';
+import type { TillAwaitingReceiptPayload, TillCashApprovalPayload, TillReceivedPayload, TillCountResultPayload, TillDayCloseCheckPayload, TillDayClosePayload, TillDayPayload, TillDayReopenPayload, TillForceClosePayload, TillSessionReopenPayload, TillXReportPayload, TillEventBatchPayload, TillMovementDetailPayload, TillOpenCheckPayload, TillSessionPayload, TillSlipCheckPayload, TillSlipCheckResultPayload, TillSuccessResponse, TillSupervisorPayload, TillVarianceDecisionPayload } from './types/till-api.types';
 export declare class TillController {
     private readonly prisma;
     private readonly context;
     private readonly days;
+    private readonly dayClose;
     private readonly sessions;
     private readonly events;
     private readonly movements;
     private readonly slipCheck;
-    constructor(prisma: PrismaService, context: TillContextService, days: TillDayService, sessions: TillSessionService, events: TillEventService, movements: TillMovementService, slipCheck: TillSlipCheckService);
+    private readonly safes;
+    constructor(prisma: PrismaService, context: TillContextService, days: TillDayService, dayClose: TillDayCloseService, sessions: TillSessionService, events: TillEventService, movements: TillMovementService, slipCheck: TillSlipCheckService, safes: TillSafeService);
     openDay(dto: OpenTillDayDto): Promise<TillSuccessResponse<TillDayPayload>>;
     getDay(query: TillDayGetQueryDto): Promise<TillSuccessResponse<TillDayPayload>>;
+    closeCheck(query: TillDayKeyDto): Promise<TillSuccessResponse<TillDayCloseCheckPayload>>;
+    closeDay(dto: CloseTillDayDto): Promise<TillSuccessResponse<TillDayClosePayload>>;
+    reopenDay(dto: ReopenTillDayDto): Promise<TillSuccessResponse<TillDayReopenPayload>>;
     openCheck(query: TillOpenCheckQueryDto): Promise<TillSuccessResponse<TillOpenCheckPayload>>;
     open(dto: OpenTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
     current(query: TillScopeDto): Promise<TillSuccessResponse<TillSessionPayload | null>>;
@@ -31,6 +38,10 @@ export declare class TillController {
     count(dto: CountTillSessionDto): Promise<TillSuccessResponse<TillCountResultPayload>>;
     close(dto: CloseTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
     decideVariance(dto: DecideTillVarianceDto): Promise<TillSuccessResponse<TillVarianceDecisionPayload>>;
+    approveCash(dto: ApproveTillCashDto): Promise<TillSuccessResponse<TillCashApprovalPayload>>;
+    forceClose(dto: ForceCloseTillSessionDto): Promise<TillSuccessResponse<TillForceClosePayload>>;
+    reopenSession(dto: ReopenTillSessionDto): Promise<TillSuccessResponse<TillSessionReopenPayload>>;
+    xReport(dto: TillSessionKeyDto): Promise<TillSuccessResponse<TillXReportPayload>>;
     createMovement(dto: CreateTillMovementDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
     supervisors(query: TillSessionKeyDto): Promise<TillSuccessResponse<TillSupervisorPayload[]>>;
     change(dto: TillChangeDto): Promise<TillSuccessResponse<{
@@ -39,8 +50,11 @@ export declare class TillController {
     }>>;
     getMovement(query: TillMovementKeyDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
     voidMovement(dto: VoidTillMovementDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
+    awaitingReceipt(query: TillAwaitingReceiptQueryDto): Promise<TillSuccessResponse<TillAwaitingReceiptPayload[]>>;
+    receive(dto: TillReceiveDto): Promise<TillSuccessResponse<TillReceivedPayload[]>>;
     batch(dto: TillEventBatchDto): Promise<TillSuccessResponse<TillEventBatchPayload>>;
     private requireAny;
+    private movementKind;
     private requireSessionView;
     private assertApprover;
     private operatorOf;

@@ -23,6 +23,8 @@ exports.toNullableNumber = toNullableNumber;
 exports.hasOwnProperty = hasOwnProperty;
 exports.applyPresentFields = applyPresentFields;
 const common_1 = require("@nestjs/common");
+const house_validation_1 = require("../validation/house-validation");
+const error_wording_1 = require("../error-wording/error-wording");
 exports.DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 exports.DEFAULT_PAGE = 1;
 exports.DEFAULT_LIMIT = 20;
@@ -46,9 +48,11 @@ function throwForbidden(message, errors) {
 function throwUnprocessable(message, errors) {
     throw new common_1.UnprocessableEntityException(buildErrorResponse(message, errors));
 }
-function throwNotFound(message, field, detailMessage) {
+function throwNotFound(message, field, detailMessage, code) {
     throw new common_1.NotFoundException(buildErrorResponse(message, [
-        { field, message: detailMessage },
+        (code
+            ? { field, message: detailMessage, code }
+            : { field, message: detailMessage }),
     ]));
 }
 function throwOnUniqueConstraintError(error, message, errors) {
@@ -135,11 +139,11 @@ function isPrismaErrorCode(error, code) {
     }
     return error.code === code;
 }
-function normalizeRequiredText(value, field, message = `${field} must not be empty`) {
+function normalizeRequiredText(value, field, message = `${field} must not be empty`, code) {
     const trimmed = value.trim();
     if (!trimmed) {
         throwBadRequest('Validation failed', [
-            { field, message },
+            (code ? { field, message, code } : { field, message }),
         ]);
     }
     return trimmed;
@@ -202,7 +206,7 @@ class ModuleExceptionFilter {
     }
     catch(exception, host) {
         const httpContext = host.switchToHttp();
-        const response = httpContext.getResponse();
+        const response = (0, error_wording_1.wordedResponse)(httpContext.getResponse(), httpContext.getRequest());
         if (exception instanceof common_1.HttpException) {
             const statusCode = exception.getStatus();
             const rawResponse = exception.getResponse();
@@ -223,14 +227,21 @@ class ModuleExceptionFilter {
         this.logger.error(`${request.method} ${request.url}`, exception instanceof Error ? exception.stack : JSON.stringify(exception));
         const overflow = numericOverflowOf(exception);
         if (overflow) {
+            const message = `A value is too large to save: ${overflow}`;
             response
                 .status(common_1.HttpStatus.UNPROCESSABLE_ENTITY)
-                .json(buildErrorResponse(`A value is too large to save: ${overflow}`));
+                .json(buildErrorResponse(message, [
+                { field: 'request', code: 'VALUE_TOO_LARGE', message },
+            ]));
             return;
         }
-        response
-            .status(common_1.HttpStatus.INTERNAL_SERVER_ERROR)
-            .json(buildErrorResponse('Internal server error'));
+        response.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json(buildErrorResponse('Internal server error', [
+            {
+                field: 'request',
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error',
+            },
+        ]));
     }
     isErrorResponse(value) {
         if (typeof value !== 'object' || value === null) {
@@ -256,6 +267,7 @@ class ModuleExceptionFilter {
                 : ['Validation failed'];
         const errors = messages.map((message) => ({
             field: this.inferFieldName(message),
+            code: (0, house_validation_1.frameworkValidationCode)(message),
             message,
         }));
         return buildErrorResponse('Validation failed', errors);

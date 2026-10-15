@@ -8,9 +8,10 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WidgetMasterExceptionFilter = void 0;
 const common_1 = require("@nestjs/common");
+const error_wording_1 = require("../../../common/error-wording/error-wording");
 let WidgetMasterExceptionFilter = class WidgetMasterExceptionFilter {
     catch(exception, host) {
-        const response = host.switchToHttp().getResponse();
+        const response = (0, error_wording_1.wordedResponse)(host.switchToHttp().getResponse(), host.switchToHttp().getRequest());
         if (exception instanceof common_1.HttpException) {
             const statusCode = exception.getStatus();
             const rawResponse = exception.getResponse();

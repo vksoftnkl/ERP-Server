@@ -15,6 +15,14 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const print_render_constants_1 = require("./print-render.constants");
+const PRINT_COUNTERS = {
+    TILL_SESSION_Z: (docId, accYear) => client_1.Prisma.sql `
+    UPDATE accounts.till_session SET tss_print_count = tss_print_count + 1
+     WHERE tss_id = ${docId}::uuid AND tss_acc_year = ${accYear}::char(9)`,
+    TILL_DAY_Z: (docId, accYear) => client_1.Prisma.sql `
+    UPDATE accounts.till_business_day SET tbd_print_count = tbd_print_count + 1
+     WHERE tbd_id = ${docId}::uuid AND tbd_acc_year = ${accYear}::char(9)`,
+};
 let PrintLogService = PrintLogService_1 = class PrintLogService {
     prisma;
     logger = new common_1.Logger(PrintLogService_1.name);
@@ -45,7 +53,9 @@ let PrintLogService = PrintLogService_1 = class PrintLogService {
         if (entries.length === 0)
             return [];
         try {
-            return await this.insert(entries);
+            const ids = await this.insert(entries);
+            await this.bumpPrintCounters(entries);
+            return ids;
         }
         catch (error) {
             if (this.isMissingPartition(error)) {
@@ -54,7 +64,9 @@ let PrintLogService = PrintLogService_1 = class PrintLogService {
                     'A new accounting year needs fn_create_printing_partitions before its first print.');
                 try {
                     await this.createPartition(accYear);
-                    return await this.insert(entries);
+                    const ids = await this.insert(entries);
+                    await this.bumpPrintCounters(entries);
+                    return ids;
                 }
                 catch (retryError) {
                     this.reportSwallowed(entries, retryError);
@@ -63,6 +75,26 @@ let PrintLogService = PrintLogService_1 = class PrintLogService {
             }
             this.reportSwallowed(entries, error);
             return [];
+        }
+    }
+    async bumpPrintCounters(entries) {
+        for (const entry of entries) {
+            const counter = PRINT_COUNTERS[entry.srcDocType];
+            if (!counter ||
+                (entry.outputMode !== 'PRINT' && entry.outputMode !== 'REPRINT') ||
+                entry.status !== 'SUCCESS' ||
+                entry.copyNo !== 1 ||
+                !entry.srcDocId ||
+                !entry.srcAccYear) {
+                continue;
+            }
+            try {
+                await this.prisma.$executeRaw(counter(entry.srcDocId, entry.srcAccYear));
+            }
+            catch (error) {
+                this.logger.error(`Could not bump the print count of ${entry.srcDocType} ${entry.srcDocId}: ` +
+                    `${error instanceof Error ? error.message : String(error)}`);
+            }
         }
     }
     async insert(entries) {

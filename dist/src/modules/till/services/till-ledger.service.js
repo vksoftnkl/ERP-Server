@@ -10,6 +10,7 @@ exports.TillLedgerService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.helper");
+const voucher_books_sql_1 = require("../../reports/common/voucher-books.sql");
 const till_errors_1 = require("../till-errors");
 const till_enum_1 = require("../types/till-enum");
 const ZERO = new client_1.Prisma.Decimal(0);
@@ -183,6 +184,23 @@ let TillLedgerService = class TillLedgerService {
             select: { tsfId: true, tsfLedgerId: true, tsfName: true },
         });
         return safe ? { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName } : null;
+    }
+    async ledgerBalances(client, scope, ledgerIds) {
+        const ids = [...new Set(ledgerIds)];
+        if (ids.length === 0) {
+            return new Map();
+        }
+        const books = { companyId: scope.companyId, accYear: scope.accYear, branchId: scope.branchId };
+        const ledgers = { ledgerIds: ids };
+        const rows = await client.$queryRaw `
+      SELECT ledger_id::text, sum(amt) AS bal FROM (
+        ${(0, voucher_books_sql_1.openingSetSql)(books, ledgers)}
+        UNION ALL
+        SELECT l.av_ledger_id AS ledger_id, sum(l.av_signed_amount) AS amt
+          FROM (${(0, voucher_books_sql_1.countedLegsSql)(books, { upTo: scope.upTo, ledgers })}) l
+         GROUP BY l.av_ledger_id) b
+       GROUP BY ledger_id`;
+        return new Map(rows.map((r) => [r.ledger_id, new client_1.Prisma.Decimal(r.bal ?? 0)]));
     }
     async roleLedger(tx, role, companyId, branchId) {
         const resolved = await (0, ledger_map_helper_1.resolveRoleLedgers)(tx, [{ role }], {

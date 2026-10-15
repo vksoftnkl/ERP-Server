@@ -8,8 +8,13 @@
 ///   PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
 ///   DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
 ///   CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+///     notes 113, till.handover_receipt = REQUIRED: a DROP / CLOSE_HANDOVER posts
+///     Dr Till cash awaiting receipt instead (tcm_receipt_status AWAITING), and a
+///     supervisor's receive posts TRcv Dr Safe / Cr awaiting (RECEIVED)
 ///   PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
 ///   REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+///     notes 118: tcm_ledger_id = the bank it is bound for, either way; a CIT one is
+///     confirmed later — CRem Dr Bank / Cr Cash in transit (tcm_confirm_voucher_id)
 ///   SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
 ///   EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
 ///
@@ -83,6 +88,38 @@ model TillCashMovement {
   /// Notes 108: when the witness's till PIN was checked (PICKUP / TOP_UP).
   /// NULL = no witness proven. Physically last (20261012140000).
   tcmWitnessVerifiedOn DateTime? @db.Timestamptz(6)                  @map("tcm_witness_verified_on")
+  // ── Added by 20261014100000 (notes 113) — physically last on the table ──
+  /// NULL = straight into the safe (setting NONE, a pickup, every row before
+  /// notes 113) | AWAITING = in "Till cash awaiting receipt" | RECEIVED.
+  tcmReceiptStatus    String?   @db.VarChar(10)                      @map("tcm_receipt_status")
+  /// The supervisor who received it into the safe — counted (movements/receive)
+  /// or approved on the session (sessions/approve-cash, notes 114); not the
+  /// cashier, unless till.single_operator (the service's rule, no CHECK).
+  tcmReceivedBy       String?   @db.Uuid                             @map("tcm_received_by")
+  tcmReceivedOn       DateTime? @db.Timestamptz(6)                   @map("tcm_received_on")
+  /// What the supervisor received; ≠ tcm_amount = a RECEIVE-stage variance.
+  tcmReceivedAmount   Decimal?  @db.Decimal(15, 2)                   @map("tcm_received_amount")
+  /// The DROP_VERIFY count behind a movements/receive; NULL for approve-cash
+  /// (no count, notes 114 — ck_tcm_received no longer asks for it).
+  tcmReceiveCountId   String?   @db.Uuid                             @map("tcm_receive_count_id")
+  /// The TRcv voucher (Dr Safe / Cr awaiting); none for an empty bag.
+  tcmReceiveVoucherId String?   @db.Uuid                             @map("tcm_receive_voucher_id")
+  tcmReceiveVoucherAccYear String? @db.Char(9)                       @map("tcm_receive_voucher_acc_year")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// REMIT only (ck_tcm_remit): BANK_DEPOSIT (staff paid it in) | CIT (an agency took it).
+  tcmRemitMode        String?   @db.VarChar(12)                      @map("tcm_remit_mode")
+  /// REMIT only: DEPOSITED (BANK_DEPOSIT) | IN_TRANSIT → CONFIRMED (CIT; ck_tcm_remit_flow).
+  tcmRemitStatus      String?   @db.VarChar(10)                      @map("tcm_remit_status")
+  /// CIT confirmed: the date and reference the bank statement shows.
+  tcmBankDate         DateTime? @db.Date                             @map("tcm_bank_date")
+  tcmBankRef          String?   @db.VarChar(50)                      @map("tcm_bank_ref")
+  /// What the bank credited; short of tcm_amount = a REMIT-stage variance.
+  tcmBankAmount       Decimal?  @db.Decimal(15, 2)                   @map("tcm_bank_amount")
+  tcmConfirmedBy      String?   @db.Uuid                             @map("tcm_confirmed_by")
+  tcmConfirmedOn      DateTime? @db.Timestamptz(6)                   @map("tcm_confirmed_on")
+  /// The Contra (CRem Dr Bank / Cr Cash in transit); none for a credit of 0.
+  tcmConfirmVoucherId String?   @db.Uuid                             @map("tcm_confirm_voucher_id")
+  tcmConfirmVoucherAccYear String? @db.Char(9)                       @map("tcm_confirm_voucher_acc_year")
 
   // Relations
   ledger              AccLedgerMaster? @relation("TillCashMovementLedger", fields: [tcmLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_ledger")
@@ -95,10 +132,17 @@ model TillCashMovement {
   //   CREATE UNIQUE INDEX ux_tcm_doc_no ON accounts.till_cash_movement
   //       (tcm_company_id, tcm_branch_id, tcm_kind, tcm_doc_no, tcm_acc_year) WHERE tcm_is_deleted = false;
   //   ix_tcm_session, ix_tcm_day, ix_tcm_safe, and ix_tcm_unposted (reconciliation:
-  //   a POSTED non-EXCHANGE movement with no voucher).
+  //   a POSTED non-EXCHANGE movement with no voucher); ix_tcm_awaiting (notes 113:
+  //   POSTED rows AWAITING receipt); ix_tcm_in_transit (notes 118: POSTED REMITs IN_TRANSIT).
   // CHECKs: ck_tcm_kind, ck_tcm_status, ck_tcm_amount, ck_tcm_session, ck_tcm_safe, ck_tcm_ledger,
   //         ck_tcm_reason, ck_tcm_transfer, ck_tcm_witness, ck_tcm_pickup_witness, ck_tcm_void,
-  //         ck_tcm_voucher_pair, ck_tcm_witness_verified (a verified witness is a named one).
+  //         ck_tcm_voucher_pair, ck_tcm_witness_verified (a verified witness is a named one),
+  //         notes 113: ck_tcm_receipt_status, ck_tcm_receipt_kind (DROP / CLOSE_HANDOVER only),
+  //         ck_tcm_received (RECEIVED ⇔ by / on / amount / count), ck_tcm_received_amount,
+  //         ck_tcm_receive_voucher_pair, ck_tcm_receive_voucher,
+  //         notes 118: ck_tcm_remit (REMIT ⇔ mode + status), ck_tcm_remit_flow, ck_tcm_remit_confirmed
+  //         (CONFIRMED ⇔ bank date / amount, confirmed by / on), ck_tcm_bank_amount,
+  //         ck_tcm_confirm_voucher_pair, ck_tcm_confirm_voucher.
   @@map("till_cash_movement")
   @@schema("accounts")
 }

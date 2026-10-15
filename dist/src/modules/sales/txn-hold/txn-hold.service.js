@@ -324,6 +324,10 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesConflict)(`Hold is LOCKED by device ${current.txhLockedDeviceId ?? 'unknown'}`, [
                 {
                     field: 'txhLockedDeviceId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.LOCKED_ELSEWHERE,
+                    status: current.txhStatus,
+                    lockedDeviceId: current.txhLockedDeviceId,
+                    lockExpiresOn: current.txhLockExpiresOn?.toISOString() ?? null,
                     message: `The hold is in use on device ${current.txhLockedDeviceId ?? 'unknown'} until ` +
                         `${current.txhLockExpiresOn?.toISOString() ?? 'the lease is released'}. It has to ` +
                         'be released there, expire, or be force-released before another device can ' +
@@ -334,6 +338,8 @@ let TxnHoldService = class TxnHoldService {
         (0, module_service_utils_1.throwSalesConflict)(`Hold is ${current.txhStatus} and cannot be resumed`, [
             {
                 field: 'txhStatus',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.NOT_RESUMABLE,
+                status: current.txhStatus,
                 message: `Only a hold in status ${txn_hold_api_types_1.TxnHoldStatus.HELD} can be resumed`,
             },
         ]);
@@ -354,6 +360,8 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesConflict)('Hold is already closed', [
                 {
                     field: 'txhStatus',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.CLOSED,
+                    status: current.txhStatus,
                     message: `A hold in status ${current.txhStatus} cannot be ${action}`,
                 },
             ]);
@@ -361,6 +369,9 @@ let TxnHoldService = class TxnHoldService {
         (0, module_service_utils_1.throwSalesForbidden)('Not leased by this device', [
             {
                 field: 'txhLockedDeviceId',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.NOT_LEASED_HERE,
+                status: current.txhStatus,
+                lockedDeviceId: current.txhLockedDeviceId,
                 message: current.txhLockedDeviceId
                     ? `The hold is leased by device ${current.txhLockedDeviceId}, so only that device can ` +
                         `have it ${action}`
@@ -406,6 +417,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesBadRequest)('Templates cannot be leased', [
                 {
                     field: 'txhKind',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.TEMPLATE_NOT_LEASABLE,
                     message: 'A TEMPLATE is copied on resume, not locked. Read it and create a new hold from its ' +
                         'payload instead',
                 },
@@ -418,6 +430,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesBadRequest)('Device id is required', [
                 {
                     field: 'txhDeviceId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.DEVICE_REQUIRED,
                     message: 'The X-Device-Id header must be sent to resume, release or convert a hold',
                 },
             ]);
@@ -426,6 +439,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesBadRequest)('Device id is not a uuid', [
                 {
                     field: 'txhDeviceId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.DEVICE_INVALID,
                     message: 'The X-Device-Id header must be a fixed.device_master uuid (dev_id)',
                 },
             ]);
@@ -438,6 +452,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesBadRequest)('Operator is required', [
                 {
                     field: 'txhLockedBy',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.OPERATOR_REQUIRED,
                     message: 'A hold can only be leased by an authenticated user',
                 },
             ]);
@@ -452,12 +467,14 @@ let TxnHoldService = class TxnHoldService {
         if (!conversion.txhConvertedDocId) {
             details.push({
                 field: 'txhConvertedDocId',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.CONVERSION_INVALID,
                 message: 'txhConvertedDocId is required when converting a hold',
             });
         }
         if (!ACC_YEAR_PATTERN.test(conversion.txhConvertedAccYear ?? '')) {
             details.push({
                 field: 'txhConvertedAccYear',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.CONVERSION_INVALID,
                 message: 'txhConvertedAccYear is required when converting a hold, as YYYY-YYYY',
             });
         }
@@ -687,18 +704,21 @@ let TxnHoldService = class TxnHoldService {
         if (saveTxnHoldDto.txhCompanyId && saveTxnHoldDto.txhCompanyId !== existing.txhCompanyId) {
             details.push({
                 field: 'txhCompanyId',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.SCOPE_IMMUTABLE,
                 message: `txhCompanyId cannot be changed (stored value is ${existing.txhCompanyId})`,
             });
         }
         if (saveTxnHoldDto.txhBranchId && saveTxnHoldDto.txhBranchId !== existing.txhBranchId) {
             details.push({
                 field: 'txhBranchId',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.SCOPE_IMMUTABLE,
                 message: `txhBranchId cannot be changed (stored value is ${existing.txhBranchId})`,
             });
         }
         if (saveTxnHoldDto.txhAccYear && saveTxnHoldDto.txhAccYear !== existing.txhAccYear.trim()) {
             details.push({
                 field: 'txhAccYear',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.SCOPE_IMMUTABLE,
                 message: `txhAccYear cannot be changed (stored value is ${existing.txhAccYear.trim()})`,
             });
         }
@@ -726,6 +746,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesConflict)('Hold number already exists', [
                 {
                     field: 'txhHoldNo',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.HOLD_NO_DUPLICATE,
                     message: `A ${scope.txhDocType} hold numbered ${txhHoldNo} already exists for this ` +
                         'company / branch / year',
                 },
@@ -753,6 +774,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesConflict)('Hold serial already exists', [
                 {
                     field: 'txhHoldSlno',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.SLNO_DUPLICATE,
                     message: `Device ${scope.txhDeviceId} has already used serial ${txhHoldSlno} for a ` +
                         `${scope.txhDocType} hold this year`,
                 },
@@ -766,7 +788,11 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!company) {
             (0, module_service_utils_1.throwSalesBadRequest)('Company does not exist', [
-                { field: 'txhCompanyId', message: `No active company found with id ${companyId}` },
+                {
+                    field: 'txhCompanyId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.COMPANY_NOT_FOUND,
+                    message: `No active company found with id ${companyId}`,
+                },
             ]);
         }
     }
@@ -777,7 +803,11 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!branch) {
             (0, module_service_utils_1.throwSalesBadRequest)('Branch does not exist', [
-                { field: 'txhBranchId', message: `No active branch found with id ${branchId}` },
+                {
+                    field: 'txhBranchId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.BRANCH_NOT_FOUND,
+                    message: `No active branch found with id ${branchId}`,
+                },
             ]);
         }
     }
@@ -788,12 +818,20 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!device) {
             (0, module_service_utils_1.throwSalesBadRequest)('Device does not exist', [
-                { field: 'txhDeviceId', message: `No active device found with id ${deviceId}` },
+                {
+                    field: 'txhDeviceId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.DEVICE_NOT_FOUND,
+                    message: `No active device found with id ${deviceId}`,
+                },
             ]);
         }
         if (device.devIsBlocked) {
             (0, module_service_utils_1.throwSalesForbidden)('Device is blocked', [
-                { field: 'txhDeviceId', message: `Device ${deviceId} is blocked and cannot park work` },
+                {
+                    field: 'txhDeviceId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.DEVICE_BLOCKED,
+                    message: `Device ${deviceId} is blocked and cannot park work`,
+                },
             ]);
         }
     }
@@ -807,7 +845,11 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!user) {
             (0, module_service_utils_1.throwSalesBadRequest)('User does not exist', [
-                { field, message: `No active user found with id ${userId}` },
+                {
+                    field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.USER_NOT_FOUND,
+                    message: `No active user found with id ${userId}`,
+                },
             ]);
         }
     }
@@ -821,7 +863,11 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!session) {
             (0, module_service_utils_1.throwSalesBadRequest)('Login session does not exist', [
-                { field: 'txhSessionId', message: `No active login session found with id ${sessionId}` },
+                {
+                    field: 'txhSessionId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.SESSION_NOT_FOUND,
+                    message: `No active login session found with id ${sessionId}`,
+                },
             ]);
         }
     }
@@ -835,7 +881,11 @@ let TxnHoldService = class TxnHoldService {
         });
         if (!staff) {
             (0, module_service_utils_1.throwSalesBadRequest)('Employee does not exist', [
-                { field: 'txhStaffId', message: `No active employee found with id ${staffId}` },
+                {
+                    field: 'txhStaffId',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.STAFF_NOT_FOUND,
+                    message: `No active employee found with id ${staffId}`,
+                },
             ]);
         }
     }
@@ -855,13 +905,18 @@ let TxnHoldService = class TxnHoldService {
             }
             if (value === null) {
                 if (!guard.nullable) {
-                    details.push({ field: guard.field, message: `${guard.field} is required` });
+                    details.push({
+                        field: guard.field,
+                        code: txn_hold_api_types_1.TxnHoldErrorCode.VALUE_REQUIRED,
+                        message: `${guard.field} is required`,
+                    });
                 }
                 continue;
             }
             if (!guard.allowed.includes(value)) {
                 details.push({
                     field: guard.field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.VALUE_NOT_ALLOWED,
                     message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
                 });
             }
@@ -873,6 +928,7 @@ let TxnHoldService = class TxnHoldService {
             Array.isArray(payload)) {
             details.push({
                 field: 'txhPayload',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.PAYLOAD_INVALID,
                 message: 'txhPayload is required and must be a JSON object',
             });
         }
@@ -880,6 +936,7 @@ let TxnHoldService = class TxnHoldService {
         if (partyId && !values.txhPartyType) {
             details.push({
                 field: 'txhPartyType',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.PARTY_TYPE_REQUIRED,
                 message: 'txhPartyType is required when txhPartyId is set',
             });
         }
@@ -891,7 +948,11 @@ let TxnHoldService = class TxnHoldService {
         ]) {
             const merged = this.mergedNumber(sent, stored);
             if (merged !== null && merged < 0) {
-                details.push({ field, message: `${field} must be greater than or equal to 0` });
+                details.push({
+                    field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.AMOUNT_NEGATIVE,
+                    message: `${field} must be greater than or equal to 0`,
+                });
             }
         }
         const holdOn = data.txhHoldOn ?? existing?.txhHoldOn ?? null;
@@ -899,6 +960,7 @@ let TxnHoldService = class TxnHoldService {
         if (holdOn && expiresOn && expiresOn.getTime() <= holdOn.getTime()) {
             details.push({
                 field: 'txhExpiresOn',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.EXPIRY_BEFORE_HOLD,
                 message: 'txhExpiresOn must be after txhHoldOn',
             });
         }
@@ -908,6 +970,7 @@ let TxnHoldService = class TxnHoldService {
         if ((printCount === 0) !== (lastPrintedOn === null)) {
             details.push({
                 field: 'txhLastPrintedOn',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.PRINT_STAMP_INVALID,
                 message: 'txhLastPrintedOn must be set exactly when txhPrintCount is greater than 0 ' +
                     '(and null when it is 0)',
             });
@@ -917,12 +980,16 @@ let TxnHoldService = class TxnHoldService {
             if (status === String(txn_hold_api_types_1.TxnHoldStatus.LOCKED)) {
                 details.push({
                     field: 'txhStatus',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.STATUS_NOT_SETTABLE,
+                    status,
                     message: 'A hold is put into LOCKED by POST /txn-holds/:id/resume, not by this payload',
                 });
             }
             if (status === String(txn_hold_api_types_1.TxnHoldStatus.CONVERTED)) {
                 details.push({
                     field: 'txhStatus',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.STATUS_NOT_SETTABLE,
+                    status,
                     message: 'A hold is put into CONVERTED by POST /txn-holds/:id/convert, which stamps the ' +
                         'conversion trail with it',
                 });
@@ -937,6 +1004,8 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesConflict)('Hold is already closed', [
                 {
                     field: 'txhStatus',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.CLOSED,
+                    status: existing.txhStatus,
                     message: `A hold in status ${existing.txhStatus} cannot be reopened`,
                 },
             ]);
@@ -1042,7 +1111,11 @@ let TxnHoldService = class TxnHoldService {
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) {
             (0, module_service_utils_1.throwSalesBadRequest)('Validation failed', [
-                { field, message: `${field} must be a valid ISO-8601 date-time` },
+                {
+                    field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.DATE_INVALID,
+                    message: `${field} must be a valid ISO-8601 date-time`,
+                },
             ]);
         }
         return parsed;
@@ -1050,7 +1123,11 @@ let TxnHoldService = class TxnHoldService {
     requireField(value, field) {
         if (!value) {
             (0, module_service_utils_1.throwSalesBadRequest)(`${field} is required`, [
-                { field, message: `${field} must be provided when creating a hold` },
+                {
+                    field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.FIELD_REQUIRED,
+                    message: `${field} must be provided when creating a hold`,
+                },
             ]);
         }
         return value;
@@ -1063,6 +1140,7 @@ let TxnHoldService = class TxnHoldService {
             (0, module_service_utils_1.throwSalesBadRequest)('txhPayload is required', [
                 {
                     field: 'txhPayload',
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.PAYLOAD_INVALID,
                     message: 'txhPayload must be the module’s save body, as a JSON object',
                 },
             ]);
@@ -1073,7 +1151,11 @@ let TxnHoldService = class TxnHoldService {
         const year = this.requireField(value, field).trim();
         if (!ACC_YEAR_PATTERN.test(year)) {
             (0, module_service_utils_1.throwSalesBadRequest)(`${field} is malformed`, [
-                { field, message: `${field} must be an accounting year in the form YYYY-YYYY` },
+                {
+                    field,
+                    code: txn_hold_api_types_1.TxnHoldErrorCode.ACC_YEAR_INVALID,
+                    message: `${field} must be an accounting year in the form YYYY-YYYY`,
+                },
             ]);
         }
         return year;
@@ -1082,13 +1164,14 @@ let TxnHoldService = class TxnHoldService {
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Hold already exists', [
             {
                 field: 'txhHoldNo',
+                code: txn_hold_api_types_1.TxnHoldErrorCode.DUPLICATE,
                 message: 'Duplicate txhHoldNo / txhHoldSlno for this company, branch, year, device and ' +
                     'document type, or a second live autosave for this screen',
             },
         ]);
     }
     throwNotFound(txhId) {
-        (0, module_service_utils_1.throwSalesNotFound)('Hold not found', 'txhId', `No active hold found with id ${txhId}`);
+        (0, module_service_utils_1.throwSalesNotFound)('Hold not found', 'txhId', `No active hold found with id ${txhId}`, txn_hold_api_types_1.TxnHoldErrorCode.NOT_FOUND);
     }
     displayName(record) {
         return record.txhHoldNo?.trim() || record.txhId;

@@ -9,7 +9,6 @@ import {
   Post,
   Query,
   UseFilters,
-  ValidationPipe,
   Version,
 } from '@nestjs/common';
 import {
@@ -47,6 +46,7 @@ import {
   LedgerBankAccountPayload,
 } from './types/account-ledger-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 
 @ApiTags('Account Ledger Masters')
 @ApiBearerAuth('access-token')
@@ -60,12 +60,7 @@ export class AccountLedgerMastersController {
   // The /create route accepts a union (single object or { data: [...] }), so Nest's global
   // ValidationPipe skips it (the reflected metatype is Object). We validate explicitly with
   // the same options once we know which DTO the body resolves to.
-  private readonly bodyValidationPipe = new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-  });
+  private readonly bodyValidationPipe = createHouseValidationPipe();
 
   @Post('create')
   @Version(API_VERSION)

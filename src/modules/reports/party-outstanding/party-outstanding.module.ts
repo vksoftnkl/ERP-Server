@@ -7,10 +7,13 @@ import { PartyOutstandingService } from './party-outstanding.service';
  *
  * Imports no other feature module on purpose (§2): Prisma and the request
  * context are global, and nothing here calls another module's service, route
- * or DTO.
+ * or DTO. The service is exported for the print providers
+ * (settings/print-render/data/providers/party-outstanding.providers.ts), which
+ * call its `export` so the paper is the report's own rows.
  */
 @Module({
   controllers: [PartyOutstandingController],
   providers: [PartyOutstandingService],
+  exports: [PartyOutstandingService],
 })
 export class ReportsPartyOutstandingModule {}

@@ -31,6 +31,7 @@ export declare class PrintLogService {
     constructor(prisma: PrismaService);
     currentAccYear(companyId: string, fallback: string | null): Promise<string>;
     record(entries: readonly PrintLogEntry[]): Promise<string[]>;
+    private bumpPrintCounters;
     private insert;
     private createPartition;
     private isMissingPartition;

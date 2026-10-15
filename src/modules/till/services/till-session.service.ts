@@ -24,6 +24,7 @@ import {
   LIVE_SESSION_STATUSES,
   TenderCloseMode,
   TILL_MENU,
+  TillCashReceiptState,
   TillCountKind,
   TillCountOutcome,
   TillCounterClaim,
@@ -32,25 +33,32 @@ import {
   TillErrorCode,
   TillEventCode,
   TillFloatMode,
+  TillHandoverReceipt,
   TillMovementKind,
+  TillReceiptStatus,
   TillSessionStatus,
   TillSessionVarianceStatus,
   TillVarianceDecision,
+  TillVarianceStage,
   TillVarianceTreatment,
+  TILL_CASH_AWAITING_ROLE,
   VARIANCE_STATUS_OF_TREATMENT,
 } from '../types/till-enum';
 import type {
   TillCarriedFromPayload,
   TillCountLineInput,
   TillCountResultPayload,
+  TillForceClosePayload,
   TillOpenCheckCounterPayload,
   TillOpenCheckPayload,
   TillOpenCheckSessionPayload,
   TillMovementPayload,
   TillSessionPayload,
+  TillSessionReopenPayload,
   TillSessionTenderPayload,
   TillVarianceDecisionPayload,
   TillVariancePayload,
+  TillXReportPayload,
 } from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
@@ -86,6 +94,8 @@ export interface DecideVarianceInput {
   reasonId: string | null;
   note: string;
   approverPin: string | null;
+  /** Notes 113: a received bag's RECEIVE-stage difference instead of the close's. */
+  tcmId?: string | null;
 }
 
 interface CountedTender {
@@ -105,12 +115,20 @@ interface CountedTender {
  *        → still out after the last recount: PENDING_APPROVAL, and the close
  *          answers 428 TILL_APPROVAL_REQUIRED until an approver decides it
  *          (decideVariance, notes 105 A): APPROVE → COUNTING with a treatment,
- *          then close; RECOUNT → COUNTING with one more attempt.
+ *          then close; RECOUNT → COUNTING, uncounted, with one more attempt
+ *          (notes 112: the close waits for that count).
  *
  * ONE writer per row (D11): this service is the only writer of till_session,
  * till_count and till_count_line; TillPostingService of till_cash_movement and
  * the TVar status of till_variance.
  */
+
+/** Notes 117 §4: a session whose cashier has gone — still taking money, or being counted. */
+const FORCE_CLOSABLE: readonly TillSessionStatus[] = [
+  TillSessionStatus.OPEN,
+  TillSessionStatus.SUSPENDED,
+  TillSessionStatus.COUNTING,
+];
 @Injectable()
 export class TillSessionService {
   constructor(
@@ -616,61 +634,71 @@ export class TillSessionService {
         TillSessionStatus.OPEN,
         TillSessionStatus.SUSPENDED,
       ]);
-      const settings = await this.context.settings({
-        companyId: key.companyId,
-        branchId: key.branchId,
-        deviceId: session.tssDeviceId,
-        userId: session.tssOperatorId,
-      });
+      await this.endBillingIn(tx, session, caller);
+    });
+    return this.get(key, { asOperator: true });
+  }
 
-      const holds = await tx.$queryRaw<{ n: number }[]>`
-        SELECT count(*)::int AS n
-          FROM public.txn_hold
+  /** endBilling's work on a session already locked (OPEN / SUSPENDED) — force close's too. */
+  private async endBillingIn(
+    tx: Tx,
+    session: TillSession,
+    caller: TillCaller,
+    opts: { countPlace?: 'COUNTER' | 'CASH_OFFICE' } = {},
+  ): Promise<void> {
+    const settings = await this.context.settings({
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+      deviceId: session.tssDeviceId,
+      userId: session.tssOperatorId,
+    });
+
+    const holds = await tx.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n
+        FROM public.txn_hold
+       WHERE txh_session_id = ${session.tssId}::uuid
+         AND txh_is_deleted = false
+         AND txh_kind = 'HOLD'
+         AND txh_status IN ('HELD','LOCKED')`;
+    const held = holds[0]?.n ?? 0;
+    if (held > 0 && settings.closeWithHolds === 'BLOCK') {
+      throwTill(
+        TillErrorCode.HOLDS_OPEN,
+        `${held} held bill(s) are on this session; resume or cancel them first (till.close_with_holds = BLOCK)`,
+        'tssId',
+        { holds: held },
+      );
+    }
+    let released = 0;
+    if (held > 0) {
+      released = await tx.$executeRaw`
+        UPDATE public.txn_hold
+           SET txh_session_id  = NULL,
+               txh_counter_id  = NULL,
+               txh_modified_on = now(),
+               txh_modified_by = ${caller.actorName}
          WHERE txh_session_id = ${session.tssId}::uuid
            AND txh_is_deleted = false
            AND txh_kind = 'HOLD'
            AND txh_status IN ('HELD','LOCKED')`;
-      const held = holds[0]?.n ?? 0;
-      if (held > 0 && settings.closeWithHolds === 'BLOCK') {
-        throwTill(
-          TillErrorCode.HOLDS_OPEN,
-          `${held} held bill(s) are on this session; resume or cancel them first (till.close_with_holds = BLOCK)`,
-          'tssId',
-          { holds: held },
-        );
-      }
-      let released = 0;
-      if (held > 0) {
-        released = await tx.$executeRaw`
-          UPDATE public.txn_hold
-             SET txh_session_id  = NULL,
-                 txh_counter_id  = NULL,
-                 txh_modified_on = now(),
-                 txh_modified_by = ${caller.actorName}
-           WHERE txh_session_id = ${session.tssId}::uuid
-             AND txh_is_deleted = false
-             AND txh_kind = 'HOLD'
-             AND txh_status IN ('HELD','LOCKED')`;
-      }
+    }
 
-      await tx.tillSession.update({
-        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
-        data: {
-          tssStatus: TillSessionStatus.COUNTING,
-          tssSuspendedOn: null,
-          tssBillingEndedOn: new Date(),
-          tssCountMode: settings.blindClose ? 'BLIND' : 'OPEN',
-          tssCountPlace: settings.countPlace,
-          tssModifiedOn: new Date(),
-          tssModifiedBy: caller.actorName,
-        },
-      });
-      await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_END_BILLING, {
-        holdsReleased: released,
-        countMode: settings.blindClose ? 'BLIND' : 'OPEN',
-      });
+    await tx.tillSession.update({
+      where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+      data: {
+        tssStatus: TillSessionStatus.COUNTING,
+        tssSuspendedOn: null,
+        tssBillingEndedOn: new Date(),
+        tssCountMode: settings.blindClose ? 'BLIND' : 'OPEN',
+        tssCountPlace: opts.countPlace ?? settings.countPlace,
+        tssModifiedOn: new Date(),
+        tssModifiedBy: caller.actorName,
+      },
     });
-    return this.get(key, { asOperator: true });
+    await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_END_BILLING, {
+      holdsReleased: released,
+      countMode: settings.blindClose ? 'BLIND' : 'OPEN',
+    });
   }
 
   /**
@@ -775,180 +803,7 @@ export class TillSessionService {
       const session = await this.lockForCount(tx, key, caller, supervisor, [
         TillSessionStatus.COUNTING,
       ]);
-      const settings = await this.context.settings({
-        companyId: key.companyId,
-        branchId: key.branchId,
-        deviceId: session.tssDeviceId,
-        userId: session.tssOperatorId,
-      });
-      // A RECOUNT decision (notes 105) grants attempts past till.max_recounts.
-      const maxAttempts = 1 + settings.maxRecounts + session.tssRecountsGranted;
-      if (session.tssCountAttempts >= maxAttempts) {
-        throwTill(
-          TillErrorCode.RECOUNT_LIMIT,
-          `${session.tssCountAttempts} count(s) already made; a further recount needs RECOUNT approval`,
-          'tssId',
-          { event: 'RECOUNT', attempts: session.tssCountAttempts },
-        );
-      }
-      if (input.witnessBy && input.witnessBy === caller.userId) {
-        throwTill(
-          TillErrorCode.COUNT_INVALID,
-          'The witness must be someone other than the counter',
-          'witnessBy',
-        );
-      }
-
-      const expectations = await this.ledger.expected(tx, this.expectationSession(session));
-      const priced = await this.priceLines(tx, key.companyId, input.lines);
-      await this.assertCountable(tx, input.lines);
-      if (settings.closeByTerminal) {
-        this.assertTerminalNamed(input.lines, expectations);
-      }
-      const counted = this.countedByTender(priced, expectations);
-
-      const rows = this.compare(expectations, counted, settings);
-      const outOfTolerance = rows.filter((r) => !r.within);
-      const drawerOut = outOfTolerance.filter((r) => !isSlipRow(r));
-      const slipsOut = outOfTolerance.filter(isSlipRow);
-      const attemptNo = session.tssCountAttempts + 1;
-      const isLast = attemptNo >= maxAttempts;
-      const outcome =
-        drawerOut.length === 0
-          ? TillCountOutcome.ACCEPTED
-          : isLast
-            ? TillCountOutcome.SENT_FOR_APPROVAL
-            : TillCountOutcome.RECOUNT_REQUIRED;
-      const isFinal = outcome !== TillCountOutcome.RECOUNT_REQUIRED;
-      const slipCheckRequired = isFinal && slipsOut.length > 0;
-
-      const countedRows = rows.filter((r) => r.counted !== null);
-      if (isFinal) {
-        // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
-        // COUNTING with its last final count still flagged: this one takes the
-        // flag (ux_tct_final keeps one per session; every attempt stays, numbered).
-        await tx.tillCount.updateMany({
-          where: {
-            tctSessionId: session.tssId,
-            tctAccYear: session.tssAccYear,
-            tctKind: { in: [TillCountKind.CLOSE, TillCountKind.RECOUNT] },
-            tctIsFinal: true,
-            tctIsDeleted: false,
-          },
-          data: { tctIsFinal: false },
-        });
-      }
-      const count = await this.writeCount(tx, session, {
-        kind: attemptNo === 1 ? TillCountKind.CLOSE : TillCountKind.RECOUNT,
-        attemptNo,
-        isFinal,
-        isBlind: session.tssCountMode === 'BLIND',
-        lines: priced,
-        expected: countedRows.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
-        caller,
-        deviceId: caller.deviceId ?? session.tssDeviceId,
-        witnessBy: input.witnessBy ?? null,
-        notes: input.notes ?? null,
-      });
-
-      const cash = rows.find((r) => r.expectation.tenderTypeId === CASH_TENDER_TYPE_ID)!;
-      const slips = rows.filter((r) => r.expectation.closeMode === TenderCloseMode.SLIPS);
-      const sessionData: Prisma.TillSessionUpdateInput = {
-        tssCountAttempts: attemptNo,
-        tssModifiedOn: new Date(),
-        tssModifiedBy: caller.actorName,
-      };
-
-      if (isFinal) {
-        // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
-        // COUNTING with its last final count's variances still on file: this
-        // count replaces them (ux_tvr_live holds one live row per tender); the
-        // count itself took the final flag above.
-        await tx.tillVariance.updateMany({
-          where: {
-            tvrSessionId: session.tssId,
-            tvrAccYear: session.tssAccYear,
-            tvrStage: 'CLOSE',
-            tvrStatus: 'OPEN',
-            tvrIsDeleted: false,
-          },
-          data: { tvrIsDeleted: true, tvrModifiedOn: new Date(), tvrModifiedBy: caller.actorName },
-        });
-        for (const row of countedRows) {
-          await tx.tillVariance.create({
-            data: this.varianceRow(session, row, settings, caller, outcome),
-          });
-        }
-        Object.assign(sessionData, {
-          tssCloseCountId: count.tctId,
-          tssCountedOn: new Date(),
-          tssCountedBy: caller.userId,
-          tssWitnessBy: input.witnessBy ?? null,
-          tssCashExpected: cash.expectation.expected,
-          tssCashCounted: cash.counted ?? ZERO,
-          tssNoncashExpected: slips.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
-          tssNoncashCounted: slips.reduce((s, r) => s.plus(r.counted ?? ZERO), ZERO),
-          tssVarianceStatus:
-            outcome === TillCountOutcome.SENT_FOR_APPROVAL || slipCheckRequired
-              ? TillSessionVarianceStatus.PENDING
-              : rows.every((r) => r.variance.isZero())
-                ? TillSessionVarianceStatus.NONE
-                : TillSessionVarianceStatus.WITHIN_TOLERANCE,
-          ...(outcome === TillCountOutcome.SENT_FOR_APPROVAL
-            ? { tssStatus: TillSessionStatus.PENDING_APPROVAL }
-            : {}),
-        } satisfies Prisma.TillSessionUpdateInput);
-      }
-      await tx.tillSession.update({
-        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
-        data: sessionData,
-      });
-
-      await this.logSessionEvent(
-        tx,
-        session,
-        caller,
-        attemptNo === 1 ? TillEventCode.SESSION_COUNT : TillEventCode.SESSION_RECOUNT,
-        { attemptNo, outcome, countId: count.tctId },
-      );
-      if (outcome === TillCountOutcome.SENT_FOR_APPROVAL) {
-        await this.logSessionEvent(tx, session, caller, TillEventCode.APPROVAL_REQUESTED, {
-          event: outOfTolerance.some((r) => r.expectation.tenderTypeId === CASH_TENDER_TYPE_ID)
-            ? 'CASH_VARIANCE'
-            : 'NONCASH_VARIANCE',
-          variance: outOfTolerance.map((r) => ({
-            tenderTypeId: r.expectation.tenderTypeId,
-            tenderId: r.expectation.tenderId,
-            variance: r.variance.toFixed(2),
-          })),
-        });
-      } else if (slipCheckRequired) {
-        // The drawer agreed, a slip total did not: reported for the slip check
-        // and the approver (phase 3); nothing waits on it (`enforced: false`).
-        await this.logSessionEvent(tx, session, caller, TillEventCode.APPROVAL_REQUESTED, {
-          event: 'NONCASH_VARIANCE',
-          enforced: false,
-          variance: slipsOut.map((r) => ({
-            tenderTypeId: r.expectation.tenderTypeId,
-            tenderId: r.expectation.tenderId,
-            variance: r.variance.toFixed(2),
-          })),
-        });
-      }
-
-      return {
-        tctId: count.tctId,
-        attemptNo,
-        attemptsLeft: Math.max(0, maxAttempts - attemptNo),
-        outcome,
-        slipCheckRequired,
-        status:
-          isFinal && outcome === TillCountOutcome.SENT_FOR_APPROVAL
-            ? TillSessionStatus.PENDING_APPROVAL
-            : (session.tssStatus as TillSessionStatus),
-        blind: session.tssCountMode === 'BLIND',
-        operatorId: session.tssOperatorId,
-      };
+      return this.countIn(tx, session, caller, input);
     });
 
     // The cashier of a blind count never sees the figure, even one who also
@@ -968,6 +823,197 @@ export class TillSessionService {
       slipCheckRequired: result.slipCheckRequired,
       tssStatus: result.status,
       variances,
+    };
+  }
+
+  /**
+   * count's work on a session already locked COUNTING. `forced` (notes 117,
+   * force close): the supervisor's one count is final whatever the attempts —
+   * within tolerance ACCEPTED, else SENT_FOR_APPROVAL, never a recount.
+   */
+  private async countIn(
+    tx: Tx,
+    session: TillSession,
+    caller: TillCaller,
+    input: { lines: TillCountLineInput[]; witnessBy?: string | null; notes?: string | null },
+    opts: { forced?: boolean } = {},
+  ) {
+    const settings = await this.context.settings({
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+      deviceId: session.tssDeviceId,
+      userId: session.tssOperatorId,
+    });
+    // A RECOUNT decision (notes 105) grants attempts past till.max_recounts.
+    const maxAttempts = 1 + settings.maxRecounts + session.tssRecountsGranted;
+    if (!opts.forced && session.tssCountAttempts >= maxAttempts) {
+      throwTill(
+        TillErrorCode.RECOUNT_LIMIT,
+        `${session.tssCountAttempts} count(s) already made; a further recount needs RECOUNT approval`,
+        'tssId',
+        { event: 'RECOUNT', attempts: session.tssCountAttempts },
+      );
+    }
+    if (input.witnessBy && input.witnessBy === caller.userId) {
+      throwTill(
+        TillErrorCode.COUNT_INVALID,
+        'The witness must be someone other than the counter',
+        'witnessBy',
+      );
+    }
+
+    const expectations = await this.ledger.expected(tx, this.expectationSession(session));
+    const priced = await this.priceLines(tx, session.tssCompanyId, input.lines);
+    await this.assertCountable(tx, input.lines);
+    if (settings.closeByTerminal) {
+      this.assertTerminalNamed(input.lines, expectations);
+    }
+    const counted = this.countedByTender(priced, expectations);
+
+    const rows = this.compare(expectations, counted, settings);
+    const outOfTolerance = rows.filter((r) => !r.within);
+    const drawerOut = outOfTolerance.filter((r) => !isSlipRow(r));
+    const slipsOut = outOfTolerance.filter(isSlipRow);
+    const attemptNo = session.tssCountAttempts + 1;
+    const isLast = opts.forced || attemptNo >= maxAttempts;
+    const outcome =
+      drawerOut.length === 0
+        ? TillCountOutcome.ACCEPTED
+        : isLast
+          ? TillCountOutcome.SENT_FOR_APPROVAL
+          : TillCountOutcome.RECOUNT_REQUIRED;
+    const isFinal = outcome !== TillCountOutcome.RECOUNT_REQUIRED;
+    const slipCheckRequired = isFinal && slipsOut.length > 0;
+
+    const countedRows = rows.filter((r) => r.counted !== null);
+    if (isFinal) {
+      // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
+      // COUNTING with its last final count still flagged: this one takes the
+      // flag (ux_tct_final keeps one per session; every attempt stays, numbered).
+      await tx.tillCount.updateMany({
+        where: {
+          tctSessionId: session.tssId,
+          tctAccYear: session.tssAccYear,
+          tctKind: { in: [TillCountKind.CLOSE, TillCountKind.RECOUNT] },
+          tctIsFinal: true,
+          tctIsDeleted: false,
+        },
+        data: { tctIsFinal: false },
+      });
+    }
+    const count = await this.writeCount(tx, session, {
+      kind: attemptNo === 1 ? TillCountKind.CLOSE : TillCountKind.RECOUNT,
+      attemptNo,
+      isFinal,
+      isBlind: session.tssCountMode === 'BLIND',
+      lines: priced,
+      expected: countedRows.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
+      caller,
+      deviceId: caller.deviceId ?? session.tssDeviceId,
+      witnessBy: input.witnessBy ?? null,
+      notes: input.notes ?? null,
+    });
+
+    const cash = rows.find((r) => r.expectation.tenderTypeId === CASH_TENDER_TYPE_ID)!;
+    const slips = rows.filter((r) => r.expectation.closeMode === TenderCloseMode.SLIPS);
+    const sessionData: Prisma.TillSessionUpdateInput = {
+      tssCountAttempts: attemptNo,
+      tssModifiedOn: new Date(),
+      tssModifiedBy: caller.actorName,
+    };
+
+    // A drop received for other than was handed over (notes 113) still waits
+    // for its decision whatever this count says.
+    const receivePending = isFinal ? await this.hasPendingReceive(tx, session) : false;
+    if (isFinal) {
+      // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
+      // COUNTING with its last final count's variances still on file: this
+      // count replaces them (ux_tvr_live holds one live row per tender); the
+      // count itself took the final flag above.
+      await tx.tillVariance.updateMany({
+        where: {
+          tvrSessionId: session.tssId,
+          tvrAccYear: session.tssAccYear,
+          tvrStage: 'CLOSE',
+          tvrStatus: 'OPEN',
+          tvrIsDeleted: false,
+        },
+        data: { tvrIsDeleted: true, tvrModifiedOn: new Date(), tvrModifiedBy: caller.actorName },
+      });
+      for (const row of countedRows) {
+        await tx.tillVariance.create({
+          data: this.varianceRow(session, row, settings, caller, outcome),
+        });
+      }
+      Object.assign(sessionData, {
+        tssCloseCountId: count.tctId,
+        tssCountedOn: new Date(),
+        tssCountedBy: caller.userId,
+        tssWitnessBy: input.witnessBy ?? null,
+        tssCashExpected: cash.expectation.expected,
+        tssCashCounted: cash.counted ?? ZERO,
+        tssNoncashExpected: slips.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
+        tssNoncashCounted: slips.reduce((s, r) => s.plus(r.counted ?? ZERO), ZERO),
+        tssVarianceStatus:
+          outcome === TillCountOutcome.SENT_FOR_APPROVAL || slipCheckRequired || receivePending
+            ? TillSessionVarianceStatus.PENDING
+            : rows.every((r) => r.variance.isZero())
+              ? TillSessionVarianceStatus.NONE
+              : TillSessionVarianceStatus.WITHIN_TOLERANCE,
+        ...(outcome === TillCountOutcome.SENT_FOR_APPROVAL
+          ? { tssStatus: TillSessionStatus.PENDING_APPROVAL }
+          : {}),
+      } satisfies Prisma.TillSessionUpdateInput);
+    }
+    await tx.tillSession.update({
+      where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+      data: sessionData,
+    });
+
+    await this.logSessionEvent(
+      tx,
+      session,
+      caller,
+      attemptNo === 1 ? TillEventCode.SESSION_COUNT : TillEventCode.SESSION_RECOUNT,
+      { attemptNo, outcome, countId: count.tctId },
+    );
+    if (outcome === TillCountOutcome.SENT_FOR_APPROVAL) {
+      await this.logSessionEvent(tx, session, caller, TillEventCode.APPROVAL_REQUESTED, {
+        event: outOfTolerance.some((r) => r.expectation.tenderTypeId === CASH_TENDER_TYPE_ID)
+          ? 'CASH_VARIANCE'
+          : 'NONCASH_VARIANCE',
+        variance: outOfTolerance.map((r) => ({
+          tenderTypeId: r.expectation.tenderTypeId,
+          tenderId: r.expectation.tenderId,
+          variance: r.variance.toFixed(2),
+        })),
+      });
+    } else if (slipCheckRequired) {
+      // The drawer agreed, a slip total did not: reported for the slip check
+      // and the approver (phase 3); nothing waits on it (`enforced: false`).
+      await this.logSessionEvent(tx, session, caller, TillEventCode.APPROVAL_REQUESTED, {
+        event: 'NONCASH_VARIANCE',
+        enforced: false,
+        variance: slipsOut.map((r) => ({
+          tenderTypeId: r.expectation.tenderTypeId,
+          tenderId: r.expectation.tenderId,
+          variance: r.variance.toFixed(2),
+        })),
+      });
+    }
+
+    return {
+      tctId: count.tctId,
+      attemptNo,
+      attemptsLeft: Math.max(0, maxAttempts - attemptNo),
+      outcome,
+      slipCheckRequired,
+      status:
+        isFinal && outcome === TillCountOutcome.SENT_FOR_APPROVAL
+          ? TillSessionStatus.PENDING_APPROVAL
+          : (session.tssStatus as TillSessionStatus),
+      blind: session.tssCountMode === 'BLIND',
+      operatorId: session.tssOperatorId,
     };
   }
 
@@ -997,156 +1043,197 @@ export class TillSessionService {
         TillSessionStatus.COUNTING,
         TillSessionStatus.PENDING_APPROVAL,
       ]);
-      if ((session.tssStatus as TillSessionStatus) === TillSessionStatus.PENDING_APPROVAL) {
-        const ask = this.varianceAsk(await this.pendingVariances(tx, session));
-        const rule = await this.approval.ruleOrDefault(tx, {
-          companyId: key.companyId,
-          branchId: key.branchId,
-          event: ask.event,
-          onDate: isoDateOf(session.tssBusinessDate),
-        });
-        throwTill(
-          TillErrorCode.APPROVAL_REQUIRED,
-          'The count is outside tolerance: an approver decides the variance first (sessions/decide-variance)',
-          'tssId',
-          {
-            event: ask.event,
-            amount: num(ask.amount),
-            requiredRole: rule.tar_min_role,
-            channel: rule.tar_channel,
-            allowSelf: rule.tar_allow_self,
-          },
-        );
-      }
-      if (!session.tssCloseCountId) {
-        throwTill(
-          TillErrorCode.NOT_COUNTED,
-          'Count the drawer first (/till/sessions/count)',
-          'tssId',
-        );
-      }
+      await this.closeIn(tx, session, caller, input);
+    });
+    return this.get(key, { asOperator: true });
+  }
 
-      const settings = await this.context.settings({
+  /**
+   * close's work on a session already locked (COUNTING / PENDING_APPROVAL).
+   * A session closed before and reopened (notes 117) keeps its Z number.
+   */
+  private async closeIn(
+    tx: Tx,
+    session: TillSession,
+    caller: TillCaller,
+    input: { floatLeft?: number | null; notes?: string | null },
+  ): Promise<void> {
+    const key = {
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+      accYear: session.tssAccYear,
+      tssId: session.tssId,
+    };
+    if ((session.tssStatus as TillSessionStatus) === TillSessionStatus.PENDING_APPROVAL) {
+      const ask = this.varianceAsk(await this.pendingVariances(tx, session));
+      const rule = await this.approval.ruleOrDefault(tx, {
         companyId: key.companyId,
         branchId: key.branchId,
-        deviceId: session.tssDeviceId,
-        userId: session.tssOperatorId,
+        event: ask.event,
+        onDate: isoDateOf(session.tssBusinessDate),
       });
-      const counter = await tx.tillCounter.findUniqueOrThrow({
-        where: { tcnId: session.tssCounterId },
-      });
-      const businessDate = isoDateOf(session.tssBusinessDate);
-      const postingSession = this.postingSession(session, businessDate);
+      throwTill(
+        TillErrorCode.APPROVAL_REQUIRED,
+        'The count is outside tolerance: an approver decides the variance first (sessions/decide-variance)',
+        'tssId',
+        {
+          event: ask.event,
+          amount: num(ask.amount),
+          requiredRole: rule.tar_min_role,
+          channel: rule.tar_channel,
+          allowSelf: rule.tar_allow_self,
+        },
+      );
+    }
+    if (!session.tssCloseCountId) {
+      throwTill(
+        TillErrorCode.NOT_COUNTED,
+        'Count the drawer first (/till/sessions/count)',
+        'tssId',
+      );
+    }
+    // A drawer gap still PENDING means no accepted count stands behind this
+    // close, and nothing can decide it once the session is CLOSED (notes 112).
+    // Only a slip gap may close undecided (notes 99 §1).
+    const undecided = (await this.pendingVariances(tx, session)).filter((v) => !isSlipVariance(v));
+    if (undecided.length > 0) {
+      throwTill(
+        TillErrorCode.NOT_COUNTED,
+        'A drawer variance from the last count is still undecided: count the drawer again (/till/sessions/count)',
+        'tssId',
+        { tenderTypeIds: undecided.map((v) => v.tvrTenderTypeId) },
+      );
+    }
 
-      // ── what stays in the drawer, what goes to the safe ──────────────
-      const cashCounted = dec(session.tssCashCounted);
-      const floatLeft =
-        input.floatLeft !== undefined && input.floatLeft !== null
-          ? dec(input.floatLeft)
-          : settings.floatMode === TillFloatMode.CARRIED
-            ? Prisma.Decimal.min(cashCounted, dec(counter.tcnDefaultFloat))
-            : ZERO;
-      if (floatLeft.isNegative() || floatLeft.greaterThan(cashCounted)) {
+    const settings = await this.context.settings({
+      companyId: key.companyId,
+      branchId: key.branchId,
+      deviceId: session.tssDeviceId,
+      userId: session.tssOperatorId,
+    });
+    const counter = await tx.tillCounter.findUniqueOrThrow({
+      where: { tcnId: session.tssCounterId },
+    });
+    const businessDate = isoDateOf(session.tssBusinessDate);
+    const postingSession = this.postingSession(session, businessDate);
+
+    // ── what stays in the drawer, what goes to the safe ──────────────
+    const cashCounted = dec(session.tssCashCounted);
+    const floatLeft =
+      input.floatLeft !== undefined && input.floatLeft !== null
+        ? dec(input.floatLeft)
+        : settings.floatMode === TillFloatMode.CARRIED
+          ? Prisma.Decimal.min(cashCounted, dec(counter.tcnDefaultFloat))
+          : ZERO;
+    if (floatLeft.isNegative() || floatLeft.greaterThan(cashCounted)) {
+      throwTill(
+        TillErrorCode.FLOAT_INVALID,
+        `The float left must be between 0 and the cash counted`,
+        'floatLeft',
+      );
+    }
+    const handedOver = cashCounted.minus(floatLeft);
+
+    // ── the variances (TVar) ─────────────────────────────────────────
+    const variances = await tx.tillVariance.findMany({
+      where: {
+        tvrSessionId: session.tssId,
+        tvrAccYear: session.tssAccYear,
+        tvrIsDeleted: false,
+        tvrStage: 'CLOSE',
+        tvrStatus: 'OPEN',
+      },
+    });
+    const tillCash = await this.ledger.tillCashTender(tx, key.companyId, key.branchId);
+    for (const v of variances) {
+      const treatment = v.tvrTreatment as TillVarianceTreatment;
+      if (
+        treatment === TillVarianceTreatment.PENDING ||
+        treatment === TillVarianceTreatment.RETENDERED
+      ) {
+        // RETENDERED posts nothing; a slip gap left PENDING by an accepted
+        // count stays OPEN for its NONCASH_VARIANCE decision
+        continue;
+      }
+      const tenderLedgerId =
+        v.tvrTenderTypeId === CASH_TENDER_TYPE_ID
+          ? tillCash.ledgerId
+          : await this.tenderLedger(tx, v.tvrTenderId, v.tvrTenderTypeId);
+      await this.posting.postVariance(tx, {
+        session: postingSession,
+        tvrId: v.tvrId,
+        tenderLedgerId,
+        tenderLabel:
+          v.tvrTenderTypeId === CASH_TENDER_TYPE_ID ? 'Cash' : `tender type ${v.tvrTenderTypeId}`,
+        variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)),
+        treatment,
+        recoveryLedgerId: v.tvrRecoveryLedgerId,
+        caller,
+      });
+    }
+
+    // ── the hand-over (TDrp) ─────────────────────────────────────────
+    // Notes 113: under till.handover_receipt REQUIRED the bag goes to Till
+    // cash awaiting receipt, and reaches the safe when a supervisor receives it.
+    if (handedOver.greaterThan(0)) {
+      const safe = await this.ledger.safeFor(tx, {
+        companyId: key.companyId,
+        branchId: key.branchId,
+        counterSafeId: counter.tcnSafeId,
+      });
+      if (!safe) {
         throwTill(
-          TillErrorCode.FLOAT_INVALID,
-          `The float left must be between 0 and the cash counted`,
+          TillErrorCode.SAFE_MISSING,
+          `${handedOver.toFixed(2)} goes to the safe at close, and this branch has none (Till Masters, menu 275)`,
           'floatLeft',
         );
       }
-      const handedOver = cashCounted.minus(floatLeft);
-
-      // ── the variances (TVar) ─────────────────────────────────────────
-      const variances = await tx.tillVariance.findMany({
-        where: {
-          tvrSessionId: session.tssId,
-          tvrAccYear: session.tssAccYear,
-          tvrIsDeleted: false,
-          tvrStage: 'CLOSE',
-          tvrStatus: 'OPEN',
-        },
+      await this.posting.postMovement(tx, {
+        session: postingSession,
+        kind: TillMovementKind.CLOSE_HANDOVER,
+        amount: handedOver,
+        safe,
+        tillCash,
+        caller,
+        countId: session.tssCloseCountId,
+        awaitingLedgerId:
+          settings.handoverReceipt === TillHandoverReceipt.REQUIRED
+            ? await this.ledger.roleLedger(tx, TILL_CASH_AWAITING_ROLE, key.companyId, key.branchId)
+            : null,
       });
-      const tillCash = await this.ledger.tillCashTender(tx, key.companyId, key.branchId);
-      for (const v of variances) {
-        const treatment = v.tvrTreatment as TillVarianceTreatment;
-        if (
-          treatment === TillVarianceTreatment.PENDING ||
-          treatment === TillVarianceTreatment.RETENDERED
-        ) {
-          // RETENDERED posts nothing; a slip gap left PENDING by an accepted
-          // count stays OPEN for its NONCASH_VARIANCE decision
-          continue;
-        }
-        const tenderLedgerId =
-          v.tvrTenderTypeId === CASH_TENDER_TYPE_ID
-            ? tillCash.ledgerId
-            : await this.tenderLedger(tx, v.tvrTenderId, v.tvrTenderTypeId);
-        await this.posting.postVariance(tx, {
-          session: postingSession,
-          tvrId: v.tvrId,
-          tenderLedgerId,
-          tenderLabel:
-            v.tvrTenderTypeId === CASH_TENDER_TYPE_ID ? 'Cash' : `tender type ${v.tvrTenderTypeId}`,
-          variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)),
-          treatment,
-          recoveryLedgerId: v.tvrRecoveryLedgerId,
-          caller,
-        });
-      }
+    }
 
-      // ── the hand-over (TDrp) ─────────────────────────────────────────
-      if (handedOver.greaterThan(0)) {
-        const safe = await this.ledger.safeFor(tx, {
-          companyId: key.companyId,
-          branchId: key.branchId,
-          counterSafeId: counter.tcnSafeId,
-        });
-        if (!safe) {
-          throwTill(
-            TillErrorCode.SAFE_MISSING,
-            `${handedOver.toFixed(2)} goes to the safe at close, and this branch has none (Till Masters, menu 275)`,
-            'floatLeft',
-          );
-        }
-        await this.posting.postMovement(tx, {
-          session: postingSession,
-          kind: TillMovementKind.CLOSE_HANDOVER,
-          amount: handedOver,
-          safe,
-          tillCash,
-          caller,
-          countId: session.tssCloseCountId,
-        });
-      }
-
-      // ── frozen totals, Z, CLOSED ─────────────────────────────────────
-      const totals = await this.frozenTotals(tx, session);
-      const zNo = counter.tcnZLastNo + 1;
+    // ── frozen totals, Z, CLOSED ─────────────────────────────────────
+    const totals = await this.frozenTotals(tx, session);
+    // A reopened session (notes 117) closes again under the Z it had.
+    const zNo = session.tssZNo ?? counter.tcnZLastNo + 1;
+    if (session.tssZNo === null) {
       await tx.tillCounter.update({
         where: { tcnId: counter.tcnId },
         data: { tcnZLastNo: zNo, tcnModifiedOn: new Date(), tcnModifiedBy: caller.actorName },
       });
-      await tx.tillSession.update({
-        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
-        data: {
-          ...totals,
-          tssHandedOver: handedOver,
-          tssFloatLeft: floatLeft,
-          tssZNo: zNo,
-          tssStatus: TillSessionStatus.CLOSED,
-          tssClosedOn: new Date(),
-          tssClosedBy: caller.userId,
-          tssNotes: input.notes ?? session.tssNotes,
-          tssModifiedOn: new Date(),
-          tssModifiedBy: caller.actorName,
-        },
-      });
-      await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_CLOSE, {
-        zNo,
-        handedOver: handedOver.toFixed(2),
-        floatLeft: floatLeft.toFixed(2),
-      });
+    }
+    await tx.tillSession.update({
+      where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+      data: {
+        ...totals,
+        tssHandedOver: handedOver,
+        tssFloatLeft: floatLeft,
+        tssZNo: zNo,
+        tssStatus: TillSessionStatus.CLOSED,
+        tssClosedOn: new Date(),
+        tssClosedBy: caller.userId,
+        tssNotes: input.notes ?? session.tssNotes,
+        tssModifiedOn: new Date(),
+        tssModifiedBy: caller.actorName,
+      },
     });
-    return this.get(key, { asOperator: true });
+    await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_CLOSE, {
+      zNo,
+      handedOver: handedOver.toFixed(2),
+      floatLeft: floatLeft.toFixed(2),
+      ...(session.tssReopenCount > 0 ? { reopenCount: session.tssReopenCount } : {}),
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -1158,8 +1245,8 @@ export class TillSessionService {
    * PENDING variance a treatment, a reason and the approval, and sends the
    * session back to COUNTING so `close()` runs unchanged and posts the TVar
    * (RECOVER to the cashier's staff advance ledger, SUSPENSE to Tender
-   * suspense); RECOUNT sends it back to COUNTING with one more attempt, and
-   * the next final count replaces the variances. Either way one
+   * suspense); RECOUNT sends it back to COUNTING, uncounted, with one more
+   * attempt, and the next final count replaces the variances. Either way one
    * `till_approval` row (A3) and a VARIANCE_DECIDED event.
    *
    * Who may (A2) is `TillApprovalService.assertApprover`: not the cashier, a
@@ -1178,6 +1265,9 @@ export class TillSessionService {
     }
     if (approve && !(APPROVABLE_TREATMENTS as readonly string[]).includes(input.treatment ?? '')) {
       throwTillBadRequest('APPROVE names a treatment: EXPENSE, RECOVER or SUSPENSE', 'treatment');
+    }
+    if (input.tcmId) {
+      return this.decideReceive(key, input, input.tcmId, caller);
     }
 
     // 1 · the session as it stands: who asked, what is pending, which rule.
@@ -1316,19 +1406,30 @@ export class TillSessionService {
           where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
           data: {
             tssStatus: TillSessionStatus.COUNTING,
-            tssVarianceStatus:
-              VARIANCE_STATUS_OF_TREATMENT[treatment as (typeof APPROVABLE_TREATMENTS)[number]],
+            tssVarianceStatus: (await this.hasPendingReceive(tx, session))
+              ? TillSessionVarianceStatus.PENDING
+              : VARIANCE_STATUS_OF_TREATMENT[treatment as (typeof APPROVABLE_TREATMENTS)[number]],
             tssCloseApprovalId: id,
             tssModifiedOn: now,
             tssModifiedBy: caller.actorName,
           },
         });
       } else {
+        // The rejected count no longer stands behind the session (notes 112):
+        // until the next count it is uncounted, so /close answers
+        // TILL_NOT_COUNTED. Its variances stay on file, PENDING, for that
+        // count to replace.
         await tx.tillSession.update({
           where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
           data: {
             tssStatus: TillSessionStatus.COUNTING,
             tssRecountsGranted: { increment: 1 },
+            tssCloseCountId: null,
+            tssCountedOn: null,
+            tssCountedBy: null,
+            tssWitnessBy: null,
+            tssCashCounted: ZERO,
+            tssNoncashCounted: ZERO,
             tssModifiedOn: now,
             tssModifiedBy: caller.actorName,
           },
@@ -1379,8 +1480,313 @@ export class TillSessionService {
       approverRole: verdict.role,
       channel: verdict.channel,
       treatment,
+      tcmId: null,
       session: await this.get(key),
     };
+  }
+
+  /**
+   * Notes 113 §4 — a received bag's difference (its RECEIVE-stage variance,
+   * PENDING because it was out of tolerance), decided as a close variance is:
+   * the CASH_VARIANCE rule, an approver who is neither the receiver (the
+   * request's author) nor the session's cashier, the channel's PIN, one
+   * till_approval row (APPROVED) and a VARIANCE_DECIDED event. Only APPROVE:
+   * the bag is in the safe and its count stands, so there is nothing to
+   * recount — SUSPENSE parks a gap that needs looking into. The TVar posts at
+   * once (there is no close to run), Dr / Cr Till cash awaiting receipt, dated
+   * today; the session keeps its status.
+   */
+  private async decideReceive(
+    key: SessionKey,
+    input: DecideVarianceInput,
+    tcmId: string,
+    caller: TillCaller,
+  ): Promise<TillVarianceDecisionPayload> {
+    if (input.decision !== TillVarianceDecision.APPROVE) {
+      throwTillBadRequest(
+        'A received bag is not recounted: APPROVE its difference with a treatment (SUSPENSE to look into it)',
+        'decision',
+      );
+    }
+    const treatment = input.treatment as TillVarianceTreatment;
+
+    // 1 · the session, the bag and its pending difference.
+    const peek = await this.prisma.tillSession.findFirst({
+      where: {
+        tssId: key.tssId,
+        tssAccYear: key.accYear,
+        tssCompanyId: key.companyId,
+        tssBranchId: key.branchId,
+        tssIsDeleted: false,
+      },
+    });
+    if (!peek) {
+      throwTillNotFound('Till session', 'tssId', key.tssId);
+    }
+    const pendingOf = (client: Client) =>
+      client.tillVariance.findFirst({
+        where: {
+          tvrSessionId: peek.tssId,
+          tvrAccYear: peek.tssAccYear,
+          tvrStage: TillVarianceStage.RECEIVE,
+          tvrMovementId: tcmId,
+          tvrIsDeleted: false,
+          tvrStatus: 'OPEN',
+          tvrTreatment: TillVarianceTreatment.PENDING,
+        },
+      });
+    const pending = await pendingOf(this.prisma);
+    const movement = pending
+      ? await this.prisma.tillCashMovement.findUnique({
+          where: { tcmId_tcmAccYear: { tcmId, tcmAccYear: peek.tssAccYear } },
+        })
+      : null;
+    if (!pending || !movement?.tcmReceivedBy) {
+      throwTill(
+        TillErrorCode.VARIANCE_NOT_PENDING,
+        `Movement ${movement?.tcmDocNo ?? tcmId} of session ${peek.tssSessionNo} has no receive difference waiting for a decision`,
+        'tcmId',
+      );
+    }
+    const variance = dec(pending.tvrCounted).minus(dec(pending.tvrExpected));
+    const amount = variance.abs();
+    const event = 'CASH_VARIANCE';
+    const settings = await this.context.settings({
+      companyId: key.companyId,
+      branchId: key.branchId,
+    });
+    const today = await businessDateNow(this.prisma, settings.dayCutoff);
+    const rule = await this.approval.ruleOrDefault(this.prisma, {
+      companyId: key.companyId,
+      branchId: key.branchId,
+      event,
+      onDate: today,
+    });
+
+    // 2 · the approver: not the receiver (the request's author, judged by
+    // assertApprover) and not the cashier whose bag it is.
+    if (caller.userId === peek.tssOperatorId && !rule.tar_allow_self) {
+      throwTill(
+        TillErrorCode.APPROVER_SELF,
+        'The cashier whose bag it is does not decide its receive difference',
+        'userId',
+        { event, requiredRole: rule.tar_min_role },
+      );
+    }
+    let verdict: Awaited<ReturnType<TillApprovalService['assertApprover']>>;
+    try {
+      verdict = await this.approval.assertApprover(this.prisma, {
+        companyId: key.companyId,
+        branchId: key.branchId,
+        event,
+        amount,
+        rule,
+        approverId: caller.userId,
+        requesterId: movement.tcmReceivedBy,
+        pin: input.approverPin,
+      });
+    } catch (error: unknown) {
+      if (input.approverPin?.trim() && tillErrorCodeOf(error) === TillErrorCode.APPROVER_PIN) {
+        await this.events.log(this.prisma, {
+          companyId: peek.tssCompanyId,
+          branchId: peek.tssBranchId,
+          accYear: peek.tssAccYear,
+          code: TillEventCode.PIN_FAIL,
+          sessionId: peek.tssId,
+          dayId: peek.tssDayId,
+          counterId: peek.tssCounterId,
+          deviceId: caller.deviceId ?? peek.tssDeviceId,
+          userId: caller.userId,
+          srcRefno: movement.tcmDocNo,
+          payload: { action: 'decide-variance', event, stage: TillVarianceStage.RECEIVE, tcmId },
+        });
+      }
+      throw error;
+    }
+
+    // 3 · the reason, and RECOVER's ledger (the cashier's, as at the close).
+    const reason = await this.varianceReason(this.prisma, {
+      companyId: key.companyId,
+      reasonId: input.reasonId,
+      event,
+    });
+    let recoveryLedgerId: string | null = null;
+    if (treatment === TillVarianceTreatment.RECOVER) {
+      const staff = await this.staffLedgerOf(this.prisma, peek.tssOperatorId);
+      if (!staff.ledgerId) {
+        throwTill(
+          TillErrorCode.LEDGER_UNMAPPED,
+          `RECOVER posts to the cashier’s staff advance ledger, and ${staff.login} has none (an employee with a loan ledger, notes 95)`,
+          'treatment',
+          { treatment, operatorId: peek.tssOperatorId },
+        );
+      }
+      recoveryLedgerId = staff.ledgerId;
+    }
+
+    const tapId = await this.prisma.$transaction(async (tx) => {
+      const session = await this.lock(tx, key, Object.values(TillSessionStatus));
+      const row = await pendingOf(tx);
+      if (!row) {
+        throwTill(
+          TillErrorCode.VARIANCE_NOT_PENDING,
+          `Movement ${movement.tcmDocNo} has no receive difference waiting for a decision`,
+          'tcmId',
+        );
+      }
+      const now = new Date();
+      const id = await this.approval.record(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        tenantId: session.tssTenantId,
+        accYear: session.tssAccYear,
+        event,
+        sessionId: session.tssId,
+        counterId: session.tssCounterId,
+        srcDocType: 'TILL_MOVEMENT',
+        srcDocId: tcmId,
+        srcRefno: movement.tcmDocNo,
+        amount,
+        rule,
+        verdict,
+        requestedBy: movement.tcmReceivedBy!,
+        requestedOn: movement.tcmReceivedOn ?? now,
+        reasonId: reason.trsId,
+        status: 'APPROVED',
+        decidedBy: caller.userId,
+        decidedOn: now,
+        decidedDeviceId: caller.deviceId,
+        decisionNote: input.note.trim(),
+        payload: {
+          decision: input.decision,
+          treatment,
+          stage: TillVarianceStage.RECEIVE,
+          tcmId,
+          variances: [
+            { tvrId: row.tvrId, tenderTypeId: row.tvrTenderTypeId, variance: variance.toFixed(2) },
+          ],
+        },
+      });
+      await tx.tillVariance.update({
+        where: { tvrId_tvrAccYear: { tvrId: row.tvrId, tvrAccYear: row.tvrAccYear } },
+        data: {
+          tvrTreatment: treatment,
+          tvrReasonId: reason.trsId,
+          tvrRecoveryLedgerId: recoveryLedgerId,
+          tvrApprovalId: id,
+          tvrDecidedBy: caller.userId,
+          tvrDecidedOn: now,
+          tvrNotes: input.note.trim(),
+          tvrModifiedOn: now,
+          tvrModifiedBy: caller.actorName,
+        },
+      });
+      await this.posting.postVariance(tx, {
+        session: this.postingSession(session, isoDateOf(session.tssBusinessDate)),
+        tvrId: row.tvrId,
+        tenderLedgerId: await this.ledger.roleLedger(
+          tx,
+          TILL_CASH_AWAITING_ROLE,
+          session.tssCompanyId,
+          session.tssBranchId,
+        ),
+        tenderLabel: `Cash received (${movement.tcmDocNo})`,
+        variance,
+        treatment: treatment as Exclude<
+          TillVarianceTreatment,
+          TillVarianceTreatment.PENDING | TillVarianceTreatment.RETENDERED
+        >,
+        recoveryLedgerId,
+        caller,
+        on: { date: today, accYear: accYearOf(today) },
+      });
+      await tx.tillSession.update({
+        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+        data: {
+          tssVarianceStatus: (await this.hasAnyPending(tx, session))
+            ? TillSessionVarianceStatus.PENDING
+            : VARIANCE_STATUS_OF_TREATMENT[treatment as (typeof APPROVABLE_TREATMENTS)[number]],
+          tssModifiedOn: now,
+          tssModifiedBy: caller.actorName,
+        },
+      });
+      await this.events.log(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        accYear: session.tssAccYear,
+        code: TillEventCode.VARIANCE_DECIDED,
+        sessionId: session.tssId,
+        dayId: session.tssDayId,
+        counterId: session.tssCounterId,
+        deviceId: caller.deviceId ?? session.tssDeviceId,
+        userId: caller.userId,
+        srcDocType: 'TILL_MOVEMENT',
+        srcDocId: tcmId,
+        srcRefno: movement.tcmDocNo,
+        amount,
+        reasonId: reason.trsId,
+        approvalId: id,
+        payload: {
+          stage: TillVarianceStage.RECEIVE,
+          decision: input.decision,
+          treatment,
+          event,
+          amount: amount.toFixed(2),
+          requiredRole: rule.tar_min_role,
+          approverRole: verdict.role,
+          channel: verdict.channel,
+          implicitGrant: verdict.implicit,
+          grantId: verdict.grantId,
+          reasonId: reason.trsId,
+          recoveryLedgerId,
+          tcmId,
+          variances: [row.tvrId],
+        },
+      });
+      return id;
+    });
+
+    return {
+      tapId,
+      decision: input.decision,
+      event,
+      amount: num(amount),
+      requiredRole: rule.tar_min_role,
+      approverRole: verdict.role,
+      channel: verdict.channel,
+      treatment,
+      tcmId,
+      session: await this.get(key),
+    };
+  }
+
+  /** A RECEIVE-stage difference still waiting for its decision (notes 113). */
+  private async hasPendingReceive(client: Client, session: TillSession): Promise<boolean> {
+    const n = await client.tillVariance.count({
+      where: {
+        tvrSessionId: session.tssId,
+        tvrAccYear: session.tssAccYear,
+        tvrStage: TillVarianceStage.RECEIVE,
+        tvrIsDeleted: false,
+        tvrStatus: 'OPEN',
+        tvrTreatment: TillVarianceTreatment.PENDING,
+      },
+    });
+    return n > 0;
+  }
+
+  /** Any live variance of the session, of any stage, still PENDING (a slip gap included). */
+  async hasAnyPending(client: Client, session: TillSession): Promise<boolean> {
+    const n = await client.tillVariance.count({
+      where: {
+        tvrSessionId: session.tssId,
+        tvrAccYear: session.tssAccYear,
+        tvrIsDeleted: false,
+        tvrStatus: 'OPEN',
+        tvrTreatment: TillVarianceTreatment.PENDING,
+      },
+    });
+    return n > 0;
   }
 
   /** 409 unless the session waits for an approver. */
@@ -1430,11 +1836,12 @@ export class TillSessionService {
   }
 
   /** An APPROVE's reason: an active VARIANCE (cash) or NONCASH (slips) reason of the company or shared. */
-  private async varianceReason(
+  async varianceReason(
     client: Client,
     input: { companyId: string; reasonId: string | null; event: string },
   ): Promise<TillReason> {
-    const category = input.event === 'CASH_VARIANCE' ? 'VARIANCE' : 'NONCASH';
+    // CASH_VARIANCE and SAFE_VARIANCE (notes 118) are cash gaps: VARIANCE reasons.
+    const category = input.event === 'NONCASH_VARIANCE' ? 'NONCASH' : 'VARIANCE';
     if (!input.reasonId) {
       throwTill(TillErrorCode.REASON_INVALID, `APPROVE names a ${category} reason`, 'reasonId');
     }
@@ -1458,7 +1865,7 @@ export class TillSessionService {
   }
 
   /** The cashier's staff advance ledger: usr_employee_id → employee_master.emp_loan_ledger_id (notes 95). */
-  private async staffLedgerOf(
+  async staffLedgerOf(
     client: Client,
     userId: string,
   ): Promise<{ login: string; ledgerId: string | null }> {
@@ -1469,6 +1876,585 @@ export class TillSessionService {
           ON e.emp_id = u.usr_employee_id AND e.emp_is_deleted = false
        WHERE u.usr_id = ${userId}::uuid`;
     return { login: row?.login ?? userId, ledgerId: row?.ledger ?? null };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  The session exceptions (notes 117): force close, reopen, X read
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Notes 117 §4 — the cashier has gone: a supervisor counts the drawer in
+   * their place. Under the FORCE_CLOSE rule (assertApprover with the cashier
+   * as the requester, so never the cashier), the caller's own PIN. One
+   * transaction: end billing (holds per till.close_with_holds), the caller's
+   * count at CASH_OFFICE — final, no recount — then within tolerance the close
+   * (the hand-over the caller's, which notes 116 lets them approve), beyond it
+   * PENDING_APPROVAL for decide-variance and /close. tss_force_closed and the
+   * reason stay on the session; SESSION_FORCE_CLOSE is journalled.
+   */
+  async forceClose(
+    key: SessionKey,
+    input: {
+      reasonId: string;
+      approverPin?: string | null;
+      lines: TillCountLineInput[];
+      floatLeft?: number | null;
+      notes?: string | null;
+    },
+  ): Promise<TillForceClosePayload> {
+    const caller = await this.context.caller();
+    const peek = await this.peekSession(key);
+    if (!FORCE_CLOSABLE.includes(peek.tssStatus as TillSessionStatus)) {
+      throwTill(
+        TillErrorCode.SESSION_NOT_OPEN,
+        (peek.tssStatus as TillSessionStatus) === TillSessionStatus.PENDING_APPROVAL
+          ? `Session ${peek.tssSessionNo} is counted and waits for its variance decision (sessions/decide-variance), then /close`
+          : `Session ${peek.tssSessionNo} is ${peek.tssStatus}: only a live session is force-closed`,
+        'tssId',
+        { status: peek.tssStatus },
+      );
+    }
+    const reason = await this.exceptionReason(this.prisma, {
+      companyId: key.companyId,
+      category: 'FORCE_CLOSE',
+      reasonId: input.reasonId,
+      notes: input.notes ?? null,
+    });
+    const { rule, verdict } = await this.exceptionApprover(peek, caller, {
+      event: 'FORCE_CLOSE',
+      requesterId: peek.tssOperatorId,
+      pin: input.approverPin ?? null,
+      onDate: isoDateOf(peek.tssBusinessDate),
+    });
+
+    const done = await this.prisma.$transaction(async (tx) => {
+      const session = await this.lock(tx, key, [...FORCE_CLOSABLE]);
+      const now = new Date();
+      const tapId = await this.approval.record(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        tenantId: session.tssTenantId,
+        accYear: session.tssAccYear,
+        event: 'FORCE_CLOSE',
+        sessionId: session.tssId,
+        counterId: session.tssCounterId,
+        srcDocType: 'TILL_SESSION',
+        srcDocId: session.tssId,
+        srcRefno: session.tssSessionNo,
+        amount: ZERO,
+        rule,
+        verdict,
+        requestedBy: session.tssOperatorId,
+        requestedOn: now,
+        reasonId: reason.trsId,
+        status: 'APPROVED',
+        decidedBy: caller.userId,
+        decidedOn: now,
+        decidedDeviceId: caller.deviceId,
+        decisionNote: input.notes?.trim() || reason.trsName,
+        payload: { action: 'force-close', status: session.tssStatus },
+      });
+      const result = await this.forceCloseIn(tx, session, caller, {
+        reasonId: reason.trsId,
+        approvalId: tapId,
+        lines: input.lines,
+        floatLeft: input.floatLeft ?? null,
+        notes: input.notes ?? null,
+      });
+      return { ...result, tapId };
+    });
+    return {
+      outcome: done.outcome,
+      tapId: done.tapId,
+      tctId: done.tctId,
+      session: await this.get(key),
+    };
+  }
+
+  /**
+   * The force close on a session already locked (OPEN / SUSPENDED /
+   * COUNTING), under an approval already recorded — the route's FORCE_CLOSE,
+   * or the day close's DAY_CLOSE_EXCEPTION (TillDayCloseService).
+   */
+  async forceCloseIn(
+    tx: Tx,
+    session: TillSession,
+    caller: TillCaller,
+    input: {
+      reasonId: string;
+      approvalId: string;
+      lines: TillCountLineInput[];
+      floatLeft: number | null;
+      notes: string | null;
+      /**
+       * The day close's force close (notes 117 §2): a hand-over that would
+       * wait for a supervisor's receipt (till.handover_receipt REQUIRED) is
+       * received at once by the caller, on their own count — the supervisor
+       * who counted the drawer is the one who would approve it, and the day
+       * cannot close over cash still awaiting receipt.
+       */
+      receiveHandOver?: boolean;
+    },
+  ): Promise<{ outcome: 'CLOSED' | 'SENT_FOR_APPROVAL'; tctId: string }> {
+    const reread = () =>
+      tx.tillSession.findUniqueOrThrow({
+        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+      });
+    if ((session.tssStatus as TillSessionStatus) !== TillSessionStatus.COUNTING) {
+      await this.endBillingIn(tx, session, caller, { countPlace: 'CASH_OFFICE' });
+    }
+    await tx.tillSession.update({
+      where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+      data: {
+        tssForceClosed: true,
+        tssForceReasonId: input.reasonId,
+        tssCountPlace: 'CASH_OFFICE',
+        tssModifiedOn: new Date(),
+        tssModifiedBy: caller.actorName,
+      },
+    });
+    const counted = await this.countIn(
+      tx,
+      await reread(),
+      caller,
+      { lines: input.lines, notes: input.notes },
+      { forced: true },
+    );
+    const outcome =
+      counted.outcome === TillCountOutcome.ACCEPTED ? 'CLOSED' : ('SENT_FOR_APPROVAL' as const);
+    await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_FORCE_CLOSE, {
+      reasonId: input.reasonId,
+      approvalId: input.approvalId,
+      countId: counted.tctId,
+      outcome,
+      cashierId: session.tssOperatorId,
+    });
+    if (outcome === 'CLOSED') {
+      await this.closeIn(tx, await reread(), caller, {
+        floatLeft: input.floatLeft,
+        notes: input.notes,
+      });
+      if (input.receiveHandOver) {
+        await this.receiveOwnHandOver(tx, await reread(), caller, counted.tctId);
+      }
+    }
+    return { outcome, tctId: counted.tctId };
+  }
+
+  /** forceCloseIn's `receiveHandOver`: the session's AWAITING hand-over received as handed over. */
+  private async receiveOwnHandOver(
+    tx: Tx,
+    session: TillSession,
+    caller: TillCaller,
+    countId: string,
+  ): Promise<void> {
+    const waiting = await tx.tillCashMovement.findMany({
+      where: {
+        tcmSessionId: session.tssId,
+        tcmAccYear: session.tssAccYear,
+        tcmIsDeleted: false,
+        tcmStatus: 'POSTED',
+        tcmKind: TillMovementKind.CLOSE_HANDOVER,
+        tcmReceiptStatus: TillReceiptStatus.AWAITING,
+      },
+    });
+    if (waiting.length === 0) {
+      return;
+    }
+    const settings = await this.context.settings({
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+    });
+    const today = await businessDateNow(tx, settings.dayCutoff);
+    const awaitingLedgerId = await this.ledger.roleLedger(
+      tx,
+      TILL_CASH_AWAITING_ROLE,
+      session.tssCompanyId,
+      session.tssBranchId,
+    );
+    for (const m of waiting) {
+      const safe = await tx.tillSafe.findUniqueOrThrow({
+        where: { tsfId: m.tcmSafeId! },
+        select: { tsfId: true, tsfLedgerId: true, tsfName: true },
+      });
+      await this.posting.postReceive(tx, {
+        movement: m,
+        session: this.postingSession(session, isoDateOf(session.tssBusinessDate)),
+        safe: { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName },
+        awaitingLedgerId,
+        received: new Prisma.Decimal(m.tcmAmount),
+        countId,
+        on: { date: today, accYear: accYearOf(today) },
+        caller,
+        notes: 'Received on the supervisor’s own count at the day close (notes 117)',
+      });
+    }
+  }
+
+  /** A live session locked for a force close (the day close's, notes 117). */
+  async lockForForce(tx: Tx, key: SessionKey): Promise<TillSession> {
+    return this.lock(tx, key, [...FORCE_CLOSABLE]);
+  }
+
+  /**
+   * Notes 117 §5 — a session closed by mistake goes back to COUNTING. Under
+   * the SESSION_REOPEN rule (requester = its cashier), the caller's PIN, a
+   * REOPEN reason. Refused while its business day is CLOSED, once its
+   * hand-over has been received into the safe (notes 113/114), and while a
+   * later session on the counter carries its float or the counter is busy.
+   * The close's own vouchers are mirrored, never deleted: the hand-over voided
+   * (its TDrp reversed) and every posted CLOSE-stage TVar REVERSED. The close
+   * count no longer stands (as a RECOUNT, notes 112) and one more attempt is
+   * granted; the Z number is kept for the next close.
+   */
+  async reopen(
+    key: SessionKey,
+    input: { reasonId: string; approverPin?: string | null; notes?: string | null },
+  ): Promise<TillSessionReopenPayload> {
+    const caller = await this.context.caller();
+    const peek = await this.peekSession(key);
+    await this.assertReopenable(this.prisma, peek);
+    const reason = await this.exceptionReason(this.prisma, {
+      companyId: key.companyId,
+      category: 'REOPEN',
+      reasonId: input.reasonId,
+      notes: input.notes ?? null,
+    });
+    const { rule, verdict } = await this.exceptionApprover(peek, caller, {
+      event: 'SESSION_REOPEN',
+      requesterId: peek.tssOperatorId,
+      pin: input.approverPin ?? null,
+      onDate: isoDateOf(peek.tssBusinessDate),
+    });
+    const reasonText = input.notes?.trim()
+      ? `${reason.trsName} — ${input.notes.trim()}`
+      : reason.trsName;
+
+    const done = await this.prisma.$transaction(async (tx) => {
+      const session = await this.lock(tx, key, [TillSessionStatus.CLOSED]);
+      await tx.$queryRaw`
+        SELECT tcm_id FROM accounts.till_cash_movement
+         WHERE tcm_session_id = ${session.tssId}::uuid AND tcm_acc_year = ${session.tssAccYear}::char(9)
+           AND tcm_is_deleted = false AND tcm_kind = 'CLOSE_HANDOVER'
+           FOR UPDATE`;
+      await this.assertReopenable(tx, session);
+      const now = new Date();
+      const tapId = await this.approval.record(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        tenantId: session.tssTenantId,
+        accYear: session.tssAccYear,
+        event: 'SESSION_REOPEN',
+        sessionId: session.tssId,
+        counterId: session.tssCounterId,
+        srcDocType: 'TILL_SESSION',
+        srcDocId: session.tssId,
+        srcRefno: session.tssSessionNo,
+        amount: ZERO,
+        rule,
+        verdict,
+        requestedBy: session.tssOperatorId,
+        requestedOn: now,
+        reasonId: reason.trsId,
+        status: 'APPROVED',
+        decidedBy: caller.userId,
+        decidedOn: now,
+        decidedDeviceId: caller.deviceId,
+        decisionNote: reasonText,
+        payload: { action: 'reopen', zNo: session.tssZNo },
+      });
+      const posting = this.postingSession(session, isoDateOf(session.tssBusinessDate));
+      const reversals: string[] = [];
+
+      // the hand-over: voided, its TDrp mirrored
+      const handOvers = await tx.tillCashMovement.findMany({
+        where: {
+          tcmSessionId: session.tssId,
+          tcmAccYear: session.tssAccYear,
+          tcmIsDeleted: false,
+          tcmStatus: 'POSTED',
+          tcmKind: TillMovementKind.CLOSE_HANDOVER,
+        },
+      });
+      for (const m of handOvers) {
+        const rev = await this.posting.voidMovement(tx, {
+          movement: m,
+          session: posting,
+          reasonId: reason.trsId,
+          reasonText: `session reopened: ${reasonText}`,
+          caller,
+          approvalId: tapId,
+        });
+        if (rev) {
+          reversals.push(rev);
+        }
+      }
+      // the close's TVar: REVERSED
+      const posted = await tx.tillVariance.findMany({
+        where: {
+          tvrSessionId: session.tssId,
+          tvrAccYear: session.tssAccYear,
+          tvrIsDeleted: false,
+          tvrStage: TillVarianceStage.CLOSE,
+          tvrStatus: 'POSTED',
+        },
+      });
+      for (const v of posted) {
+        const rev = await this.posting.reverseVariance(tx, {
+          variance: v,
+          reasonText: `session ${session.tssSessionNo} reopened: ${reasonText}`,
+          caller,
+        });
+        if (rev) {
+          reversals.push(rev);
+        }
+      }
+
+      await tx.tillSession.update({
+        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+        data: {
+          tssStatus: TillSessionStatus.COUNTING,
+          tssClosedOn: null,
+          tssClosedBy: null,
+          tssCloseCountId: null,
+          tssCountedOn: null,
+          tssCountedBy: null,
+          tssWitnessBy: null,
+          tssCashCounted: ZERO,
+          tssNoncashCounted: ZERO,
+          tssHandedOver: ZERO,
+          tssFloatLeft: ZERO,
+          tssCloseApprovalId: null,
+          tssReopenCount: { increment: 1 },
+          tssRecountsGranted: { increment: 1 },
+          tssVarianceStatus: (await this.hasAnyPending(tx, session))
+            ? TillSessionVarianceStatus.PENDING
+            : TillSessionVarianceStatus.NONE,
+          tssModifiedOn: now,
+          tssModifiedBy: caller.actorName,
+        },
+      });
+      await this.logSessionEvent(tx, session, caller, TillEventCode.SESSION_REOPEN, {
+        reasonId: reason.trsId,
+        approvalId: tapId,
+        zNo: session.tssZNo,
+        reopenCount: session.tssReopenCount + 1,
+        reversalVoucherIds: reversals,
+      });
+      return { tapId, reversals };
+    });
+    return {
+      tapId: done.tapId,
+      reversalVoucherIds: done.reversals,
+      session: await this.get(key),
+    };
+  }
+
+  /** The refusals of a reopen, checked before the approver and again under the locks. */
+  private async assertReopenable(client: Client, session: TillSession): Promise<void> {
+    if ((session.tssStatus as TillSessionStatus) !== TillSessionStatus.CLOSED) {
+      throwTill(
+        TillErrorCode.SESSION_NOT_OPEN,
+        `Session ${session.tssSessionNo} is ${session.tssStatus}: only a CLOSED session is reopened`,
+        'tssId',
+        { status: session.tssStatus },
+      );
+    }
+    const day = await client.tillBusinessDay.findUnique({
+      where: { tbdId_tbdAccYear: { tbdId: session.tssDayId, tbdAccYear: session.tssAccYear } },
+      select: { tbdStatus: true, tbdBusinessDate: true },
+    });
+    if ((day?.tbdStatus as TillDayStatus | undefined) === TillDayStatus.CLOSED) {
+      throwTill(
+        TillErrorCode.DAY_CLOSED,
+        `Business day ${isoDateOf(day!.tbdBusinessDate)} is closed: reopen the day first (days/reopen)`,
+        'tssId',
+        { businessDate: isoDateOf(day!.tbdBusinessDate) },
+      );
+    }
+    const received = await client.tillCashMovement.findFirst({
+      where: {
+        tcmSessionId: session.tssId,
+        tcmAccYear: session.tssAccYear,
+        tcmIsDeleted: false,
+        tcmStatus: 'POSTED',
+        tcmKind: TillMovementKind.CLOSE_HANDOVER,
+        tcmReceiptStatus: TillReceiptStatus.RECEIVED,
+      },
+      select: { tcmDocNo: true, tcmReceivedBy: true, tcmReceivedOn: true },
+    });
+    if (received) {
+      throwTill(
+        TillErrorCode.CASH_ALREADY_APPROVED,
+        `Session ${session.tssSessionNo}'s cash (${received.tcmDocNo}) is already approved into the safe: undoing that receipt is a safe matter, so the session stays closed`,
+        'tssId',
+        {
+          receivedBy: received.tcmReceivedBy ?? '',
+          receivedOn: received.tcmReceivedOn?.toISOString() ?? '',
+        },
+      );
+    }
+    const next = await client.tillSession.findFirst({
+      where: {
+        tssIsDeleted: false,
+        tssStatus: { not: TillSessionStatus.VOIDED },
+        OR: [
+          { tssPrevSessionId: session.tssId },
+          {
+            tssCounterId: session.tssCounterId,
+            tssAccYear: session.tssAccYear,
+            tssStatus: { in: [...LIVE_SESSION_STATUSES] },
+          },
+        ],
+      },
+      select: { tssSessionNo: true, tssStatus: true, tssPrevSessionId: true },
+    });
+    if (next) {
+      throwTill(
+        TillErrorCode.REOPEN_BLOCKED,
+        next.tssPrevSessionId === session.tssId
+          ? `Session ${next.tssSessionNo} opened on the float ${session.tssSessionNo} left: it cannot be reopened under it`
+          : `Session ${next.tssSessionNo} is ${next.tssStatus} on the same counter: close it first`,
+        'tssId',
+        { sessionNo: next.tssSessionNo, status: next.tssStatus },
+      );
+    }
+  }
+
+  /**
+   * Notes 117 §6 — a supervisor's mid-shift reading of a live session: the
+   * sessions/expected payload, numbered (the session's X_REPORT events) and
+   * journalled. The controller refuses the session's own cashier, as
+   * /expected does.
+   */
+  async xReport(key: SessionKey): Promise<TillXReportPayload> {
+    const caller = await this.context.caller();
+    const read = await this.prisma.$transaction(async (tx) => {
+      const session = await this.lock(tx, key, [
+        TillSessionStatus.OPEN,
+        TillSessionStatus.SUSPENDED,
+        TillSessionStatus.COUNTING,
+        TillSessionStatus.PENDING_APPROVAL,
+      ]);
+      const [prior] = await tx.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM accounts.till_event
+         WHERE tev_session_id = ${session.tssId}::uuid
+           AND tev_acc_year = ${session.tssAccYear}::char(9)
+           AND tev_event_code = ${TillEventCode.X_REPORT}
+           AND tev_payload ? 'xNo'`;
+      // Only the server's own X reads are numbered: a device may still report
+      // one it printed itself through events/batch (CLIENT_EVENT_CODES).
+      const xNo = (prior?.n ?? 0) + 1;
+      const readOn = new Date();
+      await this.logSessionEvent(tx, session, caller, TillEventCode.X_REPORT, {
+        xNo,
+        readOn: readOn.toISOString(),
+      });
+      return { xNo, readOn };
+    });
+    return {
+      ...(await this.getWithExpected(key)),
+      xNo: read.xNo,
+      xReadOn: read.readOn.toISOString(),
+    };
+  }
+
+  /**
+   * An exception's reason (notes 117): active, of the category, the
+   * company's or a shipped one; a reason that needs a note needs `notes`.
+   */
+  async exceptionReason(
+    client: Client,
+    input: { companyId: string; category: string; reasonId: string | null; notes: string | null },
+  ): Promise<TillReason> {
+    const reason = input.reasonId
+      ? await client.tillReason.findFirst({
+          where: {
+            trsId: input.reasonId,
+            trsCategory: input.category,
+            trsIsDeleted: false,
+            trsIsActive: true,
+            OR: [{ trsCompanyId: null }, { trsCompanyId: input.companyId }],
+          },
+        })
+      : null;
+    if (!reason) {
+      throwTill(
+        TillErrorCode.REASON_INVALID,
+        `Name an active ${input.category} reason`,
+        'reasonId',
+        { category: input.category },
+      );
+    }
+    if (reason.trsNeedsNote && !input.notes?.trim()) {
+      throwTill(TillErrorCode.REASON_INVALID, `“${reason.trsName}” needs a note`, 'notes');
+    }
+    return reason;
+  }
+
+  /**
+   * An exception's approver (notes 117), as decide-variance judges one: the
+   * event's rule, assertApprover with the caller as the approver, before any
+   * write so a wrong PIN is journalled (PIN_FAIL on the session).
+   */
+  private async exceptionApprover(
+    session: TillSession,
+    caller: TillCaller,
+    ask: { event: string; requesterId: string; pin: string | null; onDate: string },
+  ) {
+    const rule = await this.approval.ruleOrDefault(this.prisma, {
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+      event: ask.event,
+      onDate: ask.onDate,
+    });
+    try {
+      const verdict = await this.approval.assertApprover(this.prisma, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        event: ask.event,
+        amount: ZERO,
+        rule,
+        approverId: caller.userId,
+        requesterId: ask.requesterId,
+        pin: ask.pin,
+      });
+      return { rule, verdict };
+    } catch (error: unknown) {
+      if (ask.pin?.trim() && tillErrorCodeOf(error) === TillErrorCode.APPROVER_PIN) {
+        await this.events.log(this.prisma, {
+          companyId: session.tssCompanyId,
+          branchId: session.tssBranchId,
+          accYear: session.tssAccYear,
+          code: TillEventCode.PIN_FAIL,
+          sessionId: session.tssId,
+          dayId: session.tssDayId,
+          counterId: session.tssCounterId,
+          deviceId: caller.deviceId ?? session.tssDeviceId,
+          userId: caller.userId,
+          srcRefno: session.tssSessionNo,
+          payload: { action: ask.event.toLowerCase(), event: ask.event },
+        });
+      }
+      throw error;
+    }
+  }
+
+  /** The session read unlocked, for checks made before the transaction. */
+  private async peekSession(key: SessionKey): Promise<TillSession> {
+    const session = await this.prisma.tillSession.findFirst({
+      where: {
+        tssId: key.tssId,
+        tssAccYear: key.accYear,
+        tssCompanyId: key.companyId,
+        tssBranchId: key.branchId,
+        tssIsDeleted: false,
+      },
+    });
+    if (!session) {
+      throwTillNotFound('Till session', 'tssId', key.tssId);
+    }
+    return session;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -2738,8 +3724,12 @@ export class TillSessionService {
       safeId: string | null;
       movementId: string;
       caller: TillCaller;
-      deviceId: string;
+      deviceId: string | null;
       witnessBy?: string | null;
+      /** Notes 113: a receive (DROP_VERIFY) is counted blind, against what was handed over. */
+      isBlind?: boolean;
+      expected?: Prisma.Decimal;
+      notes?: string | null;
     },
   ): Promise<string> {
     const total = input.lines.reduce((s, l) => s.plus(l.amount), ZERO);
@@ -2747,18 +3737,90 @@ export class TillSessionService {
       kind: input.kind,
       attemptNo: 1,
       isFinal: true,
-      isBlind: false,
+      isBlind: input.isBlind ?? false,
       lines: input.lines,
-      expected: total,
+      expected: input.expected ?? total,
       caller: input.caller,
       deviceId: input.deviceId,
       witnessBy: input.witnessBy ?? null,
+      notes: input.notes ?? null,
     });
     await tx.tillCount.update({
       where: { tctId_tctAccYear: { tctId: count.tctId, tctAccYear: session.tssAccYear } },
       data: { tctSafeId: input.safeId, tctMovementId: input.movementId },
     });
     return count.tctId;
+  }
+
+  /**
+   * Notes 118 — a count of the safe (kind SAFE: its day, what it should hold)
+   * or of a remittance's cash (kind REMIT: the movement), with no session —
+   * written here so till_count keeps one writer. Cash only, by denomination.
+   */
+  async writeSafeCount(
+    tx: Tx,
+    input: {
+      kind: TillCountKind.SAFE | TillCountKind.REMIT;
+      companyId: string;
+      branchId: string;
+      tenantId: string | null;
+      accYear: string;
+      safeId: string;
+      /** SAFE: the business day it counts for. */
+      dayId: string | null;
+      /** REMIT: the remittance. */
+      movementId: string | null;
+      lines: (TillCountLineInput & { faceValue: Prisma.Decimal; amount: Prisma.Decimal })[];
+      /** What the safe should hold (SAFE), or the amount sent (REMIT). */
+      expected: Prisma.Decimal;
+      isBlind: boolean;
+      caller: TillCaller;
+      witnessBy?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<{ tctId: string; total: Prisma.Decimal; countedOn: Date }> {
+    const total = input.lines.reduce((sum, l) => sum.plus(l.amount), ZERO);
+    const count = await tx.tillCount.create({
+      data: {
+        tctCompanyId: input.companyId,
+        tctBranchId: input.branchId,
+        tctTenantId: input.tenantId,
+        tctAccYear: input.accYear,
+        tctKind: input.kind,
+        tctSessionId: null,
+        tctSafeId: input.safeId,
+        tctDayId: input.dayId,
+        tctMovementId: input.movementId,
+        tctAttemptNo: 1,
+        tctIsFinal: true,
+        tctIsBlind: input.isBlind,
+        tctCountedBy: input.caller.userId,
+        tctWitnessBy: input.witnessBy ?? null,
+        tctDeviceId: input.caller.deviceId,
+        tctTotalCounted: total,
+        tctExpected: input.expected,
+        tctNotes: input.notes ?? null,
+        tctCreatedBy: input.caller.actorName,
+      },
+      select: { tctId: true, tctCountedOn: true },
+    });
+    if (input.lines.length > 0) {
+      await tx.tillCountLine.createMany({
+        data: input.lines.map((line, i) => ({
+          tclAccYear: input.accYear,
+          tclCountId: count.tctId,
+          tclRowNo: i + 1,
+          tclTenderTypeId: line.tenderTypeId,
+          tclTenderId: line.tenderId ?? null,
+          tclDenominationId: line.denominationId ?? null,
+          tclFaceValue: line.faceValue,
+          tclQty: new Prisma.Decimal(line.qty ?? 0),
+          tclEnteredAmount: line.denominationId ? ZERO : line.amount,
+          tclBatchRef: line.batchRef ?? null,
+        })),
+      });
+    }
+    return { tctId: count.tctId, total, countedOn: count.tctCountedOn };
   }
 
   /** STATEMENT / NONE tenders are never counted at the till (47 §1.8). */
@@ -3015,7 +4077,7 @@ export class TillSessionService {
       lines: (TillCountLineInput & { faceValue: Prisma.Decimal; amount: Prisma.Decimal })[];
       expected: Prisma.Decimal;
       caller: TillCaller;
-      deviceId: string;
+      deviceId: string | null;
       witnessBy?: string | null;
       notes?: string | null;
     },
@@ -3265,6 +4327,10 @@ export class TillSessionService {
       tssClosedOn: session.tssClosedOn?.toISOString() ?? null,
       tssClosedBy: session.tssClosedBy,
       tssZNo: session.tssZNo,
+      tssForceClosed: session.tssForceClosed,
+      tssForceReasonId: session.tssForceReasonId,
+      tssReopenCount: session.tssReopenCount,
+      tssPrintCount: session.tssPrintCount,
       tssVarianceStatus: session.tssVarianceStatus as TillSessionVarianceStatus,
       totals: {
         billCount: session.tssBillCount,
@@ -3308,6 +4374,9 @@ export class TillSessionService {
           tcmVoucherId: m.tcmVoucherId,
           tcmStatus: m.tcmStatus as 'POSTED' | 'VOIDED',
           tcmCreatedOn: m.tcmCreatedOn.toISOString(),
+          tcmReceiptStatus: (m.tcmReceiptStatus as TillReceiptStatus | null) ?? null,
+          tcmReceivedAmount: m.tcmReceivedAmount === null ? null : num(m.tcmReceivedAmount),
+          tcmReceivedOn: m.tcmReceivedOn?.toISOString() ?? null,
         }),
       ),
       variances: visible
@@ -3315,7 +4384,8 @@ export class TillSessionService {
             (v): TillVariancePayload => ({
               tvrId: v.tvrId,
               tvrAccYear: v.tvrAccYear,
-              tvrStage: v.tvrStage as 'OPEN' | 'CLOSE',
+              tvrStage: v.tvrStage as TillVarianceStage,
+              tvrMovementId: v.tvrMovementId,
               tvrTenderTypeId: v.tvrTenderTypeId,
               tvrTenderId: v.tvrTenderId,
               tvrExpected: num(v.tvrExpected),
@@ -3332,6 +4402,34 @@ export class TillSessionService {
             }),
           )
         : [],
+      ...(await this.receiptOf(movements)),
+    };
+  }
+
+  /** Notes 114 — the session's cash receipt: its state, what still waits, the latest receipt. */
+  private async receiptOf(movements: Parameters<typeof receiptStateOf>[0]) {
+    const bags = movements.filter(
+      (m) => m.tcmStatus === 'POSTED' && !m.tcmIsDeleted && m.tcmReceiptStatus !== null,
+    );
+    const latest = bags
+      .filter((m) => m.tcmReceivedOn !== null)
+      .sort((a, b) => b.tcmReceivedOn!.getTime() - a.tcmReceivedOn!.getTime())[0];
+    const receiver = latest?.tcmReceivedBy
+      ? await this.prisma.userMaster.findUnique({
+          where: { usrId: latest.tcmReceivedBy },
+          select: { usrLoginName: true, usrDisplayName: true },
+        })
+      : null;
+    return {
+      receiptState: receiptStateOf(movements),
+      cashAwaiting: num(
+        bags
+          .filter((m) => m.tcmReceiptStatus === TillReceiptStatus.AWAITING)
+          .reduce((sum, m) => sum.plus(dec(m.tcmAmount)), ZERO),
+      ),
+      receivedBy: latest?.tcmReceivedBy ?? null,
+      receivedByName: receiver ? receiver.usrDisplayName?.trim() || receiver.usrLoginName : null,
+      receivedOn: latest?.tcmReceivedOn?.toISOString() ?? null,
     };
   }
 
@@ -3396,6 +4494,41 @@ function tenderKey(typeId: number, tenderId: string | null): string {
 /** A batch-total line (card / UPI slips): its gap is not in the drawer (notes 99 §1). */
 function isSlipRow(row: { expectation: { closeMode: TenderCloseMode } }): boolean {
   return row.expectation.closeMode === TenderCloseMode.SLIPS;
+}
+
+/**
+ * Notes 113 / 114 — the session's cash receipt, over its live bags that waited
+ * for a receipt (tcm_receipt_status set): any AWAITING → AWAITING; any received
+ * for other than was handed over → DIFFERENCE; else APPROVED; none → NONE.
+ */
+function receiptStateOf(
+  movements: {
+    tcmStatus: string;
+    tcmIsDeleted: boolean;
+    tcmReceiptStatus: string | null;
+    tcmAmount: Prisma.Decimal;
+    tcmReceivedAmount: Prisma.Decimal | null;
+    tcmReceivedBy: string | null;
+    tcmReceivedOn: Date | null;
+  }[],
+): TillCashReceiptState {
+  const bags = movements.filter(
+    (m) => m.tcmStatus === 'POSTED' && !m.tcmIsDeleted && m.tcmReceiptStatus !== null,
+  );
+  if (bags.length === 0) {
+    return TillCashReceiptState.NONE;
+  }
+  if (bags.some((m) => m.tcmReceiptStatus === TillReceiptStatus.AWAITING)) {
+    return TillCashReceiptState.AWAITING;
+  }
+  return bags.some((m) => !dec(m.tcmReceivedAmount).equals(dec(m.tcmAmount)))
+    ? TillCashReceiptState.DIFFERENCE
+    : TillCashReceiptState.APPROVED;
+}
+
+/** The same test on a written variance: only a SLIPS row carries a slip count (varianceRow). */
+function isSlipVariance(v: { tvrSlipCount: number | null }): boolean {
+  return v.tvrSlipCount !== null;
 }
 
 // re-exported for the controller's 400s

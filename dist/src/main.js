@@ -13,6 +13,7 @@ const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
 const file_logger_service_1 = require("./common/logging/file-logger.service");
+const house_validation_1 = require("./common/validation/house-validation");
 const prisma_service_1 = require("./database/prisma/prisma.service");
 const startup_seed_1 = require("./database/seed/startup-seed");
 const swaggerDocs_1 = require("./utils/swaggerDocs");
@@ -155,14 +156,7 @@ async function bootstrap() {
             ],
         });
     }
-    app.useGlobalPipes(new common_1.ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-            enableImplicitConversion: true,
-        },
-    }));
+    app.useGlobalPipes((0, house_validation_1.createHouseValidationPipe)());
     app.enableVersioning({
         type: common_1.VersioningType.URI,
         defaultVersion: process.env.API_VERSION ?? '1',

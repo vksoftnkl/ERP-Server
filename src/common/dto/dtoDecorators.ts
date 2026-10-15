@@ -16,6 +16,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateBy,
   ValidateIf,
 } from 'class-validator';
 import {
@@ -107,24 +108,33 @@ export const NullableDateString = () =>
   );
 // UUID_PATTERN spells out the nil/max alternatives, so the default Matches
 // message ("must match /…/ regular expression") is unreadable — name the rule.
-const UUID_MESSAGE = { message: '$property must be a valid UUID' };
+// Notes 119: named `isUuid`, not `matches`, so a refusal's code is
+// VALIDATION_IS_UUID — what the client words "a wrong id" by.
+const IsHouseUuid = () =>
+  ValidateBy({
+    name: 'isUuid',
+    validator: {
+      validate: (value: unknown) => typeof value === 'string' && UUID_PATTERN.test(value),
+      defaultMessage: () => '$property must be a valid UUID',
+    },
+  });
 export const NullableUuid = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toNullableUuid(value)),
     SkipOnNullish(),
-    Matches(UUID_PATTERN, UUID_MESSAGE),
+    IsHouseUuid(),
   );
 export const OptionalUuid = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalUuid(value)),
-    Matches(UUID_PATTERN, UUID_MESSAGE),
+    IsHouseUuid(),
   );
 export const RequiredUuid = () =>
   applyDecorators(
     Transform(({ value }) => toRequiredUuid(value)),
-    Matches(UUID_PATTERN, UUID_MESSAGE),
+    IsHouseUuid(),
   );
 export const OptionalDateString = () =>
   applyDecorators(

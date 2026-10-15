@@ -18,6 +18,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const till_context_service_1 = require("../till-context.service");
 const till_dates_1 = require("../till-dates");
 const till_errors_1 = require("../till-errors");
+const till_approval_service_1 = require("./till-approval.service");
 const till_event_service_1 = require("./till-event.service");
 const till_ledger_service_1 = require("./till-ledger.service");
 const till_posting_service_1 = require("./till-posting.service");
@@ -45,13 +46,15 @@ let TillMovementService = class TillMovementService {
     posting;
     sessions;
     events;
-    constructor(prisma, context, ledger, posting, sessions, events) {
+    approval;
+    constructor(prisma, context, ledger, posting, sessions, events, approval) {
         this.prisma = prisma;
         this.context = context;
         this.ledger = ledger;
         this.posting = posting;
         this.sessions = sessions;
         this.events = events;
+        this.approval = approval;
     }
     async create(input) {
         const caller = await this.context.caller();
@@ -135,6 +138,18 @@ let TillMovementService = class TillMovementService {
                 }
                 await this.assertLedger(tx, ledgerId, input.companyId);
             }
+            let awaitingLedgerId = null;
+            if (input.kind === till_enum_1.TillMovementKind.DROP) {
+                const settings = await this.context.settings({
+                    companyId: input.companyId,
+                    branchId: input.branchId,
+                    deviceId: session.tssDeviceId,
+                    userId: session.tssOperatorId,
+                });
+                if (settings.handoverReceipt === till_enum_1.TillHandoverReceipt.REQUIRED) {
+                    awaitingLedgerId = await this.ledger.roleLedger(tx, till_enum_1.TILL_CASH_AWAITING_ROLE, input.companyId, input.branchId);
+                }
+            }
             const tcmIdDrawn = await this.newId(tx);
             const deviceId = caller.deviceId ?? session.tssDeviceId;
             let countId = null;
@@ -184,6 +199,7 @@ let TillMovementService = class TillMovementService {
                 notes: input.notes ?? null,
                 deviceId,
                 witnessVerifiedOn: supervisor?.verifiedOn ?? null,
+                awaitingLedgerId,
             });
             return posted.tcmId;
         });
@@ -387,6 +403,20 @@ let TillMovementService = class TillMovementService {
             tcmVoidedBy: m.tcmVoidedBy,
             tcmVoidReasonId: m.tcmVoidReasonId,
             tcmNotes: m.tcmNotes,
+            tcmReceiptStatus: m.tcmReceiptStatus ?? null,
+            tcmReceivedAmount: m.tcmReceivedAmount === null ? null : num(m.tcmReceivedAmount),
+            tcmReceivedOn: m.tcmReceivedOn?.toISOString() ?? null,
+            tcmReceivedBy: m.tcmReceivedBy,
+            tcmReceiveVoucherId: m.tcmReceiveVoucherId,
+            tcmRemitMode: m.tcmRemitMode ?? null,
+            tcmRemitStatus: m.tcmRemitStatus ?? null,
+            tcmCitAgency: m.tcmCitAgency,
+            tcmBankDate: m.tcmBankDate ? (0, till_dates_1.isoDateOf)(m.tcmBankDate) : null,
+            tcmBankRef: m.tcmBankRef,
+            tcmBankAmount: m.tcmBankAmount === null ? null : num(m.tcmBankAmount),
+            tcmConfirmedBy: m.tcmConfirmedBy,
+            tcmConfirmedOn: m.tcmConfirmedOn?.toISOString() ?? null,
+            tcmConfirmVoucherId: m.tcmConfirmVoucherId,
             counts: counts.map((c) => ({
                 tctId: c.tctId,
                 tctKind: c.tctKind,
@@ -436,6 +466,9 @@ let TillMovementService = class TillMovementService {
             }
             if (!till_enum_1.VOIDABLE_MOVEMENTS.includes(fresh.tcmKind)) {
                 (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_NOT_VOIDABLE, `A ${fresh.tcmKind} is the session's own (its open or its close) and is not voided`, 'tcmId');
+            }
+            if (fresh.tcmReceiptStatus === till_enum_1.TillReceiptStatus.RECEIVED) {
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_NOT_VOIDABLE, `${fresh.tcmDocNo} has been received into the safe and is not voided`, 'tcmId');
             }
             const reason = await tx.tillReason.findFirst({
                 where: {
@@ -528,6 +561,702 @@ let TillMovementService = class TillMovementService {
             fullName: u.usrFullName?.trim() || u.usrDisplayName?.trim() || null,
             hasPin: u.usrPinHash !== null && u.usrPinHash !== '',
         }));
+    }
+    async awaitingReceipt(scope) {
+        const caller = await this.context.caller();
+        const settings = await this.context.settings({
+            companyId: scope.companyId,
+            branchId: scope.branchId,
+        });
+        const rows = await this.prisma.tillCashMovement.findMany({
+            where: {
+                tcmCompanyId: scope.companyId,
+                tcmBranchId: scope.branchId,
+                tcmIsDeleted: false,
+                tcmStatus: 'POSTED',
+                tcmReceiptStatus: till_enum_1.TillReceiptStatus.AWAITING,
+                ...(scope.dayId ? { tcmDayId: scope.dayId, tcmAccYear: scope.accYear ?? undefined } : {}),
+            },
+            include: { safe: { select: { tsfName: true } } },
+            orderBy: { tcmCreatedOn: 'asc' },
+        });
+        const sessionIds = [
+            ...new Set(rows.map((r) => r.tcmSessionId).filter((id) => !!id)),
+        ];
+        const sessions = await this.prisma.tillSession.findMany({
+            where: { tssId: { in: sessionIds } },
+            include: { counter: { select: { tcnCode: true, tcnName: true } } },
+        });
+        const sessionOf = new Map(sessions.map((x) => [`${x.tssId}|${x.tssAccYear}`, x]));
+        const users = await this.prisma.userMaster.findMany({
+            where: { usrId: { in: [...new Set(sessions.map((x) => x.tssOperatorId))] } },
+            select: { usrId: true, usrLoginName: true, usrDisplayName: true },
+        });
+        const nameOf = new Map(users.map((u) => [u.usrId, u.usrDisplayName?.trim() || u.usrLoginName]));
+        const now = Date.now();
+        return rows.flatMap((m) => {
+            const session = sessionOf.get(`${m.tcmSessionId}|${m.tcmAccYear}`);
+            if (!session) {
+                return [];
+            }
+            return [
+                {
+                    tcmId: m.tcmId,
+                    tcmAccYear: m.tcmAccYear,
+                    tcmKind: m.tcmKind,
+                    tcmDocNo: m.tcmDocNo,
+                    tcmDocDate: (0, till_dates_1.isoDateOf)(m.tcmDocDate),
+                    handedOverOn: m.tcmCreatedOn.toISOString(),
+                    ageMinutes: Math.max(0, Math.floor((now - m.tcmCreatedOn.getTime()) / 60_000)),
+                    bagNo: m.tcmBagNo,
+                    sealNo: m.tcmSealNo,
+                    safeId: m.tcmSafeId,
+                    safeName: m.safe?.tsfName ?? null,
+                    tssId: session.tssId,
+                    sessionNo: session.tssSessionNo,
+                    sessionStatus: session.tssStatus,
+                    counterCode: session.counter.tcnCode,
+                    counterName: session.counter.tcnName,
+                    cashierId: session.tssOperatorId,
+                    cashierName: nameOf.get(session.tssOperatorId) ?? null,
+                    handedOverBy: m.tcmDoneBy,
+                    canReceive: settings.singleOperator || caller.userId !== session.tssOperatorId,
+                },
+            ];
+        });
+    }
+    async receive(input) {
+        const caller = await this.context.caller();
+        if (input.bags.length === 0) {
+            (0, till_errors_1.throwTillBadRequest)('Name at least one bag to receive', 'bags');
+        }
+        const seen = new Set();
+        input.bags.forEach((bag, i) => {
+            if (seen.has(bag.tcmId)) {
+                (0, till_errors_1.throwTillBadRequest)('A bag is received once per call', `bags.${i}.tcmId`);
+            }
+            seen.add(bag.tcmId);
+            this.assertCashLines(bag.lines, `bags.${i}.lines`);
+        });
+        const settings = await this.context.settings({
+            companyId: input.companyId,
+            branchId: input.branchId,
+        });
+        const peeks = [];
+        for (const [index, bag] of input.bags.entries()) {
+            const m = await this.prisma.tillCashMovement.findFirst({
+                where: {
+                    tcmId: bag.tcmId,
+                    tcmAccYear: bag.accYear,
+                    tcmCompanyId: input.companyId,
+                    tcmBranchId: input.branchId,
+                    tcmIsDeleted: false,
+                },
+            });
+            if (!m) {
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_NOT_FOUND, `Till movement ${bag.tcmId} was not found`, `bags.${index}.tcmId`);
+            }
+            this.assertAwaiting(m, `bags.${index}.tcmId`);
+            const session = await this.prisma.tillSession.findUniqueOrThrow({
+                where: { tssId_tssAccYear: { tssId: m.tcmSessionId, tssAccYear: m.tcmAccYear } },
+            });
+            if (!settings.singleOperator && caller.userId === session.tssOperatorId) {
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECEIVER_SELF, `${m.tcmDocNo} is from session ${session.tssSessionNo}, and you were its cashier: another supervisor receives it`, `bags.${index}.tcmId`, { tcmId: m.tcmId });
+            }
+            peeks.push({ bag, session, index });
+        }
+        const receiver = await this.prisma.userMaster.findUnique({
+            where: { usrId: caller.userId },
+            select: { usrLoginName: true, usrPinHash: true },
+        });
+        await this.verifyPin(peeks[0].session, receiver?.usrLoginName ?? caller.actorName, receiver?.usrPinHash ?? null, {
+            pin: input.receiverPin,
+            field: 'receiverPin',
+            codes: {
+                noPin: till_enum_1.TillErrorCode.RECEIVER_NO_PIN,
+                required: till_enum_1.TillErrorCode.RECEIVER_PIN_REQUIRED,
+                wrong: till_enum_1.TillErrorCode.RECEIVER_PIN,
+            },
+            noPinMessage: `${caller.actorName} receives cash into the safe and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+            requiredMessage: 'Receiving cash into the safe is signed with your till PIN',
+            payload: { action: 'receive', tcmIds: input.bags.map((b) => b.tcmId).join(',') },
+            detail: {},
+            caller,
+        });
+        const today = await (0, till_dates_1.businessDateNow)(this.prisma, settings.dayCutoff);
+        const on = { date: today, accYear: (0, till_dates_1.accYearOf)(today) };
+        const ordered = [...peeks].sort((a, b) => a.session.tssId === b.session.tssId
+            ? a.bag.tcmId.localeCompare(b.bag.tcmId)
+            : a.session.tssId.localeCompare(b.session.tssId));
+        const results = await this.prisma.$transaction(async (tx) => {
+            const out = new Map();
+            const awaitingLedgerId = await this.ledger.roleLedger(tx, till_enum_1.TILL_CASH_AWAITING_ROLE, input.companyId, input.branchId);
+            const tillCash = await this.ledger.tillCashTender(tx, input.companyId, input.branchId);
+            for (const { bag, index } of ordered) {
+                const field = `bags.${index}`;
+                const session = await this.lockSession(tx, {
+                    companyId: input.companyId,
+                    branchId: input.branchId,
+                    accYear: bag.accYear,
+                    tssId: peeks[index].session.tssId,
+                }, Object.values(till_enum_1.TillSessionStatus));
+                await tx.$queryRaw `
+          SELECT tcm_id FROM accounts.till_cash_movement
+           WHERE tcm_id = ${bag.tcmId}::uuid AND tcm_acc_year = ${bag.accYear}::char(9)
+           FOR UPDATE`;
+                const m = await tx.tillCashMovement.findUniqueOrThrow({
+                    where: { tcmId_tcmAccYear: { tcmId: bag.tcmId, tcmAccYear: bag.accYear } },
+                });
+                this.assertAwaiting(m, `${field}.tcmId`);
+                const safe = m.tcmSafeId
+                    ? await tx.tillSafe.findUnique({
+                        where: { tsfId: m.tcmSafeId },
+                        select: { tsfId: true, tsfLedgerId: true, tsfName: true },
+                    })
+                    : null;
+                if (!safe) {
+                    (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SAFE_MISSING, `${m.tcmDocNo} names no safe to receive it into`, `${field}.tcmId`);
+                }
+                const priced = await this.sessions.priceLines(tx, input.companyId, bag.lines);
+                const received = priced.reduce((sum, l) => sum.plus(l.amount), ZERO);
+                const handedOver = new client_1.Prisma.Decimal(m.tcmAmount);
+                const countId = await this.sessions.writeMovementCount(tx, session, {
+                    kind: till_enum_1.TillCountKind.DROP_VERIFY,
+                    lines: priced,
+                    safeId: safe.tsfId,
+                    movementId: m.tcmId,
+                    caller,
+                    deviceId: caller.deviceId,
+                    isBlind: true,
+                    expected: handedOver,
+                    notes: bag.notes ?? null,
+                });
+                const postingSession = this.postingSession(session);
+                const voucherId = await this.posting.postReceive(tx, {
+                    movement: m,
+                    session: postingSession,
+                    safe: { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName },
+                    awaitingLedgerId,
+                    received,
+                    countId,
+                    on,
+                    caller,
+                    notes: bag.notes ?? null,
+                });
+                const difference = received.minus(handedOver);
+                let tvrId = null;
+                let outcome = 'RECEIVED';
+                if (!difference.isZero()) {
+                    const within = difference.abs().lessThanOrEqualTo(settings.cashTolerance);
+                    outcome = within ? 'WITHIN_TOLERANCE' : 'SENT_FOR_APPROVAL';
+                    const now = new Date();
+                    const variance = await tx.tillVariance.create({
+                        data: {
+                            tvrCompanyId: session.tssCompanyId,
+                            tvrBranchId: session.tssBranchId,
+                            tvrTenantId: session.tssTenantId,
+                            tvrAccYear: session.tssAccYear,
+                            tvrSessionId: session.tssId,
+                            tvrStage: till_enum_1.TillVarianceStage.RECEIVE,
+                            tvrMovementId: m.tcmId,
+                            tvrTenderTypeId: till_enum_1.CASH_TENDER_TYPE_ID,
+                            tvrTenderId: tillCash.tenderId,
+                            tvrOpenAmount: handedOver,
+                            tvrExpected: handedOver,
+                            tvrCounted: received,
+                            tvrTolerance: settings.cashTolerance,
+                            tvrTreatment: within
+                                ? till_enum_1.TillVarianceTreatment.WITHIN_TOLERANCE
+                                : till_enum_1.TillVarianceTreatment.PENDING,
+                            tvrDecidedBy: within ? caller.userId : null,
+                            tvrDecidedOn: within ? now : null,
+                            tvrStatus: 'OPEN',
+                            tvrNotes: bag.notes ?? null,
+                            tvrCreatedBy: caller.actorName,
+                        },
+                        select: { tvrId: true },
+                    });
+                    tvrId = variance.tvrId;
+                    if (within) {
+                        await this.posting.postVariance(tx, {
+                            session: postingSession,
+                            tvrId,
+                            tenderLedgerId: awaitingLedgerId,
+                            tenderLabel: `Cash received (${m.tcmDocNo})`,
+                            variance: difference,
+                            treatment: till_enum_1.TillVarianceTreatment.WITHIN_TOLERANCE,
+                            caller,
+                            on,
+                        });
+                    }
+                    else {
+                        await this.events.log(tx, {
+                            companyId: session.tssCompanyId,
+                            branchId: session.tssBranchId,
+                            accYear: session.tssAccYear,
+                            code: till_enum_1.TillEventCode.APPROVAL_REQUESTED,
+                            sessionId: session.tssId,
+                            dayId: session.tssDayId,
+                            counterId: session.tssCounterId,
+                            deviceId: caller.deviceId ?? session.tssDeviceId,
+                            userId: caller.userId,
+                            srcDocType: 'TILL_MOVEMENT',
+                            srcDocId: m.tcmId,
+                            srcRefno: m.tcmDocNo,
+                            amount: difference.abs(),
+                            payload: {
+                                event: 'CASH_VARIANCE',
+                                stage: till_enum_1.TillVarianceStage.RECEIVE,
+                                tcmId: m.tcmId,
+                                variance: [
+                                    {
+                                        tenderTypeId: till_enum_1.CASH_TENDER_TYPE_ID,
+                                        tenderId: tillCash.tenderId,
+                                        variance: difference.toFixed(2),
+                                    },
+                                ],
+                            },
+                        });
+                    }
+                    const status = session.tssVarianceStatus;
+                    const next = !within
+                        ? till_enum_1.TillSessionVarianceStatus.PENDING
+                        : status === till_enum_1.TillSessionVarianceStatus.NONE
+                            ? till_enum_1.TillSessionVarianceStatus.WITHIN_TOLERANCE
+                            : status;
+                    if (next !== status) {
+                        await tx.tillSession.update({
+                            where: {
+                                tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear },
+                            },
+                            data: {
+                                tssVarianceStatus: next,
+                                tssModifiedOn: now,
+                                tssModifiedBy: caller.actorName,
+                            },
+                        });
+                    }
+                }
+                out.set(m.tcmId, {
+                    tcmId: m.tcmId,
+                    tcmAccYear: m.tcmAccYear,
+                    tcmKind: m.tcmKind,
+                    tcmDocNo: m.tcmDocNo,
+                    tssId: session.tssId,
+                    sessionNo: session.tssSessionNo,
+                    handedOver: num(handedOver),
+                    received: num(received),
+                    difference: num(difference),
+                    outcome,
+                    tvrId,
+                    receiveVoucherId: voucherId,
+                    receivedOn: on.date,
+                });
+            }
+            return out;
+        });
+        return input.bags.map((b) => results.get(b.tcmId));
+    }
+    async approveCash(input) {
+        const caller = await this.context.caller();
+        const key = {
+            companyId: input.companyId,
+            branchId: input.branchId,
+            accYear: input.accYear,
+            tssId: input.tssId,
+        };
+        const settings = await this.context.settings({
+            companyId: input.companyId,
+            branchId: input.branchId,
+        });
+        const peek = await this.prisma.tillSession.findFirst({
+            where: {
+                tssId: key.tssId,
+                tssAccYear: key.accYear,
+                tssCompanyId: key.companyId,
+                tssBranchId: key.branchId,
+                tssIsDeleted: false,
+            },
+        });
+        if (!peek) {
+            (0, till_errors_1.throwTillNotFound)('Till session', 'tssId', key.tssId);
+        }
+        if (peek.tssStatus !== till_enum_1.TillSessionStatus.CLOSED) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SESSION_NOT_OPEN, `Session ${peek.tssSessionNo} is ${peek.tssStatus}: its cash is approved once it is closed`, 'tssId', { status: peek.tssStatus });
+        }
+        const waiting = await this.awaitingOf(this.prisma, peek);
+        if (waiting.length === 0) {
+            return this.refuseNothingAwaiting(this.prisma, peek);
+        }
+        if (caller.userId === peek.tssOperatorId && !settings.singleOperator) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECEIVER_SELF, `Session ${peek.tssSessionNo} is yours (you were its cashier): another supervisor approves its cash`, 'tssId', { tssId: peek.tssId });
+        }
+        const ownerAlone = settings.singleOperator && caller.userId === peek.tssOperatorId;
+        if (!ownerAlone || input.approverPin?.trim()) {
+            const me = await this.prisma.userMaster.findUnique({
+                where: { usrId: caller.userId },
+                select: { usrLoginName: true, usrPinHash: true },
+            });
+            await this.verifyPin(peek, me?.usrLoginName ?? caller.actorName, me?.usrPinHash ?? null, {
+                pin: input.approverPin,
+                field: 'approverPin',
+                codes: {
+                    noPin: till_enum_1.TillErrorCode.RECEIVER_NO_PIN,
+                    required: till_enum_1.TillErrorCode.RECEIVER_PIN_REQUIRED,
+                    wrong: till_enum_1.TillErrorCode.RECEIVER_PIN,
+                },
+                noPinMessage: `${caller.actorName} approves cash into the safe and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+                requiredMessage: 'Approving a session’s cash is signed with your till PIN',
+                payload: { action: 'approve-cash', tssId: peek.tssId },
+                detail: {},
+                caller,
+            });
+        }
+        const handedOver = waiting.reduce((sum, m) => sum.plus(m.tcmAmount), ZERO);
+        const received = input.receivedAmount === null || input.receivedAmount === undefined
+            ? handedOver
+            : new client_1.Prisma.Decimal(input.receivedAmount).toDecimalPlaces(2);
+        const difference = received.minus(handedOver);
+        const within = difference.abs().lessThanOrEqualTo(settings.cashTolerance);
+        const today = await (0, till_dates_1.businessDateNow)(this.prisma, settings.dayCutoff);
+        const on = { date: today, accYear: (0, till_dates_1.accYearOf)(today) };
+        const event = 'CASH_VARIANCE';
+        let decision = null;
+        if (!within && input.treatment) {
+            const treatment = input.treatment;
+            const rule = await this.approval.ruleOrDefault(this.prisma, {
+                companyId: key.companyId,
+                branchId: key.branchId,
+                event,
+                onDate: today,
+            });
+            const verdict = await this.approval.assertApprover(this.prisma, {
+                companyId: key.companyId,
+                branchId: key.branchId,
+                event,
+                amount: difference.abs(),
+                rule,
+                approverId: caller.userId,
+                requesterId: peek.tssOperatorId,
+                pin: input.approverPin ?? null,
+            });
+            const reason = await this.sessions.varianceReason(this.prisma, {
+                companyId: key.companyId,
+                reasonId: input.reasonId ?? null,
+                event,
+            });
+            let recoveryLedgerId = null;
+            if (treatment === till_enum_1.TillVarianceTreatment.RECOVER) {
+                const staff = await this.sessions.staffLedgerOf(this.prisma, peek.tssOperatorId);
+                if (!staff.ledgerId) {
+                    (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.LEDGER_UNMAPPED, `RECOVER posts to the cashier’s staff advance ledger, and ${staff.login} has none (an employee with a loan ledger, notes 95)`, 'treatment', { treatment, operatorId: peek.tssOperatorId });
+                }
+                recoveryLedgerId = staff.ledgerId;
+            }
+            decision = { treatment, rule, verdict, reasonId: reason.trsId, recoveryLedgerId };
+        }
+        const done = await this.prisma.$transaction(async (tx) => {
+            const session = await this.lockSession(tx, key, [till_enum_1.TillSessionStatus.CLOSED]);
+            await tx.$queryRaw `
+        SELECT tcm_id FROM accounts.till_cash_movement
+         WHERE tcm_session_id = ${session.tssId}::uuid AND tcm_acc_year = ${session.tssAccYear}::char(9)
+           AND tcm_is_deleted = false AND tcm_receipt_status = 'AWAITING'
+         ORDER BY tcm_id
+           FOR UPDATE`;
+            const bags = await this.awaitingOf(tx, session);
+            if (bags.length === 0) {
+                return this.refuseNothingAwaiting(tx, session);
+            }
+            if (bags.length !== waiting.length || bags.some((m, i) => m.tcmId !== waiting[i].tcmId)) {
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECEIPT_NOT_AWAITING, `Session ${session.tssSessionNo}'s cash changed while it was being approved: reload it`, 'tssId');
+            }
+            const anchor = bags.find((m) => m.tcmKind === till_enum_1.TillMovementKind.CLOSE_HANDOVER) ??
+                bags[bags.length - 1];
+            const share = new Map(bags.map((m) => [m.tcmId, new client_1.Prisma.Decimal(m.tcmAmount)]));
+            if (difference.isPositive()) {
+                share.set(anchor.tcmId, share.get(anchor.tcmId).plus(difference));
+            }
+            else {
+                let left = difference.abs();
+                for (const m of [anchor, ...bags.filter((b) => b !== anchor).reverse()]) {
+                    const has = share.get(m.tcmId);
+                    const take = has.lessThan(left) ? has : left;
+                    share.set(m.tcmId, has.minus(take));
+                    left = left.minus(take);
+                }
+            }
+            const awaitingLedgerId = await this.ledger.roleLedger(tx, till_enum_1.TILL_CASH_AWAITING_ROLE, input.companyId, input.branchId);
+            const postingSession = this.postingSession(session);
+            const movements = [];
+            for (const m of bags) {
+                const safe = m.tcmSafeId
+                    ? await tx.tillSafe.findUnique({
+                        where: { tsfId: m.tcmSafeId },
+                        select: { tsfId: true, tsfLedgerId: true, tsfName: true },
+                    })
+                    : null;
+                if (!safe) {
+                    (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SAFE_MISSING, `${m.tcmDocNo} names no safe to receive it into`, 'tssId');
+                }
+                const part = share.get(m.tcmId);
+                const voucherId = await this.posting.postReceive(tx, {
+                    movement: m,
+                    session: postingSession,
+                    safe: { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName },
+                    awaitingLedgerId,
+                    received: part,
+                    countId: null,
+                    on,
+                    caller,
+                    notes: input.notes ?? null,
+                });
+                movements.push({ m, received: part, voucherId });
+            }
+            let outcome = 'APPROVED';
+            let tvrId = null;
+            let tapId = null;
+            let varianceVoucherId = null;
+            if (!difference.isZero()) {
+                const now = new Date();
+                const tillCash = await this.ledger.tillCashTender(tx, input.companyId, input.branchId);
+                const treatment = within
+                    ? till_enum_1.TillVarianceTreatment.WITHIN_TOLERANCE
+                    : (decision?.treatment ?? till_enum_1.TillVarianceTreatment.PENDING);
+                outcome = within ? 'WITHIN_TOLERANCE' : decision ? 'DECIDED' : 'SENT_FOR_APPROVAL';
+                tvrId = await this.newId(tx);
+                if (decision) {
+                    tapId = await this.approval.record(tx, {
+                        companyId: session.tssCompanyId,
+                        branchId: session.tssBranchId,
+                        tenantId: session.tssTenantId,
+                        accYear: session.tssAccYear,
+                        event,
+                        sessionId: session.tssId,
+                        counterId: session.tssCounterId,
+                        srcDocType: 'TILL_MOVEMENT',
+                        srcDocId: anchor.tcmId,
+                        srcRefno: anchor.tcmDocNo,
+                        amount: difference.abs(),
+                        rule: decision.rule,
+                        verdict: decision.verdict,
+                        requestedBy: session.tssOperatorId,
+                        requestedOn: anchor.tcmCreatedOn,
+                        reasonId: decision.reasonId,
+                        status: 'APPROVED',
+                        decidedBy: caller.userId,
+                        decidedOn: now,
+                        decidedDeviceId: caller.deviceId,
+                        decisionNote: input.notes?.trim() ||
+                            `Cash approved: ${received.toFixed(2)} received of ${handedOver.toFixed(2)} handed over`,
+                        payload: {
+                            decision: 'APPROVE',
+                            treatment: decision.treatment,
+                            stage: till_enum_1.TillVarianceStage.RECEIVE,
+                            via: 'approve-cash',
+                            tcmId: anchor.tcmId,
+                            variances: [
+                                { tvrId, tenderTypeId: till_enum_1.CASH_TENDER_TYPE_ID, variance: difference.toFixed(2) },
+                            ],
+                        },
+                    });
+                }
+                await tx.tillVariance.create({
+                    data: {
+                        tvrId,
+                        tvrCompanyId: session.tssCompanyId,
+                        tvrBranchId: session.tssBranchId,
+                        tvrTenantId: session.tssTenantId,
+                        tvrAccYear: session.tssAccYear,
+                        tvrSessionId: session.tssId,
+                        tvrStage: till_enum_1.TillVarianceStage.RECEIVE,
+                        tvrMovementId: anchor.tcmId,
+                        tvrTenderTypeId: till_enum_1.CASH_TENDER_TYPE_ID,
+                        tvrTenderId: tillCash.tenderId,
+                        tvrOpenAmount: handedOver,
+                        tvrExpected: handedOver,
+                        tvrCounted: received,
+                        tvrTolerance: settings.cashTolerance,
+                        tvrTreatment: treatment,
+                        tvrReasonId: decision?.reasonId ?? null,
+                        tvrRecoveryLedgerId: decision?.recoveryLedgerId ?? null,
+                        tvrApprovalId: tapId,
+                        tvrDecidedBy: within || decision ? caller.userId : null,
+                        tvrDecidedOn: within || decision ? now : null,
+                        tvrStatus: 'OPEN',
+                        tvrNotes: input.notes ?? null,
+                        tvrCreatedBy: caller.actorName,
+                    },
+                    select: { tvrId: true },
+                });
+                if (within || decision) {
+                    varianceVoucherId = await this.posting.postVariance(tx, {
+                        session: postingSession,
+                        tvrId,
+                        tenderLedgerId: awaitingLedgerId,
+                        tenderLabel: `Cash received (${session.tssSessionNo})`,
+                        variance: difference,
+                        treatment: treatment,
+                        recoveryLedgerId: decision?.recoveryLedgerId ?? null,
+                        caller,
+                        on,
+                    });
+                }
+                await this.events.log(tx, {
+                    companyId: session.tssCompanyId,
+                    branchId: session.tssBranchId,
+                    accYear: session.tssAccYear,
+                    code: decision ? till_enum_1.TillEventCode.VARIANCE_DECIDED : till_enum_1.TillEventCode.APPROVAL_REQUESTED,
+                    sessionId: session.tssId,
+                    dayId: session.tssDayId,
+                    counterId: session.tssCounterId,
+                    deviceId: caller.deviceId ?? session.tssDeviceId,
+                    userId: caller.userId,
+                    srcDocType: 'TILL_MOVEMENT',
+                    srcDocId: anchor.tcmId,
+                    srcRefno: anchor.tcmDocNo,
+                    amount: difference.abs(),
+                    reasonId: decision?.reasonId ?? null,
+                    approvalId: tapId,
+                    payload: decision
+                        ? {
+                            stage: till_enum_1.TillVarianceStage.RECEIVE,
+                            via: 'approve-cash',
+                            decision: 'APPROVE',
+                            treatment: decision.treatment,
+                            event,
+                            amount: difference.abs().toFixed(2),
+                            requiredRole: decision.rule.tar_min_role,
+                            approverRole: decision.verdict.role,
+                            channel: decision.verdict.channel,
+                            implicitGrant: decision.verdict.implicit,
+                            grantId: decision.verdict.grantId,
+                            reasonId: decision.reasonId,
+                            recoveryLedgerId: decision.recoveryLedgerId,
+                            tcmId: anchor.tcmId,
+                            variances: [tvrId],
+                        }
+                        : {
+                            event: 'CASH_VARIANCE',
+                            stage: till_enum_1.TillVarianceStage.RECEIVE,
+                            via: 'approve-cash',
+                            tcmId: anchor.tcmId,
+                            variance: [
+                                {
+                                    tenderTypeId: till_enum_1.CASH_TENDER_TYPE_ID,
+                                    tenderId: tillCash.tenderId,
+                                    variance: difference.toFixed(2),
+                                },
+                            ],
+                        },
+                });
+                const status = session.tssVarianceStatus;
+                const next = decision
+                    ? (await this.sessions.hasAnyPending(tx, session))
+                        ? till_enum_1.TillSessionVarianceStatus.PENDING
+                        : till_enum_1.VARIANCE_STATUS_OF_TREATMENT[decision.treatment]
+                    : !within
+                        ? till_enum_1.TillSessionVarianceStatus.PENDING
+                        : status === till_enum_1.TillSessionVarianceStatus.NONE
+                            ? till_enum_1.TillSessionVarianceStatus.WITHIN_TOLERANCE
+                            : status;
+                if (next !== status) {
+                    await tx.tillSession.update({
+                        where: {
+                            tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear },
+                        },
+                        data: { tssVarianceStatus: next, tssModifiedOn: now, tssModifiedBy: caller.actorName },
+                    });
+                }
+            }
+            return { session, anchor, movements, outcome, tvrId, tapId, varianceVoucherId };
+        });
+        const numbers = await this.voucherNos([
+            ...done.movements.map((x) => x.voucherId),
+            done.varianceVoucherId,
+        ]);
+        return {
+            tssId: done.session.tssId,
+            tssAccYear: done.session.tssAccYear,
+            sessionNo: done.session.tssSessionNo,
+            handedOver: num(handedOver),
+            received: num(received),
+            difference: num(difference),
+            outcome: done.outcome,
+            tvrId: done.tvrId,
+            tcmId: done.tvrId ? done.anchor.tcmId : null,
+            treatment: done.outcome === 'DECIDED' ? decision.treatment : null,
+            tapId: done.tapId,
+            varianceVoucherId: done.varianceVoucherId,
+            varianceVoucherNo: done.varianceVoucherId
+                ? (numbers.get(done.varianceVoucherId) ?? null)
+                : null,
+            receivedOn: on.date,
+            movements: done.movements.map(({ m, received: r, voucherId }) => ({
+                tcmId: m.tcmId,
+                tcmAccYear: m.tcmAccYear,
+                tcmKind: m.tcmKind,
+                tcmDocNo: m.tcmDocNo,
+                handedOver: num(m.tcmAmount),
+                received: num(r),
+                receiveVoucherId: voucherId,
+                receiveVoucherNo: voucherId ? (numbers.get(voucherId) ?? null) : null,
+            })),
+            session: await this.sessions.get(key),
+        };
+    }
+    awaitingOf(client, session) {
+        return client.tillCashMovement.findMany({
+            where: {
+                tcmSessionId: session.tssId,
+                tcmAccYear: session.tssAccYear,
+                tcmIsDeleted: false,
+                tcmStatus: 'POSTED',
+                tcmReceiptStatus: till_enum_1.TillReceiptStatus.AWAITING,
+            },
+            orderBy: [{ tcmCreatedOn: 'asc' }, { tcmId: 'asc' }],
+        });
+    }
+    async refuseNothingAwaiting(client, session) {
+        const last = await client.tillCashMovement.findFirst({
+            where: {
+                tcmSessionId: session.tssId,
+                tcmAccYear: session.tssAccYear,
+                tcmIsDeleted: false,
+                tcmStatus: 'POSTED',
+                tcmReceiptStatus: till_enum_1.TillReceiptStatus.RECEIVED,
+            },
+            orderBy: { tcmReceivedOn: 'desc' },
+            select: { tcmReceivedBy: true, tcmReceivedOn: true },
+        });
+        if (last) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.CASH_ALREADY_APPROVED, `Session ${session.tssSessionNo}'s cash has already been approved`, 'tssId', {
+                receivedBy: last.tcmReceivedBy ?? '',
+                receivedOn: last.tcmReceivedOn?.toISOString() ?? '',
+            });
+        }
+        (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECEIPT_NOT_AWAITING, `Session ${session.tssSessionNo} handed nothing over that waits for a receipt`, 'tssId');
+    }
+    async voucherNos(ids) {
+        const wanted = ids.filter((id) => !!id);
+        if (wanted.length === 0) {
+            return new Map();
+        }
+        const rows = await this.prisma.$queryRaw `
+      SELECT avh_voucher_id::text AS id, avh_voucher_no::text AS no
+        FROM accounts.acc_voucher_header
+       WHERE avh_voucher_id = ANY(${wanted}::uuid[])`;
+        return new Map(rows.filter((r) => r.no !== null).map((r) => [r.id, r.no]));
+    }
+    assertAwaiting(m, field) {
+        if (m.tcmStatus !== 'POSTED' ||
+            m.tcmReceiptStatus !== till_enum_1.TillReceiptStatus.AWAITING ||
+            !m.tcmSessionId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECEIPT_NOT_AWAITING, m.tcmStatus !== 'POSTED'
+                ? `${m.tcmDocNo} is ${m.tcmStatus}`
+                : m.tcmReceiptStatus === till_enum_1.TillReceiptStatus.RECEIVED
+                    ? `${m.tcmDocNo} has already been received`
+                    : `${m.tcmDocNo} went straight into the safe: there is nothing to receive`, field, { receiptStatus: m.tcmReceiptStatus, status: m.tcmStatus });
+        }
     }
     async proveSupervisor(input, caller) {
         const session = await this.peekSession(input);
@@ -759,6 +1488,7 @@ exports.TillMovementService = TillMovementService = __decorate([
         till_ledger_service_1.TillLedgerService,
         till_posting_service_1.TillPostingService,
         till_session_service_1.TillSessionService,
-        till_event_service_1.TillEventService])
+        till_event_service_1.TillEventService,
+        till_approval_service_1.TillApprovalService])
 ], TillMovementService);
 //# sourceMappingURL=till-movement.service.js.map

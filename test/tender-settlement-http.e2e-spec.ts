@@ -17,6 +17,7 @@ import {
   PaymentFixtures,
   prisma,
 } from './helpers/payment-e2e';
+import { dropTestDay } from './helpers/till-cleanup';
 
 /**
  * Non-cash tender control — till/plan-noncash-tender-control.md, over HTTP
@@ -287,14 +288,12 @@ afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_variance WHERE tvr_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ${session.tssId}::uuid`;
-    if (dayCreated) {
-      await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${session.tssDayId}::uuid`;
-      await prisma.$executeRaw`
-        DELETE FROM accounts.till_business_day d WHERE d.tbd_id = ${session.tssDayId}::uuid
-           AND NOT EXISTS (SELECT 1 FROM accounts.till_session s WHERE s.tss_day_id = d.tbd_id)`;
-    }
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_device_id IN (${tillPc ?? null}::uuid, ${officePc ?? null}::uuid)`;
+  // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
+  if (dayCreated && session) {
+    await dropTestDay(prisma, session.tssDayId);
+  }
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counterId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.till_safe WHERE tsf_id = ${safeId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.acc_tender_master WHERE tnd_id = ANY(${tenders}::uuid[])`;

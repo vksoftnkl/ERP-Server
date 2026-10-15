@@ -68,7 +68,7 @@ class SalesDocStore {
     async findOrThrow(c, keys) {
         const row = await this.find(c, keys);
         if (!row) {
-            (0, module_service_utils_1.throwSalesNotFound)(`${this.spec.screenName} not found`, this.f('Id'), `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`);
+            (0, module_service_utils_1.throwSalesNotFound)(`${this.spec.screenName} not found`, this.f('Id'), `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
         }
         return row;
     }
@@ -82,7 +82,7 @@ class SalesDocStore {
          AND ${client_1.Prisma.raw(`${p}_is_deleted`)} = false
        FOR UPDATE`;
         if (rows.length === 0) {
-            (0, module_service_utils_1.throwSalesNotFound)(`${this.spec.screenName} not found`, this.f('Id'), `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`);
+            (0, module_service_utils_1.throwSalesNotFound)(`${this.spec.screenName} not found`, this.f('Id'), `No active ${this.spec.screenName.toLowerCase()} found with id ${keys.id}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
         }
         return (await this.find(tx, keys));
     }
@@ -144,6 +144,7 @@ class SalesDocStore {
                     (0, module_service_utils_1.throwSalesBadRequest)(`${k} is required`, [
                         {
                             field: k,
+                            code: posting_types_1.SALES_ERROR_CODES.FIELD_REQUIRED,
                             message: `${k} must be provided when creating a ${this.spec.screenName.toLowerCase()}`,
                         },
                     ]);
@@ -286,14 +287,19 @@ class SalesDocStore {
         for (const { it, lineNo } of resolved) {
             if (seen.has(lineNo)) {
                 (0, module_service_utils_1.throwSalesBadRequest)('Duplicate line number', [
-                    { field: this.fi('LineNo'), message: `Line ${lineNo} appears twice` },
+                    {
+                        field: this.fi('LineNo'),
+                        code: posting_types_1.SALES_ERROR_CODES.LINE_NO_DUPLICATE,
+                        line: lineNo,
+                        message: `Line ${lineNo} appears twice`,
+                    },
                 ]);
             }
             seen.add(lineNo);
             const id = it[this.fi('Id')];
             if (id) {
                 if (!byId.has(id)) {
-                    (0, module_service_utils_1.throwSalesNotFound)('Line not found', this.fi('Id'), `No active line ${id} on this document`);
+                    (0, module_service_utils_1.throwSalesNotFound)('Line not found', this.fi('Id'), `No active line ${id} on this document`, posting_types_1.SALES_ERROR_CODES.LINE_NOT_FOUND);
                 }
                 keep.add(id);
             }
@@ -344,7 +350,12 @@ class SalesDocStore {
             for (const r of this.spec.itemRequired) {
                 if (!it[r]) {
                     (0, module_service_utils_1.throwSalesBadRequest)(`${r} is required for a new line`, [
-                        { field: r, message: `${r} must be provided when creating a line` },
+                        {
+                            field: r,
+                            code: posting_types_1.SALES_ERROR_CODES.LINE_FIELD_REQUIRED,
+                            line: lineNo,
+                            message: `${r} must be provided when creating a line`,
+                        },
                     ]);
                 }
                 data[r] = it[r];

@@ -88,7 +88,7 @@ describe('TxnHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'txhCompanyId', message: 'txhCompanyId must be a valid UUID' }],
+      errors: [{ field: 'txhCompanyId', code: 'VALIDATION_FAILED', message: 'txhCompanyId must be a valid UUID' }],
     });
   });
   it('falls back to `request` when the message names no field', () => {
@@ -99,7 +99,7 @@ describe('TxnHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'request', message: 'each value must be a string' }],
+      errors: [{ field: 'request', code: 'VALIDATION_FAILED', message: 'each value must be a string' }],
     });
   });
   it('answers an unknown error with the 500 envelope', () => {
@@ -108,7 +108,7 @@ describe('TxnHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   });
 });

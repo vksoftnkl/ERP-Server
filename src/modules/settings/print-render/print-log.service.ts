@@ -18,7 +18,10 @@ import { ACC_YEAR_PATTERN, PlgOutputMode, PlgStatus } from './print-render.const
  *
  * This table IS the record of printing. `sale_bill.sb_print_count` and its
  * siblings stay a denormalised cache of `COUNT(*)` over it, never the truth,
- * and nothing here writes them.
+ * and nothing here writes them — save the till's Z counters (notes 117 §7,
+ * PRINT_COUNTERS below): a PRINT of a TILL_SESSION_Z / TILL_DAY_Z bumps
+ * `tss_print_count` / `tbd_print_count` once per render, so the Z itself can
+ * say "REPRINT n". Swallowed like the log: a counter never fails a print.
  *
  * ── IMMUTABLE MEANS IMMUTABLE ──────────────────────────────────────────────
  *
@@ -65,6 +68,20 @@ export interface PrintLogEntry {
   durationMs: number | null;
   printedBy: string | null;
 }
+
+/**
+ * Notes 117 §7 — the documents whose own print counter this log keeps, by
+ * `plg_src_doc_type` (the purpose's ppo_doc_type). One bump per PRINT render
+ * (its copy 1), never for a preview or a file.
+ */
+const PRINT_COUNTERS: Readonly<Record<string, (docId: string, accYear: string) => Prisma.Sql>> = {
+  TILL_SESSION_Z: (docId, accYear) => Prisma.sql`
+    UPDATE accounts.till_session SET tss_print_count = tss_print_count + 1
+     WHERE tss_id = ${docId}::uuid AND tss_acc_year = ${accYear}::char(9)`,
+  TILL_DAY_Z: (docId, accYear) => Prisma.sql`
+    UPDATE accounts.till_business_day SET tbd_print_count = tbd_print_count + 1
+     WHERE tbd_id = ${docId}::uuid AND tbd_acc_year = ${accYear}::char(9)`,
+};
 
 @Injectable()
 export class PrintLogService {
@@ -113,7 +130,9 @@ export class PrintLogService {
     if (entries.length === 0) return [];
 
     try {
-      return await this.insert(entries);
+      const ids = await this.insert(entries);
+      await this.bumpPrintCounters(entries);
+      return ids;
     } catch (error) {
       if (this.isMissingPartition(error)) {
         const accYear = entries[0].accYear;
@@ -123,7 +142,9 @@ export class PrintLogService {
         );
         try {
           await this.createPartition(accYear);
-          return await this.insert(entries);
+          const ids = await this.insert(entries);
+          await this.bumpPrintCounters(entries);
+          return ids;
         } catch (retryError) {
           this.reportSwallowed(entries, retryError);
           return [];
@@ -132,6 +153,31 @@ export class PrintLogService {
 
       this.reportSwallowed(entries, error);
       return [];
+    }
+  }
+
+  /** PRINT_COUNTERS: one bump per printed document (copy 1 of a SUCCESS PRINT). */
+  private async bumpPrintCounters(entries: readonly PrintLogEntry[]): Promise<void> {
+    for (const entry of entries) {
+      const counter = PRINT_COUNTERS[entry.srcDocType];
+      if (
+        !counter ||
+        (entry.outputMode !== 'PRINT' && entry.outputMode !== 'REPRINT') ||
+        entry.status !== 'SUCCESS' ||
+        entry.copyNo !== 1 ||
+        !entry.srcDocId ||
+        !entry.srcAccYear
+      ) {
+        continue;
+      }
+      try {
+        await this.prisma.$executeRaw(counter(entry.srcDocId, entry.srcAccYear));
+      } catch (error) {
+        this.logger.error(
+          `Could not bump the print count of ${entry.srcDocType} ${entry.srcDocId}: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 

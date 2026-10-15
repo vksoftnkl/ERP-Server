@@ -21,6 +21,8 @@ export interface SalesCodedErrorDetail extends SalesErrorDetail {
   code: SalesErrorCodeLike;
   line?: number;
   statutory?: SalesStatutoryRef;
+  /** The state the refusal is about (a cheque's register status …), for the client's wording. */
+  status?: string;
 }
 
 /** 409 — the row exists and the request is well formed; its STATE refuses. */

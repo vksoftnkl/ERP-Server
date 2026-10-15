@@ -11,6 +11,13 @@
 ///
 /// A variance row is never edited after it posts; a changed decision is a
 /// REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+/// Stage RECEIVE (notes 113) = a bag a supervisor received for other than was
+/// handed over: the OPEN row's shape (cash, open_amount = handed over, counted =
+/// received), naming the bag in tvr_movement_id.
+/// Stages SAFE / REMIT (notes 118) = a safe gap, with NO session: a safe count
+/// (open_amount = expected = what the safe should hold, counted = counted,
+/// tvr_count_id) or a CIT remittance the bank credited short (expected = sent,
+/// counted = credited, tvr_movement_id = the REMIT), both naming tvr_safe_id.
 /// ck_tvr_expected holds the row's own arithmetic (since 20261008110000, file 48):
 ///   expected = open + sales - refund + receipt - payment - expense
 ///              + moved_in - moved_out.
@@ -20,9 +27,11 @@ model TillVariance {
   tvrBranchId         String    @db.Uuid                             @map("tvr_branch_id")
   tvrTenantId         String?   @db.Uuid                             @map("tvr_tenant_id")
   tvrAccYear          String    @db.Char(9)                          @map("tvr_acc_year")
-  tvrSessionId        String    @db.Uuid                             @map("tvr_session_id")
+  /// NULL only for a safe gap — stage SAFE / REMIT (notes 118, ck_tvr_owner).
+  tvrSessionId        String?   @db.Uuid                             @map("tvr_session_id")
   /// OPEN (float mismatch) | CLOSE
-  tvrStage            String    @default("CLOSE") @db.VarChar(5)     @map("tvr_stage")
+  /// OPEN | CLOSE | RECEIVE (varchar(8) since 20261014100000) | SAFE | REMIT (notes 118)
+  tvrStage            String    @default("CLOSE") @db.VarChar(8)     @map("tvr_stage")
   tvrTenderTypeId     Int                                            @map("tvr_tender_type_id")
   tvrTenderId         String?   @db.Uuid                             @map("tvr_tender_id")
   /// Float (cash only).
@@ -77,9 +86,18 @@ model TillVariance {
   /// [{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
   /// credits suspense, not the clearing ledger, for these.
   tvrRows             Json?     @db.JsonB                            @map("tvr_rows")
+  // ── Added by 20261014100000 (notes 113) — physically last on the table ──
+  /// Stage RECEIVE: the hand-over / drop received (till_cash_movement, same
+  /// acc year; ck_tvr_receive). FK-less.
+  tvrMovementId       String?   @db.Uuid                             @map("tvr_movement_id")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// Stage SAFE / REMIT: the safe (till_safe). FK-less.
+  tvrSafeId           String?   @db.Uuid                             @map("tvr_safe_id")
+  /// Stage SAFE: the safe count that found the gap (till_count, same acc year). FK-less.
+  tvrCountId          String?   @db.Uuid                             @map("tvr_count_id")
 
   // Relations
-  session             TillSession   @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
+  session             TillSession?  @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
   tenderType          AccTenderType @relation("TillVarianceTenderType", fields: [tvrTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_tender_type")
   reason              TillReason?   @relation("TillVarianceReason",     fields: [tvrReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_reason")
 
@@ -87,13 +105,16 @@ model TillVariance {
 
   // DB-only:
   //   CREATE UNIQUE INDEX ux_tvr_live ON accounts.till_variance
-  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_acc_year) NULLS NOT DISTINCT
+  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_movement_id,
+  //        tvr_safe_id, tvr_count_id, tvr_acc_year) NULLS NOT DISTINCT
   //       WHERE tvr_is_deleted = false AND tvr_status <> 'REVERSED';
-  //   ix_tvr_session, ix_tvr_pending.
+  //   ix_tvr_session, ix_tvr_pending, ix_tvr_safe (notes 118).
   // CHECKs: ck_tvr_treatment, ck_tvr_status, ck_tvr_stage, ck_tvr_open_stage, ck_tvr_expected,
   //         ck_tvr_counted, ck_tvr_cash_terms (float / movements are CASH = tender type 1 only),
   //         ck_tvr_recover, ck_tvr_reason, ck_tvr_decided, ck_tvr_voucher_pair,
-  //         ck_tvr_split (payment / expense >= 0).
+  //         ck_tvr_split (payment / expense >= 0), ck_tvr_owner (notes 118, was ck_tvr_receive:
+  //         OPEN / CLOSE a session only · RECEIVE a session + its bag · SAFE a safe + its count ·
+  //         REMIT a safe + the remittance).
   @@map("till_variance")
   @@schema("accounts")
 }

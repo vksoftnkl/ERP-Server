@@ -1818,6 +1818,9 @@ model AccTenderDetail {
   // Partial index (DB-only) for 40A(3), cash to one payee in a day (20261008180000):
   //   ix_td_cash_party_day (td_company_id, td_party_ledger_id, td_doc_date)
   //     WHERE td_tender_type_id = 1 AND live — payment/cash-payment-limit.ts.
+  // Partial index (DB-only) for the safe's balance (notes 118, 20261015100000):
+  //   ix_td_cash_tender_ledger (td_tender_ledger_id) WHERE td_tender_type_id = 1
+  //     — back-office cash routed to a safe's ledger (till-safe.service.ts).
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
   // REDEEM rows of one redemption share ONE tender, one per lot consumed —
@@ -3299,8 +3302,13 @@ model TillBusinessDay {
 ///   PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
 ///   DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
 ///   CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+///     notes 113, till.handover_receipt = REQUIRED: a DROP / CLOSE_HANDOVER posts
+///     Dr Till cash awaiting receipt instead (tcm_receipt_status AWAITING), and a
+///     supervisor's receive posts TRcv Dr Safe / Cr awaiting (RECEIVED)
 ///   PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
 ///   REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+///     notes 118: tcm_ledger_id = the bank it is bound for, either way; a CIT one is
+///     confirmed later — CRem Dr Bank / Cr Cash in transit (tcm_confirm_voucher_id)
 ///   SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
 ///   EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
 ///
@@ -3374,6 +3382,38 @@ model TillCashMovement {
   /// Notes 108: when the witness's till PIN was checked (PICKUP / TOP_UP).
   /// NULL = no witness proven. Physically last (20261012140000).
   tcmWitnessVerifiedOn DateTime? @db.Timestamptz(6)                  @map("tcm_witness_verified_on")
+  // ── Added by 20261014100000 (notes 113) — physically last on the table ──
+  /// NULL = straight into the safe (setting NONE, a pickup, every row before
+  /// notes 113) | AWAITING = in "Till cash awaiting receipt" | RECEIVED.
+  tcmReceiptStatus    String?   @db.VarChar(10)                      @map("tcm_receipt_status")
+  /// The supervisor who received it into the safe — counted (movements/receive)
+  /// or approved on the session (sessions/approve-cash, notes 114); not the
+  /// cashier, unless till.single_operator (the service's rule, no CHECK).
+  tcmReceivedBy       String?   @db.Uuid                             @map("tcm_received_by")
+  tcmReceivedOn       DateTime? @db.Timestamptz(6)                   @map("tcm_received_on")
+  /// What the supervisor received; ≠ tcm_amount = a RECEIVE-stage variance.
+  tcmReceivedAmount   Decimal?  @db.Decimal(15, 2)                   @map("tcm_received_amount")
+  /// The DROP_VERIFY count behind a movements/receive; NULL for approve-cash
+  /// (no count, notes 114 — ck_tcm_received no longer asks for it).
+  tcmReceiveCountId   String?   @db.Uuid                             @map("tcm_receive_count_id")
+  /// The TRcv voucher (Dr Safe / Cr awaiting); none for an empty bag.
+  tcmReceiveVoucherId String?   @db.Uuid                             @map("tcm_receive_voucher_id")
+  tcmReceiveVoucherAccYear String? @db.Char(9)                       @map("tcm_receive_voucher_acc_year")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// REMIT only (ck_tcm_remit): BANK_DEPOSIT (staff paid it in) | CIT (an agency took it).
+  tcmRemitMode        String?   @db.VarChar(12)                      @map("tcm_remit_mode")
+  /// REMIT only: DEPOSITED (BANK_DEPOSIT) | IN_TRANSIT → CONFIRMED (CIT; ck_tcm_remit_flow).
+  tcmRemitStatus      String?   @db.VarChar(10)                      @map("tcm_remit_status")
+  /// CIT confirmed: the date and reference the bank statement shows.
+  tcmBankDate         DateTime? @db.Date                             @map("tcm_bank_date")
+  tcmBankRef          String?   @db.VarChar(50)                      @map("tcm_bank_ref")
+  /// What the bank credited; short of tcm_amount = a REMIT-stage variance.
+  tcmBankAmount       Decimal?  @db.Decimal(15, 2)                   @map("tcm_bank_amount")
+  tcmConfirmedBy      String?   @db.Uuid                             @map("tcm_confirmed_by")
+  tcmConfirmedOn      DateTime? @db.Timestamptz(6)                   @map("tcm_confirmed_on")
+  /// The Contra (CRem Dr Bank / Cr Cash in transit); none for a credit of 0.
+  tcmConfirmVoucherId String?   @db.Uuid                             @map("tcm_confirm_voucher_id")
+  tcmConfirmVoucherAccYear String? @db.Char(9)                       @map("tcm_confirm_voucher_acc_year")
 
   // Relations
   ledger              AccLedgerMaster? @relation("TillCashMovementLedger", fields: [tcmLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_ledger")
@@ -3386,10 +3426,17 @@ model TillCashMovement {
   //   CREATE UNIQUE INDEX ux_tcm_doc_no ON accounts.till_cash_movement
   //       (tcm_company_id, tcm_branch_id, tcm_kind, tcm_doc_no, tcm_acc_year) WHERE tcm_is_deleted = false;
   //   ix_tcm_session, ix_tcm_day, ix_tcm_safe, and ix_tcm_unposted (reconciliation:
-  //   a POSTED non-EXCHANGE movement with no voucher).
+  //   a POSTED non-EXCHANGE movement with no voucher); ix_tcm_awaiting (notes 113:
+  //   POSTED rows AWAITING receipt); ix_tcm_in_transit (notes 118: POSTED REMITs IN_TRANSIT).
   // CHECKs: ck_tcm_kind, ck_tcm_status, ck_tcm_amount, ck_tcm_session, ck_tcm_safe, ck_tcm_ledger,
   //         ck_tcm_reason, ck_tcm_transfer, ck_tcm_witness, ck_tcm_pickup_witness, ck_tcm_void,
-  //         ck_tcm_voucher_pair, ck_tcm_witness_verified (a verified witness is a named one).
+  //         ck_tcm_voucher_pair, ck_tcm_witness_verified (a verified witness is a named one),
+  //         notes 113: ck_tcm_receipt_status, ck_tcm_receipt_kind (DROP / CLOSE_HANDOVER only),
+  //         ck_tcm_received (RECEIVED ⇔ by / on / amount / count), ck_tcm_received_amount,
+  //         ck_tcm_receive_voucher_pair, ck_tcm_receive_voucher,
+  //         notes 118: ck_tcm_remit (REMIT ⇔ mode + status), ck_tcm_remit_flow, ck_tcm_remit_confirmed
+  //         (CONFIRMED ⇔ bank date / amount, confirmed by / on), ck_tcm_bank_amount,
+  //         ck_tcm_confirm_voucher_pair, ck_tcm_confirm_voucher.
   @@map("till_cash_movement")
   @@schema("accounts")
 }
@@ -3409,6 +3456,7 @@ model TillCount {
   tctTenantId         String?   @db.Uuid                             @map("tct_tenant_id")
   tctAccYear          String    @db.Char(9)                          @map("tct_acc_year")
   /// OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE
+  /// | REMIT (notes 118: the cash a remittance took out of the safe)
   tctKind             String    @db.VarChar(12)                      @map("tct_kind")
   /// NULL for a SAFE count.
   tctSessionId        String?   @db.Uuid                             @map("tct_session_id")
@@ -3432,6 +3480,10 @@ model TillCount {
   tctSyncDate         DateTime? @db.Timestamptz(6)                   @map("tct_sync_date")
   tctCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_created_on")
   tctCreatedBy        String?   @db.VarChar(50)                      @map("tct_created_by")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// A SAFE count: the business day it counts for (till_business_day, same
+  /// acc year; ck_tct_safe). The day's last count of a safe is the day's. FK-less.
+  tctDayId            String?   @db.Uuid                             @map("tct_day_id")
 
   // Relations
   lines               TillCountLine[] @relation("TillCountLineCount")
@@ -3441,11 +3493,13 @@ model TillCount {
   // DB-only:
   //   ix_tct_session (tct_session_id, tct_acc_year, tct_kind, tct_attempt_no) WHERE tct_is_deleted = false
   //   ix_tct_safe    (tct_safe_id, tct_counted_on) WHERE tct_is_deleted = false AND tct_safe_id IS NOT NULL
+  //   ix_tct_safe_day (tct_day_id, tct_acc_year, tct_safe_id) WHERE tct_is_deleted = false AND tct_kind = 'SAFE'
   //   CREATE UNIQUE INDEX ux_tct_final ON accounts.till_count
   //       (tct_session_id, (CASE WHEN tct_kind = 'OPEN' THEN 'OPEN' ELSE 'CLOSE' END), tct_acc_year)
   //       WHERE tct_is_deleted = false AND tct_is_final AND tct_session_id IS NOT NULL
   //         AND tct_kind IN ('OPEN','CLOSE','RECOUNT');
-  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness.
+  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness,
+  //         ck_tct_safe (notes 118: a SAFE count names its safe and day, never a session).
   @@map("till_count")
   @@schema("accounts")
 }
@@ -3916,6 +3970,13 @@ model TillSessionReview {
 ///
 /// A variance row is never edited after it posts; a changed decision is a
 /// REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+/// Stage RECEIVE (notes 113) = a bag a supervisor received for other than was
+/// handed over: the OPEN row's shape (cash, open_amount = handed over, counted =
+/// received), naming the bag in tvr_movement_id.
+/// Stages SAFE / REMIT (notes 118) = a safe gap, with NO session: a safe count
+/// (open_amount = expected = what the safe should hold, counted = counted,
+/// tvr_count_id) or a CIT remittance the bank credited short (expected = sent,
+/// counted = credited, tvr_movement_id = the REMIT), both naming tvr_safe_id.
 /// ck_tvr_expected holds the row's own arithmetic (since 20261008110000, file 48):
 ///   expected = open + sales - refund + receipt - payment - expense
 ///              + moved_in - moved_out.
@@ -3925,9 +3986,11 @@ model TillVariance {
   tvrBranchId         String    @db.Uuid                             @map("tvr_branch_id")
   tvrTenantId         String?   @db.Uuid                             @map("tvr_tenant_id")
   tvrAccYear          String    @db.Char(9)                          @map("tvr_acc_year")
-  tvrSessionId        String    @db.Uuid                             @map("tvr_session_id")
+  /// NULL only for a safe gap — stage SAFE / REMIT (notes 118, ck_tvr_owner).
+  tvrSessionId        String?   @db.Uuid                             @map("tvr_session_id")
   /// OPEN (float mismatch) | CLOSE
-  tvrStage            String    @default("CLOSE") @db.VarChar(5)     @map("tvr_stage")
+  /// OPEN | CLOSE | RECEIVE (varchar(8) since 20261014100000) | SAFE | REMIT (notes 118)
+  tvrStage            String    @default("CLOSE") @db.VarChar(8)     @map("tvr_stage")
   tvrTenderTypeId     Int                                            @map("tvr_tender_type_id")
   tvrTenderId         String?   @db.Uuid                             @map("tvr_tender_id")
   /// Float (cash only).
@@ -3982,9 +4045,18 @@ model TillVariance {
   /// [{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
   /// credits suspense, not the clearing ledger, for these.
   tvrRows             Json?     @db.JsonB                            @map("tvr_rows")
+  // ── Added by 20261014100000 (notes 113) — physically last on the table ──
+  /// Stage RECEIVE: the hand-over / drop received (till_cash_movement, same
+  /// acc year; ck_tvr_receive). FK-less.
+  tvrMovementId       String?   @db.Uuid                             @map("tvr_movement_id")
+  // ── Added by 20261015100000 (notes 118) — physically last on the table ──
+  /// Stage SAFE / REMIT: the safe (till_safe). FK-less.
+  tvrSafeId           String?   @db.Uuid                             @map("tvr_safe_id")
+  /// Stage SAFE: the safe count that found the gap (till_count, same acc year). FK-less.
+  tvrCountId          String?   @db.Uuid                             @map("tvr_count_id")
 
   // Relations
-  session             TillSession   @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
+  session             TillSession?  @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
   tenderType          AccTenderType @relation("TillVarianceTenderType", fields: [tvrTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_tender_type")
   reason              TillReason?   @relation("TillVarianceReason",     fields: [tvrReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_reason")
 
@@ -3992,13 +4064,16 @@ model TillVariance {
 
   // DB-only:
   //   CREATE UNIQUE INDEX ux_tvr_live ON accounts.till_variance
-  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_acc_year) NULLS NOT DISTINCT
+  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_movement_id,
+  //        tvr_safe_id, tvr_count_id, tvr_acc_year) NULLS NOT DISTINCT
   //       WHERE tvr_is_deleted = false AND tvr_status <> 'REVERSED';
-  //   ix_tvr_session, ix_tvr_pending.
+  //   ix_tvr_session, ix_tvr_pending, ix_tvr_safe (notes 118).
   // CHECKs: ck_tvr_treatment, ck_tvr_status, ck_tvr_stage, ck_tvr_open_stage, ck_tvr_expected,
   //         ck_tvr_counted, ck_tvr_cash_terms (float / movements are CASH = tender type 1 only),
   //         ck_tvr_recover, ck_tvr_reason, ck_tvr_decided, ck_tvr_voucher_pair,
-  //         ck_tvr_split (payment / expense >= 0).
+  //         ck_tvr_split (payment / expense >= 0), ck_tvr_owner (notes 118, was ck_tvr_receive:
+  //         OPEN / CLOSE a session only · RECEIVE a session + its bag · SAFE a safe + its count ·
+  //         REMIT a safe + the remittance).
   @@map("till_variance")
   @@schema("accounts")
 }
@@ -4329,6 +4404,52 @@ model DeviceMaster {
   tillCounters          TillCounter[]             @relation("TillCounterDevice")
 
   @@map("device_master")
+  @@schema("fixed")
+}
+
+// ----- prisma/fixed/errorMessage.prisma -----
+/// ERROR MESSAGE — the plain words for an error code (notes 120, migration
+/// 20261015130000). Every refusal carries a `code` (notes 119); the exception
+/// filters attach the matching row to each error as `user { title, line, todo }`,
+/// and GET /error-messages hands the whole catalogue to the apps to cache.
+///
+/// Rows are loaded from prisma/seed/Error_Messages.json by the TS seed
+/// `error-messages` (the user approves the wording in the share files).
+///
+/// ermCode: the exact code, or a prefix row ending in * (HOLD_*) for every code
+/// of it that has no row of its own. ermVariant: '' = the plain row;
+/// field=<name> · <key>=<value> · <key>=* — the same code worded by an extra
+/// field of the error. Resolution: field= first, then <key>=<value>, then
+/// <key>=*, then the plain row; the exact code before any prefix row.
+model ErrorMessage {
+  ermId          String    @id(map: "pk_error_message") @default(dbgenerated("uuidv7()")) @db.Uuid @map("erm_id")
+  ermCode        String    @db.VarChar(60)                     @map("erm_code")
+  ermVariant     String    @default("") @db.VarChar(60)        @map("erm_variant")
+  ermLang        String    @default("en") @db.VarChar(10)      @map("erm_lang")
+  ermTitle       String    @db.VarChar(60)                     @map("erm_title")
+  ermLine        String    @db.VarChar(200)                    @map("erm_line")
+  ermTodo        String    @db.VarChar(200)                    @map("erm_todo")
+  ermIsActive    Boolean   @default(true)                      @map("erm_is_active")
+  ermCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)  @map("erm_created_on")
+  ermModifiedOn  DateTime? @db.Timestamptz(6)                  @map("erm_modified_on")
+  ermSyncDate    DateTime? @db.Timestamptz(6)                  @map("erm_sync_date")
+
+  @@unique([ermCode, ermVariant, ermLang], map: "uq_error_message")
+  // CHECKs: ck_erm_code, ck_erm_variant, ck_erm_lang, ck_erm_words.
+  @@map("error_message")
+  @@schema("fixed")
+}
+
+/// ERROR MESSAGE CATALOGUE — the one version of fixed.error_message (the seed
+/// file's), which the apps send back as `since` (notes 120). ck_emc_one_row.
+model ErrorMessageCatalogue {
+  emcId        Int       @id(map: "pk_error_message_catalogue") @default(1) @db.SmallInt @map("emc_id")
+  emcVersion   String    @db.VarChar(40)                     @map("emc_version")
+  emcRowCount  Int       @default(0)                         @map("emc_row_count")
+  emcLoadedOn  DateTime  @default(now()) @db.Timestamptz(6)  @map("emc_loaded_on")
+  emcSyncDate  DateTime? @db.Timestamptz(6)                  @map("emc_sync_date")
+
+  @@map("error_message_catalogue")
   @@schema("fixed")
 }
 

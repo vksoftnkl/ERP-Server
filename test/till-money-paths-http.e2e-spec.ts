@@ -4,6 +4,7 @@ import * as request from 'supertest';
 
 import { bootApp as bootTillApp } from './helpers/payment-e2e';
 import { grantMenuRights, restoreMenuRights, type MenuRightsMemo } from './helpers/menu-rights';
+import { dropTestDay } from './helpers/till-cleanup';
 import {
   ACC_YEAR,
   BEARER,
@@ -60,6 +61,8 @@ let billAmt: number;
 /** The UPI bill re-tendered to cash in the session (notes 100): the drawer must expect it. */
 let retenderCash = 0;
 let session: { tssId: string; tssAccYear: string; tssBusinessDate: string };
+/** The branch's business days before the suite: none of them is ever dropped (notes 115). */
+let daysBefore = new Set<string>();
 /** Bills a later test POSTS (cancelled in teardown) and leaves as DRAFT (deleted). */
 const postedBills: string[] = [];
 const draftBills: string[] = [];
@@ -76,6 +79,10 @@ function expectStatus(res: request.Response, status: number): void {
 const key = () => ({ companyId: COMPANY, branchId: BRANCH, accYear: session.tssAccYear, tssId: session.tssId });
 
 beforeAll(async () => {
+  const days = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT tbd_id::text AS id FROM accounts.till_business_day
+     WHERE tbd_company_id = ${COMPANY}::uuid AND tbd_branch_id = ${BRANCH}::uuid`;
+  daysBefore = new Set(days.map((d) => d.id));
   const [device] = await prisma.$queryRaw<{ dev_id: string }[]>`
     INSERT INTO fixed.device_master (dev_company_id, dev_branch_id, dev_device_uid, dev_device_name, dev_device_type)
     VALUES (${COMPANY}::uuid, ${BRANCH}::uuid, ${`e2e-till-money-${tag}`}, 'E2E till money PC', 'Desktop')
@@ -140,11 +147,9 @@ afterAll(async () => {
     const [day] = await prisma.$queryRaw<{ tss_day_id: string }[]>`
       SELECT tss_day_id::text FROM accounts.till_session WHERE tss_id = ${s}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ${s}::uuid`;
-    if (day) {
-      await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${day.tss_day_id}::uuid`;
-      await prisma.$executeRaw`
-        DELETE FROM accounts.till_business_day d WHERE d.tbd_id = ${day.tss_day_id}::uuid
-           AND NOT EXISTS (SELECT 1 FROM accounts.till_session x WHERE x.tss_day_id = d.tbd_id)`;
+    // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
+    if (day && !daysBefore.has(day.tss_day_id)) {
+      await dropTestDay(prisma, day.tss_day_id);
     }
   }
   await prisma.$executeRaw`

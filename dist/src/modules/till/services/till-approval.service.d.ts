@@ -23,12 +23,17 @@ export interface ApproverAsk {
     approverId: string;
     requesterId: string;
     pin: string | null;
+    selfExempt?: boolean;
+    second?: {
+        userId: string;
+    } | null;
 }
 export interface ApproverVerdict {
     role: TillApproverRole;
     channel: 'COUNTER' | 'REMOTE';
     grantId: string | null;
     implicit: boolean;
+    secondBy: string | null;
 }
 export interface ApprovalRecordInput {
     companyId: string;
@@ -53,6 +58,8 @@ export interface ApprovalRecordInput {
     decidedDeviceId: string | null;
     decisionNote: string;
     payload?: Record<string, unknown>;
+    selfAllowed?: boolean;
+    secondOn?: Date | null;
 }
 export declare class TillApprovalService {
     ruleFor(client: Client, scope: {
@@ -77,6 +84,7 @@ export declare class TillApprovalService {
         amount: Prisma.Decimal;
     }): Promise<TillApprovalNeed | null>;
     assertApprover(client: Client, ask: ApproverAsk): Promise<ApproverVerdict>;
+    private assertSecond;
     record(tx: Prisma.TransactionClient, input: ApprovalRecordInput): Promise<string>;
 }
 export {};

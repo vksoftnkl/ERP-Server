@@ -4,14 +4,9 @@ exports.hasRequestPayload = void 0;
 exports.validateDto = validateDto;
 exports.validateSingleOrArrayDto = validateSingleOrArrayDto;
 const common_1 = require("@nestjs/common");
-const dtoValidationPipe = new common_1.ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: {
-        enableImplicitConversion: true,
-    },
-});
+const house_validation_1 = require("../validation/house-validation");
+const module_shared_utils_1 = require("./module-shared.utils");
+const dtoValidationPipe = (0, house_validation_1.createHouseValidationPipe)();
 const hasRequestPayload = (value) => {
     if (value === undefined || value === null) {
         return false;
@@ -30,9 +25,7 @@ async function validateDto(value, metatype, options = {}) {
         if (options.optional) {
             return undefined;
         }
-        throw new common_1.BadRequestException({
-            message: ['Request payload is required'],
-        });
+        throw payloadRefusal('VALIDATION_PAYLOAD_REQUIRED', 'Request payload is required');
     }
     return (await dtoValidationPipe.transform(value, {
         type: options.type ?? 'body',
@@ -45,20 +38,16 @@ async function validateSingleOrArrayDto(value, metatype, options = {}) {
         if (options.optional) {
             return undefined;
         }
-        throw new common_1.BadRequestException({
-            message: ['Request payload is required'],
-        });
+        throw payloadRefusal('VALIDATION_PAYLOAD_REQUIRED', 'Request payload is required');
     }
     if (!Array.isArray(value)) {
         return validateDto(value, metatype, options);
     }
     if (value.length === 0) {
-        throw new common_1.BadRequestException({
-            message: ['Request payload should not be an empty array'],
-        });
+        throw payloadRefusal('VALIDATION_PAYLOAD_EMPTY_ARRAY', 'Request payload should not be an empty array');
     }
     const validatedItems = [];
-    const validationMessages = [];
+    const details = [];
     for (const [index, item] of value.entries()) {
         try {
             const validatedItem = await validateDto(item, metatype, options);
@@ -67,36 +56,39 @@ async function validateSingleOrArrayDto(value, metatype, options = {}) {
             }
         }
         catch (error) {
-            const messages = extractValidationMessages(error);
-            validationMessages.push(...messages.map((message) => `items[${index}] ${message}`));
+            details.push(...extractValidationDetails(error).map((d) => ({
+                field: `items.${index}.${d.field}`,
+                code: d.code,
+                message: `items[${index}] ${d.message}`,
+            })));
         }
     }
-    if (validationMessages.length > 0) {
-        throw new common_1.BadRequestException({
-            message: validationMessages,
-        });
+    if (details.length > 0) {
+        throw new common_1.BadRequestException((0, module_shared_utils_1.buildErrorResponse)('Validation failed', details));
     }
     return validatedItems;
 }
-function extractValidationMessages(error) {
+function payloadRefusal(code, message) {
+    return new common_1.BadRequestException((0, module_shared_utils_1.buildErrorResponse)('Validation failed', [
+        { field: 'request', code, message },
+    ]));
+}
+function extractValidationDetails(error) {
     if (error instanceof common_1.BadRequestException) {
         const response = error.getResponse();
-        if (typeof response === 'string') {
-            return [response];
+        if (typeof response === 'object' && response !== null && 'errors' in response) {
+            const errors = response.errors;
+            if (Array.isArray(errors)) {
+                return errors;
+            }
         }
-        if (typeof response === 'object' && response !== null && 'message' in response) {
-            const message = response.message;
-            if (Array.isArray(message)) {
-                return message.filter((entry) => typeof entry === 'string');
-            }
-            if (typeof message === 'string') {
-                return [message];
-            }
+        if (typeof response === 'string') {
+            return [{ field: 'request', code: 'VALIDATION_FAILED', message: response }];
         }
     }
     if (error instanceof Error && error.message) {
-        return [error.message];
+        return [{ field: 'request', code: 'VALIDATION_FAILED', message: error.message }];
     }
-    return ['Request payload is invalid'];
+    return [{ field: 'request', code: 'VALIDATION_FAILED', message: 'Request payload is invalid' }];
 }
 //# sourceMappingURL=request-payload-validation.util.js.map

@@ -5,7 +5,7 @@
  * with a constraint name.
  */
 
-/** Menus 271–276 (migration 20261008140000), 280–283 (notes 101 / 102), 285 (notes 111). Rights are judged on these. */
+/** Menus 271–276 (migration 20261008140000), 280–283 (notes 101 / 102), 285 (notes 111), 287 (notes 118). Rights are judged on these. */
 export const TILL_MENU = {
   GROUP: 271,
   /** The cashier's own session: VIEW · CREATE (open) · EDIT (suspend … close) · PRINT. */
@@ -28,6 +28,17 @@ export const TILL_MENU = {
   APPROVAL_RULES: 276,
   /** Till Approval Authority (notes 111): who may approve what, up to how much. */
   APPROVAL_AUTHORITY: 285,
+  /**
+   * Cash Office (notes 118): the safe — VIEW its balance · CREATE count it /
+   * remit to the bank · OVERRIDE decide a safe gap. A new id: 286 stays retired.
+   */
+  CASH_OFFICE: 287,
+  /**
+   * The first Cash Office (notes 113) — retired by notes 114 (menu_is_active
+   * false, its grants removed): the cash is approved on Till Sessions (273). No
+   * route reads it.
+   */
+  RETIRED_CASH_OFFICE: 286,
 } as const;
 
 /** `<prefix>_RIGHT_<RIGHT>` codes for the menu-right refusals (rights.ts). */
@@ -113,6 +124,8 @@ export enum TillCountKind {
   PICKUP = 'PICKUP',
   DROP_VERIFY = 'DROP_VERIFY',
   SAFE = 'SAFE',
+  /** Notes 118: the denominations a remittance took out of the safe. */
+  REMIT = 'REMIT',
 }
 
 /** ck_tcm_kind after 48 (PAID_OUT left — an expense is an ExpV). */
@@ -146,8 +159,8 @@ export const MOVEMENT_VOUCHER_TYPE: Readonly<Record<TillMovementKind, string | n
  * by the session's cashier: a drop of a sealed bag into the drop safe, money in,
  * notes changed — and, signed by a SUPERVISOR standing there with their till PIN
  * (notes 110), a pickup handed to them or change they bring. FLOAT_ISSUE and
- * CLOSE_HANDOVER are written by the session's open and close; REMIT and
- * SAFE_TRANSFER are the cash office's (phase 5).
+ * CLOSE_HANDOVER are written by the session's open and close; REMIT is the
+ * cash office's (notes 118, movements/remit); SAFE_TRANSFER has no route yet.
  */
 export const CASHIER_MOVEMENTS: readonly TillMovementKind[] = [
   TillMovementKind.DROP,
@@ -166,6 +179,130 @@ export const VOIDABLE_MOVEMENTS: readonly TillMovementKind[] = [
 
 /** The till variance voucher type (47 §10.2). */
 export const VARIANCE_VOUCHER_TYPE = 'TVar';
+
+/** Notes 113 — a received bag into the safe: Dr Safe / Cr Till cash awaiting receipt. */
+export const RECEIVE_VOUCHER_TYPE = 'TRcv';
+
+/** Notes 113 — the ledger role a hand-over / drop sits in until it is received (Cash-in-Hand). */
+export const TILL_CASH_AWAITING_ROLE = 'TILL_CASH_AWAITING';
+
+/**
+ * Notes 113 — the movements that wait for a supervisor to receive them when
+ * till.handover_receipt is REQUIRED: the bags the cashier parts with alone
+ * (ck_tcm_receipt_kind). A PICKUP is already two signatures (notes 110).
+ */
+export const RECEIPT_MOVEMENTS: readonly TillMovementKind[] = [
+  TillMovementKind.DROP,
+  TillMovementKind.CLOSE_HANDOVER,
+];
+
+/** tcm_remit_mode (notes 118). */
+export enum TillRemitMode {
+  /** Staff paid it in at the bank: CRem Dr Bank / Cr Safe. */
+  BANK_DEPOSIT = 'BANK_DEPOSIT',
+  /** A cash-in-transit agency took it: CRem Dr Cash in transit / Cr Safe, then the confirm's Contra. */
+  CIT = 'CIT',
+}
+
+/** tcm_remit_status (notes 118); VOIDED is tcm_status. */
+export enum TillRemitStatus {
+  /** BANK_DEPOSIT: in the bank once posted. */
+  DEPOSITED = 'DEPOSITED',
+  /** CIT: with the agency, until the bank statement shows it. */
+  IN_TRANSIT = 'IN_TRANSIT',
+  /** CIT: remit-confirm posted the Contra Dr Bank / Cr Cash in transit. */
+  CONFIRMED = 'CONFIRMED',
+}
+
+/** Notes 118 — the ledger role a CIT remittance sits in until the bank confirms it. */
+export const CASH_IN_TRANSIT_ROLE = 'CASH_IN_TRANSIT';
+
+/** Notes 118 — what a safe count or a remit-confirm answers about its gap. */
+export enum TillSafeGapOutcome {
+  /** No difference. */
+  EXACT = 'EXACT',
+  /** Within till.cash_tolerance: posted at once. */
+  WITHIN_TOLERANCE = 'WITHIN_TOLERANCE',
+  /** Beyond it, decided in the same step under SAFE_VARIANCE. */
+  DECIDED = 'DECIDED',
+  /** Beyond it, PENDING for safes/decide-variance. */
+  SENT_FOR_APPROVAL = 'SENT_FOR_APPROVAL',
+}
+
+/** tcm_receipt_status (notes 113); NULL = straight into the safe. */
+export enum TillReceiptStatus {
+  AWAITING = 'AWAITING',
+  RECEIVED = 'RECEIVED',
+}
+
+/**
+ * Notes 114 — a session's cash receipt as the Till Sessions list and the
+ * cockpit show it, over its hand-over and drops that waited for a receipt.
+ */
+export enum TillCashReceiptState {
+  /** Some hand-over / drop still waits for a supervisor. */
+  AWAITING = 'AWAITING',
+  /** All received, for exactly what was handed over. */
+  APPROVED = 'APPROVED',
+  /** All received, with a gap — decided, or pending a decision. */
+  DIFFERENCE = 'DIFFERENCE',
+  /** Nothing waited: till.handover_receipt NONE, or closed before notes 113. */
+  NONE = 'NONE',
+}
+
+/** Notes 117 — one line of a day's close-check. */
+export enum TillCloseCheckCode {
+  SESSIONS_LIVE = 'SESSIONS_LIVE',
+  SESSIONS_PENDING_APPROVAL = 'SESSIONS_PENDING_APPROVAL',
+  CASH_TO_APPROVE = 'CASH_TO_APPROVE',
+  VARIANCE_UNDECIDED = 'VARIANCE_UNDECIDED',
+  MOVEMENTS_UNPOSTED = 'MOVEMENTS_UNPOSTED',
+  SLIP_GAPS = 'SLIP_GAPS',
+  HELD_BILLS = 'HELD_BILLS',
+  SAFE_OVER_INSURED = 'SAFE_OVER_INSURED',
+  /** Notes 118 — a safe that held or moved cash has no count of the day (RED under till.day_close_safe_count). */
+  SAFE_NOT_COUNTED = 'SAFE_NOT_COUNTED',
+}
+
+/** RED blocks the close · AMBER is shown, not enforced · GREEN is clear. */
+export enum TillCloseCheckTone {
+  RED = 'RED',
+  AMBER = 'AMBER',
+  GREEN = 'GREEN',
+}
+
+/**
+ * The RED items a day may be closed over with a DAY_CLOSE_EXCEPTION approval:
+ * a cashier who left (their session is force-closed by the close), and a safe
+ * not counted (notes 118: "Safe counted next morning"). Every other RED is a
+ * decision still missing.
+ */
+export const CLOSE_EXCEPTION_CODES: readonly TillCloseCheckCode[] = [
+  TillCloseCheckCode.SESSIONS_LIVE,
+  TillCloseCheckCode.SAFE_NOT_COUNTED,
+];
+
+/** till.handover_receipt (notes 113). */
+export enum TillHandoverReceipt {
+  /** The hand-over and a drop post straight into the safe, as before notes 113. */
+  NONE = 'NONE',
+  /** They post to Till cash awaiting receipt until a supervisor receives them. */
+  REQUIRED = 'REQUIRED',
+}
+
+/** ck_tvr_stage. */
+export enum TillVarianceStage {
+  /** The float mismatch at the open. */
+  OPEN = 'OPEN',
+  /** The drawer at the close. */
+  CLOSE = 'CLOSE',
+  /** A bag received for other than was handed over (notes 113). */
+  RECEIVE = 'RECEIVE',
+  /** Notes 118 — a safe count's gap (no session; the safe and the count). */
+  SAFE = 'SAFE',
+  /** Notes 118 — a CIT remittance the bank credited short (no session; the safe and the REMIT). */
+  REMIT = 'REMIT',
+}
 
 /** ck_tvr_treatment. */
 export enum TillVarianceTreatment {
@@ -252,8 +389,18 @@ export enum TillEventCode {
   SETTLEMENT_IMPORTED = 'SETTLEMENT_IMPORTED',
   SETTLEMENT_POSTED = 'SETTLEMENT_POSTED',
   NONCASH_WRITTEN_OFF = 'NONCASH_WRITTEN_OFF',
+  /** Notes 113 — a supervisor received a hand-over / drop into the safe. */
+  CASH_RECEIVED = 'CASH_RECEIVED',
   /** A bill re-tendered, in the session the money moved in (notes 99 §7; in ck_tev_code since 47). */
   RETENDER = 'RETENDER',
+  /** Notes 117 — the day close and the session exceptions (in ck_tev_code since 47). */
+  DAY_CLOSE = 'DAY_CLOSE',
+  DAY_REOPEN = 'DAY_REOPEN',
+  SESSION_FORCE_CLOSE = 'SESSION_FORCE_CLOSE',
+  SESSION_REOPEN = 'SESSION_REOPEN',
+  /** Notes 118 — a safe counted; a CIT remittance confirmed by the bank. */
+  SAFE_COUNT = 'SAFE_COUNT',
+  REMIT_CONFIRMED = 'REMIT_CONFIRMED',
 }
 
 /**
@@ -297,6 +444,8 @@ export const TILL_REASON_CATEGORIES = [
   'PRICE_OVERRIDE',
   'REFUND',
   'NONCASH',
+  /** Notes 117: the reason a day closes over an exception. */
+  'DAY_CLOSE',
 ] as const;
 
 /** ck_tar_event / ck_tap_event after 49. */
@@ -367,7 +516,7 @@ export function approverRoleRank(role: string): number {
 export enum TillVarianceDecision {
   /** The PENDING variances take the treatment named; the session goes back to COUNTING for /close. */
   APPROVE = 'APPROVE',
-  /** Back to COUNTING with one more count attempt; the next final count replaces the variances. */
+  /** Back to COUNTING, uncounted, with one more count attempt; the next final count replaces the variances. */
   RECOUNT = 'RECOUNT',
 }
 /** The treatments an approver may choose; WITHIN_TOLERANCE and RETENDERED are the system's. */
@@ -376,6 +525,12 @@ export const APPROVABLE_TREATMENTS = [
   TillVarianceTreatment.RECOVER,
   TillVarianceTreatment.SUSPENSE,
 ] as const;
+/** Notes 118 — the treatments a safe gap takes: there is no cashier to RECOVER from. */
+export const SAFE_GAP_TREATMENTS = [
+  TillVarianceTreatment.EXPENSE,
+  TillVarianceTreatment.SUSPENSE,
+] as const;
+export type TillSafeGapTreatment = (typeof SAFE_GAP_TREATMENTS)[number];
 /** What the session's variance status becomes under each approved treatment (ck_tss_variance_status). */
 export const VARIANCE_STATUS_OF_TREATMENT: Readonly<
   Record<(typeof APPROVABLE_TREATMENTS)[number], TillSessionVarianceStatus>
@@ -402,6 +557,10 @@ export enum TillSettingKey {
   SINGLE_OPERATOR = 'till.single_operator',
   MONEY_DOCS_IN_SESSION = 'till.money_docs_in_session',
   BACKOFFICE_CASH_FROM = 'till.backoffice_cash_from',
+  /** Notes 113 — REQUIRED: the hand-over and drops wait for a supervisor's receipt. */
+  HANDOVER_RECEIPT = 'till.handover_receipt',
+  /** 47 — the day close wants each safe counted (notes 118: SAFE_NOT_COUNTED is RED). */
+  DAY_CLOSE_SAFE_COUNT = 'till.day_close_safe_count',
   /** 49 — a TENDER key the close reads (plan-noncash-tender-control §4.1). */
   CLOSE_BY_TERMINAL = 'tender.close_by_terminal',
 }
@@ -490,6 +649,40 @@ export enum TillErrorCode {
   SUPERVISOR_PIN = 'TILL_SUPERVISOR_PIN',
   /** Notes 110 §3 — the counter's own safe is not a drop safe (or it has none). */
   NO_DROP_SAFE = 'TILL_NO_DROP_SAFE',
+  /** Notes 113 — the movement is not a bag waiting to be received (already received, voided, or straight to the safe). */
+  RECEIPT_NOT_AWAITING = 'TILL_RECEIPT_NOT_AWAITING',
+  /** Notes 113 / 116 — the receiver was the session's cashier (allowed only under till.single_operator). */
+  RECEIVER_SELF = 'TILL_RECEIVER_SELF',
+  /** Notes 113 — the receiver has no till PIN (usr_pin_hash, notes 95). */
+  RECEIVER_NO_PIN = 'TILL_RECEIVER_NO_PIN',
+  /** Notes 113 — a receive came without the receiver's till PIN. */
+  RECEIVER_PIN_REQUIRED = 'TILL_RECEIVER_PIN_REQUIRED',
+  /** Notes 113 — the receiver's till PIN is wrong (journalled PIN_FAIL). */
+  RECEIVER_PIN = 'TILL_RECEIVER_PIN',
+  /** Notes 113 — decide-variance named a bag with no receive difference waiting for a decision. */
+  VARIANCE_NOT_PENDING = 'TILL_VARIANCE_NOT_PENDING',
+  /** Notes 114 — approve-cash on a session whose cash has all been received already. */
+  CASH_ALREADY_APPROVED = 'TILL_CASH_ALREADY_APPROVED',
+  /** Notes 117 — days/close found RED items (the close-check's, in `items`) an exception may not cover, or none was given. */
+  DAY_CLOSE_BLOCKED = 'TILL_DAY_CLOSE_BLOCKED',
+  /** Notes 117 — the business day is CLOSED: closed again, or a session of it reopened. */
+  DAY_CLOSED = 'TILL_DAY_CLOSED',
+  /** Notes 117 — days/reopen on a day that is not CLOSED. */
+  DAY_NOT_CLOSED = 'TILL_DAY_NOT_CLOSED',
+  /** Notes 117 — a later business day of the branch is already CLOSED: this one stays closed. */
+  DAY_LATER_CLOSED = 'TILL_DAY_LATER_CLOSED',
+  /** Notes 117 — the session cannot be reopened (a later session carries its float, or its counter is busy). */
+  REOPEN_BLOCKED = 'TILL_REOPEN_BLOCKED',
+  /** Notes 117 — a day close over a live session needs the supervisor's count of its drawer. */
+  FORCE_COUNT_REQUIRED = 'TILL_FORCE_COUNT_REQUIRED',
+  /** Notes 118 — the safe moved while its count or remittance was being judged: count / send again. */
+  SAFE_CHANGED = 'TILL_SAFE_CHANGED',
+  /** Notes 118 — a remittance above what the safe should hold. */
+  REMIT_OVER_BALANCE = 'TILL_REMIT_OVER_BALANCE',
+  /** Notes 118 — remit-confirm on a remittance that is not a CIT one in transit. */
+  REMIT_NOT_IN_TRANSIT = 'TILL_REMIT_NOT_IN_TRANSIT',
+  /** Notes 118 — a two-person rule (SAFE_VARIANCE as shipped) without a valid second signature. */
+  APPROVER_SECOND = 'TILL_APPROVER_SECOND',
 }
 
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
@@ -554,4 +747,26 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.SUPERVISOR_PIN]: 403,
   // A master to fix (tick the counter's safe as a drop safe), as SAFE_MISSING.
   [TillErrorCode.NO_DROP_SAFE]: 422,
+  // Notes 113: the bag is not in the state the call needs, as MOVEMENT_NOT_VOIDABLE.
+  [TillErrorCode.RECEIPT_NOT_AWAITING]: 409,
+  // The receiver is not someone this signature accepts, as an approver's 403s.
+  [TillErrorCode.RECEIVER_SELF]: 403,
+  [TillErrorCode.RECEIVER_NO_PIN]: 422,
+  [TillErrorCode.RECEIVER_PIN_REQUIRED]: 403,
+  [TillErrorCode.RECEIVER_PIN]: 403,
+  [TillErrorCode.VARIANCE_NOT_PENDING]: 409,
+  [TillErrorCode.CASH_ALREADY_APPROVED]: 409,
+  [TillErrorCode.DAY_CLOSE_BLOCKED]: 409,
+  [TillErrorCode.DAY_CLOSED]: 409,
+  [TillErrorCode.DAY_NOT_CLOSED]: 409,
+  [TillErrorCode.DAY_LATER_CLOSED]: 409,
+  [TillErrorCode.REOPEN_BLOCKED]: 409,
+  [TillErrorCode.FORCE_COUNT_REQUIRED]: 422,
+  // Notes 118: the state changed under the caller, as DAY_CLOSE_BLOCKED's "check it again".
+  [TillErrorCode.SAFE_CHANGED]: 409,
+  // The amount asked for is wrong for what the safe holds, as a count's figures are 422.
+  [TillErrorCode.REMIT_OVER_BALANCE]: 422,
+  [TillErrorCode.REMIT_NOT_IN_TRANSIT]: 409,
+  // Not someone this decision accepts, as the approver's own 403s.
+  [TillErrorCode.APPROVER_SECOND]: 403,
 };

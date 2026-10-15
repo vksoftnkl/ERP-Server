@@ -71,9 +71,11 @@ async function ok<T>(path: string, query: Record<string, unknown>): Promise<T> {
 async function refused(path: string, query: Record<string, unknown>, status: number, code: string) {
   const res = await get(path, query);
   expectStatus(res, status);
-  // AllExceptionsFilter wraps the exception body in `message`.
-  const body = res.body as { message?: { errors?: { code?: string }[] } };
-  expect((body.message?.errors ?? []).map((e) => e.code)).toContain(code);
+  // Notes 119: AllExceptionsFilter passes a house body through at the top
+  // level (it used to wrap it in `message`), so `errors[].code` is where the
+  // client reads it.
+  const body = res.body as { errors?: { code?: string }[] };
+  expect((body.errors ?? []).map((e) => e.code)).toContain(code);
 }
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);

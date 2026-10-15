@@ -20,6 +20,8 @@ exports.TILL_SETTING_DEFAULTS = {
     moneyDocsInSession: true,
     backofficeCashFrom: 'SAFE',
     closeByTerminal: true,
+    handoverReceipt: till_enum_1.TillHandoverReceipt.NONE,
+    daySafeCount: true,
 };
 function readTillSettings(effective) {
     const byKey = new Map(effective.map((item) => [item.asdKey, item.value]));
@@ -40,6 +42,8 @@ function readTillSettings(effective) {
         moneyDocsInSession: pickBoolean(byKey.get(till_enum_1.TillSettingKey.MONEY_DOCS_IN_SESSION), d.moneyDocsInSession),
         backofficeCashFrom: pickEnum(byKey.get(till_enum_1.TillSettingKey.BACKOFFICE_CASH_FROM), ['SAFE', 'REFUSE'], d.backofficeCashFrom),
         closeByTerminal: pickBoolean(byKey.get(till_enum_1.TillSettingKey.CLOSE_BY_TERMINAL), d.closeByTerminal),
+        handoverReceipt: pickEnum(byKey.get(till_enum_1.TillSettingKey.HANDOVER_RECEIPT), [till_enum_1.TillHandoverReceipt.NONE, till_enum_1.TillHandoverReceipt.REQUIRED], d.handoverReceipt),
+        daySafeCount: pickBoolean(byKey.get(till_enum_1.TillSettingKey.DAY_CLOSE_SAFE_COUNT), d.daySafeCount),
     };
 }
 function pickEnum(value, allowed, fallback) {

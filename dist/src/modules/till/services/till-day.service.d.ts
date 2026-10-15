@@ -1,8 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import type { TillCaller } from '../till-context.service';
-import type { TillSettings } from '../till.settings';
 import { TillEventService } from './till-event.service';
+import { type TillSettings } from '../till.settings';
 import type { TillDayPayload } from '../types/till-api.types';
 type Tx = Prisma.TransactionClient;
 export interface OpenDay {

@@ -151,6 +151,27 @@ export const SALES_ERROR_CODES = {
    * refused here rather than surfacing as a 23503 the operator cannot read.
    */
   DEVICE_UNREGISTERED: 'SALES_DEVICE_UNREGISTERED',
+
+  // Notes 119 — refusals that had no code: the cheque register (bill / order
+  // tenders, pdc-register.helper.ts) and the shared document store.
+  CHEQUE_NUMBER_MISSING: 'SALES_CHEQUE_NUMBER_MISSING',
+  CHEQUE_DATE_MISSING: 'SALES_CHEQUE_DATE_MISSING',
+  /** Dated before the document: a cheque cannot mature before it was received. */
+  CHEQUE_BACKDATED: 'SALES_CHEQUE_BACKDATED',
+  /** More than three months before the document: the bank would refuse it. */
+  CHEQUE_STALE: 'SALES_CHEQUE_STALE',
+  /** More than a year after the document: check the year on the cheque. */
+  CHEQUE_DATE_TOO_FAR: 'SALES_CHEQUE_DATE_TOO_FAR',
+  /** The same cheque twice on one document. */
+  CHEQUE_REPEATED: 'SALES_CHEQUE_REPEATED',
+  /** Already registered for this customer this year, on another document. */
+  CHEQUE_ALREADY_REGISTERED: 'SALES_CHEQUE_ALREADY_REGISTERED',
+  /** Past HELD in the cheque register (`status`): settle it on the PDC screen first. */
+  CHEQUE_LOCKED_IN_REGISTER: 'SALES_CHEQUE_LOCKED_IN_REGISTER',
+  FIELD_REQUIRED: 'SALES_FIELD_REQUIRED',
+  LINE_NO_DUPLICATE: 'SALES_LINE_NO_DUPLICATE',
+  LINE_NOT_FOUND: 'SALES_LINE_NOT_FOUND',
+  LINE_FIELD_REQUIRED: 'SALES_LINE_FIELD_REQUIRED',
 } as const;
 
 export type SalesErrorCode = (typeof SALES_ERROR_CODES)[keyof typeof SALES_ERROR_CODES];

@@ -58,6 +58,7 @@ const transaction_module_1 = require("./modules/accountsModule/transaction/trans
 const receipt_module_1 = require("./modules/accountsModule/receipt/receipt.module");
 const payment_module_1 = require("./modules/accountsModule/payment/payment.module");
 const till_module_1 = require("./modules/till/till.module");
+const error_messages_module_1 = require("./modules/error-messages/error-messages.module");
 const expense_module_1 = require("./modules/accountsModule/expense/expense.module");
 const tender_settlement_module_1 = require("./modules/accountsModule/tenderSettlement/tender-settlement.module");
 const cheques_module_1 = require("./modules/accountsModule/cheques/cheques.module");
@@ -220,6 +221,7 @@ exports.AppModule = AppModule = __decorate([
             receipt_module_1.ReceiptModule,
             payment_module_1.PaymentModule,
             till_module_1.TillModule,
+            error_messages_module_1.ErrorMessagesModule,
             expense_module_1.ExpenseModule,
             tender_settlement_module_1.TenderSettlementModule,
             cheques_module_1.ChequesModule,

@@ -10,6 +10,8 @@ export declare const TILL_MENU: {
     readonly DENOMINATIONS: 282;
     readonly APPROVAL_RULES: 276;
     readonly APPROVAL_AUTHORITY: 285;
+    readonly CASH_OFFICE: 287;
+    readonly RETIRED_CASH_OFFICE: 286;
 };
 export declare const TILL_RIGHT_CODE_PREFIX = "TILL";
 export declare enum TillSessionStatus {
@@ -51,7 +53,8 @@ export declare enum TillCountKind {
     FLOAT_ISSUE = "FLOAT_ISSUE",
     PICKUP = "PICKUP",
     DROP_VERIFY = "DROP_VERIFY",
-    SAFE = "SAFE"
+    SAFE = "SAFE",
+    REMIT = "REMIT"
 }
 export declare enum TillMovementKind {
     FLOAT_ISSUE = "FLOAT_ISSUE",
@@ -69,6 +72,63 @@ export declare const CASHIER_MOVEMENTS: readonly TillMovementKind[];
 export declare const SUPERVISOR_MOVEMENTS: readonly TillMovementKind[];
 export declare const VOIDABLE_MOVEMENTS: readonly TillMovementKind[];
 export declare const VARIANCE_VOUCHER_TYPE = "TVar";
+export declare const RECEIVE_VOUCHER_TYPE = "TRcv";
+export declare const TILL_CASH_AWAITING_ROLE = "TILL_CASH_AWAITING";
+export declare const RECEIPT_MOVEMENTS: readonly TillMovementKind[];
+export declare enum TillRemitMode {
+    BANK_DEPOSIT = "BANK_DEPOSIT",
+    CIT = "CIT"
+}
+export declare enum TillRemitStatus {
+    DEPOSITED = "DEPOSITED",
+    IN_TRANSIT = "IN_TRANSIT",
+    CONFIRMED = "CONFIRMED"
+}
+export declare const CASH_IN_TRANSIT_ROLE = "CASH_IN_TRANSIT";
+export declare enum TillSafeGapOutcome {
+    EXACT = "EXACT",
+    WITHIN_TOLERANCE = "WITHIN_TOLERANCE",
+    DECIDED = "DECIDED",
+    SENT_FOR_APPROVAL = "SENT_FOR_APPROVAL"
+}
+export declare enum TillReceiptStatus {
+    AWAITING = "AWAITING",
+    RECEIVED = "RECEIVED"
+}
+export declare enum TillCashReceiptState {
+    AWAITING = "AWAITING",
+    APPROVED = "APPROVED",
+    DIFFERENCE = "DIFFERENCE",
+    NONE = "NONE"
+}
+export declare enum TillCloseCheckCode {
+    SESSIONS_LIVE = "SESSIONS_LIVE",
+    SESSIONS_PENDING_APPROVAL = "SESSIONS_PENDING_APPROVAL",
+    CASH_TO_APPROVE = "CASH_TO_APPROVE",
+    VARIANCE_UNDECIDED = "VARIANCE_UNDECIDED",
+    MOVEMENTS_UNPOSTED = "MOVEMENTS_UNPOSTED",
+    SLIP_GAPS = "SLIP_GAPS",
+    HELD_BILLS = "HELD_BILLS",
+    SAFE_OVER_INSURED = "SAFE_OVER_INSURED",
+    SAFE_NOT_COUNTED = "SAFE_NOT_COUNTED"
+}
+export declare enum TillCloseCheckTone {
+    RED = "RED",
+    AMBER = "AMBER",
+    GREEN = "GREEN"
+}
+export declare const CLOSE_EXCEPTION_CODES: readonly TillCloseCheckCode[];
+export declare enum TillHandoverReceipt {
+    NONE = "NONE",
+    REQUIRED = "REQUIRED"
+}
+export declare enum TillVarianceStage {
+    OPEN = "OPEN",
+    CLOSE = "CLOSE",
+    RECEIVE = "RECEIVE",
+    SAFE = "SAFE",
+    REMIT = "REMIT"
+}
 export declare enum TillVarianceTreatment {
     PENDING = "PENDING",
     WITHIN_TOLERANCE = "WITHIN_TOLERANCE",
@@ -137,10 +197,17 @@ export declare enum TillEventCode {
     SETTLEMENT_IMPORTED = "SETTLEMENT_IMPORTED",
     SETTLEMENT_POSTED = "SETTLEMENT_POSTED",
     NONCASH_WRITTEN_OFF = "NONCASH_WRITTEN_OFF",
-    RETENDER = "RETENDER"
+    CASH_RECEIVED = "CASH_RECEIVED",
+    RETENDER = "RETENDER",
+    DAY_CLOSE = "DAY_CLOSE",
+    DAY_REOPEN = "DAY_REOPEN",
+    SESSION_FORCE_CLOSE = "SESSION_FORCE_CLOSE",
+    SESSION_REOPEN = "SESSION_REOPEN",
+    SAFE_COUNT = "SAFE_COUNT",
+    REMIT_CONFIRMED = "REMIT_CONFIRMED"
 }
 export declare const CLIENT_EVENT_CODES: readonly TillEventCode[];
-export declare const TILL_REASON_CATEGORIES: readonly ["VARIANCE", "FLOAT_MISMATCH", "EXPENSE", "PAID_IN", "PICKUP", "NO_SALE", "SUSPEND", "FORCE_CLOSE", "REOPEN", "SESSION_VOID", "MOVEMENT_VOID", "DAY_REOPEN", "REPRINT", "VOID_BILL", "VOID_LINE", "PRICE_OVERRIDE", "REFUND", "NONCASH"];
+export declare const TILL_REASON_CATEGORIES: readonly ["VARIANCE", "FLOAT_MISMATCH", "EXPENSE", "PAID_IN", "PICKUP", "NO_SALE", "SUSPEND", "FORCE_CLOSE", "REOPEN", "SESSION_VOID", "MOVEMENT_VOID", "DAY_REOPEN", "REPRINT", "VOID_BILL", "VOID_LINE", "PRICE_OVERRIDE", "REFUND", "NONCASH", "DAY_CLOSE"];
 export declare const TILL_APPROVAL_EVENTS: readonly ["FLOAT_MISMATCH", "CASH_VARIANCE", "NONCASH_VARIANCE", "EXPENSE", "CASH_PAYMENT", "PAID_IN", "PICKUP", "TOP_UP", "NO_SALE", "CASH_LIMIT_OVERRIDE", "SUSPEND_LONG", "FORCE_CLOSE", "SESSION_REOPEN", "SESSION_VOID", "MOVEMENT_VOID", "RECOUNT", "DAY_CLOSE_EXCEPTION", "DAY_REOPEN", "SAFE_VARIANCE", "REMITTANCE", "VOID_BILL", "VOID_LINE", "PRICE_OVERRIDE", "DISCOUNT_OVER", "RETURN_NO_RECEIPT", "REFUND_CASH", "REPRINT", "RETENDER", "COUNTER_RELINK", "NONCASH_WRITE_OFF", "SETTLEMENT_RESOLVE"];
 export declare const TILL_APPROVAL_MODES: readonly ["NEVER", "ALWAYS", "OVER_AMOUNT", "OVER_COUNT", "OVER_PERCENT"];
 export declare const TILL_APPROVAL_CHANNELS: readonly ["COUNTER", "REMOTE", "EITHER"];
@@ -152,6 +219,8 @@ export declare enum TillVarianceDecision {
     RECOUNT = "RECOUNT"
 }
 export declare const APPROVABLE_TREATMENTS: readonly [TillVarianceTreatment.EXPENSE, TillVarianceTreatment.RECOVER, TillVarianceTreatment.SUSPENSE];
+export declare const SAFE_GAP_TREATMENTS: readonly [TillVarianceTreatment.EXPENSE, TillVarianceTreatment.SUSPENSE];
+export type TillSafeGapTreatment = (typeof SAFE_GAP_TREATMENTS)[number];
 export declare const VARIANCE_STATUS_OF_TREATMENT: Readonly<Record<(typeof APPROVABLE_TREATMENTS)[number], TillSessionVarianceStatus>>;
 export declare enum TillSettingKey {
     REQUIRE_SESSION = "till.require_session",
@@ -169,6 +238,8 @@ export declare enum TillSettingKey {
     SINGLE_OPERATOR = "till.single_operator",
     MONEY_DOCS_IN_SESSION = "till.money_docs_in_session",
     BACKOFFICE_CASH_FROM = "till.backoffice_cash_from",
+    HANDOVER_RECEIPT = "till.handover_receipt",
+    DAY_CLOSE_SAFE_COUNT = "till.day_close_safe_count",
     CLOSE_BY_TERMINAL = "tender.close_by_terminal"
 }
 export declare enum TillErrorCode {
@@ -225,6 +296,23 @@ export declare enum TillErrorCode {
     SUPERVISOR_NO_PIN = "TILL_SUPERVISOR_NO_PIN",
     SUPERVISOR_PIN_REQUIRED = "TILL_SUPERVISOR_PIN_REQUIRED",
     SUPERVISOR_PIN = "TILL_SUPERVISOR_PIN",
-    NO_DROP_SAFE = "TILL_NO_DROP_SAFE"
+    NO_DROP_SAFE = "TILL_NO_DROP_SAFE",
+    RECEIPT_NOT_AWAITING = "TILL_RECEIPT_NOT_AWAITING",
+    RECEIVER_SELF = "TILL_RECEIVER_SELF",
+    RECEIVER_NO_PIN = "TILL_RECEIVER_NO_PIN",
+    RECEIVER_PIN_REQUIRED = "TILL_RECEIVER_PIN_REQUIRED",
+    RECEIVER_PIN = "TILL_RECEIVER_PIN",
+    VARIANCE_NOT_PENDING = "TILL_VARIANCE_NOT_PENDING",
+    CASH_ALREADY_APPROVED = "TILL_CASH_ALREADY_APPROVED",
+    DAY_CLOSE_BLOCKED = "TILL_DAY_CLOSE_BLOCKED",
+    DAY_CLOSED = "TILL_DAY_CLOSED",
+    DAY_NOT_CLOSED = "TILL_DAY_NOT_CLOSED",
+    DAY_LATER_CLOSED = "TILL_DAY_LATER_CLOSED",
+    REOPEN_BLOCKED = "TILL_REOPEN_BLOCKED",
+    FORCE_COUNT_REQUIRED = "TILL_FORCE_COUNT_REQUIRED",
+    SAFE_CHANGED = "TILL_SAFE_CHANGED",
+    REMIT_OVER_BALANCE = "TILL_REMIT_OVER_BALANCE",
+    REMIT_NOT_IN_TRANSIT = "TILL_REMIT_NOT_IN_TRANSIT",
+    APPROVER_SECOND = "TILL_APPROVER_SECOND"
 }
 export declare const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>>;

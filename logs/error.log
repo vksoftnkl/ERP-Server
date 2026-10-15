@@ -15919,3 +15919,560 @@ Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type 
     at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
 2026-10-13T05:07:06.809Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-13T05:07:57.956Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-14T05:23:04.798Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-14T13:47:11.265Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=100
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:11.271Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=19&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:11.656Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:12.029Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:12.417Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:12.779Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:20.778Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:21.173Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=17&grid_param=%7B%22icompany_id%22%3A%22019c8ea6-19e9-78a8-b15f-749e1cde7292%22%2C%22ibranch_id%22%3A%22019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:23.304Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=100
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:23.337Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=38&page=1&limit=100
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:23.441Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=100
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:23.455Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=12&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:23.804Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:24.134Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:24.468Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:24.799Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:25.133Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-14T13:47:25.472Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=86&page=1&limit=11&grid_param=%7B%22icompany_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22ibranch_id%22%3A%2200000000-0000-0000-0000-000000000000%22%2C%22iacc_year%22%3A%222026-2027%22%2C%22ifrom_date%22%3A%222026-09-14%22%2C%22ito_date%22%3A%222026-10-14%22%7D
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:223:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-10-15T05:07:43.334Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-04-01&toDate=2026-10-15&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:07:52.717Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-10-01&toDate=2026-10-31&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:08:19.431Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0a4c5-c5b1-7bb4-ae1a-b852289d8449&fromDate=2026-10-01&toDate=2026-10-31&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:08:26.822Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0a4c5-c5b1-7bb4-ae1a-b852289d8449&fromDate=2026-10-01&toDate=2026-10-31&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:18:22.842Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-04-01&toDate=2027-03-31&includeCancelled=true&withBillRefs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:18:35.754Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-04-01&toDate=2027-03-31
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:18:49.243Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-04-01&toDate=2027-03-31&pageSize=1000&page=2
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:18:49.391Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-10-01&toDate=2027-03-31
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:18:49.421Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-10-01&toDate=2026-10-10
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:18:49.445Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-10-11&toDate=2027-03-31
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:19:17.558Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/export?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&ledgerId=019ef849-aefe-7e27-8e8f-d4094cf5c254&fromDate=2026-04-01&toDate=2027-03-31&includeCancelled=true&withBillRefs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async LedgerStatementService.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:337:18)
+    at async LedgerStatementController.export (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:165:18)
+2026-10-15T05:33:37.492Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-04-01&toDate=2026-10-15&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:33:39.609Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-04-01&toDate=2026-10-15&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:33:40.316Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-04-01&toDate=2026-10-15&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:33:40.504Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=01a0eafd-df15-7ea3-8549-0cb6850ef910&fromDate=2026-04-01&toDate=2026-10-15&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-15T05:59:33.790Z ERROR [DatasetRunnerService] Provider 'reports.party_outstanding.head' failed for dataset 'head': 2030-01-01 is outside every financial year set up for this company.
+2026-10-15T05:59:33.790Z ERROR [DatasetRunnerService] Provider 'reports.party_outstanding.parties' failed for dataset 'parties': 2030-01-01 is outside every financial year set up for this company.
+2026-10-15T05:59:33.810Z ERROR [DatasetRunnerService] Provider 'reports.party_outstanding.parties' failed for dataset 'parties': The print's filters are not what Party-wise Outstanding takes: side must be one of the following values: RECEIVABLE, PAYABLE
+2026-10-15T05:59:33.810Z ERROR [DatasetRunnerService] Provider 'reports.party_outstanding.head' failed for dataset 'head': The print's filters are not what Party-wise Outstanding takes: side must be one of the following values: RECEIVABLE, PAYABLE
+2026-10-15T06:47:18.578Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e50-b30d-7885-a05a-6d3aa4b8fa97, 2026-2027, bil01244, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:17:18.452866+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:48:24.131Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e51-b339-7569-8e4c-fca7b181cd88, 2026-2027, bil01245, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:18:24.059212+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:49:44.837Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e52-ee79-7072-8a7e-15e4119ff273, 2026-2027, bil01248, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:19:44.745278+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:50:32.357Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e53-a819-77f2-8bbd-754c2c3c5310, 2026-2027, bil01249, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:20:32.274207+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:53:37.492Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-12, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e56-7b46-72b6-a7f0-cd04eb7afefa, 2026-2027, bil01250, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:23:37.396389+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:56:59.730Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e59-9144-76f6-8040-7c27674d4079, 2026-2027, bil01252, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:26:59.634106+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:58:05.410Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e5a-91cf-7fe8-b236-d24e738e2ab7, 2026-2027, bil01253, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:28:05.290482+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T06:59:26.050Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e5b-cccf-7784-b0dc-eadc37b1eb43, 2026-2027, bil01256, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:29:25.938986+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:00:13.517Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e5c-8640-7ee2-a3a9-2f7a5a044a66, 2026-2027, bil01257, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:30:13.437744+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:04:52.348Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-12, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e60-c76e-724b-8571-a26979edd282, 2026-2027, bil01257, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:34:52.266423+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:09:00.041Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e64-8ef9-77eb-b9fc-3b55bdb3e25d, 2026-2027, bil01259, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:38:59.946758+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:10:05.644Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e65-8f3e-7cd6-9612-289ed5b61ce5, 2026-2027, bil01260, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:40:05.566692+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:12:19.747Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e67-9b11-7412-93e5-74bc9fe94066, 2026-2027, bil01262, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:42:19.646673+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:13:07.220Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-15, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e68-548b-7121-bdec-0ae151d4cab3, 2026-2027, bil01263, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:43:07.143529+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-15T07:17:02.820Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "stock_lot" violates check constraint "ck_slt_prices"
+DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e9-78a8-b15f-749e1cde7292, null, 01a0d242-56a9-7e80-95ea-4b6141872fa7, 01a0d242-56bf-7512-b62b-fed348185fcb, null, null, null, null, null, null, null, null, ~, -1.000000, -1.000000, 0001-01-01, ~, 00000000-0000-0000-0000-000000000000, N, 2026-10-12, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, SALES, SALE_BILL, 01a13e6b-ecd8-78d6-a09f-1eb92a955fd7, 2026-2027, bil01264, 40.000000, 40.000000, -0.025661, 0.000000, 5.000, ACTIVE, null, null, 0.000000, 1, null, t, f, null, 2026-10-15 12:47:02.737126+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async resolveLots (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:1301:3)
+    at async postStockVoucher (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher-posting.helper.ts:240:5)
+    at async StockPostingService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/posting/stock-posting.service.ts:84:20)
+    at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)

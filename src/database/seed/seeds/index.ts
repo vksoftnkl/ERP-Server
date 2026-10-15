@@ -1,4 +1,5 @@
 import type { TsSeed } from '../seed.types';
+import { errorMessagesSeed } from './error-messages.seed';
 
 /**
  * Seeds written in TypeScript, run through Prisma after every SQL file in
@@ -9,4 +10,4 @@ import type { TsSeed } from '../seed.types';
  * up on its own. Keep any seed added here idempotent (upsert / find-then-write),
  * because `mode: 'always'` means it runs on every deploy.
  */
-export const TS_SEEDS: TsSeed[] = [];
+export const TS_SEEDS: TsSeed[] = [errorMessagesSeed];

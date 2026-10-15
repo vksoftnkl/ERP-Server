@@ -12,6 +12,13 @@ import { CompanyProfileProvider } from './data/providers/company-profile.provide
 import { SaleBillHeaderProvider } from './data/providers/sale-bill-header.provider';
 import { SaleBillItemsProvider } from './data/providers/sale-bill-items.provider';
 import { SaleBillTaxSummaryProvider } from './data/providers/sale-bill-tax-summary.provider';
+import { TILL_PRINT_PROVIDERS } from './data/providers/till.providers';
+import { TillModule } from '../../till/till.module';
+import {
+  PARTY_OUTSTANDING_PRINT_PROVIDERS,
+  PartyOutstandingPrintSource,
+} from './data/providers/party-outstanding.providers';
+import { ReportsPartyOutstandingModule } from '../../reports/party-outstanding/party-outstanding.module';
 import { FontRegistry } from './engine/fonts/font.registry';
 import { LayoutEngine } from './engine/layout/layout.engine';
 import { TextMeasurer } from './engine/layout/text-measure';
@@ -42,7 +49,10 @@ import { PrintRenderService } from './print-render.service';
  * array order decide.
  */
 @Module({
-  imports: [PgModule, PrintTemplateAssignmentModule],
+  // TillModule: the till.* providers read its payloads (notes 117 §7).
+  // ReportsPartyOutstandingModule: the reports.party_outstanding.* providers
+  // print the report's own /export rows.
+  imports: [PgModule, PrintTemplateAssignmentModule, TillModule, ReportsPartyOutstandingModule],
   controllers: [PrintRenderController],
   providers: [
     // The engine. Restored intact from the reporting module that was removed on
@@ -66,6 +76,9 @@ import { PrintRenderService } from './print-render.service';
     SaleBillHeaderProvider,
     SaleBillItemsProvider,
     SaleBillTaxSummaryProvider,
+    ...TILL_PRINT_PROVIDERS,
+    PartyOutstandingPrintSource,
+    ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
     {
       provide: PRINT_DATA_PROVIDERS,
       useFactory: (...providers: PrintDataProvider[]): PrintDataProvider[] => providers,
@@ -75,6 +88,8 @@ import { PrintRenderService } from './print-render.service';
         SaleBillHeaderProvider,
         SaleBillItemsProvider,
         SaleBillTaxSummaryProvider,
+        ...TILL_PRINT_PROVIDERS,
+        ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
       ],
     },
     PrintDataProviderRegistry,

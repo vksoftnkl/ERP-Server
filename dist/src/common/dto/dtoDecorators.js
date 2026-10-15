@@ -35,12 +35,18 @@ const NullableEmail = (maxLength) => (0, common_1.applyDecorators)((0, class_val
 exports.NullableEmail = NullableEmail;
 const NullableDateString = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toNullableStringStrict)(value)), (0, exports.SkipOnNullish)(), (0, class_validator_1.IsDateString)());
 exports.NullableDateString = NullableDateString;
-const UUID_MESSAGE = { message: '$property must be a valid UUID' };
-const NullableUuid = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toNullableUuid)(value)), (0, exports.SkipOnNullish)(), (0, class_validator_1.Matches)(DtoTransforms_1.UUID_PATTERN, UUID_MESSAGE));
+const IsHouseUuid = () => (0, class_validator_1.ValidateBy)({
+    name: 'isUuid',
+    validator: {
+        validate: (value) => typeof value === 'string' && DtoTransforms_1.UUID_PATTERN.test(value),
+        defaultMessage: () => '$property must be a valid UUID',
+    },
+});
+const NullableUuid = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toNullableUuid)(value)), (0, exports.SkipOnNullish)(), IsHouseUuid());
 exports.NullableUuid = NullableUuid;
-const OptionalUuid = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toOptionalUuid)(value)), (0, class_validator_1.Matches)(DtoTransforms_1.UUID_PATTERN, UUID_MESSAGE));
+const OptionalUuid = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toOptionalUuid)(value)), IsHouseUuid());
 exports.OptionalUuid = OptionalUuid;
-const RequiredUuid = () => (0, common_1.applyDecorators)((0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toRequiredUuid)(value)), (0, class_validator_1.Matches)(DtoTransforms_1.UUID_PATTERN, UUID_MESSAGE));
+const RequiredUuid = () => (0, common_1.applyDecorators)((0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toRequiredUuid)(value)), IsHouseUuid());
 exports.RequiredUuid = RequiredUuid;
 const OptionalDateString = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toOptionalDateString)(value)), (0, class_validator_1.IsDateString)());
 exports.OptionalDateString = OptionalDateString;

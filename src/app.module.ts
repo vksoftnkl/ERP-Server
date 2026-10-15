@@ -50,6 +50,7 @@ import { TransactionModule } from './modules/accountsModule/transaction/transact
 import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
 import { PaymentModule } from './modules/accountsModule/payment/payment.module';
 import { TillModule } from './modules/till/till.module';
+import { ErrorMessagesModule } from './modules/error-messages/error-messages.module';
 import { ExpenseModule } from './modules/accountsModule/expense/expense.module';
 import { TenderSettlementModule } from './modules/accountsModule/tenderSettlement/tender-settlement.module';
 import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
@@ -207,6 +208,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     // The Payment (menu 100): the receipt mirrored, money going OUT.
     PaymentModule,
     TillModule,
+    ErrorMessagesModule,
     ExpenseModule,
     TenderSettlementModule,
     ChequesModule,

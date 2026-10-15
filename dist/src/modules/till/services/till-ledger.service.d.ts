@@ -53,6 +53,12 @@ export declare class TillLedgerService {
         branchId: string;
         counterSafeId: string | null;
     }): Promise<SafeRef | null>;
+    ledgerBalances(client: Pick<Prisma.TransactionClient, '$queryRaw'>, scope: {
+        companyId: string;
+        branchId: string;
+        accYear: string;
+        upTo: string;
+    }, ledgerIds: readonly string[]): Promise<Map<string, Prisma.Decimal>>;
     roleLedger(tx: Tx, role: string, companyId: string, branchId: string): Promise<string>;
 }
 export {};

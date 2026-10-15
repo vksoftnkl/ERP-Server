@@ -1975,6 +1975,26 @@ Table till_cash_movement {
   tcmModifiedBy String
   tcmWitnessVerifiedOn DateTime [note: 'Notes 108: when the witness\'s till PIN was checked (PICKUP / TOP_UP).
 NULL = no witness proven. Physically last (20261012140000).']
+  tcmReceiptStatus String [note: 'NULL = straight into the safe (setting NONE, a pickup, every row before
+notes 113) | AWAITING = in "Till cash awaiting receipt" | RECEIVED.']
+  tcmReceivedBy String [note: 'The supervisor who received it into the safe — counted (movements/receive)
+or approved on the session (sessions/approve-cash, notes 114); not the
+cashier, unless till.single_operator (the service\'s rule, no CHECK).']
+  tcmReceivedOn DateTime
+  tcmReceivedAmount Decimal [note: 'What the supervisor received; ≠ tcm_amount = a RECEIVE-stage variance.']
+  tcmReceiveCountId String [note: 'The DROP_VERIFY count behind a movements/receive; NULL for approve-cash
+(no count, notes 114 — ck_tcm_received no longer asks for it).']
+  tcmReceiveVoucherId String [note: 'The TRcv voucher (Dr Safe / Cr awaiting); none for an empty bag.']
+  tcmReceiveVoucherAccYear String
+  tcmRemitMode String [note: 'REMIT only (ck_tcm_remit): BANK_DEPOSIT (staff paid it in) | CIT (an agency took it).']
+  tcmRemitStatus String [note: 'REMIT only: DEPOSITED (BANK_DEPOSIT) | IN_TRANSIT → CONFIRMED (CIT; ck_tcm_remit_flow).']
+  tcmBankDate DateTime [note: 'CIT confirmed: the date and reference the bank statement shows.']
+  tcmBankRef String
+  tcmBankAmount Decimal [note: 'What the bank credited; short of tcm_amount = a REMIT-stage variance.']
+  tcmConfirmedBy String
+  tcmConfirmedOn DateTime
+  tcmConfirmVoucherId String [note: 'The Contra (CRem Dr Bank / Cr Cash in transit); none for a credit of 0.']
+  tcmConfirmVoucherAccYear String
   ledger acc_ledger_master
   reason till_reason
   safe till_safe
@@ -1993,8 +2013,13 @@ TOP_UP          SAFE → TILL          TFlt      Till cash / Safe          (chan
 PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
 DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
 CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+notes 113, till.handover_receipt = REQUIRED: a DROP / CLOSE_HANDOVER posts
+Dr Till cash awaiting receipt instead (tcm_receipt_status AWAITING), and a
+supervisor\'s receive posts TRcv Dr Safe / Cr awaiting (RECEIVED)
 PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
 REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+notes 118: tcm_ledger_id = the bank it is bound for, either way; a CIT one is
+confirmed later — CRem Dr Bank / Cr Cash in transit (tcm_confirm_voucher_id)
 SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
 EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
 
@@ -2014,7 +2039,8 @@ Table till_count {
   tctBranchId String [not null]
   tctTenantId String
   tctAccYear String [not null]
-  tctKind String [not null, note: 'OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE']
+  tctKind String [not null, note: 'OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE
+| REMIT (notes 118: the cash a remittance took out of the safe)']
   tctSessionId String [note: 'NULL for a SAFE count.']
   tctSafeId String [note: 'SAFE / DROP_VERIFY.']
   tctMovementId String [note: 'DROP_VERIFY / FLOAT_ISSUE / PICKUP: the movement counted.']
@@ -2032,6 +2058,8 @@ Table till_count {
   tctSyncDate DateTime
   tctCreatedOn DateTime [default: `now()`, not null]
   tctCreatedBy String
+  tctDayId String [note: 'A SAFE count: the business day it counts for (till_business_day, same
+acc year; ck_tct_safe). The day\'s last count of a safe is the day\'s. FK-less.']
   lines till_count_line [not null]
 
   indexes {
@@ -2369,8 +2397,9 @@ Table till_variance {
   tvrBranchId String [not null]
   tvrTenantId String
   tvrAccYear String [not null]
-  tvrSessionId String [not null]
-  tvrStage String [not null, default: 'CLOSE', note: 'OPEN (float mismatch) | CLOSE']
+  tvrSessionId String [note: 'NULL only for a safe gap — stage SAFE / REMIT (notes 118, ck_tvr_owner).']
+  tvrStage String [not null, default: 'CLOSE', note: 'OPEN (float mismatch) | CLOSE
+OPEN | CLOSE | RECEIVE (varchar(8) since 20261014100000) | SAFE | REMIT (notes 118)']
   tvrTenderTypeId Int [not null]
   tvrTenderId String
   tvrOpenAmount Decimal [not null, default: 0, note: 'Float (cash only).']
@@ -2407,7 +2436,11 @@ Table till_variance {
   tvrRows Json [note: 'The tender rows a close-time NON-CASH variance parked in Tender suspense:
 [{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
 credits suspense, not the clearing ledger, for these.']
-  session till_session [not null]
+  tvrMovementId String [note: 'Stage RECEIVE: the hand-over / drop received (till_cash_movement, same
+acc year; ck_tvr_receive). FK-less.']
+  tvrSafeId String [note: 'Stage SAFE / REMIT: the safe (till_safe). FK-less.']
+  tvrCountId String [note: 'Stage SAFE: the safe count that found the gap (till_count, same acc year). FK-less.']
+  session till_session
   tenderType acc_tender_types [not null]
   reason till_reason
 
@@ -2428,6 +2461,13 @@ RETENDERED        no posting: the gap was a wrong tender, fixed by /bills/retend
 
 A variance row is never edited after it posts; a changed decision is a
 REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+Stage RECEIVE (notes 113) = a bag a supervisor received for other than was
+handed over: the OPEN row\'s shape (cash, open_amount = handed over, counted =
+received), naming the bag in tvr_movement_id.
+Stages SAFE / REMIT (notes 118) = a safe gap, with NO session: a safe count
+(open_amount = expected = what the safe should hold, counted = counted,
+tvr_count_id) or a CIT remittance the bank credited short (expected = sent,
+counted = credited, tvr_movement_id = the REMIT), both naming tvr_safe_id.
 ck_tvr_expected holds the row\'s own arithmetic (since 20261008110000, file 48):
 expected = open + sales - refund + receipt - payment - expense
 + moved_in - moved_out.'
@@ -2599,6 +2639,49 @@ Table device_master {
   couponTxns loyalty_coupon_txn [not null]
   promotionUsages promotion_usage [not null]
   tillCounters till_counter [not null]
+}
+
+Table error_message {
+  ermId String [pk]
+  ermCode String [not null]
+  ermVariant String [not null, default: '']
+  ermLang String [not null, default: 'en']
+  ermTitle String [not null]
+  ermLine String [not null]
+  ermTodo String [not null]
+  ermIsActive Boolean [not null, default: true]
+  ermCreatedOn DateTime [default: `now()`, not null]
+  ermModifiedOn DateTime
+  ermSyncDate DateTime
+
+  indexes {
+    (ermCode, ermVariant, ermLang) [unique]
+  }
+
+  Note: 'ERROR MESSAGE — the plain words for an error code (notes 120, migration
+20261015130000). Every refusal carries a `code` (notes 119); the exception
+filters attach the matching row to each error as `user { title, line, todo }`,
+and GET /error-messages hands the whole catalogue to the apps to cache.
+
+Rows are loaded from prisma/seed/Error_Messages.json by the TS seed
+`error-messages` (the user approves the wording in the share files).
+
+ermCode: the exact code, or a prefix row ending in * (HOLD_*) for every code
+of it that has no row of its own. ermVariant: \'\' = the plain row;
+field=<name> · <key>=<value> · <key>=* — the same code worded by an extra
+field of the error. Resolution: field= first, then <key>=<value>, then
+<key>=*, then the plain row; the exact code before any prefix row.'
+}
+
+Table error_message_catalogue {
+  emcId Int [pk, default: 1]
+  emcVersion String [not null]
+  emcRowCount Int [not null, default: 0]
+  emcLoadedOn DateTime [default: `now()`, not null]
+  emcSyncDate DateTime
+
+  Note: 'ERROR MESSAGE CATALOGUE — the one version of fixed.error_message (the seed
+file\'s), which the apps send back as `since` (notes 120). ck_emc_one_row.'
 }
 
 Table form_section {

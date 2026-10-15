@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
-import { throwSalesBadRequest, type SalesErrorDetail } from 'src/common/utils/module-service.utils';
+import { throwSalesBadRequest } from 'src/common/utils/module-service.utils';
+import type { SalesCodedErrorDetail } from './sales.errors';
+import { SALES_ERROR_CODES, type SalesErrorCode } from './types/posting.types';
 // accounts.acc_tender_types.ttm_type_id 5 — CHEQUE, seeded by
 // prisma/migrations/20260731080000_add_tender_types_and_master. A tender line
 // carrying this type is a physical instrument the company now holds, and an
@@ -332,9 +334,9 @@ function toRegistrableCheques(tenders: PdcTenderLine[]): PdcTenderLine[] {
     )
     .sort((left, right) => left.tdRowNo - right.tdRowNo);
 }
-function refuse(message: string): never {
-  throwSalesBadRequest<SalesErrorDetail>('Cheque cannot be registered', [
-    { field: 'tenders', message },
+function refuse(message: string, code: SalesErrorCode): never {
+  throwSalesBadRequest<SalesCodedErrorDetail>('Cheque cannot be registered', [
+    { field: 'tenders', message, code },
   ]);
 }
 function requireInstrumentNo(cheque: PdcTenderLine, rules: PdcDocumentRules): string {
@@ -343,6 +345,7 @@ function requireInstrumentNo(cheque: PdcTenderLine, rules: PdcDocumentRules): st
     refuse(
       `Tender line ${cheque.tdRowNo} is a cheque but carries no cheque number. ` +
         'Send it as tdRefNo — the cheque register is keyed by it.',
+      SALES_ERROR_CODES.CHEQUE_NUMBER_MISSING,
     );
   }
   void rules;
@@ -359,6 +362,7 @@ function requireInstrumentDate(
     refuse(
       `Tender line ${cheque.tdRowNo} is a cheque but carries no cheque date. ` +
         'Send it as tdInstrumentDate — it is the date the instrument matures on.',
+      SALES_ERROR_CODES.CHEQUE_DATE_MISSING,
     );
   }
   const instrumentDate = startOfUtcDay(cheque.tdInstrumentDate);
@@ -367,6 +371,7 @@ function requireInstrumentDate(
       `Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, ` +
         `before the ${rules.label} date ${toDateText(received)}. A cheque cannot mature ` +
         'before the day it was received.',
+      SALES_ERROR_CODES.CHEQUE_BACKDATED,
     );
   }
   if (!rules.checkDateWindow) {
@@ -381,12 +386,14 @@ function requireInstrumentDate(
       `Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, more than three ` +
         `months before the ${rules.label} date ${toDateText(received)} — the bank would refuse ` +
         'it as stale.',
+      SALES_ERROR_CODES.CHEQUE_STALE,
     );
   }
   if (instrumentDate.getTime() > latest.getTime()) {
     refuse(
       `Tender line ${cheque.tdRowNo} is dated ${toDateText(instrumentDate)}, more than a year ` +
         `after the ${rules.label} date ${toDateText(received)}. Check the year on the cheque.`,
+      SALES_ERROR_CODES.CHEQUE_DATE_TOO_FAR,
     );
   }
   return instrumentDate;
@@ -402,6 +409,7 @@ function ensureNoRepeatedInstrument(cheques: PdcTenderLine[], rules: PdcDocument
       refuse(
         `Cheque ${instrumentNo} is tendered twice on this ${rules.label} (lines ${firstRow} and ` +
           `${cheque.tdRowNo}). One cheque can only be taken once.`,
+        SALES_ERROR_CODES.CHEQUE_REPEATED,
       );
     }
     seen.set(instrumentNo, cheque.tdRowNo);
@@ -441,6 +449,7 @@ async function ensureInstrumentsAreFree(
     refuse(
       `Cheque ${clash.apdInstrumentNo} is already registered for this customer in ` +
         `${doc.accYear}. The same instrument cannot be taken twice.`,
+      SALES_ERROR_CODES.CHEQUE_ALREADY_REGISTERED,
     );
   }
 }
@@ -458,9 +467,11 @@ function ensureInstrumentIsHeld(
   if (rules.onMoved) {
     rules.onMoved(row, change);
   }
-  throwSalesBadRequest<SalesErrorDetail>(`Cheque cannot be ${change}`, [
+  throwSalesBadRequest<SalesCodedErrorDetail>(`Cheque cannot be ${change}`, [
     {
       field: 'tenders',
+      code: SALES_ERROR_CODES.CHEQUE_LOCKED_IN_REGISTER,
+      status: row.apdStatus,
       message:
         `Cheque ${row.apdInstrumentNo} on this ${rules.label} is ${row.apdStatus} in the cheque ` +
         `register, so it can no longer be ${change} from the ${rules.label}. ` +

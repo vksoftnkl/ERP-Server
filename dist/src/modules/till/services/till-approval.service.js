@@ -70,12 +70,10 @@ let TillApprovalService = class TillApprovalService {
     }
     async assertApprover(client, ask) {
         const { rule, event } = ask;
-        if (ask.approverId === ask.requesterId && !rule.tar_allow_self) {
+        if (ask.approverId === ask.requesterId && !rule.tar_allow_self && !ask.selfExempt) {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_SELF, 'The cashier of a session does not decide its own variance: the rule allows no self-approval', 'userId', { event, requiredRole: rule.tar_min_role });
         }
-        if (rule.tar_two_person) {
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_NO_GRANT, `The ${event} rule asks for two approvers; the two-person gate is Part B of the approvals work`, 'decision', { event, requiredRole: rule.tar_min_role, twoPerson: true });
-        }
+        const second = rule.tar_two_person ? this.assertSecond(ask) : null;
         const user = await client.userMaster.findUnique({
             where: { usrId: ask.approverId },
             select: { usrLoginName: true, usrType: true, usrPinHash: true, usrIsActive: true },
@@ -149,7 +147,24 @@ let TillApprovalService = class TillApprovalService {
             channel,
             grantId: grant.id,
             implicit: grant.implicit,
+            secondBy: second,
         };
+    }
+    assertSecond(ask) {
+        const { rule, event } = ask;
+        if (ask.second === undefined) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_NO_GRANT, `The ${event} rule asks for two approvers; the two-person gate is Part B of the approvals work`, 'decision', { event, requiredRole: rule.tar_min_role, twoPerson: true });
+        }
+        if (ask.second === null) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_SECOND, `The ${event} rule asks for two people: a second person signs with their till PIN`, 'secondId', { event, requiredRole: rule.tar_min_role, twoPerson: true });
+        }
+        const by = ask.second.userId;
+        if (by === ask.approverId || by === ask.requesterId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_SECOND, by === ask.approverId
+                ? 'The second signature is another person than the one deciding'
+                : 'The second signature is another person than the one who raised it', 'secondId', { event, requiredRole: rule.tar_min_role, twoPerson: true });
+        }
+        return by;
     }
     async record(tx, input) {
         const countInSession = input.sessionId
@@ -175,6 +190,7 @@ let TillApprovalService = class TillApprovalService {
                 role: input.verdict.role,
                 grantId: input.verdict.grantId,
                 implicit: input.verdict.implicit,
+                secondBy: input.verdict.secondBy,
             },
             ...(input.payload ?? {}),
         };
@@ -195,8 +211,8 @@ let TillApprovalService = class TillApprovalService {
                 tapRuleId: input.rule.tar_id,
                 tapRuleSnapshot: snapshot,
                 tapRequiredRole: input.rule.tar_min_role,
-                tapTwoPerson: false,
-                tapSelfAllowed: input.rule.tar_allow_self,
+                tapTwoPerson: input.rule.tar_two_person && input.verdict.secondBy !== null,
+                tapSelfAllowed: input.selfAllowed ?? input.rule.tar_allow_self,
                 tapChannel: input.verdict.channel,
                 tapRequestedBy: input.requestedBy,
                 tapRequestedOn: input.requestedOn,
@@ -206,6 +222,8 @@ let TillApprovalService = class TillApprovalService {
                 tapDecidedOn: input.decidedOn,
                 tapDecidedDeviceId: input.decidedDeviceId,
                 tapDecisionNote: input.decisionNote,
+                tapSecondBy: input.verdict.secondBy,
+                tapSecondOn: input.verdict.secondBy ? (input.secondOn ?? input.decidedOn) : null,
                 tapDeviceId: input.decidedDeviceId,
             },
             select: { tapId: true },

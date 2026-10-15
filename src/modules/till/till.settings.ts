@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { AppSettingEffectiveItem } from '../settings/appSettings/types/app-settings-api.types';
-import { TillFloatMode, TillSettingKey } from './types/till-enum';
+import { TillFloatMode, TillHandoverReceipt, TillSettingKey } from './types/till-enum';
 
 /**
  * The `till.*` settings (47 §10.3, 48 §8), read through
@@ -44,6 +44,18 @@ export interface TillSettings {
    * took that kind of money on more than one.
    */
   closeByTerminal: boolean;
+  /**
+   * Notes 113 (`till.handover_receipt`, BRANCH) — REQUIRED: the close hand-over
+   * and a cashier's drop post to Till cash awaiting receipt, and reach the safe
+   * when a supervisor receives them; NONE: straight into the safe.
+   */
+  handoverReceipt: TillHandoverReceipt;
+  /**
+   * 47 (`till.day_close_safe_count`, BRANCH) — the day close wants each safe
+   * that held or moved cash counted that day: SAFE_NOT_COUNTED is RED (an
+   * exception may still cover it), else AMBER (notes 118).
+   */
+  daySafeCount: boolean;
 }
 
 export const TILL_SETTING_DEFAULTS: TillSettings = {
@@ -62,6 +74,8 @@ export const TILL_SETTING_DEFAULTS: TillSettings = {
   moneyDocsInSession: true,
   backofficeCashFrom: 'SAFE',
   closeByTerminal: true,
+  handoverReceipt: TillHandoverReceipt.NONE,
+  daySafeCount: true,
 };
 
 export function readTillSettings(effective: readonly AppSettingEffectiveItem[]): TillSettings {
@@ -102,6 +116,12 @@ export function readTillSettings(effective: readonly AppSettingEffectiveItem[]):
       d.backofficeCashFrom,
     ),
     closeByTerminal: pickBoolean(byKey.get(TillSettingKey.CLOSE_BY_TERMINAL), d.closeByTerminal),
+    handoverReceipt: pickEnum(
+      byKey.get(TillSettingKey.HANDOVER_RECEIPT),
+      [TillHandoverReceipt.NONE, TillHandoverReceipt.REQUIRED] as const,
+      d.handoverReceipt,
+    ),
+    daySafeCount: pickBoolean(byKey.get(TillSettingKey.DAY_CLOSE_SAFE_COUNT), d.daySafeCount),
   };
 }
 

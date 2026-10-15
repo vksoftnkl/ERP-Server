@@ -13,6 +13,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     ({
       switchToHttp: () => ({
         getResponse: () => response,
+      getRequest: () => ({ method: 'POST', url: '/test' }),
       }),
     }) as never;
 
@@ -25,7 +26,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     const exception = new BadRequestException({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'lsc_name', message: 'lsc_name is required' }],
+      errors: [{ field: 'lsc_name', code: 'VALIDATION_FAILED', message: 'lsc_name is required' }],
     });
 
     filter.catch(exception, createHost(response));
@@ -34,7 +35,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     expect(response.json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'lsc_name', message: 'lsc_name is required' }],
+      errors: [{ field: 'lsc_name', code: 'VALIDATION_FAILED', message: 'lsc_name is required' }],
     });
   });
 
@@ -56,11 +57,11 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
       errors: [
         {
           field: 'ls_end_date',
-          message: 'ls_end_date must be greater than or equal to ls_start_date',
+          code: 'VALIDATION_FAILED', message: 'ls_end_date must be greater than or equal to ls_start_date',
         },
         {
           field: 'gift_points',
-          message: 'gift_points must be greater than 0',
+          code: 'VALIDATION_FAILED', message: 'gift_points must be greater than 0',
         },
       ],
     });
@@ -75,7 +76,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     expect(response.json).toHaveBeenCalledWith({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   });
 

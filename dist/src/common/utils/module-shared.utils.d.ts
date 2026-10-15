@@ -19,7 +19,7 @@ export declare function throwBadRequest<TErrorDetail extends ModuleErrorDetail, 
 export declare function throwConflict<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
 export declare function throwForbidden<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
 export declare function throwUnprocessable<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
-export declare function throwNotFound<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, field: string, detailMessage: string): never;
+export declare function throwNotFound<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, field: string, detailMessage: string, code?: string): never;
 export declare function throwOnUniqueConstraintError<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(error: unknown, message: string, errors: TErrorDetail[]): void;
 export declare function isUniqueConstraintError(error: unknown): boolean;
 export declare function isForeignKeyConstraintError(error: unknown): boolean;
@@ -28,7 +28,7 @@ export declare function isExclusionConstraintError(error: unknown): boolean;
 export declare function violatedCheckOf(error: unknown): string | null;
 export declare function numericOverflowOf(error: unknown): string | null;
 export declare function isPrismaErrorCode(error: unknown, code: string): boolean;
-export declare function normalizeRequiredText<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(value: string, field: string, message?: string): string;
+export declare function normalizeRequiredText<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(value: string, field: string, message?: string, code?: string): string;
 export declare function normalizeNullableString(value: string | null | undefined): string | null | undefined;
 export declare function resolveActor(value: string | null | undefined, userId?: string | null | undefined): string;
 export declare function toNumber(value: Prisma.Decimal | number): number;

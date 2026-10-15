@@ -11,6 +11,7 @@ import {
   prisma,
 } from './helpers/payment-e2e';
 import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from './helpers/menu-rights';
+import { dropTestDay } from './helpers/till-cleanup';
 
 /**
  * Till management, build phase 1 (src/modules/till, TILL_DESIGN.md REV 1) —
@@ -143,12 +144,9 @@ afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ANY(${ids}::uuid[])`;
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_device_id IN (${deviceId}::uuid, ${webDeviceId}::uuid)`;
+  // Never till_event by day: the day is the live branch's, its events real sessions' (notes 115).
   if (createdDayId && createdDayId !== 'pending') {
-    await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_day_id = ${createdDayId}::uuid`;
-    await prisma.$executeRaw`
-      DELETE FROM accounts.till_business_day d
-       WHERE d.tbd_id = ${createdDayId}::uuid
-         AND NOT EXISTS (SELECT 1 FROM accounts.till_session s WHERE s.tss_day_id = d.tbd_id)`;
+    await dropTestDay(prisma, createdDayId);
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_company_id = ${COMPANY}::uuid AND tcn_code LIKE 'E2E%'`;
   await prisma.$executeRaw`DELETE FROM accounts.till_safe WHERE tsf_company_id = ${COMPANY}::uuid AND tsf_code LIKE 'E2E%'`;
