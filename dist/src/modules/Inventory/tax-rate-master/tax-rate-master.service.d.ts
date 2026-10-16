@@ -1,0 +1,36 @@
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { ListTaxRateQueryDto, ResolveTaxRateQueryDto } from './dto/tax-rate-query.dto';
+import { SaveTaxRateDto } from './dto/save-tax-rate.dto';
+import { TaxRateDeleteResult, TaxRatePayload, TaxRateResolution } from './types/tax-rate-api.types';
+export declare class TaxRateMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    getById(taxId: string): Promise<TaxRatePayload>;
+    list(query: ListTaxRateQueryDto): Promise<TaxRatePayload[]>;
+    resolveLedgers(query: ResolveTaxRateQueryDto): Promise<TaxRateResolution>;
+    save(dto: SaveTaxRateDto): Promise<TaxRatePayload>;
+    private createTaxRate;
+    private updateTaxRate;
+    softDelete(taxId: string, modifiedBy?: string | null): Promise<TaxRateDeleteResult>;
+    private applyHeaderFields;
+    private effectiveTaxRate;
+    private collectHeaderErrors;
+    private collectCessErrors;
+    private assertNameIsFree;
+    private assertCodeIsFree;
+    private assertSupersedesExists;
+    private assertNoSupersedeCycle;
+    private syncLines;
+    private collectLineErrors;
+    private saveLineRow;
+    private softDeleteLineRow;
+    private describeLine;
+    private findWithLines;
+    private resolveWriteActor;
+    private audit;
+    private throwNotFound;
+}
