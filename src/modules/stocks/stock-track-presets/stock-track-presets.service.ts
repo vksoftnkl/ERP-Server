@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { StockTrackPreset } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { GetStockTrackPresetsQueryDto } from './dto/get-stock-track-presets-query.dto';
+import { throwNotFound, type ModuleErrorDetail } from 'src/common/utils/module-shared.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
 import { mergePresets, presetScopeFilter } from './preset-merge';
 import {
   StockTrackPresetsGetMeta,
@@ -30,7 +32,12 @@ export class StockTrackPresetsService {
         where: { sptId: queryDto.spt_id },
       });
       if (!record) {
-        throw new NotFoundException(`Stock track preset not found for spt_id ${queryDto.spt_id}`);
+        throwNotFound<ModuleErrorDetail>(
+          `Stock track preset not found for spt_id ${queryDto.spt_id}`,
+          'spt_id',
+          `Stock track preset not found for spt_id ${queryDto.spt_id}`,
+          StockErrorCode.PRESET_NOT_FOUND,
+        );
       }
       return {
         items: [this.toPayload(record, record.sptCompanyId !== null)],

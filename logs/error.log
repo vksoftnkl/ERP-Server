@@ -20539,3 +20539,11 @@ DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e
     at async SalesStockService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-stock.service.ts:142:30)
     at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1292:19)
     at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:244:18)
+2026-10-16T07:09:17.599Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:11:01.947Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:12:22.867Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:12:52.092Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:13:18.143Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:13:43.416Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T07:13:46.850Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-16T10:19:47.175Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

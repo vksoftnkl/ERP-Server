@@ -26,10 +26,10 @@ export interface ModuleErrorDetail {
   field: string;
   message: string;
   /**
-   * Notes 119 / 127 §5 — the client words its box by this code alone. Optional
-   * while the modules are being coded; becomes REQUIRED once every throw has one.
+   * Notes 119 / 127 §5 — the client words its box by this code alone. REQUIRED
+   * (2026-10-16): a refusal cannot be built without one.
    */
-  code?: string;
+  code: string;
 }
 export interface ModuleErrorResponse<TErrorDetail extends ModuleErrorDetail = ModuleErrorDetail> {
   success: false;
@@ -40,7 +40,7 @@ export type ModuleWriteClient = Prisma.TransactionClient | PrismaService;
 export function buildErrorResponse<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
->(message: string, errors: TErrorDetail[] = []): TErrorResponse {
+>(message: string, errors: TErrorDetail[]): TErrorResponse {
   return {
     success: false,
     message,
@@ -83,16 +83,14 @@ export function throwUnprocessable<
   );
 }
 // `code` (notes 119): what the client switches its wording on — module-prefixed,
-// never reused for a new meaning. Optional only until every caller names one.
+// never reused for a new meaning. Required since notes 127 §5.
 export function throwNotFound<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
->(message: string, field: string, detailMessage: string, code?: string): never {
+>(message: string, field: string, detailMessage: string, code: string): never {
   throw new NotFoundException(
     buildErrorResponse<TErrorDetail, TErrorResponse>(message, [
-      (code
-        ? { field, message: detailMessage, code }
-        : { field, message: detailMessage }) as TErrorDetail,
+      { field, message: detailMessage, code } as TErrorDetail,
     ]),
   );
 }
@@ -235,14 +233,23 @@ export function isPrismaErrorCode(error: unknown, code: string): boolean {
   }
   return (error as { code?: string }).code === code;
 }
+/**
+ * A blank required text refuses with the house ValidationPipe's code for the
+ * same failure (VALIDATION_IS_NOT_EMPTY) unless the caller names its own.
+ */
 export function normalizeRequiredText<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
->(value: string, field: string, message = `${field} must not be empty`, code?: string): string {
+>(
+  value: string,
+  field: string,
+  message = `${field} must not be empty`,
+  code = 'VALIDATION_IS_NOT_EMPTY',
+): string {
   const trimmed = value.trim();
   if (!trimmed) {
     throwBadRequest<TErrorDetail, TErrorResponse>('Validation failed', [
-      (code ? { field, message, code } : { field, message }) as TErrorDetail,
+      { field, message, code } as TErrorDetail,
     ]);
   }
   return trimmed;
@@ -332,12 +339,14 @@ export abstract class ModuleExceptionFilter<
         response.status(statusCode).json(this.mapValidationPayload(rawResponse));
         return;
       }
+      // Notes 127 §5: a plain Nest exception still goes out coded, by its status.
+      const message = this.resolveErrorMessage(rawResponse, exception.message);
       response
         .status(statusCode)
         .json(
-          buildErrorResponse<TErrorDetail, TErrorResponse>(
-            this.resolveErrorMessage(rawResponse, exception.message),
-          ),
+          buildErrorResponse<TErrorDetail, TErrorResponse>(message, [
+            { field: 'request', code: `HTTP_${statusCode}`, message } as unknown as TErrorDetail,
+          ]),
         );
       return;
     }

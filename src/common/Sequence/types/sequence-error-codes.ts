@@ -1,7 +1,8 @@
 /**
  * Notes 119 / 127 §5 — every refusal of the voucher sequence routes (/sequences)
- * carries one of these as `errors[].code`; the client words its box by the code
- * alone. Never reuse a code for a different meaning.
+ * and of the number allocator every document save goes through
+ * (voucher-sequence.helper) carries one of these as `errors[].code`; the client
+ * words its box by the code alone. Never reuse a code for a different meaning.
  *
  * A malformed field answers with the house ValidationPipe's own code
  * (VALIDATION_ + the constraint), so it reads the same however it is caught.
@@ -17,6 +18,10 @@ export enum SequenceErrorCode {
   BRANCH_NOT_FOUND = 'SEQUENCE_BRANCH_NOT_FOUND',
   /** A sequence with this voucher type, company, branch, year, device and period already exists — 409. */
   SCOPE_DUPLICATE = 'SEQUENCE_SCOPE_DUPLICATE',
+  /** A document's number comes from a sequence an administrator deactivated (or deleted) for that year. */
+  INACTIVE = 'SEQUENCE_INACTIVE',
+  /** The number built from the prefix, counter and suffix is longer than the ref no column (100). */
+  REFNO_TOO_LONG = 'SEQUENCE_REFNO_TOO_LONG',
   /** A field that must be a UUID is not one. */
   FIELD_NOT_UUID = 'VALIDATION_IS_UUID',
   /** A text field came as something other than a string. */

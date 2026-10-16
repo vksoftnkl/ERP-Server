@@ -1,4 +1,6 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { throwBadRequest, throwNotFound } from '../utils/module-shared.utils';
+import type { SequenceErrorDetail } from './types/sequence-api.types';
+import { SequenceErrorCode } from './types/sequence-error-codes';
 import { AccVoucherSeq, AccVoucherType, Prisma, VoucherResetFreq } from '@prisma/client';
 // Held for the life of the transaction so the find-or-create below cannot race a
 // concurrent first allocation on the same scope (the unique constraint would
@@ -53,7 +55,13 @@ export async function allocateVoucherNumber(
 ): Promise<AllocatedVoucherNumber> {
   const vchrTypeId = scope.vchrTypeId;
   if (!Number.isInteger(vchrTypeId) || vchrTypeId <= 0) {
-    throw new BadRequestException('vchrTypeId must be a positive integer.');
+    throwBadRequest<SequenceErrorDetail>('vchrTypeId must be a positive integer.', [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.FIELD_NOT_INTEGER,
+        message: 'vchrTypeId must be a positive integer.',
+      },
+    ]);
   }
   const companyId = requireText(scope.companyId, 'companyId');
   const branchId = requireText(scope.branchId, 'branchId');
@@ -72,7 +80,12 @@ export async function allocateVoucherNumber(
     },
   });
   if (!voucherType) {
-    throw new NotFoundException(`Voucher type ${vchrTypeId} was not found.`);
+    throwNotFound<SequenceErrorDetail>(
+      `Voucher type ${vchrTypeId} was not found.`,
+      'vchrTypeId',
+      `Voucher type ${vchrTypeId} was not found.`,
+      SequenceErrorCode.VOUCHER_TYPE_NOT_FOUND,
+    );
   }
   const periodKey = buildPeriodKey(voucherType.vchrResetFreq, accYear, scope.documentDate);
   const resolvedScope = {
@@ -155,9 +168,10 @@ export function buildRefno(sequence: AccVoucherSeq): string {
   const width = Math.max(sequence.noWidth, digits.length);
   const refno = `${prefix}${digits.padStart(width, '0')}${suffix}`;
   if (refno.length > REFNO_MAX_LENGTH) {
-    throw new BadRequestException(
-      `Generated reference number "${refno}" exceeds ${REFNO_MAX_LENGTH} characters. Shorten the prefix, suffix, or number width on voucher type ${sequence.vchrTypeId}.`,
-    );
+    const message = `Generated reference number "${refno}" exceeds ${REFNO_MAX_LENGTH} characters. Shorten the prefix, suffix, or number width on voucher type ${sequence.vchrTypeId}.`;
+    throwBadRequest<SequenceErrorDetail>(message, [
+      { field: 'vchrTypeId', code: SequenceErrorCode.REFNO_TOO_LONG, message },
+    ]);
   }
   return refno;
 }
@@ -183,9 +197,10 @@ async function findOrCreateSequence(
     // isActive / isDeleted are deliberate admin switches — quietly reviving the
     // row would undo them, so the save fails with something actionable instead.
     if (existing.isDeleted || !existing.isActive) {
-      throw new BadRequestException(
-        `Voucher sequence ${existing.id} for voucher type ${scope.vchrTypeId} is inactive. Reactivate it before creating documents in ${scope.accYear}.`,
-      );
+      const message = `Voucher sequence ${existing.id} for voucher type ${scope.vchrTypeId} is inactive. Reactivate it before creating documents in ${scope.accYear}.`;
+      throwBadRequest<SequenceErrorDetail>(message, [
+        { field: 'vchrTypeId', code: SequenceErrorCode.INACTIVE, message },
+      ]);
     }
     return existing;
   }
@@ -211,12 +226,16 @@ async function findOrCreateSequence(
     }),
   ]);
   if (!company) {
-    throw new BadRequestException(`No active company found with id ${scope.companyId}.`);
+    const message = `No active company found with id ${scope.companyId}.`;
+    throwBadRequest<SequenceErrorDetail>(message, [
+      { field: 'companyId', code: SequenceErrorCode.COMPANY_NOT_FOUND, message },
+    ]);
   }
   if (!branch) {
-    throw new BadRequestException(
-      `No active branch found with id ${scope.branchId} for company ${scope.companyId}.`,
-    );
+    const message = `No active branch found with id ${scope.branchId} for company ${scope.companyId}.`;
+    throwBadRequest<SequenceErrorDetail>(message, [
+      { field: 'branchId', code: SequenceErrorCode.BRANCH_NOT_FOUND, message },
+    ]);
   }
   return tx.accVoucherSeq.create({
     data: {
@@ -287,7 +306,13 @@ async function acquireScopeLock(
 function requireText(value: string | null | undefined, fieldName: string): string {
   const trimmed = value?.trim();
   if (!trimmed) {
-    throw new BadRequestException(`${fieldName} is required.`);
+    throwBadRequest<SequenceErrorDetail>(`${fieldName} is required.`, [
+      {
+        field: fieldName,
+        code: SequenceErrorCode.FIELD_EMPTY,
+        message: `${fieldName} is required.`,
+      },
+    ]);
   }
   return trimmed;
 }

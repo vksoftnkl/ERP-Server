@@ -45,7 +45,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       message,
       // Notes 119: an unexpected failure, and a 400 a framework pipe raised,
-      // carry a code the client can word.
+      // carry a code the client can word. Notes 127 §5: so does any other
+      // refusal thrown as a plain Nest exception — HTTP_<status> — so none goes
+      // out without a code.
       ...(statusCode >= 500
         ? {
             errors: [
@@ -54,7 +56,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           }
         : statusCode === 400
           ? { errors: frameworkErrors(message) }
-          : {}),
+          : { errors: statusErrors(statusCode, message) }),
       path: request.url,
       timestamp: new Date().toISOString(),
     });
@@ -68,6 +70,20 @@ function isHouseErrorBody(
   }
   const body = value as { success?: unknown; message?: unknown; errors?: unknown };
   return body.success === false && typeof body.message === 'string' && Array.isArray(body.errors);
+}
+/** Any other plain 4xx (a bare NotFoundException …), coded by its status alone. */
+function statusErrors(
+  statusCode: number,
+  body: unknown,
+): { field: string; code: string; message: string }[] {
+  const raw =
+    typeof body === 'string'
+      ? body
+      : typeof body === 'object' && body !== null
+        ? (body as { message?: unknown }).message
+        : undefined;
+  const message = typeof raw === 'string' && raw.length > 0 ? raw : `HTTP ${statusCode}`;
+  return [{ field: 'request', code: `HTTP_${statusCode}`, message }];
 }
 /** Nest's own 400 bodies ({ message: string | string[] } or a string), as coded errors. */
 function frameworkErrors(body: unknown): { field: string; code: string; message: string }[] {

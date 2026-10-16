@@ -2,10 +2,10 @@ export interface ModuleApiErrorDetail {
   field: string;
   message: string;
   /**
-   * Notes 119 / 127 §5 — the client words its box by this code alone. Optional
-   * while the modules are being coded; becomes REQUIRED once every throw has one.
+   * Notes 119 / 127 §5 — the client words its box by this code alone. REQUIRED
+   * (2026-10-16): a refusal cannot be built without one.
    */
-  code?: string;
+  code: string;
 }
 export interface ModuleApiErrorResponse<
   TErrorDetail extends ModuleApiErrorDetail = ModuleApiErrorDetail,

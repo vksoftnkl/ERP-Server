@@ -34,10 +34,12 @@ export class ItemBatchStockExceptionFilter implements ExceptionFilter {
         return;
       }
 
+      // Notes 127 §5: a plain Nest exception still goes out coded, by its status.
+      const message = this.resolveErrorMessage(rawResponse, exception.message);
       response.status(statusCode).json({
         success: false,
-        message: this.resolveErrorMessage(rawResponse, exception.message),
-        errors: [],
+        message,
+        errors: [{ field: 'request', code: `HTTP_${statusCode}`, message }],
       });
       return;
     }
@@ -45,7 +47,7 @@ export class ItemBatchStockExceptionFilter implements ExceptionFilter {
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   }
 

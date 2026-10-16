@@ -28,17 +28,19 @@ export class ItemStockBalanceExceptionFilter implements ExceptionFilter {
         response.status(statusCode).json(this.mapValidationPayload(rawResponse));
         return;
       }
+      // Notes 127 §5: a plain Nest exception still goes out coded, by its status.
+      const message = this.resolveErrorMessage(rawResponse, exception.message);
       response.status(statusCode).json({
         success: false,
-        message: this.resolveErrorMessage(rawResponse, exception.message),
-        errors: [],
+        message,
+        errors: [{ field: 'request', code: `HTTP_${statusCode}`, message }],
       });
       return;
     }
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   }
   private isItemStockBalanceErrorResponse(value: unknown): value is ItemStockBalanceErrorResponse {
