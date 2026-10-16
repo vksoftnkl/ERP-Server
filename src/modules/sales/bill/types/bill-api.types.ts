@@ -190,6 +190,8 @@ export type BillTenderPayload = TenderDetailPayload & {
 export type BillErrorDetail = {
   field: string;
   message: string;
+  /** Notes 119: what the client words its box by (SALES_* or this module's own code). */
+  code: string;
 };
 export type BillErrorResponse = {
   statusCode?: number;

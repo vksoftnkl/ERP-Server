@@ -20,6 +20,7 @@ import {
   assertNoLiveReferences,
   type LiveReference,
 } from '../utils/master-tree.helper';
+import { UnitErrorCode } from './types/unit-error-codes';
 
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
@@ -68,7 +69,14 @@ const UNIT_REFERENCES: readonly LiveReference[] = [
     label: 'item categories (as their default unit)',
   },
 ];
-const UNIT_DELETE_STATE = { label: 'unit', idField: 'unit_id', restoreRoute: '/units/restore' };
+const UNIT_DELETE_STATE = {
+  label: 'unit',
+  idField: 'unit_id',
+  restoreRoute: '/units/restore',
+  alreadyDeletedCode: UnitErrorCode.ALREADY_DELETED,
+  notDeletedCode: UnitErrorCode.NOT_DELETED,
+  inUseCode: UnitErrorCode.IN_USE,
+};
 /** A GST Unit Quantity Code: three capital letters (ck_unit_uqc). */
 const UQC_PATTERN = /^[A-Z]{3}$/;
 
@@ -99,6 +107,7 @@ export class UnitsMasterService {
         'Unit not found',
         'unit_id',
         `No active unit found with id ${unitId}`,
+        UnitErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(
@@ -152,6 +161,7 @@ export class UnitsMasterService {
           'Unit not found',
           'unit_id',
           `No unit found with id ${unitId}`,
+          UnitErrorCode.NOT_FOUND,
         );
       }
       assertDeleteState(existing.unit_is_deleted, wantDeleted, UNIT_DELETE_STATE);
@@ -166,6 +176,7 @@ export class UnitsMasterService {
           throwInventoryConflict<UnitErrorDetail>('The base unit is deleted', [
             {
               field: 'unit_base_unit_id',
+              code: UnitErrorCode.BASE_DELETED,
               message: `Restore base unit ${existing.unit_base_unit_id} first.`,
             },
           ]);
@@ -189,6 +200,7 @@ export class UnitsMasterService {
           'Unit not found',
           'unit_id',
           `No unit found with id ${unitId}`,
+          UnitErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -269,6 +281,7 @@ export class UnitsMasterService {
             'Unit not found',
             'unit_id',
             `No active unit found with id ${unitId}`,
+            UnitErrorCode.NOT_FOUND,
           );
         }
         // `!== undefined`, not hasOwnProperty: every declared DTO field is an
@@ -284,7 +297,11 @@ export class UnitsMasterService {
             : toNullableNumber(existing.unit_conversion);
         if (baseUnitId !== null && baseUnitId === unitId) {
           throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
-            { field: 'unit_base_unit_id', message: 'unit_base_unit_id cannot be same as unit_id' },
+            {
+              field: 'unit_base_unit_id',
+              code: UnitErrorCode.SELF_BASE,
+              message: 'unit_base_unit_id cannot be same as unit_id',
+            },
           ]);
         }
         this.validateConversionRules(baseUnitId, conversion);
@@ -327,13 +344,18 @@ export class UnitsMasterService {
         throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
           {
             field: 'unit_conversion',
+            code: UnitErrorCode.TO_BASE_REQUIRED,
             message: 'unit_conversion is required when unit_base_unit_id is set',
           },
         ]);
       }
       if (Number(conversion) <= 0) {
         throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
-          { field: 'unit_conversion', message: 'unit_conversion must be greater than 0' },
+          {
+            field: 'unit_conversion',
+            code: UnitErrorCode.TO_BASE_NOT_POSITIVE,
+            message: 'unit_conversion must be greater than 0',
+          },
         ]);
       }
     }
@@ -406,7 +428,11 @@ export class UnitsMasterService {
 
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<UnitErrorDetail>(error, 'Unit name already exists', [
-      { field: 'unit_name', message: 'Duplicate unit_name is not allowed' },
+      {
+        field: 'unit_name',
+        code: UnitErrorCode.NAME_TAKEN,
+        message: 'Duplicate unit_name is not allowed',
+      },
     ]);
   }
 }

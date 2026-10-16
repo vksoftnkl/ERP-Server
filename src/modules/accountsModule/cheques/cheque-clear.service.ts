@@ -25,6 +25,8 @@ import {
 } from './types/cheque-enum';
 import { ClearChequeDto } from './dto/cheque-actions.dto';
 import type { ChequeClearPayload, ChequeErrorDetail } from './types/cheque-api.types';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.3 — the bank paid. The happy ending, and the only one of the six that has
@@ -108,6 +110,7 @@ export class ChequeClearService {
         throwAccountsBadRequest<ChequeErrorDetail>('Cheque has no deposit bank', [
           {
             field: 'apdId',
+            code: CHQ.BANK_MISSING,
             message:
               `${cheque.apdInstrumentNo} is DEPOSITED but names no bank ledger, so there is ` +
               'nowhere to credit the money. Re-deposit it to record which bank took it.',
@@ -206,6 +209,7 @@ export class ChequeClearService {
       throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
         {
           field: 'allocations',
+          code: VCH.CHEQUE_STATE,
           message:
             `${cheque.apdInstrumentNo} was posted ON_RECEIPT, so its bills were already settled ` +
             'by the receipt. A clearing under this mode allocates nothing.',

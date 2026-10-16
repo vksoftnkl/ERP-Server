@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { MasterErrorDetail, throwMasterNotFound } from '../../common/utils/module-service.utils';
+import { MasterLookupErrorCode } from './types/master-lookup-error-codes';
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
@@ -185,6 +186,7 @@ export class MasterLookupService {
         'Barcode not found',
         'barcode',
         `No active item found for barcode ${code}`,
+        MasterLookupErrorCode.BARCODE_NOT_FOUND,
       );
     }
     // Legacy INNER JOIN item_master ON item_id = ean.item_id
@@ -223,6 +225,7 @@ export class MasterLookupService {
               .filter(Boolean)
               .join(' and ')}`
           : `Barcode ${code} is not linked to a valid item`,
+        MasterLookupErrorCode.BARCODE_ITEM_NOT_FOUND,
       );
     }
     return {

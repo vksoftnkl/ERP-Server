@@ -1,6 +1,7 @@
 import { Prisma, StateMaster } from '@prisma/client';
 import { SaveStateDto } from '../dto/save-state.dto';
 import { StateErrorDetail, StateErrorResponse, StatePayload } from '../types/state-api.types';
+import { StateErrorCode } from '../types/state-error-codes';
 import {
   DEFAULT_ACTOR,
   DEFAULT_LIMIT,
@@ -52,6 +53,7 @@ export async function ensureStateNameIsUnique(
       {
         field: 'stmName',
         message: 'Duplicate state name is not allowed',
+        code: StateErrorCode.NAME_EXISTS,
       },
     ]);
   }
@@ -63,7 +65,12 @@ export function applyStateOptionalFields(
   applyPresentFields(data, saveStateDto, STATE_OPTIONAL_FIELDS);
 }
 export function normalizeRequiredStateName(name: string): string {
-  return normalizeRequiredText<StateErrorDetail, StateErrorResponse>(name, 'stmName');
+  return normalizeRequiredText<StateErrorDetail, StateErrorResponse>(
+    name,
+    'stmName',
+    undefined,
+    StateErrorCode.NAME_REQUIRED,
+  );
 }
 export function toStatePayload(record: StateMaster): StatePayload {
   return {
@@ -96,6 +103,7 @@ export function handleStateWriteError(error: unknown): void {
       {
         field: 'stmName',
         message: 'Duplicate stmName is not allowed',
+        code: StateErrorCode.NAME_EXISTS,
       },
     ],
   );
@@ -105,6 +113,7 @@ export function throwStateNotFound(stmId: string): never {
     'State not found',
     'stmId',
     `No active state found with id ${stmId}`,
+    StateErrorCode.NOT_FOUND,
   );
 }
 export function throwStateBadRequest(message: string, errors: StateErrorDetail[]): never {

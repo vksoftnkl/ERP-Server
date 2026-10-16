@@ -3,8 +3,10 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
+import type { AppSettingsErrorCode } from './app-settings-error-codes';
 
-export type AppSettingsErrorDetail = ModuleApiErrorDetail;
+/** Notes 119 — every refusal this module raises carries one of its own codes. */
+export type AppSettingsErrorDetail = ModuleApiErrorDetail & { code: AppSettingsErrorCode };
 export type AppSettingsErrorResponse = ModuleApiErrorResponse<AppSettingsErrorDetail>;
 export type AppSettingsSuccessResponse<
   T,

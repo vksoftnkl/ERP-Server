@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { tillSessionIdOrNull } from '../../till/till-session-id';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveBillDto } from './dto/save-bill.dto';
 import { SaveBillItemDto } from './dto/save-bill-item.dto';
@@ -68,6 +69,7 @@ import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
 import { throwSalesLocked } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
+import { SaleBillErrorCode } from './types/sale-bill-error-codes';
 import { num, TENDER_TYPE } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
 import { loadSetOffCredits, splitSetOffs } from '../../../common/posting/bill-adjustment.helper';
@@ -374,6 +376,7 @@ function toDateOrNull(value: unknown, field: string): Date | null | undefined {
       {
         field,
         message: `${field} must be a valid ISO date`,
+        code: SaleBillErrorCode.DATE_INVALID,
       },
     ]);
   }
@@ -553,6 +556,7 @@ export class BillService {
         'Bill not found',
         'sbId',
         `No active bill found with id ${sbId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // txn_charge_detail is polymorphic (no FK to sale_bill), so the applied
@@ -605,6 +609,7 @@ export class BillService {
         'Bill not found',
         'sbId',
         `No active bill found with id ${keys.sbId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     const record = await tx.saleBill.findFirst({
@@ -795,6 +800,7 @@ export class BillService {
    * lines AND the number back. Run `prepareSave` first.
    */
   async createBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill> {
+    saveBillDto.sbSessionId = await tillSessionIdOrNull(tx, saveBillDto.sbSessionId);
     const normalizedCustName = normalizeRequiredText<BillErrorDetail, BillErrorResponse>(
       saveBillDto.sbCustName ?? '',
       'sbCustName',
@@ -923,6 +929,7 @@ export class BillService {
    * first.
    */
   async updateBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill> {
+    saveBillDto.sbSessionId = await tillSessionIdOrNull(tx, saveBillDto.sbSessionId);
     const sbId = saveBillDto.sbId!;
     const existing = await tx.saleBill.findFirst({
       where: { sbId, sbIsDeleted: false },
@@ -932,6 +939,7 @@ export class BillService {
         'Bill not found',
         'sbId',
         `No active bill found with id ${sbId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // Lock 1. A POSTED bill is corrected through /bills/amend, a CANCELLED
@@ -1090,7 +1098,11 @@ export class BillService {
     });
     if (!cus) {
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Customer does not exist', [
-        { field: 'sbCustId', message: `No customer found with id ${custId}` },
+        {
+          field: 'sbCustId',
+          message: `No customer found with id ${custId}`,
+          code: SaleBillErrorCode.CUSTOMER_NOT_FOUND,
+        },
       ]);
     }
     const addr = [cus.cusAddr1, cus.cusAddr2, cus.cusAddr3].filter((a) => a?.trim()).join(', ');
@@ -1168,6 +1180,7 @@ export class BillService {
           {
             field: `adjustments[${index}].againstBillId`,
             message: `No open credit ${adj.againstBillId} belongs to this customer`,
+            code: SaleBillErrorCode.ADJUSTMENT_CREDIT_NOT_FOUND,
           },
         ]);
       }
@@ -1176,6 +1189,7 @@ export class BillService {
           {
             field: `adjustments[${index}].amount`,
             message: `Credit has only ${num(credit.abl_pending_amount)} pending`,
+            code: SaleBillErrorCode.ADJUSTMENT_OVER_PENDING,
           },
         ]);
       }
@@ -1193,6 +1207,7 @@ export class BillService {
         errors.push({
           field,
           message: `${kind} adjustments total ${total.toFixed(2)} but ${field} says ${declared.toFixed(2)}`,
+          code: SaleBillErrorCode.ADJUSTMENT_TOTAL_MISMATCH,
         });
       }
     }
@@ -1242,6 +1257,7 @@ export class BillService {
             {
               field: 'sbiLineNo',
               message: `A bill line already exists with line number ${lineNo}`,
+              code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
             },
           ],
         );
@@ -1253,6 +1269,7 @@ export class BillService {
             'Bill item not found',
             'sbiId',
             `No active bill line found with id ${inputItem.sbiId} on this bill`,
+            SALES_ERROR_CODES.LINE_NOT_FOUND,
           );
         }
         keptIds.add(inputItem.sbiId);
@@ -1444,7 +1461,13 @@ export class BillService {
     void error;
     return {
       message: 'Bill already exists',
-      errors: [{ field: 'sbId', message: 'A bill with this id already exists' }],
+      errors: [
+        {
+          field: 'sbId',
+          message: 'A bill with this id already exists',
+          code: SaleBillErrorCode.DUPLICATE,
+        },
+      ],
     };
   }
   // Mirrors the DB CHECK constraints dropped from sale_bill (ck_sb_doc_type /
@@ -1468,7 +1491,11 @@ export class BillService {
       }
       if (value === null) {
         if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
+          details.push({
+            field: guard.field,
+            message: `${guard.field} is required`,
+            code: SALES_ERROR_CODES.FIELD_REQUIRED,
+          });
         }
         continue;
       }
@@ -1476,6 +1503,7 @@ export class BillService {
         details.push({
           field: guard.field,
           message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+          code: SaleBillErrorCode.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -1510,6 +1538,7 @@ export class BillService {
         {
           field: 'sbPosStcd',
           message: `No state found with code ${posStcd}`,
+          code: SaleBillErrorCode.POS_STATE_NOT_FOUND,
         },
       ]);
     }
@@ -1531,6 +1560,7 @@ export class BillService {
         details.push({
           field: 'sbiFreeType',
           message: `sbiFreeType must be one of: ${BILL_ITEM_FREE_TYPES.join(', ')}`,
+          code: SaleBillErrorCode.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -1544,6 +1574,7 @@ export class BillService {
       details.push({
         field: 'sbiBatchNo',
         message: 'sbiBatchNo is required when sbiSplitNo is not 1',
+        code: SaleBillErrorCode.BATCH_REQUIRED_FOR_SPLIT,
       });
     }
     // A sale-order reference is NOT checked for completeness here. A line that
@@ -1659,6 +1690,7 @@ export class BillService {
           {
             field,
             message: `${field} must be provided when creating a bill line`,
+            code: SALES_ERROR_CODES.LINE_FIELD_REQUIRED,
           },
         ],
       );
@@ -1730,6 +1762,7 @@ export class BillService {
           message:
             'This bill names no customer (sbCustId), so there is no account ledger to raise ' +
             'these rows against. Pick a customer, or drop them from the payload.',
+          code: SALES_ERROR_CODES.CUSTOMER_REQUIRED,
         },
       ]);
     }

@@ -8,6 +8,7 @@ import {
   ItemBatchStockErrorResponse,
   ItemBatchStockPayload,
 } from './types/item-batch-stock-api.types';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 /** One holding of `stock.stock_balance` with its lot — the row a batch is now. */
 interface LotHoldingRow {
@@ -234,6 +235,7 @@ export class ItemBatchStockService {
       this.buildErrorResponse('Item batch stock not found', [
         {
           field: 'scope',
+          code: StockErrorCode.BATCH_STOCK_NOT_FOUND,
           message:
             `No item batch stock found for acc year ${queryDto.ibs_acc_year}, ` +
             `company ${queryDto.ibs_company_id}, branch ${queryDto.ibs_branch_id}, ` +
@@ -249,6 +251,7 @@ export class ItemBatchStockService {
       this.buildErrorResponse('Item price master not found', [
         {
           field: 'ipm_item_id',
+          code: StockErrorCode.ITEM_PRICE_NOT_FOUND,
           message: `No item price master found for item ${itemId} and unit ${unitId}`,
         },
       ]),

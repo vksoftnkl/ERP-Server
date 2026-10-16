@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 import { throwSalesBadRequest } from 'src/common/utils/module-service.utils';
 import { allocateVoucherSlno } from 'src/common/Sequence/voucher-sequence.helper';
 import { BillErrorDetail, BillErrorResponse } from './types/bill-api.types';
+import { SaleBillErrorCode } from './types/sale-bill-error-codes';
+import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 // ck_avh_src on acc_voucher_header wants all three src_* columns or none, and
 // ux_avh_src makes (company, module, doc_type, doc_id, acc_year) unique — which
 // is what stops the same bill being posted to accounts twice.
@@ -91,6 +93,7 @@ function requirePartyLedgerId(bill: BillPostingSource): string {
         message:
           'A POSTED bill must name a customer: its voucher and receivable are raised against ' +
           "the customer's account ledger, which a walk-in does not have.",
+        code: SALES_ERROR_CODES.CUSTOMER_REQUIRED,
       },
     ]);
   }
@@ -126,6 +129,7 @@ export async function postBillToAccounts(
       {
         field: 'sbStatus',
         message: 'A POSTED bill must have a bill number (sbBillSlno / sbBillRefno) assigned.',
+        code: SaleBillErrorCode.NUMBER_MISSING,
       },
     ]);
   }
@@ -445,6 +449,7 @@ function ensureNothingSettledForDelete(receivable: {
         message:
           `Bill ${receivable.ablDocRefno ?? ''} has ${settled.toString()} discounted or written ` +
           `off against it in accounts, so it cannot be deleted. Reverse the settlement first.`.trim(),
+        code: SaleBillErrorCode.SETTLED_IN_ACCOUNTS,
       },
     ]);
   }
@@ -493,6 +498,7 @@ async function ensureNotPreviouslyCancelled(
         field: 'sbStatus',
         message:
           'This bill was already posted and cancelled in accounts; it cannot be posted again. Raise a new bill instead.',
+        code: SaleBillErrorCode.CANCELLED_IN_ACCOUNTS,
       },
     ]);
   }
@@ -645,6 +651,7 @@ async function createReceivable(
       {
         field: 'sbStatus',
         message: 'A POSTED bill must have a bill number (sbBillSlno / sbBillRefno) assigned.',
+        code: SaleBillErrorCode.NUMBER_MISSING,
       },
     ]);
   }
@@ -703,6 +710,7 @@ function ensureNothingSettled(
         message:
           `This bill already has ${settled.toString()} settled against it, so it cannot be ` +
           `changed to ${billAmount.toString()}. Reverse the settlement first.`,
+        code: SaleBillErrorCode.AMOUNT_BELOW_SETTLED,
       },
     ]);
   }

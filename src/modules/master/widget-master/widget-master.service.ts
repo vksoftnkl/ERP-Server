@@ -14,6 +14,7 @@ import {
   WidgetPlatform,
   WidgetVisibilityFilter,
 } from './types/widget-master-api.types';
+import { WIDGET_ERROR } from './types/widget-master-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -383,6 +384,7 @@ export class WidgetMasterService {
         {
           field: 'sectionId',
           message: 'sectionId must be a positive integer',
+          code: WIDGET_ERROR.SECTION_ID_INVALID,
         },
       ]);
     }
@@ -394,6 +396,7 @@ export class WidgetMasterService {
         {
           field: 'fieldId',
           message: 'fieldId must be a positive integer',
+          code: WIDGET_ERROR.FIELD_ID_INVALID,
         },
       ]);
     }
@@ -404,6 +407,7 @@ export class WidgetMasterService {
       'Section not found',
       'sectionId',
       `No section found with sectionId ${sectionId}`,
+      WIDGET_ERROR.SECTION_NOT_FOUND,
     );
   }
 
@@ -412,6 +416,7 @@ export class WidgetMasterService {
       'Field not found',
       'fieldId',
       `No field found with fieldId ${fieldId} under sectionId ${sectionId}`,
+      WIDGET_ERROR.FIELD_NOT_FOUND,
     );
   }
 

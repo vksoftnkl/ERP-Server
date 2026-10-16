@@ -26,6 +26,7 @@ import {
   PrintTemplateListResult,
   PrintTemplatePayload,
 } from './types/print-template-api.types';
+import { PrintTemplateErrorCode } from './types/print-template-error-codes';
 import {
   EffectiveDataset,
   EffectiveTemplate,
@@ -371,13 +372,25 @@ export class PrintTemplateService {
 
     if (!existing) {
       if (!purposeId) {
-        errors.push({ field: 'ptlPurposeId', message: 'ptlPurposeId is required' });
+        errors.push({
+          field: 'ptlPurposeId',
+          code: PrintTemplateErrorCode.FIELD_REQUIRED,
+          message: 'ptlPurposeId is required',
+        });
       }
       if (!code) {
-        errors.push({ field: 'ptlCode', message: 'ptlCode is required' });
+        errors.push({
+          field: 'ptlCode',
+          code: PrintTemplateErrorCode.FIELD_REQUIRED,
+          message: 'ptlCode is required',
+        });
       }
       if (!name) {
-        errors.push({ field: 'ptlName', message: 'ptlName is required' });
+        errors.push({
+          field: 'ptlName',
+          code: PrintTemplateErrorCode.FIELD_REQUIRED,
+          message: 'ptlName is required',
+        });
       }
     }
 
@@ -465,6 +478,7 @@ export class PrintTemplateService {
       this.throwConflict('Duplicate template code', [
         {
           field: 'ptlCode',
+          code: PrintTemplateErrorCode.CODE_TAKEN,
           message: companyId
             ? `ptlCode ${code} already exists for this company`
             : `ptlCode ${code} already exists among the shipped templates`,
@@ -487,6 +501,7 @@ export class PrintTemplateService {
       this.throwConflict('Print template is still assigned', [
         {
           field: 'ptlId',
+          code: PrintTemplateErrorCode.STILL_ASSIGNED,
           message:
             'One or more print template assignments still point at this template. Remove them ' +
             'first, or point them at another design.',
@@ -524,6 +539,7 @@ export class PrintTemplateService {
       if (row.ptvId && !current) {
         errors.push({
           field: `${path}.ptvId`,
+          code: PrintTemplateErrorCode.VERSION_NOT_FOUND,
           message: `No revision ${row.ptvId} belongs to this template`,
         });
         return;
@@ -555,6 +571,7 @@ export class PrintTemplateService {
       if (!current && row.ptvRevNo !== undefined && claimedRevNos.has(row.ptvRevNo)) {
         errors.push({
           field: `${path}.ptvRevNo`,
+          code: PrintTemplateErrorCode.REV_NO_TAKEN,
           message:
             `Revision ${row.ptvRevNo} already exists on this template. Revision numbers are ` +
             'never reused — omit ptvRevNo and the next one is assigned.',
@@ -598,6 +615,7 @@ export class PrintTemplateService {
     if (design.length > 0) {
       errors.push({
         field: `${path}.${design[0]}`,
+        code: PrintTemplateErrorCode.VERSION_FROZEN,
         message:
           `Revision ${current.ptvRevNo} is ${current.ptvStatus} and can no longer be edited — ` +
           'print_log points at these exact bytes. Send a version row with NO ptvId instead and ' +
@@ -608,6 +626,7 @@ export class PrintTemplateService {
     if (row.datasets !== undefined) {
       errors.push({
         field: `${path}.datasets`,
+        code: PrintTemplateErrorCode.VERSION_FROZEN,
         message:
           `The datasets of ${current.ptvStatus} revision ${current.ptvRevNo} are frozen with its ` +
           'design. Add a new revision to change what feeds it.',
@@ -622,6 +641,7 @@ export class PrintTemplateService {
     if (!(current.ptvStatus === 'PUBLISHED' && target === 'RETIRED')) {
       errors.push({
         field: `${path}.ptvStatus`,
+        code: PrintTemplateErrorCode.STATUS_MOVE_INVALID,
         message:
           `A ${current.ptvStatus} revision cannot become ${target}. The only move left to a ` +
           'published revision is RETIRED.',
@@ -653,6 +673,7 @@ export class PrintTemplateService {
     if (!current) {
       errors.push({
         field: `${path}.ptvId`,
+        code: PrintTemplateErrorCode.VERSION_DELETE_NEEDS_ID,
         message: 'ptvIsDeleted needs a ptvId — there is nothing to delete without one',
       });
       return null;
@@ -663,6 +684,7 @@ export class PrintTemplateService {
     if (current.ptvStatus === 'PUBLISHED') {
       errors.push({
         field: `${path}.ptvIsDeleted`,
+        code: PrintTemplateErrorCode.VERSION_DELETE_PUBLISHED,
         message:
           `Revision ${current.ptvRevNo} is PUBLISHED. Retire it first — a revision that has ` +
           'printed cannot be deleted out from under print_log.',
@@ -672,6 +694,7 @@ export class PrintTemplateService {
     if (existing?.ptlPublishedRevId === current.ptvId) {
       errors.push({
         field: `${path}.ptvIsDeleted`,
+        code: PrintTemplateErrorCode.VERSION_DELETE_IS_LIVE,
         message: `Revision ${current.ptvRevNo} is the one this template publishes. Point the template elsewhere first.`,
       });
       return null;
@@ -785,6 +808,7 @@ export class PrintTemplateService {
       if (row.ptdId && !existing) {
         errors.push({
           field: `${path}.ptdId`,
+          code: PrintTemplateErrorCode.DATASET_NOT_FOUND,
           message: `No dataset ${row.ptdId} belongs to this revision`,
         });
         return;
@@ -813,7 +837,11 @@ export class PrintTemplateService {
     const role = row.ptdRole ?? existing?.ptdRole ?? PTD_DEFAULT_ROLE;
     const name = row.ptdName ?? existing?.ptdName ?? '';
     if (!existing && !name) {
-      errors.push({ field: `${path}.ptdName`, message: 'ptdName is required' });
+      errors.push({
+        field: `${path}.ptdName`,
+        code: PrintTemplateErrorCode.FIELD_REQUIRED,
+        message: 'ptdName is required',
+      });
     }
 
     // A MASTER is dataset 0 by definition, so a create that names a role but no
@@ -823,6 +851,7 @@ export class PrintTemplateService {
     if (!existing && Number.isNaN(datasetNo)) {
       errors.push({
         field: `${path}.ptdDatasetNo`,
+        code: PrintTemplateErrorCode.FIELD_REQUIRED,
         message: 'ptdDatasetNo is required for a DETAIL dataset — it is what a band points at',
       });
     }
@@ -864,6 +893,7 @@ export class PrintTemplateService {
     if (publishing.length > 1) {
       errors.push({
         field: `${publishing[1].path}.ptvStatus`,
+        code: PrintTemplateErrorCode.PUBLISH_TWO,
         message:
           'Only one revision may be published per request — the template has one published ' +
           'pointer, and two candidates leave no way to say which is live.',
@@ -881,6 +911,7 @@ export class PrintTemplateService {
     if (publishing.length > 0) {
       errors.push({
         field: 'ptlPublishedRevId',
+        code: PrintTemplateErrorCode.PUBLISH_BOTH_WAYS,
         message:
           'Send either ptlPublishedRevId or a revision with ptvStatus PUBLISHED, not both — they ' +
           'are two ways of moving the same pointer.',
@@ -892,16 +923,19 @@ export class PrintTemplateService {
     if (!target) {
       errors.push({
         field: 'ptlPublishedRevId',
+        code: PrintTemplateErrorCode.PUBLISH_NOT_OURS,
         message: 'ptlPublishedRevId must name a revision of THIS template',
       });
     } else if (target.ptvIsDeleted) {
       errors.push({
         field: 'ptlPublishedRevId',
+        code: PrintTemplateErrorCode.PUBLISH_DELETED,
         message: `Revision ${target.ptvRevNo} is deleted and cannot be published`,
       });
     } else if (target.ptvStatus !== 'PUBLISHED') {
       errors.push({
         field: 'ptlPublishedRevId',
+        code: PrintTemplateErrorCode.PUBLISH_NOT_PUBLISHED,
         message:
           `Revision ${target.ptvRevNo} is ${target.ptvStatus}. Only a PUBLISHED revision may be ` +
           'the one a render uses — set its ptvStatus to PUBLISHED in the same call.',
@@ -1362,6 +1396,7 @@ export class PrintTemplateService {
       message,
       field,
       `${field} ${value} was not found`,
+      PrintTemplateErrorCode.NOT_FOUND,
     );
   }
 }

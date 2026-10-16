@@ -10,6 +10,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { RequestContextModule } from './common/request-context/request-context.module';
 import { RedisModule } from './common/redis/redis.module';
+import { DataChangesModule } from './common/data-changes/data-changes.module';
 import { QueueModule } from './common/queue/queue.module';
 import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
 import { SequenceModule } from './common/Sequence/sequence.module';
@@ -60,6 +61,7 @@ import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger
 import { LoyaltyStatusModule } from './modules/reports/loyalty-status/loyalty-status.module';
 import { ReportsPartyOutstandingModule } from './modules/reports/party-outstanding/party-outstanding.module';
 import { DaySummaryModule } from './modules/reports/day-summary/day-summary.module';
+import { TenderDayBookModule } from './modules/reports/tender-day-book/tender-day-book.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -151,6 +153,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     }),
     RequestContextModule,
     RedisModule,
+    DataChangesModule,
     QueueModule,
     ConfiguredGridSqlModule,
     SequenceModule,
@@ -220,6 +223,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     LedgerStatementModule,
     // Account Day Summary — the day book (menu 284, Day Book Detail 181).
     DaySummaryModule,
+    TenderDayBookModule,
     ReportsPartyOutstandingModule,
     LoyaltyStatusModule,
     LedgerMapModule,

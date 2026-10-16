@@ -47,6 +47,7 @@ import {
   type OpeningBillsPayload,
   type OpeningBillsSavePayload,
 } from './types/opening-balance-api.types';
+import { OpeningBalanceErrorCode } from './types/opening-balance-error-codes';
 
 /**
  * §4.6 / §5.3 — the bill-by-bill breakup.
@@ -129,6 +130,7 @@ export class BillWiseService {
           {
             field: 'partyId',
             message: `"${party.ledName}" is not a bill-by-bill ledger — open it with a figure on the opening balances screen instead`,
+            code: OpeningBalanceErrorCode.NOT_BILL_WISE,
           },
         ]);
       }
@@ -361,6 +363,7 @@ export class BillWiseService {
           {
             field: 'opId',
             message: `opId ${dto.opId} is not this party's opening for ${accYear} at this branch`,
+            code: OpeningBalanceErrorCode.OPENING_MISMATCH,
           },
         ]);
       }
@@ -445,6 +448,7 @@ export class BillWiseService {
         errors.push({
           field: `bills.${index}.ablDocRefno`,
           message: 'A bill reference is required — it is the original invoice number',
+          code: OpeningBalanceErrorCode.BILL_REF_REQUIRED,
         });
       }
 
@@ -454,6 +458,7 @@ export class BillWiseService {
         errors.push({
           field: `bills.${index}.ablDocRefno`,
           message: `"${refno}" appears twice in this breakup (rows ${firstIndex} and ${index}) — one bill per reference per year`,
+          code: OpeningBalanceErrorCode.BILL_REF_REPEATED,
         });
       } else {
         seenRefnos.set(refno.toUpperCase(), index);
@@ -465,6 +470,7 @@ export class BillWiseService {
         errors.push({
           field: `bills.${index}.ablBillAmount`,
           message: 'A bill amount must be greater than zero — put the side in ablDrCr',
+          code: OpeningBalanceErrorCode.BILL_AMOUNT_NOT_POSITIVE,
         });
       }
 
@@ -472,6 +478,7 @@ export class BillWiseService {
         errors.push({
           field: `bills.${index}.ablDueDate`,
           message: `Due date ${row.ablDueDate} is before the bill date ${row.ablDocDate}`,
+          code: OpeningBalanceErrorCode.BILL_DUE_BEFORE_DATE,
         });
       }
 
@@ -484,6 +491,7 @@ export class BillWiseService {
         errors.push({
           field: `bills.${index}.ablId`,
           message: `Bill ${row.ablId} is not an opening bill of this party for this year`,
+          code: OpeningBalanceErrorCode.BILL_NOT_FOUND,
         });
         continue;
       }
@@ -507,6 +515,7 @@ export class BillWiseService {
             `"${existing.ablDocRefno}" has ${settled.toFixed(2)} settled against it, so its amount, side, ` +
             'reference and date are fixed. Either add a correcting opening bill for the difference, ' +
             'or reverse the allocation in the receipt screen first and then edit this one.',
+          code: OpeningBalanceErrorCode.BILL_SETTLED_EDIT,
         });
       }
     }
@@ -539,6 +548,7 @@ export class BillWiseService {
             message:
               `"${args.data.ablDocRefno}" is already an opening bill of this party for this year. ` +
               'Send its ablId to update it, or use a different reference.',
+            code: OpeningBalanceErrorCode.BILL_REF_EXISTS,
           },
         ]);
       }
@@ -570,6 +580,7 @@ export class BillWiseService {
           message:
             `"${bill.ablDocRefno}" has ${settledTotal(bill).toFixed(2)} settled against it and cannot be ` +
             'removed from the breakup. Reverse the allocation in the receipt screen first.',
+          code: OpeningBalanceErrorCode.BILL_SETTLED_REMOVE,
         })),
       );
     }
@@ -598,6 +609,7 @@ export class BillWiseService {
         'Party not found',
         'partyId',
         `Ledger ${partyId} does not exist or does not belong to this company`,
+        OpeningBalanceErrorCode.PARTY_NOT_FOUND,
       );
     }
     return { ledName: party.ledName, ledIsBillByBill: party.ledIsBillByBill };
@@ -666,6 +678,7 @@ export class BillWiseService {
         {
           field: 'accYear',
           message: `"${accYear}" is not an accounting year — expected YYYY-YYYY with the second half one greater than the first`,
+          code: OpeningBalanceErrorCode.ACC_YEAR_INVALID,
         },
       ]);
     }

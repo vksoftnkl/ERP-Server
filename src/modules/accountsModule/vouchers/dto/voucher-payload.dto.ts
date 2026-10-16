@@ -219,6 +219,18 @@ export class VoucherLineDto {
   @ValidateNested()
   @Type(() => VoucherInstrumentDto)
   instrument?: VoucherInstrumentDto | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Notes 126 §6 — a CONTRA line’s tender (the "from" tender on the CR line, the "to" tender on the DR ' +
+      'line): a CASH tender on a cash ledger, a BANK tender on its own bank ledger (send that ledger as ' +
+      'ledgerId). Required on a Contra (VCH_MONEY_LINE_NO_TENDER), refused on any other type ' +
+      '(VCH_INSTRUMENT_NOT_ALLOWED: a Receipt / Payment names its tender in `instrument`).',
+  })
+  @NullableUuid()
+  tenderId?: string | null;
 }
 
 export class VoucherAllocationDto {

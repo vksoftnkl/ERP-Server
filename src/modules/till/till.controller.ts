@@ -401,6 +401,7 @@ export class TillController {
       lines: dto.lines,
       reasonId: dto.reasonId ?? null,
       notes: dto.notes ?? null,
+      approvalId: dto.approvalId ?? null,
     });
     return { success: true, message: `Session ${data.tssSessionNo} opened`, data };
   }
@@ -775,6 +776,12 @@ export class TillController {
   @ApiConflictResponse({
     type: TillErrorResponseDto,
     description: 'TILL_SESSION_NOT_OPEN · TILL_HOLDS_OPEN',
+  })
+  @ApiForbiddenResponse({
+    type: TillErrorResponseDto,
+    description:
+      'TILL_FORCE_CLOSE_SELF (the session’s own cashier — notes 127 §6) · TILL_APPROVER_NO_GRANT · ' +
+      'TILL_APPROVER_LIMIT · TILL_APPROVER_PIN · TILL_RIGHT_OVERRIDE',
   })
   async forceClose(
     @Body() dto: ForceCloseTillSessionDto,

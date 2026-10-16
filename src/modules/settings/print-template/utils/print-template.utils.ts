@@ -9,9 +9,12 @@ import {
 } from 'src/common/utils/module-service.utils';
 import {
   PrintTemplateDatasetPayload,
+  PrintTemplateErrorDetail,
+  PrintTemplateErrorResponse,
   PrintTemplatePayload,
   PrintTemplateVersionPayload,
 } from '../types/print-template-api.types';
+import { PrintTemplateErrorCode } from '../types/print-template-error-codes';
 
 // ─── What a read pulls back ────────────────────────────────────────────────
 
@@ -184,13 +187,16 @@ export function toTemplatePayload(
 export function handlePrintTemplateWriteError(error: unknown): void {
   if (isUniqueConstraintError(error)) {
     const target = describeUniqueTarget(error);
-    throwSettingsConflict(target.message, [{ field: target.field, message: target.detail }]);
+    throwSettingsConflict<PrintTemplateErrorDetail, PrintTemplateErrorResponse>(target.message, [
+      { field: target.field, code: target.code, message: target.detail },
+    ]);
     return;
   }
   if (isForeignKeyConstraintError(error)) {
-    throwSettingsBadRequest('Validation failed', [
+    throwSettingsBadRequest<PrintTemplateErrorDetail, PrintTemplateErrorResponse>('Validation failed', [
       {
         field: resolveForeignKeyField(error),
+        code: PrintTemplateErrorCode.REFERENCE_INVALID,
         message: 'Referenced record was not found, or is still in use by another row',
       },
     ]);
@@ -202,9 +208,10 @@ export function handlePrintTemplateWriteError(error: unknown): void {
   // "Internal server error".
   const constraint = matchCheckConstraint(error);
   if (constraint) {
-    throwSettingsBadRequest('Validation failed', [
+    throwSettingsBadRequest<PrintTemplateErrorDetail, PrintTemplateErrorResponse>('Validation failed', [
       {
         field: fieldForConstraint(constraint),
+        code: PrintTemplateErrorCode.DB_REFUSED,
         message: `The database refused this row: ${constraint}. See the printing schema notes for what it enforces.`,
       },
     ]);
@@ -213,6 +220,7 @@ export function handlePrintTemplateWriteError(error: unknown): void {
 
 interface UniqueTarget {
   field: string;
+  code: PrintTemplateErrorCode;
   message: string;
   detail: string;
 }
@@ -222,6 +230,7 @@ function describeUniqueTarget(error: unknown): UniqueTarget {
   if (target.includes('ptv_rev_no') || target.includes('ptvRevNo')) {
     return {
       field: 'ptvRevNo',
+      code: PrintTemplateErrorCode.REV_NO_TAKEN,
       message: 'Duplicate revision number',
       detail:
         'This template already has a version with that ptvRevNo. Revision numbers are dense, ' +
@@ -231,6 +240,7 @@ function describeUniqueTarget(error: unknown): UniqueTarget {
   if (target.includes('ptd_dataset_no') || target.includes('ptdDatasetNo')) {
     return {
       field: 'ptdDatasetNo',
+      code: PrintTemplateErrorCode.DATASET_NO_TAKEN,
       message: 'Duplicate dataset number',
       detail: 'Another dataset on this version already claims that number',
     };
@@ -238,6 +248,7 @@ function describeUniqueTarget(error: unknown): UniqueTarget {
   if (target.includes('ptd_name') || target.includes('ptdName')) {
     return {
       field: 'ptdName',
+      code: PrintTemplateErrorCode.DATASET_NAME_TAKEN,
       message: 'Duplicate dataset name',
       detail: 'Another dataset on this version already has that name',
     };
@@ -245,6 +256,7 @@ function describeUniqueTarget(error: unknown): UniqueTarget {
   if (target.includes('ptd_role') || target.includes('one_master')) {
     return {
       field: 'ptdRole',
+      code: PrintTemplateErrorCode.DATASET_MASTER_TWICE,
       message: 'Duplicate MASTER dataset',
       detail: 'A version may hold at most one MASTER dataset',
     };
@@ -252,12 +264,14 @@ function describeUniqueTarget(error: unknown): UniqueTarget {
   if (target.includes('ptl_code') || target.includes('ptlCode')) {
     return {
       field: 'ptlCode',
+      code: PrintTemplateErrorCode.CODE_TAKEN,
       message: 'Duplicate template code',
       detail: 'A template with that code already exists for this owner',
     };
   }
   return {
     field: 'request',
+    code: PrintTemplateErrorCode.DUPLICATE,
     message: 'Duplicate print template data is not allowed',
     detail: 'A record with the same unique values already exists',
   };

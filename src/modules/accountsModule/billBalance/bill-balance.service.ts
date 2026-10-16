@@ -6,6 +6,7 @@ import {
 import { PgService } from '../../../database/pg/pg.service';
 import { GetPartyCreditSummaryDto } from './dto/get-party-credit-summary.dto';
 import { PartyCreditSummary } from './types/bill-balance-api.types';
+import { BillBalanceErrorCode } from './types/bill-balance-error-codes';
 
 /**
  * The row the credit-summary query hands back. Every monetary column is cast to
@@ -85,6 +86,7 @@ export class BillBalanceService {
         companyId
           ? `No active customer found for id ${partyId} under company ${companyId}`
           : `No active customer found for id ${partyId}`,
+        BillBalanceErrorCode.PARTY_NOT_FOUND,
       );
     }
 

@@ -110,10 +110,18 @@ export class GstCompanyCredentialService {
         const validUpto = keep(toDateOnly(dto.gccValidUpto), existing?.gccValidUpto, null);
         const errors: GstErrorDetail[] = [];
         if (validUpto && validFrom > validUpto) {
-          errors.push({ field: 'gccValidUpto', message: 'must not be before gccValidFrom' });
+          errors.push({
+            field: 'gccValidUpto',
+            message: 'must not be before gccValidFrom',
+            code: GST_CODES.VALID_UPTO_BEFORE_FROM,
+          });
         }
         if (creating && !dto.password) {
-          errors.push({ field: 'password', message: 'password is required on create' });
+          errors.push({
+            field: 'password',
+            message: 'password is required on create',
+            code: GST_CODES.PASSWORD_REQUIRED,
+          });
         }
         if (errors.length) {
           this.support.badRequest(errors);
@@ -149,6 +157,7 @@ export class GstCompanyCredentialService {
             {
               field: hasClientId ? 'clientSecret' : 'clientId',
               message: 'clientId and clientSecret are set together, or neither',
+              code: GST_CODES.PAIR_INCOMPLETE,
             },
           ]);
         }
@@ -388,6 +397,7 @@ export class GstCompanyCredentialService {
           {
             field: 'gccBranchId',
             message: `the branch belongs to company ${branch.brCompId}, not this one`,
+            code: GST_CODES.BRANCH_OTHER_COMPANY,
           },
         ]);
       }

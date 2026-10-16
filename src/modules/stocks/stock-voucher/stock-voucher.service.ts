@@ -36,6 +36,7 @@ import {
 // guard, so every document that moves stock goes through the same door.
 import { StockPostingService } from '../posting/stock-posting.service';
 import { StockVoucherSource } from '../posting/stock-voucher.source';
+import { StockErrorCode } from '../types/stock-error-codes';
 import {
   appendTxnStatusLog,
   TxnStatusEvent,
@@ -492,6 +493,7 @@ export class StockVoucherService {
         if (refused === rules.voucherType) {
           errors.push({
             field: 'voucherType',
+            code: StockErrorCode.VOUCHER_TYPE_NOT_ALLOWED,
             message: `${rules.voucherType} cannot be saved through this route.`,
           });
         }
@@ -503,12 +505,14 @@ export class StockVoucherService {
     if (rules.requiresToGodown && !header.toGodownId) {
       errors.push({
         field: 'toGodownId',
+        code: StockErrorCode.TO_GODOWN_REQUIRED,
         message: `A ${rules.displayName} must name the godown the stock arrives in.`,
       });
     }
     if (rules.requiresFromGodown && !header.fromGodownId) {
       errors.push({
         field: 'fromGodownId',
+        code: StockErrorCode.FROM_GODOWN_REQUIRED,
         message: `A ${rules.displayName} must name the godown the stock leaves from.`,
       });
     }
@@ -521,6 +525,7 @@ export class StockVoucherService {
       if (signed >= 0) {
         errors.push({
           field: `lines.${signed}`,
+          code: StockErrorCode.LINE_DIRECTION_NOT_ALLOWED,
           message: `Line ${lines[signed].lineNo}: only a stock adjustment states a direction per line; a ${rules.displayName.toLowerCase()} moves every line the same way.`,
         });
       }
@@ -534,11 +539,13 @@ export class StockVoucherService {
         if (!line.toBucket) {
           errors.push({
             field: `lines.${index}.toBucket`,
+            code: StockErrorCode.MOVE_TO_BUCKET_REQUIRED,
             message: `Line ${line.lineNo}: a stock move names the bucket the stock moves to.`,
           });
         } else if (line.toBucket === (line.bucket ?? 'SALEABLE')) {
           errors.push({
             field: `lines.${index}.toBucket`,
+            code: StockErrorCode.MOVE_SAME_BUCKET,
             message: `Line ${line.lineNo}: moves stock from ${line.toBucket} into ${line.toBucket}. Pick a different bucket.`,
           });
         }
@@ -550,6 +557,7 @@ export class StockVoucherService {
       if (moved >= 0) {
         errors.push({
           field: `lines.${moved}.toBucket`,
+          code: StockErrorCode.TO_BUCKET_NOT_ALLOWED,
           message: `Line ${lines[moved].lineNo}: only a stock move names a destination bucket; a ${rules.displayName.toLowerCase()} keeps the stock where it is.`,
         });
       }
@@ -557,6 +565,7 @@ export class StockVoucherService {
     if (!rules.allowsToBranch && header.toBranchId) {
       errors.push({
         field: 'toBranchId',
+        code: StockErrorCode.TO_BRANCH_NOT_ALLOWED,
         message: `Only a transfer names the branch stock is going to; a ${rules.displayName.toLowerCase()} does not leave the branch.`,
       });
     }
@@ -564,6 +573,7 @@ export class StockVoucherService {
       if (header.freezeStock || header.freezeFrom || header.freezeTo) {
         errors.push({
           field: 'freezeStock',
+          code: StockErrorCode.FREEZE_NOT_ALLOWED,
           message: `Only a physical count freezes stock; a ${rules.displayName.toLowerCase()} counts nothing.`,
         });
       }
@@ -581,6 +591,7 @@ export class StockVoucherService {
         // out of afterwards.
         errors.push({
           field: `lines.${at}`,
+          code: StockErrorCode.COUNT_FIELDS_NOT_ALLOWED,
           message: `Line ${lines[at].lineNo}: bookQty and countedQty belong to a physical count. A ${rules.displayName.toLowerCase()} states a quantity, it does not reconcile one.`,
         });
       }
@@ -589,6 +600,7 @@ export class StockVoucherService {
       // constraint name rather than as a field.
       errors.push({
         field: 'freezeStock',
+        code: StockErrorCode.FREEZE_WINDOW_REQUIRED,
         message:
           'A freeze needs both freezeFrom and freezeTo — without a window the count measures a moving target.',
       });
@@ -606,6 +618,7 @@ export class StockVoucherService {
     if (linkGiven.length > 0 && linkGiven.length < linkParts.length) {
       errors.push({
         field: 'linkSrcModule',
+        code: StockErrorCode.LINK_INCOMPLETE,
         message:
           'The source document is all four of linkSrcModule, linkSrcDocType, linkSrcDocId and linkSrcAccYear, or none of them (ck_svh_link).',
       });
@@ -614,7 +627,7 @@ export class StockVoucherService {
       // A draft with no lines is allowed to EXIST — a user opens the screen,
       // fills the header and walks away — but not to be created empty by an
       // importer that resolved nothing.
-      errors.push({ field: 'lines', message: 'A document must have at least one line.' });
+      errors.push({ field: 'lines', code: StockErrorCode.LINES_REQUIRED, message: 'A document must have at least one line.' });
     }
     // ck_svh_freeze refuses a freeze with no window, and it refuses it from
     // Postgres with a constraint name. Caught here it is a 422 that says which
@@ -622,6 +635,7 @@ export class StockVoucherService {
     if (header.freezeStock && (!header.freezeFrom || !header.freezeTo)) {
       errors.push({
         field: 'freezeFrom',
+        code: StockErrorCode.FREEZE_WINDOW_REQUIRED,
         message:
           'A stock freeze needs a window: send freezeFrom and freezeTo as instants with an offset. The guard compares them to now(), not to the document date.',
       });
@@ -631,7 +645,7 @@ export class StockVoucherService {
     const freezeFrom = this.toInstant(header.freezeFrom);
     const freezeTo = this.toInstant(header.freezeTo);
     if (freezeFrom !== null && freezeTo !== null && freezeTo <= freezeFrom) {
-      errors.push({ field: 'freezeTo', message: 'freezeTo must be after freezeFrom.' });
+      errors.push({ field: 'freezeTo', code: StockErrorCode.FREEZE_WINDOW_ORDER, message: 'freezeTo must be after freezeFrom.' });
     }
     const isCount = rules.quantityMode === 'COUNT';
     // §17 open item 1: the counted godown is named ONCE, on the header, and
@@ -655,6 +669,7 @@ export class StockVoucherService {
         // partition-local index and no line number.
         errors.push({
           field,
+          code: StockErrorCode.LINE_DUPLICATE,
           message: `Line ${line.lineNo} split ${splitNo} is already used by row ${firstAt + 1}.`,
         });
       } else {
@@ -667,6 +682,7 @@ export class StockVoucherService {
         // voucher type. A negative opening is an ADJUSTMENT, not an opening.
         errors.push({
           field,
+          code: StockErrorCode.LINE_QTY_NEGATIVE,
           message: `Line ${line.lineNo}: quantities are magnitudes and cannot be negative. A negative opening is an ADJUSTMENT.`,
         });
       } else if (!isCount && qty === 0 && freeQty === 0) {
@@ -675,6 +691,7 @@ export class StockVoucherService {
         // this refuses the whole document at save, one error per line.
         errors.push({
           field,
+          code: StockErrorCode.LINE_QTY_REQUIRED,
           message: `Line ${line.lineNo} has no quantity.`,
         });
       }
@@ -685,6 +702,7 @@ export class StockVoucherService {
         // than reaching Postgres as a NOT NULL violation naming a column.
         errors.push({
           field,
+          code: StockErrorCode.LINE_UNIT_REQUIRED,
           message: `Line ${line.lineNo} names no unit. uomId is an item_unit_conversion iuc_id, not a unit_id.`,
         });
       }
@@ -696,6 +714,7 @@ export class StockVoucherService {
           // could point the line at a different one than the book figure.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_UNIT_NOT_ALLOWED,
             message: `Line ${line.lineNo}: a count line names no unit. It is counted in the base unit the book figure is held in, read from the balance row.`,
           });
         }
@@ -705,6 +724,7 @@ export class StockVoucherService {
           // that posts as a count is a variance nobody typed.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_QTY_NOT_ALLOWED,
             message: `Line ${line.lineNo}: a count line states what was FOUND, not a quantity to move. Send countedQty and leave qty at 0 — a quantity to move is an ADJUSTMENT.`,
           });
         }
@@ -712,6 +732,7 @@ export class StockVoucherService {
           // §3.3 — the engine decides both directions. See the cost rule below.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_COST_NOT_ALLOWED,
             message: `Line ${line.lineNo}: a count line carries no cost rate. An overage is valued from the document's rate source; a shortage at what the stock cost us, stamped by the engine.`,
           });
         }
@@ -721,6 +742,7 @@ export class StockVoucherService {
           // book figure the client chose turns a variance into a wish.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_BOOK_QTY_NOT_ALLOWED,
             message: `Line ${line.lineNo}: bookQty is read from stock_balance at save time and is never taken from the payload.`,
           });
         }
@@ -730,6 +752,7 @@ export class StockVoucherService {
           // mistake this screen can make.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_NOT_COUNTED,
             message: `Line ${line.lineNo} has not been counted yet. Send countedQty: 0 to record that nothing was found — absent means the counter has not reached this line.`,
           });
         } else if (this.toDecimalNumber(line.countedQty) < 0) {
@@ -737,6 +760,7 @@ export class StockVoucherService {
           // derived svi_diff_qty is signed.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_QTY_NEGATIVE,
             message: `Line ${line.lineNo}: countedQty is a count and cannot be negative. Only the derived difference is signed.`,
           });
         }
@@ -746,12 +770,14 @@ export class StockVoucherService {
           // sheet" path, caught before the balance lookup.
           errors.push({
             field,
+            code: StockErrorCode.COUNT_HOLDING_REQUIRED,
             message: `Line ${line.lineNo} names no holding. A count line comes from the count sheet, which carries the lotId its book figure was read from.`,
           });
         }
         if (countedGodownId && line.godownId !== countedGodownId) {
           errors.push({
             field,
+            code: StockErrorCode.COUNT_GODOWN_MISMATCH,
             message: `Line ${line.lineNo} is in a different godown than the one this count names. A count is per godown.`,
           });
         }
@@ -766,6 +792,7 @@ export class StockVoucherService {
         if (!line.lotId) {
           errors.push({
             field,
+            code: StockErrorCode.LINE_LOT_REQUIRED,
             message: `Line ${line.lineNo} names no lot. A ${rules.displayName.toLowerCase()} moves existing stock — pick the holding from the balance, which carries its lotId.`,
           });
         }
@@ -774,12 +801,14 @@ export class StockVoucherService {
         // balance names its holding; an inward one leaves the engine to it.
         errors.push({
           field,
+          code: StockErrorCode.LINE_LOT_NOT_ALLOWED,
           message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} does not choose its own lot. The engine resolves it at post.`,
         });
       }
       if (this.toDecimalNumber(line.weightQty ?? 0) < 0) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_WEIGHT_NEGATIVE,
           message: `Line ${line.lineNo}: weight is a magnitude and cannot be negative.`,
         });
       }
@@ -788,6 +817,7 @@ export class StockVoucherService {
         // split BY BATCH.
         errors.push({
           field,
+          code: StockErrorCode.LINE_SPLIT_BATCH_REQUIRED,
           message: `Line ${line.lineNo} split ${splitNo} needs a batch number.`,
         });
       }
@@ -795,6 +825,7 @@ export class StockVoucherService {
         // ck_svi_expiry_order
         errors.push({
           field,
+          code: StockErrorCode.LINE_EXPIRY_BEFORE_MFG,
           message: `Line ${line.lineNo}: expiry ${line.expiryDate} is before manufacture ${line.mfgDate}.`,
         });
       }
@@ -811,6 +842,7 @@ export class StockVoucherService {
       ) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_COST_NOT_ALLOWED,
           message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} carries no cost rate. The stock is valued at what it cost where it came from, stamped by the engine, and that figure travels with it.`,
         });
       }
@@ -841,6 +873,7 @@ export class StockVoucherService {
       ) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_COST_REQUIRED,
           message: header.rateSource
             ? `Line ${line.lineNo} brings stock in at cost 0 and the rate source is ${header.rateSource}, which derives nothing. Type the cost rate.`
             : `Line ${line.lineNo} brings stock in at cost 0 and the document names no rate source. Set a cost rate, or a rateSource for the engine to derive one from.`,
@@ -927,6 +960,7 @@ export class StockVoucherService {
       if (!reason) {
         errors.push({
           field: first.field,
+          code: StockErrorCode.REASON_NOT_FOUND,
           message: `No stock reason ${reasonId} visible to this company. A reason is either the company's own or one shared with every company.`,
         });
         continue;
@@ -936,6 +970,7 @@ export class StockVoucherService {
         // that decision one document at a time.
         errors.push({
           field: first.field,
+          code: StockErrorCode.REASON_INACTIVE,
           message: `Stock reason ${reason.srmCode} (${reason.srmName}) is inactive.`,
         });
         continue;
@@ -957,6 +992,7 @@ export class StockVoucherService {
       if (allowed.length && !allowed.some((txnType) => rules.ledgerTxnTypes.includes(txnType))) {
         errors.push({
           field: first.field,
+          code: StockErrorCode.REASON_NOT_ALLOWED,
           message: `Stock reason ${reason.srmCode} (${reason.srmName}) may not be cited by a ${rules.displayName.toLowerCase()}; it is restricted to ${allowed.join(', ')}.`,
         });
         continue;
@@ -969,6 +1005,7 @@ export class StockVoucherService {
           if (!citation.remarks?.trim()) {
             errors.push({
               field: citation.field,
+              code: StockErrorCode.REASON_REMARK_REQUIRED,
               message: `Stock reason ${reason.srmCode} (${reason.srmName}) requires a remark saying what happened.`,
             });
           }
@@ -1416,16 +1453,19 @@ export class StockVoucherService {
       if (stored === null) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_ID_ON_NEW,
           message: `Line ${line.lineNo} sends line id ${id}, but a new ${rules.displayName.toLowerCase()} has no lines yet. Send it without sviId.`,
         });
       } else if (seen.has(id)) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_ID_REPEATED,
           message: `Line ${line.lineNo} repeats line id ${id}: one stored line cannot become two.`,
         });
       } else if (!stored.has(id)) {
         errors.push({
           field,
+          code: StockErrorCode.LINE_ID_STALE,
           message: `Line ${line.lineNo} names line ${id}, which is not a line of this document any more. Reload it and save again.`,
         });
       }
@@ -1536,6 +1576,7 @@ export class StockVoucherService {
       if (!holding) {
         errors.push({
           field: `lines.${index}`,
+          code: StockErrorCode.COUNT_HOLDING_GONE,
           message: `Line ${line.lineNo} names a holding this godown no longer has — regenerate the count sheet. (Someone may have sold the last of this lot while the count was being taken.)`,
         });
         return;
@@ -1545,6 +1586,7 @@ export class StockVoucherService {
         // means the line was assembled from two different sheets.
         errors.push({
           field: `lines.${index}`,
+          code: StockErrorCode.COUNT_HOLDING_OTHER_ITEM,
           message: `Line ${line.lineNo} names a holding that belongs to another item — regenerate the count sheet.`,
         });
       }
@@ -1770,6 +1812,7 @@ export class StockVoucherService {
         `${rules.displayName} not found`,
         'svhId',
         `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`,
+        StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
     const lines = await client.$queryRaw<LineRow[]>`
@@ -2192,6 +2235,7 @@ export class StockVoucherService {
         `This ${rules.displayName.toLowerCase()} cannot be posted`,
         problems.map((row) => ({
           field: `lines.${row.lineNo}`,
+          code: StockErrorCode.LINE_NOT_POSTABLE,
           message: `Line ${row.lineNo}${row.splitNo > 1 ? ` split ${row.splitNo}` : ''} (${row.itemName}): ${row.problem}`,
         })),
       );
@@ -2362,6 +2406,7 @@ export class StockVoucherService {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Cancellation needs a reason', [
         {
           field: 'reason',
+          code: StockErrorCode.CANCEL_REASON_REQUIRED,
           message: 'A cancelled document with no reason is unanswerable three months later.',
         },
       ]);
@@ -2377,6 +2422,7 @@ export class StockVoucherService {
         [
           {
             field: 'svhId',
+            code: StockErrorCode.VOUCHER_ALREADY_CANCELLED,
             message: `${existing.svhRefno} was cancelled on ${cancelStep?.tslChangedOn.toISOString() ?? 'an earlier date'}.`,
           },
         ],
@@ -2396,6 +2442,7 @@ export class StockVoucherService {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} is a draft`, [
         {
           field: 'svhId',
+          code: StockErrorCode.VOUCHER_DRAFT_NOT_CANCELLABLE,
           message: `${existing.svhRefno} is DRAFT and has moved no stock of its own, so there is nothing to reverse. Delete it instead — cancelling it would strand the despatch it settles.`,
         },
       ]);
@@ -2493,6 +2540,7 @@ export class StockVoucherService {
         [
           {
             field: 'svhId',
+            code: StockErrorCode.VOUCHER_NOT_DELETABLE,
             message:
               existing.svhStatus === 'CANCELLED'
                 ? // Reached by a cancelled DRAFT too, which has no ledger rows
@@ -2622,6 +2670,7 @@ export class StockVoucherService {
         `${rules.displayName} not found`,
         'svhId',
         `No ${rules.voucherType} voucher ${svhId} in ${accYear}.`,
+        StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
     // Every row that names no godown of its own inherits the document's. For an
@@ -2635,6 +2684,7 @@ export class StockVoucherService {
         [
           {
             field: 'svhId',
+            code: StockErrorCode.IMPORT_NO_GODOWN,
             message: `${header.svhRefno} names no godown, so a row without one has nowhere to go. Save the header with a godown first.`,
           },
         ],
@@ -2864,6 +2914,7 @@ export class StockVoucherService {
         [
           {
             field: 'voucherType',
+            code: StockErrorCode.COUNT_SHEET_WRONG_TYPE,
             message: `A ${rules.displayName.toLowerCase()} states its own lines; only a count generates them from the book.`,
           },
         ],
@@ -3039,6 +3090,7 @@ export class StockVoucherService {
         `${rules.displayName} not found`,
         'svhId',
         `No ${rules.voucherType} voucher ${svhId} in ${accYear}.`,
+        StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
     return existing;
@@ -3193,6 +3245,7 @@ export class StockVoucherService {
         `${rules.displayName} not found`,
         'svhId',
         `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`,
+        StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
     return existing;
@@ -3203,7 +3256,7 @@ export class StockVoucherService {
   ): void {
     if (existing.svhIsDeleted) {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} is deleted`, [
-        { field: 'svhId', message: `${existing.svhRefno} has been deleted.` },
+        { field: 'svhId', code: StockErrorCode.VOUCHER_DELETED, message: `${existing.svhRefno} has been deleted.` },
       ]);
     }
     if (existing.svhStatus !== 'DRAFT') {
@@ -3212,6 +3265,7 @@ export class StockVoucherService {
         [
           {
             field: 'svhId',
+            code: StockErrorCode.VOUCHER_NOT_DRAFT,
             message: `${existing.svhRefno} is ${existing.svhStatus}; only a DRAFT voucher can be edited or posted. A posted document accepts only cancel and print.`,
           },
         ],

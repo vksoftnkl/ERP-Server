@@ -19,6 +19,7 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
+import { StateErrorCode } from './types/state-error-codes';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 @Injectable()
 export class StateService {
@@ -73,6 +74,7 @@ export class StateService {
             {
               field: 'parentId',
               message: `No active account group found with id ${parentId}`,
+              code: StateErrorCode.PARENT_GROUP_NOT_FOUND,
             },
           ]);
         }
@@ -173,6 +175,7 @@ export class StateService {
           {
             field: 'stmId',
             message: `State ${stmId} is used by ${cityCount} city(s).`,
+            code: StateErrorCode.HAS_CITIES,
           },
         ]);
       }

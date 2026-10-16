@@ -1,6 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -47,6 +46,8 @@ import {
   ItemEanCodePayload,
   ItemEanCodeSuccessResponse,
 } from './types/item-ean-code-api.types';
+import { ItemEanErrorCode } from './types/item-ean-error-codes';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   hasRequestPayload,
@@ -209,9 +210,11 @@ export class ItemsEanCodeMasterController {
     }
 
     if (!eanId?.trim()) {
-      throw new BadRequestException({
-        message: ['ean_id is required'],
-      });
+      // The house body the filter used to build from the bare validation
+      // payload (same status, message and field), now with its code.
+      throwInventoryBadRequest('Validation failed', [
+        { field: 'ean_id', code: ItemEanErrorCode.ID_REQUIRED, message: 'ean_id is required' },
+      ]);
     }
 
     return await validateDto(

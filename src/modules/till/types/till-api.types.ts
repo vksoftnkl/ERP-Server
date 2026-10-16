@@ -9,6 +9,7 @@ import type {
   TillCountKind,
   TillCountOutcome,
   TillDayStatus,
+  TillErrorCode,
   TillFloatMode,
   TillHandoverReceipt,
   TillMovementKind,
@@ -31,7 +32,8 @@ import type {
  */
 
 export interface TillErrorDetail extends ModuleErrorDetail {
-  code?: string;
+  /** Notes 119: every till refusal names one — the client words its box by it. */
+  code: TillErrorCode;
   /** TILL_APPROVAL_REQUIRED: what the TillGate needs to request one. */
   event?: string;
   amount?: number;
@@ -112,6 +114,15 @@ export interface TillDayPayload {
     expected: number;
     counted: number | null;
     remitted: number;
+    /**
+     * Notes 124 §3: the book below zero (the opening of a closed day, or the
+     * expected) — printed as it is, with the reason beside it.
+     */
+    belowZero: boolean;
+    /** Cash handed over and not yet received into a safe, at the end of the day before. */
+    awaitingOpening: number;
+    /** The same at the end of the day. */
+    awaiting: number;
   };
 }
 
@@ -369,6 +380,8 @@ export interface TillSessionPayload {
   receivedBy: string | null;
   receivedByName: string | null;
   receivedOn: string | null;
+  /** Notes 127 §3 — the latest receipt was made by the session's own cashier. */
+  receivedBySelf: boolean;
 }
 
 export interface TillMovementPayload {
@@ -550,6 +563,13 @@ export interface TillCashApprovalMovementPayload {
 }
 
 /** /till/sessions/approve-cash (notes 114): the session's cash, as approved. */
+/**
+ * Notes 127 §3 — the session's own cashier approved its cash into the safe:
+ * RULE under the company's CASH_VARIANCE rule (`tar_allow_self`, with their
+ * PIN); SINGLE_OPERATOR under till.single_operator.
+ */
+export type SelfCashApproval = 'RULE' | 'SINGLE_OPERATOR';
+
 export interface TillCashApprovalPayload {
   tssId: string;
   tssAccYear: string;
@@ -577,6 +597,8 @@ export interface TillCashApprovalPayload {
   varianceVoucherId: string | null;
   varianceVoucherNo: string | null;
   receivedOn: string;
+  /** Approved by the session's own cashier, and on what footing; null when by someone else. */
+  selfApproval: SelfCashApproval | null;
   movements: TillCashApprovalMovementPayload[];
   session: TillSessionPayload;
 }
@@ -775,14 +797,16 @@ export interface TillApprovalRulePayload {
 }
 
 /**
- * What an approval rule would ask of one money document (TillApprovalService.
- * assess): reported by the expense voucher and the payment until phase 3 builds
- * the gate, never enforced before then.
+ * What an approval rule asks of one money document (TillApprovalService.
+ * assess). Notes 124 §5: the gate acts on it — under `till.approval_gate`
+ * WARN the document goes through and a PENDING request waits in the inbox
+ * (`approvalId`); under REFUSE, on a rule that blocks the till, it is refused
+ * until an approved request is brought (`enforced` true, `approvalId` that one).
  */
 export interface TillApprovalNeed {
   /** ck_tar_event: CASH_PAYMENT, EXPENSE … */
   event: string;
-  ruleId: string;
+  ruleId: string | null;
   /** ALWAYS | OVER_AMOUNT */
   mode: string;
   threshold: number;
@@ -794,8 +818,100 @@ export interface TillApprovalNeed {
   channel: string;
   twoPerson: boolean;
   blocksTill: boolean;
-  /** false until phase 3: the document posts, and the need is on its record. */
-  enforced: false;
+  /** True when the gate refused (or would refuse) the document without an approved request. */
+  enforced: boolean;
+  /** The request filed for review (WARN), or the approved one the document took. */
+  approvalId?: string | null;
+}
+
+/** till_approval.tap_status. */
+export type TillApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
+
+/** One approval request (notes 124 §5): approvals/request · decide · get · cancel answer it. */
+export interface TillApprovalPayload {
+  tapId: string;
+  tapAccYear: string;
+  companyId: string;
+  branchId: string;
+  event: string;
+  status: TillApprovalStatus;
+  amount: number;
+  requiredRole: string;
+  /** The rule's channel while PENDING (COUNTER · REMOTE · EITHER); the one used once decided. */
+  channel: string;
+  twoPerson: boolean;
+  selfAllowed: boolean;
+  sessionId: string | null;
+  sessionNo: string | null;
+  counterId: string | null;
+  counterName: string | null;
+  srcDocType: string | null;
+  srcDocId: string | null;
+  srcRefno: string | null;
+  reasonId: string | null;
+  reasonName: string | null;
+  requestedBy: string;
+  requestedByName: string | null;
+  requestedOn: string;
+  requestNote: string | null;
+  decidedBy: string | null;
+  decidedByName: string | null;
+  decidedOn: string | null;
+  decisionNote: string | null;
+  secondBy: string | null;
+  secondByName: string | null;
+  secondOn: string | null;
+  expiresOn: string | null;
+  /** An approved request a document has already taken (it approves nothing more). */
+  usedOn: string | null;
+}
+
+/** What waits for an approver, and the route that decides it (approvals/pending). */
+export type TillApprovalInboxKind =
+  | 'REQUEST'
+  | 'SESSION_VARIANCE'
+  | 'RECEIVE_VARIANCE'
+  | 'SAFE_VARIANCE';
+
+export interface TillApprovalInboxItem {
+  kind: TillApprovalInboxKind;
+  /** The route that decides it: approvals/decide · sessions/decide-variance · safes/decide-variance. */
+  action: string;
+  event: string;
+  accYear: string;
+  tapId: string | null;
+  tssId: string | null;
+  tcmId: string | null;
+  tvrId: string | null;
+  safeId: string | null;
+  sessionNo: string | null;
+  counterName: string | null;
+  safeName: string | null;
+  /** Null for a caller without Till Sessions (273) OVERRIDE: a blind count's gap is not shown. */
+  amount: number | null;
+  requiredRole: string;
+  channel: string;
+  twoPerson: boolean;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  requestedOn: string | null;
+  expiresOn: string | null;
+  srcDocType: string | null;
+  srcDocId: string | null;
+  srcRefno: string | null;
+  note: string | null;
+  /** The session closed with this gap undecided (decided on sessions/decide-variance after close). */
+  afterClose: boolean;
+  /** Whether the caller's own authority could decide it (self, level, ceiling); a PIN may still be asked. */
+  canDecide: boolean;
+  /** Why not: TILL_APPROVER_SELF · TILL_APPROVER_NO_GRANT · TILL_APPROVER_LIMIT. */
+  cannotBecause: string | null;
+}
+
+export interface TillApprovalInboxPayload {
+  items: TillApprovalInboxItem[];
+  /** Requests swept to EXPIRED by this read. */
+  expired: number;
 }
 
 export interface TillApprovalAuthorityPayload {

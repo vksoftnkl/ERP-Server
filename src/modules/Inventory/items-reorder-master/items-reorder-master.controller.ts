@@ -1,6 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -41,11 +40,14 @@ import { ItemReorderExceptionFilter } from './item-reorder-exception.filter';
 import { ItemsReorderMasterService } from './items-reorder-master.service';
 import {
   ItemReorderDeleteResult,
+  ItemReorderErrorDetail,
   ItemReorderListItem,
   ItemReorderListMeta,
   ItemReorderPayload,
   ItemReorderSuccessResponse,
 } from './types/item-reorder-api.types';
+import { ItemReorderErrorCode } from './types/item-reorder-error-codes';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   hasRequestPayload,
@@ -65,7 +67,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemReorderSuccessSingleDto,
   ItemReorderSuccessListDto,
 )
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-reorders')
 @UseFilters(ItemReorderExceptionFilter)
 export class ItemsReorderMasterController {
@@ -208,9 +210,9 @@ export class ItemsReorderMasterController {
     }
 
     if (!irId?.trim()) {
-      throw new BadRequestException({
-        message: ['ir_id is required'],
-      });
+      throwInventoryBadRequest<ItemReorderErrorDetail>('Validation failed', [
+        { field: 'ir_id', code: ItemReorderErrorCode.ID_REQUIRED, message: 'ir_id is required' },
+      ]);
     }
 
     return await validateDto(

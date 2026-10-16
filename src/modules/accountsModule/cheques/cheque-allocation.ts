@@ -24,6 +24,7 @@ import type { ChequeBillRef, ChequeErrorDetail } from './types/cheque-api.types'
 import type { LockedCheque } from './cheques.guards';
 import type { RestoredAllocation } from './cheque-reversal.helper';
 import type { ChequeAllocationDto } from './dto/cheque-keys.dto';
+import { CHQ } from './types/cheque-error-codes';
 
 /**
  * Pouring one cheque's money into a party's bills — the shared half of the
@@ -175,6 +176,7 @@ export async function allocateChequeMoney(
       throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
         {
           field: 'allocations',
+          code: CHQ.ALLOCATION_WRONG,
           message:
             `The bounce of ${scope.cheque.apdInstrumentNo} took ${allocated.toFixed(2)} off the ` +
             `bills, but the cheque is for ${amount.toFixed(2)}. Re-present it with explicit ` +
@@ -185,6 +187,7 @@ export async function allocateChequeMoney(
     throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
       {
         field: 'allocations',
+        code: CHQ.ALLOCATION_WRONG,
         message:
           `The allocations come to ${allocated.toFixed(2)} but ${scope.cheque.apdInstrumentNo} ` +
           `is for ${amount.toFixed(2)}.`,
@@ -328,6 +331,7 @@ async function loadRestoredBills(
       throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
         {
           field: `allocations.${index}.billId`,
+          code: CHQ.ALLOCATION_WRONG,
           message:
             `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
             `${bill?.ablDocRefno ?? row.billId}, which no longer exists. Re-present it with ` +
@@ -352,6 +356,7 @@ async function loadRestoredBills(
       throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
         {
           field: `allocations.${index}.amount`,
+          code: CHQ.ALLOCATION_WRONG,
           message:
             `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
             `${bill.ablDocRefno}, which now has only ${bill.ablPendingAmount.toFixed(2)} ` +

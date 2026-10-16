@@ -48,6 +48,7 @@ import {
   type TrialBalancePayload,
   type UnclassifiedLedger,
 } from './types/opening-balance-api.types';
+import { OpeningBalanceErrorCode } from './types/opening-balance-error-codes';
 
 /**
  * §5.1 — the CRUD half of the module: list, save, trial balance, delete.
@@ -388,6 +389,7 @@ export class OpeningBalanceService {
             `"${inventory.ledgerName}" is the Stock-in-Hand ledger and accounts.cogs_mode is PERPETUAL: ` +
             'its opening comes from the Opening Stock document, which posts it at cost when it is posted. ' +
             'Keying it here as well would count the stock twice. Leave this row at 0.',
+          code: OpeningBalanceErrorCode.STOCK_LEDGER,
         });
       }
     }
@@ -412,6 +414,7 @@ export class OpeningBalanceService {
           'Opening balance not found',
           'opId',
           `No live opening balance ${opId} in ${year}`,
+          OpeningBalanceErrorCode.NOT_FOUND,
         );
       }
 
@@ -427,6 +430,7 @@ export class OpeningBalanceService {
           {
             field: 'opId',
             message: `This opening still has ${billCount} opening bill(s). Delete the bills first.`,
+            code: OpeningBalanceErrorCode.HAS_BILLS,
           },
         ]);
       }
@@ -621,6 +625,7 @@ export class OpeningBalanceService {
         {
           field,
           message: `"${accYear}" is not an accounting year — expected YYYY-YYYY with the second half one greater than the first`,
+          code: OpeningBalanceErrorCode.ACC_YEAR_INVALID,
         },
       ]);
     }
@@ -647,6 +652,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${index}.opLedgerId`,
           message: `Ledger ${row.opLedgerId} does not exist or does not belong to this company`,
+          code: OpeningBalanceErrorCode.LEDGER_NOT_VISIBLE,
         });
         continue;
       }
@@ -657,6 +663,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${index}.opLedgerId`,
           message: `"${ledger.ledName}" appears twice in this set (rows ${firstIndex} and ${index}) — one opening per ledger per year`,
+          code: OpeningBalanceErrorCode.DUPLICATE_LEDGER,
         });
         continue;
       }
@@ -666,6 +673,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${index}.opAmount`,
           message: `Opening amount cannot be negative for "${ledger.ledName}" — send a positive amount and put the side in opDrCr`,
+          code: OpeningBalanceErrorCode.NEGATIVE_AMOUNT,
         });
       }
 
@@ -681,6 +689,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${index}.opLedgerId`,
           message: `"${ledger.ledName}" is under a group with no nature — classify the group before opening it`,
+          code: OpeningBalanceErrorCode.GROUP_NO_NATURE,
         });
         continue;
       }
@@ -689,6 +698,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${index}.opLedgerId`,
           message: `"${ledger.ledName}" is ${ledger.groupNature} — only Assets and Liabilities ledgers carry an opening balance`,
+          code: OpeningBalanceErrorCode.NOT_BALANCE_SHEET,
         });
       }
     }
@@ -735,6 +745,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${entry.index}.opAmount`,
           message: `"${entry.ledger!.ledName}" is a bill-by-bill party — enter its opening as bills in the breakup panel, not as a figure`,
+          code: OpeningBalanceErrorCode.BILL_WISE_NEEDS_BILLS,
         });
         continue;
       }
@@ -745,6 +756,7 @@ export class OpeningBalanceService {
         errors.push({
           field: `rows.${entry.index}.opAmount`,
           message: `"${entry.ledger!.ledName}" is bill-by-bill: its opening is the total of its bills, ${expected.amount.toFixed(2)} ${expected.drCr}. Change the bills, not this figure.`,
+          code: OpeningBalanceErrorCode.BILL_WISE_TOTAL_MISMATCH,
         });
       }
     }
@@ -914,10 +926,22 @@ export class OpeningBalanceService {
         );
         throwAccountsBadRequest<OpeningBalanceErrorDetail>('Validation failed', [
           message.includes('branch')
-            ? { field: 'opBranchId', message: 'Branch not found' }
+            ? {
+                field: 'opBranchId',
+                message: 'Branch not found',
+                code: OpeningBalanceErrorCode.BRANCH_NOT_FOUND,
+              }
             : message.includes('company')
-              ? { field: 'opCompanyId', message: 'Company not found' }
-              : { field: 'opLedgerId', message: 'Ledger no longer exists' },
+              ? {
+                  field: 'opCompanyId',
+                  message: 'Company not found',
+                  code: OpeningBalanceErrorCode.COMPANY_NOT_FOUND,
+                }
+              : {
+                  field: 'opLedgerId',
+                  message: 'Ledger no longer exists',
+                  code: OpeningBalanceErrorCode.LEDGER_GONE,
+                },
         ]);
       }
       throw error;

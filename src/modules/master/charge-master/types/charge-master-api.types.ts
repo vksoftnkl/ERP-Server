@@ -22,7 +22,8 @@ export {
   ChargeRole,
   ChargeType,
 } from './charge-enum';
-export type ChargeMasterErrorDetail = ModuleApiErrorDetail;
+/** Every Charge master refusal names its `code` (CHARGE_ERROR, or VALIDATION_* from the filter). */
+export type ChargeMasterErrorDetail = ModuleApiErrorDetail & { code: string };
 export type ChargeMasterErrorResponse = ModuleApiErrorResponse<ChargeMasterErrorDetail>;
 export type ChargeMasterSuccessResponse<
   T,

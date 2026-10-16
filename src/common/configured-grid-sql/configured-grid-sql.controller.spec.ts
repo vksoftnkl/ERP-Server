@@ -76,12 +76,19 @@ describe('ConfiguredGridSqlController', () => {
       }),
     );
 
-    await expect(controller.run({ grid_id: '84', page: 1, limit: 15 })).rejects.toThrow(
-      new BadRequestException(
-        'Grid 84 configured SQL failed: invalid input syntax for type uuid: "icompany_id".' +
-          ' Pass a value for icompany_id in grid_param.',
-      ),
-    );
+    const message =
+      'Grid 84 configured SQL failed: invalid input syntax for type uuid: "icompany_id".' +
+      ' Pass a value for icompany_id in grid_param.';
+    const failure = controller.run({ grid_id: '84', page: 1, limit: 15 });
+    await expect(failure).rejects.toThrow(new BadRequestException(message));
+    // Notes 119: the house body, coded — the unbound token is the request's omission.
+    await expect(failure).rejects.toMatchObject({
+      response: {
+        success: false,
+        message,
+        errors: [{ field: 'grid_param', code: 'GRID_RUN_PARAM_MISSING', message }],
+      },
+    });
     expect(service.findUnboundParamTokens).toHaveBeenCalledWith(baseSql);
   });
 

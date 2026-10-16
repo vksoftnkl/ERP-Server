@@ -20,6 +20,7 @@ import {
   ChargeRole,
   ChargeType,
 } from './types/charge-detail-api.types';
+import { CHARGE_DETAIL_ERROR } from './types/charge-detail-error-codes';
 import {
   DEFAULT_ACTOR,
   MasterWriteClient,
@@ -124,7 +125,11 @@ export class ChargeDetailService {
     const { cdId, cdDocType, cdDocId, isActive } = getChargeDetailQueryDto;
     if (cdId && (cdDocType || cdDocId)) {
       throwMasterBadRequest<ChargeDetailErrorDetail>('Ambiguous charge line lookup', [
-        { field: 'cdId', message: 'Send either cdId or the cdDocType + cdDocId pair, not both' },
+        {
+          field: 'cdId',
+          message: 'Send either cdId or the cdDocType + cdDocId pair, not both',
+          code: CHARGE_DETAIL_ERROR.LOOKUP_AMBIGUOUS,
+        },
       ]);
     }
     if (cdId) {
@@ -137,6 +142,7 @@ export class ChargeDetailService {
       {
         field: 'cdId',
         message: 'Either cdId, or both cdDocType and cdDocId, is required',
+        code: CHARGE_DETAIL_ERROR.LOOKUP_MISSING,
       },
     ]);
   }
@@ -259,6 +265,7 @@ export class ChargeDetailService {
           {
             field: 'cdSlno',
             message: `A charge line with number ${slno} already exists on this document`,
+            code: CHARGE_DETAIL_ERROR.SLNO_DUPLICATE,
           },
         ]);
       }
@@ -597,12 +604,14 @@ export class ChargeDetailService {
       details.push({
         field: 'cdDocType',
         message: `cdDocType cannot be changed (stored value is ${existing.cdDocType})`,
+        code: CHARGE_DETAIL_ERROR.DOCUMENT_LOCKED,
       });
     }
     if (saveChargeDetailDto.cdDocId && saveChargeDetailDto.cdDocId !== existing.cdDocId) {
       details.push({
         field: 'cdDocId',
         message: 'cdDocId cannot be changed; delete the line and create it on the other document',
+        code: CHARGE_DETAIL_ERROR.DOCUMENT_LOCKED,
       });
     }
     if (details.length > 0) {
@@ -621,12 +630,14 @@ export class ChargeDetailService {
       details.push({
         field: 'cdDocType',
         message: `cdDocType must be ${scope.cdDocType} on this document`,
+        code: CHARGE_DETAIL_ERROR.DOCUMENT_LOCKED,
       });
     }
     if (saveChargeDetailDto.cdDocId && saveChargeDetailDto.cdDocId !== scope.cdDocId) {
       details.push({
         field: 'cdDocId',
         message: 'cdDocId must be the parent document; a charge line cannot be moved off it',
+        code: CHARGE_DETAIL_ERROR.DOCUMENT_LOCKED,
       });
     }
     if (details.length > 0) {
@@ -647,7 +658,11 @@ export class ChargeDetailService {
     });
     if (!ledger) {
       throwMasterBadRequest<ChargeDetailErrorDetail>('Ledger does not exist', [
-        { field: 'cdLedgerCode', message: `No active ledger found with id ${ledgerCode}` },
+        {
+          field: 'cdLedgerCode',
+          message: `No active ledger found with id ${ledgerCode}`,
+          code: CHARGE_DETAIL_ERROR.LEDGER_NOT_FOUND,
+        },
       ]);
     }
     return ledger.ledName;
@@ -666,7 +681,11 @@ export class ChargeDetailService {
     });
     if (!charge) {
       throwMasterBadRequest<ChargeDetailErrorDetail>('Charge does not exist', [
-        { field: 'cdChgId', message: `No active charge found with id ${chgId}` },
+        {
+          field: 'cdChgId',
+          message: `No active charge found with id ${chgId}`,
+          code: CHARGE_DETAIL_ERROR.CHARGE_NOT_FOUND,
+        },
       ]);
     }
   }
@@ -702,6 +721,7 @@ export class ChargeDetailService {
         {
           field: 'cdSlno',
           message: `A charge line with number ${requested} already exists on this document`,
+          code: CHARGE_DETAIL_ERROR.SLNO_DUPLICATE,
         },
       ]);
     }
@@ -734,7 +754,11 @@ export class ChargeDetailService {
       }
       if (value === null) {
         if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
+          details.push({
+            field: guard.field,
+            message: `${guard.field} is required`,
+            code: CHARGE_DETAIL_ERROR.VALUE_REQUIRED,
+          });
         }
         continue;
       }
@@ -742,6 +766,7 @@ export class ChargeDetailService {
         details.push({
           field: guard.field,
           message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+          code: CHARGE_DETAIL_ERROR.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -752,6 +777,7 @@ export class ChargeDetailService {
         field: 'cdTaxApl',
         message:
           'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+        code: CHARGE_DETAIL_ERROR.TAX_APL_BEFORE_TAX,
       });
     }
     // charge_master.ck_chg_tax_id, restated for the line. A before-tax charge
@@ -765,6 +791,7 @@ export class ChargeDetailService {
         field: 'cdTaxCode',
         message:
           'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
+        code: CHARGE_DETAIL_ERROR.TAX_NOT_APPLICABLE,
       });
     }
     if (details.length > 0) {
@@ -776,7 +803,11 @@ export class ChargeDetailService {
   private requireField<T extends string>(value: T | undefined, field: string): T {
     if (!value) {
       throwMasterBadRequest<ChargeDetailErrorDetail>(`${field} is required`, [
-        { field, message: `${field} must be provided when creating a charge line` },
+        {
+          field,
+          message: `${field} must be provided when creating a charge line`,
+          code: CHARGE_DETAIL_ERROR.FIELD_REQUIRED,
+        },
       ]);
     }
     return value;
@@ -795,6 +826,7 @@ export class ChargeDetailService {
           field: 'request',
           message:
             'One of the referenced charge / ledger / company / branch records does not exist',
+          code: CHARGE_DETAIL_ERROR.REFERENCE_INVALID,
         },
       ]);
     }
@@ -804,6 +836,7 @@ export class ChargeDetailService {
       'Charge line not found',
       'cdId',
       `No active charge line found with id ${cdId}`,
+      CHARGE_DETAIL_ERROR.NOT_FOUND,
     );
   }
   private displayName(record: TransactionChargeDetail): string {

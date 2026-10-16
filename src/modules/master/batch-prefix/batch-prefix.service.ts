@@ -15,6 +15,7 @@ import {
   BatchPrefixListMeta,
   BatchPrefixPayload,
 } from './types/batch-prefix-api.types';
+import { BATCH_PREFIX_ERROR } from './types/batch-prefix-error-codes';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -232,7 +233,11 @@ export class BatchPrefixService {
     });
     if (existing) {
       throwMasterConflict<BatchPrefixErrorDetail>('Batch prefix already exists', [
-        { field: 'prefixUsed', message: 'Duplicate prefixUsed is not allowed' },
+        {
+          field: 'prefixUsed',
+          message: 'Duplicate prefixUsed is not allowed',
+          code: BATCH_PREFIX_ERROR.DUPLICATE,
+        },
       ]);
     }
   }
@@ -241,7 +246,11 @@ export class BatchPrefixService {
     const trimmed = value.trim();
     if (!trimmed) {
       throwMasterBadRequest<BatchPrefixErrorDetail>('Validation failed', [
-        { field: 'prefixUsed', message: 'prefixUsed must not be empty' },
+        {
+          field: 'prefixUsed',
+          message: 'prefixUsed must not be empty',
+          code: BATCH_PREFIX_ERROR.PREFIX_EMPTY,
+        },
       ]);
     }
     return trimmed;
@@ -256,7 +265,11 @@ export class BatchPrefixService {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
       throwMasterBadRequest<BatchPrefixErrorDetail>('Validation failed', [
-        { field, message: `${field} must be a valid ISO-8601 date-time` },
+        {
+          field,
+          message: `${field} must be a valid ISO-8601 date-time`,
+          code: BATCH_PREFIX_ERROR.DATE_INVALID,
+        },
       ]);
     }
     return parsed;
@@ -280,7 +293,11 @@ export class BatchPrefixService {
 
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<BatchPrefixErrorDetail>(error, 'Batch prefix already exists', [
-      { field: 'prefixUsed', message: 'Duplicate prefixUsed is not allowed' },
+      {
+        field: 'prefixUsed',
+        message: 'Duplicate prefixUsed is not allowed',
+        code: BATCH_PREFIX_ERROR.DUPLICATE,
+      },
     ]);
   }
 
@@ -295,6 +312,7 @@ export class BatchPrefixService {
       'Batch prefix not found',
       'id',
       `No batch prefix found with id ${id}`,
+      BATCH_PREFIX_ERROR.NOT_FOUND,
     );
   }
 }

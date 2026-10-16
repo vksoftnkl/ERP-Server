@@ -17,6 +17,7 @@ import {
   GridDetailListItem,
   GridDetailPayload,
 } from './types/grid-detail-api.types';
+import { GridDetailErrorCode } from './types/grid-detail-enum';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -84,6 +85,7 @@ export class GridDetailsService {
             'Grid column not found',
             'grid_column_id',
             `No active grid column found with id ${item.grid_column_id}`,
+            GridDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         // Each width is written only when the caller actually sent it. The
@@ -121,6 +123,7 @@ export class GridDetailsService {
             'Grid column not found',
             'grid_column_id',
             `No active grid column found with id ${item.grid_column_id}`,
+            GridDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         await tx.gridColumn.update({
@@ -146,6 +149,7 @@ export class GridDetailsService {
             'Grid column not found',
             'grid_column_id',
             `No active grid column found with id ${item.grid_column_id}`,
+            GridDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         await tx.gridColumn.update({
@@ -173,6 +177,7 @@ export class GridDetailsService {
         'Grid details not found',
         'grid_id',
         `No active grid details found with id ${gridId}`,
+        GridDetailErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record as GridDetailsWithColumns);
@@ -189,6 +194,7 @@ export class GridDetailsService {
           'Grid details not found',
           'grid_id',
           `No active grid details found with id ${gridId}`,
+          GridDetailErrorCode.NOT_FOUND,
         );
       }
       const result = await tx.gridDetails.updateMany({
@@ -200,6 +206,7 @@ export class GridDetailsService {
           'Grid details not found',
           'grid_id',
           `No active grid details found with id ${gridId}`,
+          GridDetailErrorCode.NOT_FOUND,
         );
       }
       await tx.gridColumn.updateMany({
@@ -243,6 +250,7 @@ export class GridDetailsService {
           'Grid column not found',
           'grid_column_id',
           `No active grid column found with id ${grid_column_id}`,
+          GridDetailErrorCode.COLUMN_NOT_FOUND,
         );
       }
       await tx.gridColumn.update({
@@ -325,6 +333,7 @@ export class GridDetailsService {
           'Grid details not found',
           'grid_id',
           `No active grid details found with id ${gridId}`,
+          GridDetailErrorCode.NOT_FOUND,
         );
       }
       const data: Prisma.GridDetailsUncheckedUpdateInput = {
@@ -426,7 +435,11 @@ export class GridDetailsService {
     const normalizedName = colDto.grid_column_name?.trim();
     if (!normalizedName) {
       throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>('Validation failed', [
-        { field: 'grid_column_name', message: 'grid_column_name must not be empty' },
+        {
+          field: 'grid_column_name',
+          message: 'grid_column_name must not be empty',
+          code: GridDetailErrorCode.COLUMN_NAME_REQUIRED,
+        },
       ]);
     }
     if (colDto.grid_column_id) {
@@ -505,6 +518,7 @@ export class GridDetailsService {
           {
             field: 'grid_sql',
             message: 'grid_sql must be a SELECT query with a top-level FROM table',
+            code: GridDetailErrorCode.SQL_NO_FROM_TABLE,
           },
         ],
       );
@@ -516,7 +530,7 @@ export class GridDetailsService {
     if (!validation.isValid) {
       throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>(
         'Invalid grid_sql configuration',
-        [{ field: 'grid_sql', message: validation.message }],
+        [{ field: 'grid_sql', message: validation.message, code: GridDetailErrorCode.SQL_INVALID }],
       );
     }
     // Persist the raw SELECT as-is. We intentionally do NOT execute it against the database
@@ -577,7 +591,7 @@ export class GridDetailsService {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
     ) {
       throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>('Validation error', [
-        { field, message: `${field} must be a valid UUID` },
+        { field, message: `${field} must be a valid UUID`, code: GridDetailErrorCode.COLUMN_ID_INVALID },
       ]);
     }
     return normalized;
@@ -586,7 +600,7 @@ export class GridDetailsService {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
       throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>('Validation error', [
-        { field, message: `${field} must be a numeric id` },
+        { field, message: `${field} must be a numeric id`, code: GridDetailErrorCode.ID_INVALID },
       ]);
     }
     return BigInt(normalized);

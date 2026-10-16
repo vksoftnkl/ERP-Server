@@ -402,6 +402,7 @@ export class SaleOrderLifecycleService {
         'Order not found',
         'soId',
         `No active order found with id ${keys.soId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     if (order.soStatus !== ORDER_STATUS.DRAFT) {
@@ -457,6 +458,7 @@ export class SaleOrderLifecycleService {
         'Order not found',
         'soId',
         `No active order found with id ${keys.soId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     const order = await tx.saleOrder.findFirst({

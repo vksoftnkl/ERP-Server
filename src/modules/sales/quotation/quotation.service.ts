@@ -21,6 +21,8 @@ import {
   QuotationItemPayload,
   QuotationPayload,
 } from './types/quotation-api.types';
+import { QuotationErrorCode } from './types/quotation-error-codes';
+import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 // A types-only edge to the bill module, the mirror of the one sale-order
 // already has: this module decides what a quotation's conversion columns say,
 // and a bill that has been called off is no longer a conversion.
@@ -338,6 +340,7 @@ function toDateOrNull(value: unknown, field: string): Date | null | undefined {
       {
         field,
         message: `${field} must be a valid ISO date`,
+        code: QuotationErrorCode.INVALID_DATE,
       },
     ]);
   }
@@ -439,7 +442,13 @@ export class QuotationService {
     if (!sqId && !sqQuoteNo) {
       throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>(
         'Quotation lookup requires an identifier',
-        [{ field: 'sqId', message: 'Provide either sqId or sqQuoteNo' }],
+        [
+          {
+            field: 'sqId',
+            message: 'Provide either sqId or sqQuoteNo',
+            code: QuotationErrorCode.LOOKUP_KEY_REQUIRED,
+          },
+        ],
       );
     }
     const record = await this.prisma.saleQuotation.findFirst({
@@ -488,6 +497,7 @@ export class QuotationService {
         sqId
           ? `No active quotation found with id ${sqId}`
           : `No active quotation found with quote no ${sqQuoteNo}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // txn_charge_detail is polymorphic (no FK to sale_quotation), so the
@@ -525,6 +535,7 @@ export class QuotationService {
           'Quotation not found',
           'sqId',
           `No active quotation found with id ${sqId}`,
+          SALES_ERROR_CODES.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -548,6 +559,7 @@ export class QuotationService {
           'Quotation not found',
           'sqId',
           `No active quotation found with id ${sqId}`,
+          SALES_ERROR_CODES.NOT_FOUND,
         );
       }
       // Cascade the soft delete to the quotation's line items so no line stays
@@ -696,6 +708,7 @@ export class QuotationService {
           message:
             `No active quotation found with id ${ref.srcDocId} in accounting year ` +
             `${ref.srcAccYear}`,
+          code: SALES_ERROR_CODES.NOT_FOUND,
         },
       ]);
     }
@@ -771,6 +784,7 @@ export class QuotationService {
           message:
             `No active quotation found with id ${existing.sqId} in accounting year ` +
             `${existing.sqAccYear}`,
+          code: SALES_ERROR_CODES.NOT_FOUND,
         },
       ]);
     }
@@ -970,6 +984,7 @@ export class QuotationService {
             'Quotation not found',
             'sqId',
             `No active quotation found with id ${sqId}`,
+            SALES_ERROR_CODES.NOT_FOUND,
           );
         }
         const now = new Date();
@@ -1113,6 +1128,7 @@ export class QuotationService {
             {
               field: 'sqiLineNo',
               message: `A quotation line already exists with line number ${lineNo}`,
+              code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
             },
           ],
         );
@@ -1124,6 +1140,7 @@ export class QuotationService {
             'Quotation item not found',
             'sqiId',
             `No active quotation line found with id ${inputItem.sqiId} on this quotation`,
+            SALES_ERROR_CODES.LINE_NOT_FOUND,
           );
         }
         keptIds.add(inputItem.sqiId);
@@ -1317,6 +1334,7 @@ export class QuotationService {
           {
             field: 'sqiLineNo',
             message: 'Another active line on this quotation already uses this line number',
+            code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
           },
         ],
       };
@@ -1328,6 +1346,7 @@ export class QuotationService {
           {
             field: 'sqQuoteSlno',
             message: 'Duplicate quotation serial number is not allowed',
+            code: QuotationErrorCode.SLNO_TAKEN,
           },
         ],
       };
@@ -1339,6 +1358,7 @@ export class QuotationService {
         {
           field: 'sqQuoteRefno',
           message: 'Duplicate quotation reference number is not allowed',
+          code: QuotationErrorCode.QUOTE_NO_TAKEN,
         },
       ],
     };
@@ -1349,6 +1369,7 @@ export class QuotationService {
         `${field} is required for a new quotation line`,
         field,
         `${field} must be provided when creating a quotation line`,
+        SALES_ERROR_CODES.LINE_FIELD_REQUIRED,
       );
     }
     return value;
@@ -1422,6 +1443,7 @@ export class QuotationService {
             {
               field: 'cdSlno',
               message: `A quotation charge already exists with line number ${slno}`,
+              code: QuotationErrorCode.CHARGE_LINE_NO_DUPLICATE,
             },
           ],
         );
@@ -1433,6 +1455,7 @@ export class QuotationService {
           'Quotation charge not found',
           'cdId',
           `No active quotation charge found with id ${inputCharge.cdId} on this quotation`,
+          QuotationErrorCode.CHARGE_NOT_FOUND,
         );
       }
       this.ensureChargeValuesAreAllowed(inputCharge, existingCharge);
@@ -1548,6 +1571,7 @@ export class QuotationService {
         `${field} is required for a new quotation charge`,
         field,
         `${field} must be provided when creating a quotation charge`,
+        QuotationErrorCode.CHARGE_FIELD_REQUIRED,
       );
     }
     return value;
@@ -1586,7 +1610,11 @@ export class QuotationService {
       }
       if (value === null) {
         if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
+          details.push({
+            field: guard.field,
+            message: `${guard.field} is required`,
+            code: QuotationErrorCode.CHARGE_FIELD_REQUIRED,
+          });
         }
         continue;
       }
@@ -1594,6 +1622,7 @@ export class QuotationService {
         details.push({
           field: guard.field,
           message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+          code: QuotationErrorCode.CHARGE_VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -1604,6 +1633,7 @@ export class QuotationService {
         field: 'cdTaxApl',
         message:
           'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+        code: QuotationErrorCode.CHARGE_TAX_EXCLUSIVE,
       });
     }
     // charge_master.ck_chg_tax_id, restated for the line. A before-tax charge
@@ -1617,6 +1647,7 @@ export class QuotationService {
         field: 'cdTaxCode',
         message:
           'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
+        code: QuotationErrorCode.CHARGE_TAX_CODE_UNUSED,
       });
     }
     if (details.length > 0) {

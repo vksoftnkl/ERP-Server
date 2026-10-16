@@ -65,7 +65,7 @@ class TillSafeGapDecisionDto extends TillScopeDto {
     nullable: true,
     description:
       'With `treatment`: the caller’s till PIN, as the SAFE_VARIANCE rule’s channel asks (EITHER as shipped: a ' +
-      'PIN, else remote authority). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+      'PIN, else remote authority). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL; none set → 422 TILL_APPROVER_NO_PIN.',
   })
   @NullableString(20)
   approverPin?: string | null;

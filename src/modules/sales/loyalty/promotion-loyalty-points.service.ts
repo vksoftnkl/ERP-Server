@@ -82,6 +82,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { LoyaltyErrorCode } from './types/loyalty-error-codes';
 
 const SCREEN_NAME = 'Promotion Loyalty Points';
 const SCHEME_TABLE_NAME = 'loyalty scheme';
@@ -209,7 +210,7 @@ export class PromotionLoyaltyPointsService {
   async getSchemeById(lscId: string): Promise<LoyaltySchemePayload> {
     const scheme = await this.findSchemeWithChildren(this.prisma, lscId);
     if (!scheme) {
-      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
+      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found', LoyaltyErrorCode.SCHEME_NOT_FOUND);
     }
     return toSchemePayload(scheme);
   }
@@ -245,7 +246,7 @@ export class PromotionLoyaltyPointsService {
       select: { cusId: true, cusGroupId: true },
     });
     if (!customer) {
-      this.throwNotFound('cus_id', cusId, 'Customer not found');
+      this.throwNotFound('cus_id', cusId, 'Customer not found', LoyaltyErrorCode.CUSTOMER_NOT_FOUND);
     }
 
     // Every branch of the OR must be a non-null id. `{ lspCustGroupId: null }`
@@ -306,7 +307,7 @@ export class PromotionLoyaltyPointsService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.findSchemeWithChildren(tx, lscId);
       if (!existing) {
-        this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
+        this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found', LoyaltyErrorCode.SCHEME_NOT_FOUND);
       }
 
       const modifiedOn = new Date();
@@ -435,7 +436,7 @@ export class PromotionLoyaltyPointsService {
       .$transaction(async (tx) => {
         const existing = await this.findSchemeWithChildren(tx, lscId);
         if (!existing) {
-          this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
+          this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found', LoyaltyErrorCode.SCHEME_NOT_FOUND);
         }
 
         const data: Prisma.LoyaltySchemeUncheckedUpdateInput = {
@@ -614,7 +615,11 @@ export class PromotionLoyaltyPointsService {
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) {
           this.throwBadRequest('Validation failed', [
-            { field: 'lsc_approved_on', message: 'lsc_approved_on must be a valid datetime' },
+            {
+              field: 'lsc_approved_on',
+              message: 'lsc_approved_on must be a valid datetime',
+              code: LoyaltyErrorCode.INVALID_DATETIME,
+            },
           ]);
         }
         data.lscApprovedOn = parsed;
@@ -714,7 +719,11 @@ export class PromotionLoyaltyPointsService {
     });
     if (clash) {
       this.throwConflict('Duplicate loyalty scheme code', [
-        { field: 'lsc_code', message: `lsc_code ${code} already exists for this company` },
+        {
+          field: 'lsc_code',
+          message: `lsc_code ${code} already exists for this company`,
+          code: LoyaltyErrorCode.SCHEME_CODE_EXISTS,
+        },
       ]);
     }
   }
@@ -767,6 +776,7 @@ export class PromotionLoyaltyPointsService {
             `Scheme ${clash.lscCode} is already the approved primary (priority 1) ` +
             `${effective.lscType} scheme for this company and branch. Lower this scheme's ` +
             'priority, or retire that one.',
+          code: LoyaltyErrorCode.PRIMARY_SCHEME_EXISTS,
         },
       ]);
     }
@@ -789,7 +799,12 @@ export class PromotionLoyaltyPointsService {
         where: { lsbId: row.lsb_id, lsbLscId: lscId, lsbIsDeleted: false },
       });
       if (!existing) {
-        this.throwNotFound('lsb_id', row.lsb_id, 'Loyalty scheme branch row not found');
+        this.throwNotFound(
+          'lsb_id',
+          row.lsb_id,
+          'Loyalty scheme branch row not found',
+          LoyaltyErrorCode.SCHEME_ROW_NOT_FOUND,
+        );
       }
       const data: Prisma.LoyaltySchemeBranchUncheckedUpdateInput = {
         lsbModifiedOn: new Date(),
@@ -860,7 +875,12 @@ export class PromotionLoyaltyPointsService {
         })
       : null;
     if (row.lsp_id && !existing) {
-      this.throwNotFound('lsp_id', row.lsp_id, 'Loyalty scheme party row not found');
+      this.throwNotFound(
+          'lsp_id',
+          row.lsp_id,
+          'Loyalty scheme party row not found',
+          LoyaltyErrorCode.SCHEME_ROW_NOT_FOUND,
+        );
     }
 
     // The row as it will stand once this write lands — the stored values
@@ -954,7 +974,12 @@ export class PromotionLoyaltyPointsService {
         })
       : null;
     if (row.lsi_id && !existing) {
-      this.throwNotFound('lsi_id', row.lsi_id, 'Loyalty scheme item row not found');
+      this.throwNotFound(
+          'lsi_id',
+          row.lsi_id,
+          'Loyalty scheme item row not found',
+          LoyaltyErrorCode.SCHEME_ROW_NOT_FOUND,
+        );
     }
 
     const slno = row.lsi_slno ?? existing?.lsiSlno ?? index + 1;
@@ -1062,7 +1087,12 @@ export class PromotionLoyaltyPointsService {
         })
       : null;
     if (row.lss_id && !existing) {
-      this.throwNotFound('lss_id', row.lss_id, 'Loyalty scheme slab row not found');
+      this.throwNotFound(
+          'lss_id',
+          row.lss_id,
+          'Loyalty scheme slab row not found',
+          LoyaltyErrorCode.SCHEME_ROW_NOT_FOUND,
+        );
     }
 
     const band: EffectiveSlabRow = {
@@ -1156,7 +1186,12 @@ export class PromotionLoyaltyPointsService {
         })
       : null;
     if (row.lsg_id && !existing) {
-      this.throwNotFound('lsg_id', row.lsg_id, 'Loyalty scheme gift row not found');
+      this.throwNotFound(
+          'lsg_id',
+          row.lsg_id,
+          'Loyalty scheme gift row not found',
+          LoyaltyErrorCode.SCHEME_ROW_NOT_FOUND,
+        );
     }
 
     const validFrom = hasOwnProperty(row, 'lsg_valid_from')
@@ -1308,7 +1343,7 @@ export class PromotionLoyaltyPointsService {
       where: { lscId, lscIsDeleted: false },
     });
     if (!scheme) {
-      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
+      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found', LoyaltyErrorCode.SCHEME_NOT_FOUND);
     }
     return scheme;
   }
@@ -1582,7 +1617,11 @@ export class PromotionLoyaltyPointsService {
       const first = seen.get(key);
       if (first !== undefined) {
         this.throwBadRequest('Validation failed', [
-          { field, message: `Rows ${first + 1} and ${index + 1} target the same scope` },
+          {
+            field,
+            message: `Rows ${first + 1} and ${index + 1} target the same scope`,
+            code: LoyaltyErrorCode.DUPLICATE_ROW_SCOPE,
+          },
         ]);
       }
       seen.set(key, index);
@@ -1666,11 +1705,17 @@ export class PromotionLoyaltyPointsService {
     );
   }
 
-  private throwNotFound(field: string, value: string, message: string): never {
+  private throwNotFound(
+    field: string,
+    value: string,
+    message: string,
+    code: LoyaltyErrorCode,
+  ): never {
     throwSalesNotFound<PromotionLoyaltyPointsErrorDetail, PromotionLoyaltyPointsErrorResponse>(
       message,
       field,
       `${field} ${value} was not found`,
+      code,
     );
   }
 }

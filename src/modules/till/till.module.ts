@@ -3,11 +3,13 @@ import { AppSettingsModule } from '../settings/appSettings/app-settings.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CommonPostingModule } from '../../common/posting/posting.module';
 import { TillController } from './till.controller';
+import { TillApprovalController } from './till-approval.controller';
 import { TillMastersController } from './till-masters.controller';
 import { TillSafeController } from './till-safe.controller';
 import { TillExceptionFilter } from './till-exception.filter';
 import { TillContextService } from './till-context.service';
 import { TillApprovalService } from './services/till-approval.service';
+import { TillApprovalGateService } from './services/till-approval-gate.service';
 import { TillDayService } from './services/till-day.service';
 import { TillDayCloseService } from './services/till-day-close.service';
 import { TillEventService } from './services/till-event.service';
@@ -30,12 +32,15 @@ import { TillSlipCheckService } from './services/till-slip-check.service';
  * payment or an expense reports (plan-till-receipt-payment-expense §3.3 / §4.3);
  * TillPrintService for the print module's till.* providers (notes 117 §7).
  * TillSafeController / TillSafeService are the safe (notes 118, Cash Office 287).
+ * TillApprovalController / TillApprovalGateService are the approval gate's
+ * request · decide · cancel · inbox (notes 124 §5).
  */
 @Module({
   imports: [AppSettingsModule, AuditLogModule, CommonPostingModule],
-  controllers: [TillController, TillMastersController, TillSafeController],
+  controllers: [TillController, TillMastersController, TillSafeController, TillApprovalController],
   providers: [
     TillApprovalService,
+    TillApprovalGateService,
     TillContextService,
     TillDayService,
     TillDayCloseService,

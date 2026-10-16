@@ -9,6 +9,7 @@ import {
   throwSettingsConflict,
 } from 'src/common/utils/module-service.utils';
 import { EmployeeMasterErrorDetail } from './types/employee-master-api.types';
+import { EmployeeMasterErrorCode } from './types/employee-master-error-codes';
 
 // Notes 95 §A — every employee has a staff advance ledger: what the company has paid them in
 // advance, and where a till shortage decided RECOVER is debited. The employee row points at it
@@ -17,7 +18,7 @@ import { EmployeeMasterErrorDetail } from './types/employee-master-api.types';
 
 /** The shared, reserved group under Current Assets every staff advance ledger lives in. */
 export const STAFF_ADVANCE_GROUP_NAME = 'Loans & Advances (Asset)';
-export const EMP_LEDGER_HAS_BALANCE = 'EMP_LEDGER_HAS_BALANCE';
+export const EMP_LEDGER_HAS_BALANCE = EmployeeMasterErrorCode.LEDGER_HAS_BALANCE;
 const STAFF_ADVANCE_SUFFIX = ' - Staff Advance';
 const LEDGER_NAME_MAX = 200; // acc_ledger_master.led_name varchar(200)
 const GROUP_WALK_LIMIT = 24; // the depth the voucher pickers walk to as well
@@ -216,16 +217,20 @@ export class StaffAdvanceLedgerService {
       select: { ledName: true, ledGroupId: true, ledCompanyId: true },
     });
     if (!ledger) {
-      this.refuse(`No active ledger found with id ${ledId}`);
+      this.refuse(`No active ledger found with id ${ledId}`, EmployeeMasterErrorCode.LEDGER_NOT_FOUND);
     }
     const groupId = await this.staffAdvanceGroupId(tx);
     if (!(await this.isWithinGroup(tx, ledger.ledGroupId, groupId))) {
       this.refuse(
         `Ledger "${ledger.ledName}" is not in ${STAFF_ADVANCE_GROUP_NAME} or a sub-group of it`,
+        EmployeeMasterErrorCode.LEDGER_WRONG_GROUP,
       );
     }
     if (ledger.ledCompanyId !== null && ledger.ledCompanyId !== employee.empCompanyId) {
-      this.refuse(`Ledger "${ledger.ledName}" belongs to another company`);
+      this.refuse(
+        `Ledger "${ledger.ledName}" belongs to another company`,
+        EmployeeMasterErrorCode.LEDGER_OTHER_COMPANY,
+      );
     }
     const other = await tx.employeeMaster.findFirst({
       where: { empLoanLedgerId: ledId, empIsDeleted: false, NOT: { empId: employee.empId } },
@@ -236,6 +241,7 @@ export class StaffAdvanceLedgerService {
         {
           field: 'empLoanLedgerId',
           message: `Ledger "${ledger.ledName}" is already the staff advance ledger of employee "${other.empName}"`,
+          code: EmployeeMasterErrorCode.LEDGER_TAKEN,
         },
       ]);
     }
@@ -391,6 +397,7 @@ export class StaffAdvanceLedgerService {
         message: `Ledger "${name}" already exists. ${
           suggestCode ? 'Give the employee a code, or pick' : 'Pick'
         } an existing ledger in empLoanLedgerId.`,
+        code: EmployeeMasterErrorCode.LEDGER_NAME_DUPLICATE,
       },
     ]);
   }
@@ -407,14 +414,15 @@ export class StaffAdvanceLedgerService {
     if (!group) {
       this.refuse(
         `The shared account group "${STAFF_ADVANCE_GROUP_NAME}" is missing; it is seeded with the chart of accounts`,
+        EmployeeMasterErrorCode.LEDGER_GROUP_MISSING,
       );
     }
     return group.accGroupId;
   }
 
-  private refuse(message: string): never {
+  private refuse(message: string, code: EmployeeMasterErrorCode): never {
     throwSettingsBadRequest<EmployeeMasterErrorDetail>('Invalid staff advance ledger', [
-      { field: 'empLoanLedgerId', message },
+      { field: 'empLoanLedgerId', message, code },
     ]);
   }
 }

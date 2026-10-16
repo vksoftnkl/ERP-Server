@@ -23,6 +23,7 @@ import {
   PromotionSchemeSlabPayload,
   PromotionSchemeSummaryPayload,
 } from '../types/promotion-scheme-api.types';
+import { PromotionSchemeErrorCode } from '../types/promotion-scheme-error-codes';
 export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // ─── The vocabularies ─────────────────────────────────────────────────────────
@@ -160,8 +161,8 @@ export function throwBadRequest(message: string, errors: PromotionSchemeErrorDet
 export function throwConflict(message: string, errors: PromotionSchemeErrorDetail[]): never {
   throwSalesConflict<PromotionSchemeErrorDetail, PromotionSchemeErrorResponse>(message, errors);
 }
-export function fieldError(field: string, message: string): never {
-  throwBadRequest('Validation failed', [{ field, message }]);
+export function fieldError(field: string, message: string, code: PromotionSchemeErrorCode): never {
+  throwBadRequest('Validation failed', [{ field, message, code }]);
 }
 // ─── Format helpers ───────────────────────────────────────────────────────────
 export function toIsoDate(value: Date): string {
@@ -202,13 +203,13 @@ export function resolveActorUuid(...candidates: Array<string | null | undefined>
 // ─── Validation primitives ────────────────────────────────────────────────────
 export function requireString(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    fieldError(field, `${field} is required`);
+    fieldError(field, `${field} is required`, PromotionSchemeErrorCode.FIELD_REQUIRED);
   }
   return value.trim();
 }
 export function requireUuid(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
-    fieldError(field, `${field} must be a valid uuid`);
+    fieldError(field, `${field} must be a valid uuid`, PromotionSchemeErrorCode.INVALID_UUID);
   }
   return value;
 }
@@ -227,10 +228,18 @@ export function requireNumber(
   maxValue?: number,
 ): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minValue) {
-    fieldError(field, `${field} must be a number greater than or equal to ${minValue}`);
+    fieldError(
+      field,
+      `${field} must be a number greater than or equal to ${minValue}`,
+      PromotionSchemeErrorCode.NUMBER_BELOW_MINIMUM,
+    );
   }
   if (maxValue !== undefined && value > maxValue) {
-    fieldError(field, `${field} must be less than or equal to ${maxValue}`);
+    fieldError(
+      field,
+      `${field} must be less than or equal to ${maxValue}`,
+      PromotionSchemeErrorCode.NUMBER_ABOVE_MAXIMUM,
+    );
   }
   return value;
 }
@@ -241,25 +250,33 @@ export function requireInteger(
   maxValue?: number,
 ): number {
   if (!Number.isInteger(value)) {
-    fieldError(field, `${field} must be an integer`);
+    fieldError(field, `${field} must be an integer`, PromotionSchemeErrorCode.NOT_WHOLE_NUMBER);
   }
   return requireNumber(value as number, field, minValue, maxValue);
 }
 export function parseDateOnly(value: string | undefined | null, field: string): Date {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   if (!trimmed) {
-    fieldError(field, `${field} is required`);
+    fieldError(field, `${field} is required`, PromotionSchemeErrorCode.FIELD_REQUIRED);
   }
   const parsed = new Date(`${trimmed.slice(0, 10)}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) {
-    fieldError(field, `${field} must be a valid date (YYYY-MM-DD)`);
+    fieldError(
+      field,
+      `${field} must be a valid date (YYYY-MM-DD)`,
+      PromotionSchemeErrorCode.INVALID_DATE,
+    );
   }
   return parsed;
 }
 export function parseTimeToUtcDate(value: string, field: string): Date {
   const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim());
   if (!match) {
-    fieldError(field, `${field} must be a valid time (HH:mm or HH:mm:ss)`);
+    fieldError(
+      field,
+      `${field} must be a valid time (HH:mm or HH:mm:ss)`,
+      PromotionSchemeErrorCode.INVALID_TIME,
+    );
   }
   const [, hours, minutes, seconds] = match;
   return new Date(Date.UTC(1970, 0, 1, Number(hours), Number(minutes), Number(seconds ?? 0)));
@@ -492,6 +509,7 @@ export function handlePromotionWriteError(error: unknown): void {
           'Another approved exclusive scheme already runs on this branch and trigger at this ' +
           'priority over an overlapping date range. Change the priority, the dates, or use ' +
           'STACKABLE.',
+        code: PromotionSchemeErrorCode.EXCLUSIVE_CLASH,
       },
     ]);
   }
@@ -503,6 +521,7 @@ export function handlePromotionWriteError(error: unknown): void {
       {
         field: 'request',
         message: 'A record with the same unique values already exists',
+        code: PromotionSchemeErrorCode.DUPLICATE_RECORD,
       },
     ]);
     return;
@@ -512,6 +531,7 @@ export function handlePromotionWriteError(error: unknown): void {
       {
         field: resolveForeignKeyField(error),
         message: 'Referenced master record was not found or is inactive',
+        code: PromotionSchemeErrorCode.REFERENCE_NOT_FOUND,
       },
     ]);
   }

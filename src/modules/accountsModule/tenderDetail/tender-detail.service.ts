@@ -142,7 +142,8 @@ type TenderDetailRecord = AccTenderDetail & {
 interface TenderMasterSnapshot {
   tndName: string;
   tndTypeId: number;
-  tndLedgerId: string;
+  /** Null on TEMP_CR / CREDIT / LOYALTY, which post no tender leg (notes 126 §5). */
+  tndLedgerId: string | null;
   tndSettlementLedgerId: string | null;
   tndSettlementDays: number;
   tndNeedsRef: boolean | null;
@@ -512,8 +513,6 @@ export class TenderDetailService {
     if (tenderTypeId !== tender.tndTypeId) {
       await this.ensureTenderTypeExists(tx, tenderTypeId);
     }
-    const tenderLedgerId = saveTenderDetailDto.tdTenderLedgerId ?? tender.tndLedgerId;
-    const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
     // The line's own party wins; otherwise the document's. Required here rather
     // than on the scope: the scope is built once per save, and a document with
     // no party of its own is legal right up until it tries to file a tender.
@@ -521,6 +520,11 @@ export class TenderDetailService {
       saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId,
       'tdPartyLedgerId',
     );
+    // A tender that posts no leg (TEMP_CR / CREDIT / LOYALTY, notes 126 §5)
+    // has no ledger of its own: the row names the party it is owed by.
+    const tenderLedgerId =
+      saveTenderDetailDto.tdTenderLedgerId ?? tender.tndLedgerId ?? partyLedgerId;
+    const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
     await this.ensureLedgerExists(tx, partyLedgerId, 'tdPartyLedgerId');
     if (saveTenderDetailDto.tdSettleLedgerId) {
       await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
@@ -650,7 +654,9 @@ export class TenderDetailService {
     }
     const tenderLedgerId =
       saveTenderDetailDto.tdTenderLedgerId ??
-      (tenderChanged ? tender.tndLedgerId : existing.tdTenderLedgerId);
+      (tenderChanged
+        ? (tender.tndLedgerId ?? saveTenderDetailDto.tdPartyLedgerId ?? existing.tdPartyLedgerId)
+        : existing.tdTenderLedgerId);
     const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
     if (
       saveTenderDetailDto.tdPartyLedgerId &&

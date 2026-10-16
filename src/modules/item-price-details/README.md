@@ -6,7 +6,7 @@ default tax record, assembled into one nested payload keyed by `item_id`.
 - **Base route:** `item-price-details` (endpoint API-versioned via `API_VERSION`)
 - **Swagger tag:** `Item Price Details`
 - **Auth:** Bearer `access-token` (required)
-- **Cache:** `@CacheTTL(60)` — responses cacheable for 60s
+- **Cache:** `@CacheTTL(1)` — responses cacheable for 1s
 - **Reads (all in the `inventory` schema):**
   - `item_master` (model `ItemMaster`) — matched on PK `itemId`, filtered `itemIsDeleted = false`
   - `item_price_master` (model `ItemPriceMaster`) — filtered `ipmItemId = itemId` and

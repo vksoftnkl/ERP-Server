@@ -270,7 +270,7 @@ export class TillSafeService {
       orderBy: [{ tsfIsDefault: 'desc' }, { tsfCode: 'asc' }],
     });
     if (scope.safeId && safes.length === 0) {
-      throwTillNotFound('Till safe', 'safeId', scope.safeId);
+      throwTillNotFound(TillErrorCode.SAFE_NOT_FOUND, 'Till safe', 'safeId', scope.safeId);
     }
     const day = await this.prisma.tillBusinessDay.findFirst({
       where: {
@@ -378,30 +378,6 @@ export class TillSafeService {
     };
   }
 
-  /**
-   * What the safe held at `since`, walked back from now: expected now, less
-   * the flows since, less the gap of every count since (each count re-based
-   * the expected balance on what was counted).
-   */
-  private async expectedAt(
-    client: Client,
-    safe: SafeRow,
-    today: { date: string; accYear: string },
-    since: Date,
-  ): Promise<Prisma.Decimal> {
-    const now = await this.stateOf(client, safe, today);
-    // A day's first session opens it in the same transaction as its float
-    // issue: the same now(), so "since" takes in what happened at that instant.
-    const from = new Date(since.getTime() - 1);
-    const flows = await this.flowsOf(client, safe, from);
-    const [gaps] = await client.$queryRaw<{ g: Prisma.Decimal | null }[]>`
-      SELECT sum(tct_total_counted - COALESCE(tct_expected, tct_total_counted)) AS g
-        FROM accounts.till_count
-       WHERE tct_safe_id = ${safe.tsfId}::uuid AND tct_kind = ${TillCountKind.SAFE}
-         AND tct_is_deleted = false AND tct_counted_on > ${from}::timestamptz`;
-    return now.expected.minus(netOf(flows)).minus(new Prisma.Decimal(gaps?.g ?? 0));
-  }
-
   /** The timed flows of one safe after `after` (all of them when null) — see the class comment. */
   private async flowsOf(
     client: Client,
@@ -475,6 +451,9 @@ export class TillSafeService {
                   -t.td_total_amt)) AS x(at, amt)
            WHERE t.td_tender_ledger_id = ${safe.tsfLedgerId}::uuid
              AND t.td_tender_type_id = ${CASH_TENDER_TYPE_ID}::int
+             -- notes 126: not the server's labels on the till's own transfers
+             -- (TFlt / TDrp / TRcv / CRem) — the movements above count those
+             AND t.td_src_doc_type <> 'VOUCHER'
              AND h.avh_is_deleted = false
              AND ((h.avh_voucher_status = 'POSTED' AND t.td_is_deleted = false AND t.td_is_voided = false)
                   OR h.avh_voucher_status = 'CANCELLED')
@@ -1456,15 +1435,23 @@ export class TillSafeService {
   /**
    * The day's safe figures, kept current by every count / remittance and
    * frozen by the day close: `counted` / `expected` over the safes counted that
-   * day (each by its last count; `counted` NULL and `expected` every active
-   * safe's balance when none was), `remitted` = the day's live REMITs,
-   * `opening` = the active safes' expected balance when the day opened.
+   * day (each by its last count; `counted` NULL and `expected` the active
+   * safes' book at the end of the day when none was), `remitted` = the day's
+   * live REMITs, `opening` = the active safes' book at the end of the day
+   * before.
+   *
+   * Notes 122 §6: the book is read AS OF the business date (vouchers by their
+   * date), never walked back from now — a day closed late, or a hand-over of
+   * the day before posted after this day opened, used to give an opening no
+   * safe ever held. So the answer is the same whenever it is worked out, and
+   * one day's book closing is the next day's opening. Each safe LEDGER counts
+   * once: safes sharing one (the SAFE_CASH role's) share its balance.
    */
   async refreshDay(tx: Tx, tbdId: string, accYear: string): Promise<void> {
     const day = await tx.tillBusinessDay.findUniqueOrThrow({
       where: { tbdId_tbdAccYear: { tbdId, tbdAccYear: accYear } },
     });
-    const today = { date: isoDateOf(day.tbdBusinessDate), accYear: day.tbdAccYear };
+    const businessDate = isoDateOf(day.tbdBusinessDate);
     const safes = await this.branchSafes(tx, day);
     const counts = await tx.$queryRaw<
       { counted: Prisma.Decimal; expected: Prisma.Decimal | null }[]
@@ -1474,14 +1461,23 @@ export class TillSafeService {
        WHERE tct_day_id = ${day.tbdId}::uuid AND tct_acc_year = ${day.tbdAccYear}::char(9)
          AND tct_kind = ${TillCountKind.SAFE} AND tct_is_deleted = false
        ORDER BY tct_safe_id, tct_counted_on DESC, tct_id DESC`;
-    let opening = ZERO;
-    let expectedNow = ZERO;
-    for (const safe of safes) {
-      opening = opening.plus(await this.expectedAt(tx, safe, today, day.tbdOpenedOn));
-      if (counts.length === 0) {
-        expectedNow = expectedNow.plus((await this.stateOf(tx, safe, today)).expected);
-      }
-    }
+    await this.customPlans(tx);
+    const bookAt = async (upTo: string): Promise<Prisma.Decimal> => {
+      const balances = await this.ledger.ledgerBalances(
+        tx,
+        {
+          companyId: day.tbdCompanyId,
+          branchId: day.tbdBranchId,
+          accYear: day.tbdAccYear,
+          upTo,
+        },
+        safes.map((s) => s.tsfLedgerId),
+      );
+      return [...balances.values()].reduce((sum, b) => sum.plus(b), ZERO);
+    };
+    // The day before 1 April falls outside the year: its legs are none, so the
+    // book is the year's opening set — the right answer there too.
+    const opening = await bookAt(isoDateOf(new Date(day.tbdBusinessDate.getTime() - 86_400_000)));
     const [remitted] = await tx.$queryRaw<{ amt: Prisma.Decimal | null }[]>`
       SELECT sum(tcm_amount) AS amt FROM accounts.till_cash_movement
        WHERE tcm_day_id = ${day.tbdId}::uuid AND tcm_acc_year = ${day.tbdAccYear}::char(9)
@@ -1491,7 +1487,9 @@ export class TillSafeService {
       data: {
         tbdSafeOpening: opening,
         tbdSafeExpected:
-          counts.length > 0 ? counts.reduce((s, c) => s.plus(c.expected ?? 0), ZERO) : expectedNow,
+          counts.length > 0
+            ? counts.reduce((s, c) => s.plus(c.expected ?? 0), ZERO)
+            : await bookAt(businessDate),
         tbdSafeCounted: counts.length > 0 ? counts.reduce((s, c) => s.plus(c.counted), ZERO) : null,
         tbdRemitted: new Prisma.Decimal(remitted?.amt ?? 0),
       },
@@ -1967,7 +1965,7 @@ export class TillSafeService {
       },
     });
     if (!safe) {
-      throwTillNotFound('Till safe', 'safeId', key.safeId);
+      throwTillNotFound(TillErrorCode.SAFE_NOT_FOUND, 'Till safe', 'safeId', key.safeId);
     }
     if (opts.active && !safe.tsfIsActive) {
       throwTill(
@@ -2125,7 +2123,7 @@ export class TillSafeService {
       },
     });
     if (!tvr) {
-      throwTillNotFound('Safe variance', 'tvrId', key.tvrId);
+      throwTillNotFound(TillErrorCode.VARIANCE_NOT_FOUND, 'Safe variance', 'tvrId', key.tvrId);
     }
     if (
       tvr.tvrStatus !== 'OPEN' ||

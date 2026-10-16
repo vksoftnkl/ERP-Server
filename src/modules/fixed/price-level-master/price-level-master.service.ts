@@ -1,14 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PriceLevel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
+import { DEFAULT_ACTOR, throwNotFound } from '../../../common/utils/module-shared.utils';
 import { GetPriceLevelMasterQueryDto } from './dto/get-price-level-master-query.dto';
 import { UpdatePriceLevelMasterDto } from './dto/update-price-level-master.dto';
 import {
   PriceLevelMasterGetMeta,
   PriceLevelMasterPayload,
 } from './types/price-level-master-api.types';
+import { PriceLevelMasterErrorCode } from './types/price-level-master-error-codes';
 type PriceLevelRecord = Pick<
   PriceLevel,
   | 'priceLvlId'
@@ -54,7 +55,8 @@ export class PriceLevelMasterService {
       },
     });
     if (queryDto.priceLvlId !== undefined && records.length === 0) {
-      throw new NotFoundException(`Price level not found for priceLvlId ${queryDto.priceLvlId}`);
+      const message = `Price level not found for priceLvlId ${queryDto.priceLvlId}`;
+      throwNotFound(message, 'priceLvlId', message, PriceLevelMasterErrorCode.NOT_FOUND);
     }
     const items = records.map((record) => this.toPayload(record));
     return {
@@ -74,9 +76,8 @@ export class PriceLevelMasterService {
     const foundIds = new Set(existing.map((record) => record.priceLvlId));
     const missing = ids.filter((id) => !foundIds.has(id));
     if (missing.length > 0) {
-      throw new NotFoundException(
-        `Price level(s) not found for priceLvlId(s): ${missing.join(', ')}`,
-      );
+      const message = `Price level(s) not found for priceLvlId(s): ${missing.join(', ')}`;
+      throwNotFound(message, 'priceLevels', message, PriceLevelMasterErrorCode.NOT_FOUND);
     }
 
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;

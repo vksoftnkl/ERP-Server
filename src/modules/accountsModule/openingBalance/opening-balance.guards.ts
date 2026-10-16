@@ -11,6 +11,7 @@ import {
   OpeningSource,
   OpeningStaleReason,
 } from './types/opening-balance-enum';
+import { OpeningBalanceErrorCode } from './types/opening-balance-error-codes';
 import { isAccYearAfter, isValidAccYear } from './opening-balance.utils';
 
 /**
@@ -55,6 +56,7 @@ export async function assertAccYearWritable(
       {
         field,
         message: `"${accYear}" is not an accounting year — expected YYYY-YYYY with the second half one greater than the first`,
+        code: OpeningBalanceErrorCode.ACC_YEAR_INVALID,
       },
     ]);
   }
@@ -73,6 +75,7 @@ export async function assertAccYearWritable(
       {
         field,
         message: `Accounting year ${year.fyYearName} is ${year.fyStatus} and cannot be written to`,
+        code: OpeningBalanceErrorCode.YEAR_NOT_OPEN,
       },
     ]);
   }
@@ -84,6 +87,7 @@ export async function assertAccYearWritable(
         message: `Accounting year ${year.fyYearName} was locked on ${year.fyLockDate
           .toISOString()
           .slice(0, 10)} and cannot be written to`,
+        code: OpeningBalanceErrorCode.YEAR_LOCKED,
       },
     ]);
   }

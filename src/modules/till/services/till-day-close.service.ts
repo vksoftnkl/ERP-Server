@@ -114,7 +114,8 @@ export class TillDayCloseService {
    * its variance decision, a hand-over / drop of the day awaiting receipt
    * (notes 113/114), a drawer gap of a CLOSED session still PENDING (one sent
    * on by approve-cash), a movement or variance without its voucher. AMBER: a
-   * slip gap (notes 99 §1 — reported, not enforced), the branch's parked bills,
+   * slip gap (notes 99 §1 — reported, not enforced; notes 122 §7: a slip
+   * check's unexplained rows too), the branch's parked bills,
    * a safe over its insured limit. Notes 118: a safe gap of the day still
    * PENDING is VARIANCE_UNDECIDED too; a safe that held or moved cash with no
    * count of the day is SAFE_NOT_COUNTED — RED under till.day_close_safe_count
@@ -155,6 +156,31 @@ export class TillDayCloseService {
        GROUP BY 1, 2`;
     const drawerGaps = gaps.filter((g) => !g.slip);
     const slipGaps = gaps.filter((g) => g.slip);
+    // Notes 122 §7: what the supervisor's slip check left unexplained — on its
+    // latest check per terminal, the rows with no slip or a differing amount
+    // that are still live (a re-tender voids the row, so explained ones drop
+    // out), plus the slips with no row. A matched batch total moved no money,
+    // so this is a paperwork gap: AMBER, never a variance.
+    const slipChecks = await client.$queryRaw<{ session: string; n: number }[]>`
+      WITH latest AS (
+        SELECT DISTINCT ON (e.tev_session_id, e.tev_payload->>'tenderId')
+               e.tev_session_id, e.tev_payload
+          FROM accounts.till_event e
+         WHERE e.tev_session_id = ANY(${closedIds}::uuid[]) AND e.tev_acc_year = ${day.tbdAccYear}::char(9)
+           AND e.tev_event_code = ${TillEventCode.SLIP_CHECK}
+         ORDER BY e.tev_session_id, e.tev_payload->>'tenderId', e.tev_event_on DESC
+      ), counted AS (
+        SELECT l.tev_session_id::text AS session,
+               ((SELECT count(DISTINCT t.td_id)
+                   FROM jsonb_array_elements_text(COALESCE(l.tev_payload->'noSlipRows', '[]'::jsonb)
+                                                  || COALESCE(l.tev_payload->'amountDiffersRows', '[]'::jsonb)) AS r(td_id)
+                   JOIN accounts.acc_tender_detail t
+                     ON t.td_id = r.td_id::uuid AND t.td_acc_year = ${day.tbdAccYear}::char(9)
+                  WHERE t.td_is_deleted = false AND t.td_is_voided = false)
+                + COALESCE(jsonb_array_length(l.tev_payload->'slipsWithoutRowList'), 0))::int AS n
+          FROM latest l
+      )
+      SELECT session, sum(n)::int AS n FROM counted WHERE n > 0 GROUP BY session`;
 
     // Should be impossible: every movement but an EXCHANGE posts a voucher,
     // and a CLOSED session's decided variances posted at its close.
@@ -260,11 +286,20 @@ export class TillDayCloseService {
       item(
         TillCloseCheckCode.SLIP_GAPS,
         TillCloseCheckTone.AMBER,
-        sum(slipGaps),
-        slipGaps.length > 0
-          ? `${sum(slipGaps)} card / UPI slip gap(s) still open (reported, not enforced): ${named(sessionsOf(slipGaps))}`
+        sum(slipGaps) + sum(slipChecks),
+        slipGaps.length + slipChecks.length > 0
+          ? [
+              slipGaps.length > 0
+                ? `${sum(slipGaps)} card / UPI slip gap(s) still open: ${named(sessionsOf(slipGaps))}`
+                : null,
+              slipChecks.length > 0
+                ? `${sum(slipChecks)} slip(s) the slip check could not match: ${named(sessionsOf(slipChecks))}`
+                : null,
+            ]
+              .filter((x) => x !== null)
+              .join('; ') + ' (reported, not enforced)'
           : 'No slip gap is open',
-        sessionsOf(slipGaps),
+        [...new Set([...sessionsOf(slipGaps), ...sessionsOf(slipChecks)])],
       ),
       item(
         TillCloseCheckCode.HELD_BILLS,
@@ -765,7 +800,7 @@ export class TillDayCloseService {
       },
     });
     if (!day) {
-      throwTillNotFound('Business day', 'tbdId', key.tbdId);
+      throwTillNotFound(TillErrorCode.DAY_NOT_FOUND, 'Business day', 'tbdId', key.tbdId);
     }
     return day;
   }

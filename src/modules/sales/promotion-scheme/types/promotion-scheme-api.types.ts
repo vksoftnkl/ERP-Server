@@ -3,8 +3,12 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
+import type { PromotionSchemeErrorCode } from './promotion-scheme-error-codes';
 
-export type PromotionSchemeErrorDetail = ModuleApiErrorDetail;
+/** Notes 119: every refusal names its code — see promotion-scheme-error-codes.ts. */
+export interface PromotionSchemeErrorDetail extends ModuleApiErrorDetail {
+  code: PromotionSchemeErrorCode;
+}
 export type PromotionSchemeErrorResponse = ModuleApiErrorResponse<PromotionSchemeErrorDetail>;
 export type PromotionSchemeSuccessResponse<
   T,

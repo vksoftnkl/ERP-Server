@@ -8,6 +8,9 @@ import { PdcPostingMode, PdcStatus } from '../receipt/types/receipt-enum';
 import { daysBetween, todayUtc } from '../receipt/receipt.utils';
 import { ChequeDueBucket, STALE_AFTER_DAYS } from './types/cheque-enum';
 import type { ChequeErrorDetail } from './types/cheque-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * The checks that belong to no single endpoint, written once and shared by the
@@ -238,6 +241,7 @@ export async function lockChequeOrThrow(
       'Cheque not found',
       field,
       `No live cheque ${keys.apdId} at this company / branch in ${keys.apdAccYear}`,
+      VCH.CHEQUE_NOT_FOUND,
     );
   }
 
@@ -248,6 +252,7 @@ export async function lockChequeOrThrow(
     throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
       {
         field,
+        code: ACC.INVALID,
         message:
           `${cheque.apdInstrumentNo} is an ISSUED cheque, not a received one. ` +
           'It belongs to the Issued Cheques screen.',
@@ -278,6 +283,7 @@ export function assertStatus(
   throwAccountsConflict<ChequeErrorDetail>(`Cheque cannot be ${action}`, [
     {
       field,
+      code: VCH.CHEQUE_STATE,
       message:
         `${cheque.apdInstrumentNo} is ${cheque.apdStatus} — ` +
         `${whatCanBeDone(cheque.apdStatus)}.`,
@@ -328,6 +334,7 @@ export function assertDateOnOrAfter(
   throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
     {
       field,
+      code: CHQ.DATE_TOO_EARLY,
       message: `${what} on or after ${formatDate(earliest)}, ${earliestLabel}`,
     },
   ]);
@@ -345,6 +352,7 @@ export function assertNotInFuture(date: Date, what: string, field: string): void
   throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
     {
       field,
+      code: CHQ.DATE_FUTURE,
       message: `${what} cannot be dated ${formatDate(date)} — that is in the future`,
     },
   ]);
@@ -419,6 +427,7 @@ export async function resolveChequesInHand(
     throwAccountsBadRequest<ChequeErrorDetail>('Cheque is not linked to its receipt', [
       {
         field,
+        code: ACC.INVALID,
         message:
           `${cheque.apdInstrumentNo} has no tender row, so the ledger it was posted to cannot ` +
           'be known. A cheque posted ON_RECEIPT always has one; this row was written by hand ' +
@@ -441,6 +450,7 @@ export async function resolveChequesInHand(
     throwAccountsBadRequest<ChequeErrorDetail>('Cheque is not linked to its receipt', [
       {
         field,
+        code: ACC.INVALID,
         message:
           `The tender row behind ${cheque.apdInstrumentNo} has been deleted, so the ledger it ` +
           'was posted to cannot be known.',
@@ -497,17 +507,23 @@ export async function loadBankLedger(
       'Bank ledger not found',
       field,
       `No ledger ${bankLedgerId} is visible to this company`,
+      VCH.LEDGER_NOT_FOUND,
     );
   }
   if (!ledger.ledIsActive) {
     throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
-      { field, message: `"${ledger.ledName}" is inactive and cannot take a deposit` },
+      {
+        field,
+        code: VCH.LEDGER_INACTIVE,
+        message: `"${ledger.ledName}" is inactive and cannot take a deposit`,
+      },
     ]);
   }
   if (ledger.ledLedgerType !== 'BANK') {
     throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
       {
         field,
+        code: CHQ.BANK_WRONG,
         message:
           `"${ledger.ledName}" is a ${ledger.ledLedgerType ?? 'untyped'} ledger. ` +
           'A cheque is deposited into a BANK ledger.',

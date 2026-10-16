@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { AuthErrorCode, authErrorBody } from './types/auth-error-codes';
 export type AccessTokenClaims = {
   sub: string;
   user_name: string;
@@ -62,7 +63,9 @@ export class TokenService {
     ttlSeconds: number,
   ): TType extends 'access' ? SignedAccessToken : SignedRefreshToken {
     if (!this.secret) {
-      throw new InternalServerErrorException('JWT secret is not configured');
+      throw new InternalServerErrorException(
+        authErrorBody('JWT secret is not configured', 'server', AuthErrorCode.JWT_SECRET_MISSING),
+      );
     }
     const now = Math.floor(Date.now() / 1000);
     const payload = {
@@ -94,25 +97,27 @@ export class TokenService {
     expectedType: TType,
   ): TType extends 'access' ? AccessTokenPayload : RefreshTokenPayload {
     if (!this.secret) {
-      throw new InternalServerErrorException('JWT secret is not configured');
+      throw new InternalServerErrorException(
+        authErrorBody('JWT secret is not configured', 'server', AuthErrorCode.JWT_SECRET_MISSING),
+      );
     }
     const tokenSegments = token.split('.');
     if (tokenSegments.length !== 3) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     const [headerSegment, payloadSegment, signatureSegment] = tokenSegments;
-    const header = this.decodeSegment<Record<string, unknown>>(headerSegment);
+    const header = this.decodeSegment<Record<string, unknown>>(headerSegment, expectedType);
     if (header.alg !== 'HS256' || header.typ !== 'JWT') {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     const unsignedToken = `${headerSegment}.${payloadSegment}`;
     const expectedSignature = createHmac('sha256', this.secret)
       .update(unsignedToken)
       .digest('base64url');
     if (!this.compareSignatures(signatureSegment, expectedSignature)) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
-    const payloadRecord = this.decodeSegment<Record<string, unknown>>(payloadSegment);
+    const payloadRecord = this.decodeSegment<Record<string, unknown>>(payloadSegment, expectedType);
     return this.validatePayload(payloadRecord, expectedType) as TType extends 'access'
       ? AccessTokenPayload
       : RefreshTokenPayload;
@@ -120,13 +125,32 @@ export class TokenService {
   private encodeBase64Url(data: Record<string, unknown>): string {
     return Buffer.from(JSON.stringify(data)).toString('base64url');
   }
-  private decodeSegment<T>(segment: string): T {
+  private decodeSegment<T>(segment: string, expectedType: 'access' | 'refresh'): T {
     try {
       const json = Buffer.from(segment, 'base64url').toString('utf8');
       return JSON.parse(json) as T;
     } catch {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
+  }
+  /**
+   * Notes 119: the message stays 'Invalid access token' for both token kinds
+   * (what the routes always answered); the code says which kind failed, since
+   * a bad access token can still be refreshed and a bad refresh token cannot.
+   */
+  private invalidToken(expectedType: 'access' | 'refresh'): UnauthorizedException {
+    return new UnauthorizedException(
+      expectedType === 'access'
+        ? authErrorBody('Invalid access token', 'authorization', AuthErrorCode.ACCESS_TOKEN_INVALID)
+        : authErrorBody('Invalid access token', 'refresh_token', AuthErrorCode.REFRESH_TOKEN_INVALID),
+    );
+  }
+  private expiredToken(expectedType: 'access' | 'refresh'): UnauthorizedException {
+    return new UnauthorizedException(
+      expectedType === 'access'
+        ? authErrorBody('Invalid access token', 'authorization', AuthErrorCode.ACCESS_TOKEN_EXPIRED)
+        : authErrorBody('Invalid access token', 'refresh_token', AuthErrorCode.REFRESH_TOKEN_EXPIRED),
+    );
   }
   private compareSignatures(receivedSignature: string, expectedSignature: string): boolean {
     const receivedBuffer = Buffer.from(receivedSignature, 'utf8');
@@ -151,42 +175,41 @@ export class TokenService {
     const branchId = payload.branch_id;
     const deviceId = payload.device_id;
     if (typeof sub !== 'string' || sub.length === 0) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (typeof userName !== 'string' || userName.length === 0) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt < 0) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
-    if (
-      typeof expiresAt !== 'number' ||
-      !Number.isInteger(expiresAt) ||
-      expiresAt <= issuedAt ||
-      expiresAt <= Math.floor(Date.now() / 1000)
-    ) {
-      throw new UnauthorizedException('Invalid access token');
+    if (typeof expiresAt !== 'number' || !Number.isInteger(expiresAt) || expiresAt <= issuedAt) {
+      throw this.invalidToken(expectedType);
+    }
+    // The same check as before, split off so an expired token is told apart.
+    if (expiresAt <= Math.floor(Date.now() / 1000)) {
+      throw this.expiredToken(expectedType);
     }
     if (tokenType !== expectedType) {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (userType !== undefined && userType !== null && typeof userType !== 'string') {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (companyId !== undefined && companyId !== null && typeof companyId !== 'string') {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     // Absent on every token minted before these claims existed. That is a
     // session with no counter, not a bad token, so it normalizes to null the
     // same way an unregistered device does rather than forcing a re-login.
     if (branchId !== undefined && branchId !== null && typeof branchId !== 'string') {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     if (deviceId !== undefined && deviceId !== null && typeof deviceId !== 'string') {
-      throw new UnauthorizedException('Invalid access token');
+      throw this.invalidToken(expectedType);
     }
     const normalizedPayload = {
       sub,

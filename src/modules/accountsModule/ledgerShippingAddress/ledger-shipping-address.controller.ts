@@ -40,6 +40,7 @@ import {
   LedgerShippingAddressPayload,
   LedgerShippingAddressSuccessResponse,
 } from './types/ledger-shipping-address-api.types';
+import { LedgerShippingAddressErrorCode } from './types/ledger-shipping-address-error-codes';
 import { throwAccountsBadRequest } from 'src/common/utils/module-service.utils';
 import { API_VERSION } from '../../../common/constants/api-version';
 
@@ -135,6 +136,7 @@ export class LedgerShippingAddressController {
           {
             field: 'ledgerId',
             message: "Pass saaId to fetch one address, or ledgerId to list a ledger's addresses",
+            code: LedgerShippingAddressErrorCode.ID_REQUIRED,
           },
         ],
       );

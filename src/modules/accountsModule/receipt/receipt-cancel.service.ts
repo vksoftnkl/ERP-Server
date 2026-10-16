@@ -35,6 +35,8 @@ import { flipSide, toAmount, todayUtc } from './receipt.utils';
 import { CancelReceiptDto } from './dto/post-receipt.dto';
 import { DrCr, PdcStatus, VoucherStatus } from './types/receipt-enum';
 import type { ReceiptCancelPayload, ReceiptErrorDetail } from './types/receipt-api.types';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.3 — cancel: unmaking a posted receipt.
@@ -136,6 +138,7 @@ export class ReceiptCancelService {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be cancelled', [
           {
             field: 'avhVoucherId',
+            code: statusOf(header) === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_POSTED,
             message:
               `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
               'Only a POSTED receipt is cancelled; a DRAFT is simply not posted.',
@@ -148,6 +151,7 @@ export class ReceiptCancelService {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be cancelled', [
           {
             field: 'avhVoucherId',
+            code: ACC.PDC_VOUCHER,
             message:
               'This is a post-dated cheque voucher, not a receipt. Cancel the receipt it belongs ' +
               'to and both are reversed together.',
@@ -521,6 +525,7 @@ export class ReceiptCancelService {
       throwAccountsBadRequest<ReceiptErrorDetail>('The reversal does not balance', [
         {
           field: 'avhVoucherId',
+          code: VCH.UNBALANCED,
           message:
             `The reversal of ${voucher.avhVoucherRefno} is out by ${totals.difference.toFixed(2)}. ` +
             'The original voucher is unbalanced; nothing has been changed.',

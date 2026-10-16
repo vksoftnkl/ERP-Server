@@ -15,6 +15,7 @@ import {
   throwStockUnprocessable,
 } from 'src/common/utils/module-service.utils';
 import { StockAccountsPostingService } from '../posting/stock-accounts-posting.service';
+import { StockErrorCode } from '../types/stock-error-codes';
 import { settleTransitShort } from '../stock-voucher/stock-voucher-posting.helper';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { SaveStockVoucherDto } from '../stock-voucher/dto/save-stock-voucher.dto';
@@ -143,6 +144,7 @@ export class StockTransferService {
       // godowns that a chain often names identically.
       errors.push({
         field: 'toGodownId',
+        code: StockErrorCode.TRANSFER_SAME_GODOWN,
         message:
           'A transfer within one branch must move the stock somewhere: the source and destination godowns are the same.',
       });
@@ -154,6 +156,7 @@ export class StockTransferService {
         // Only meaningful within one branch, for the same reason as above.
         errors.push({
           field,
+          code: StockErrorCode.TRANSFER_SAME_GODOWN,
           message: `Line ${line.lineNo} takes stock from the godown this transfer is going to. A godown cannot transfer to itself.`,
         });
       }
@@ -186,6 +189,7 @@ export class StockTransferService {
         if (clashedSource !== undefined) {
           errors.push({
             field,
+            code: StockErrorCode.TRANSFER_LINE_CLASH,
             message: `Line ${line.lineNo} sends the same item, lot and bucket as row ${clashedSource + 1}. One despatch carries one destination godown, so both lines would become the same transit row and the despatch would be refused. Two source godowns is two transfers.`,
           });
         } else {
@@ -198,6 +202,7 @@ export class StockTransferService {
         } else if (firstBucket.bucket !== bucket) {
           errors.push({
             field,
+            code: StockErrorCode.TRANSFER_MIXED_BUCKETS,
             message: `Line ${line.lineNo} ships the same item and lot as row ${firstBucket.index + 1} in a different bucket (${bucket} against ${firstBucket.bucket}). The receiving branch matches on item and lot alone, would find two transit rows and could never post the receipt. Send them as two transfers.`,
           });
         }
@@ -286,6 +291,7 @@ export class StockTransferService {
       if (!lot) {
         errors.push({
           field,
+          code: StockErrorCode.LOT_NOT_FOUND,
           message: `Line ${line.lineNo} names a lot that does not exist. Pick the holding from the balance.`,
         });
         return;
@@ -293,6 +299,7 @@ export class StockTransferService {
       if (lot.slt_company_id !== header.companyId) {
         errors.push({
           field,
+          code: StockErrorCode.LOT_OTHER_COMPANY,
           message: `Line ${line.lineNo} names a lot belonging to another company.`,
         });
       }
@@ -302,6 +309,7 @@ export class StockTransferService {
         // and both balances are wrong afterwards in a way no report will show.
         errors.push({
           field,
+          code: StockErrorCode.LOT_OTHER_ITEM,
           message: `Line ${line.lineNo} names a lot that belongs to a different item. The lot is the identity of the stock being moved — it cannot be carried across items.`,
         });
       }
@@ -323,6 +331,7 @@ export class StockTransferService {
         reported.add(key);
         errors.push({
           field,
+          code: StockErrorCode.INSUFFICIENT_STOCK,
           message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists, whatever the item's negative-stock policy says.`,
         });
       }
@@ -561,6 +570,7 @@ export class StockTransferService {
         'Transfer not found',
         'outVoucherId',
         `No TRANSFER_OUT ${outVoucherId} in ${accYear} for this company.`,
+        StockErrorCode.TRANSFER_NOT_FOUND,
       );
     }
     this.assertReceivable(out, branchId);
@@ -607,6 +617,7 @@ export class StockTransferService {
       throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer is deleted', [
         {
           field: 'outVoucherId',
+          code: StockErrorCode.TRANSFER_DELETED,
           message: `${out.svh_refno} has been deleted by the sending branch.`,
         },
       ]);
@@ -617,6 +628,7 @@ export class StockTransferService {
       throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer is for another branch', [
         {
           field: 'branchId',
+          code: StockErrorCode.TRANSFER_OTHER_BRANCH,
           message: `${out.svh_refno} was sent to another branch. A transfer can only be received where it was addressed.`,
         },
       ]);
@@ -625,6 +637,7 @@ export class StockTransferService {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(`Transfer is ${out.svh_status}`, [
         {
           field: 'outVoucherId',
+          code: StockErrorCode.TRANSFER_NOT_IN_TRANSIT,
           message:
             out.svh_status === 'RECEIVED'
               ? `${out.svh_refno} has already been received in full.`
@@ -669,6 +682,7 @@ export class StockTransferService {
         'Transfer not found',
         'linkSrcDocId',
         `No TRANSFER_OUT ${header.linkSrcDocId} in ${header.linkSrcAccYear} for this company. A receipt must name the despatch it is against.`,
+        StockErrorCode.TRANSFER_NOT_FOUND,
       );
     }
     this.assertReceivable(out, header.branchId);
@@ -716,6 +730,7 @@ export class StockTransferService {
         [
           {
             field: 'lines',
+            code: StockErrorCode.RECEIPT_LINES_REQUIRED,
             message:
               'A receipt records what ARRIVED. If nothing arrived there is no receipt to raise — a short is what remains unkeyed, and it keeps the transfer open by itself.',
           },
@@ -751,6 +766,7 @@ export class StockTransferService {
       if (!rows?.length) {
         errors.push({
           field,
+          code: StockErrorCode.RECEIPT_NOT_IN_TRANSIT,
           message: `Line ${line.lineNo}: nothing of this lot is in transit to this godown. The receipt grid is opened from the despatch — godownId here is the DESTINATION, not where the stock came from.`,
         });
         return;
@@ -760,6 +776,7 @@ export class StockTransferService {
         // saved before the despatch-side check existed.
         errors.push({
           field,
+          code: StockErrorCode.RECEIPT_BUCKET_AMBIGUOUS,
           message: `Line ${line.lineNo}: this item and lot were shipped in more than one bucket (${rows.map((row) => row.bucket).join(', ')}). The receipt cannot tell them apart. The sender must cancel and ship them as separate transfers.`,
         });
         return;
@@ -775,6 +792,7 @@ export class StockTransferService {
       if (bucket !== row.bucket && bucket !== 'DAMAGED') {
         errors.push({
           field,
+          code: StockErrorCode.RECEIPT_BUCKET_CHANGED,
           message: `Line ${line.lineNo} was shipped as ${row.bucket} and is being received as ${bucket}. Stock cannot change bucket by arriving — receive it as ${row.bucket}, or as DAMAGED if it arrived broken.`,
         });
       }
@@ -785,6 +803,7 @@ export class StockTransferService {
           reported.add(key);
           errors.push({
             field,
+            code: StockErrorCode.RECEIPT_OVER_REMAINING,
             message: `Line ${line.lineNo} receives ${asked} but only ${row.remainingQty} of that lot is still in transit (${row.sentQty} sent, ${row.receivedQty} already received, ${row.damageQty} damaged). A second receipt opens with the remainder, not the original quantity.`,
           });
         }
@@ -839,6 +858,7 @@ export class StockTransferService {
       throwStockConflict<StockErrorDetail, StockErrorResponse>('Receipt links no transfer', [
         {
           field: 'linkSrcDocId',
+          code: StockErrorCode.RECEIPT_NO_TRANSFER,
           message: `${draft.header.refno} names no despatch. A receipt cannot be posted without the transfer it is against.`,
         },
       ]);
@@ -912,12 +932,16 @@ export class StockTransferService {
     `;
     if (!reason || !reason.srm_is_active) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Reason not usable', [
-        { field: 'reasonId', message: 'A short settlement must cite a live stock reason (e.g. TRANSIT_LOSS).' },
+        {
+          field: 'reasonId',
+          code: reason ? StockErrorCode.REASON_INACTIVE : StockErrorCode.REASON_NOT_FOUND,
+          message: 'A short settlement must cite a live stock reason (e.g. TRANSIT_LOSS).',
+        },
       ]);
     }
     if (reason.srm_direction === 'IN') {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Reason points the wrong way', [
-        { field: 'reasonId', message: 'A transit short is stock LOST; the reason must be direction OUT or BOTH.' },
+        { field: 'reasonId', code: StockErrorCode.REASON_WRONG_DIRECTION, message: 'A transit short is stock LOST; the reason must be direction OUT or BOTH.' },
       ]);
     }
     const remarks = args.remarks?.trim() || null;

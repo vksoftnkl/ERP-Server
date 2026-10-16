@@ -28,6 +28,7 @@ import { ItemEanCodePayload } from '../items-ean-code-master/types/item-ean-code
 import { ItemReorderPayload } from '../items-reorder-master/types/item-reorder-api.types';
 import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils';
+import { ItemErrorCode } from './types/item-error-codes';
 
 export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
 
@@ -183,7 +184,13 @@ export class ItemMasterUpdateService {
     }
     throwInventoryBadRequest<InventoryErrorDetail>(
       'Unit not found in unit conversion for this item',
-      [{ field, message: `Unit ${unitId} has no unit conversion row for this item` }],
+      [
+        {
+          field,
+          code: ItemErrorCode.UNIT_NOT_CONVERTED,
+          message: `Unit ${unitId} has no unit conversion row for this item`,
+        },
+      ],
     );
   }
 
@@ -525,6 +532,7 @@ export class ItemMasterUpdateService {
         throwInventoryBadRequest<InventoryErrorDetail>('Duplicate rows in one save', [
           {
             field: `${field}.${index}`,
+            code: ItemErrorCode.DUPLICATE_CHILD_ROWS,
             message: `${field}[${first}] and ${field}[${index}] are ${what}.`,
           },
         ]);

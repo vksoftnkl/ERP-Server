@@ -6,6 +6,7 @@ import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerM
 import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import { LedgerBankAccountPayload, SupplierPayload } from './types/supplier-api.types';
+import { SupplierErrorCode } from './types/supplier-error-codes';
 import {
   DEFAULT_ACTOR,
   PurchaseWriteClient,
@@ -88,7 +89,11 @@ export class SuppliersService {
       // A client may echo the link it created the supplier with; only a different ledger is wrong.
       if (saveSupplierDto.supLinkLedId && saveSupplierDto.supLinkLedId !== saveSupplierDto.supId) {
         throwPurchaseBadRequest('Validation failed', [
-          { field: 'supLinkLedId', message: 'supLinkLedId applies to a create only' },
+          {
+            field: 'supLinkLedId',
+            message: 'supLinkLedId applies to a create only',
+            code: SupplierErrorCode.LINK_LEDGER_ON_UPDATE,
+          },
         ]);
       }
       return this.updateSupplier(saveSupplierDto);
@@ -104,6 +109,7 @@ export class SuppliersService {
         'Supplier not found',
         'supId',
         `No active supplier found with id ${supId}`,
+        SupplierErrorCode.NOT_FOUND,
       );
     }
     // Bank accounts live on the linked account ledger (it shares sup_id as its PK), so load
@@ -125,6 +131,7 @@ export class SuppliersService {
           'Supplier not found',
           'supId',
           `No active supplier found with id ${supId}`,
+          SupplierErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -142,6 +149,7 @@ export class SuppliersService {
           'Supplier not found',
           'supId',
           `No active supplier found with id ${supId}`,
+          SupplierErrorCode.NOT_FOUND,
         );
       }
       // Soft delete the linked account ledger (shares sup_id as its PK) so it can't stay active
@@ -206,20 +214,38 @@ export class SuppliersService {
             {
               field: 'ledgerBankAccount',
               message: 'Bank accounts cannot be sent with supLinkLedId; save them afterwards',
+              code: SupplierErrorCode.BANK_WITH_LINK_LEDGER,
             },
           ]);
         }
         const dto = linkLedger
           ? this.withLinkedLedgerDefaults(saveSupplierDto, linkLedger)
           : saveSupplierDto;
-        const normalizedName = normalizeRequiredText(dto.supName, 'supName');
+        const normalizedName = normalizeRequiredText(
+          dto.supName,
+          'supName',
+          undefined,
+          SupplierErrorCode.NAME_REQUIRED,
+        );
         const normalizedPurchaseType = normalizeRequiredText(
           dto.supPurchaseType,
           'supPurchaseType',
+          undefined,
+          SupplierErrorCode.PURCHASE_TYPE_REQUIRED,
         );
-        const normalizedStateName = normalizeRequiredText(dto.supStateName, 'supStateName');
+        const normalizedStateName = normalizeRequiredText(
+          dto.supStateName,
+          'supStateName',
+          undefined,
+          SupplierErrorCode.STATE_NAME_REQUIRED,
+        );
         const normalizedStateCode = this.normalizeStateCode(dto.supStateCode);
-        const normalizedGstType = normalizeRequiredText(dto.supGstType, 'supGstType');
+        const normalizedGstType = normalizeRequiredText(
+          dto.supGstType,
+          'supGstType',
+          undefined,
+          SupplierErrorCode.GST_TYPE_REQUIRED,
+        );
         const now = new Date();
         const createdBy = resolveActor(dto.supCreatedBy, this.requestContextService.getUserId());
         const data: Prisma.SupplierUncheckedCreateInput = {
@@ -270,7 +296,11 @@ export class SuppliersService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError(error, 'Supplier already exists', [
-        { field: 'supName', message: 'Duplicate supplier name is not allowed' },
+        {
+          field: 'supName',
+          message: 'Duplicate supplier name is not allowed',
+          code: SupplierErrorCode.NAME_EXISTS,
+        },
       ]);
       throw error;
     }
@@ -292,7 +322,11 @@ export class SuppliersService {
     const previous = await tx.supplier.findUnique({ where: { supId } });
     if (previous && !previous.supIsDeleted) {
       throwPurchaseConflict('Supplier already exists', [
-        { field: 'supLinkLedId', message: `Ledger "${ledger.ledName}" is already a supplier` },
+        {
+          field: 'supLinkLedId',
+          message: `Ledger "${ledger.ledName}" is already a supplier`,
+          code: SupplierErrorCode.LINK_LEDGER_ALREADY_SUPPLIER,
+        },
       ]);
     }
     let saved: Supplier;
@@ -340,7 +374,11 @@ export class SuppliersService {
     const ledger = await tx.accLedgerMaster.findFirst({ where: { ledId, ledIsDeleted: false } });
     if (!ledger) {
       throwPurchaseBadRequest('Ledger does not exist', [
-        { field: 'supLinkLedId', message: `No active account ledger found with id ${ledId}` },
+        {
+          field: 'supLinkLedId',
+          message: `No active account ledger found with id ${ledId}`,
+          code: SupplierErrorCode.LINK_LEDGER_NOT_FOUND,
+        },
       ]);
     }
     if (ledger.ledLedgerType !== 'PARTY' && !(await this.findCustomerRole(tx, ledId))) {
@@ -348,6 +386,7 @@ export class SuppliersService {
         {
           field: 'supLinkLedId',
           message: `Ledger "${ledger.ledName}" is a ${ledger.ledLedgerType ?? 'untyped'} ledger; only a PARTY ledger can be a supplier`,
+          code: SupplierErrorCode.LINK_LEDGER_NOT_PARTY,
         },
       ]);
     }
@@ -365,19 +404,34 @@ export class SuppliersService {
             'Supplier not found',
             'supId',
             `No active supplier found with id ${supId}`,
+            SupplierErrorCode.NOT_FOUND,
           );
         }
-        const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
+        const normalizedName = normalizeRequiredText(
+          saveSupplierDto.supName,
+          'supName',
+          undefined,
+          SupplierErrorCode.NAME_REQUIRED,
+        );
         const normalizedPurchaseType = normalizeRequiredText(
           saveSupplierDto.supPurchaseType,
           'supPurchaseType',
+          undefined,
+          SupplierErrorCode.PURCHASE_TYPE_REQUIRED,
         );
         const normalizedStateName = normalizeRequiredText(
           saveSupplierDto.supStateName,
           'supStateName',
+          undefined,
+          SupplierErrorCode.STATE_NAME_REQUIRED,
         );
         const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
-        const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
+        const normalizedGstType = normalizeRequiredText(
+          saveSupplierDto.supGstType,
+          'supGstType',
+          undefined,
+          SupplierErrorCode.GST_TYPE_REQUIRED,
+        );
         await this.ensureSupplierGroupExists(tx, saveSupplierDto.supGroupId);
         const nextCompanyId = hasOwnProperty(saveSupplierDto, 'supCompanyId')
           ? (saveSupplierDto.supCompanyId ?? null)
@@ -446,7 +500,11 @@ export class SuppliersService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError(error, 'Supplier already exists', [
-        { field: 'supName', message: 'Duplicate supplier name is not allowed' },
+        {
+          field: 'supName',
+          message: 'Duplicate supplier name is not allowed',
+          code: SupplierErrorCode.NAME_EXISTS,
+        },
       ]);
       throw error;
     }
@@ -530,7 +588,11 @@ export class SuppliersService {
     });
     if (!record) {
       throwPurchaseBadRequest('Supplier group does not exist', [
-        { field: 'supGroupId', message: `No active supplier group found with id ${supGroupId}` },
+        {
+          field: 'supGroupId',
+          message: `No active supplier group found with id ${supGroupId}`,
+          code: SupplierErrorCode.UNKNOWN_GROUP,
+        },
       ]);
     }
   }
@@ -551,7 +613,11 @@ export class SuppliersService {
     });
     if (existing) {
       throwPurchaseConflict('Supplier name already exists for this company', [
-        { field: 'supName', message: 'Duplicate supplier name is not allowed for this company' },
+        {
+          field: 'supName',
+          message: 'Duplicate supplier name is not allowed for this company',
+          code: SupplierErrorCode.NAME_EXISTS,
+        },
       ]);
     }
   }
@@ -640,7 +706,11 @@ export class SuppliersService {
     const normalized = (value ?? '').trim().toUpperCase();
     if (normalized.length !== 2) {
       throwPurchaseBadRequest('Validation failed', [
-        { field: 'supStateCode', message: 'supStateCode must be exactly 2 characters' },
+        {
+          field: 'supStateCode',
+          message: 'supStateCode must be exactly 2 characters',
+          code: SupplierErrorCode.STATE_CODE_INVALID,
+        },
       ]);
     }
     return normalized;

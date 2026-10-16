@@ -3,6 +3,7 @@ import { StockExceptionFilter } from 'src/common/utils/module-exception-filter.u
 import { buildStockErrorResponse } from 'src/common/utils/module-service.utils';
 import { STOCK_ENGINE_SQLSTATE_STATUS } from '../stock-voucher/types/stock-voucher.types';
 import type { StockErrorDetail, StockErrorResponse } from './types/selling-price-bulk.types';
+import { STOCK_DB_ERROR_CODES, StockErrorCode } from '../types/stock-error-codes';
 
 /** What a Prisma raw-query failure carries when a function RAISEd inside it. */
 interface RawQueryErrorMeta {
@@ -32,6 +33,16 @@ const CONSTRAINT_MESSAGES: Readonly<Record<string, string>> = {
   ck_ipm_bucket_mrp: 'An MRP bucket must be above zero.',
   ck_ipm_bucket_sp: 'A sale-price bucket must be above zero.',
   chk_ipm_nonnegative: 'A selling price cannot be negative.',
+};
+
+/** Notes 119 — the code each constraint above is refused with. */
+const CONSTRAINT_CODES: Readonly<Record<string, StockErrorCode>> = {
+  ex_ipm_overlap: StockErrorCode.PRICE_OVERLAP,
+  ck_ipm_not_above_mrp: StockErrorCode.PRICE_ABOVE_MRP,
+  ck_ipm_bucket_mrp_is_max: StockErrorCode.PRICE_BUCKET_MRP_MISMATCH,
+  ck_ipm_bucket_mrp: StockErrorCode.PRICE_BUCKET_MRP_ZERO,
+  ck_ipm_bucket_sp: StockErrorCode.PRICE_BUCKET_SP_ZERO,
+  chk_ipm_nonnegative: StockErrorCode.PRICE_NEGATIVE,
 };
 
 /**
@@ -91,7 +102,11 @@ export class SellingPriceBulkExceptionFilter extends StockExceptionFilter<
 
     return new HttpException(
       buildStockErrorResponse<StockErrorDetail, StockErrorResponse>(message, [
-        { field: named ?? 'request', message: named ? `${message} (${engineMessage})` : message },
+        {
+          field: named ?? 'request',
+          code: named ? CONSTRAINT_CODES[named] : STOCK_DB_ERROR_CODES[sqlState],
+          message: named ? `${message} (${engineMessage})` : message,
+        },
       ]),
       status,
     );

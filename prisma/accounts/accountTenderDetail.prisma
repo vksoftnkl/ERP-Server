@@ -92,6 +92,10 @@ model AccTenderDetail {
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
   //   ck_td_src_doc_type admits 'EXPENSE' since 20261008110000 (the ExpV tender rows).
+  //   Notes 126 (20261016120000): ck_td_src_doc_type admits 'VOUCHER' — a row the server wrote
+  //   for a cash / bank line no document row covered (src doc = td_voucher_id = the voucher) —
+  //   and ck_td_src_module 'TILL' (the till's own transfers). ix_td_voucher (td_voucher_id) and
+  //   ix_td_src_doc (td_src_doc_id) join a voucher to its tender rows (money-lines.ts).
   // Partial index (DB-only) for the till's expected-cash query (20261008110000):
   //   CREATE INDEX ix_td_session ON accounts.acc_tender_detail
   //       (td_session_id, td_acc_year, td_tender_type_id, td_src_doc_type)

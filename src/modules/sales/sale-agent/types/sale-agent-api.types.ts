@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as SaleAgentErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as SaleAgentErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { SaleAgentErrorCode } from './sale-agent-error-codes';
+
+/** Notes 119: every refusal names its code — see sale-agent-error-codes.ts. */
+export interface SaleAgentErrorDetail extends SalesErrorDetail {
+  code: SaleAgentErrorCode;
+}
+export type SaleAgentErrorResponse = SalesErrorResponse<SaleAgentErrorDetail>;
 export type { SalesSuccessResponse as SaleAgentSuccessResponse } from 'src/common/types/module-api.types';
 export interface SaleAgentPayload {
   saId: string;

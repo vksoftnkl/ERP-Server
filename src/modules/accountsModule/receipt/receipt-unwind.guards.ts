@@ -4,6 +4,7 @@ import { BillType, CANCELLABLE_PDC_STATUSES } from './types/receipt-enum';
 import { receiptChequeFilter, type ReceiptChequeScope } from './receipt-cheque-links';
 import { ZERO } from './receipt.utils';
 import type { ReceiptErrorDetail } from './types/receipt-api.types';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * The two refusals that guard EVERY unwind of a posted receipt, whichever
@@ -76,6 +77,7 @@ export async function assertChequesStillHeld(
     throwAccountsConflict<ReceiptErrorDetail>(refusal(verb), [
       {
         field: 'avhVoucherId',
+        code: VCH.CHEQUE_MOVED,
         message:
           `Cheque ${first.apdInstrumentNo} is ${first.apdStatus}. Once an instrument has left ` +
           'the drawer the receipt behind it cannot be unmade — unwind it on the Received ' +
@@ -125,6 +127,7 @@ export async function assertAdvancesUntouched(
       throwAccountsConflict<ReceiptErrorDetail>(refusal(verb), [
         {
           field: 'avhVoucherId',
+          code: VCH.ADVANCE_SPENT,
           message:
             `The on-account balance from ${advance.ablDocRefno} has already been used — ` +
             `${advance.ablBillAmount.minus(pending).toFixed(2)} of it is settling another bill. ` +

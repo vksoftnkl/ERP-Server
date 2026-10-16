@@ -1,4 +1,5 @@
 import { MasterErrorDetail, throwMasterNotFound } from '../../../common/utils/module-service.utils';
+import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DocumentNumberQueryDto } from '../dto/document-number-query.dto';
 import { DocumentLookupModuleKey, DocumentNumberPayload } from '../types/master-lookup-api.types';
@@ -129,6 +130,7 @@ export class DocumentNumberLookup {
         `${DOCUMENT_LABELS[module]} not found`,
         'orderNo',
         `No ${DOCUMENT_LABELS[module].toLowerCase()} found for number ${orderNo} in company ${companyId} / branch ${branchId}`,
+        MasterLookupErrorCode.DOCUMENT_NOT_FOUND,
       );
     }
     return {

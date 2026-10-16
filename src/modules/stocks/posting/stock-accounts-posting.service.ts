@@ -10,6 +10,7 @@ import type {
   StockVoucherType,
 } from '../stock-voucher/types/stock-voucher.types';
 import { StockCogsModeService, type CogsModeResolver } from './stock-cogs-mode.service';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 /** The DI token for the cogs-mode resolver, so a test can hand in a literal. */
 export const STOCK_COGS_MODE = Symbol('STOCK_COGS_MODE');
@@ -293,7 +294,7 @@ export class StockAccountsPostingService {
        WHERE srm_id = ${input.reasonId}::uuid AND srm_is_deleted = false`;
     if (!reason) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Reason not found', [
-        { field: 'reasonId', message: `No stock reason ${input.reasonId}.` },
+        { field: 'reasonId', code: StockErrorCode.REASON_NOT_FOUND, message: `No stock reason ${input.reasonId}.` },
       ]);
     }
     const journal = { vchr_type_id: await this.voucherTypeIdByCode(tx, SHORT_SETTLE_VOUCHER_TYPE_CODE) };
@@ -514,6 +515,7 @@ export class StockAccountsPostingService {
       [
         {
           field: 'userId',
+          code: StockErrorCode.ACCOUNTS_USER_REQUIRED,
           message: 'The accounts voucher needs a user to be posted by, and this request carries none.',
         },
       ],

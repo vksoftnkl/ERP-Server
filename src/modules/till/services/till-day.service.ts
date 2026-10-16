@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type TillBusinessDay } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   accYearOf,
@@ -11,14 +11,17 @@ import {
 import { throwTill, throwTillNotFound } from '../till-errors';
 import type { TillCaller } from '../till-context.service';
 import { TillEventService } from './till-event.service';
+import { TillLedgerService } from './till-ledger.service';
 import { TILL_SETTING_DEFAULTS, type TillSettings } from '../till.settings';
 import {
+  TILL_CASH_AWAITING_ROLE,
   TillDayStatus,
   TillErrorCode,
   TillEventCode,
   TillReceiptStatus,
   TillSessionStatus,
 } from '../types/till-enum';
+import { resolveRoleLedgers } from '../../accountsModule/ledgerRole/ledger-map.helper';
 import type { TillDayPayload } from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
@@ -42,6 +45,7 @@ export class TillDayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: TillEventService,
+    private readonly ledger: TillLedgerService,
   ) {}
 
   /**
@@ -172,7 +176,12 @@ export class TillDayService {
       },
     });
     if (!day) {
-      throwTillNotFound('Business day', 'tbdId', scope.tbdId ?? 'for today');
+      throwTillNotFound(
+        TillErrorCode.DAY_NOT_FOUND,
+        'Business day',
+        'tbdId',
+        scope.tbdId ?? 'for today',
+      );
     }
     const counts = await this.prisma.tillSession.groupBy({
       by: ['tssStatus'],
@@ -243,7 +252,59 @@ export class TillDayService {
         expected: num(day.tbdSafeExpected),
         counted: day.tbdSafeCounted === null ? null : num(day.tbdSafeCounted),
         remitted: num(day.tbdRemitted),
+        // Notes 124 §3: the books stand as they are; a safe below zero says
+        // why — cash handed over and not yet received into it.
+        belowZero:
+          (day.tbdStatus === TillDayStatus.CLOSED && num(day.tbdSafeOpening) < 0) ||
+          num(day.tbdSafeExpected) < 0,
+        ...(await this.awaitingAsOf(day)),
       },
     };
+  }
+
+  /**
+   * Notes 124 §3 — what the safe's book does not hold yet: cash handed over (a
+   * close's hand-over, a drop) and not yet received into a safe, read as the
+   * safe book is (notes 122 §6: vouchers by their date) — the branch's Till
+   * cash awaiting receipt ledger at the end of the day before (`awaitingOpening`,
+   * beside `opening`) and of the day (`awaiting`, beside `expected`). A
+   * hand-over approved on a later day is in both until that day, so a safe
+   * that gave out floats before it shows below zero by about this much.
+   * 0 when the role has no ledger (no hand-over ever waited).
+   */
+  private async awaitingAsOf(
+    day: TillBusinessDay,
+  ): Promise<{ awaitingOpening: number; awaiting: number }> {
+    const businessDate = isoDateOf(day.tbdBusinessDate);
+    const dayBefore = isoDateOf(new Date(day.tbdBusinessDate.getTime() - 86_400_000));
+    return this.prisma.$transaction(async (tx) => {
+      const [hit] = [
+        ...(
+          await resolveRoleLedgers(tx, [{ role: TILL_CASH_AWAITING_ROLE }], {
+            companyId: day.tbdCompanyId,
+            branchId: day.tbdBranchId,
+            where: 'till',
+          })
+        ).values(),
+      ];
+      if (!hit) {
+        return { awaitingOpening: 0, awaiting: 0 };
+      }
+      // Generic plans make the books' SQL ~150x slower after five runs.
+      await tx.$executeRaw`SET LOCAL plan_cache_mode = force_custom_plan`;
+      const at = async (upTo: string) => {
+        const scope = {
+          companyId: day.tbdCompanyId,
+          branchId: day.tbdBranchId,
+          accYear: day.tbdAccYear,
+          upTo,
+        };
+        const bal = (await this.ledger.ledgerBalances(tx, scope, [hit.ledgerId])).get(
+          hit.ledgerId,
+        );
+        return bal ? Number(bal.toFixed(2)) : 0;
+      };
+      return { awaitingOpening: await at(dayBefore), awaiting: await at(businessDate) };
+    });
   }
 }

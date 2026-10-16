@@ -15,6 +15,7 @@ import type { AuditActionInput } from '../../audit-log/types/audit-log.types';
 import { collectRoleLedgerErrors } from '../ledgerRole/ledger-role.helper';
 import { SaveLedgerMapDto } from './dto/save-ledger-map.dto';
 import { describeDocuments, documentsUsingRole } from './role-usage';
+import { LedgerMapErrorCode } from './types/ledger-map-error-codes';
 import type {
   LedgerMapDeletePayload,
   LedgerMapErrorDetail,
@@ -123,6 +124,7 @@ export class LedgerMapService {
         {
           field: 'role',
           message: `${saveLedgerMapDto.role} already has a ledger. Re-point that mapping instead of adding a second one.`,
+          code: LedgerMapErrorCode.ROLE_ALREADY_MAPPED,
         },
       ]);
       throw error;
@@ -145,6 +147,7 @@ export class LedgerMapService {
           'Posting ledger mapping not found',
           'almId',
           `No active acc_ledger_map row with id ${almId}`,
+          LedgerMapErrorCode.NOT_FOUND,
         );
       }
       this.requireShared(existing);
@@ -157,6 +160,7 @@ export class LedgerMapService {
             message:
               `${existing.almRole} is used by ${describeDocuments(documents)}. ` +
               'Point it at a different ledger instead of removing it.',
+            code: LedgerMapErrorCode.ROLE_IN_USE,
           },
         ]);
       }
@@ -207,6 +211,7 @@ export class LedgerMapService {
           message:
             `${role.alrRole} already has a ledger (almId ${duplicate.almId}). ` +
             'Send that almId to re-point it rather than adding a second mapping.',
+          code: LedgerMapErrorCode.ROLE_ALREADY_MAPPED,
         },
       ]);
     }
@@ -251,6 +256,7 @@ export class LedgerMapService {
         'Posting ledger mapping not found',
         'almId',
         `No active acc_ledger_map row with id ${almId}`,
+        LedgerMapErrorCode.NOT_FOUND,
       );
     }
     this.requireShared(existing);
@@ -265,6 +271,7 @@ export class LedgerMapService {
           message:
             `This mapping belongs to ${existing.almRole}, not ${role.alrRole}. ` +
             `Map ${role.alrRole} with its own request; a mapping never changes role.`,
+          code: LedgerMapErrorCode.ROLE_CHANGED,
         },
       ]);
     }
@@ -317,6 +324,7 @@ export class LedgerMapService {
         message:
           `"${role}" is not a posting role. Known roles: ` +
           `${known.map((row) => row.alrRole).join(', ')}`,
+        code: LedgerMapErrorCode.UNKNOWN_ROLE,
       },
     ]);
   }
@@ -348,11 +356,13 @@ export class LedgerMapService {
       errors.push({
         field: 'ledgerId',
         message: `"${ledger.ledName}" is deleted — a mapping must name a live ledger`,
+        code: LedgerMapErrorCode.LEDGER_DELETED,
       });
     } else if (ledger && !ledger.ledIsActive) {
       errors.push({
         field: 'ledgerId',
         message: `"${ledger.ledName}" is inactive — a mapping must name a live ledger`,
+        code: LedgerMapErrorCode.LEDGER_INACTIVE,
       });
     }
     // Reports a missing ledger too, so an unknown id and an unfit one read the
@@ -388,6 +398,7 @@ export class LedgerMapService {
           message:
             'That mapping is scoped to a company, a branch or a supply nature. ' +
             '/ledger-map manages the shared mapping only.',
+          code: LedgerMapErrorCode.SCOPED_MAPPING,
         },
       ]);
     }

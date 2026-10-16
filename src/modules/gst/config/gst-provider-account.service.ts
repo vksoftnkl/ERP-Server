@@ -81,7 +81,11 @@ export class GstProviderAccountService {
         const validUpto = keep(toDateOnly(dto.gpaValidUpto), existing?.gpaValidUpto, null);
         if (validFrom && validUpto && validFrom > validUpto) {
           this.support.badRequest([
-            { field: 'gpaValidUpto', message: 'must not be before gpaValidFrom' },
+            {
+              field: 'gpaValidUpto',
+              message: 'must not be before gpaValidFrom',
+              code: GST_CODES.VALID_UPTO_BEFORE_FROM,
+            },
           ]);
         }
         const clash = await tx.gstProviderAccount.findFirst({

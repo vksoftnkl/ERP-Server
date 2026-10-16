@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { randomBytes, scrypt as nodeScrypt } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Prisma, UserMaster } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { throwConflict, throwNotFound } from '../../common/utils/module-shared.utils';
+import { UsersErrorCode, type UsersErrorDetail } from './types/users-error-codes';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 const scryptAsync = promisify(nodeScrypt);
@@ -17,7 +19,13 @@ export class UsersService {
       where: { usrLoginName: { equals: username, mode: 'insensitive' }, usrIsDeleted: false },
     });
     if (existing) {
-      throw new ConflictException('User with this username already exists');
+      throwConflict<UsersErrorDetail>('User with this username already exists', [
+        {
+          field: 'user_name',
+          message: 'User with this username already exists',
+          code: UsersErrorCode.LOGIN_NAME_TAKEN,
+        },
+      ]);
     }
     const hashedPassword = await this.hashPassword(createUserDto.user_password);
     return this.prisma.userMaster.create({
@@ -58,7 +66,13 @@ export class UsersService {
         },
       });
       if (taken) {
-        throw new ConflictException('User with this username already exists');
+        throwConflict<UsersErrorDetail>('User with this username already exists', [
+          {
+            field: 'user_name',
+            message: 'User with this username already exists',
+            code: UsersErrorCode.LOGIN_NAME_TAKEN,
+          },
+        ]);
       }
     }
     if (!nextUsername && updateUserDto.user_phone === undefined && nextPassword === undefined) {
@@ -83,14 +97,21 @@ export class UsersService {
       data: { usrIsDeleted: true, usrIsActive: false, usrModifiedOn: new Date() },
     });
     if (result.count === 0) {
-      throw new NotFoundException(`User with id ${id} not found`);
+      throwNotFound<UsersErrorDetail>(
+        `User with id ${id} not found`,
+        'id',
+        `User with id ${id} not found`,
+        UsersErrorCode.NOT_FOUND,
+      );
     }
   }
   private async getUserOrThrow(id: string): Promise<UserMaster> {
     const user = await this.prisma.userMaster.findFirst({
       where: { usrId: id, usrIsDeleted: false },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) {
+      throwNotFound<UsersErrorDetail>('User not found', 'id', 'User not found', UsersErrorCode.NOT_FOUND);
+    }
     return user;
   }
   private async hashPassword(plainPassword: string): Promise<string> {

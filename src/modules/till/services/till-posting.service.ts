@@ -104,6 +104,8 @@ export interface ReceiveInput {
   on: { date: string; accYear: string };
   caller: TillCaller;
   notes?: string | null;
+  /** Notes 127 §3 — the session's own cashier approved it (journalled on CASH_RECEIVED). */
+  selfApproval?: 'RULE' | 'SINGLE_OPERATOR' | null;
 }
 
 /**
@@ -252,6 +254,9 @@ export class TillPostingService {
             { ledgerId: tillCash.ledgerId, drCr: 'CR', amount: size, oppLedgerId: other },
           ];
       const voucher = await this.posting.postLegs(tx, {
+        // Notes 126 §3: a cash leg is labelled CASH by the server; a bank one (CRem,
+        // a bank tender's variance) takes that bank's BANK tender.
+        money: { bankTender: 'BANK' },
         header: {
           companyId: session.tssCompanyId,
           branchId: session.tssBranchId,
@@ -368,6 +373,9 @@ export class TillPostingService {
     }
     const size = money(input.amount);
     const voucher = await this.posting.postLegs(tx, {
+      // Notes 126 §3: a cash leg is labelled CASH by the server; a bank one (CRem,
+      // a bank tender's variance) takes that bank's BANK tender.
+      money: { bankTender: 'BANK' },
       header: {
         companyId: scope.companyId,
         branchId: scope.branchId,
@@ -478,6 +486,9 @@ export class TillPostingService {
     if (input.bankAmount.greaterThan(0)) {
       const size = money(input.bankAmount);
       const voucher = await this.posting.postLegs(tx, {
+        // Notes 126 §3: a cash leg is labelled CASH by the server; a bank one (CRem,
+        // a bank tender's variance) takes that bank's BANK tender.
+        money: { bankTender: 'BANK' },
         header: {
           companyId: scope.companyId,
           branchId: scope.branchId,
@@ -573,6 +584,9 @@ export class TillPostingService {
     if (input.received.greaterThan(0)) {
       const size = money(input.received);
       const voucher = await this.posting.postLegs(tx, {
+        // Notes 126 §3: a cash leg is labelled CASH by the server; a bank one (CRem,
+        // a bank tender's variance) takes that bank's BANK tender.
+        money: { bankTender: 'BANK' },
         header: {
           companyId: session.tssCompanyId,
           branchId: session.tssBranchId,
@@ -653,6 +667,9 @@ export class TillPostingService {
         countId: input.countId,
         voucherId,
         receivedOn: input.on.date,
+        // notes 127 §3: "approved by own cashier", and on what footing
+        selfApproved: !!input.selfApproval,
+        selfApproval: input.selfApproval ?? null,
       },
     });
     return voucherId;
@@ -930,6 +947,9 @@ export class TillPostingService {
           },
         ];
     const voucher = await this.posting.postLegs(tx, {
+      // Notes 126 §3: a cash leg is labelled CASH by the server; a bank one (CRem,
+      // a bank tender's variance) takes that bank's BANK tender.
+      money: { bankTender: 'BANK' },
       header: {
         companyId: input.companyId,
         branchId: input.branchId,

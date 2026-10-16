@@ -376,6 +376,7 @@ export class PartyOutstandingService {
         'Bill not found',
         'billId',
         `No bill ${q.billId} in ${q.accYear} for this company`,
+        PARTY_OUTSTANDING_ERROR.BILL_NOT_FOUND,
       );
     }
     const rows = await this.prisma.$queryRaw<

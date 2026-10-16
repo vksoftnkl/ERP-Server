@@ -154,6 +154,9 @@ export class TillLedgerService {
        WHERE t.td_session_id = ${session.tssId}::uuid
          AND t.td_acc_year   = ${session.tssAccYear}::char(9)
          AND t.td_is_deleted = false
+         -- notes 126: the server's own labels on the till's transfers — the
+         -- movement totals already count that cash
+         AND t.td_src_doc_type <> 'VOUCHER'
          AND (t.td_is_voided = false
               OR (${session.tssClosedOn ?? null}::timestamptz IS NOT NULL
                   AND t.td_voided_on > ${session.tssClosedOn ?? null}::timestamptz))

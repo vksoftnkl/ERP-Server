@@ -29,6 +29,7 @@ import {
   GstinLookupErrorDetail,
   GstinLookupPayload,
 } from './types/gstin-lookup.types';
+import { GstinLookupErrorCode } from './types/gstin-lookup-error-codes';
 
 const SERVICE = 'GSTIN_VERIFY';
 const ACTION = 'VERIFY_GSTIN';
@@ -136,7 +137,10 @@ export class GstinLookupService {
         ok: false,
         message: `Unable to reach the GST service: ${reason}`,
       });
-      this.throwUpstream('Unable to reach the GST service right now');
+      this.throwUpstream(
+        'Unable to reach the GST service right now',
+        GstinLookupErrorCode.UPSTREAM_UNREACHABLE,
+      );
     }
     const { endpoint } = route;
     const succeeded =
@@ -149,7 +153,7 @@ export class GstinLookupService {
       this.logger.warn(`GSTIN search via ${host} answered HTTP ${status}`);
       const message = this.messageOf(body, endpoint, `The GST service answered HTTP ${status}`);
       await log({ status, body, ok: false, message });
-      this.throwUpstream(message);
+      this.throwUpstream(message, GstinLookupErrorCode.UPSTREAM_ERROR);
     }
     const root = endpoint.gpeResponseRootPath ? this.at(body, endpoint.gpeResponseRootPath) : body;
     const data = this.extractTaxpayer(root);
@@ -160,7 +164,12 @@ export class GstinLookupService {
         `The GST service has no details for GSTIN ${gstin}`,
       );
       await log({ status, body, ok: false, message });
-      throwSettingsNotFound<GstinLookupErrorDetail>('GST details not found', 'gstin', message);
+      throwSettingsNotFound<GstinLookupErrorDetail>(
+        'GST details not found',
+        'gstin',
+        message,
+        GstinLookupErrorCode.NOT_FOUND,
+      );
     }
     const payload = this.toPayload(gstin, data);
     await log({
@@ -223,11 +232,16 @@ export class GstinLookupService {
       this.throwUnavailable(
         'GSTIN search is switched off',
         `No ${SERVICE} service is set up. Add one, with a ${ACTION} endpoint and an account, under GST Providers.`,
+        GstinLookupErrorCode.NOT_SET_UP,
       );
     }
     assertGstRouteActive(first, { field: 'gstin', title: 'GSTIN search is switched off' });
     // Unreachable: a route the guard refuses has thrown above.
-    this.throwUnavailable('GSTIN search is switched off', `No active ${SERVICE} provider`);
+    this.throwUnavailable(
+      'GSTIN search is switched off',
+      `No active ${SERVICE} provider`,
+      GstinLookupErrorCode.NO_ACTIVE_PROVIDER,
+    );
   }
 
   /** The request company and the GSTIN it searches as: {gstin}. */
@@ -244,6 +258,7 @@ export class GstinLookupService {
       this.throwUnavailable(
         'GSTIN search is not configured',
         'The company has no GSTIN to search as: set it in Company Master',
+        GstinLookupErrorCode.COMPANY_GSTIN_MISSING,
       );
     }
     return { companyId, sourceGstin };
@@ -310,6 +325,7 @@ export class GstinLookupService {
               `The ${ACTION} endpoint uses {${name}}, which GSTIN search does not fill`,
           )
           .join('; '),
+        GstinLookupErrorCode.ACCOUNT_INCOMPLETE,
       );
     }
     try {
@@ -318,6 +334,7 @@ export class GstinLookupService {
       this.throwUnavailable(
         'GSTIN search is not configured',
         `${provider.gpvCode} ${service.gpsEnvironment} ${SERVICE}: "${loggedUrl}" is not a valid URL`,
+        GstinLookupErrorCode.URL_INVALID,
       );
     }
     return {
@@ -531,18 +548,20 @@ export class GstinLookupService {
     }
   }
 
-  private throwUpstream(message: string): never {
+  private throwUpstream(message: string, code: GstinLookupErrorCode): never {
     throw new HttpException(
       buildSettingsErrorResponse<GstinLookupErrorDetail>('GST service error', [
-        { field: 'gstin', message },
+        { field: 'gstin', message, code },
       ]),
       HttpStatus.BAD_GATEWAY,
     );
   }
 
-  private throwUnavailable(title: string, message: string): never {
+  private throwUnavailable(title: string, message: string, code: GstinLookupErrorCode): never {
     throw new HttpException(
-      buildSettingsErrorResponse<GstinLookupErrorDetail>(title, [{ field: 'gstin', message }]),
+      buildSettingsErrorResponse<GstinLookupErrorDetail>(title, [
+        { field: 'gstin', message, code },
+      ]),
       HttpStatus.SERVICE_UNAVAILABLE,
     );
   }

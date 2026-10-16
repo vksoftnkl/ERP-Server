@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { HsnMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { GetHsnCodeMasterQueryDto } from './dto/get-hsn-code-master-query.dto';
 import { HsnCodeMasterGetMeta, HsnCodeMasterPayload } from './types/hsn-code-master-api.types';
+import { HsnCodeMasterErrorCode } from './types/hsn-code-master-error-codes';
+import { throwNotFound } from 'src/common/utils/module-shared.utils';
 
 type HsnCodeRecord = Pick<
   HsnMaster,
@@ -56,8 +58,12 @@ export class HsnCodeMasterService {
     });
 
     if ((queryDto.hsnId !== undefined || normalizedHsnCode) && records.length === 0) {
-      throw new NotFoundException(
-        `HSN code not found for filters hsnId=${queryDto.hsnId ?? 'NA'}, hsnCode=${normalizedHsnCode ?? 'NA'}`,
+      const message = `HSN code not found for filters hsnId=${queryDto.hsnId ?? 'NA'}, hsnCode=${normalizedHsnCode ?? 'NA'}`;
+      throwNotFound(
+        message,
+        queryDto.hsnId !== undefined ? 'hsnId' : 'hsnCode',
+        message,
+        HsnCodeMasterErrorCode.NOT_FOUND,
       );
     }
 

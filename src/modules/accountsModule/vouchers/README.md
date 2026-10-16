@@ -312,6 +312,40 @@ unbuilt screens (48 and 49 with an "(old)" suffix, 187, 188, 179, 185) at 90+ an
 own (the register's "Opened from:" uses the voucher TYPE's name from `/vouchers/types`), so
 a screen titled "Receipt" keeps that title until the client renames it.
 
+## notes 126 — every cash / bank line carries a tender (§1, §6)
+
+The money side of every voucher is a **tender**, never a typed cash / bank ledger (the user,
+2026-10-16: "on money selection area user must select tender master list only"). The derive's
+`moneySideRule` (voucher-derive.ts), after the side check:
+
+| Type | A line on a cash / bank ledger (`isMoneyLedger`) |
+|---|---|
+| RcpV, PmtV | refused — `VCH_MONEY_LINE_NO_TENDER` on `lines.N.ledgerId`: the instrument on the party line carries the money (its leg is generated from the tender) |
+| Con | each line IS a money line and names its tender in **`tenderId`** (the "from" tender on the CR line, the "to" on the DR): a CASH tender on a cash ledger, a BANK tender on its own bank (send that bank as `ledgerId`). Missing → `VCH_MONEY_LINE_NO_TENDER`; the wrong kind → `VCH_INSTRUMENT_TENDER`. `tenderId` on any other type → `VCH_INSTRUMENT_NOT_ALLOWED` |
+| Jrl, DrN, CrN, PurA, SalA | refused — `VCH_MONEY_LEDGER_NOT_ALLOWED`: no money side; bank charges / interest from the statement go on a Payment / Receipt with the bank's NEFT tender, never a Journal |
+
+§2 (till-session.service `assertNoTillCashLeg`): in a branch that runs a till, a Journal / Contra
+never has a leg on the till cash ledger, a safe's, Till cash awaiting receipt or Cash in transit
+(409 `TILL_CASH_LEDGER_DIRECT`), from any device or none — so a Contra there is bank ↔ bank; cash
+to the bank is the Cash Office remittance (CRem).
+
+The post writes the legs with `money: { deferred: true }` (the instruments' tender rows come after,
+step 9c) and then step **9d** `coverPostedVoucher` — today's voucher and each post-dated one, a
+Contra's own tenders passed as `tenders` — writes the server's `VOUCHER` tender row for each Contra
+side and refuses any line still uncovered (the safety net, common/posting/money-lines.ts).
+
+A cheque voucher's bank line (a received cheque's clearing, an issued cheque's stop / return:
+DR bank) is labelled with the CHEQUE tender. `fn_is_cheques_in_hand_ledger` used to call any
+ledger with a DR CHEQUE row "Cheques In Hand", so that label made Kvb one and the books check
+refused every such post (ACC_CHEQUES_OUT_OF_BALANCE). Migration `20261016140000` makes it skip
+`td_src_doc_type = 'VOUCHER'` rows: a server label is not a cheque received.
+
+The register e2e suite sends the money side the §6 way: RcpV / PmtV lines carry `instrument`
+(cash in at the CASH tender, a payment by Kvb's BANK tender with `bankLedgerId`), Contra lines a
+`tenderId`. With no device the call is the back office, so in a branch that runs a till a cash
+instrument posts to the branch's default safe — `/validate` still previews the CASH tender's
+own ledger (it does not route).
+
 ## Grids and ui_tables (§10) — migration `20260926100000_voucher_register_grids`
 
 | Id | Name | Params |

@@ -16,6 +16,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { LoyaltyLedgerService } from '../../posting/loyalty-ledger.service';
 import type { LoyaltyAdjustResult } from '../../posting/types/loyalty.types';
+import { LoyaltyErrorCode } from '../types/loyalty-error-codes';
 import type {
   LoyaltyMemberAdjustDto,
   LoyaltyMemberHistoryDto,
@@ -35,15 +36,20 @@ import type {
 export const LOYALTY_STATUS_MENU_ID = 79;
 const CODE_PREFIX = 'LST';
 
+/**
+ * The member actions' refusal codes — kept with the scheme master's in the
+ * module's one enum (types/loyalty-error-codes.ts, notes 119 §5).
+ */
 export const LOYALTY_MEMBER_ERROR = {
-  NOT_FOUND: 'LOYALTY_MEMBER_NOT_FOUND',
-  MERGED: 'LOYALTY_MEMBER_MERGED',
-  NO_CHANGE: 'LOYALTY_MEMBER_NO_CHANGE',
-  HAS_BALANCE: 'LOYALTY_MEMBER_HAS_BALANCE',
-  REASON_REQUIRED: 'LOYALTY_MEMBER_REASON_REQUIRED',
-  APPROVER_REQUIRED: 'LOYALTY_MEMBER_APPROVER_REQUIRED',
-  YEAR_UNKNOWN: 'LOYALTY_MEMBER_YEAR_UNKNOWN',
-  BRANCH_NOT_IN_COMPANY: 'LOYALTY_MEMBER_BRANCH_NOT_IN_COMPANY',
+  NOT_FOUND: LoyaltyErrorCode.MEMBER_NOT_FOUND,
+  MERGED: LoyaltyErrorCode.MEMBER_MERGED,
+  NO_CHANGE: LoyaltyErrorCode.MEMBER_NO_CHANGE,
+  HAS_BALANCE: LoyaltyErrorCode.MEMBER_HAS_BALANCE,
+  REASON_REQUIRED: LoyaltyErrorCode.MEMBER_REASON_REQUIRED,
+  APPROVER_REQUIRED: LoyaltyErrorCode.MEMBER_APPROVER_REQUIRED,
+  YEAR_UNKNOWN: LoyaltyErrorCode.MEMBER_YEAR_UNKNOWN,
+  BRANCH_NOT_IN_COMPANY: LoyaltyErrorCode.MEMBER_BRANCH_NOT_IN_COMPANY,
+  POINTS_ZERO: LoyaltyErrorCode.MEMBER_POINTS_ZERO,
 } as const;
 
 export interface StatusChangeResult {
@@ -203,7 +209,7 @@ export class LoyaltyMembersService {
   async adjust(dto: LoyaltyMemberAdjustDto): Promise<LoyaltyAdjustResult> {
     await this.assertRight('edit', 'adjust loyalty points');
     if (!(dto.points !== 0 && Number.isFinite(dto.points))) {
-      refuse('SALES_LOYALTY_CAP', 'points', 'points must be a non-zero number.');
+      refuse(LOYALTY_MEMBER_ERROR.POINTS_ZERO, 'points', 'points must be a non-zero number.');
     }
     await this.assertBranch(dto.companyId, dto.branchId);
     const userId = this.requestContext.getUserId();
@@ -245,6 +251,7 @@ export class LoyaltyMembersService {
         'Loyalty member not found',
         'memberId',
         `No live member ${q.memberId} in this company`,
+        LOYALTY_MEMBER_ERROR.NOT_FOUND,
       );
     }
     const rows = await this.prisma.$queryRaw<
@@ -313,6 +320,7 @@ export class LoyaltyMembersService {
         'Loyalty member not found',
         'memberId',
         `No live member ${memberId} in this company`,
+        LOYALTY_MEMBER_ERROR.NOT_FOUND,
       );
     }
     return m;
@@ -386,13 +394,13 @@ export class LoyaltyMembersService {
 }
 
 function detail(
-  code: string,
+  code: LoyaltyErrorCode,
   field: string,
   message: string,
-): { field: string; message: string; code: string } {
+): { field: string; message: string; code: LoyaltyErrorCode } {
   return { field, message, code };
 }
 
-function refuse(code: string, field: string, message: string): never {
+function refuse(code: LoyaltyErrorCode, field: string, message: string): never {
   throwBadRequest('Loyalty member request refused', [detail(code, field, message)]);
 }

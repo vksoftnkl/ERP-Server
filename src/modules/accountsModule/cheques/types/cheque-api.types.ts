@@ -20,8 +20,8 @@ import type { ChequeDueBucket } from './cheque-enum';
  * the server; only the answer is a number.
  */
 
-export type ChequeErrorDetail = ModuleApiErrorDetail;
-export type ChequeErrorResponse = ModuleApiErrorResponse;
+export type ChequeErrorDetail = ModuleApiErrorDetail & { code: string };
+export type ChequeErrorResponse = ModuleApiErrorResponse<ChequeErrorDetail>;
 
 export type ChequeSuccessResponse<
   T,

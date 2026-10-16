@@ -7,6 +7,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { CustomerDetailQueryDto } from '../dto/customer-detail-query.dto';
 import { CustomerDetail } from '../types/master-lookup-api.types';
 import { formatBilledDate } from '../utils/lookup-option.utils';
+import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
 /**
  * Port of the legacy PL/pgSQL `iflag = 7` customer-detail cursor onto the
  * current UUID schema. Resolves one customer (legacy isale_cust_id) within a
@@ -45,6 +46,7 @@ export class CustomerDetailLookup {
         'Customer not found',
         'cus_id',
         `No active customer found for id ${cus_id}`,
+        MasterLookupErrorCode.CUSTOMER_NOT_FOUND,
       );
     }
     // Company (legacy INNER JOIN companys ON comp_id = icompany_id) and the

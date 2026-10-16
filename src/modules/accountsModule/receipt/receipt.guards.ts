@@ -11,6 +11,8 @@ import {
   RECEIVABLE_BILL_TYPES,
 } from './types/receipt-enum';
 import { isValidAccYear } from './receipt.utils';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * The checks that belong to no single endpoint, shared by the four services so
@@ -49,6 +51,7 @@ export async function assertAccYearWritable(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field,
+        code: ACC.INVALID,
         message: `"${accYear}" is not an accounting year — expected YYYY-YYYY with the second half one greater than the first`,
       },
     ]);
@@ -66,6 +69,7 @@ export async function assertAccYearWritable(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field,
+        code: VCH.YEAR_CLOSED,
         message: `Accounting year ${year.fyYearName} is ${year.fyStatus} and cannot be written to`,
       },
     ]);
@@ -74,6 +78,7 @@ export async function assertAccYearWritable(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field,
+        code: VCH.PERIOD_LOCKED,
         message: `Accounting year ${year.fyYearName} was locked on ${year.fyLockDate
           .toISOString()
           .slice(0, 10)} and cannot be written to`,
@@ -129,6 +134,7 @@ export async function assertVoucherPartitionExists(
     throwAccountsBadRequest<ReceiptErrorDetail>('Accounting year is not set up', [
       {
         field,
+        code: ACC.YEAR_NOT_SET_UP,
         message:
           `${accYear} has no voucher partitions. Run ` +
           `SELECT public.ensure_acc_year_partitions('${accYear}'); and try again.`,
@@ -195,11 +201,16 @@ export async function loadParty(
       'Party not found',
       field,
       `No ledger ${partyId} is visible to this company`,
+      VCH.PARTY_NOT_FOUND,
     );
   }
   if (!ledger.ledIsActive) {
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-      { field, message: `"${ledger.ledName}" is inactive and cannot receive a receipt` },
+      {
+        field,
+        code: VCH.LEDGER_INACTIVE,
+        message: `"${ledger.ledName}" is inactive and cannot receive a receipt`,
+      },
     ]);
   }
 
@@ -243,6 +254,7 @@ export async function loadReceiptVoucherType(
       'avhVoucherTypeId',
       `accounts.acc_voucher_types has no active row with vchr_type_code = '${RECEIPT_VOUCHER_TYPE_CODE}'. ` +
         'Run migration 20260915120000.',
+      ACC.TYPE_NOT_SET_UP,
     );
   }
 
@@ -285,6 +297,7 @@ export function assertHeaderScope(
       'Receipt not found',
       'avhVoucherId',
       `No receipt ${keys.voucherId} at this company / branch / year`,
+      VCH.NOT_FOUND,
     );
   }
 }
@@ -403,19 +416,25 @@ export function assertBillUsable(
       'Bill not found',
       expect.field,
       `No live bill ${expect.billId}`,
+      VCH.BILL_NOT_FOUND,
     );
   }
   if (bill.ablPartyId !== expect.partyId) {
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field: expect.field,
+        code: VCH.BILL_WRONG_PARTY,
         message: `Bill ${bill.ablDocRefno} belongs to another party`,
       },
     ]);
   }
   if (bill.ablCompanyId !== expect.companyId) {
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-      { field: expect.field, message: `Bill ${bill.ablDocRefno} belongs to another company` },
+      {
+        field: expect.field,
+        code: VCH.BILL_WRONG_PARTY,
+        message: `Bill ${bill.ablDocRefno} belongs to another company`,
+      },
     ]);
   }
 
@@ -425,6 +444,7 @@ export function assertBillUsable(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field: expect.field,
+        code: VCH.BILL_WRONG_SIDE,
         message:
           `Bill ${bill.ablDocRefno} is a ${bill.ablBillType} bill and cannot be settled as ` +
           `${expect.kind === 'RECEIVABLE' ? 'a receivable' : 'a credit'} by a receipt`,
@@ -439,6 +459,7 @@ export function assertBillUsable(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field: expect.field,
+        code: VCH.BILL_WRONG_SIDE,
         message:
           `Bill ${bill.ablDocRefno} sits on the ${bill.ablDrCr} side of this party's account, ` +
           `and a ${expect.kind === 'RECEIVABLE' ? 'receivable' : 'credit'} must be ${wantSide}`,

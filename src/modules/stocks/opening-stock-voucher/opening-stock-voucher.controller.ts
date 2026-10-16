@@ -29,6 +29,7 @@ import {
 import { API_VERSION } from 'src/common/constants/api-version';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import { StockVoucherExceptionFilter } from '../stock-voucher/stock-voucher-exception.filter';
+import { StockErrorCode } from '../types/stock-error-codes';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type {
   OpeningReconcileRow,
@@ -401,7 +402,13 @@ export class OpeningStockVoucherController {
       throw new BadRequestException({
         success: false,
         message: 'No file uploaded',
-        errors: [{ field: 'file', message: 'Attach the CSV as the "file" part of the form.' }],
+        errors: [
+          {
+            field: 'file',
+            code: StockErrorCode.IMPORT_FILE_MISSING,
+            message: 'Attach the CSV as the "file" part of the form.',
+          },
+        ],
       });
     }
     if (file.buffer.length > MAX_IMPORT_BYTES) {
@@ -411,6 +418,7 @@ export class OpeningStockVoucherController {
         errors: [
           {
             field: 'file',
+            code: StockErrorCode.IMPORT_FILE_TOO_LARGE,
             message: `The file is ${Math.round(file.buffer.length / 1024)}KB; the limit is ${MAX_IMPORT_BYTES / 1024 / 1024}MB.`,
           },
         ],

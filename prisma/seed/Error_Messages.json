@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-15.1",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15",
+  "version": "2026-10-15.5",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -59,6 +59,14 @@
       "todo": "Drop cash in safe, or call supervisor."
     },
     {
+      "code": "TILL_CASH_SHORT_IN_DRAWER",
+      "variant": "",
+      "lang": "en",
+      "title": "Not enough cash",
+      "line": "The drawer does not hold this much cash.",
+      "todo": "Pay less in cash, or pay by bank."
+    },
+    {
       "code": "TILL_HOLDS_OPEN",
       "variant": "",
       "lang": "en",
@@ -89,6 +97,726 @@
       "title": "Day closed",
       "line": "Today is closed for billing.",
       "todo": "Call manager."
+    },
+    {
+      "code": "SALES_BILL_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already posted",
+      "line": "This bill is already posted.",
+      "todo": "To change it, use Amend or Cancel."
+    },
+    {
+      "code": "SALES_BILL_CANCELLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Bill cancelled",
+      "line": "This bill is cancelled.",
+      "todo": "Make a new bill."
+    },
+    {
+      "code": "SALES_DOC_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already posted",
+      "line": "This document is already posted.",
+      "todo": "To change it, use Amend or Cancel."
+    },
+    {
+      "code": "SALES_DOC_CANCELLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cancelled",
+      "line": "This document is cancelled.",
+      "todo": "Make a new one."
+    },
+    {
+      "code": "SALES_DOC_NOT_DRAFT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed now",
+      "line": "This document is not in the right state for this.",
+      "todo": "Refresh and check its status."
+    },
+    {
+      "code": "SALES_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This document is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "SALES_REVISION_STALE",
+      "variant": "",
+      "lang": "en",
+      "title": "Changed meanwhile",
+      "line": "Someone changed this document after you opened it.",
+      "todo": "Close it, open it again, and redo your change."
+    },
+    {
+      "code": "SALES_AMEND_OFF",
+      "variant": "",
+      "lang": "en",
+      "title": "Amend is off",
+      "line": "Changing a posted document is switched off.",
+      "todo": "Cancel it and make a new one, or call manager."
+    },
+    {
+      "code": "SALES_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_PRINT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to print this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_EXPORT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to export this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "SALES_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_AMEND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to amend.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_RIGHT_OVERRIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to override this warning.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "SALES_RETENDER_RIGHT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change how a bill was paid.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "SALES_RETURN_LOCKS_BILL",
+      "variant": "",
+      "lang": "en",
+      "title": "Return exists",
+      "line": "A sale return is made against this bill.",
+      "todo": "Cancel the return first."
+    },
+    {
+      "code": "SALES_ALLOCATION_LOCKS_BILL",
+      "variant": "",
+      "lang": "en",
+      "title": "Payment linked",
+      "line": "A receipt or credit note is set against this bill.",
+      "todo": "Cancel that first."
+    },
+    {
+      "code": "SALES_CN_APPLIED",
+      "variant": "",
+      "lang": "en",
+      "title": "Credit note used",
+      "line": "This credit note is already used or refunded.",
+      "todo": "Make a new document to correct it."
+    },
+    {
+      "code": "SALES_BILL_PDC_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque moved",
+      "line": "This bill's cheque has already gone to the bank.",
+      "todo": "Handle it in Received Cheques."
+    },
+    {
+      "code": "SALES_RETENDER_PDC_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque moved",
+      "line": "This cheque has already gone to the bank.",
+      "todo": "A bounce is done in Received Cheques."
+    },
+    {
+      "code": "SALES_CHEQUE_LOCKED_IN_REGISTER",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque moved",
+      "line": "This cheque is already deposited or settled.",
+      "todo": "Settle it in Received Cheques first."
+    },
+    {
+      "code": "SALES_IRN_LIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "E-invoice live",
+      "line": "This bill has a live e-invoice.",
+      "todo": "Cancel the e-invoice first, or make a credit note."
+    },
+    {
+      "code": "SALES_EWB_LIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "E-way bill live",
+      "line": "This bill has a live e-way bill.",
+      "todo": "Cancel the e-way bill first."
+    },
+    {
+      "code": "GST_DECLARED_LOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already declared",
+      "line": "Transport details are already sent to GST.",
+      "todo": "Change the vehicle on the e-way bill instead."
+    },
+    {
+      "code": "SALES_IRN_WINDOW_PASSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Too late",
+      "line": "The time to cancel this e-invoice has passed.",
+      "todo": "Make a credit note instead."
+    },
+    {
+      "code": "SALES_EWB_WINDOW_PASSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Too late",
+      "line": "The time to cancel this e-way bill has passed.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "GST_IRN_CANCEL_FAILED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cancel at portal",
+      "line": "The e-invoice could not be cancelled from here.",
+      "todo": "Cancel it on the GST portal first."
+    },
+    {
+      "code": "GST_EWB_EXPIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "E-way bill expired",
+      "line": "This e-way bill has expired.",
+      "todo": "Make a new e-way bill."
+    },
+    {
+      "code": "GST_CREDIT_NOTE_CUTOFF",
+      "variant": "",
+      "lang": "en",
+      "title": "Too late",
+      "line": "The GST date for a credit note on this bill has passed.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_EWAY_TRANSPORT_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Transport needed",
+      "line": "E-way bill needs the transport details.",
+      "todo": "Fill in the vehicle and transport details."
+    },
+    {
+      "code": "SALES_ORDER_DELIVERED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already delivered",
+      "line": "Some lines of this order are delivered.",
+      "todo": "Cancel only the open lines."
+    },
+    {
+      "code": "SALES_ORDER_LINE_DELIVERED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already delivered",
+      "line": "This line is already delivered.",
+      "todo": "Keep the delivered quantity."
+    },
+    {
+      "code": "SALES_ORDER_CONFIRMED",
+      "variant": "",
+      "lang": "en",
+      "title": "Order confirmed",
+      "line": "A confirmed order is not deleted.",
+      "todo": "Cancel it instead."
+    },
+    {
+      "code": "SALES_ORDER_NOT_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Order not open",
+      "line": "This order cannot be billed now.",
+      "todo": "Check the order's status."
+    },
+    {
+      "code": "SALES_ORDER_LINE_OVER",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much",
+      "line": "More than the order's pending quantity.",
+      "todo": "Bill the pending quantity or less."
+    },
+    {
+      "code": "SALES_RESERVE_SHORT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not enough stock",
+      "line": "Not enough stock to keep for this order.",
+      "todo": "Lower the quantity."
+    },
+    {
+      "code": "SALES_DC_PURPOSE_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "This challan type is not used here.",
+      "todo": "Pick another type, or call manager."
+    },
+    {
+      "code": "SALES_DC_REQUIRES_ORDER",
+      "variant": "",
+      "lang": "en",
+      "title": "Order needed",
+      "line": "This challan needs a sale order.",
+      "todo": "Pick the order first."
+    },
+    {
+      "code": "SALES_DC_LINE_OVER_ORDER",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much",
+      "line": "More than the order line allows.",
+      "todo": "Lower the quantity."
+    },
+    {
+      "code": "SALES_DC_LINE_OVER",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much",
+      "line": "More than the challan line has left.",
+      "todo": "Lower the quantity."
+    },
+    {
+      "code": "SALES_DC_BILLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already billed",
+      "line": "A bill is made against this challan.",
+      "todo": "Cancel the bill first."
+    },
+    {
+      "code": "SALES_DC_RETURNED",
+      "variant": "",
+      "lang": "en",
+      "title": "Goods returned",
+      "line": "Goods are returned against this challan.",
+      "todo": "Cancel that return first."
+    },
+    {
+      "code": "SALES_DCR_OVER_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much",
+      "line": "More than the challan has open.",
+      "todo": "Lower the quantity."
+    },
+    {
+      "code": "SALES_DCR_DC_NOT_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Challan not posted",
+      "line": "The challan is not posted.",
+      "todo": "Post the challan first."
+    },
+    {
+      "code": "SALES_RETURN_OVER_QTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much",
+      "line": "More than was sold on the bill.",
+      "todo": "Lower the return quantity."
+    },
+    {
+      "code": "SALES_RETURN_BILL_NOT_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Bill not posted",
+      "line": "The bill is not posted.",
+      "todo": "Post the bill first."
+    },
+    {
+      "code": "SALES_RETURN_ITEM_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "No returns",
+      "line": "This item cannot be returned.",
+      "todo": "Remove it from the return."
+    },
+    {
+      "code": "SALES_FREE_RETURN_OFF",
+      "variant": "",
+      "lang": "en",
+      "title": "No free returns",
+      "line": "Free items cannot be returned.",
+      "todo": "Remove the free line."
+    },
+    {
+      "code": "SALES_RETURN_WINDOW",
+      "variant": "",
+      "lang": "en",
+      "title": "Too late",
+      "line": "The time to return this bill has passed.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_YEAR_LOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Year closed",
+      "line": "This financial year is closed.",
+      "todo": "Use a date in the open year."
+    },
+    {
+      "code": "SALES_BACKDATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Old date",
+      "line": "This date is too far back.",
+      "todo": "Use today's date, or call manager."
+    },
+    {
+      "code": "SALES_CUSTOMER_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Customer needed",
+      "line": "Pick a customer for this bill.",
+      "todo": "Pick the customer."
+    },
+    {
+      "code": "SALES_CREDIT_LIMIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Credit limit crossed",
+      "line": "This customer's credit limit is crossed.",
+      "todo": "Take payment now, or call manager."
+    },
+    {
+      "code": "SALES_RATE_BELOW_MIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Rate too low",
+      "line": "The rate is below the lowest allowed.",
+      "todo": "Raise the rate, or call supervisor."
+    },
+    {
+      "code": "SALES_DISC_CAP",
+      "variant": "",
+      "lang": "en",
+      "title": "Discount too big",
+      "line": "The discount is more than allowed.",
+      "todo": "Lower the discount, or call supervisor."
+    },
+    {
+      "code": "SALES_TENDER_DAILY_LIMIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Limit crossed",
+      "line": "This payment type's daily limit is crossed.",
+      "todo": "Take it another way."
+    },
+    {
+      "code": "SALES_TENDER_MIN_MAX",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "Amount is too small or too big for this payment type.",
+      "todo": "Change the amount, or pay another way."
+    },
+    {
+      "code": "SALES_LOYALTY_CAP",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many points",
+      "line": "More points than allowed on this bill.",
+      "todo": "Use fewer points."
+    },
+    {
+      "code": "SALES_PROMO_NOT_LIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Offer ended",
+      "line": "This offer is not on now.",
+      "todo": "Remove the offer."
+    },
+    {
+      "code": "SALES_CHARGE_OVER_CARRY",
+      "variant": "",
+      "lang": "en",
+      "title": "Charge too big",
+      "line": "This charge is more than was collected before.",
+      "todo": "Lower it, or call supervisor."
+    },
+    {
+      "code": "SALES_STOCK_NEGATIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not enough stock",
+      "line": "Not enough stock for this quantity.",
+      "todo": "Lower the quantity."
+    },
+    {
+      "code": "SALES_DELIVERY_ORDER",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong step",
+      "line": "Delivery steps must go in order.",
+      "todo": "Do the next step first."
+    },
+    {
+      "code": "SALES_CASH_LIMIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Cash limit crossed",
+      "line": "Cash from this customer today is ₹2,00,000 or more.",
+      "todo": "Take the rest by bank, card or UPI."
+    },
+    {
+      "code": "SALES_CASH_LIMIT",
+      "variant": "isWalkIn=true",
+      "lang": "en",
+      "title": "Cash limit crossed",
+      "line": "One bill cannot take ₹2,00,000 or more in cash.",
+      "todo": "Take the rest by bank, card or UPI."
+    },
+    {
+      "code": "SALES_PAN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "PAN needed",
+      "line": "A cash sale this big needs the customer's PAN.",
+      "todo": "Enter the PAN, or a Form 60 reference."
+    },
+    {
+      "code": "HSN_DIGITS",
+      "variant": "",
+      "lang": "en",
+      "title": "HSN too short",
+      "line": "An HSN code is too short.",
+      "todo": "Check the item's HSN."
+    },
+    {
+      "code": "SALES_TEMP_CREDIT_DETAILS_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Details needed",
+      "line": "Temporary credit needs the person's name and mobile.",
+      "todo": "Fill in name and mobile."
+    },
+    {
+      "code": "SALES_TEMP_CREDIT_DAYS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many days",
+      "line": "Temporary credit is for fewer days.",
+      "todo": "Pick fewer days."
+    },
+    {
+      "code": "SALES_TEMP_CREDIT_AMOUNT",
+      "variant": "",
+      "lang": "en",
+      "title": "Amount too big",
+      "line": "Temporary credit amount is too big.",
+      "todo": "Lower the amount."
+    },
+    {
+      "code": "SALES_TEMP_CREDIT_OPEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Credit already open",
+      "line": "This mobile already has temporary credit.",
+      "todo": "Collect it first, or call supervisor."
+    },
+    {
+      "code": "SALES_CHEQUE_NUMBER_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque number",
+      "line": "The cheque number is missing.",
+      "todo": "Fill in the cheque number."
+    },
+    {
+      "code": "SALES_CHEQUE_DATE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque date",
+      "line": "The cheque date is missing.",
+      "todo": "Fill in the cheque date."
+    },
+    {
+      "code": "SALES_CHEQUE_BACKDATED",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "The cheque date is before the bill date.",
+      "todo": "Check the cheque date."
+    },
+    {
+      "code": "SALES_CHEQUE_STALE",
+      "variant": "",
+      "lang": "en",
+      "title": "Old cheque",
+      "line": "This cheque is more than 3 months old.",
+      "todo": "The bank will not take it: ask for a new one."
+    },
+    {
+      "code": "SALES_CHEQUE_DATE_TOO_FAR",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "The cheque date is more than a year away.",
+      "todo": "Check the year on the cheque."
+    },
+    {
+      "code": "SALES_CHEQUE_REPEATED",
+      "variant": "",
+      "lang": "en",
+      "title": "Same cheque twice",
+      "line": "The same cheque is entered twice.",
+      "todo": "Remove one."
+    },
+    {
+      "code": "SALES_CHEQUE_ALREADY_REGISTERED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque already taken",
+      "line": "This cheque is already taken on another bill.",
+      "todo": "Check the cheque number."
+    },
+    {
+      "code": "SALES_RETENDER_AMOUNT_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Amounts don't match",
+      "line": "New payments must add up to what you remove.",
+      "todo": "Check the amounts."
+    },
+    {
+      "code": "SALES_DEVICE_UNREGISTERED",
+      "variant": "",
+      "lang": "en",
+      "title": "This PC is not set up",
+      "line": "This PC is not registered.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SALES_FIELD_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_LINE_FIELD_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_LINE_NO_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_LINE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_SALESMAN_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_STOCK_QTY_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "SALES_AMOUNT_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
     },
     {
       "code": "TILL_OPERATOR_BUSY",
@@ -385,6 +1113,14 @@
       "title": "Wrong PIN",
       "line": "PIN is empty or wrong.",
       "todo": "Type again."
+    },
+    {
+      "code": "TILL_APPROVER_NO_PIN",
+      "variant": "",
+      "lang": "en",
+      "title": "No PIN",
+      "line": "You have no PIN.",
+      "todo": "Call manager."
     },
     {
       "code": "TILL_RECEIVER_SELF",
@@ -881,6 +1617,790 @@
       "title": "Something went wrong",
       "line": "The app sent a wrong request.",
       "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VCH_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "VCH_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_AMEND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to amend.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_RIGHT_OVERRIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to override this warning.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "VCH_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This voucher is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "VCH_NOT_DRAFT",
+      "variant": "",
+      "lang": "en",
+      "title": "Already posted",
+      "line": "Only a draft can be changed.",
+      "todo": "Cancel it and enter it again."
+    },
+    {
+      "code": "VCH_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already posted",
+      "line": "This voucher is already posted.",
+      "todo": "Cancel it and enter it again."
+    },
+    {
+      "code": "VCH_NOT_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Still a draft",
+      "line": "This is still a draft.",
+      "todo": "Delete the draft instead."
+    },
+    {
+      "code": "VCH_CANCELLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already cancelled",
+      "line": "This voucher is already cancelled.",
+      "todo": "Nothing to do."
+    },
+    {
+      "code": "VCH_UNBALANCED",
+      "variant": "",
+      "lang": "en",
+      "title": "Doesn't balance",
+      "line": "Debit and credit are not equal.",
+      "todo": "Check the amounts."
+    },
+    {
+      "code": "VCH_NO_LINES",
+      "variant": "",
+      "lang": "en",
+      "title": "No lines",
+      "line": "The voucher has no lines.",
+      "todo": "Add the lines."
+    },
+    {
+      "code": "VCH_LINE_AMOUNT",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong amount",
+      "line": "A line's amount is wrong.",
+      "todo": "Check each line's amount."
+    },
+    {
+      "code": "VCH_PERIOD_LOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Books locked",
+      "line": "The books for this date are locked.",
+      "todo": "Use a later date, or call manager."
+    },
+    {
+      "code": "VCH_YEAR_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Year closed",
+      "line": "This financial year is closed.",
+      "todo": "Use a date in the open year."
+    },
+    {
+      "code": "VCH_DATE_OUTSIDE_YEAR",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong year",
+      "line": "The date is not in this financial year.",
+      "todo": "Check the date."
+    },
+    {
+      "code": "VCH_BACKDATED",
+      "variant": "",
+      "lang": "en",
+      "title": "Old date",
+      "line": "The date is before today.",
+      "todo": "Use today's date, or call manager."
+    },
+    {
+      "code": "VCH_LEDGER_SIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong side",
+      "line": "This account cannot be on that side.",
+      "todo": "Check debit and credit on the line."
+    },
+    {
+      "code": "VCH_LEDGER_INACTIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Account switched off",
+      "line": "This account is switched off.",
+      "todo": "Pick another account, or call manager."
+    },
+    {
+      "code": "VCH_LEDGER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Account not found",
+      "line": "This account is not there.",
+      "todo": "Pick the account again."
+    },
+    {
+      "code": "VCH_INSTRUMENT_LEDGER",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong account",
+      "line": "A cheque or card needs a bank or payment account.",
+      "todo": "Pick the right account."
+    },
+    {
+      "code": "VCH_PARTY_MODE",
+      "variant": "",
+      "lang": "en",
+      "title": "Party needed",
+      "line": "This voucher needs one party.",
+      "todo": "Pick the party."
+    },
+    {
+      "code": "VCH_PARTY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Party not found",
+      "line": "This party is not there.",
+      "todo": "Pick the party again."
+    },
+    {
+      "code": "VCH_DUP_DOC_REFNO",
+      "variant": "",
+      "lang": "en",
+      "title": "Number used",
+      "line": "This reference number is already used.",
+      "todo": "Check the reference number."
+    },
+    {
+      "code": "VCH_DOC_REFNO_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Reference needed",
+      "line": "The bill or reference number is missing.",
+      "todo": "Fill in the reference number."
+    },
+    {
+      "code": "VCH_BILLWISE_SHORT",
+      "variant": "",
+      "lang": "en",
+      "title": "Bills not matched",
+      "line": "The amount is not fully set against bills.",
+      "todo": "Set the rest against bills, or as advance if allowed."
+    },
+    {
+      "code": "VCH_BILL_OVERSPENT",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much on a bill",
+      "line": "More than the bill's pending amount.",
+      "todo": "Lower the amount on that bill."
+    },
+    {
+      "code": "VCH_BILL_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Bill not found",
+      "line": "This bill is not there now.",
+      "todo": "Refresh the bills list."
+    },
+    {
+      "code": "VCH_BILL_WRONG_PARTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong party",
+      "line": "This bill belongs to another party.",
+      "todo": "Pick this party's bills."
+    },
+    {
+      "code": "VCH_BILL_WRONG_SIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong bill",
+      "line": "This bill cannot be settled here.",
+      "todo": "Pick another bill."
+    },
+    {
+      "code": "VCH_ALLOCATED_ELSEWHERE",
+      "variant": "",
+      "lang": "en",
+      "title": "Already used",
+      "line": "A receipt or payment is set against this.",
+      "todo": "Cancel that first."
+    },
+    {
+      "code": "VCH_ADVANCE_SPENT",
+      "variant": "",
+      "lang": "en",
+      "title": "Advance used",
+      "line": "The advance from this is already used.",
+      "todo": "Reverse that use first."
+    },
+    {
+      "code": "VCH_GST_RATE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "GST rate needed",
+      "line": "The GST rate is missing.",
+      "todo": "Pick the rate on the line."
+    },
+    {
+      "code": "VCH_GST_LEDGER_TYPED",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong account",
+      "line": "GST accounts fill in by themselves.",
+      "todo": "Remove the GST account line."
+    },
+    {
+      "code": "VCH_GST_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "No GST here",
+      "line": "This voucher cannot carry GST.",
+      "todo": "Remove the GST."
+    },
+    {
+      "code": "VCH_TDS_RATE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "TDS not set",
+      "line": "This party's TDS is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_TDS_BELOW_THRESHOLD",
+      "variant": "",
+      "lang": "en",
+      "title": "No TDS needed",
+      "line": "The amount is below the TDS limit.",
+      "todo": "Remove the TDS."
+    },
+    {
+      "code": "VCH_TDS_DEPOSITED",
+      "variant": "",
+      "lang": "en",
+      "title": "TDS already paid",
+      "line": "This TDS is already paid to the government.",
+      "todo": "Call accounts: it needs a TDS return correction."
+    },
+    {
+      "code": "VCH_IRN_LIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "E-invoice live",
+      "line": "This voucher has a live e-invoice.",
+      "todo": "Cancel the e-invoice first."
+    },
+    {
+      "code": "VCH_CHEQUE_DETAILS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque details",
+      "line": "Cheque number or date is missing or wrong.",
+      "todo": "Fill in the cheque details."
+    },
+    {
+      "code": "VCH_CHEQUE_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque moved",
+      "line": "This cheque has already gone to the bank.",
+      "todo": "Handle it in Cheques first."
+    },
+    {
+      "code": "VCH_CHEQUE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque not found",
+      "line": "This cheque is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "VCH_CHEQUE_STATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed now",
+      "line": "This cheque is not in the right state for this.",
+      "todo": "Refresh and check its status."
+    },
+    {
+      "code": "VCH_INSTRUMENT_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "A cheque or card cannot be on this line.",
+      "todo": "Move it to the bank line."
+    },
+    {
+      "code": "VCH_INSTRUMENT_TENDER",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong payment type",
+      "line": "This payment type does not fit the line.",
+      "todo": "Pick another payment type."
+    },
+    {
+      "code": "VCH_BANK_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Bank needed",
+      "line": "Pick the bank account.",
+      "todo": "Pick the bank."
+    },
+    {
+      "code": "VCH_BOOK_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cheque book needed",
+      "line": "Pick the cheque book.",
+      "todo": "Pick the book."
+    },
+    {
+      "code": "VCH_BOOK_FINISHED",
+      "variant": "",
+      "lang": "en",
+      "title": "Book finished",
+      "line": "This cheque book has no leaves left.",
+      "todo": "Start a new cheque book."
+    },
+    {
+      "code": "VCH_BOOK_BANK",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong book",
+      "line": "This cheque book is for another bank.",
+      "todo": "Pick this bank's book."
+    },
+    {
+      "code": "VCH_BOOK_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Book not found",
+      "line": "This cheque book is not there.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "VCH_BOOK_OVERLAP",
+      "variant": "",
+      "lang": "en",
+      "title": "Leaves clash",
+      "line": "These cheque numbers are in another book.",
+      "todo": "Check the leaf numbers."
+    },
+    {
+      "code": "VCH_BOOK_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong numbers",
+      "line": "The cheque leaf numbers are wrong.",
+      "todo": "Check the first and last leaf."
+    },
+    {
+      "code": "VCH_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VCH_ALLOCATION_LINE",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VCH_TYPE_NOT_REGISTER",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VCH_TYPE_INVENTORY",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "VCH_GST_LEDGER_UNMAPPED",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "VCH_TDS_UNMAPPED",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ACC_BILL_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Changed meanwhile",
+      "line": "This bill changed while you were entering.",
+      "todo": "Refresh the bills and try again."
+    },
+    {
+      "code": "ACC_CREDIT_OVERSPENT",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much credit",
+      "line": "More than the credit note has left.",
+      "todo": "Lower the amount."
+    },
+    {
+      "code": "ACC_CREDIT_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Changed meanwhile",
+      "line": "This credit changed while you were entering.",
+      "todo": "Refresh and try again."
+    },
+    {
+      "code": "ACC_AMEND_OFF",
+      "variant": "",
+      "lang": "en",
+      "title": "Amend is off",
+      "line": "Changing a posted voucher is switched off.",
+      "todo": "Cancel it and enter it again."
+    },
+    {
+      "code": "ACC_PDC_VOUCHER",
+      "variant": "",
+      "lang": "en",
+      "title": "Open the main voucher",
+      "line": "This is the cheque's own voucher.",
+      "todo": "Open the receipt or payment it belongs to."
+    },
+    {
+      "code": "ACC_PARTY_LOCKED",
+      "variant": "",
+      "lang": "en",
+      "title": "Party can't change",
+      "line": "A posted voucher's party can't change.",
+      "todo": "Cancel it and enter it again."
+    },
+    {
+      "code": "ACC_REVISION_STALE",
+      "variant": "",
+      "lang": "en",
+      "title": "Changed meanwhile",
+      "line": "Someone changed this after you opened it.",
+      "todo": "Close it, open it again, and redo your change."
+    },
+    {
+      "code": "ACC_NO_TENDER",
+      "variant": "",
+      "lang": "en",
+      "title": "Payment type needed",
+      "line": "Add how the money was paid.",
+      "todo": "Add a cash, cheque or UPI line."
+    },
+    {
+      "code": "ACC_TENDER_NOT_USABLE",
+      "variant": "",
+      "lang": "en",
+      "title": "Payment type off",
+      "line": "This payment type can't be used here.",
+      "todo": "Pick another payment type."
+    },
+    {
+      "code": "ACC_CHANGE_WRONG",
+      "variant": "",
+      "lang": "en",
+      "title": "Change wrong",
+      "line": "Received minus change does not match.",
+      "todo": "Check received and change."
+    },
+    {
+      "code": "ACC_TENDER_LEDGER_FIXED",
+      "variant": "",
+      "lang": "en",
+      "title": "Account fixed",
+      "line": "This payment type's account can't change.",
+      "todo": "Leave the account as it is."
+    },
+    {
+      "code": "ACC_PARTY_AS_LINE",
+      "variant": "",
+      "lang": "en",
+      "title": "Same account twice",
+      "line": "The party can't also be a line.",
+      "todo": "Remove that line."
+    },
+    {
+      "code": "ACC_WRITEOFF_APPROVER",
+      "variant": "",
+      "lang": "en",
+      "title": "Approval needed",
+      "line": "Writing off needs an approver.",
+      "todo": "Pick the approver."
+    },
+    {
+      "code": "ACC_PDC_ALLOCATION",
+      "variant": "",
+      "lang": "en",
+      "title": "Bills later",
+      "line": "Bills are matched when the cheque clears.",
+      "todo": "Match them in Cheques after clearing."
+    },
+    {
+      "code": "ACC_POSTED_FIELDS",
+      "variant": "",
+      "lang": "en",
+      "title": "Can't change that",
+      "line": "Money details of a posted voucher can't change.",
+      "todo": "Use Amend, or cancel and enter it again."
+    },
+    {
+      "code": "ACC_COLLECTOR_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Who collected?",
+      "line": "Pick who collected this money.",
+      "todo": "Pick the person."
+    },
+    {
+      "code": "ACC_PAYER_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Who paid?",
+      "line": "Pick who made this payment.",
+      "todo": "Pick the person."
+    },
+    {
+      "code": "ACC_YEAR_NOT_SET_UP",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ACC_TYPE_NOT_SET_UP",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ACC_ROLE_UNMAPPED",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "Something is not set up.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ACC_OTHER_LINE_UNFUNDED",
+      "variant": "",
+      "lang": "en",
+      "title": "Needs money now",
+      "line": "Extra income or charges can't come from a post-dated cheque.",
+      "todo": "Cover it with cash or UPI, or remove that line."
+    },
+    {
+      "code": "ACC_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ACC_CHEQUE_BACKDATED",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "Our cheque can't be dated before the payment.",
+      "todo": "Use the payment date or later."
+    },
+    {
+      "code": "ACC_BOOK_NOT_USABLE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong book",
+      "line": "This cheque book can't be used here.",
+      "todo": "Pick another book."
+    },
+    {
+      "code": "ACC_PARTY_IS_CASH",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong party",
+      "line": "A cash or bank account can't be paid here.",
+      "todo": "Use a Contra voucher instead."
+    },
+    {
+      "code": "ACC_TDS_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "TDS differs",
+      "line": "The TDS typed differs from the worked-out TDS.",
+      "todo": "Use the worked-out TDS."
+    },
+    {
+      "code": "ACC_TENDER_SETTLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already settled",
+      "line": "A payment line is already settled with the bank.",
+      "todo": "Undo the settlement first."
+    },
+    {
+      "code": "CHQ_ALLOCATION_WRONG",
+      "variant": "",
+      "lang": "en",
+      "title": "Bills don't match",
+      "line": "The bills don't add up to the cheque.",
+      "todo": "Check the bill amounts."
+    },
+    {
+      "code": "CHQ_REASON_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Reason needed",
+      "line": "Say why the bank returned it.",
+      "todo": "Pick the reason."
+    },
+    {
+      "code": "CHQ_BANK_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Bank needed",
+      "line": "This cheque has no bank account.",
+      "todo": "Pick the bank."
+    },
+    {
+      "code": "CHQ_BOUNCED_ONCE",
+      "variant": "",
+      "lang": "en",
+      "title": "Bounced before",
+      "line": "This cheque bounced once.",
+      "todo": "Re-present it, or ask for a new cheque."
+    },
+    {
+      "code": "CHQ_STALE",
+      "variant": "",
+      "lang": "en",
+      "title": "Old cheque",
+      "line": "This cheque is more than 3 months old.",
+      "todo": "The bank will not take it: ask for a new one."
+    },
+    {
+      "code": "CHQ_DATE_TOO_FAR",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "The cheque date is more than a year away.",
+      "todo": "Check the year on the cheque."
+    },
+    {
+      "code": "CHQ_DATE_TOO_EARLY",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "This date is too early for this cheque.",
+      "todo": "Use a later date."
+    },
+    {
+      "code": "CHQ_DATE_FUTURE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "This date is in the future.",
+      "todo": "Use today or earlier."
+    },
+    {
+      "code": "CHQ_BANK_WRONG",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong account",
+      "line": "Deposit only into a bank account.",
+      "todo": "Pick a bank account."
+    },
+    {
+      "code": "CHQ_ALREADY_DONE",
+      "variant": "",
+      "lang": "en",
+      "title": "Already done",
+      "line": "Someone already did this.",
+      "todo": "Refresh."
     }
   ]
 }

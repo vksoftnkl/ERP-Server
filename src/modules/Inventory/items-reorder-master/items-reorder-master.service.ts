@@ -13,6 +13,7 @@ import {
   ItemReorderListMeta,
   ItemReorderPayload,
 } from './types/item-reorder-api.types';
+import { ItemReorderErrorCode } from './types/item-reorder-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -133,6 +134,7 @@ export class ItemsReorderMasterService {
         'Item reorder not found',
         'ir_id',
         `No active item reorder found with id ${irId}`,
+        ItemReorderErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -198,6 +200,7 @@ export class ItemsReorderMasterService {
         'Item reorder not found',
         'ir_id',
         `No item reorder found with id ${irId}`,
+        ItemReorderErrorCode.NOT_FOUND,
       );
     }
 
@@ -215,6 +218,7 @@ export class ItemsReorderMasterService {
         'Item reorder not found',
         'ir_id',
         `No item reorder found with id ${irId}`,
+        ItemReorderErrorCode.NOT_FOUND,
       );
     }
 
@@ -303,6 +307,7 @@ export class ItemsReorderMasterService {
         'Item reorder not found',
         'ir_id',
         `No active item reorder found with id ${irId}`,
+        ItemReorderErrorCode.NOT_FOUND,
       );
     }
 
@@ -378,6 +383,7 @@ export class ItemsReorderMasterService {
       throwInventoryBadRequest<ItemReorderErrorDetail>('Validation failed', [
         {
           field: 'ir_max_level',
+          code: ItemReorderErrorCode.LEVEL_RANGE_INVALID,
           message: 'ir_max_level must be greater than or equal to ir_min_level',
         },
       ]);
@@ -419,11 +425,19 @@ export class ItemsReorderMasterService {
 
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemReorderErrorDetail>(error, 'Item reorder already exists', [
-      { field: 'ir_item_id', message: 'Duplicate item + unit + godown combination is not allowed' },
+      {
+        field: 'ir_item_id',
+        code: ItemReorderErrorCode.DUPLICATE,
+        message: 'Duplicate item + unit + godown combination is not allowed',
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemReorderErrorDetail>('Invalid relation reference', [
-        { field: 'ir_item_id', message: 'Referenced item/unit does not exist' },
+        {
+          field: 'ir_item_id',
+          code: ItemReorderErrorCode.REFERENCE_NOT_FOUND,
+          message: 'Referenced item/unit does not exist',
+        },
       ]);
     }
   }

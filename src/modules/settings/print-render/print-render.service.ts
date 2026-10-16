@@ -2,6 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { PrintTemplate, PrintTemplateDataset, PrintTemplateVersion } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import {
+  buildSettingsErrorResponse,
   throwSettingsBadRequest,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
@@ -40,6 +41,7 @@ import {
   RenderWarning,
   ResolvedDataset,
 } from './types/print-render-api.types';
+import { PrintRenderErrorCode } from './types/print-render-error-codes';
 
 /**
  * §8 — the renderer.
@@ -211,6 +213,7 @@ export class PrintRenderService {
         [
           {
             field: 'isReprint',
+            code: PrintRenderErrorCode.REPRINT_NOT_ALLOWED,
             message:
               'ppoAllowReprint is false for this purpose, so it may be printed once. Change the ' +
               'purpose if that is wrong; there is no override on the render.',
@@ -235,6 +238,7 @@ export class PrintRenderService {
           `${resolution.scope} scope but its publish pointer is empty — either nothing has been ` +
           'published yet, or the live revision was retired, which releases the pointer and is ' +
           'what withdrawing a design means.',
+        PrintRenderErrorCode.NOT_PUBLISHED,
       );
     }
 
@@ -410,7 +414,12 @@ export class PrintRenderService {
     if (!renderer) {
       // chooseRenderer already refuses an unimplemented mode; this is the
       // compiler's proof, not a second check.
-      throw new InternalServerErrorException(`No renderer registered for ${outputMode}`);
+      const message = `No renderer registered for ${outputMode}`;
+      throw new InternalServerErrorException(
+        buildSettingsErrorResponse<PrintRenderErrorDetail, PrintRenderErrorResponse>(message, [
+          { field: 'outputMode', code: PrintRenderErrorCode.NO_RENDERER, message },
+        ]),
+      );
     }
 
     const params = this.resolveParams(bundle.version, input.params);
@@ -607,6 +616,7 @@ export class PrintRenderService {
         `No active print purpose has id ${purposeId} for this company. A purpose is what makes ` +
           'a thing printable at all — 3.0 kept this list in C++ as a magic integer, and it is a ' +
           'table now.',
+        PrintRenderErrorCode.PURPOSE_NOT_FOUND,
       );
     }
 
@@ -630,6 +640,7 @@ export class PrintRenderService {
         'Revision not found',
         'versionId',
         `No undeleted print_template_version has id ${versionId}`,
+        PrintRenderErrorCode.VERSION_NOT_FOUND,
       );
     }
 
@@ -643,6 +654,7 @@ export class PrintRenderService {
         'Revision not found',
         'versionId',
         `Revision ${versionId} belongs to another company`,
+        PrintRenderErrorCode.VERSION_NOT_FOUND,
       );
     }
 
@@ -681,6 +693,7 @@ export class PrintRenderService {
         [
           {
             field: 'body',
+            code: PrintRenderErrorCode.REVISION_FROZEN,
             message:
               `Revision ${bundle.version.ptvRevNo} is ${bundle.version.ptvStatus}, so it is frozen ` +
               'and previewing a different body against it would show a design nothing will print. ' +
@@ -760,6 +773,7 @@ export class PrintRenderService {
         [
           {
             field: 'outputMode',
+            code: PrintRenderErrorCode.NO_RENDERER,
             message: `Available renderers: ${IMPLEMENTED_RENDERERS.join(', ')}.`,
           },
         ],
@@ -772,6 +786,7 @@ export class PrintRenderService {
         [
           {
             field: 'outputMode',
+            code: PrintRenderErrorCode.MODE_MISMATCH,
             message:
               layoutMode === 'GRID'
                 ? `This revision's engine lays out in CHARACTER CELLS, and ${mode} draws in ` +
@@ -874,7 +889,16 @@ export class PrintRenderService {
         () =>
           reject(
             new InternalServerErrorException(
-              `Rendering ${label} exceeded the ${timeoutMs}ms limit and was abandoned.`,
+              buildSettingsErrorResponse<PrintRenderErrorDetail, PrintRenderErrorResponse>(
+                `Rendering ${label} exceeded the ${timeoutMs}ms limit and was abandoned.`,
+                [
+                  {
+                    field: 'request',
+                    code: PrintRenderErrorCode.TIMED_OUT,
+                    message: `Rendering ${label} exceeded the ${timeoutMs}ms limit and was abandoned.`,
+                  },
+                ],
+              ),
             ),
           ),
         timeoutMs,

@@ -9,7 +9,7 @@ scoped optionally by branch, unit and godown.
 - **Swagger tag:** `Item Reorders`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `item_reorders` (`inventory` schema) — Prisma model `ItemReorder`, PK `ir_id` (`irId`)
-- **Caching:** controller sets `@CacheTTL(60)`
+- **Caching:** controller sets `@CacheTTL(1)`
 
 ## Files
 

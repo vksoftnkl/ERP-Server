@@ -5,6 +5,7 @@ import {
   collectRoleLedgerErrors,
 } from '../../../accountsModule/ledgerRole/ledger-role.helper';
 import { SUPPLY_NATURES } from './tax-rate.utils';
+import { TaxRateErrorCode } from '../types/tax-rate-error-codes';
 
 /**
  * inventory.fn_tax_rate_ledger_guard, in the application layer.
@@ -112,6 +113,7 @@ export async function collectTaxRateLedgerErrors(
     if (!role) {
       errors.push({
         field: field(index, 'trl_role'),
+        code: TaxRateErrorCode.LINE_ROLE_UNKNOWN,
         message: `"${line.trl_role}" is not a posting role — accounts.acc_ledger_role has no such row`,
       });
       // No role means no expectation to check the ledger against, so this row
@@ -153,6 +155,7 @@ function collectRoleErrors(
   if (!role.alrIsActive) {
     errors.push({
       field: field(index, 'trl_role'),
+      code: TaxRateErrorCode.LINE_ROLE_INACTIVE,
       message: `Posting role "${role.alrLabel}" is inactive`,
     });
   }
@@ -160,6 +163,7 @@ function collectRoleErrors(
   if (!role.alrByRate) {
     errors.push({
       field: field(index, 'trl_role'),
+      code: TaxRateErrorCode.LINE_ROLE_NOT_PER_RATE,
       message:
         `"${role.alrLabel}" has one answer for the whole business and cannot be set per rate — ` +
         'map it in accounts.acc_ledger_map instead',
@@ -173,6 +177,7 @@ function collectRoleErrors(
   if (!SUPPLY_NATURES.includes(nature as (typeof SUPPLY_NATURES)[number])) {
     errors.push({
       field: field(index, 'trl_supply_nature'),
+      code: TaxRateErrorCode.SUPPLY_NATURE_INVALID,
       message: `trl_supply_nature must be ${SUPPLY_NATURES.join(' or ')}, or null for both`,
     });
     return;
@@ -180,6 +185,7 @@ function collectRoleErrors(
   if (!role.alrBySupply) {
     errors.push({
       field: field(index, 'trl_supply_nature'),
+      code: TaxRateErrorCode.LINE_SUPPLY_NATURE_NOT_ALLOWED,
       message:
         `"${role.alrLabel}" does not vary by supply nature — CGST and SGST exist only on an ` +
         'intra-state sale and IGST only on an inter-state one, so the role already says it. ' +
@@ -208,6 +214,7 @@ function collectDuplicateErrors(
     }
     errors.push({
       field: field(index, 'trl_role'),
+      code: TaxRateErrorCode.LINE_DUPLICATE,
       message:
         `Lines ${first + 1} and ${index + 1} both override ${line.trl_role}` +
         `${line.trl_supply_nature ? ` for ${line.trl_supply_nature}` : ' for both supply natures'}`,

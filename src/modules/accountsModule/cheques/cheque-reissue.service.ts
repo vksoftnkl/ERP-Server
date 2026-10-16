@@ -57,6 +57,8 @@ import type {
   ChequeRepresentPayload,
   ChequeReplacePayload,
 } from './types/cheque-api.types';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.5 and §4.6 — the two ways a bounced cheque becomes money again. They
@@ -265,7 +267,11 @@ export class ChequeReissueService {
       if (amount.lessThanOrEqualTo(0)) {
         // ck_apd_amount refuses it anyway; this names the box.
         throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
-          { field: 'newCheque.amount', message: 'A cheque has to be for more than nothing' },
+          {
+            field: 'newCheque.amount',
+            code: VCH.LINE_AMOUNT,
+            message: 'A cheque has to be for more than nothing',
+          },
         ]);
       }
       this.assertInstrumentDateUsable(instrumentDate, today);
@@ -550,6 +556,7 @@ export class ChequeReissueService {
         throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
           {
             field: 'allocations',
+            code: VCH.CHEQUE_STATE,
             message:
               `${params.instrumentNo} is an ON_CLEARING cheque, so its bills are settled when it ` +
               'clears and not before. Allocate on /cheques/clear.',
@@ -772,6 +779,7 @@ export class ChequeReissueService {
       throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
         {
           field: 'newCheque.instrumentDate',
+          code: CHQ.STALE,
           message:
             `${toDateString(instrumentDate)} is more than three months old, so the bank would ` +
             'refuse it as stale. Ask for a cheque dated within the last three months.',
@@ -782,6 +790,7 @@ export class ChequeReissueService {
       throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
         {
           field: 'newCheque.instrumentDate',
+          code: CHQ.DATE_TOO_FAR,
           message:
             `${toDateString(instrumentDate)} is more than a year away. Check the year on the ` +
             'cheque.',

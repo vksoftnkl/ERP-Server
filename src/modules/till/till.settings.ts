@@ -56,6 +56,20 @@ export interface TillSettings {
    * exception may still cover it), else AMBER (notes 118).
    */
   daySafeCount: boolean;
+  /**
+   * Notes 122 §5 (`till.cash_out_over_expected`, DEVICE) — REFUSE: a payment,
+   * expense or refund pays out of a drawer no more cash than it is expected to
+   * hold (TILL_CASH_SHORT_IN_DRAWER); ALLOW: the drawer may run negative.
+   */
+  cashOutOverExpected: 'REFUSE' | 'ALLOW';
+  /**
+   * Notes 124 §5 (`till.approval_gate`, DEVICE) — WARN: an event its approval
+   * rule asks for goes through, and a PENDING request is filed for the inbox;
+   * REFUSE: an event whose rule blocks the till (`tar_blocks_till`) is refused
+   * with 428 TILL_APPROVAL_REQUIRED until an approved request is brought. The
+   * counter is never blocked while a customer waits unless a company says so.
+   */
+  approvalGate: 'WARN' | 'REFUSE';
 }
 
 export const TILL_SETTING_DEFAULTS: TillSettings = {
@@ -76,6 +90,8 @@ export const TILL_SETTING_DEFAULTS: TillSettings = {
   closeByTerminal: true,
   handoverReceipt: TillHandoverReceipt.NONE,
   daySafeCount: true,
+  cashOutOverExpected: 'REFUSE',
+  approvalGate: 'WARN',
 };
 
 export function readTillSettings(effective: readonly AppSettingEffectiveItem[]): TillSettings {
@@ -122,6 +138,16 @@ export function readTillSettings(effective: readonly AppSettingEffectiveItem[]):
       d.handoverReceipt,
     ),
     daySafeCount: pickBoolean(byKey.get(TillSettingKey.DAY_CLOSE_SAFE_COUNT), d.daySafeCount),
+    cashOutOverExpected: pickEnum(
+      byKey.get(TillSettingKey.CASH_OUT_OVER_EXPECTED),
+      ['REFUSE', 'ALLOW'] as const,
+      d.cashOutOverExpected,
+    ),
+    approvalGate: pickEnum(
+      byKey.get(TillSettingKey.APPROVAL_GATE),
+      ['WARN', 'REFUSE'] as const,
+      d.approvalGate,
+    ),
   };
 }
 

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { throwStockNotFound, toNumber } from 'src/common/utils/module-service.utils';
 import { PriceBucketGateway } from '../selling-price-bulk/price-bucket.gateway';
+import { StockErrorCode } from '../types/stock-error-codes';
 import {
   effectivePolicyLateral,
   unreversedLedgerRow,
@@ -280,44 +281,47 @@ export class OpeningStockLookupService {
        WHERE i.item_id = ${args.itemId}::uuid
     `;
 
-    const notFound = (field: string, detail: string): never =>
+    const notFound = (field: string, code: StockErrorCode, detail: string): never =>
       throwStockNotFound<StockErrorDetail, StockErrorResponse>(
         'This item cannot be put on an opening line',
         field,
         detail,
+        code,
       );
 
     if (!cause || cause.isDeleted) {
-      return notFound('itemId', 'No such item.');
+      return notFound('itemId', StockErrorCode.OPENING_ITEM_NOT_FOUND, 'No such item.');
     }
     if (!cause.isActive) {
-      return notFound('itemId', 'This item is inactive; activate it on the item master first.');
+      return notFound('itemId', StockErrorCode.OPENING_ITEM_INACTIVE, 'This item is inactive; activate it on the item master first.');
     }
     // Scope before everything else, in the order the WHERE drops the row —
     // but only the dimensions the caller actually restricted: with no company
     // given, the company predicate was off and cannot be why the row is gone.
     // An item with NO company is shared and never the cause (notes 73).
     if (companyId !== null && cause.companyId !== null && cause.companyId !== companyId) {
-      return notFound('itemId', 'This item belongs to another company.');
+      return notFound('itemId', StockErrorCode.OPENING_ITEM_OTHER_COMPANY, 'This item belongs to another company.');
     }
     if (branchId !== null && cause.branchId !== null && cause.branchId !== branchId) {
-      return notFound('itemId', 'This item belongs to another branch of the company.');
+      return notFound('itemId', StockErrorCode.OPENING_ITEM_OTHER_BRANCH, 'This item belongs to another branch of the company.');
     }
     if (cause.isService) {
-      return notFound('itemId', 'This is a service item; a service has no stock to open.');
+      return notFound('itemId', StockErrorCode.OPENING_ITEM_SERVICE, 'This is a service item; a service has no stock to open.');
     }
     if (cause.conversions === 0) {
       return notFound(
         'itemId',
+        StockErrorCode.OPENING_ITEM_NO_UNIT,
         'This item has no unit conversion, so there is no unit to key it in; set one on the item master.',
       );
     }
     if (uomId !== null && !cause.uomFound) {
-      return notFound('uomId', "This unit is not one of the item's conversions.");
+      return notFound('uomId', StockErrorCode.OPENING_UNIT_NOT_OF_ITEM, "This unit is not one of the item's conversions.");
     }
     if (uomId === null && !cause.hasDefault) {
       return notFound(
         'uomId',
+        StockErrorCode.OPENING_NO_DEFAULT_UNIT,
         'This item has no default unit; send uomId, or mark one of its conversions as the default.',
       );
     }
@@ -325,6 +329,7 @@ export class OpeningStockLookupService {
     // so there is no iuc_id to store in svi_base_uom_id.
     return notFound(
       'uomId',
+      StockErrorCode.OPENING_BASE_UNIT_MISSING,
       "The unit's base unit has no conversion row of its own on this item; add it on the item master.",
     );
   }

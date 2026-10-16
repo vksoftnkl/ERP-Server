@@ -1,4 +1,5 @@
 import { PromotionSchemeErrorDetail } from '../types/promotion-scheme-api.types';
+import { PromotionSchemeErrorCode } from '../types/promotion-scheme-error-codes';
 import {
   PRM_APPLY_ON,
   PRM_BENEFITS,
@@ -68,12 +69,24 @@ const vocabulary = (
 ): PromotionSchemeErrorDetail[] =>
   allowed.includes(value)
     ? ok
-    : [{ field, message: `${field} must be one of ${allowed.join(', ')}` }];
+    : [
+        {
+          field,
+          message: `${field} must be one of ${allowed.join(', ')}`,
+          code: PromotionSchemeErrorCode.VALUE_NOT_ALLOWED,
+        },
+      ];
 
 const notNegative = (field: string, value: number | null): PromotionSchemeErrorDetail[] =>
   value === null || (Number.isFinite(value) && value >= 0)
     ? ok
-    : [{ field, message: `${field} must be 0 or more` }];
+    : [
+        {
+          field,
+          message: `${field} must be 0 or more`,
+          code: PromotionSchemeErrorCode.NEGATIVE_VALUE,
+        },
+      ];
 
 const inRange = (
   field: string,
@@ -83,12 +96,24 @@ const inRange = (
 ): PromotionSchemeErrorDetail[] =>
   Number.isFinite(value) && value >= minimum && value <= maximum
     ? ok
-    : [{ field, message: `${field} must be between ${minimum} and ${maximum}` }];
+    : [
+        {
+          field,
+          message: `${field} must be between ${minimum} and ${maximum}`,
+          code: PromotionSchemeErrorCode.OUT_OF_RANGE,
+        },
+      ];
 
 const greaterThanZero = (field: string, value: number): PromotionSchemeErrorDetail[] =>
   Number.isFinite(value) && value > 0
     ? ok
-    : [{ field, message: `${field} must be greater than 0` }];
+    : [
+        {
+          field,
+          message: `${field} must be greater than 0`,
+          code: PromotionSchemeErrorCode.NOT_ABOVE_ZERO,
+        },
+      ];
 
 const wholeBetween = (
   field: string,
@@ -102,6 +127,7 @@ const wholeBetween = (
         {
           field,
           message: `${field} must be a whole number between ${minimum} and ${maximum}`,
+          code: PromotionSchemeErrorCode.OUT_OF_RANGE,
         },
       ];
 
@@ -115,6 +141,7 @@ export const ckPrmCodeShape: SchemeInvariant = (s) =>
         {
           field: 'prm_code',
           message: 'prm_code may contain only letters, digits, underscore and hyphen',
+          code: PromotionSchemeErrorCode.CODE_SHAPE,
         },
       ];
 
@@ -176,6 +203,7 @@ export const ckPrmFixedPriceScope: SchemeInvariant = (s) =>
           message:
             'A FIXED_PRICE benefit needs an item trigger (ITEM_QTY or ITEM_AMOUNT) — there is no ' +
             'line to reprice on a bill-level scheme',
+          code: PromotionSchemeErrorCode.FIXED_PRICE_NEEDS_ITEM_TRIGGER,
         },
       ];
 
@@ -185,7 +213,13 @@ export const ckPrmFixedPriceScope: SchemeInvariant = (s) =>
 export const ckPrmDates: SchemeInvariant = (s) =>
   s.prmEndDate.getTime() >= s.prmStartDate.getTime()
     ? ok
-    : [{ field: 'prm_end_date', message: 'prm_end_date must be on or after prm_start_date' }];
+    : [
+        {
+          field: 'prm_end_date',
+          message: 'prm_end_date must be on or after prm_start_date',
+          code: PromotionSchemeErrorCode.END_BEFORE_START,
+        },
+      ];
 
 /**
  * ck_prm_time_pair — both ends of the window or neither.
@@ -200,6 +234,7 @@ export const ckPrmTimePair: SchemeInvariant = (s) =>
         {
           field: 'prm_valid_to_time',
           message: 'Send both prm_valid_from_time and prm_valid_to_time, or neither',
+          code: PromotionSchemeErrorCode.TIME_PAIR_INCOMPLETE,
         },
       ];
 
@@ -211,6 +246,7 @@ export const ckPrmWeekdays: SchemeInvariant = (s) =>
         {
           field: 'prm_valid_weekdays',
           message: 'prm_valid_weekdays must be comma-separated MON,TUE,WED,THU,FRI,SAT,SUN',
+          code: PromotionSchemeErrorCode.WEEKDAYS_INVALID,
         },
       ];
 
@@ -244,6 +280,7 @@ export const ckPrmApproved: SchemeInvariant = (s) =>
         {
           field: 'prm_approved_by',
           message: 'prm_approved_by is required once prm_status is APPROVED',
+          code: PromotionSchemeErrorCode.APPROVER_REQUIRED,
         },
       ];
 
@@ -300,7 +337,13 @@ export const ckPrpKind: PartyInvariant = (r) => vocabulary('prp_kind', r.prpKind
 export const ckPrpSlno: PartyInvariant = (r) =>
   Number.isInteger(r.prpSlno) && r.prpSlno > 0
     ? ok
-    : [{ field: 'prp_slno', message: 'prp_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'prp_slno',
+          message: 'prp_slno must be a whole number greater than 0',
+          code: PromotionSchemeErrorCode.SLNO_INVALID,
+        },
+      ];
 
 /**
  * ck_prp_match_priority — prp_match_priority BETWEEN 0 AND 9.
@@ -371,6 +414,10 @@ export const ckPriUnit: ItemInvariant = (r) =>
             r.priKind === 'ITEM'
               ? 'pri_unit_id is required on an ITEM row — a quantity is meaningless without a unit'
               : `pri_unit_id must be null on an ${r.priKind} row — a unit belongs to one item`,
+          code:
+            r.priKind === 'ITEM'
+              ? PromotionSchemeErrorCode.ITEM_UNIT_REQUIRED
+              : PromotionSchemeErrorCode.ITEM_UNIT_NOT_ALLOWED,
         },
       ];
 
@@ -382,6 +429,7 @@ export const ckPriOneRate: ItemInvariant = (r) =>
         {
           field: 'pri_disc_perc',
           message: 'Set at most one of pri_disc_perc, pri_disc_qty, pri_disc_amt',
+          code: PromotionSchemeErrorCode.ITEM_MORE_THAN_ONE_RATE,
         },
       ];
 
@@ -397,6 +445,7 @@ export const ckPriExclude: ItemInvariant = (r) =>
         {
           field: 'pri_is_exclude',
           message: 'An exclude row gives nothing — leave every rate at 0 and pri_factor at 1',
+          code: PromotionSchemeErrorCode.EXCLUDE_ROW_GIVES,
         },
       ];
 
@@ -414,7 +463,13 @@ export const ckPriValues: ItemInvariant = (r) => [
 export const ckPriSlno: ItemInvariant = (r) =>
   Number.isInteger(r.priSlno) && r.priSlno > 0
     ? ok
-    : [{ field: 'pri_slno', message: 'pri_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'pri_slno',
+          message: 'pri_slno must be a whole number greater than 0',
+          code: PromotionSchemeErrorCode.SLNO_INVALID,
+        },
+      ];
 
 /**
  * ck_pri_match_priority — BETWEEN 0 AND 9. Most specific wins; seeded by kind
@@ -468,7 +523,13 @@ export const ckPrsBand: SlabInvariant = (r) => [
   ...notNegative('prs_exceeds', r.prsExceeds),
   ...(r.prsUpto === null || r.prsUpto > r.prsExceeds
     ? ok
-    : [{ field: 'prs_upto', message: 'prs_upto must be greater than prs_exceeds' }]),
+    : [
+        {
+          field: 'prs_upto',
+          message: 'prs_upto must be greater than prs_exceeds',
+          code: PromotionSchemeErrorCode.SLAB_BAND_INVALID,
+        },
+      ]),
 ];
 
 /** ck_prs_each — prs_each > 0, prs_max_repeats >= 0, and repeats only mean something when repeating. */
@@ -481,6 +542,7 @@ export const ckPrsEach: SlabInvariant = (r) => [
         {
           field: 'prs_max_repeats',
           message: 'prs_max_repeats only means something when prs_is_repeat is true',
+          code: PromotionSchemeErrorCode.SLAB_REPEATS_WITHOUT_REPEAT,
         },
       ]),
 ];
@@ -507,6 +569,7 @@ export const ckPrsFreeUnitPair: SlabInvariant = (r) =>
         {
           field: 'prs_free_unit_id',
           message: 'A free item needs the unit it is issued in — send both or neither',
+          code: PromotionSchemeErrorCode.SLAB_FREE_UNIT_PAIR,
         },
       ];
 
@@ -531,6 +594,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
               {
                 field: 'prs_free_item_id',
                 message: 'A FREE_ITEM band needs prs_free_item_id and prs_free_qty greater than 0',
+                code: PromotionSchemeErrorCode.SLAB_BENEFIT_VALUE_MISSING,
               },
             ]),
         ...(noDiscounts && r.prsFixedPrice === null
@@ -539,6 +603,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
               {
                 field: 'prs_benefit',
                 message: 'A FREE_ITEM band must leave the discount and fixed-price columns empty',
+                code: PromotionSchemeErrorCode.SLAB_OTHER_BENEFIT_FILLED,
               },
             ]),
       ];
@@ -550,6 +615,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
               {
                 field: 'prs_disc_perc',
                 message: 'A DISC_PERC band needs prs_disc_perc greater than 0',
+                code: PromotionSchemeErrorCode.SLAB_BENEFIT_VALUE_MISSING,
               },
             ]),
         ...(noFree && r.prsDiscQty === 0 && r.prsDiscAmt === 0 && r.prsFixedPrice === null
@@ -558,6 +624,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
               {
                 field: 'prs_benefit',
                 message: 'A DISC_PERC band must leave every other benefit column empty',
+                code: PromotionSchemeErrorCode.SLAB_OTHER_BENEFIT_FILLED,
               },
             ]),
       ];
@@ -573,6 +640,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
                 message:
                   'A DISC_AMT band needs exactly one of prs_disc_amt (flat) or prs_disc_qty ' +
                   '(per unit)',
+                code: PromotionSchemeErrorCode.SLAB_BENEFIT_VALUE_MISSING,
               },
             ]),
         ...(noFree && r.prsDiscPerc === 0 && r.prsFixedPrice === null
@@ -582,6 +650,7 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
                 field: 'prs_benefit',
                 message:
                   'A DISC_AMT band must leave the free-item, percentage and price columns empty',
+                code: PromotionSchemeErrorCode.SLAB_OTHER_BENEFIT_FILLED,
               },
             ]),
       ];
@@ -589,19 +658,32 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
       return [
         ...(r.prsFixedPrice !== null
           ? ok
-          : [{ field: 'prs_fixed_price', message: 'A FIXED_PRICE band needs prs_fixed_price' }]),
+          : [
+              {
+                field: 'prs_fixed_price',
+                message: 'A FIXED_PRICE band needs prs_fixed_price',
+                code: PromotionSchemeErrorCode.SLAB_BENEFIT_VALUE_MISSING,
+              },
+            ]),
         ...(noFree && noDiscounts
           ? ok
           : [
               {
                 field: 'prs_benefit',
                 message: 'A FIXED_PRICE band must leave the free-item and discount columns empty',
+                code: PromotionSchemeErrorCode.SLAB_OTHER_BENEFIT_FILLED,
               },
             ]),
       ];
     default:
       // The DDL's ELSE false: an unknown benefit fails the constraint outright.
-      return [{ field: 'prs_benefit', message: `Unknown benefit ${r.prsBenefit}` }];
+      return [
+        {
+          field: 'prs_benefit',
+          message: `Unknown benefit ${r.prsBenefit}`,
+          code: PromotionSchemeErrorCode.VALUE_NOT_ALLOWED,
+        },
+      ];
   }
 };
 
@@ -609,7 +691,13 @@ export const ckPrsBenefitColumns: SlabInvariant = (r) => {
 export const ckPrsSlno: SlabInvariant = (r) =>
   Number.isInteger(r.prsSlno) && r.prsSlno > 0
     ? ok
-    : [{ field: 'prs_slno', message: 'prs_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'prs_slno',
+          message: 'prs_slno must be a whole number greater than 0',
+          code: PromotionSchemeErrorCode.SLNO_INVALID,
+        },
+      ];
 
 /** The slab set, keyed by the constraint each one stands in for. */
 export const SLAB_INVARIANTS: ReadonlyMap<string, SlabInvariant> = new Map([

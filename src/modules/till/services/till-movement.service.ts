@@ -41,6 +41,7 @@ import type {
   TillMovementDetailPayload,
   TillReceivedPayload,
   TillSupervisorPayload,
+  SelfCashApproval,
 } from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
@@ -582,7 +583,7 @@ export class TillMovementService {
       },
     });
     if (!m) {
-      throwTillNotFound('Till movement', 'tcmId', key.tcmId);
+      throwTillNotFound(TillErrorCode.MOVEMENT_NOT_FOUND, 'Till movement', 'tcmId', key.tcmId);
     }
     const counts = await this.prisma.tillCount.findMany({
       where: { tctMovementId: m.tcmId, tctAccYear: m.tcmAccYear, tctIsDeleted: false },
@@ -832,7 +833,7 @@ export class TillMovementService {
       select: { tssOperatorId: true },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     const users = await this.prisma.userMaster.findMany({
       where: {
@@ -963,12 +964,16 @@ export class TillMovementService {
   }): Promise<TillReceivedPayload[]> {
     const caller = await this.context.caller();
     if (input.bags.length === 0) {
-      throwTillBadRequest('Name at least one bag to receive', 'bags');
+      throwTillBadRequest(TillErrorCode.BAGS_REQUIRED, 'Name at least one bag to receive', 'bags');
     }
     const seen = new Set<string>();
     input.bags.forEach((bag, i) => {
       if (seen.has(bag.tcmId)) {
-        throwTillBadRequest('A bag is received once per call', `bags.${i}.tcmId`);
+        throwTillBadRequest(
+          TillErrorCode.BAG_REPEATED,
+          'A bag is received once per call',
+          `bags.${i}.tcmId`,
+        );
       }
       seen.add(bag.tcmId);
       this.assertCashLines(bag.lines, `bags.${i}.lines`);
@@ -1282,7 +1287,7 @@ export class TillMovementService {
       },
     });
     if (!peek) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     if ((peek.tssStatus as TillSessionStatus) !== TillSessionStatus.CLOSED) {
       throwTill(
@@ -1297,8 +1302,19 @@ export class TillMovementService {
       return this.refuseNothingAwaiting(this.prisma, peek);
     }
 
-    // 2 · who: never the session's cashier (single_operator aside), and their PIN.
-    if (caller.userId === peek.tssOperatorId && !settings.singleOperator) {
+    // 2 · who: not the session's cashier — unless till.single_operator, or
+    // (notes 127 §3) the company's CASH_VARIANCE rule allows self
+    // (tar_allow_self) — and their PIN.
+    const today = await businessDateNow(this.prisma, settings.dayCutoff);
+    const event = 'CASH_VARIANCE';
+    const rule = await this.approval.ruleOrDefault(this.prisma, {
+      companyId: key.companyId,
+      branchId: key.branchId,
+      event,
+      onDate: today,
+    });
+    const own = caller.userId === peek.tssOperatorId;
+    if (own && !settings.singleOperator && !rule.tar_allow_self) {
       throwTill(
         TillErrorCode.RECEIVER_SELF,
         `Session ${peek.tssSessionNo} is yours (you were its cashier): another supervisor approves its cash`,
@@ -1306,7 +1322,15 @@ export class TillMovementService {
         { tssId: peek.tssId },
       );
     }
-    const ownerAlone = settings.singleOperator && caller.userId === peek.tssOperatorId;
+    const ownerAlone = settings.singleOperator && own;
+    /** Journalled on each CASH_RECEIVED and answered, so the Cockpit and the Z show it. */
+    const selfApproval: SelfCashApproval | null = !own
+      ? null
+      : ownerAlone
+        ? 'SINGLE_OPERATOR'
+        : 'RULE';
+    // The single-operator owner may leave the PIN out; a cashier approving
+    // their own cash under the rule always signs.
     if (!ownerAlone || input.approverPin?.trim()) {
       const me = await this.prisma.userMaster.findUnique({
         where: { usrId: caller.userId },
@@ -1336,9 +1360,7 @@ export class TillMovementService {
         : new Prisma.Decimal(input.receivedAmount).toDecimalPlaces(2);
     const difference = received.minus(handedOver);
     const within = difference.abs().lessThanOrEqualTo(settings.cashTolerance);
-    const today = await businessDateNow(this.prisma, settings.dayCutoff);
     const on = { date: today, accYear: accYearOf(today) };
-    const event = 'CASH_VARIANCE';
     let decision: {
       treatment: (typeof APPROVABLE_TREATMENTS)[number];
       rule: Awaited<ReturnType<TillApprovalService['ruleOrDefault']>>;
@@ -1348,12 +1370,6 @@ export class TillMovementService {
     } | null = null;
     if (!within && input.treatment) {
       const treatment = input.treatment as (typeof APPROVABLE_TREATMENTS)[number];
-      const rule = await this.approval.ruleOrDefault(this.prisma, {
-        companyId: key.companyId,
-        branchId: key.branchId,
-        event,
-        onDate: today,
-      });
       const verdict = await this.approval.assertApprover(this.prisma, {
         companyId: key.companyId,
         branchId: key.branchId,
@@ -1460,6 +1476,7 @@ export class TillMovementService {
           on,
           caller,
           notes: input.notes ?? null,
+          selfApproval,
         });
         movements.push({ m, received: part, voucherId });
       }
@@ -1649,6 +1666,7 @@ export class TillMovementService {
         ? (numbers.get(done.varianceVoucherId) ?? null)
         : null,
       receivedOn: on.date,
+      selfApproval,
       movements: done.movements.map(
         ({ m, received: r, voucherId }): TillCashApprovalMovementPayload => ({
           tcmId: m.tcmId,
@@ -1963,7 +1981,7 @@ export class TillMovementService {
       },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     this.assertMovable(session, MOVABLE_STATUSES);
     return session;
@@ -1981,7 +1999,7 @@ export class TillMovementService {
          AND tss_is_deleted = false
        FOR UPDATE`;
     if (locked.length === 0) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     const session = await tx.tillSession.findUniqueOrThrow({
       where: { tssId_tssAccYear: { tssId: key.tssId, tssAccYear: key.accYear } },

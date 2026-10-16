@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { ModuleErrorDetail, throwBadRequest } from 'src/common/utils/module-service.utils';
+import { TaxRateErrorCode } from '../types/tax-rate-error-codes';
 
 /**
  * What makes a tax_rate_master reference usable, checked once here rather than
@@ -31,6 +32,22 @@ export interface TaxRateRef {
 type TaxRateRefClient = Pick<Prisma.TransactionClient, 'taxRateMaster'>;
 
 /**
+ * The `errors[].code` (notes 119) each refusal carries. A caller in another
+ * module may pass its own; left out, the tax rate master's codes are used.
+ */
+export interface TaxRateRefCodes {
+  /** The rate does not exist or is deleted. */
+  notFound: string;
+  /** The rate is inactive. */
+  inactive: string;
+}
+
+const DEFAULT_TAX_RATE_REF_CODES: TaxRateRefCodes = {
+  notFound: TaxRateErrorCode.REF_NOT_FOUND,
+  inactive: TaxRateErrorCode.REF_INACTIVE,
+};
+
+/**
  * The throwing form: a 400 listing every unusable reference, or nothing when
  * they are all live rates.
  */
@@ -38,8 +55,9 @@ export async function assertTaxRateRefs(
   client: TaxRateRefClient,
   refs: readonly TaxRateRef[],
   message = 'Validation failed',
+  codes: TaxRateRefCodes = DEFAULT_TAX_RATE_REF_CODES,
 ): Promise<void> {
-  const errors = await collectTaxRateRefErrors(client, refs);
+  const errors = await collectTaxRateRefErrors(client, refs, codes);
   if (errors.length > 0) {
     throwBadRequest(message, errors);
   }
@@ -53,6 +71,7 @@ export async function assertTaxRateRefs(
 export async function collectTaxRateRefErrors(
   client: TaxRateRefClient,
   refs: readonly TaxRateRef[],
+  codes: TaxRateRefCodes = DEFAULT_TAX_RATE_REF_CODES,
 ): Promise<ModuleErrorDetail[]> {
   if (refs.length === 0) {
     return [];
@@ -68,12 +87,17 @@ export async function collectTaxRateRefErrors(
   for (const ref of refs) {
     const rate = rateById.get(ref.taxId);
     if (!rate || rate.taxIsDeleted) {
-      errors.push({ field: ref.field, message: `No tax rate found with id ${ref.taxId}` });
+      errors.push({
+        field: ref.field,
+        code: codes.notFound,
+        message: `No tax rate found with id ${ref.taxId}`,
+      });
       continue;
     }
     if (!rate.taxIsActive) {
       errors.push({
         field: ref.field,
+        code: codes.inactive,
         message: `Tax rate "${rate.taxName}" is inactive and cannot be quoted on a new document`,
       });
     }

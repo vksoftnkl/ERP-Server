@@ -5,6 +5,7 @@ import {
   ItemStockBalanceErrorResponse,
 } from './types/item-stock-balance-api.types';
 import { wordedResponse } from '../../../common/error-wording/error-wording';
+import { frameworkValidationCode } from '../../../common/validation/house-validation';
 type ValidationExceptionPayload = {
   message?: string | string[];
 };
@@ -66,6 +67,8 @@ export class ItemStockBalanceExceptionFilter implements ExceptionFilter {
         : ['Validation failed'];
     const errors: ItemStockBalanceErrorDetail[] = messages.map((message) => ({
       field: this.inferFieldName(message),
+      // Notes 119: an old `{ message: [...] }` 400 still gets the nearest VALIDATION_* code.
+      code: frameworkValidationCode(message),
       message,
     }));
     return {

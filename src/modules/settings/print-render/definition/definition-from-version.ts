@@ -1,5 +1,6 @@
 import { PrintTemplateDataset, PrintTemplateVersion } from '@prisma/client';
-import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
+import type { PrintRenderErrorDetail } from '../types/print-render-api.types';
+import { PrintRenderErrorCode } from '../types/print-render-error-codes';
 import {
   LAYOUT_MODE_FOR_ENGINE,
   RENDERABLE_ENGINES,
@@ -56,7 +57,7 @@ export interface DefinitionBuildResult {
 export class PrintRenderDefinitionError extends Error {
   constructor(
     message: string,
-    readonly details: ModuleErrorDetail[],
+    readonly details: PrintRenderErrorDetail[],
   ) {
     super(message);
     this.name = 'PrintRenderDefinitionError';
@@ -99,6 +100,7 @@ export function assertRenderableEngine(engine: string): RenderableEngine {
     [
       {
         field: 'ptvEngine',
+        code: PrintRenderErrorCode.ENGINE_NOT_RENDERABLE,
         message:
           `${engine} has no renderer — ${reason[engine] ?? 'it is not a format this server draws'}. ` +
           `Renderable engines are ${RENDERABLE_ENGINES.join(' and ')}.`,
@@ -118,6 +120,7 @@ function parseBody(
     throw new PrintRenderDefinitionError('The stored design is not valid JSON', [
       {
         field: 'ptvBody',
+        code: PrintRenderErrorCode.BODY_NOT_JSON_OBJECT,
         message:
           `Revision ${version.ptvId} holds a body that does not parse as JSON: ` +
           `${error instanceof Error ? error.message : String(error)}. ` +
@@ -130,6 +133,7 @@ function parseBody(
     throw new PrintRenderDefinitionError('The stored design is not a design', [
       {
         field: 'ptvBody',
+        code: PrintRenderErrorCode.BODY_NOT_JSON_OBJECT,
         message:
           'A JSON_BANDS body must be a JSON OBJECT holding a `bands` array. ' +
           `This one is ${Array.isArray(parsed) ? 'an array' : typeof parsed}.`,
@@ -240,6 +244,7 @@ export function buildDefinition(
     throw new PrintRenderDefinitionError('This revision has no design yet', [
       {
         field: 'bands',
+        code: PrintRenderErrorCode.DESIGN_EMPTY,
         message:
           `Revision ${version.ptvRevNo} holds no bands, which is what a design looks like before ` +
           'anything has been drawn on it. Open it in the designer, add at least one band, and ' +
@@ -257,6 +262,7 @@ export function buildDefinition(
         // `bands[2].elements[7].value` names a box on the canvas, where
         // `ptvBody` names a 40 KB text column.
         field: issue.path.length > 0 ? issue.path.join('.') : 'ptvBody',
+        code: PrintRenderErrorCode.DESIGN_INVALID,
         message: issue.message,
       })),
     );

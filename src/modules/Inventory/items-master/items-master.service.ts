@@ -3,6 +3,7 @@ import { ItemMaster, Prisma } from '@prisma/client';
 import { SaveItemDto } from './dto/save-item.dto';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { BulkLoadItemPayload, ItemErrorDetail, ItemPayload } from './types/item-api.types';
+import { ItemErrorCode } from './types/item-error-codes';
 import { ItemCompositeDeleteResult, ItemCompositePayload } from './types/item-composite-api.types';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 import { ItemsPriceMasterService } from '../items-price-master/items-price-master.service';
@@ -48,16 +49,39 @@ const TRACK_PRESET_INCLUDE = {
  * FK error used to be filed under item_group_id, so a bad tax id read as a
  * bad group (notes 50 #4).
  */
-const ITEM_FOREIGN_KEYS: Readonly<Record<string, { field: string; what: string }>> = {
-  item_master_item_group_id_fkey: { field: 'item_group_id', what: 'item group' },
+const ITEM_FOREIGN_KEYS: Readonly<
+  Record<string, { field: string; what: string; code: ItemErrorCode }>
+> = {
+  item_master_item_group_id_fkey: {
+    field: 'item_group_id',
+    what: 'item group',
+    code: ItemErrorCode.UNKNOWN_GROUP,
+  },
   item_master_item_default_tax_id_fkey: {
     field: 'item_default_tax_id',
     what: 'tax rate (tax_rate_master)',
+    code: ItemErrorCode.UNKNOWN_TAX_RATE,
   },
-  item_master_item_base_unit_id_fkey: { field: 'item_base_unit_id', what: 'unit' },
-  item_master_item_category_id_fkey: { field: 'item_category_id', what: 'item category' },
-  item_master_item_company_id_fkey: { field: 'item_company_id', what: 'company' },
-  fk_item_track_preset: { field: 'item_track_preset_id', what: 'stock track preset' },
+  item_master_item_base_unit_id_fkey: {
+    field: 'item_base_unit_id',
+    what: 'unit',
+    code: ItemErrorCode.UNKNOWN_UNIT,
+  },
+  item_master_item_category_id_fkey: {
+    field: 'item_category_id',
+    what: 'item category',
+    code: ItemErrorCode.UNKNOWN_CATEGORY,
+  },
+  item_master_item_company_id_fkey: {
+    field: 'item_company_id',
+    what: 'company',
+    code: ItemErrorCode.UNKNOWN_COMPANY,
+  },
+  fk_item_track_preset: {
+    field: 'item_track_preset_id',
+    what: 'stock track preset',
+    code: ItemErrorCode.UNKNOWN_TRACK_PRESET,
+  },
 };
 /** What keeps an item from being deleted (notes 70 C4): stock that still exists. */
 const ITEM_STOCK_REFERENCES: readonly LiveReference[] = [
@@ -135,6 +159,7 @@ export class ItemsMasterService {
         'Item not found',
         'item_id',
         `No active item found with id ${itemId}`,
+        ItemErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -501,6 +526,7 @@ export class ItemsMasterService {
         throwInventoryConflict<ItemErrorDetail>('Item is already deleted', [
           {
             field: 'item_id',
+            code: ItemErrorCode.ALREADY_DELETED,
             message: `${existing.itemNameEn} is already deleted. POST /items/restore brings it back.`,
           },
         ]);
@@ -512,6 +538,7 @@ export class ItemsMasterService {
       await assertNoLiveReferences(tx, ITEM_STOCK_REFERENCES, itemId, {
         label: 'item',
         idField: 'item_id',
+        inUseCode: ItemErrorCode.IN_USE,
       });
       const item = await this.setItemDeleted(tx, existing, true);
       const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
@@ -555,6 +582,7 @@ export class ItemsMasterService {
           throwInventoryConflict<ItemErrorDetail>('Item is not deleted', [
             {
               field: 'item_id',
+              code: ItemErrorCode.NOT_DELETED,
               message: `${existing.itemNameEn} is not deleted; there is nothing to restore.`,
             },
           ]);
@@ -604,16 +632,19 @@ export class ItemsMasterService {
           /item_name_en/.test(constraint)
             ? {
                 field: 'item_name_en',
+                code: ItemErrorCode.RESTORE_NAME_TAKEN,
                 message: 'Another live item now has this name. Rename one of them, then restore.',
               }
             : /ean_code/.test(constraint)
               ? {
                   field: 'ean_codes',
+                  code: ItemErrorCode.RESTORE_EAN_TAKEN,
                   message:
                     'An EAN code of this item now belongs to another live item. Remove it there, then restore.',
                 }
               : {
                   field: 'item_id',
+                  code: ItemErrorCode.RESTORE_CLASH,
                   message: 'A row of this item now clashes with a live row elsewhere.',
                 },
         ]);
@@ -631,6 +662,7 @@ export class ItemsMasterService {
         'Item not found',
         'item_id',
         `No item found with id ${itemId}`,
+        ItemErrorCode.NOT_FOUND,
       );
     }
     return existing;
@@ -651,6 +683,7 @@ export class ItemsMasterService {
       throwInventoryConflict<ItemErrorDetail>('Item changed', [
         {
           field: 'item_id',
+          code: ItemErrorCode.CHANGED_CONCURRENTLY,
           message: 'The item was deleted or restored by someone else just now. Reload it.',
         },
       ]);
@@ -712,6 +745,7 @@ export class ItemsMasterService {
       throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_name_en',
+          code: ItemErrorCode.NAME_REQUIRED,
           message: 'item_name_en is required',
         },
       ]);
@@ -780,12 +814,13 @@ export class ItemsMasterService {
     if (!branchId) {
       return;
     }
-    const refuse = (message: string): never =>
+    const refuse = (code: ItemErrorCode, message: string): never =>
       throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
-        { field: 'item_branch_id', message },
+        { field: 'item_branch_id', code, message },
       ]);
     if (!companyId) {
       return refuse(
+        ItemErrorCode.BRANCH_NEEDS_COMPANY,
         "An item with a branch must name that branch's company: set item_company_id, or clear " +
           'item_branch_id to share the item with every company',
       );
@@ -795,10 +830,13 @@ export class ItemsMasterService {
       select: { brCompId: true, brName: true },
     });
     if (!branch) {
-      return refuse(`No branch found with id ${branchId}`);
+      return refuse(ItemErrorCode.UNKNOWN_BRANCH, `No branch found with id ${branchId}`);
     }
     if (branch.brCompId !== companyId) {
-      return refuse(`${branch.brName} belongs to another company, not to item_company_id`);
+      return refuse(
+        ItemErrorCode.BRANCH_OTHER_COMPANY,
+        `${branch.brName} belongs to another company, not to item_company_id`,
+      );
     }
   }
   /**
@@ -889,6 +927,7 @@ export class ItemsMasterService {
       throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_name_en',
+          code: ItemErrorCode.NAME_REQUIRED,
           message: 'item_name_en cannot be empty',
         },
       ]);
@@ -905,6 +944,7 @@ export class ItemsMasterService {
           'Item not found',
           'item_id',
           `No active item found with id ${itemId}`,
+          ItemErrorCode.NOT_FOUND,
         );
       }
       // AN UPDATE WRITES WHAT THE PAYLOAD STATES. An omitted key keeps the
@@ -1177,6 +1217,7 @@ export class ItemsMasterService {
       throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_photo',
+          code: ItemErrorCode.PHOTO_INVALID,
           message: 'item_photo must be a valid base64 string',
         },
       ]);
@@ -1257,7 +1298,11 @@ export class ItemsMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemErrorDetail>(error, 'Item already exists', [
-      { field: 'item_name_en', message: 'Duplicate item_name_en is not allowed' },
+      {
+        field: 'item_name_en',
+        code: ItemErrorCode.NAME_TAKEN,
+        message: 'Duplicate item_name_en is not allowed',
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       const known = ITEM_FOREIGN_KEYS[violatedConstraintOf(error) ?? ''];
@@ -1265,9 +1310,14 @@ export class ItemsMasterService {
         known
           ? {
               field: known.field,
+              code: known.code,
               message: `${known.field} does not name an existing ${known.what}`,
             }
-          : { field: 'request', message: 'Referenced relation does not exist' },
+          : {
+              field: 'request',
+              code: ItemErrorCode.UNKNOWN_REFERENCE,
+              message: 'Referenced relation does not exist',
+            },
       ]);
     }
   }

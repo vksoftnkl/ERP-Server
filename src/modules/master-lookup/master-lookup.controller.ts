@@ -221,7 +221,7 @@ export class MasterLookupController {
   }
   @Get('item-price')
   @Version(API_VERSION)
-  @CacheTTL(60)
+  @CacheTTL(1)
   @ApiOperation({
     summary:
       'Resolve an item into a single sale-lookup row: effective price for the requested price level, tax block, stock, reorder and quantity-wise rates. unit_id selects the unit rate, else the unit-slno rule applies (retail item → highest unit, else base unit); customer_id applies a customer rate to price levels 1–4; godown_id overrides the sale godown; regional returns the local-language name; acccyear scopes stock.',

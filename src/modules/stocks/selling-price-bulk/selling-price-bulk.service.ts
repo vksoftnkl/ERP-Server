@@ -36,11 +36,20 @@ import {
   type PagedResult,
   type PriceLevel,
   type PriceScope,
+  type PriceVerdict,
   type SellingPriceProblem,
   type SellingPriceRow,
   type SellingPriceSaveResult,
   type StockErrorDetail,
 } from './types/selling-price-bulk.types';
+import { StockErrorCode } from '../types/stock-error-codes';
+
+/** Notes 119 — the code each Q26 verdict is refused with. */
+const PRICE_VERDICT_CODES: Readonly<Record<PriceVerdict, StockErrorCode>> = {
+  ABOVE_MRP: StockErrorCode.PRICE_ABOVE_MRP,
+  BELOW_MIN: StockErrorCode.PRICE_BELOW_MIN,
+  BELOW_COST: StockErrorCode.PRICE_BELOW_COST,
+};
 
 /** The audit trail's table and screen — the ones ItemsPriceMasterService files under. */
 const ITEM_PRICE_TABLE_NAME = 'item price master';
@@ -354,6 +363,7 @@ export class SellingPriceBulkService {
     throwStockForbidden<StockErrorDetail>('These prices cannot be saved', [
       {
         field: 'scope',
+        code: StockErrorCode.PRICE_CHAIN_HQ_ONLY,
         message:
           'Only an HQ user may save prices for all branches. Save at This branch scope instead.',
       },
@@ -404,6 +414,7 @@ export class SellingPriceBulkService {
       'These prices cannot be saved',
       wrong.map(({ row, index }) => ({
         field: `rows.${row.lineNo ?? index + 1}`,
+        code: StockErrorCode.PRICE_UNIT_NOT_OF_ITEM,
         message: `Line ${row.lineNo ?? index + 1}: unit ${row.uomId} is not one of item ${row.itemId}'s units.`,
       })),
     );
@@ -433,6 +444,7 @@ export class SellingPriceBulkService {
         throwStockUnprocessable<StockErrorDetail>('These prices cannot be saved', [
           {
             field: `rows.${candidate.lineNo}`,
+            code: StockErrorCode.PRICE_DUPLICATE_BUCKET,
             message:
               `Lines ${candidates[first].lineNo} and ${candidate.lineNo} price the same bucket of ` +
               `${candidate.itemName || candidate.itemId} at the same scope. Keep one of them.`,
@@ -538,6 +550,7 @@ export class SellingPriceBulkService {
       message,
       problems.map((problem) => ({
         field: `rows.${problem.lineNo}`,
+        code: PRICE_VERDICT_CODES[problem.verdict],
         message: `Line ${problem.lineNo}: ${problem.message}`,
       })),
     );

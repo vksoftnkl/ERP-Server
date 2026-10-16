@@ -2,6 +2,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { readCsvTable, type CsvRow } from './csv.helper';
 import type { SaveStockVoucherItemDto } from './dto/save-stock-voucher-item.dto';
 import type { StockErrorDetail } from './types/stock-voucher.types';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 /**
  * Turning a spreadsheet into stock voucher lines.
@@ -138,6 +139,7 @@ export async function resolveImportedLines(
   if (!table.rows.length) {
     errors.push({
       field: 'file',
+      code: StockErrorCode.IMPORT_FILE_EMPTY,
       message: table.headers.length
         ? 'The file has a header row but no data rows.'
         : 'The file is empty.',
@@ -151,6 +153,7 @@ export async function resolveImportedLines(
     // near-miss ("item code" with a space) is obvious rather than mysterious.
     errors.push({
       field: 'file',
+      code: StockErrorCode.IMPORT_COLUMNS_MISSING,
       message: `The file is missing required column(s): ${missingColumns
         .map((field) => COLUMN_ALIASES[field][0])
         .join(', ')}. Found: ${table.headers.join(', ') || '(none)'}.`,
@@ -253,18 +256,19 @@ export async function resolveImportedLines(
 
   table.rows.forEach((row, index) => {
     const field = `file.row.${row.lineNo}`;
-    const fail = (message: string): void => {
-      errors.push({ field, message: `Row ${row.lineNo}: ${message}` });
+    const fail = (code: StockErrorCode, message: string): void => {
+      errors.push({ field, code, message: `Row ${row.lineNo}: ${message}` });
     };
 
     const itemCode = cell(row, 'itemCode');
     const candidates = itemsByCode.get(itemCode.toLowerCase()) ?? [];
     if (!candidates.length) {
-      fail(`no item with code "${itemCode}".`);
+      fail(StockErrorCode.IMPORT_ITEM_NOT_FOUND, `no item with code "${itemCode}".`);
       return;
     }
     if (candidates.length > 1) {
       fail(
+        StockErrorCode.IMPORT_ITEM_AMBIGUOUS,
         `item code "${itemCode}" matches ${candidates.length} items (${candidates
           .map((candidate) => candidate.itemNameEn)
           .join(', ')}). Codes must be unique to import by them.`,
@@ -279,6 +283,7 @@ export async function resolveImportedLines(
     );
     if (!unitMatches.length) {
       fail(
+        StockErrorCode.IMPORT_UNIT_NOT_FOUND,
         `"${item.itemNameEn}" has no unit named "${unitName}". Its units are: ${
           item.unitConversions
             .map((c) => c.unit?.unit_name)
@@ -290,13 +295,14 @@ export async function resolveImportedLines(
     }
     if (unitMatches.length > 1) {
       fail(
+        StockErrorCode.IMPORT_UNIT_AMBIGUOUS,
         `"${item.itemNameEn}" has ${unitMatches.length} conversions named "${unitName}". Resolve the duplicate on the item before importing.`,
       );
       return;
     }
     const baseUnit = item.unitConversions.find((conversion) => conversion.iucIsBaseUnit);
     if (!baseUnit) {
-      fail(`"${item.itemNameEn}" has no base unit in item_unit_conversion.`);
+      fail(StockErrorCode.IMPORT_NO_BASE_UNIT, `"${item.itemNameEn}" has no base unit in item_unit_conversion.`);
       return;
     }
 
@@ -305,11 +311,11 @@ export async function resolveImportedLines(
     if (godownName) {
       const godownMatches = godownsByName.get(godownName.toLowerCase()) ?? [];
       if (!godownMatches.length) {
-        fail(`no godown named or coded "${godownName}" in this branch.`);
+        fail(StockErrorCode.IMPORT_GODOWN_NOT_FOUND, `no godown named or coded "${godownName}" in this branch.`);
         return;
       }
       if (godownMatches.length > 1) {
-        fail(`"${godownName}" matches ${godownMatches.length} godowns in this branch.`);
+        fail(StockErrorCode.IMPORT_GODOWN_AMBIGUOUS, `"${godownName}" matches ${godownMatches.length} godowns in this branch.`);
         return;
       }
       godownId = godownMatches[0].gdlId;
@@ -320,11 +326,11 @@ export async function resolveImportedLines(
     if (supplierName) {
       const supplierMatches = suppliersByName.get(supplierName.toLowerCase()) ?? [];
       if (!supplierMatches.length) {
-        fail(`no supplier named "${supplierName}".`);
+        fail(StockErrorCode.IMPORT_SUPPLIER_NOT_FOUND, `no supplier named "${supplierName}".`);
         return;
       }
       if (supplierMatches.length > 1) {
-        fail(`"${supplierName}" matches ${supplierMatches.length} suppliers.`);
+        fail(StockErrorCode.IMPORT_SUPPLIER_AMBIGUOUS, `"${supplierName}" matches ${supplierMatches.length} suppliers.`);
         return;
       }
       supplierId = supplierMatches[0].supId;
@@ -332,7 +338,7 @@ export async function resolveImportedLines(
 
     const qty = parseNumber(cell(row, 'qty'));
     if (qty === null) {
-      fail(`"${cell(row, 'qty')}" is not a quantity.`);
+      fail(StockErrorCode.IMPORT_QTY_INVALID, `"${cell(row, 'qty')}" is not a quantity.`);
       return;
     }
     const freeQty = parseNumber(cell(row, 'freeQty')) ?? 0;
@@ -342,25 +348,25 @@ export async function resolveImportedLines(
     // have done.
     const factor = Number(unitMatches[0].iucToBaseFactor);
     if (!Number.isFinite(factor) || factor <= 0) {
-      fail(`unit "${cell(row, 'unitName')}" has no usable conversion factor on this item.`);
+      fail(StockErrorCode.IMPORT_UNIT_FACTOR_INVALID, `unit "${cell(row, 'unitName')}" has no usable conversion factor on this item.`);
       return;
     }
     const costRate = parseNumber(cell(row, 'costRate'));
     if (costRate === null) {
-      fail(`"${cell(row, 'costRate')}" is not a cost rate.`);
+      fail(StockErrorCode.IMPORT_COST_INVALID, `"${cell(row, 'costRate')}" is not a cost rate.`);
       return;
     }
 
     const rawMfg = cell(row, 'mfgDate');
     const mfgDate = rawMfg ? parseDate(rawMfg) : null;
     if (rawMfg && mfgDate === null) {
-      fail(`"${rawMfg}" is not a date the importer recognises (yyyy-MM-dd or dd/MM/yyyy).`);
+      fail(StockErrorCode.IMPORT_DATE_INVALID, `"${rawMfg}" is not a date the importer recognises (yyyy-MM-dd or dd/MM/yyyy).`);
       return;
     }
     const rawExpiry = cell(row, 'expiryDate');
     const expiryDate = rawExpiry ? parseDate(rawExpiry) : null;
     if (rawExpiry && expiryDate === null) {
-      fail(`"${rawExpiry}" is not a date the importer recognises (yyyy-MM-dd or dd/MM/yyyy).`);
+      fail(StockErrorCode.IMPORT_DATE_INVALID, `"${rawExpiry}" is not a date the importer recognises (yyyy-MM-dd or dd/MM/yyyy).`);
       return;
     }
 

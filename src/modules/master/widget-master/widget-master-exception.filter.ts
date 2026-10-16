@@ -5,6 +5,7 @@ import {
   WidgetMasterErrorResponse,
 } from './types/widget-master-api.types';
 import { wordedResponse } from '../../../common/error-wording/error-wording';
+import { frameworkValidationCode } from '../../../common/validation/house-validation';
 type ValidationExceptionPayload = {
   message?: string | string[];
 };
@@ -67,6 +68,8 @@ export class WidgetMasterExceptionFilter implements ExceptionFilter {
 
     const errors: WidgetMasterErrorDetail[] = messages.map((message) => ({
       field: this.inferFieldName(message),
+      // Notes 119: an old `{ message: [...] }` 400 still gets the nearest VALIDATION_* code.
+      code: frameworkValidationCode(message),
       message,
     }));
     return {

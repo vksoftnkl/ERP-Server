@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { coverPostedVoucher } from '../../../common/posting/money-lines';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -71,10 +72,15 @@ import {
 } from './types/payment-enum';
 import type { PaymentErrorDetail, PaymentPostPayload } from './types/payment-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
-import { TillApprovalService } from '../../till/services/till-approval.service';
+import {
+  TillApprovalService,
+  type GateAsk,
+  type GateVerdict,
+} from '../../till/services/till-approval.service';
 import { CASH_TENDER_TYPE_ID, TillErrorCode, TillEventCode } from '../../till/types/till-enum';
-import { throwRefusals, type VoucherWarning } from '../vouchers/vouchers.errors';
+import { VCH, throwRefusals, type VoucherWarning } from '../vouchers/vouchers.errors';
 import { checkCashPaymentLimit } from './cash-payment-limit';
+import { ACC } from '../receipt/types/acc-error-codes';
 
 /**
  * §5.2 — THE transaction, direction OUT. `receipt-posting.service.ts` step for
@@ -149,6 +155,7 @@ export class PaymentPostingService {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'onAccount',
+          code: ACC.INVALID,
           message:
             'onAccount is required when post is true — it is the figure that proves the client and the server read the same payment',
         },
@@ -233,6 +240,9 @@ export class PaymentPostingService {
       sessionId: header.avhSessionId,
       field: 'avhSessionId',
       hasCash: tenders.some((tender) => tender.tenderTypeId === CASH_TENDER_TYPE_ID),
+      cashOut: tenders
+        .filter((tender) => tender.tenderTypeId === CASH_TENDER_TYPE_ID)
+        .reduce((sum, tender) => sum.plus(tender.amount), new Prisma.Decimal(0)),
     });
     if (till.ref) {
       await this.till.stampVoucher(
@@ -287,27 +297,50 @@ export class PaymentPostingService {
         overridable: false,
       });
     }
-    const approval =
+    // Notes 124 §5 — the CASH_PAYMENT gate: under till.approval_gate WARN (as
+    // shipped) it posts and a PENDING request waits in the approvers' inbox;
+    // under REFUSE, 428 until `approvalId` names an approved one for it.
+    const gateAsk: GateAsk = {
+      companyId: header.avhCompanyId,
+      branchId: header.avhBranchId,
+      tenantId: header.avhTenantId,
+      accYear: header.avhAccYear,
+      event: 'CASH_PAYMENT',
+      onDate: toDateString(header.avhVoucherDate)!,
+      amount: cash,
+      requesterId: actor,
+      deviceId: this.requestContext.getDeviceId() ?? null,
+      sessionId: till.ref?.tssId ?? null,
+      counterId: null,
+      srcDocType: 'PAYMENT',
+      srcDocId: header.avhVoucherId,
+      srcRefno: null,
+      approvalId: dto.approvalId ?? null,
+      field: 'approvalId',
+    };
+    const gate: GateVerdict =
       till.ref && cash.greaterThan(0)
-        ? await this.approvals.assess(tx, {
-            companyId: header.avhCompanyId,
-            branchId: header.avhBranchId,
-            event: 'CASH_PAYMENT',
-            onDate: toDateString(header.avhVoucherDate)!,
-            amount: cash,
-          })
-        : null;
-    if (approval) {
+        ? await this.approvals.assessGate(tx, gateAsk)
+        : { state: 'NONE' };
+    if (gate.state === 'REFUSE') {
+      this.approvals.throwApprovalRequired(gate.need, gateAsk);
+    }
+    let approval = gate.state === 'NONE' ? null : gate.need;
+    if (gate.state === 'WARN') {
       warnings.push({
         code: TillErrorCode.APPROVAL_REQUIRED,
         level: 'INFO',
         message:
           `Cash of ${cash.toFixed(2)} out of the drawer is above the CASH_PAYMENT threshold of ` +
-          `${approval.threshold.toFixed(2)} (${approval.minRole}): recorded for review — ` +
-          'the approval gate is not built yet',
+          `${gate.need.threshold.toFixed(2)} (${gate.need.minRole}): it posts, and waits in the ` +
+          'approvers’ inbox for review',
         field: 'tenders',
         overridable: false,
       });
+    }
+    const approvalId = await this.approvals.settleGate(tx, gateAsk, gate);
+    if (approval && approvalId) {
+      approval = { ...approval, approvalId };
     }
 
     // ── 3 · Lock every open item, and read what is pending NOW ─────────────
@@ -430,6 +463,11 @@ export class PaymentPostingService {
       tenderIdByRow,
       registerByTenderRow,
     });
+    // Notes 126 §1: every cash / bank leg of every voucher this payment wrote
+    // carries a tender row by now; a gap is a bug, refused rather than booked.
+    for (const v of byKey.values()) {
+      await coverPostedVoucher(tx, { voucherId: v.voucherId, accYear: v.accYear }, { createdBy: actor });
+    }
 
     // ── 10 · The bill caches and the TDS register ──────────────────────────
     const touched = [
@@ -608,6 +646,7 @@ export class PaymentPostingService {
     throwAccountsConflict<PaymentErrorDetail>('Payment cannot be posted', [
       {
         field: 'avhVoucherId',
+        code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_DRAFT,
         message:
           `${header.avhVoucherRefno ?? header.avhVoucherId} is ${status}, and only a DRAFT may be posted.` +
           (status === VoucherStatus.POSTED
@@ -629,6 +668,7 @@ export class PaymentPostingService {
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: `allocations.${index}.writeoffApprovedBy`,
+            code: ACC.WRITEOFF_APPROVER,
             message:
               `Writing back ${bill.writeoff.toFixed(2)} on ${bill.docRefno} needs an approver ` +
               `(accounts.writeoff_approval_above is ${threshold.toFixed(2)})`,
@@ -854,6 +894,7 @@ export class PaymentPostingService {
         throwAccountsBadRequest<PaymentErrorDetail>('Allocation could not be completed', [
           {
             field: 'tenders',
+            code: ACC.INVALID,
             message: `The allocation names a voucher "${key}" that has no instrument`,
           },
         ]);
@@ -887,6 +928,7 @@ export class PaymentPostingService {
         throwAccountsConflict<PaymentErrorDetail>('Cheque book has no leaf to give', [
           {
             field: `tenders.${tender.rowNo}.cheque.chequeBookId`,
+            code: VCH.BOOK_FINISHED,
             message: `Book ${tender.cheque!.bookNo} has no leaf left — start a new book (Cheque Books, menu 263)`,
           },
         ]);
@@ -1327,6 +1369,7 @@ export class PaymentPostingService {
         throwAccountsBadRequest<PaymentErrorDetail>('The voucher does not balance', [
           {
             field: 'avhVoucherId',
+            code: VCH.UNBALANCED,
             message:
               `${voucher.voucherRefno} is out by ${totals.difference.toFixed(2)} ` +
               `(debit ${totals.totalDebit.toFixed(2)}, credit ${totals.totalCredit.toFixed(2)})`,

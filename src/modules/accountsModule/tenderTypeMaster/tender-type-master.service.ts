@@ -7,6 +7,7 @@ import {
   TenderTypeMasterErrorDetail,
   TenderTypeMasterPayload,
 } from './types/tender-type-master-api.types';
+import { TenderTypeErrorCode } from './types/tender-type-master-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -46,6 +47,7 @@ export class TenderTypeMasterService {
         'Tender type not found',
         'ttmTypeId',
         `No active tender type found with id ${ttmTypeId}`,
+        TenderTypeErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -64,6 +66,7 @@ export class TenderTypeMasterService {
           'Tender type not found',
           'ttmTypeId',
           `No active tender type found with id ${ttmTypeId}`,
+          TenderTypeErrorCode.NOT_FOUND,
         );
       }
       const activeTendersCount = await tx.accTenderMaster.count({
@@ -79,6 +82,7 @@ export class TenderTypeMasterService {
             {
               field: 'ttmTypeId',
               message: `Tender type ${ttmTypeId} is used by ${activeTendersCount} tender(s).`,
+              code: TenderTypeErrorCode.IN_USE,
             },
           ],
         );
@@ -101,6 +105,7 @@ export class TenderTypeMasterService {
           'Tender type not found',
           'ttmTypeId',
           `No active tender type found with id ${ttmTypeId}`,
+          TenderTypeErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -176,7 +181,13 @@ export class TenderTypeMasterService {
       throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(
         error,
         'Tender type already exists',
-        [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }],
+        [
+          {
+            field: 'ttmTypeName',
+            message: 'Duplicate tender type unique value is not allowed',
+            code: TenderTypeErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -199,6 +210,7 @@ export class TenderTypeMasterService {
             'Tender type not found',
             'ttmTypeId',
             `No active tender type found with id ${ttmTypeId}`,
+            TenderTypeErrorCode.NOT_FOUND,
           );
         }
         const ttmTypeName = normalizeRequiredText<TenderTypeMasterErrorDetail>(
@@ -243,7 +255,13 @@ export class TenderTypeMasterService {
       throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(
         error,
         'Tender type already exists',
-        [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }],
+        [
+          {
+            field: 'ttmTypeName',
+            message: 'Duplicate tender type unique value is not allowed',
+            code: TenderTypeErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -287,7 +305,11 @@ export class TenderTypeMasterService {
     });
     if (existing) {
       throwAccountsConflict<TenderTypeMasterErrorDetail>('Tender type name already exists', [
-        { field: 'ttmTypeName', message: 'Duplicate ttmTypeName is not allowed' },
+        {
+          field: 'ttmTypeName',
+          message: 'Duplicate ttmTypeName is not allowed',
+          code: TenderTypeErrorCode.NAME_TAKEN,
+        },
       ]);
     }
   }
@@ -307,6 +329,7 @@ export class TenderTypeMasterService {
         {
           field,
           message: `${field} must be a valid numeric identifier`,
+          code: TenderTypeErrorCode.ID_INVALID,
         },
       ]);
     }
@@ -318,6 +341,7 @@ export class TenderTypeMasterService {
         {
           field,
           message: `${field} must be a valid numeric identifier`,
+          code: TenderTypeErrorCode.ID_INVALID,
         },
       ]);
     }

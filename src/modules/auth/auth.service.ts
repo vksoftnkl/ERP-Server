@@ -8,6 +8,7 @@ import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
 import { SignedAccessToken, SignedRefreshToken, TokenService } from './token.service';
+import { AuthErrorCode, authErrorBody } from './types/auth-error-codes';
 const scryptAsync = promisify(nodeScrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
 type LoginRequestMetadata = {
@@ -30,7 +31,9 @@ export class AuthService {
     const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
     if (!user) {
       await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(
+        authErrorBody('Invalid credentials', 'credentials', AuthErrorCode.INVALID_CREDENTIALS),
+      );
     }
     const isPasswordValid = await this.verifyPassword(
       loginAuthDto.usrPassword,
@@ -47,7 +50,9 @@ export class AuthService {
           `Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`,
         );
       }
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(
+        authErrorBody('Invalid credentials', 'credentials', AuthErrorCode.INVALID_CREDENTIALS),
+      );
     }
     // Device validation is disabled: an unregistered, blocked or inactive device
     // no longer refuses the login. The lookup still runs, though, because
@@ -156,7 +161,9 @@ export class AuthService {
       select: { usrType: true, usrCompanyId: true },
     });
     if (!user) {
-      throw new UnauthorizedException('User is no longer active');
+      throw new UnauthorizedException(
+        authErrorBody('User is no longer active', 'refresh_token', AuthErrorCode.USER_INACTIVE),
+      );
     }
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: refreshPayload.sub,
@@ -309,7 +316,9 @@ export class AuthService {
     const resolvedType = opts.deviceType ?? 'Desktop';
     const lookupUid = resolvedType.toLowerCase() === 'web' ? `web:${user.usrId}` : deviceUid;
     if (!lookupUid) {
-      throw new UnauthorizedException('Device not registered');
+      throw new UnauthorizedException(
+        authErrorBody('Device not registered', 'device_id', AuthErrorCode.DEVICE_NOT_REGISTERED),
+      );
     }
     const isWeb = resolvedType.toLowerCase() === 'web';
     // The desktop client registers itself as 'PC', which used to fall outside this
@@ -327,7 +336,13 @@ export class AuthService {
         orderBy: [{ devLastLogin: { sort: 'desc', nulls: 'last' } }, { devCreatedOn: 'desc' }],
       });
       if (webDevices.length === 0) {
-        throw new UnauthorizedException('Device not registered. Please contact administrator.');
+        throw new UnauthorizedException(
+          authErrorBody(
+            'Device not registered. Please contact administrator.',
+            'device_id',
+            AuthErrorCode.DEVICE_NOT_REGISTERED,
+          ),
+        );
       }
       // Web logins used to skip the blocked/inactive checks the desktop and mobile
       // branch below applies, so a blocked or soft-deleted device still let the user in.
@@ -340,13 +355,22 @@ export class AuthService {
           this.logger.warn(
             `Web login rejected for user ${user.usrId}: device ${blockedDevice.devDeviceUid} is blocked.`,
           );
-          throw new UnauthorizedException(this.describeBlockedDevice(blockedDevice));
+          const blockedMessage = this.describeBlockedDevice(blockedDevice);
+          throw new UnauthorizedException(
+            authErrorBody(blockedMessage, 'device_id', AuthErrorCode.DEVICE_BLOCKED),
+          );
         }
         this.logger.warn(
           `Web login rejected for user ${user.usrId}: no active web device among ` +
             `${webDevices.map((candidate) => candidate.devDeviceUid).join(', ')}.`,
         );
-        throw new UnauthorizedException('Device is not available. Please contact administrator.');
+        throw new UnauthorizedException(
+          authErrorBody(
+            'Device is not available. Please contact administrator.',
+            'device_id',
+            AuthErrorCode.DEVICE_UNAVAILABLE,
+          ),
+        );
       }
       // Prefer the canonical per-user row so repeat logins keep landing on the same
       // device; older `WEB-<uuid>` registrations remain valid as a fallback.
@@ -366,20 +390,35 @@ export class AuthService {
       where: { devDeviceUid: lookupUid },
     });
     if (!existing) {
-      throw new UnauthorizedException('Device not registered. Please contact administrator.');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Device not registered. Please contact administrator.',
+          'device_id',
+          AuthErrorCode.DEVICE_NOT_REGISTERED,
+        ),
+      );
     }
     if (isDesktopOrMobile) {
       if (existing.devIsBlocked) {
         this.logger.warn(
           `Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is blocked.`,
         );
-        throw new UnauthorizedException(this.describeBlockedDevice(existing));
+        const blockedMessage = this.describeBlockedDevice(existing);
+        throw new UnauthorizedException(
+          authErrorBody(blockedMessage, 'device_id', AuthErrorCode.DEVICE_BLOCKED),
+        );
       }
       if (!existing.devIsActive || existing.devIsDeleted) {
         this.logger.warn(
           `Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is inactive or deleted.`,
         );
-        throw new UnauthorizedException('Device is not available. Please contact administrator.');
+        throw new UnauthorizedException(
+          authErrorBody(
+            'Device is not available. Please contact administrator.',
+            'device_id',
+            AuthErrorCode.DEVICE_UNAVAILABLE,
+          ),
+        );
       }
     }
     return this.prisma.deviceMaster.update({

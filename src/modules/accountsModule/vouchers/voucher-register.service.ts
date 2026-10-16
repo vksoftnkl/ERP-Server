@@ -91,6 +91,7 @@ import {
   type RaisedBill,
 } from './voucher-billwise.helper';
 import { VoucherTypesService } from './voucher-types.service';
+import { coverPostedVoucher } from '../../../common/posting/money-lines';
 import {
   newGuardContext,
   refuse,
@@ -441,6 +442,12 @@ export class VoucherRegisterService {
               field: 'header.sessionId',
               hasCash: cashLineRows.size > 0,
               cashIn: moneyDocType === TenderSrcDocType.RECEIPT,
+              // Notes 122 §5: what the CASH instruments pay out of the drawer.
+              cashOut: d.legs
+                .filter(
+                  (l) => l.drCr === 'CR' && l.instrument?.tender.typeId === CASH_TENDER_TYPE_ID,
+                )
+                .reduce((sum, l) => sum.plus(l.amount), new Prisma.Decimal(0)),
             });
       const sessionId = till.ref?.tssId ?? existing?.avh_session_id ?? null;
       /** A CASH instrument's money leg, when the back office's cash comes from the safe. */
@@ -494,6 +501,8 @@ export class VoucherRegisterService {
           draftVoucherId: existing?.avh_voucher_id ?? null,
         },
         legs: todayLegs.map(toVoucherLeg),
+        // Notes 126: the instruments' tender rows are written below (9c).
+        money: { deferred: true },
       });
       const voucherId = voucher.voucherId;
       const refno = voucher.voucherRefno ?? voucherId;
@@ -560,6 +569,7 @@ export class VoucherRegisterService {
             createdBy: actor,
           },
           legs: pair.map(toVoucherLeg),
+          money: { deferred: true },
         });
         await tx.$executeRaw`
           UPDATE accounts.acc_voucher_header
@@ -729,6 +739,24 @@ export class VoucherRegisterService {
             chequeAccYear: cheque?.apdAccYear.trim() ?? null,
           });
         }
+      }
+
+      // 9d · notes 126 §1: every cash / bank line now carries its instrument's
+      //      tender row — today's voucher and each post-dated one. A typed money
+      //      line was refused by the derive (§6); this is the safety net.
+      await coverPostedVoucher(
+        tx,
+        { voucherId, accYear: dto.header.accYear },
+        {
+          createdBy: actor,
+          // a Contra line names its own tender (§6): the from / to sides
+          tenders: dto.lines
+            .filter((l) => l.tenderId)
+            .map((l) => ({ ledgerId: l.ledgerId, drCr: l.drCr, tenderId: l.tenderId! })),
+        },
+      );
+      for (const pdc of pdcVouchers.values()) {
+        await coverPostedVoucher(tx, pdc, { createdBy: actor });
       }
 
       // 10 · bills and allocations — today's on today's voucher, a post-dated
@@ -1225,6 +1253,7 @@ export class VoucherRegisterService {
           }
         : null,
       tdsBase: l.tdsBase ?? null,
+      tenderId: l.tenderId ?? null,
       instrument: l.instrument
         ? {
             tenderId: l.instrument.tenderId,
@@ -1335,10 +1364,11 @@ export class VoucherRegisterService {
     // already registered for a party in the year the cheque posts
     // (ux_apd_instrument); the years a post-dated cheque would post into that
     // are not OPEN or are locked as at its date.
-    const tenders = await loadTenderFacts(
-      tx,
-      lines.filter((l) => l.instrument).map((l) => l.instrument!.tenderId),
-    );
+    const tenders = await loadTenderFacts(tx, [
+      ...lines.filter((l) => l.instrument).map((l) => l.instrument!.tenderId),
+      // notes 126 §6: a Contra line's own tender
+      ...lines.filter((l) => l.tenderId).map((l) => l.tenderId!),
+    ]);
     const registeredCheques = new Set<string>();
     const closedYears = new Map<string, string>();
     // notes (55): an ISSUED cheque (a payment's) sends no number — the book

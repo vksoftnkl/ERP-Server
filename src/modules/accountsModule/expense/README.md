@@ -46,7 +46,10 @@ it has no template until one is designed. Both: migration `20261008170000`.
   with `itc: false` carries its tax in its cost. Place of supply defaults to the GSTIN's state.
   A supplier's invoice no already on a LIVE (DRAFT or POSTED) voucher of that supplier → 409
   `EXPENSE_GST_BILL_DUPLICATE` on `gstBill.invoiceNo` — at save `ux_avh_doc_refno`, at post the
-  register's key, naming the voucher that holds it — never a 500 (notes 103 / 104).
+  register's key, naming the voucher that holds it — never a 500 (notes 103 / 104). Notes 124 §7:
+  the save looks for the clash BEFORE writing (a year partition names the violated index
+  `acc_voucher_header_<year>_avh_company_id_avh_party_id_av_idx`, which the catch could not tell
+  apart), the catch stays for a race.
   RCM, TDS and import of services are not here (PurA / Payment).
   `accounts.expense_gst_bill_above` WARNs (`EXPENSE_GST_BILL_MISSING`) when a large expense has
   no bill.
@@ -67,9 +70,12 @@ it has no template until one is designed. Both: migration `20261008170000`.
   cash payments (menu 100 and the register) and expenses of the day; no supplier → this voucher
   alone. Above `CASH_PAYMENT_LIMIT_40A3` (10,000 shipped) → WARN `STATUTORY_40A3`, never a
   refusal; a company REFUSE row refuses.
-- **Approval** (EXPENSE rule, 500 shipped, on the TOTAL, in a till session): reported only —
-  `approval` + an INFO `TILL_APPROVAL_REQUIRED` warning + the `EXPENSE_POSTED` event's payload.
-  Phase 3's gate will enforce it.
+- **Approval** (EXPENSE rule, 500 shipped, on the TOTAL, in a till session) — the gate (notes 124
+  §5, till README "The approval gate"): under `till.approval_gate` WARN (as shipped) it posts,
+  `approval` + an INFO `TILL_APPROVAL_REQUIRED` warning + the `EXPENSE_POSTED` payload, and a
+  PENDING request (`approval.approvalId`) waits in the approvers' inbox; under REFUSE `/post`
+  answers 428 until `approvalId` (PostExpenseDto) names an approved request for this voucher
+  (srcDocType `EXPENSE`), and `/validate` lists it as a refusal.
 
 ## Till journal
 

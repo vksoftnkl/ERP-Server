@@ -4,6 +4,7 @@ import { looseSearchSql } from '../../../common/search/loose-search';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { throwSalesNotFound } from 'src/common/utils/module-service.utils';
+import { TempCreditErrorCode } from './types/temp-credit-error-codes';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { appendTempCreditStatus } from '../../../common/txn-status-log/temp-credit-status';
 import { TxnStatusEvent } from '../../../common/txn-status-log/txn-status-log.helper';
@@ -113,6 +114,7 @@ export class TempCreditService {
         'Temporary credit not found',
         'atcId',
         `No temporary credit found with id ${dto.atcId}`,
+        TempCreditErrorCode.NOT_FOUND,
       );
     }
     const updated = await this.prisma.accTempCredit.update({
@@ -173,6 +175,7 @@ export class TempCreditService {
         'Temporary credit not found',
         'atcId',
         `No temporary credit found with id ${dto.atcId}`,
+        TempCreditErrorCode.NOT_FOUND,
       );
     }
     await this.prisma.$transaction(async (tx) => {

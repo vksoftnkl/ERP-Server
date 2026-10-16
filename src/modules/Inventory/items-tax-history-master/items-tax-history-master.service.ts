@@ -7,6 +7,7 @@ import {
   ItemTaxHistoryErrorDetail,
   ItemTaxHistoryPayload,
 } from './types/item-tax-history-api.types';
+import { ItemTaxHistoryErrorCode } from './types/item-tax-history-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -42,6 +43,7 @@ export class ItemsTaxHistoryMasterService {
         'Item tax history not found',
         'ith_id',
         `No item tax history found with id ${ithId}`,
+        ItemTaxHistoryErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -56,6 +58,7 @@ export class ItemsTaxHistoryMasterService {
             'Item tax history not found',
             'ith_id',
             `No item tax history found with id ${ithId}`,
+            ItemTaxHistoryErrorCode.NOT_FOUND,
           );
         }
         await tx.itemTaxHistory.delete({ where: { ithId } });
@@ -154,6 +157,7 @@ export class ItemsTaxHistoryMasterService {
             'Item tax history not found',
             'ith_id',
             `No item tax history found with id ${ithId}`,
+            ItemTaxHistoryErrorCode.NOT_FOUND,
           );
         }
         const data: Prisma.ItemTaxHistoryUncheckedUpdateInput = {
@@ -205,7 +209,11 @@ export class ItemsTaxHistoryMasterService {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Validation failed', [
-        { field: fieldName, message: `${fieldName} must be a valid date` },
+        {
+          field: fieldName,
+          code: ItemTaxHistoryErrorCode.DATE_INVALID,
+          message: `${fieldName} must be a valid date`,
+        },
       ]);
     }
     return parsedDate;
@@ -226,6 +234,7 @@ export class ItemsTaxHistoryMasterService {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Validation failed', [
         {
           field: 'ith_effective_to',
+          code: ItemTaxHistoryErrorCode.DATE_RANGE_INVALID,
           message: 'ith_effective_to must be greater than or equal to ith_effective_from',
         },
       ]);
@@ -253,11 +262,21 @@ export class ItemsTaxHistoryMasterService {
     throwOnUniqueConstraintError<ItemTaxHistoryErrorDetail>(
       error,
       'Item tax history already exists',
-      [{ field: 'ith_id', message: 'Duplicate item tax history is not allowed' }],
+      [
+        {
+          field: 'ith_id',
+          code: ItemTaxHistoryErrorCode.DUPLICATE,
+          message: 'Duplicate item tax history is not allowed',
+        },
+      ],
     );
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Invalid relation reference', [
-        { field: 'ith_item_id', message: 'Referenced item or tax does not exist' },
+        {
+          field: 'ith_item_id',
+          code: ItemTaxHistoryErrorCode.REFERENCE_NOT_FOUND,
+          message: 'Referenced item or tax does not exist',
+        },
       ]);
     }
   }
@@ -265,7 +284,11 @@ export class ItemsTaxHistoryMasterService {
   private handleDeleteError(error: unknown): void {
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Cannot delete item tax history', [
-        { field: 'ith_id', message: 'Item tax history is referenced by related records' },
+        {
+          field: 'ith_id',
+          code: ItemTaxHistoryErrorCode.IN_USE,
+          message: 'Item tax history is referenced by related records',
+        },
       ]);
     }
   }

@@ -30,7 +30,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Stock Balance')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-stock-balance')
 @UseFilters(ItemStockBalanceExceptionFilter)
 export class ItemStockBalanceController {

@@ -185,6 +185,7 @@ describe('GridDetailsService', () => {
           {
             field: 'grid_sql',
             message: 'grid_sql must be a SELECT query with a top-level FROM table',
+            code: 'GRID_SQL_NO_FROM_TABLE',
           },
         ],
       },

@@ -12,6 +12,7 @@ import {
   TaxRateLedgerPayload,
   TaxRatePayload,
 } from '../types/tax-rate-api.types';
+import { TaxRateErrorCode } from '../types/tax-rate-error-codes';
 
 // ─── The vocabularies ────────────────────────────────────────────────────────
 // Mirrors of ck_tax_taxability, ck_tax_cess_basis / ck_tax_acess_basis and
@@ -153,7 +154,11 @@ export function handleTaxRateWriteError(error: unknown): void {
   }
   if (error.code === 'P2002') {
     throwTaxRateConflict('Duplicate tax rate data is not allowed', [
-      { field: resolveUniqueField(error), message: 'A record with the same value already exists' },
+      {
+        field: resolveUniqueField(error),
+        code: TaxRateErrorCode.DUPLICATE,
+        message: 'A record with the same value already exists',
+      },
     ]);
     return;
   }
@@ -161,6 +166,7 @@ export function handleTaxRateWriteError(error: unknown): void {
     throwTaxRateBadRequest('Validation failed', [
       {
         field: resolveForeignKeyField(error),
+        code: TaxRateErrorCode.REFERENCE_NOT_FOUND,
         message: 'Referenced master record was not found',
       },
     ]);
@@ -192,6 +198,11 @@ function describeTarget(error: Prisma.PrismaClientKnownRequestError): string {
 }
 
 /** Collects rather than throws, so a whole form is corrected in one round-trip. */
-export function pushError(errors: ModuleErrorDetail[], field: string, message: string): void {
-  errors.push({ field, message });
+export function pushError(
+  errors: ModuleErrorDetail[],
+  field: string,
+  message: string,
+  code: TaxRateErrorCode,
+): void {
+  errors.push({ field, code, message });
 }

@@ -35,6 +35,7 @@ export enum ExpenseErrorCode {
   PARTY_INVALID = 'EXPENSE_PARTY_INVALID',
   /** A GST bill without its supplier, GSTIN, invoice no / date, or a line's rate. */
   GST_INCOMPLETE = 'EXPENSE_GST_INCOMPLETE',
+  /** A line's GST rate id names no live (active) tax rate. */
   GST_RATE_MISSING = 'EXPENSE_GST_RATE_MISSING',
   /** No ledger mapped for INPUT_CGST / SGST / IGST / CESS (menu 250). */
   GST_LEDGER_UNMAPPED = 'EXPENSE_GST_LEDGER_UNMAPPED',
@@ -49,7 +50,12 @@ export enum ExpenseErrorCode {
   GST_BILL_DUPLICATE = 'EXPENSE_GST_BILL_DUPLICATE',
   /** A cheque or a post-dated instrument: those go on a bill-wise Payment. */
   TENDER_NOT_ALLOWED = 'EXPENSE_TENDER_NOT_ALLOWED',
+  /** No lines, a row number keyed twice, or a line amount of zero or less. */
   NO_LINES = 'EXPENSE_NO_LINES',
+  /** 404: the companyId the voucher is keyed under names no company. */
+  COMPANY_NOT_FOUND = 'EXPENSE_COMPANY_NOT_FOUND',
+  /** 404: the ExpV voucher type is missing from accounts.acc_voucher_types or inactive. */
+  TYPE_NOT_SET_UP = 'EXPENSE_TYPE_NOT_SET_UP',
 }
 
 export enum ExpenseStatus {

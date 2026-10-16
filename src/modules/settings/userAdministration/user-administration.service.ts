@@ -14,10 +14,12 @@ import {
   throwOnUniqueConstraintError,
   throwSettingsBadRequest,
   throwSettingsConflict,
+  throwSettingsForbidden,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { hashSecret } from 'src/common/utils/secret-hash.utils';
-import { UserType } from './types/user-administration.enum';
+import { UserAdminErrorCode, UserType } from './types/user-administration.enum';
+import { callerIsSuperAdmin } from './super-admin';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const USER_MASTER_TABLE_NAME = 'user_master';
@@ -105,6 +107,7 @@ export class UserAdministrationService {
       if (!existing) {
         this.throwNotFound(usrId);
       }
+      await this.assertMayTouch(tx, existing, 'delete');
 
       const now = new Date();
 
@@ -152,12 +155,17 @@ export class UserAdministrationService {
   private async createUser(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
     if (!dto.usrPassword?.trim()) {
       throwSettingsBadRequest<UserAdminErrorDetail>('Validation failed', [
-        { field: 'usrPassword', message: 'usrPassword is required when creating a new user' },
+        {
+          field: 'usrPassword',
+          message: 'usrPassword is required when creating a new user',
+          code: UserAdminErrorCode.PASSWORD_REQUIRED,
+        },
       ]);
     }
 
     try {
       return this.prisma.$transaction(async (tx) => {
+        await this.assertMayGiveRole(tx, dto.usrType);
         await this.ensureLoginNameUnique(dto.usrLoginName, undefined, tx);
         await this.ensureEmployeeLinkable(tx, {
           employeeId: dto.usrEmployeeId ?? null,
@@ -224,6 +232,12 @@ export class UserAdministrationService {
         });
         if (!existing) {
           this.throwNotFound(usrId);
+        }
+        // Notes 125 §3: a SUPER ADMIN user — edited, deactivated, its password
+        // reset — and the role itself, only by a SUPER ADMIN.
+        await this.assertMayTouch(tx, existing, 'change');
+        if (dto.usrType !== existing.usrType) {
+          await this.assertMayGiveRole(tx, dto.usrType);
         }
 
         await this.ensureLoginNameUnique(dto.usrLoginName, usrId, tx);
@@ -294,6 +308,49 @@ export class UserAdministrationService {
     }
   }
 
+  /**
+   * Notes 125 §3 — SUPER ADMIN is VK Softwares' own account, never a client's
+   * role (the user, 2026-10-16): only a SUPER ADMIN saves a user as one.
+   * 403 USER_ROLE_RESERVED on `usrType`.
+   */
+  private async assertMayGiveRole(
+    tx: UserAdminWriteClient,
+    usrType: UserType | null | undefined,
+  ): Promise<void> {
+    if (usrType !== UserType.SUPER_ADMIN) {
+      return;
+    }
+    if (!(await callerIsSuperAdmin(tx, this.requestContextService.getUserId()))) {
+      throwSettingsForbidden<UserAdminErrorDetail>('User role reserved', [
+        {
+          field: 'usrType',
+          code: UserAdminErrorCode.ROLE_RESERVED,
+          message: 'Only a SUPER ADMIN can make a user SUPER ADMIN',
+        },
+      ]);
+    }
+  }
+
+  /** Notes 125 §3 — an existing SUPER ADMIN user is changed or deleted only by a SUPER ADMIN. */
+  private async assertMayTouch(
+    tx: UserAdminWriteClient,
+    target: Pick<UserMaster, 'usrType' | 'usrLoginName'>,
+    action: 'change' | 'delete',
+  ): Promise<void> {
+    if (target.usrType !== UserType.SUPER_ADMIN) {
+      return;
+    }
+    if (!(await callerIsSuperAdmin(tx, this.requestContextService.getUserId()))) {
+      throwSettingsForbidden<UserAdminErrorDetail>('User role reserved', [
+        {
+          field: 'usrId',
+          code: UserAdminErrorCode.ROLE_RESERVED,
+          message: `${target.usrLoginName} is a SUPER ADMIN user: only a SUPER ADMIN can ${action} it`,
+        },
+      ]);
+    }
+  }
+
   private async replaceUserMenus(
     usrId: string,
     menus: SaveUserMenuDto[],
@@ -321,7 +378,11 @@ export class UserAdministrationService {
     const invalidIds = menuIds.filter((id) => !validMenuIds.has(id));
     if (invalidIds.length > 0) {
       throwSettingsBadRequest<UserAdminErrorDetail>('Invalid menu reference', [
-        { field: 'menus', message: `Menu IDs not found or inactive: ${invalidIds.join(', ')}` },
+        {
+          field: 'menus',
+          message: `Menu IDs not found or inactive: ${invalidIds.join(', ')}`,
+          code: UserAdminErrorCode.MENU_INVALID,
+        },
       ]);
     }
 
@@ -395,7 +456,11 @@ export class UserAdministrationService {
 
     if (existing) {
       throwSettingsBadRequest<UserAdminErrorDetail>('Validation failed', [
-        { field: 'usrLoginName', message: `Login name '${loginName}' is already taken` },
+        {
+          field: 'usrLoginName',
+          message: `Login name '${loginName}' is already taken`,
+          code: UserAdminErrorCode.LOGIN_NAME_TAKEN,
+        },
       ]);
     }
   }
@@ -428,6 +493,7 @@ export class UserAdministrationService {
         {
           field: 'usrEmployeeId',
           message: `No active employee found with id ${link.employeeId}`,
+          code: UserAdminErrorCode.EMPLOYEE_NOT_FOUND,
         },
       ]);
     }
@@ -436,6 +502,7 @@ export class UserAdministrationService {
         {
           field: 'usrEmployeeId',
           message: `Employee "${employee.empName}" is not an employee of the user's company`,
+          code: UserAdminErrorCode.EMPLOYEE_OTHER_COMPANY,
         },
       ]);
     }
@@ -453,6 +520,7 @@ export class UserAdministrationService {
         {
           field: 'usrEmployeeId',
           message: `Employee "${employee.empName}" is not active`,
+          code: UserAdminErrorCode.EMPLOYEE_INACTIVE,
         },
       ]);
     }
@@ -470,6 +538,7 @@ export class UserAdministrationService {
         {
           field: 'usrEmployeeId',
           message: `Employee "${employee.empName}" is already linked to active user '${other.usrLoginName}'`,
+          code: UserAdminErrorCode.EMPLOYEE_LINKED,
         },
       ]);
     }
@@ -599,7 +668,11 @@ export class UserAdministrationService {
 
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<UserAdminErrorDetail>(error, 'User already exists', [
-      { field: 'usrLoginName', message: 'A user with this login name already exists' },
+      {
+        field: 'usrLoginName',
+        message: 'A user with this login name already exists',
+        code: UserAdminErrorCode.LOGIN_NAME_TAKEN,
+      },
     ]);
   }
 
@@ -608,6 +681,7 @@ export class UserAdministrationService {
       'User not found',
       'usrId',
       `No active user found with id ${usrId}`,
+      UserAdminErrorCode.NOT_FOUND,
     );
   }
 }

@@ -362,6 +362,10 @@ export enum TillEventCode {
   MOVEMENT_VOIDED = 'MOVEMENT_VOIDED',
   VARIANCE_DECIDED = 'VARIANCE_DECIDED',
   APPROVAL_REQUESTED = 'APPROVAL_REQUESTED',
+  /** Notes 124 §5 — a request decided (APPROVED / REJECTED) or cancelled (payload `status`). */
+  APPROVAL_DECIDED = 'APPROVAL_DECIDED',
+  /** Notes 124 §5 — a request swept past tap_expires_on. */
+  APPROVAL_EXPIRED = 'APPROVAL_EXPIRED',
   DRAWER_OPEN_SALE = 'DRAWER_OPEN_SALE',
   NO_SALE = 'NO_SALE',
   DRAWER_LEFT_OPEN = 'DRAWER_LEFT_OPEN',
@@ -561,6 +565,14 @@ export enum TillSettingKey {
   HANDOVER_RECEIPT = 'till.handover_receipt',
   /** 47 — the day close wants each safe counted (notes 118: SAFE_NOT_COUNTED is RED). */
   DAY_CLOSE_SAFE_COUNT = 'till.day_close_safe_count',
+  /** Notes 122 §5 — REFUSE: cash paid out of a drawer never exceeds its expected cash. */
+  CASH_OUT_OVER_EXPECTED = 'till.cash_out_over_expected',
+  /**
+   * Notes 124 §5 — WARN: an event its rule asks an approval for goes through
+   * and files a PENDING request for the inbox; REFUSE: refused (428) until an
+   * approved request is brought — only on a rule that blocks the till.
+   */
+  APPROVAL_GATE = 'till.approval_gate',
   /** 49 — a TENDER key the close reads (plan-noncash-tender-control §4.1). */
   CLOSE_BY_TERMINAL = 'tender.close_by_terminal',
 }
@@ -597,6 +609,8 @@ export enum TillErrorCode {
   EVENT_INVALID = 'TILL_EVENT_INVALID',
   SESSION_CLOSED_USE_RETURN = 'TILL_SESSION_CLOSED_USE_RETURN',
   CASH_BLOCKED = 'TILL_CASH_BLOCKED',
+  /** Notes 122 §5 — a document pays out more cash than the drawer is expected to hold (till.cash_out_over_expected = REFUSE). */
+  CASH_SHORT_IN_DRAWER = 'TILL_CASH_SHORT_IN_DRAWER',
   MOVEMENT_INVALID = 'TILL_MOVEMENT_INVALID',
   MOVEMENT_NOT_FOUND = 'TILL_MOVEMENT_NOT_FOUND',
   MOVEMENT_NOT_VOIDABLE = 'TILL_MOVEMENT_NOT_VOIDABLE',
@@ -623,12 +637,16 @@ export enum TillErrorCode {
   CASH_LEDGER_DIRECT = 'TILL_CASH_LEDGER_DIRECT',
   /** Notes 105 A2 — the approver is the session's own cashier (tar_allow_self = false). */
   APPROVER_SELF = 'TILL_APPROVER_SELF',
+  /** Notes 127 §6 — the session's own cashier tried to force-close it (FORCE_CLOSE rule, no self). */
+  FORCE_CLOSE_SELF = 'TILL_FORCE_CLOSE_SELF',
   /** Notes 105 A2 — no till_approval_authority grant covers this event, branch and level (Till Approval Authority, menu 285); a SUPER ADMIN needs none. */
   APPROVER_NO_GRANT = 'TILL_APPROVER_NO_GRANT',
   /** Notes 105 A2 — every grant at the level has a taa_max_amount below the variance. */
   APPROVER_LIMIT = 'TILL_APPROVER_LIMIT',
   /** Notes 105 A2 — the channel wants the approver's till PIN (usr_pin_hash, notes 95), and none or a wrong one came. */
   APPROVER_PIN = 'TILL_APPROVER_PIN',
+  /** Notes 122 §8 — the approver has no till PIN (usr_pin_hash, notes 95) to type, as the witness's / supervisor's / receiver's NO_PIN. */
+  APPROVER_NO_PIN = 'TILL_APPROVER_NO_PIN',
   /** Notes 108 — a PICKUP / TOP_UP came without the witness's till PIN. */
   WITNESS_PIN_REQUIRED = 'TILL_WITNESS_PIN_REQUIRED',
   /** Notes 108 — the witness's till PIN is wrong (journalled PIN_FAIL). */
@@ -683,6 +701,80 @@ export enum TillErrorCode {
   REMIT_NOT_IN_TRANSIT = 'TILL_REMIT_NOT_IN_TRANSIT',
   /** Notes 118 — a two-person rule (SAFE_VARIANCE as shipped) without a valid second signature. */
   APPROVER_SECOND = 'TILL_APPROVER_SECOND',
+  /** Notes 124 §5 — the approval request is not PENDING (decided, cancelled, expired). */
+  APPROVAL_NOT_PENDING = 'TILL_APPROVAL_NOT_PENDING',
+  /** Notes 124 §5 — the approval request ran past its expiry before it was decided. */
+  APPROVAL_EXPIRED = 'TILL_APPROVAL_EXPIRED',
+  /** Notes 124 §5 — the `approvalId` brought does not approve this action (event, document, amount, used). */
+  APPROVAL_INVALID = 'TILL_APPROVAL_INVALID',
+  /** Notes 124 §5 — only whoever asked (or a Till Sessions OVERRIDE holder) cancels a request. */
+  APPROVAL_NOT_YOURS = 'TILL_APPROVAL_NOT_YOURS',
+
+  // ── Notes 119 — the 404s and 400s throwTillNotFound / throwTillBadRequest raised uncoded ──
+  /** No business day by that id (or none open for today) in the caller's scope. */
+  DAY_NOT_FOUND = 'TILL_DAY_NOT_FOUND',
+  /** No safe by that id in the caller's company. */
+  SAFE_NOT_FOUND = 'TILL_SAFE_NOT_FOUND',
+  /** No till reason by that id in the caller's company. */
+  REASON_NOT_FOUND = 'TILL_REASON_NOT_FOUND',
+  /** No denomination by that id in the caller's company. */
+  DENOMINATION_NOT_FOUND = 'TILL_DENOMINATION_NOT_FOUND',
+  /** No approval rule by that id in the caller's company. */
+  APPROVAL_RULE_NOT_FOUND = 'TILL_APPROVAL_RULE_NOT_FOUND',
+  /** No approval authority grant by that id in the caller's company. */
+  APPROVAL_AUTHORITY_NOT_FOUND = 'TILL_APPROVAL_AUTHORITY_NOT_FOUND',
+  /** No approval request by that id in the caller's scope. */
+  APPROVAL_NOT_FOUND = 'TILL_APPROVAL_NOT_FOUND',
+  /** No safe variance by that id. */
+  VARIANCE_NOT_FOUND = 'TILL_VARIANCE_NOT_FOUND',
+  /** A decision with no note, where one is required (approval decide, variance decide). */
+  NOTE_REQUIRED = 'TILL_NOTE_REQUIRED',
+  /** An approval request for a negative amount. */
+  AMOUNT_NEGATIVE = 'TILL_AMOUNT_NEGATIVE',
+  /** srcDocType given without srcDocId, or the other way round. */
+  SOURCE_DOC_PAIR = 'TILL_SOURCE_DOC_PAIR',
+  /** A counter / safe / approval rule edited onto another branch: it keeps the scope it was created in. */
+  MASTER_SCOPE_FIXED = 'TILL_MASTER_SCOPE_FIXED',
+  /** A master field holds a value outside its list (counter kind, drawer mode, reason category, rule event/mode/channel/role …). */
+  VALUE_NOT_ALLOWED = 'TILL_VALUE_NOT_ALLOWED',
+  /** A counter's cash block limit below its alert limit. */
+  BLOCK_BELOW_ALERT = 'TILL_BLOCK_BELOW_ALERT',
+  /** A master with that key already exists (counter/safe code, reason, denomination, rule start date). */
+  MASTER_DUPLICATE = 'TILL_MASTER_DUPLICATE',
+  /** The device named for a counter already drives another counter. */
+  DEVICE_ALREADY_LINKED = 'TILL_DEVICE_ALREADY_LINKED',
+  /** A counter's safe is not a safe of the counter's branch. */
+  SAFE_OTHER_BRANCH = 'TILL_SAFE_OTHER_BRANCH',
+  /** A denomination value of zero or less. */
+  DENOMINATION_VALUE_INVALID = 'TILL_DENOMINATION_VALUE_INVALID',
+  /** A branch-level approval authority grant with no company. */
+  GRANT_COMPANY_REQUIRED = 'TILL_GRANT_COMPANY_REQUIRED',
+  /** An approval authority grant for a user that does not exist. */
+  USER_UNKNOWN = 'TILL_USER_UNKNOWN',
+  /** An approval authority grant whose valid-to is before its valid-from. */
+  VALID_TO_BEFORE_FROM = 'TILL_VALID_TO_BEFORE_FROM',
+  /** The device named for a counter is not a registered device. */
+  COUNTER_DEVICE_UNREGISTERED = 'TILL_COUNTER_DEVICE_UNREGISTERED',
+  /** The device named for a counter is a web client (no drawer). */
+  COUNTER_DEVICE_WEB = 'TILL_COUNTER_DEVICE_WEB',
+  /** The device named for a counter is blocked. */
+  COUNTER_DEVICE_BLOCKED = 'TILL_COUNTER_DEVICE_BLOCKED',
+  /** The device named for a counter is registered to another branch. */
+  COUNTER_DEVICE_OTHER_BRANCH = 'TILL_COUNTER_DEVICE_OTHER_BRANCH',
+  /** A ledger named on a till master is not a ledger of this company. */
+  LEDGER_NOT_IN_COMPANY = 'TILL_LEDGER_NOT_IN_COMPANY',
+  /** A receive named no bag. */
+  BAGS_REQUIRED = 'TILL_BAGS_REQUIRED',
+  /** A receive named the same bag twice. */
+  BAG_REPEATED = 'TILL_BAG_REPEATED',
+  /** The deviceId / userId sent is not this login's (the token's) device / user. */
+  NOT_THIS_LOGIN = 'TILL_NOT_THIS_LOGIN',
+  /** An APPROVE decision with no treatment (EXPENSE, RECOVER or SUSPENSE). */
+  TREATMENT_REQUIRED = 'TILL_TREATMENT_REQUIRED',
+  /** RECOUNT asked where there is nothing to recount (cash handed over, bag received): APPROVE with a treatment. */
+  RECOUNT_NOT_ALLOWED = 'TILL_RECOUNT_NOT_ALLOWED',
+  /** The device is linked to no counter and the open named none: name one of the free counters. */
+  COUNTER_REQUIRED = 'TILL_COUNTER_REQUIRED',
 }
 
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
@@ -713,6 +805,8 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.EVENT_INVALID]: 422,
   [TillErrorCode.SESSION_CLOSED_USE_RETURN]: 409,
   [TillErrorCode.CASH_BLOCKED]: 409,
+  // The drawer's state refuses it, as CASH_BLOCKED.
+  [TillErrorCode.CASH_SHORT_IN_DRAWER]: 409,
   [TillErrorCode.MOVEMENT_INVALID]: 422,
   [TillErrorCode.MOVEMENT_NOT_FOUND]: 404,
   [TillErrorCode.MOVEMENT_NOT_VOIDABLE]: 409,
@@ -729,9 +823,12 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.CASH_LEDGER_DIRECT]: 409,
   // 403: the caller is not an approver this decision accepts (TILL_DESIGN.md §7.3 TILL_APPROVAL_DENIED, split four ways).
   [TillErrorCode.APPROVER_SELF]: 403,
+  [TillErrorCode.FORCE_CLOSE_SELF]: 403,
   [TillErrorCode.APPROVER_NO_GRANT]: 403,
   [TillErrorCode.APPROVER_LIMIT]: 403,
   [TillErrorCode.APPROVER_PIN]: 403,
+  // A user master to fix first, as WITNESS_NO_PIN.
+  [TillErrorCode.APPROVER_NO_PIN]: 422,
   // Notes 108: no proof the witness was there — the same 403 as an approver's PIN.
   [TillErrorCode.WITNESS_PIN_REQUIRED]: 403,
   [TillErrorCode.WITNESS_PIN]: 403,
@@ -769,4 +866,43 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.REMIT_NOT_IN_TRANSIT]: 409,
   // Not someone this decision accepts, as the approver's own 403s.
   [TillErrorCode.APPROVER_SECOND]: 403,
+  // Notes 124 §5: the request is not in the state the call needs, as VARIANCE_NOT_PENDING.
+  [TillErrorCode.APPROVAL_NOT_PENDING]: 409,
+  [TillErrorCode.APPROVAL_EXPIRED]: 409,
+  // The approval brought is wrong for this call, as MOVEMENT_INVALID.
+  [TillErrorCode.APPROVAL_INVALID]: 422,
+  [TillErrorCode.APPROVAL_NOT_YOURS]: 403,
+  // Notes 119: the statuses throwTillNotFound / throwTillBadRequest always answered with.
+  [TillErrorCode.DAY_NOT_FOUND]: 404,
+  [TillErrorCode.SAFE_NOT_FOUND]: 404,
+  [TillErrorCode.REASON_NOT_FOUND]: 404,
+  [TillErrorCode.DENOMINATION_NOT_FOUND]: 404,
+  [TillErrorCode.APPROVAL_RULE_NOT_FOUND]: 404,
+  [TillErrorCode.APPROVAL_AUTHORITY_NOT_FOUND]: 404,
+  [TillErrorCode.APPROVAL_NOT_FOUND]: 404,
+  [TillErrorCode.VARIANCE_NOT_FOUND]: 404,
+  [TillErrorCode.NOTE_REQUIRED]: 400,
+  [TillErrorCode.AMOUNT_NEGATIVE]: 400,
+  [TillErrorCode.SOURCE_DOC_PAIR]: 400,
+  [TillErrorCode.MASTER_SCOPE_FIXED]: 400,
+  [TillErrorCode.VALUE_NOT_ALLOWED]: 400,
+  [TillErrorCode.BLOCK_BELOW_ALERT]: 400,
+  [TillErrorCode.MASTER_DUPLICATE]: 400,
+  [TillErrorCode.DEVICE_ALREADY_LINKED]: 400,
+  [TillErrorCode.SAFE_OTHER_BRANCH]: 400,
+  [TillErrorCode.DENOMINATION_VALUE_INVALID]: 400,
+  [TillErrorCode.GRANT_COMPANY_REQUIRED]: 400,
+  [TillErrorCode.USER_UNKNOWN]: 400,
+  [TillErrorCode.VALID_TO_BEFORE_FROM]: 400,
+  [TillErrorCode.COUNTER_DEVICE_UNREGISTERED]: 400,
+  [TillErrorCode.COUNTER_DEVICE_WEB]: 400,
+  [TillErrorCode.COUNTER_DEVICE_BLOCKED]: 400,
+  [TillErrorCode.COUNTER_DEVICE_OTHER_BRANCH]: 400,
+  [TillErrorCode.LEDGER_NOT_IN_COMPANY]: 400,
+  [TillErrorCode.BAGS_REQUIRED]: 400,
+  [TillErrorCode.BAG_REPEATED]: 400,
+  [TillErrorCode.NOT_THIS_LOGIN]: 400,
+  [TillErrorCode.TREATMENT_REQUIRED]: 400,
+  [TillErrorCode.RECOUNT_NOT_ALLOWED]: 400,
+  [TillErrorCode.COUNTER_REQUIRED]: 400,
 };

@@ -495,7 +495,7 @@ describe('ItemsMasterService composite endpoints', () => {
     await expect(
       service.saveComposite({ item_name_en: 'Widget', item_group_id: GROUP_ID }),
     ).rejects.toMatchObject({
-      response: { errors: [{ field: 'item_default_tax_id' }] },
+      response: { errors: [{ field: 'item_default_tax_id', code: 'ITEM_UNKNOWN_TAX_RATE' }] },
     });
   });
 
@@ -920,7 +920,7 @@ describe('ItemsMasterService composite endpoints', () => {
 
     await expect(service.restoreComposite(ITEM_ID)).rejects.toMatchObject({
       status: 409,
-      response: { errors: [{ field: 'item_name_en' }] },
+      response: { errors: [{ field: 'item_name_en', code: 'ITEM_RESTORE_NAME_TAKEN' }] },
     });
   });
 

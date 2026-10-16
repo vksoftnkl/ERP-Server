@@ -3,7 +3,12 @@ import { AccTenderMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
-import { TenderMasterErrorDetail, TenderMasterPayload } from './types/tender-master-api.types';
+import {
+  TenderMasterErrorCode,
+  TenderMasterErrorDetail,
+  TenderMasterPayload,
+  type TenderMasterCodedErrorDetail,
+} from './types/tender-master-api.types';
 import {
   applyPresentFields,
   DEFAULT_ACTOR,
@@ -20,6 +25,12 @@ import type {
   PresentFieldTransform,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+/** acc_tender_types ids the ledger-fit rule names (notes 126). */
+const TENDER_TYPE_ID = { CASH: 1, CHEQUE: 5, BANK: 6 } as const;
+/** CARD, UPI, WALLET: their money sits in a clearing ledger until the payout. */
+const CLEARING_TENDER_TYPES: readonly number[] = [2, 3, 4];
+/** TEMP_CR, CREDIT, LOYALTY post no tender leg: no ledger (ck_tnd_ledger_required). */
+const NO_LEDGER_TENDER_TYPES: readonly number[] = [8, 9, 10];
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 const TENDER_SHORT_NAME_MAX_LENGTH = 30;
@@ -120,6 +131,7 @@ function toDateOrNull(value: unknown, field: string): Date | null | undefined {
       {
         field,
         message: `${field} must be a valid ISO date`,
+        code: TenderMasterErrorCode.DATE_INVALID,
       },
     ]);
   }
@@ -188,6 +200,7 @@ export class TenderMasterService {
         'Tender not found',
         'tndId',
         `No active tender found with id ${tndId}`,
+        TenderMasterErrorCode.NOT_FOUND,
       );
     }
 
@@ -208,6 +221,7 @@ export class TenderMasterService {
           'Tender not found',
           'tndId',
           `No active tender found with id ${tndId}`,
+          TenderMasterErrorCode.NOT_FOUND,
         );
       }
 
@@ -230,6 +244,7 @@ export class TenderMasterService {
           'Tender not found',
           'tndId',
           `No active tender found with id ${tndId}`,
+          TenderMasterErrorCode.NOT_FOUND,
         );
       }
 
@@ -292,7 +307,9 @@ export class TenderMasterService {
         await this.ensureCompanyExists(tx, scope.companyId);
         await this.ensureBranchExists(tx, tndBranchId);
         await this.ensureTenderTypeExists(tndTypeId, tx);
-        await this.ensureLedgerExists(saveTenderMasterDto.tndLedgerId, tx, 'tndLedgerId');
+        const tndLedgerId = saveTenderMasterDto.tndLedgerId ?? null;
+        await this.ensureLedgerExists(tndLedgerId, tx, 'tndLedgerId');
+        await this.ensureLedgerFitsType(tx, tndTypeId, tndLedgerId);
         await this.ensureLedgerExists(
           saveTenderMasterDto.tndSettlementLedgerId,
           tx,
@@ -320,7 +337,7 @@ export class TenderMasterService {
           tndTypeId,
           tndName,
           tndShortName,
-          tndLedgerId: saveTenderMasterDto.tndLedgerId,
+          tndLedgerId,
           tndMinAmount,
           ...this.buildOptionalData(saveTenderMasterDto),
           tndCreatedOn: now,
@@ -350,7 +367,11 @@ export class TenderMasterService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [
-        { field: 'tndName', message: 'Duplicate tender unique value is not allowed' },
+        {
+          field: 'tndName',
+          message: 'Duplicate tender unique value is not allowed',
+          code: TenderMasterErrorCode.DUPLICATE,
+        },
       ]);
       throw error;
     }
@@ -375,6 +396,7 @@ export class TenderMasterService {
             'Tender not found',
             'tndId',
             `No active tender found with id ${tndId}`,
+            TenderMasterErrorCode.NOT_FOUND,
           );
         }
 
@@ -407,7 +429,14 @@ export class TenderMasterService {
         await this.ensureCompanyExists(tx, scope.companyId);
         await this.ensureBranchExists(tx, tndBranchId);
         await this.ensureTenderTypeExists(tndTypeId, tx);
-        await this.ensureLedgerExists(saveTenderMasterDto.tndLedgerId, tx, 'tndLedgerId');
+        // Omitted keeps the stored ledger (class fields make every key own, so
+        // test undefined — never write `?? null` over a value the caller left out).
+        const tndLedgerId =
+          saveTenderMasterDto.tndLedgerId !== undefined
+            ? saveTenderMasterDto.tndLedgerId
+            : existing.tndLedgerId;
+        await this.ensureLedgerExists(tndLedgerId, tx, 'tndLedgerId');
+        await this.ensureLedgerFitsType(tx, tndTypeId, tndLedgerId);
         await this.ensureLedgerExists(
           saveTenderMasterDto.tndSettlementLedgerId,
           tx,
@@ -446,7 +475,7 @@ export class TenderMasterService {
           tndTypeId,
           tndName,
           tndShortName,
-          tndLedgerId: saveTenderMasterDto.tndLedgerId,
+          tndLedgerId,
           tndMinAmount,
           ...this.buildOptionalData(saveTenderMasterDto),
           tndModifiedOn: new Date(),
@@ -481,7 +510,11 @@ export class TenderMasterService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [
-        { field: 'tndName', message: 'Duplicate tender unique value is not allowed' },
+        {
+          field: 'tndName',
+          message: 'Duplicate tender unique value is not allowed',
+          code: TenderMasterErrorCode.DUPLICATE,
+        },
       ]);
       throw error;
     }
@@ -503,6 +536,7 @@ export class TenderMasterService {
         {
           field: 'tndCompanyId',
           message: `No active company found with id ${companyId}`,
+          code: TenderMasterErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -531,6 +565,7 @@ export class TenderMasterService {
         {
           field: 'tndBranchId',
           message: `No active branch found with id ${branchId}`,
+          code: TenderMasterErrorCode.BRANCH_NOT_FOUND,
         },
       ]);
     }
@@ -552,6 +587,7 @@ export class TenderMasterService {
         {
           field: 'tndTypeId',
           message: `No active tender type found with id ${typeId.toString()}`,
+          code: TenderMasterErrorCode.UNKNOWN_TYPE,
         },
       ]);
     }
@@ -559,6 +595,70 @@ export class TenderMasterService {
 
   // Shared by the posting, settlement and surcharge ledgers — the error is
   // reported against whichever field carried the id.
+  /**
+   * Notes 126 — the tender says HOW money moved, its ledger WHERE it sits; a
+   * wrong pair is stopped here, once, so it never reaches the counter:
+   *   CASH → a CASH ledger (led_ledger_type, derived from Cash-in-Hand);
+   *   CARD / UPI / WALLET → a clearing ledger, never CASH or BANK (the money is
+   *     not in the bank until the payout — TSet settles it there);
+   *   BANK → a BANK ledger; CHEQUE → not CASH / BANK (Cheques In Hand: an issued
+   *     cheque leaves the bank of its book, whatever this says);
+   *   TEMP_CR / CREDIT / LOYALTY → no ledger needed (they post no tender leg).
+   */
+  private async ensureLedgerFitsType(
+    tx: TenderMasterWriteClient,
+    typeId: number,
+    ledgerId: string | null,
+  ): Promise<void> {
+    const refuse = (code: TenderMasterErrorCode, message: string): never =>
+      throwAccountsBadRequest<TenderMasterCodedErrorDetail>('Tender ledger does not fit', [
+        { field: 'tndLedgerId', code, message },
+      ]);
+    if (!ledgerId) {
+      if (!NO_LEDGER_TENDER_TYPES.includes(typeId)) {
+        refuse(
+          TenderMasterErrorCode.LEDGER_REQUIRED,
+          'Name the ledger the tender money sits in (only TEMP_CR, CREDIT and LOYALTY have none)',
+        );
+      }
+      return;
+    }
+    const ledger = await tx.accLedgerMaster.findUnique({
+      where: { ledId: ledgerId },
+      select: { ledName: true, ledLedgerType: true },
+    });
+    const kind = (ledger?.ledLedgerType ?? '').toUpperCase();
+    const name = ledger?.ledName ?? 'that ledger';
+    const isMoney = kind === 'CASH' || kind === 'BANK';
+    if (typeId === TENDER_TYPE_ID.CASH && kind !== 'CASH') {
+      refuse(
+        TenderMasterErrorCode.LEDGER_TYPE,
+        `${name} is not a cash ledger: a CASH tender posts to a ledger under Cash-in-Hand`,
+      );
+    }
+    if (CLEARING_TENDER_TYPES.includes(typeId) && isMoney) {
+      refuse(
+        TenderMasterErrorCode.LEDGER_TYPE,
+        `${name} is a ${kind.toLowerCase()} ledger: card, UPI and wallet money is not in the bank until ` +
+          'the payout — point the tender at a clearing ledger (like UPI Clearing) and set the bank as ' +
+          'its settlement ledger',
+      );
+    }
+    if (typeId === TENDER_TYPE_ID.BANK && kind !== 'BANK') {
+      refuse(
+        TenderMasterErrorCode.LEDGER_TYPE,
+        `${name} is not a bank ledger: a BANK tender posts to a ledger under Bank Accounts`,
+      );
+    }
+    if (typeId === TENDER_TYPE_ID.CHEQUE && isMoney) {
+      refuse(
+        TenderMasterErrorCode.LEDGER_TYPE,
+        `${name} is a ${kind.toLowerCase()} ledger: a received cheque sits in Cheques In Hand until it ` +
+          'clears (an issued cheque leaves the bank of its cheque book)',
+      );
+    }
+  }
+
   private async ensureLedgerExists(
     ledgerId: string | null | undefined,
     tx: TenderMasterWriteClient,
@@ -583,6 +683,7 @@ export class TenderMasterService {
         {
           field,
           message: `No active account ledger found with id ${ledgerId}`,
+          code: TenderMasterErrorCode.LEDGER_NOT_FOUND,
         },
       ]);
     }
@@ -611,6 +712,7 @@ export class TenderMasterService {
         {
           field: 'tndBankAccountId',
           message: `No active ledger bank account found with id ${bankAccountId}`,
+          code: TenderMasterErrorCode.BANK_ACCOUNT_NOT_FOUND,
         },
       ]);
     }
@@ -657,7 +759,13 @@ export class TenderMasterService {
     if (existingName) {
       throwAccountsConflict<TenderMasterErrorDetail>(
         'Tender name already exists for this company and branch',
-        [{ field: 'tndName', message: 'Duplicate tndName is not allowed for this company/branch' }],
+        [
+          {
+            field: 'tndName',
+            message: 'Duplicate tndName is not allowed for this company/branch',
+            code: TenderMasterErrorCode.NAME_TAKEN,
+          },
+        ],
       );
     }
 
@@ -681,6 +789,7 @@ export class TenderMasterService {
           {
             field: 'tndShortName',
             message: 'Duplicate tndShortName is not allowed for this company/branch',
+            code: TenderMasterErrorCode.SHORT_NAME_TAKEN,
           },
         ],
       );
@@ -719,6 +828,7 @@ export class TenderMasterService {
           {
             field: 'tndHotkey',
             message: 'Duplicate tndHotkey is not allowed for this company/branch',
+            code: TenderMasterErrorCode.HOTKEY_TAKEN,
           },
         ],
       );
@@ -760,6 +870,7 @@ export class TenderMasterService {
           {
             field: 'tndIsDefault',
             message: `${existing.tndName} is already the default tender for this company/branch`,
+            code: TenderMasterErrorCode.DEFAULT_TAKEN,
           },
         ],
       );
@@ -776,6 +887,7 @@ export class TenderMasterService {
         {
           field: 'tndMaxAmount',
           message: 'tndMaxAmount must be greater than or equal to tndMinAmount',
+          code: TenderMasterErrorCode.AMOUNT_RANGE,
         },
       ]);
     }
@@ -791,6 +903,7 @@ export class TenderMasterService {
         {
           field: 'tndEffectiveTo',
           message: 'tndEffectiveTo must be on or after tndEffectiveFrom',
+          code: TenderMasterErrorCode.DATE_RANGE,
         },
       ]);
     }
@@ -830,6 +943,7 @@ export class TenderMasterService {
         {
           field,
           message: `${field} must be a valid numeric identifier`,
+          code: TenderMasterErrorCode.BAD_TYPE_ID,
         },
       ]);
     }
@@ -842,6 +956,7 @@ export class TenderMasterService {
         {
           field,
           message: `${field} must be a valid numeric identifier`,
+          code: TenderMasterErrorCode.BAD_TYPE_ID,
         },
       ]);
     }
@@ -855,6 +970,7 @@ export class TenderMasterService {
         {
           field,
           message: `${field} must be a finite number`,
+          code: TenderMasterErrorCode.NUMBER_INVALID,
         },
       ]);
     }

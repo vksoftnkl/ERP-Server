@@ -47,6 +47,7 @@ import {
   ReceiptBillSort,
   VoucherStatus,
 } from './types/payment-enum';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.1 and §4.2 for the payment — what the screen reads before a figure is
@@ -518,6 +519,7 @@ export class PaymentOpenItemsService {
         'Payment not found',
         'voucherId',
         `No payment ${query.voucherId} in ${query.accYear} for this company and branch`,
+        VCH.NOT_FOUND,
       );
     }
     const isPrev = query.direction === 'prev';

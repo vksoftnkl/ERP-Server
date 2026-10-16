@@ -28,6 +28,7 @@ import {
   type AppThemeTemplatePayload,
   type AppThemeTemplateRef,
 } from './types/app-theme.types';
+import { AppThemeErrorCode } from './types/app-theme-error-codes';
 
 const APP_THEME_TABLE_NAME = 'app theme master';
 const APP_THEME_AUDIT_SCREEN_NAME = 'App Theme Master';
@@ -105,6 +106,7 @@ export class AppThemeService {
         'Company not found',
         'companyId',
         `No live company found with id ${companyId}`,
+        AppThemeErrorCode.COMPANY_NOT_FOUND,
       );
     }
     const own = company.compStylesheetId
@@ -122,6 +124,7 @@ export class AppThemeService {
         'No default app theme',
         'thmIsDefault',
         'No live theme is marked default. Mark one with POST /app-themes/save.',
+        AppThemeErrorCode.NO_DEFAULT,
       );
     }
     return {
@@ -158,6 +161,7 @@ export class AppThemeService {
         'No active app theme template',
         'tplId',
         'No live, active template exists: migration 20261001140000_app_theme_template seeds one.',
+        AppThemeErrorCode.TEMPLATE_MISSING,
       );
     }
     return this.toTemplatePayload(record);
@@ -184,12 +188,14 @@ export class AppThemeService {
           'App theme template not found',
           'tplId',
           `No app theme template found with id ${dto.tplId}`,
+          AppThemeErrorCode.TEMPLATE_NOT_FOUND,
         );
       }
       if (existing.tplIsDeleted || !existing.tplIsActive) {
         throwSettingsConflict<AppThemeErrorDetail>('Not the active template', [
           {
             field: 'tplId',
+            code: AppThemeErrorCode.TEMPLATE_NOT_ACTIVE,
             message: `Template ${existing.tplId} is not the one clients apply; edit the one GET /app-themes/template answers.`,
           },
         ]);
@@ -200,6 +206,7 @@ export class AppThemeService {
         throwSettingsConflict<AppThemeErrorDetail>('Template changed by someone else', [
           {
             field: 'tplModifiedOn',
+            code: AppThemeErrorCode.TEMPLATE_CHANGED,
             message: `It was saved at ${current}, after the copy you loaded (${loaded}). Reload it and apply your edit again.`,
           },
         ]);
@@ -249,6 +256,7 @@ export class AppThemeService {
     if (bytes > APP_THEME_TEMPLATE_MAX_BYTES) {
       errors.push({
         field,
+        code: AppThemeErrorCode.TEMPLATE_TOO_LARGE,
         message: `at most ${APP_THEME_TEMPLATE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes / 1024)} KB`,
       });
     }
@@ -259,7 +267,11 @@ export class AppThemeService {
       }
     }
     for (const key of unknown) {
-      errors.push({ field, message: `unknown placeholder {{${key}}}` });
+      errors.push({
+        field,
+        code: AppThemeErrorCode.TEMPLATE_PLACEHOLDER_UNKNOWN,
+        message: `unknown placeholder {{${key}}}`,
+      });
     }
     // Blank out comments, strings and placeholders, keeping every newline, so a
     // line number still points at the right line of the text as sent.
@@ -269,6 +281,7 @@ export class AppThemeService {
     if (openComment >= 0) {
       errors.push({
         field,
+        code: AppThemeErrorCode.TEMPLATE_OPEN_COMMENT,
         message: `the comment opened on line ${this.lineOf(qss, openComment)} is never closed`,
       });
       masked = masked.slice(0, openComment) + blank(masked.slice(openComment));
@@ -282,11 +295,19 @@ export class AppThemeService {
       if (masked[index] === '{') {
         opened.push(index);
       } else if (masked[index] === '}' && opened.pop() === undefined) {
-        errors.push({ field, message: `the } on line ${this.lineOf(qss, index)} closes nothing` });
+        errors.push({
+          field,
+          code: AppThemeErrorCode.TEMPLATE_BRACES_UNBALANCED,
+          message: `the } on line ${this.lineOf(qss, index)} closes nothing`,
+        });
       }
     }
     for (const index of opened) {
-      errors.push({ field, message: `the { on line ${this.lineOf(qss, index)} is never closed` });
+      errors.push({
+        field,
+        code: AppThemeErrorCode.TEMPLATE_BRACES_UNBALANCED,
+        message: `the { on line ${this.lineOf(qss, index)} is never closed`,
+      });
     }
     // url(...) is read off the text as sent (a quoted target is masked above),
     // but only where the masked text shows it — so a url( in a comment is not one.
@@ -300,6 +321,7 @@ export class AppThemeService {
       if (!target.startsWith(':/')) {
         errors.push({
           field,
+          code: AppThemeErrorCode.TEMPLATE_URL_NOT_RESOURCE,
           message: `url(${target}) on line ${this.lineOf(qss, start)} is not a :/ resource`,
         });
       }
@@ -332,7 +354,11 @@ export class AppThemeService {
         }
         if (existing?.thmIsDeleted) {
           throwSettingsConflict<AppThemeErrorDetail>('App theme is deleted', [
-            { field: 'thmId', message: `Restore theme ${existing.thmId} before editing it.` },
+            {
+              field: 'thmId',
+              code: AppThemeErrorCode.DELETED,
+              message: `Restore theme ${existing.thmId} before editing it.`,
+            },
           ]);
         }
         const willBeDefault = dto.thmIsDefault ?? existing?.thmIsDefault ?? false;
@@ -341,6 +367,7 @@ export class AppThemeService {
           throwSettingsBadRequest<AppThemeErrorDetail>('The default theme stays the default', [
             {
               field: 'thmIsDefault',
+              code: AppThemeErrorCode.DEFAULT_STAYS_DEFAULT,
               message:
                 'Every company without a theme of its own is painted in the default. Save ' +
                 'another theme with thmIsDefault = true instead.',
@@ -349,7 +376,11 @@ export class AppThemeService {
         }
         if (willBeDefault && !willBeActive) {
           throwSettingsBadRequest<AppThemeErrorDetail>('The default theme must be active', [
-            { field: 'thmIsActive', message: 'The default theme cannot be inactive.' },
+            {
+              field: 'thmIsActive',
+              code: AppThemeErrorCode.DEFAULT_MUST_BE_ACTIVE,
+              message: 'The default theme cannot be inactive.',
+            },
           ]);
         }
         await this.assertNameIsFree(tx, dto.thmName, existing?.thmId ?? null);
@@ -415,13 +446,18 @@ export class AppThemeService {
         throwSettingsConflict<AppThemeErrorDetail>('App theme is already deleted', [
           {
             field: 'thmId',
+            code: AppThemeErrorCode.ALREADY_DELETED,
             message: 'Nothing to delete. POST /app-themes/restore brings it back.',
           },
         ]);
       }
       if (existing.thmIsDefault) {
         throwSettingsConflict<AppThemeErrorDetail>('The default theme cannot be deleted', [
-          { field: 'thmId', message: 'Make another theme the default first.' },
+          {
+            field: 'thmId',
+            code: AppThemeErrorCode.DEFAULT_UNDELETABLE,
+            message: 'Make another theme the default first.',
+          },
         ]);
       }
       const usedBy = await this.usedByCount(tx, thmId);
@@ -429,6 +465,7 @@ export class AppThemeService {
         throwSettingsConflict<AppThemeErrorDetail>('App theme is in use', [
           {
             field: 'thmId',
+            code: AppThemeErrorCode.IN_USE,
             message: `In use by ${usedBy} compan${usedBy === 1 ? 'y' : 'ies'}. Point them at another theme first.`,
           },
         ]);
@@ -448,7 +485,7 @@ export class AppThemeService {
         }
         if (!existing.thmIsDeleted) {
           throwSettingsConflict<AppThemeErrorDetail>('App theme is not deleted', [
-            { field: 'thmId', message: 'Nothing to restore.' },
+            { field: 'thmId', code: AppThemeErrorCode.NOT_DELETED, message: 'Nothing to restore.' },
           ]);
         }
         await this.assertNameIsFree(tx, existing.thmName, thmId);
@@ -469,11 +506,19 @@ export class AppThemeService {
     const clean: Record<string, string> = {};
     for (const [key, value] of Object.entries(tokens ?? {})) {
       if (!Object.prototype.hasOwnProperty.call(APP_THEME_TOKENS, key)) {
-        errors.push({ field: `tokens.${key}`, message: 'unknown token' });
+        errors.push({
+          field: `tokens.${key}`,
+          code: AppThemeErrorCode.TOKEN_UNKNOWN,
+          message: 'unknown token',
+        });
         continue;
       }
       if (typeof value !== 'string' || !APP_THEME_COLOUR_PATTERN.test(value)) {
-        errors.push({ field: `tokens.${key}`, message: 'not a colour: #rrggbb or #rrggbbaa' });
+        errors.push({
+          field: `tokens.${key}`,
+          code: AppThemeErrorCode.TOKEN_NOT_COLOUR,
+          message: 'not a colour: #rrggbb or #rrggbbaa',
+        });
         continue;
       }
       clean[key] = value.toUpperCase();
@@ -527,7 +572,11 @@ export class AppThemeService {
        LIMIT 1`;
     if (clash) {
       throwSettingsConflict<AppThemeErrorDetail>('App theme name already exists', [
-        { field: 'thmName', message: `"${name}" is already theme ${clash.thmId}.` },
+        {
+          field: 'thmName',
+          code: AppThemeErrorCode.NAME_TAKEN,
+          message: `"${name}" is already theme ${clash.thmId}.`,
+        },
       ]);
     }
   }
@@ -668,6 +717,7 @@ export class AppThemeService {
       'App theme not found',
       'thmId',
       `No app theme found with id ${thmId}`,
+      AppThemeErrorCode.NOT_FOUND,
     );
   }
 
@@ -680,8 +730,16 @@ export class AppThemeService {
           : 'App theme name already exists',
         [
           constraint.includes('default')
-            ? { field: 'thmIsDefault', message: 'Save again: another request moved the default.' }
-            : { field: 'thmName', message: 'A live theme already has this name.' },
+            ? {
+                field: 'thmIsDefault',
+                code: AppThemeErrorCode.DEFAULT_MOVED,
+                message: 'Save again: another request moved the default.',
+              }
+            : {
+                field: 'thmName',
+                code: AppThemeErrorCode.NAME_TAKEN,
+                message: 'A live theme already has this name.',
+              },
         ],
       );
     }
@@ -690,6 +748,7 @@ export class AppThemeService {
       throwSettingsBadRequest<AppThemeErrorDetail>('Validation failed', [
         {
           field: check === 'ck_thm_tokens' ? 'tokens' : 'thmBase',
+          code: check === 'ck_thm_tokens' ? AppThemeErrorCode.TOKEN_NOT_COLOUR : AppThemeErrorCode.BASE_INVALID,
           message:
             check === 'ck_thm_tokens'
               ? 'every token must be #rrggbb or #rrggbbaa'

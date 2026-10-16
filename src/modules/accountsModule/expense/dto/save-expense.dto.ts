@@ -41,6 +41,20 @@ export class ExpenseKeyDto {
   voucherId!: string;
 }
 
+/** POST /expenses/post. */
+export class PostExpenseDto extends ExpenseKeyDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Notes 124 §5 — an APPROVED EXPENSE request for this voucher (/till/approvals/request with srcDocType ' +
+      'EXPENSE and this voucherId), when till.approval_gate REFUSE answered 428 TILL_APPROVAL_REQUIRED. Taken ' +
+      'by the post (it approves nothing else); a wrong one → 422 TILL_APPROVAL_INVALID.',
+  })
+  @NullableUuid()
+  approvalId?: string | null;
+}
+
 export class CancelExpenseDto extends ExpenseKeyDto {
   @ApiProperty({ example: 'Entered twice', maxLength: 250 })
   @UpperMaxString(250)

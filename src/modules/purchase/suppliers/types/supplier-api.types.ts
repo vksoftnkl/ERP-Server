@@ -1,6 +1,12 @@
 import type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
-export type { PurchaseErrorDetail as SupplierErrorDetail } from 'src/common/types/module-api.types';
-export type { PurchaseErrorResponse as SupplierErrorResponse } from 'src/common/types/module-api.types';
+import type { PurchaseErrorDetail, PurchaseErrorResponse } from 'src/common/types/module-api.types';
+import type { SupplierErrorCode } from './supplier-error-codes';
+
+/** Notes 119: every refusal names its code — see supplier-error-codes.ts. */
+export interface SupplierErrorDetail extends PurchaseErrorDetail {
+  code: SupplierErrorCode;
+}
+export type SupplierErrorResponse = PurchaseErrorResponse<SupplierErrorDetail>;
 export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/common/types/module-api.types';
 export type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 export interface SupplierPayload {

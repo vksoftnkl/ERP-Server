@@ -337,11 +337,19 @@ export class SaleReturnService {
       // D7 / §5.5: a refund comes out of the drawer it is paid from, so on a
       // counter's device the return posts in THAT live session — whatever
       // session the original bill was in. Any other device posts as before.
+      const refundTenders =
+        ((row.srSettleMode as string | null) ?? 'ADJUST').toUpperCase() === 'CASH'
+          ? await this.store.loadTenders(row, tx)
+          : [];
       const till = await this.till.resolveForMoney(tx, {
         companyId: row.srCompanyId as string,
         branchId: row.srBranchId as string,
         sessionId: row.srSessionId as string | null,
         field: 'srSessionId',
+        // Notes 122 §5: a cash refund leaves the drawer.
+        cashOut: refundTenders
+          .filter((t) => Number(t.tdTenderTypeId) === TENDER_TYPE.CASH)
+          .reduce((sum, t) => sum.plus(t.tdAmount ?? 0), new Prisma.Decimal(0)),
       });
       if (till) {
         await this.stampTillSession(tx, row, till, ctx.actorName);

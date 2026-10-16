@@ -7,6 +7,7 @@ import {
   LedgerBankAccountErrorDetail,
   LedgerBankAccountPayload,
 } from './types/ledger-bank-account-api.types';
+import { LedgerBankErrorCode } from './types/ledger-bank-account-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -49,6 +50,7 @@ export class LedgerBankAccountService {
         'Ledger bank account not found',
         'lbaId',
         `No active ledger bank account found with id ${lbaId}`,
+        LedgerBankErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -66,6 +68,7 @@ export class LedgerBankAccountService {
           'Ledger bank account not found',
           'lbaId',
           `No active ledger bank account found with id ${lbaId}`,
+          LedgerBankErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -86,6 +89,7 @@ export class LedgerBankAccountService {
           'Ledger bank account not found',
           'lbaId',
           `No active ledger bank account found with id ${lbaId}`,
+          LedgerBankErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -125,14 +129,20 @@ export class LedgerBankAccountService {
         const accountHolder = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountHolder,
           'lbaAccountHolder',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const bankName = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaBankName,
           'lbaBankName',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const accountNo = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountNo,
           'lbaAccountNo',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
         const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
@@ -182,11 +192,21 @@ export class LedgerBankAccountService {
       throwOnUniqueConstraintError<LedgerBankAccountErrorDetail>(
         error,
         'Ledger bank account already exists',
-        [{ field: 'lbaAccountNo', message: 'Duplicate lbaAccountNo is not allowed' }],
+        [
+          {
+            field: 'lbaAccountNo',
+            message: 'Duplicate lbaAccountNo is not allowed',
+            code: LedgerBankErrorCode.DUPLICATE_ACCOUNT_NO,
+          },
+        ],
       );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Invalid reference value provided', [
-          { field: 'lbaLedgerId', message: 'Referenced ledger or company does not exist' },
+          {
+            field: 'lbaLedgerId',
+            message: 'Referenced ledger or company does not exist',
+            code: LedgerBankErrorCode.INVALID_REFERENCE,
+          },
         ]);
       }
       throw error;
@@ -209,19 +229,26 @@ export class LedgerBankAccountService {
             'Ledger bank account not found',
             'lbaId',
             `No active ledger bank account found with id ${lbaId}`,
+            LedgerBankErrorCode.NOT_FOUND,
           );
         }
         const accountHolder = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountHolder,
           'lbaAccountHolder',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const bankName = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaBankName,
           'lbaBankName',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const accountNo = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountNo,
           'lbaAccountNo',
+          undefined,
+          LedgerBankErrorCode.FIELD_EMPTY,
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
         const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
@@ -281,11 +308,21 @@ export class LedgerBankAccountService {
       throwOnUniqueConstraintError<LedgerBankAccountErrorDetail>(
         error,
         'Ledger bank account already exists',
-        [{ field: 'lbaAccountNo', message: 'Duplicate lbaAccountNo is not allowed' }],
+        [
+          {
+            field: 'lbaAccountNo',
+            message: 'Duplicate lbaAccountNo is not allowed',
+            code: LedgerBankErrorCode.DUPLICATE_ACCOUNT_NO,
+          },
+        ],
       );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Invalid reference value provided', [
-          { field: 'lbaLedgerId', message: 'Referenced ledger or company does not exist' },
+          {
+            field: 'lbaLedgerId',
+            message: 'Referenced ledger or company does not exist',
+            code: LedgerBankErrorCode.INVALID_REFERENCE,
+          },
         ]);
       }
       throw error;
@@ -310,6 +347,7 @@ export class LedgerBankAccountService {
         {
           field: 'lbaLedgerId',
           message: `No active account ledger found with id ${lbaLedgerId}`,
+          code: LedgerBankErrorCode.LEDGER_NOT_FOUND,
         },
       ]);
     }
@@ -333,6 +371,7 @@ export class LedgerBankAccountService {
         {
           field: 'lbaCompanyId',
           message: `No active company found with id ${compId}`,
+          code: LedgerBankErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -352,6 +391,7 @@ export class LedgerBankAccountService {
           {
             field: 'lbaCompanyId',
             message: `lbaCompanyId ${companyId} must match ledger company id ${ledgerCompanyId}`,
+            code: LedgerBankErrorCode.COMPANY_MISMATCH,
           },
         ]);
       }
@@ -394,6 +434,7 @@ export class LedgerBankAccountService {
           {
             field: 'lbaAccountNo',
             message: 'Duplicate lbaAccountNo is not allowed for this ledger',
+            code: LedgerBankErrorCode.DUPLICATE_ACCOUNT_NO,
           },
         ],
       );

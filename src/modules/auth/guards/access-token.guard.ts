@@ -5,6 +5,7 @@ import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuthSessionService } from '../auth-session.service';
 import { AccessTokenPayload, TokenService } from '../token.service';
+import { AuthErrorCode, authErrorBody } from '../types/auth-error-codes';
 type RequestWithUser = Request & {
   user?: AccessTokenPayload;
 };
@@ -30,7 +31,13 @@ export class AccessTokenGuard implements CanActivate {
     }
     const accessToken = this.extractBearerToken(request);
     if (!accessToken) {
-      throw new UnauthorizedException('Missing or invalid Authorization header');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Missing or invalid Authorization header',
+          'authorization',
+          AuthErrorCode.AUTHORIZATION_MISSING,
+        ),
+      );
     }
     request.user = this.tokenService.verifyAccessToken(accessToken);
     await this.authSessionService.assertAccessTokenIsActive(accessToken, request.user);

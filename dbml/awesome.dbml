@@ -1112,7 +1112,7 @@ Table acc_tender_master {
   tndTypeId Int [not null]
   tndName String [not null]
   tndShortName String [not null]
-  tndLedgerId String [not null]
+  tndLedgerId String [note: 'Optional only for TEMP_CR / CREDIT / LOYALTY, which post no tender leg (notes 126 §5, ck_tnd_ledger_required).']
   tndSettlementLedgerId String
   tndSettlementDays Int [not null, default: 0]
   tndBankAccountId String
@@ -1152,7 +1152,7 @@ import. One tender row PER TERMINAL / PER VPA is the set-up rule that makes it w
   company companys [not null]
   branch branch_master
   tenderType acc_tender_types [not null]
-  ledger acc_ledger_master [not null]
+  ledger acc_ledger_master
   settlementLedger acc_ledger_master
   surchargeLedger acc_ledger_master
   bankAccount acc_ledger_bank_accounts

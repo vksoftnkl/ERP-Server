@@ -35,6 +35,7 @@ import {
   RenderInspection,
   RenderOutcome,
 } from './types/print-render-api.types';
+import { PrintRenderErrorCode } from './types/print-render-error-codes';
 import { PrintRenderExceptionFilter } from './print-render-exception.filter';
 
 /**
@@ -267,6 +268,7 @@ export class PrintRenderController {
         [
           {
             field: 'companyId',
+            code: PrintRenderErrorCode.NO_COMPANY,
             message:
               'Every dataset is company-scoped and the company comes from the authenticated ' +
               'session, never from the request. Re-authenticate against a company.',
@@ -307,6 +309,7 @@ export class PrintRenderController {
         [
           {
             field: 'docIds',
+            code: PrintRenderErrorCode.DOC_ID_BOTH,
             message:
               'They name the same thing: docId is one document and docIds is a list of them. ' +
               'A render carrying both cannot say which one it used, so drop whichever is not ' +

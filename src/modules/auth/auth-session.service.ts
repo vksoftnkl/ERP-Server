@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException, UnauthorizedException } from '
 import { createHash, randomUUID } from 'node:crypto';
 import { RedisCacheService } from '../../common/redis/redis-cache.service';
 import { AccessTokenPayload, RefreshTokenPayload } from './token.service';
+import { AuthErrorCode, authErrorBody } from './types/auth-error-codes';
 type CachedAccessTokenSession = {
   sid: string;
   sub: string;
@@ -64,11 +65,23 @@ export class AuthSessionService {
       throw error;
     }
     if (!cachedSessionValue) {
-      throw new UnauthorizedException('Access token is no longer active');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Access token is no longer active',
+          'authorization',
+          AuthErrorCode.ACCESS_SESSION_ENDED,
+        ),
+      );
     }
     const cachedSession = this.parseSession(cachedSessionValue);
     if (!cachedSession) {
-      throw new UnauthorizedException('Access token session is invalid');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Access token session is invalid',
+          'authorization',
+          AuthErrorCode.ACCESS_SESSION_INVALID,
+        ),
+      );
     }
     if (
       cachedSession.sid !== payload.sid ||
@@ -76,7 +89,13 @@ export class AuthSessionService {
       cachedSession.user_name !== payload.user_name ||
       cachedSession.token_hash !== this.hashToken(token)
     ) {
-      throw new UnauthorizedException('Access token is no longer active');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Access token is no longer active',
+          'authorization',
+          AuthErrorCode.ACCESS_SESSION_ENDED,
+        ),
+      );
     }
   }
   async assertRefreshTokenIsActive(token: string, payload: RefreshTokenPayload): Promise<void> {
@@ -93,11 +112,23 @@ export class AuthSessionService {
       throw error;
     }
     if (!cachedSessionValue) {
-      throw new UnauthorizedException('Refresh token is no longer active');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Refresh token is no longer active',
+          'refresh_token',
+          AuthErrorCode.REFRESH_SESSION_ENDED,
+        ),
+      );
     }
     const cachedSession = this.parseSession(cachedSessionValue);
     if (!cachedSession) {
-      throw new UnauthorizedException('Refresh token session is invalid');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Refresh token session is invalid',
+          'refresh_token',
+          AuthErrorCode.REFRESH_SESSION_INVALID,
+        ),
+      );
     }
     if (
       cachedSession.sid !== payload.sid ||
@@ -105,7 +136,13 @@ export class AuthSessionService {
       cachedSession.user_name !== payload.user_name ||
       cachedSession.refresh_token_hash !== this.hashToken(token)
     ) {
-      throw new UnauthorizedException('Refresh token is no longer active');
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Refresh token is no longer active',
+          'refresh_token',
+          AuthErrorCode.REFRESH_SESSION_ENDED,
+        ),
+      );
     }
   }
   async revokeAccessTokenSession(payload: AccessTokenPayload): Promise<void> {

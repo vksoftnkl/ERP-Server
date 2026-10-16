@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import { Response } from 'express';
 import { BatchPrefixErrorDetail, BatchPrefixErrorResponse } from './types/batch-prefix-api.types';
 import { wordedResponse } from '../../../common/error-wording/error-wording';
+import { frameworkValidationCode } from '../../../common/validation/house-validation';
 
 type ValidationExceptionPayload = {
   message?: string | string[];
@@ -78,6 +79,8 @@ export class BatchPrefixExceptionFilter implements ExceptionFilter {
 
     const errors: BatchPrefixErrorDetail[] = messages.map((message) => ({
       field: this.inferFieldName(message),
+      // Notes 119: an old `{ message: [...] }` 400 still gets the nearest VALIDATION_* code.
+      code: frameworkValidationCode(message),
       message,
     }));
 

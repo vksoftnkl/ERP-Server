@@ -20,6 +20,8 @@ import type { SavePaymentOtherLineDto, SavePaymentTenderDto } from './dto/save-p
 import type { PaymentParty, PaymentWriteClient } from './payment.guards';
 import type { PaymentSettings } from './payment.settings';
 import { computePaymentTds, type PaymentTdsComputed, type PaymentTdsFacts } from './payment-tds';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.1 rules 3 and 4 for the PAYMENT — turning what the client sent into what
@@ -122,6 +124,7 @@ export async function normalisePaymentTenders(
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
       {
         field: 'tenders',
+        code: ACC.NO_TENDER,
         message:
           'A payment with no instruments is a journal, not a payment. Even a payment settled ' +
           'entirely from a debit the party holds needs a journal voucher instead.',
@@ -164,7 +167,11 @@ export async function normalisePaymentTenders(
 
     if (seenRowNos.has(tender.tdRowNo)) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: field('tdRowNo'), message: `Row number ${tender.tdRowNo} appears twice` },
+        {
+          field: field('tdRowNo'),
+          code: ACC.INVALID,
+          message: `Row number ${tender.tdRowNo} appears twice`,
+        },
       ]);
     }
     seenRowNos.add(tender.tdRowNo);
@@ -175,17 +182,23 @@ export async function normalisePaymentTenders(
         'Tender not found',
         field('tdTenderId'),
         `No live tender with id ${tender.tdTenderId}`,
+        ACC.TENDER_NOT_FOUND,
       );
     }
     if (!master.tndIsActive) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: field('tdTenderId'), message: `Tender "${master.tndName}" is inactive` },
+        {
+          field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
+          message: `Tender "${master.tndName}" is inactive`,
+        },
       ]);
     }
     if (master.tndCompanyId !== params.companyId) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" belongs to another company`,
         },
       ]);
@@ -194,6 +207,7 @@ export async function normalisePaymentTenders(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" is not available at this branch`,
         },
       ]);
@@ -202,6 +216,7 @@ export async function normalisePaymentTenders(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('tdTenderTypeId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" is type ${master.tndTypeId}, not ${tender.tdTenderTypeId}`,
         },
       ]);
@@ -210,7 +225,11 @@ export async function normalisePaymentTenders(
     const amount = money(tender.tdAmount);
     if (amount.lessThanOrEqualTo(0)) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: field('tdAmount'), message: 'A tender row must carry more than zero' },
+        {
+          field: field('tdAmount'),
+          code: VCH.LINE_AMOUNT,
+          message: 'A tender row must carry more than zero',
+        },
       ]);
     }
 
@@ -224,7 +243,7 @@ export async function normalisePaymentTenders(
         : null;
 
     let cheque: NormalisedPaymentCheque | null = null;
-    let tenderLedgerId: string;
+    let tenderLedgerId: string | null;
     if (isCheque) {
       // notes (55): the leaf is the book's to give, at post. A number keyed
       // here would be a second numbering of the same paper.
@@ -232,6 +251,7 @@ export async function normalisePaymentTenders(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('tdRefNo'),
+            code: ACC.INVALID,
             message:
               'A cheque we issue takes its number from the book at post — leave tdRefNo empty ' +
               'and name the book in cheque.chequeBookId.',
@@ -243,6 +263,7 @@ export async function normalisePaymentTenders(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('cheque.chequeBookId'),
+            code: VCH.BOOK_REQUIRED,
             message: 'A cheque row must name the book its leaf comes from',
           },
         ]);
@@ -252,6 +273,7 @@ export async function normalisePaymentTenders(
           'Cheque book not found',
           field('cheque.chequeBookId'),
           `No live cheque book ${tender.cheque.chequeBookId}`,
+          VCH.BOOK_NOT_FOUND,
         );
       }
       assertBookUsable(book, params, field('cheque.chequeBookId'));
@@ -259,6 +281,7 @@ export async function normalisePaymentTenders(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('tdInstrumentDate'),
+            code: ACC.CHEQUE_BACKDATED,
             message: 'A cheque we issue is dated the payment or later — it cannot be back-dated',
           },
         ]);
@@ -291,10 +314,22 @@ export async function normalisePaymentTenders(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('tdTenderLedgerId'),
+            code: ACC.TENDER_LEDGER_FIXED,
             message: `Tender "${master.tndName}" does not allow its ledger to be changed`,
           },
         ]);
       }
+    }
+
+    if (!tenderLedgerId) {
+      // Notes 126 §5: TEMP_CR / CREDIT / LOYALTY carry no ledger — they pay nothing out.
+      throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
+        {
+          field: field('tdTenderId'),
+          code: VCH.INSTRUMENT_TENDER,
+          message: `Tender "${master.tndName}" posts to no ledger: it cannot pay out`,
+        },
+      ]);
     }
 
     const received = money(tender.tdReceivedAmt ?? 0);
@@ -303,6 +338,7 @@ export async function normalisePaymentTenders(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('tdReceivedAmt'),
+          code: ACC.CHANGE_WRONG,
           message:
             `Paid ${received.toFixed(2)} less change ${change.toFixed(2)} is ` +
             `${received.minus(change).toFixed(2)}, but the row is for ${amount.toFixed(2)}`,
@@ -362,18 +398,27 @@ function assertBookUsable(
 ): void {
   if (book.companyId !== params.companyId) {
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-      { field, message: `Cheque book ${book.bookNo} belongs to another company` },
+      {
+        field,
+        code: ACC.BOOK_NOT_USABLE,
+        message: `Cheque book ${book.bookNo} belongs to another company`,
+      },
     ]);
   }
   if (book.branchId !== null && book.branchId !== params.branchId) {
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-      { field, message: `Cheque book ${book.bookNo} is not usable at this branch` },
+      {
+        field,
+        code: ACC.BOOK_NOT_USABLE,
+        message: `Cheque book ${book.bookNo} is not usable at this branch`,
+      },
     ]);
   }
   if (book.status !== 'ACTIVE' || leavesLeft(book) <= 0) {
     throwAccountsConflict<PaymentErrorDetail>('Cheque book has no leaf to give', [
       {
         field,
+        code: VCH.BOOK_FINISHED,
         message:
           `Book ${book.bookNo} on ${book.bankName} is ${book.status === 'ACTIVE' ? 'used up' : book.status} ` +
           '— start a new book (Cheque Books, menu 263) or pick another.',
@@ -485,13 +530,18 @@ export async function normalisePaymentOtherLines(
 
     if (amount.lessThanOrEqualTo(0)) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: field('amount'), message: 'An other-ledger line must carry more than zero' },
+        {
+          field: field('amount'),
+          code: VCH.LINE_AMOUNT,
+          message: 'An other-ledger line must carry more than zero',
+        },
       ]);
     }
     if (Boolean(line.role) === Boolean(line.ledgerId)) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('role'),
+          code: ACC.INVALID,
           message:
             'Give the line either a role — which every report can find again — or a ledger ' +
             'chosen by hand. Not both, and not neither.',
@@ -511,6 +561,7 @@ export async function normalisePaymentOtherLines(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('role'),
+            code: ACC.INVALID,
             message: rides
               ? `${line.role} is not keyed as a line — it rides on allocations[].discount / .writeoff / ` +
                 '.roundoff, and sending both would count it twice.' +
@@ -524,7 +575,11 @@ export async function normalisePaymentOtherLines(
       }
       if (side !== line.drCr) {
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-          { field: field('drCr'), message: `${line.role} posts ${side}, not ${line.drCr}` },
+          {
+            field: field('drCr'),
+            code: ACC.INVALID,
+            message: `${line.role} posts ${side}, not ${line.drCr}`,
+          },
         ]);
       }
       const mapped = params.ledgerForRole(line.role);
@@ -532,6 +587,7 @@ export async function normalisePaymentOtherLines(
         throwAccountsBadRequest<PaymentErrorDetail>('Posting ledgers are not configured', [
           {
             field: field('role'),
+            code: ACC.ROLE_UNMAPPED,
             message: `Nothing maps "${line.role}" to a ledger — accounts.acc_ledger_map has no row for it`,
           },
         ]);
@@ -542,6 +598,7 @@ export async function normalisePaymentOtherLines(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('settlesBill'),
+            code: ACC.INVALID,
             message: `${line.role} cannot settle a bill — it is not a deduction from what we owe. Leave settlesBill off.`,
           },
         ]);
@@ -555,6 +612,7 @@ export async function normalisePaymentOtherLines(
         throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
           {
             field: field('approvedBy'),
+            code: ACC.WRITEOFF_APPROVER,
             message:
               `Writing back ${amount.toFixed(2)} needs an approver ` +
               `(accounts.writeoff_approval_above is ${params.settings.writeoffApprovalAbove.toFixed(2)})`,
@@ -583,17 +641,23 @@ export async function normalisePaymentOtherLines(
         'Ledger not found',
         field('ledgerId'),
         `No live ledger ${line.ledgerId} is visible to this company`,
+        VCH.LEDGER_NOT_FOUND,
       );
     }
     if (!ledger.ledIsActive) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: field('ledgerId'), message: `"${ledger.ledName}" is inactive` },
+        {
+          field: field('ledgerId'),
+          code: VCH.LEDGER_INACTIVE,
+          message: `"${ledger.ledName}" is inactive`,
+        },
       ]);
     }
     if (ledger.ledId === params.partyId) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: field('ledgerId'),
+          code: ACC.PARTY_AS_LINE,
           message: `"${ledger.ledName}" is the party of this payment and cannot also be a line on it`,
         },
       ]);
@@ -645,6 +709,7 @@ function seedBankCharges(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'tenders.tdMdrAmt',
+          code: ACC.INVALID,
           message:
             `The payload carries ${supplied.toFixed(2)} of bank charges, but no tender row has any. ` +
             'Put it on the instrument it came from.',
@@ -658,6 +723,7 @@ function seedBankCharges(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'tenders.tdMdrAmt',
+          code: ACC.INVALID,
           message:
             `The tenders carry ${total.toFixed(2)} of bank charges and the BANK_CHARGES line ` +
             `says ${supplied.toFixed(2)}. They must agree.`,
@@ -674,6 +740,7 @@ function seedBankCharges(
     throwAccountsBadRequest<PaymentErrorDetail>('Posting ledgers are not configured', [
       {
         field: 'tenders.tdMdrAmt',
+        code: ACC.ROLE_UNMAPPED,
         message: `The tenders carry ${total.toFixed(2)} of bank charges, and nothing maps "BANK_CHARGES" to a ledger`,
       },
     ]);
@@ -713,6 +780,7 @@ function seedTds(
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'otherLines',
+          code: VCH.TDS_RATE_MISSING,
           message:
             `${params.party.ledName} is not TDS-applicable in its ledger master, so TDS of ` +
             `${keyedTotal.toFixed(2)} would reach TDS Payable with no section to file it under ` +
@@ -727,6 +795,7 @@ function seedTds(
     throwAccountsBadRequest<PaymentErrorDetail>('TDS rate is not configured', [
       {
         field: 'avhPartyId',
+        code: VCH.TDS_RATE_MISSING,
         message:
           `${params.party.ledName} is TDS-applicable under ${params.party.ledTdsSection ?? 'no section'} ` +
           `(${params.party.ledTdsDeducteeType ?? 'ANY'}) and no rate is in force for it in accounts.tds_rates`,
@@ -753,6 +822,7 @@ function seedTds(
       throwAccountsConflict<PaymentErrorDetail>('TDS does not agree', [
         {
           field: 'otherLines',
+          code: ACC.TDS_MISMATCH,
           message:
             `The client keyed TDS of ${keyedTotal.toFixed(2)}, but ${computed.section} @ ` +
             `${computed.rate.toString()}% on ${computed.base.toFixed(2)} (${computed.rateSource}) ` +
@@ -775,6 +845,7 @@ function seedTds(
     throwAccountsBadRequest<PaymentErrorDetail>('Posting ledgers are not configured', [
       {
         field: 'avhPartyId',
+        code: ACC.ROLE_UNMAPPED,
         message: `${params.party.ledName} is TDS-applicable, and nothing maps "TDS_PAYABLE" to a ledger`,
       },
     ]);

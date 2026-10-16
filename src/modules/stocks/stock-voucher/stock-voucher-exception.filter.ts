@@ -6,6 +6,7 @@ import {
   NEGATIVE_STOCK_MESSAGE_FRAGMENT,
   STOCK_ENGINE_SQLSTATE_STATUS,
 } from './types/stock-voucher.types';
+import { STOCK_DB_ERROR_CODES, StockErrorCode } from '../types/stock-error-codes';
 
 /** What a Prisma raw-query failure carries when a function RAISEd inside it. */
 interface RawQueryErrorMeta {
@@ -77,10 +78,21 @@ export class StockVoucherExceptionFilter extends StockExceptionFilter<
     }
     return new HttpException(
       buildStockErrorResponse<StockErrorDetail, StockErrorResponse>(engineMessage, [
-        { field: 'request', message: engineMessage },
+        { field: 'request', code: this.resolveCode(sqlState, engineMessage), message: engineMessage },
       ]),
       status,
     );
+  }
+
+  /** Notes 119 — the code by SQLSTATE; the negative-stock refusal is told apart as resolveStatus does. */
+  private resolveCode(sqlState: string, engineMessage: string): StockErrorCode {
+    if (
+      sqlState === '23514' &&
+      engineMessage.toLowerCase().includes(NEGATIVE_STOCK_MESSAGE_FRAGMENT)
+    ) {
+      return StockErrorCode.NEGATIVE_BLOCKED;
+    }
+    return STOCK_DB_ERROR_CODES[sqlState];
   }
 
   private resolveStatus(sqlState: string, engineMessage: string): number | null {

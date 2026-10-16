@@ -6,7 +6,8 @@ assignments (view / create / edit / delete / print / export).
 
 - **Base route:** `user-administration` (API-versioned via `API_VERSION`)
 - **Swagger tag:** `User Administration`
-- **Auth:** Bearer `access-token` (required)
+- **Auth:** Bearer `access-token` (required — the controller was `@Public` until notes 125 §3, so
+  an anonymous caller could create users; both clients send the login token on these routes)
 - **Primary table:** `user_master` (`public` schema) — PK `usrId`
 - **Nested table:** `user_menus` (`public` schema) — PK `umId`, FK `umUserId → usrId`, unique `(umUserId, umMenuId)` (`uq_user_menus_user_menu`)
 
@@ -112,4 +113,26 @@ Menu-level access is managed through the `menus[]` array on the create/update pa
 
 Defined in [types/user-administration.enum.ts](types/user-administration.enum.ts):
 
-- `UserType` — `SUPER ADMIN` · `ADMIN` · `MANAGER` · `USER` · `CASHIER` · `VIEWER` · `SYSTEM`
+- `UserType` — `SUPER ADMIN` · `ADMIN` · `HO FINANCE` · `AREA MANAGER` · `STORE MANAGER` ·
+  `CASH OFFICE` · `SUPERVISOR` · `USER` · `CASHIER` · `VIEWER` · `SYSTEM`. Notes 125: the names of
+  the till approval levels in the space spelling (STORE MANAGER ↔ STORE_MANAGER), so the Approval
+  Authority (285) popup starts a grant at the user's role. Still a label only (notes 96): what a
+  user may approve is their 285 grant. `MANAGER` was renamed `STORE MANAGER` (migration
+  `20261016110000`) and is refused now (400).
+
+## SUPER ADMIN is VK Softwares' own (notes 125 §3)
+
+Never a client's role. Judged on the caller's own `user_master.usr_type` (active, not deleted),
+never on the token's `user_type` claim (`super-admin.ts` → `callerIsSuperAdmin`):
+
+- create / update with `usrType = SUPER ADMIN` by anyone else → **403 `USER_ROLE_RESERVED`** on
+  `usrType`;
+- any update of an existing SUPER ADMIN user (edit, password reset, deactivate, role change) or
+  its delete by anyone else → **403 `USER_ROLE_RESERVED`** on `usrId`;
+- `/users` (the bare user rows: list, create, set a password, delete — `@Public` until then, used
+  by no client) now wants a login token and a SUPER ADMIN caller, else 403 `USER_ROLE_RESERVED`.
+
+Reading a SUPER ADMIN user (`/get`) stays open to the screen, which shows it view-only. The user
+list (grid 62) still lists SUPER ADMIN users: the grid runner has no trusted caller parameter to
+filter on, and the list grants nothing. The implicit HO_FINANCE till grant of a SUPER ADMIN stays
+(`TillApprovalService.grantsOf`). `test/user-role-reserved-notes-125.e2e-spec.ts` covers it.

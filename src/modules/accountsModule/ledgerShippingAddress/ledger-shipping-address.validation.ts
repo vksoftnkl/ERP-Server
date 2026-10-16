@@ -3,6 +3,7 @@ import {
   type AccountsErrorDetail,
 } from 'src/common/utils/module-service.utils';
 import { SaaAddrType } from './types/ledger-shipping-address-enum';
+import { LedgerShippingAddressErrorCode } from './types/ledger-shipping-address-error-codes';
 
 // Central home for the four acc_ship_addrs data-quality checks that the source
 // DDL declared as DB CHECK constraints (acc_ship_addrs_addr_type_chk,
@@ -34,6 +35,7 @@ export function assertSaaAddrType(value: string): SaaAddrType {
       {
         field: 'saaAddrType',
         message: `saaAddrType must be one of ${SAA_ADDR_TYPES.join(', ')}`,
+        code: LedgerShippingAddressErrorCode.ADDR_TYPE_INVALID,
       },
     ]);
   }
@@ -53,6 +55,7 @@ export function assertSaaStateCode(value: string | null | undefined): void {
       {
         field: 'saaStateCode',
         message: 'saaStateCode must be a 2-digit GST state code',
+        code: LedgerShippingAddressErrorCode.STATE_CODE_INVALID,
       },
     ]);
   }
@@ -78,6 +81,7 @@ export function assertSaaPin(
       {
         field: 'saaPin',
         message: 'saaPin must be a 6-digit PIN code for India',
+        code: LedgerShippingAddressErrorCode.PIN_INVALID,
       },
     ]);
   }
@@ -95,6 +99,7 @@ export function assertSaaGstin(value: string | null | undefined): string {
       {
         field: 'saaGstin',
         message: 'saaGstin is required',
+        code: LedgerShippingAddressErrorCode.GSTIN_REQUIRED,
       },
     ]);
   }
@@ -103,6 +108,7 @@ export function assertSaaGstin(value: string | null | undefined): string {
       {
         field: 'saaGstin',
         message: 'saaGstin must be a valid 15-character GSTIN',
+        code: LedgerShippingAddressErrorCode.GSTIN_INVALID,
       },
     ]);
   }

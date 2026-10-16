@@ -232,6 +232,12 @@ beforeAll(async () => {
   });
   expectStatus(open, 201);
   session = open.body.data;
+  // The drawer opens with no float and pays cash out (expected −300 below): this
+  // till lets its drawer run negative (notes 122 §5 — a DEVICE row of its own,
+  // which the §2.3 test's clean-up of 'e2e-expense' rows leaves alone).
+  await prisma.$executeRaw`
+    INSERT INTO public.app_setting_value (asv_setting_key, asv_scope, asv_device_id, asv_value, asv_created_by)
+    VALUES ('till.cash_out_over_expected', 'DEVICE', ${tillPc}::uuid, 'ALLOW', 'e2e-expense-drawer')`;
 });
 
 afterAll(async () => {
@@ -248,6 +254,8 @@ afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM accounts.acc_tender_detail WHERE td_src_doc_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM public.txn_status_log WHERE tsl_src_doc_id = ANY(${all}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_src_doc_id = ANY(${ids}::uuid[])`;
+    // Notes 124 §5: an expense over the EXPENSE rule in a session files a request (WARN).
+    await prisma.$executeRaw`DELETE FROM accounts.till_approval WHERE tap_src_doc_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`
       UPDATE accounts.acc_voucher_header SET avh_reversal_voucher_id = NULL, avh_reversal_acc_year = NULL
        WHERE avh_voucher_id = ANY(${ids}::uuid[])`;
@@ -257,6 +265,8 @@ afterAll(async () => {
   }
   if (session) {
     await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_session_id = ${session.tssId}::uuid`;
+    // …and a cash payment over CASH_PAYMENT's (the payment fixture's voucher, not in `ids`).
+    await prisma.$executeRaw`DELETE FROM accounts.till_approval WHERE tap_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_variance WHERE tvr_session_id = ${session.tssId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_session WHERE tss_id = ${session.tssId}::uuid`;
@@ -268,7 +278,7 @@ afterAll(async () => {
   }
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counterId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.till_safe WHERE tsf_id = ${safeId ?? null}::uuid`;
-  await prisma.$executeRaw`DELETE FROM public.app_setting_value WHERE asv_created_by = 'e2e-expense'`;
+  await prisma.$executeRaw`DELETE FROM public.app_setting_value WHERE asv_created_by IN ('e2e-expense', 'e2e-expense-drawer')`;
   await prisma.$executeRaw`DELETE FROM accounts.acc_ledger_master WHERE led_id IN (${expenseLedger ?? null}::uuid, ${supplier ?? null}::uuid, ${supplier2 ?? null}::uuid)`;
   await prisma.$executeRaw`DELETE FROM fixed.device_master WHERE dev_id IN (${tillPc ?? null}::uuid, ${officePc ?? null}::uuid)`;
   for (const memo of rights.reverse()) {
@@ -361,6 +371,31 @@ describe('§2.3 · back-office cash in a branch that runs a till', () => {
 });
 
 describe('§2.1 / §3 · on a till device in session', () => {
+  it('notes 122 §5 · under REFUSE the drawer pays out no more cash than it holds: TILL_CASH_SHORT_IN_DRAWER', async () => {
+    const setTo = (value: string) => prisma.$executeRaw`
+      UPDATE public.app_setting_value SET asv_value = ${value}
+       WHERE asv_created_by = 'e2e-expense-drawer' AND asv_device_id = ${tillPc}::uuid`;
+    await setTo('REFUSE');
+    try {
+      // No float, nothing taken: the drawer holds nothing. The card part is not cash.
+      const { posted } = await createAndPost(tillPc, {
+        lines: [{ rowNo: 1, ledgerId: expenseLedger, amount: 150 }],
+        tenders: [
+          { tdRowNo: 1, tdTenderId: TENDER.CASH.id, tdTenderTypeId: TENDER.CASH.type, tdAmount: 50 },
+          { tdRowNo: 2, tdTenderId: TENDER.CARD.id, tdTenderTypeId: TENDER.CARD.type, tdAmount: 100 },
+        ],
+      });
+      expectStatus(posted, 409);
+      expect(posted.body.errors[0]).toEqual(
+        expect.objectContaining({ code: 'TILL_CASH_SHORT_IN_DRAWER', cashOut: 50 }),
+      );
+      // The refusal never names what the drawer holds (a blind cashier).
+      expect(posted.body.errors[0]).not.toHaveProperty('expected');
+    } finally {
+      await setTo('ALLOW');
+    }
+  });
+
   it('cash is the drawer and the card is "paid from bank": the session expects the cash, never the card', async () => {
     const check = await postAs(
       tillPc,
@@ -433,7 +468,7 @@ describe('§2.1 / §3 · on a till device in session', () => {
     );
   });
 
-  it('§2.2 · a journal on the till cash ledger is TILL_CASH_LEDGER_DIRECT', async () => {
+  it('§2.2 · a journal on the till cash ledger is refused — since notes 126 §6 a journal has no money side at all', async () => {
     const res = await postAs(tillPc, 'vouchers/post', {
       header: {
         companyId: COMPANY,
@@ -447,8 +482,8 @@ describe('§2.1 / §3 · on a till device in session', () => {
         { rowNo: 2, drCr: 'CR', ledgerId: CASH_LEDGER, amount: 10 },
       ],
     });
-    expectStatus(res, 409);
-    expect(codes(res)).toEqual(['TILL_CASH_LEDGER_DIRECT']);
+    expectStatus(res, 422);
+    expect(codes(res)).toEqual(['VCH_MONEY_LEDGER_NOT_ALLOWED']);
   });
 });
 

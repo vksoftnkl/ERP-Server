@@ -10,6 +10,7 @@ import {
   SequenceListResult,
   SequencePayload,
 } from './types/sequence-api.types';
+import { SequenceErrorCode } from './types/sequence-error-codes';
 import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
@@ -135,6 +136,7 @@ export class SequenceService {
         'Sequence not found',
         'id',
         `No active sequence found with id ${id}`,
+        SequenceErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -157,6 +159,7 @@ export class SequenceService {
             'Sequence not found',
             'id',
             `No active sequence found with id ${id}`,
+            SequenceErrorCode.NOT_FOUND,
           );
         }
         const scope = this.resolveUpdateScope(existing, updateSequenceDto);
@@ -201,6 +204,7 @@ export class SequenceService {
         'Sequence not found',
         'id',
         `No active sequence found with id ${id}`,
+        SequenceErrorCode.NOT_FOUND,
       );
     }
     return {
@@ -468,6 +472,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Voucher type does not exist', [
         {
           field: 'vchrTypeId',
+          code: SequenceErrorCode.VOUCHER_TYPE_NOT_FOUND,
           message: `No voucher type found with id ${scope.vchrTypeId}`,
         },
       ]);
@@ -477,6 +482,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Company does not exist', [
         {
           field: 'companyId',
+          code: SequenceErrorCode.COMPANY_NOT_FOUND,
           message: `No active company found with id ${scope.companyId}`,
         },
       ]);
@@ -486,6 +492,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Branch does not exist', [
         {
           field: 'branchId',
+          code: SequenceErrorCode.BRANCH_NOT_FOUND,
           message: `No active branch found with id ${scope.branchId} for company ${scope.companyId}`,
         },
       ]);
@@ -516,6 +523,7 @@ export class SequenceService {
       throwConflict<SequenceErrorDetail>('Sequence scope already exists', [
         {
           field: 'scope',
+          code: SequenceErrorCode.SCOPE_DUPLICATE,
           message:
             'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
         },
@@ -642,6 +650,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_NOT_UUID,
           message: `${field} must be a valid UUID`,
         },
       ]);
@@ -667,6 +676,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_NOT_STRING,
           message: `${field} must be a string`,
         },
       ]);
@@ -677,6 +687,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_EMPTY,
           message: `${field} must not be empty`,
         },
       ]);
@@ -686,6 +697,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_TOO_LONG,
           message: `${field} must be ${maxLength} characters or less`,
         },
       ]);
@@ -725,6 +737,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_BELOW_MIN,
           message: `${field} must be greater than or equal to ${options.min}`,
         },
       ]);
@@ -734,6 +747,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_ABOVE_MAX,
           message: `${field} must be less than or equal to ${options.max}`,
         },
       ]);
@@ -766,6 +780,7 @@ export class SequenceService {
       throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
+          code: SequenceErrorCode.FIELD_NOT_INTEGER,
           message: `${field} must be a valid integer`,
         },
       ]);
@@ -810,6 +825,7 @@ export class SequenceService {
     throwBadRequest<SequenceErrorDetail>('Validation failed', [
       {
         field,
+        code: SequenceErrorCode.FIELD_NOT_INTEGER,
         message: `${field} must be a valid non-negative integer`,
       },
     ]);
@@ -838,6 +854,7 @@ export class SequenceService {
     throwBadRequest<SequenceErrorDetail>('Validation failed', [
       {
         field,
+        code: SequenceErrorCode.FIELD_NOT_BOOLEAN,
         message: `${field} must be a boolean`,
       },
     ]);
@@ -851,6 +868,7 @@ export class SequenceService {
     throwOnUniqueConstraintError<SequenceErrorDetail>(error, 'Sequence scope already exists', [
       {
         field: 'scope',
+        code: SequenceErrorCode.SCOPE_DUPLICATE,
         message:
           'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
       },

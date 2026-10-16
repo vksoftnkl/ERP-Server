@@ -5,6 +5,7 @@ import { TillDayService } from './till-day.service';
 import { TillSessionService } from './till-session.service';
 import {
   CASH_TENDER_TYPE_ID,
+  TillErrorCode,
   TillDayStatus,
   TillEventCode,
   TillMovementKind,
@@ -101,6 +102,8 @@ export class TillPrintService {
       cash_awaiting: s.cashAwaiting,
       received_by: s.receivedByName,
       received_on: timeText(s.receivedOn),
+      // notes 127 §3: approved into the safe by the session's own cashier
+      received_by_self: s.receivedBySelf,
       expected_visible: s.expectedVisible,
       print_count: s.tssPrintCount,
       printed_on: timeText(new Date().toISOString()),
@@ -167,7 +170,8 @@ export class TillPrintService {
       exception_count: day.tbdExceptionCount,
       cash_awaiting: sum((s) => s.cashAwaiting),
       // Notes 121 §4 — the safe (notes 118): the day's tbd_safe_* as days/get
-      // carries them; the opening is written by the day close.
+      // carries them; the opening is the safes' book as of the day before
+      // (notes 122 §6), shown once the day close has frozen it.
       safe_opening: closed ? day.safe.opening : null,
       safe_expected: day.safe.expected,
       safe_counted: day.safe.counted,
@@ -175,6 +179,12 @@ export class TillPrintService {
         day.safe.counted === null ? null : round2(day.safe.counted - day.safe.expected),
       safe_remitted: day.safe.remitted,
       safe_in_transit: await this.inTransit(day.tbdCompanyId, day.tbdBranchId),
+      // Notes 124 §3: a safe below zero prints as it is, flagged, with the cash
+      // handed over and not yet received that explains it (opening: the end of
+      // the day before; the other: the end of the day).
+      safe_below_zero: day.safe.belowZero,
+      safe_awaiting_opening: closed ? day.safe.awaitingOpening : null,
+      safe_awaiting: day.safe.awaiting,
       notes: day.tbdNotes,
       print_count: day.tbdPrintCount,
       printed_on: timeText(new Date().toISOString()),
@@ -202,6 +212,8 @@ export class TillPrintService {
         handed_over: s.totals.handedOver,
         float_left: s.totals.floatLeft,
         receipt_state: s.receiptState,
+        received_by: s.receivedByName,
+        received_by_self: s.receivedBySelf,
         force_closed: s.tssForceClosed,
         reopen_count: s.tssReopenCount,
       };
@@ -258,7 +270,7 @@ export class TillPrintService {
       },
     });
     if (!row) {
-      throwTillNotFound('Till session', 'docId', doc.docId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'docId', doc.docId);
     }
     const session = await this.sessions.get(
       {
@@ -300,7 +312,7 @@ export class TillPrintService {
       select: { tbdBranchId: true, tbdOpenedBy: true },
     });
     if (!row) {
-      throwTillNotFound('Business day', 'docId', doc.docId);
+      throwTillNotFound(TillErrorCode.DAY_NOT_FOUND, 'Business day', 'docId', doc.docId);
     }
     const day: TillDayPayload = await this.days.get({
       companyId: doc.companyId,

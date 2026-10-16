@@ -1050,7 +1050,7 @@ async function seedChequeAsReceiptWouldHave(
     where: { ledLedgerType: 'BANK', ledIsDeleted: false, ledIsActive: true },
     select: { ledId: true },
   });
-  const inHandLedgerId = tender.tndLedgerId;
+  const inHandLedgerId = tender.tndLedgerId!;
 
   return prisma.$transaction(async (tx) => {
     // ── The voucher, POSTED, with the two legs the receipt wrote ────────

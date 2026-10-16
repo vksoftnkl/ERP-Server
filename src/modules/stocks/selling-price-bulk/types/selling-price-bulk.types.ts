@@ -120,6 +120,11 @@ export const CONFIRMABLE_VERDICTS: readonly PriceVerdict[] = ['BELOW_COST'];
  * DENY BY DEFAULT, and that asymmetry is the point: a wrongly refused chain
  * save is a 403 the user can escalate, while a wrongly allowed one moves every
  * branch's shelf price and is discovered at the till.
+ *
+ * Notes 125 §4 (2026-10-16): User Role now has a vocabulary (UserType, the till
+ * approval levels' names). HO FINANCE is NOT added — it is the cash approver's
+ * top level, not merchandising; deny by default until the client says it is HQ.
+ * 'SUPERADMIN' matches 'SUPER ADMIN' (the comparison ignores spaces).
  */
 export const HQ_USER_TYPES: readonly string[] = ['HQ', 'ADMIN', 'SUPERADMIN'];
 

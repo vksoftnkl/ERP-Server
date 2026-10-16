@@ -15,6 +15,7 @@ import {
   BankListMeta,
   BankListPayload,
 } from './types/bank-list-api.types';
+import { BankListErrorCode } from './types/bank-list-error-codes';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -66,7 +67,13 @@ export class BankListService {
     if (!result) {
       throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>(
         'No configured grid found for bank list',
-        [],
+        [
+          {
+            field: 'list',
+            message: 'No configured grid found for bank list',
+            code: BankListErrorCode.GRID_NOT_CONFIGURED,
+          },
+        ],
       );
     }
     return result;
@@ -80,6 +87,7 @@ export class BankListService {
         'Bank not found',
         'bnkId',
         `No active bank found with id ${bnkId}`,
+        BankListErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -94,6 +102,7 @@ export class BankListService {
           'Bank not found',
           'bnkId',
           `No active bank found with id ${bnkId}`,
+          BankListErrorCode.NOT_FOUND,
         );
       }
       const bankUsageCount = await tx.accLedgerBankAccount.count({
@@ -106,6 +115,7 @@ export class BankListService {
             {
               field: 'bnkId',
               message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).`,
+              code: BankListErrorCode.IN_USE,
             },
           ],
         );
@@ -125,6 +135,7 @@ export class BankListService {
           'Bank not found',
           'bnkId',
           `No active bank found with id ${bnkId}`,
+          BankListErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -157,6 +168,8 @@ export class BankListService {
     const normalizedName = normalizeRequiredText<BankListErrorDetail, BankListErrorResponse>(
       saveBankListDto.bnkName,
       'bnkName',
+      undefined,
+      BankListErrorCode.NAME_REQUIRED,
     );
     const now = new Date();
     const createdBy = resolveActor(
@@ -195,7 +208,13 @@ export class BankListService {
       throwOnUniqueConstraintError<BankListErrorDetail, BankListErrorResponse>(
         error,
         'Bank already exists',
-        [{ field: 'bnkName', message: 'Duplicate bnkName is not allowed' }],
+        [
+          {
+            field: 'bnkName',
+            message: 'Duplicate bnkName is not allowed',
+            code: BankListErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -212,11 +231,14 @@ export class BankListService {
             'Bank not found',
             'bnkId',
             `No active bank found with id ${bnkId}`,
+            BankListErrorCode.NOT_FOUND,
           );
         }
         const normalizedName = normalizeRequiredText<BankListErrorDetail, BankListErrorResponse>(
           saveBankListDto.bnkName,
           'bnkName',
+          undefined,
+          BankListErrorCode.NAME_REQUIRED,
         );
         await this.ensureNameIsUnique(tx, normalizedName, bnkId);
         const data: Prisma.BankMasterUncheckedUpdateInput = {
@@ -254,7 +276,13 @@ export class BankListService {
       throwOnUniqueConstraintError<BankListErrorDetail, BankListErrorResponse>(
         error,
         'Bank already exists',
-        [{ field: 'bnkName', message: 'Duplicate bnkName is not allowed' }],
+        [
+          {
+            field: 'bnkName',
+            message: 'Duplicate bnkName is not allowed',
+            code: BankListErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -274,7 +302,11 @@ export class BankListService {
     });
     if (existing) {
       throwFixedConflict<BankListErrorDetail, BankListErrorResponse>('Bank name already exists', [
-        { field: 'bnkName', message: 'Duplicate bank name is not allowed' },
+        {
+          field: 'bnkName',
+          message: 'Duplicate bank name is not allowed',
+          code: BankListErrorCode.NAME_DUPLICATE,
+        },
       ]);
     }
   }

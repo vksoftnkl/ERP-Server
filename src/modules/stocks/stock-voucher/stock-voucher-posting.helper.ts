@@ -5,6 +5,7 @@ import {
   throwStockConflict,
   throwStockUnprocessable,
 } from 'src/common/utils/module-service.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
 import {
   RELOT_REASON_CODES,
   type StockErrorDetail,
@@ -851,8 +852,8 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
            LIMIT 1
         ) slc ON true
         LEFT JOIN LATERAL (
-          SELECT NULLIF(MAX(b.sbl_avg_cost_rate), 0)     AS lot_rate,
-                 NULLIF(MAX(b.sbl_avg_cost_rate_wot), 0) AS lot_rate_wot
+          SELECT NULLIF(MAX(b.sbl_avg_cost_rate), 0)                   AS lot_rate,
+                 NULLIF(GREATEST(MAX(b.sbl_avg_cost_rate_wot), 0), 0)  AS lot_rate_wot
             FROM stock.stock_balance b
            WHERE keyed.valuation_method = 'LOT_ACTUAL'
              AND b.sbl_company_id = keyed.svh_company_id
@@ -908,14 +909,18 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
              -- the line's. A 0 is "not stated" — costed derives it from the
              -- cost and the tax rate — never a rate: an average carrying cost
              -- but a 0 wot used to receive and relieve stock at a 0
-             -- without-tax cost.
+             -- without-tax cost. A NEGATIVE average wot is not stated either:
+             -- it is what such a 0-wot receipt leaves once later issues
+             -- relieve its pool below zero (ZT-ITEM-B, OPN0067), and
+             -- ck_slt_prices refuses it even on a lot insert that would only
+             -- have conflicted.
              CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate_wot, 0)
                   WHEN keyed.line_direction < 0
                     OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
                   THEN CASE WHEN keyed.lot_rate IS NOT NULL
                             THEN keyed.lot_rate_wot
                             WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
-                            THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
+                            THEN NULLIF(GREATEST(sic.sic_avg_cost_rate_wot, 0), 0)
                             ELSE NULLIF(keyed.svi_cost_rate_wot, 0) END
                   WHEN relot.qty > 0 THEN NULLIF(ROUND(relot.value_wot / relot.qty, 6), 0)
                   WHEN NULLIF(keyed.svi_cost_rate, 0) IS NOT NULL
@@ -924,7 +929,7 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
                       CASE keyed.svh_rate_source
                         WHEN 'AVG_COST'      THEN CASE WHEN keyed.lot_rate IS NOT NULL
                                                        THEN keyed.lot_rate_wot
-                                                       ELSE NULLIF(sic.sic_avg_cost_rate_wot, 0) END
+                                                       ELSE NULLIF(GREATEST(sic.sic_avg_cost_rate_wot, 0), 0) END
                         WHEN 'LOT_COST'      THEN CASE WHEN keyed.lot_rate IS NOT NULL
                                                        THEN keyed.lot_rate_wot
                                                        ELSE NULLIF(keyed.slt_cost_rate_wot, 0) END
@@ -946,7 +951,7 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
                  SUM((o.move_base_qty + o.move_free_base_qty)
                      * CASE WHEN o.lot_rate IS NOT NULL THEN COALESCE(o.lot_rate_wot, 0)
                             WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
-                            THEN COALESCE(NULLIF(sic.sic_avg_cost_rate_wot, 0), 0)
+                            THEN GREATEST(sic.sic_avg_cost_rate_wot, 0)
                             ELSE COALESCE(NULLIF(o.svi_cost_rate_wot, 0), 0) END)                       AS value_wot
             FROM lotted o
            WHERE keyed.valuation_method = 'LOT_ACTUAL'
@@ -1125,6 +1130,7 @@ async function pickIssueLots(
     if (strategy === 'MANUAL') {
       errors.push({
         field: `lines.${line.svi_line_no}`,
+        code: StockErrorCode.PICK_MANUAL_LOT_REQUIRED,
         message: `Line ${line.svi_line_no} (${line.item_name}): the issue strategy for this item is MANUAL, so the line must name the lot it issues from.`,
       });
       continue;
@@ -1169,6 +1175,7 @@ async function pickIssueLots(
       const stated = statedIdentity(line);
       errors.push({
         field: `lines.${line.svi_line_no}`,
+        code: StockErrorCode.PICK_NO_STOCK,
         message: `Line ${line.svi_line_no} (${line.item_name}): names no lot and this godown holds no stock of the item${stated ? ` matching what the line states (${stated})` : ''} to issue from. Name the lot, or receive the stock first.`,
       });
       continue;
@@ -1473,6 +1480,7 @@ async function assertInwardCost(
       `This ${rules.displayName.toLowerCase()} cannot be posted`,
       rows.map((r) => ({
         field: `lines.${r.svi_line_no}`,
+        code: StockErrorCode.LINE_COST_UNRESOLVED,
         message: `Line ${r.svi_line_no}${r.svi_split_no > 1 ? ` split ${r.svi_split_no}` : ''} (${r.item_name}): brings stock in at a cost of 0 — the rate source resolved nothing. Set a cost on the line or a rate source the engine can derive one from.`,
       })),
     );
@@ -1631,6 +1639,7 @@ async function assertLotsNamed(
       `This ${rules.displayName.toLowerCase()} cannot be ${verb}`,
       lotless.map((r) => ({
         field: `lines.${r.svi_line_no}`,
+        code: StockErrorCode.LINE_LOT_REQUIRED,
         message: `Line ${r.svi_line_no} names no lot — ${why}`,
       })),
     );
@@ -1659,6 +1668,7 @@ async function assertDespatchable(
       [
         {
           field: 'toGodownId',
+          code: StockErrorCode.TO_GODOWN_REQUIRED,
           message: 'An inter-branch transfer must name the destination godown.',
         },
       ],
@@ -1683,6 +1693,7 @@ async function assertReceivable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Receipt links no transfer', [
       {
         field: 'linkSrcDocId',
+        code: StockErrorCode.RECEIPT_NO_TRANSFER,
         message: `${header.refno} names no despatch. A receipt cannot be posted without the transfer it is against.`,
       },
     ]);
@@ -1707,6 +1718,7 @@ async function assertReceivable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer not found', [
       {
         field: 'linkSrcDocId',
+        code: StockErrorCode.TRANSFER_NOT_FOUND,
         message: `${header.refno} answers a despatch that does not exist.`,
       },
     ]);
@@ -1715,6 +1727,7 @@ async function assertReceivable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer is deleted', [
       {
         field: 'linkSrcDocId',
+        code: StockErrorCode.TRANSFER_DELETED,
         message: `${out.svh_refno} has been deleted by the sending branch. Nothing can be received against it.`,
       },
     ]);
@@ -1723,6 +1736,7 @@ async function assertReceivable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer is for another branch', [
       {
         field: 'branchId',
+        code: StockErrorCode.TRANSFER_OTHER_BRANCH,
         message: `${out.svh_refno} was sent to another branch. A transfer can only be received where it was addressed.`,
       },
     ]);
@@ -1731,6 +1745,7 @@ async function assertReceivable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>(`Transfer is ${out.svh_status}`, [
       {
         field: 'linkSrcDocId',
+        code: StockErrorCode.TRANSFER_NOT_IN_TRANSIT,
         message:
           out.svh_status === 'RECEIVED'
             ? `${out.svh_refno} has already been received in full.`
@@ -1783,6 +1798,7 @@ async function assertReceivable(
     if (!c.stt_id) {
       errors.push({
         field,
+        code: StockErrorCode.RECEIPT_NOT_IN_TRANSIT,
         message: `Line ${c.svi_line_no}: nothing of this lot is in transit to this godown.`,
       });
       continue;
@@ -1790,6 +1806,7 @@ async function assertReceivable(
     if (Number(c.matches) > 1) {
       errors.push({
         field,
+        code: StockErrorCode.RECEIPT_BUCKET_AMBIGUOUS,
         message: `Line ${c.svi_line_no}: this item and lot were shipped in more than one bucket, and the receipt cannot tell them apart. The sender must ship them as separate transfers.`,
       });
       continue;
@@ -1798,6 +1815,7 @@ async function assertReceivable(
       reported.add(c.stt_id);
       errors.push({
         field,
+        code: StockErrorCode.RECEIPT_OVER_REMAINING,
         message: `Line ${c.svi_line_no} receives ${c.claimed.toString()} but only ${(c.remaining ?? new Prisma.Decimal(0)).toString()} of that lot is still in transit. A second receipt opens with the remainder, not the original quantity.`,
       });
     }
@@ -1997,6 +2015,7 @@ export async function settleTransitShort(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Transfer not found', [
       {
         field: 'outVoucherId',
+        code: StockErrorCode.TRANSFER_NOT_FOUND,
         message: `No live TRANSFER_OUT ${outId} in ${outAccYear} for this branch.`,
       },
     ]);
@@ -2005,6 +2024,7 @@ export async function settleTransitShort(
     throwStockConflict<StockErrorDetail, StockErrorResponse>(`Transfer is ${out.svh_status}`, [
       {
         field: 'outVoucherId',
+        code: StockErrorCode.TRANSFER_NOT_IN_TRANSIT,
         message:
           out.svh_status === 'RECEIVED'
             ? `${out.svh_refno} is already closed: nothing is short.`
@@ -2021,6 +2041,7 @@ export async function settleTransitShort(
     throwStockConflict<StockErrorDetail, StockErrorResponse>('Nothing has been received yet', [
       {
         field: 'outVoucherId',
+        code: StockErrorCode.TRANSFER_NOTHING_RECEIVED,
         message: `${out.svh_refno} has lines nothing has been received against. A short is settled after the receipt, not instead of it — receive what arrived first.`,
       },
     ]);
@@ -2863,7 +2884,7 @@ async function assertNegativeStockPolicy(
   if (blocked.length) {
     throwStockConflict<StockErrorDetail, StockErrorResponse>(
       `This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`,
-      blocked.map((row) => ({ field: 'lines', message: `${describe(row)} — policy is BLOCK` })),
+      blocked.map((row) => ({ field: 'lines', code: StockErrorCode.NEGATIVE_BLOCKED, message: `${describe(row)} — policy is BLOCK` })),
     );
   }
 }
@@ -3117,6 +3138,7 @@ async function assertTransferCancellable(
       [
         {
           field: 'svhId',
+          code: StockErrorCode.TRANSFER_NOT_CANCELLABLE,
           message: `${header.refno} is ${header.status}: goods that left cannot be cancelled on paper. Receive what arrived and transfer it back, or short-settle what never arrived.`,
         },
       ],
@@ -3126,6 +3148,7 @@ async function assertTransferCancellable(
     throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} is POSTED`, [
       {
         field: 'svhId',
+        code: StockErrorCode.RECEIPT_NOT_CANCELLABLE,
         message: `${header.refno} has been received: un-receiving is a reverse transfer back to the sender, not a cancellation.`,
       },
     ]);
@@ -3213,6 +3236,7 @@ async function lockHeaderInStatus(
     throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} not found`, [
       {
         field: 'svhId',
+        code: StockErrorCode.VOUCHER_NOT_FOUND,
         message: `${svhId} no longer exists in ${accYear}, so there is nothing to ${expected === 'DRAFT' ? 'post' : 'cancel'}.`,
       },
     ]);
@@ -3223,6 +3247,10 @@ async function lockHeaderInStatus(
       [
         {
           field: 'svhId',
+          code:
+            header.status === 'CANCELLED'
+              ? StockErrorCode.VOUCHER_ALREADY_CANCELLED
+              : StockErrorCode.VOUCHER_STATUS_CHANGED,
           message:
             header.status === 'CANCELLED'
               ? `${header.refno} was already cancelled.`

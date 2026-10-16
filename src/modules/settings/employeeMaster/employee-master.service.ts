@@ -10,6 +10,7 @@ import {
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
 import { StaffAdvanceLedgerService } from './staff-advance-ledger.service';
+import { EmployeeMasterErrorCode } from './types/employee-master-error-codes';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -302,10 +303,15 @@ export class EmployeeMasterService {
   ): Promise<EmployeeMasterPayload> {
     try {
       return this.prisma.$transaction(async (tx) => {
-        const empName = this.normalizeRequiredValue(saveEmployeeMasterDto.empName, 'empName');
+        const empName = this.normalizeRequiredValue(
+          saveEmployeeMasterDto.empName,
+          'empName',
+          EmployeeMasterErrorCode.NAME_REQUIRED,
+        );
         const empSalaryType = this.normalizeRequiredValue(
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
+          EmployeeMasterErrorCode.SALARY_TYPE_REQUIRED,
         );
         await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
@@ -363,10 +369,15 @@ export class EmployeeMasterService {
         if (!existing) {
           this.throwNotFound(empId);
         }
-        const empName = this.normalizeRequiredValue(saveEmployeeMasterDto.empName, 'empName');
+        const empName = this.normalizeRequiredValue(
+          saveEmployeeMasterDto.empName,
+          'empName',
+          EmployeeMasterErrorCode.NAME_REQUIRED,
+        );
         const empSalaryType = this.normalizeRequiredValue(
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
+          EmployeeMasterErrorCode.SALARY_TYPE_REQUIRED,
         );
         await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
@@ -434,6 +445,7 @@ export class EmployeeMasterService {
         {
           field: 'empCompanyId',
           message: `No active company found with id ${compId}`,
+          code: EmployeeMasterErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -459,6 +471,7 @@ export class EmployeeMasterService {
         {
           field: 'empDesignationId',
           message: `No active employee designation found with id ${empDesignationId}`,
+          code: EmployeeMasterErrorCode.DESIGNATION_NOT_FOUND,
         },
       ]);
     }
@@ -484,6 +497,7 @@ export class EmployeeMasterService {
         {
           field: 'empDepartmentId',
           message: `No active employee department found with id ${empDepartmentId}`,
+          code: EmployeeMasterErrorCode.DEPARTMENT_NOT_FOUND,
         },
       ]);
     }
@@ -496,11 +510,12 @@ export class EmployeeMasterService {
       empPhoto: (value) => this.decodePhoto(value as string | null | undefined),
     });
   }
-  private normalizeRequiredValue(value: string, field: string): string {
+  private normalizeRequiredValue(value: string, field: string, code: EmployeeMasterErrorCode): string {
     return normalizeRequiredText<EmployeeMasterErrorDetail>(
       value,
       field,
       `${field} must not be empty`,
+      code,
     );
   }
   private decodePhoto(value: string | null | undefined): Prisma.Bytes | null | undefined {
@@ -521,6 +536,7 @@ export class EmployeeMasterService {
         {
           field: 'empPhoto',
           message: 'empPhoto must be a valid base64 string',
+          code: EmployeeMasterErrorCode.PHOTO_INVALID,
         },
       ]);
     }
@@ -599,6 +615,7 @@ export class EmployeeMasterService {
       {
         field: 'empCode',
         message: 'Duplicate employee unique value is not allowed',
+        code: EmployeeMasterErrorCode.DUPLICATE,
       },
     ]);
     if (isForeignKeyConstraintError(error)) {
@@ -606,6 +623,7 @@ export class EmployeeMasterService {
         {
           field: 'empCompanyId',
           message: 'Referenced relation does not exist',
+          code: EmployeeMasterErrorCode.RELATION_NOT_FOUND,
         },
       ]);
     }
@@ -615,6 +633,7 @@ export class EmployeeMasterService {
       'Employee not found',
       'empId',
       `No active employee found with id ${empId}`,
+      EmployeeMasterErrorCode.NOT_FOUND,
     );
   }
   private throwBadRequest(message: string, errors: EmployeeMasterErrorDetail[]): never {

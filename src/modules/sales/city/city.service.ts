@@ -9,6 +9,7 @@ import {
   CityMasterCreateResult,
   CityPayload,
 } from './types/city-api.types';
+import { CityErrorCode } from './types/city-error-codes';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -54,6 +55,8 @@ export class CityService {
     const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
       dto.ctmName,
       'ctmName',
+      undefined,
+      CityErrorCode.NAME_REQUIRED,
     );
     const actor = resolveActor(dto.ctmCreatedBy, userId);
     const now = new Date();
@@ -88,6 +91,7 @@ export class CityService {
               {
                 field: 'parentId',
                 message: `No active account group found with id ${parentId}`,
+                code: CityErrorCode.PARENT_GROUP_NOT_FOUND,
               },
             ],
           );
@@ -158,6 +162,7 @@ export class CityService {
           {
             field: 'ctmName',
             message: 'Duplicate ctmName is not allowed',
+            code: CityErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -176,6 +181,7 @@ export class CityService {
         'City not found',
         'ctmId',
         `No active city found with id ${ctmId}`,
+        CityErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(record);
@@ -195,6 +201,7 @@ export class CityService {
           'City not found',
           'ctmId',
           `No active city found with id ${ctmId}`,
+          CityErrorCode.NOT_FOUND,
         );
       }
       const areaCount = await tx.areaMaster.count({
@@ -210,6 +217,7 @@ export class CityService {
             {
               field: 'ctmId',
               message: `City ${ctmId} is used by ${areaCount} area(s).`,
+              code: CityErrorCode.HAS_AREAS,
             },
           ],
         );
@@ -232,6 +240,7 @@ export class CityService {
           'City not found',
           'ctmId',
           `No active city found with id ${ctmId}`,
+          CityErrorCode.NOT_FOUND,
         );
       }
       // Mirror the soft delete onto the linked account group (shares ctm_id as its PK) so it
@@ -343,12 +352,15 @@ export class CityService {
             'City not found',
             'ctmId',
             `No active city found with id ${ctmId}`,
+            CityErrorCode.NOT_FOUND,
           );
         }
 
         const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
           saveCityDto.ctmName,
           'ctmName',
+          undefined,
+          CityErrorCode.NAME_REQUIRED,
         );
         const nextStateId = hasOwnProperty(saveCityDto, 'ctmStateId')
           ? saveCityDto.ctmStateId
@@ -418,6 +430,7 @@ export class CityService {
           {
             field: 'ctmName',
             message: 'Duplicate ctmName is not allowed',
+            code: CityErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -452,6 +465,7 @@ export class CityService {
         {
           field: 'ctmStateId',
           message: `No active state found with id ${stateId}`,
+          code: CityErrorCode.STATE_NOT_FOUND,
         },
       ]);
     }
@@ -491,6 +505,7 @@ export class CityService {
           {
             field: 'ctmName',
             message: 'Duplicate city name is not allowed for this state',
+            code: CityErrorCode.NAME_EXISTS,
           },
         ],
       );

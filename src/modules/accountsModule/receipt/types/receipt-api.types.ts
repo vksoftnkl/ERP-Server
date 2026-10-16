@@ -14,7 +14,7 @@ import type {
   VoucherStatus,
 } from './receipt-enum';
 
-export type ReceiptErrorDetail = ModuleApiErrorDetail;
+export type ReceiptErrorDetail = ModuleApiErrorDetail & { code: string };
 export type ReceiptErrorResponse = ModuleApiErrorResponse<ReceiptErrorDetail>;
 export type ReceiptSuccessResponse<
   T,

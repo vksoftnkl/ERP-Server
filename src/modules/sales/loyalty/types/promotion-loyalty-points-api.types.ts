@@ -3,8 +3,12 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
+import type { LoyaltyErrorCode } from './loyalty-error-codes';
 
-export type PromotionLoyaltyPointsErrorDetail = ModuleApiErrorDetail;
+/** Notes 119: every refusal names its code — see loyalty-error-codes.ts. */
+export interface PromotionLoyaltyPointsErrorDetail extends ModuleApiErrorDetail {
+  code: LoyaltyErrorCode;
+}
 export type PromotionLoyaltyPointsErrorResponse =
   ModuleApiErrorResponse<PromotionLoyaltyPointsErrorDetail>;
 export type PromotionLoyaltyPointsSuccessResponse<

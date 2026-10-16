@@ -24,6 +24,9 @@ import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { DEPOSITABLE_STATUSES } from './types/cheque-enum';
 import { DepositChequesDto } from './dto/deposit-cheques.dto';
 import type { ChequeDepositPayload, ChequeErrorDetail } from './types/cheque-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.2 — the deposit. A batch, and NO voucher.
@@ -92,6 +95,7 @@ export class ChequeDepositService {
           throwAccountsBadRequest<ChequeErrorDetail>('Use re-present instead', [
             {
               field: `cheques.${index}`,
+              code: CHQ.BOUNCED_ONCE,
               message:
                 `${cheque.apdInstrumentNo} has already bounced once. Send it back to the bank ` +
                 'through /cheques/re-present, which re-issues it to the party first.',
@@ -202,12 +206,14 @@ export class ChequeDepositService {
         'Cheque not found',
         `cheques.${index}`,
         `No live cheque ${key.apdId} at this company / branch in ${key.apdAccYear}`,
+        VCH.CHEQUE_NOT_FOUND,
       );
     }
     if (cheque.apdTraType !== 'R') {
       throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
         {
           field: `cheques.${index}`,
+          code: ACC.INVALID,
           message:
             `${cheque.apdInstrumentNo} is an ISSUED cheque, not a received one. ` +
             'It belongs to the Issued Cheques screen.',

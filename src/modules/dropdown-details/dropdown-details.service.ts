@@ -19,6 +19,7 @@ import {
   DropdownDetailPayload,
   DropdownRunResult,
 } from './types/dropdown-detail-api.types';
+import { DropdownDetailErrorCode } from './types/dropdown-detail-enum.types';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -87,6 +88,7 @@ export class DropdownDetailsService {
         'Dropdown details not found',
         'dropdown_id',
         `No dropdown details found with id ${queryDto.dropdown_id}`,
+        DropdownDetailErrorCode.NOT_FOUND,
       );
     }
     const baseSql = dropdown.dropdownSql?.trim();
@@ -97,6 +99,7 @@ export class DropdownDetailsService {
           {
             field: 'dropdown_sql',
             message: `Dropdown ${queryDto.dropdown_id} has no configured SQL`,
+            code: DropdownDetailErrorCode.SQL_MISSING,
           },
         ],
       );
@@ -106,7 +109,7 @@ export class DropdownDetailsService {
     if (!validation.isValid) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Invalid dropdown SQL configuration',
-        [{ field: 'dropdown_sql', message: validation.message }],
+        [{ field: 'dropdown_sql', message: validation.message, code: DropdownDetailErrorCode.SQL_INVALID }],
       );
     }
     const finalSql = dropdownPrm
@@ -156,6 +159,7 @@ export class DropdownDetailsService {
             message: rawMessage
               ? `dropdown_sql could not be executed: ${rawMessage}`
               : 'dropdown_sql could not be executed',
+            code: DropdownDetailErrorCode.SQL_FAILED,
           },
         ],
       );
@@ -187,6 +191,7 @@ export class DropdownDetailsService {
             'Dropdown column not found',
             'dropdown_columns_id',
             `No dropdown column found with id ${item.dropdown_columns_id}`,
+            DropdownDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         await tx.dropdownColumns.update({
@@ -212,6 +217,7 @@ export class DropdownDetailsService {
             'Dropdown column not found',
             'dropdown_columns_id',
             `No dropdown column found with id ${item.dropdown_columns_id}`,
+            DropdownDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         await tx.dropdownColumns.update({
@@ -237,6 +243,7 @@ export class DropdownDetailsService {
             'Dropdown column not found',
             'dropdown_columns_id',
             `No dropdown column found with id ${item.dropdown_columns_id}`,
+            DropdownDetailErrorCode.COLUMN_NOT_FOUND,
           );
         }
         await tx.dropdownColumns.update({
@@ -263,6 +270,7 @@ export class DropdownDetailsService {
         'Dropdown details not found',
         'dropdown_id',
         `No dropdown details found with id ${dropdownId}`,
+        DropdownDetailErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record as DropdownDetailsWithColumns);
@@ -279,6 +287,7 @@ export class DropdownDetailsService {
           'Dropdown details not found',
           'dropdown_id',
           `No dropdown details found with id ${dropdownId}`,
+          DropdownDetailErrorCode.NOT_FOUND,
         );
       }
       await tx.dropdownDetails.delete({ where: { dropdownId: parsedDropdownId } });
@@ -314,6 +323,7 @@ export class DropdownDetailsService {
           'Dropdown column not found',
           'dropdown_columns_id',
           `No dropdown column found with id ${dropdown_columns_id}`,
+          DropdownDetailErrorCode.COLUMN_NOT_FOUND,
         );
       }
       await tx.dropdownColumns.delete({ where: { dropdownColumnsId: parsedColumnId } });
@@ -399,6 +409,7 @@ export class DropdownDetailsService {
           'Dropdown details not found',
           'dropdown_id',
           `No dropdown details found with id ${dropdownId}`,
+          DropdownDetailErrorCode.NOT_FOUND,
         );
       }
       const data: Prisma.DropdownDetailsUncheckedUpdateInput = {
@@ -482,6 +493,7 @@ export class DropdownDetailsService {
           {
             field: 'dropdown_columns_name',
             message: 'dropdown_columns_name must not be empty',
+            code: DropdownDetailErrorCode.COLUMN_NAME_REQUIRED,
           },
         ],
       );
@@ -494,6 +506,7 @@ export class DropdownDetailsService {
           {
             field: 'dropdown_columns_data_type',
             message: 'dropdown_columns_data_type must not be empty',
+            code: DropdownDetailErrorCode.COLUMN_DATA_TYPE_REQUIRED,
           },
         ],
       );
@@ -613,13 +626,25 @@ export class DropdownDetailsService {
     } catch {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation error',
-        [{ field: 'dropdown_param', message: 'dropdown_param must be valid JSON' }],
+        [
+          {
+            field: 'dropdown_param',
+            message: 'dropdown_param must be valid JSON',
+            code: DropdownDetailErrorCode.PARAM_NOT_JSON,
+          },
+        ],
       );
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation error',
-        [{ field: 'dropdown_param', message: 'dropdown_param must be a JSON object' }],
+        [
+          {
+            field: 'dropdown_param',
+            message: 'dropdown_param must be a JSON object',
+            code: DropdownDetailErrorCode.PARAM_NOT_OBJECT,
+          },
+        ],
       );
     }
     const prm = parsed as Record<string, unknown>;
@@ -631,6 +656,7 @@ export class DropdownDetailsService {
             {
               field: 'dropdown_param',
               message: `Invalid parameter name in dropdown_param: "${key}"`,
+              code: DropdownDetailErrorCode.PARAM_NAME_INVALID,
             },
           ],
         );
@@ -648,6 +674,7 @@ export class DropdownDetailsService {
             {
               field: 'dropdown_param',
               message: `Unsupported value type for dropdown_param.${key}: ${typeof val}`,
+              code: DropdownDetailErrorCode.PARAM_VALUE_UNSUPPORTED,
             },
           ],
         );
@@ -655,7 +682,13 @@ export class DropdownDetailsService {
       if (typeof val === 'number' && !Number.isFinite(val)) {
         throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Validation error',
-          [{ field: 'dropdown_param', message: `Non-finite number for dropdown_param.${key}` }],
+          [
+            {
+              field: 'dropdown_param',
+              message: `Non-finite number for dropdown_param.${key}`,
+              code: DropdownDetailErrorCode.PARAM_VALUE_NOT_FINITE,
+            },
+          ],
         );
       }
     }
@@ -668,7 +701,7 @@ export class DropdownDetailsService {
     ) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation error',
-        [{ field, message: `${field} must be a valid UUID` }],
+        [{ field, message: `${field} must be a valid UUID`, code: DropdownDetailErrorCode.COLUMN_ID_INVALID }],
       );
     }
     return normalized;
@@ -678,14 +711,14 @@ export class DropdownDetailsService {
     if (!/^\d+$/.test(normalized)) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation error',
-        [{ field, message: `${field} must be a numeric id` }],
+        [{ field, message: `${field} must be a numeric id`, code: DropdownDetailErrorCode.ID_INVALID }],
       );
     }
     const parsed = Number(normalized);
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation error',
-        [{ field, message: `${field} must be a positive numeric id` }],
+        [{ field, message: `${field} must be a positive numeric id`, code: DropdownDetailErrorCode.ID_INVALID }],
       );
     }
     return parsed;

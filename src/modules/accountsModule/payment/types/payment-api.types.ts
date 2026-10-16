@@ -28,7 +28,7 @@ import type { TillApprovalNeed } from '../../../till/types/till-api.types';
  * other way and a second copy of those shapes would drift.
  */
 
-export type PaymentErrorDetail = ModuleApiErrorDetail;
+export type PaymentErrorDetail = ModuleApiErrorDetail & { code: string };
 export type PaymentErrorResponse = ModuleApiErrorResponse<PaymentErrorDetail>;
 export type PaymentSuccessResponse<
   T,

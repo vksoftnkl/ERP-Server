@@ -5,6 +5,7 @@ import {
   type ResolvedRoleLedger,
 } from '../ledgerRole/ledger-map.helper';
 import { ReceiptLedgerRole } from './types/receipt-enum';
+import { ACC } from './types/acc-error-codes';
 
 /**
  * Every ledger this module posts to that is not a party, a tender or a ledger
@@ -50,6 +51,7 @@ export function requireReceiptRoleLedgers(
       branchId: scope.branchId,
       where: 'receipt',
       message: 'Posting ledgers are not configured',
+      code: ACC.ROLE_UNMAPPED,
     },
   );
 }

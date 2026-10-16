@@ -82,6 +82,8 @@ export interface TypedLineInput {
   tdsBase: boolean | null;
   /** notes (54): only on a type with instruments */
   instrument?: InstrumentInput | null;
+  /** Notes 126 §6: a Contra line's tender (cash / bank), the line itself being the money leg. */
+  tenderId?: string | null;
 }
 
 export interface AllocationInput {
@@ -529,6 +531,7 @@ export function derive(input: DeriveInput): DerivedInternal {
         { field: `${field}.ledgerId`, line: line.rowNo },
       );
     }
+    moneySideRule(input, line, ledger);
     if (input.instrumentLedgers.has(ledger.ledId)) {
       refuse(
         ctx,
@@ -1471,6 +1474,100 @@ export function derive(input: DeriveInput): DerivedInternal {
     allocations,
     postDated,
   };
+}
+
+/**
+ * Notes 126 §6 — the money side of every voucher is a TENDER, never a typed
+ * cash / bank ledger (the user, 2026-10-16: "on money selection area user must
+ * select tender master list only"):
+ *
+ *   Receipt / Payment Voucher — the instrument on the party's line carries the
+ *     money (its leg is generated from the tender); a typed cash / bank line →
+ *     VCH_MONEY_LINE_NO_TENDER;
+ *   Contra — each line IS a money line and names its tender (`tenderId`): a
+ *     CASH tender on a cash ledger, a BANK tender on its own bank;
+ *   every other type (Journal, Debit / Credit Note, Purchase / Sales
+ *     (Accounting)) has no money side → VCH_MONEY_LEDGER_NOT_ALLOWED — bank
+ *     charges and interest from the statement go on a Payment / Receipt with
+ *     the bank's tender, not a Journal.
+ *
+ * `tenderId` on anything but a Contra is refused.
+ */
+const CONTRA_TYPE_CODE = 'Con';
+const CASH_TYPE_ID = 1;
+const BANK_TYPE_ID = 6;
+
+function moneySideRule(input: DeriveInput, line: TypedLineInput, ledger: LedgerFacts): void {
+  const { type, ctx } = input;
+  const field = `lines.${line.rowNo}`;
+  const isContra = type.typeCode === CONTRA_TYPE_CODE;
+  if (line.tenderId && !isContra) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_NOT_ALLOWED,
+      `Row ${line.rowNo}: tenderId is a Contra line's — a ${type.typeName} names its tender in the line's instrument`,
+      { field: `${field}.tenderId`, line: line.rowNo },
+    );
+    return;
+  }
+  const money = isMoneyLedger(ledger);
+  if (isContra) {
+    if (!line.tenderId) {
+      refuse(
+        ctx,
+        VCH.MONEY_LINE_NO_TENDER,
+        `Row ${line.rowNo}: a Contra moves money between cash and bank — pick this side's tender (Cash, or the bank's NEFT / IMPS tender)`,
+        { field: `${field}.tenderId`, line: line.rowNo },
+      );
+      return;
+    }
+    const tender = input.tenders?.get(line.tenderId) ?? null;
+    if (
+      !tender ||
+      tender.isDeleted ||
+      !tender.isActive ||
+      tender.companyId !== input.company.companyId
+    ) {
+      refuse(ctx, VCH.INSTRUMENT_TENDER, `Row ${line.rowNo}: no such live tender for this company`, {
+        field: `${field}.tenderId`,
+        line: line.rowNo,
+      });
+      return;
+    }
+    const bank = isBankLedger(ledger);
+    const fits =
+      (tender.typeId === CASH_TYPE_ID && money && !bank) ||
+      (tender.typeId === BANK_TYPE_ID && tender.ledgerId === ledger.ledId);
+    if (!fits) {
+      refuse(
+        ctx,
+        VCH.INSTRUMENT_TENDER,
+        tender.typeId === CASH_TYPE_ID || tender.typeId === BANK_TYPE_ID
+          ? `Row ${line.rowNo}: "${tender.name}" is ${tender.typeId === CASH_TYPE_ID ? 'cash' : `${tender.ledgerName}'s`}; ${ledger.name} takes ${bank ? `its own BANK tender` : money ? 'the CASH tender' : 'no tender — a Contra line is cash or bank'}`
+          : `Row ${line.rowNo}: a Contra moves money between cash and bank — "${tender.name}" (${tender.typeName}) is neither`,
+        { field: `${field}.tenderId`, line: line.rowNo },
+      );
+    }
+    return;
+  }
+  if (!money) {
+    return;
+  }
+  if (type.instruments) {
+    refuse(
+      ctx,
+      VCH.MONEY_LINE_NO_TENDER,
+      `Row ${line.rowNo}: ${ledger.name} is a cash / bank ledger — the money side is picked from the tender list (the line's instrument), not typed`,
+      { field: `${field}.ledgerId`, line: line.rowNo },
+    );
+    return;
+  }
+  refuse(
+    ctx,
+    VCH.MONEY_LEDGER_NOT_ALLOWED,
+    `Row ${line.rowNo}: ${ledger.name} is a cash / bank ledger, and a ${type.typeName} has no money side — money in or out goes on a Receipt / Payment Voucher with its tender (bank charges or interest from the statement: a Payment / Receipt with the bank's NEFT tender, never a Journal)`,
+    { field: `${field}.ledgerId`, line: line.rowNo },
+  );
 }
 
 /**

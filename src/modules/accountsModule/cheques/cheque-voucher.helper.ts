@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { coverPostedVoucher } from 'src/common/posting/money-lines';
 import {
   isUniqueConstraintError,
   throwAccountsBadRequest,
@@ -19,6 +20,9 @@ import type {
   ChequeVoucherLeg,
   ChequeVoucherRef,
 } from './types/cheque-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * ONE way to write a voucher in this module.
@@ -84,6 +88,7 @@ export async function loadVoucherType(
       field,
       `accounts.acc_voucher_types has no active row with vchr_type_code = '${code}'. ` +
         'Run migration 20260916120000.',
+      ACC.TYPE_NOT_SET_UP,
     );
   }
 
@@ -175,6 +180,7 @@ export async function writeChequeVoucher(
     throwAccountsBadRequest<ChequeErrorDetail>('Nothing to post', [
       {
         field: params.field,
+        code: ACC.INVALID,
         message: 'Every leg of this voucher came to zero, so there is nothing to record.',
       },
     ]);
@@ -224,6 +230,7 @@ export async function writeChequeVoucher(
     throwAccountsBadRequest<ChequeErrorDetail>('The voucher does not balance', [
       {
         field: params.field,
+        code: VCH.UNBALANCED,
         message:
           `${number.voucherRefno} is out by ${totals.difference.abs().toFixed(2)} ` +
           `(debit ${totals.totalDebit.toFixed(2)}, credit ${totals.totalCredit.toFixed(2)}). ` +
@@ -247,6 +254,13 @@ export async function writeChequeVoucher(
       avhPostedOn: now,
     },
   });
+  // Notes 126 §1: a bank line here moved by cheque — the clearing's credit to
+  // the bank, a bounce's reversal, a re-issue — so the CHEQUE tender labels it.
+  await coverPostedVoucher(
+    tx,
+    { voucherId: header.avhVoucherId, accYear: params.accYear },
+    { bankTender: 'CHEQUE', createdBy: params.actor },
+  );
 
   const ledgerNames = await loadLedgerNames(
     tx,
@@ -337,7 +351,7 @@ async function createHeader(
   } catch (error) {
     if (isUniqueConstraintError(error) && params.duplicateMessage) {
       throwAccountsConflict<ChequeErrorDetail>('Already done', [
-        { field: params.field, message: params.duplicateMessage },
+        { field: params.field, code: CHQ.ALREADY_DONE, message: params.duplicateMessage },
       ]);
     }
     throw error;

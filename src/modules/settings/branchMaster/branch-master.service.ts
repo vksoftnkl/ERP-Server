@@ -27,6 +27,7 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
+import { BranchMasterErrorCode } from './types/branch-master-error-codes';
 import { GodownsMasterService } from 'src/modules/Inventory/godowns-master/godowns-master.service';
 
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
@@ -242,6 +243,7 @@ export class BranchMasterService {
           'Branch not found',
           'brId',
           `No branch found with id ${brId}`,
+          BranchMasterErrorCode.NOT_FOUND,
         );
       }
       if (!existing.brIsDeleted) {
@@ -249,6 +251,7 @@ export class BranchMasterService {
           {
             field: 'brId',
             message: `${existing.brName} is live; only a deleted branch can be restored`,
+            code: BranchMasterErrorCode.NOT_DELETED,
           },
         ]);
       }
@@ -261,6 +264,7 @@ export class BranchMasterService {
           {
             field: 'brCompId',
             message: 'Restore the company first (POST /company-masters/restore)',
+            code: BranchMasterErrorCode.COMPANY_DELETED,
           },
         ]);
       }
@@ -476,6 +480,7 @@ export class BranchMasterService {
             {
               field: 'brIsDefault',
               message: `${existing.brName} is its company’s default branch; make another branch the default instead`,
+              code: BranchMasterErrorCode.DEFAULT_UNSET_REFUSED,
             },
           ]);
         }
@@ -579,6 +584,7 @@ export class BranchMasterService {
         {
           field: 'compId',
           message: `No active company found with id ${compId}`,
+          code: BranchMasterErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -616,6 +622,7 @@ export class BranchMasterService {
           {
             field: 'brName',
             message: 'Duplicate brName is not allowed for this company',
+            code: BranchMasterErrorCode.NAME_DUPLICATE,
           },
         ],
       );
@@ -652,6 +659,7 @@ export class BranchMasterService {
         {
           field: 'brCode',
           message: 'Duplicate brCode is not allowed',
+          code: BranchMasterErrorCode.CODE_DUPLICATE,
         },
       ]);
     }
@@ -688,7 +696,12 @@ export class BranchMasterService {
     applyPresentFields(data, saveBranchMasterDto, BRANCH_MASTER_OPTIONAL_FIELDS);
   }
   private normalizeRequiredName(name: string): string {
-    return normalizeRequiredText<BranchMasterErrorDetail>(name, 'brName');
+    return normalizeRequiredText<BranchMasterErrorDetail>(
+      name,
+      'brName',
+      undefined,
+      BranchMasterErrorCode.NAME_REQUIRED,
+    );
   }
   private normalizeStateCode(stateCode: string): string {
     const normalized = stateCode.trim().toUpperCase();
@@ -697,6 +710,7 @@ export class BranchMasterService {
         {
           field: 'brStateCode',
           message: 'brStateCode must be exactly 2 characters',
+          code: BranchMasterErrorCode.STATE_CODE_INVALID,
         },
       ]);
     }
@@ -766,6 +780,7 @@ export class BranchMasterService {
       {
         field: 'brCode',
         message: 'Duplicate branch unique value is not allowed',
+        code: BranchMasterErrorCode.DUPLICATE,
       },
     ]);
   }
@@ -791,6 +806,7 @@ export class BranchMasterService {
           {
             field: 'brId',
             message: `${existing.brName} is its company’s default branch; make another branch the default first`,
+            code: BranchMasterErrorCode.DEFAULT_UNDELETABLE,
           },
         ]);
       }
@@ -803,6 +819,7 @@ export class BranchMasterService {
           message:
             `Used by ${describeUse(used)}. A deleted branch would leave them under a ` +
             'branch nobody can open.',
+          code: BranchMasterErrorCode.IN_USE,
         },
       ]);
     }
@@ -822,6 +839,7 @@ export class BranchMasterService {
         {
           field: 'brCompId',
           message: `${existing.brName} is its company’s default branch and cannot move to another company`,
+          code: BranchMasterErrorCode.DEFAULT_IMMOVABLE,
         },
       ]);
     }
@@ -831,6 +849,7 @@ export class BranchMasterService {
         {
           field: 'brCompId',
           message: `${existing.brName} cannot move to another company: it has ${describeUse(used)}`,
+          code: BranchMasterErrorCode.IN_USE_IMMOVABLE,
         },
       ]);
     }
@@ -852,13 +871,24 @@ export class BranchMasterService {
     stateCode: string,
     pan: string | null | undefined,
   ): string | null {
-    const check = checkGstin(gstin, stateCode, pan, {
-      gstin: 'brGstinNo',
-      stateCode: 'brStateCode',
-      pan: 'brPanNo',
-    });
+    const fields = { gstin: 'brGstinNo', stateCode: 'brStateCode', pan: 'brPanNo' };
+    const check = checkGstin(gstin, stateCode, pan, fields);
     if (check.errors.length) {
-      this.throwBadRequest('Validation failed', check.errors);
+      // checkGstin (settings/shared) names no code: the field tells a PAN
+      // mismatch, and of the GSTIN's two refusals only the state one opens
+      // with "GSTIN ".
+      this.throwBadRequest(
+        'Validation failed',
+        check.errors.map((error) => ({
+          ...error,
+          code:
+            error.field === fields.pan
+              ? BranchMasterErrorCode.PAN_GSTIN_MISMATCH
+              : error.message.startsWith('GSTIN ')
+                ? BranchMasterErrorCode.GSTIN_STATE_MISMATCH
+                : BranchMasterErrorCode.GSTIN_INVALID,
+        })),
+      );
     }
     return check.panFromGstin;
   }
@@ -867,6 +897,7 @@ export class BranchMasterService {
       'Branch not found',
       'brId',
       `No active branch found with id ${brId}`,
+      BranchMasterErrorCode.NOT_FOUND,
     );
   }
   private throwBadRequest(message: string, errors: BranchMasterErrorDetail[]): never {

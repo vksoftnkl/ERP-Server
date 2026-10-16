@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as AreaErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as AreaErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { AreaErrorCode } from './area-error-codes';
+
+/** Notes 119: every refusal names its code — see area-error-codes.ts. */
+export interface AreaErrorDetail extends SalesErrorDetail {
+  code: AreaErrorCode;
+}
+export type AreaErrorResponse = SalesErrorResponse<AreaErrorDetail>;
 export type { SalesSuccessResponse as AreaSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface AreaPayload {

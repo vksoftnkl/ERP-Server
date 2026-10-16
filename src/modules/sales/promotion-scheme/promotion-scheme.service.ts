@@ -72,6 +72,7 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
+import { PromotionSchemeErrorCode } from './types/promotion-scheme-error-codes';
 
 const SCREEN_NAME = 'Promotion Scheme';
 const SCHEME_TABLE_NAME = 'promotion scheme';
@@ -162,7 +163,12 @@ export class PromotionSchemeService {
   async getSchemeById(prmId: string): Promise<PromotionSchemePayload> {
     const scheme = await this.findSchemeWithChildren(this.prisma, prmId);
     if (!scheme) {
-      this.throwNotFound('prm_id', prmId, 'Promotion scheme not found');
+      this.throwNotFound(
+        'prm_id',
+        prmId,
+        'Promotion scheme not found',
+        PromotionSchemeErrorCode.SCHEME_NOT_FOUND,
+      );
     }
     return toSchemePayload(scheme);
   }
@@ -208,7 +214,12 @@ export class PromotionSchemeService {
       },
     });
     if (!customer) {
-      this.throwNotFound('cus_id', cusId, 'Customer not found');
+      this.throwNotFound(
+        'cus_id',
+        cusId,
+        'Customer not found',
+        PromotionSchemeErrorCode.CUSTOMER_NOT_FOUND,
+      );
     }
 
     // Every branch of the OR must be a non-null id. `{ prpAreaId: null }` would
@@ -275,7 +286,12 @@ export class PromotionSchemeService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.findSchemeWithChildren(tx, prmId);
       if (!existing) {
-        this.throwNotFound('prm_id', prmId, 'Promotion scheme not found');
+        this.throwNotFound(
+        'prm_id',
+        prmId,
+        'Promotion scheme not found',
+        PromotionSchemeErrorCode.SCHEME_NOT_FOUND,
+      );
       }
 
       const modifiedOn = new Date();
@@ -396,7 +412,12 @@ export class PromotionSchemeService {
       .$transaction(async (tx) => {
         const existing = await this.findSchemeWithChildren(tx, prmId);
         if (!existing) {
-          this.throwNotFound('prm_id', prmId, 'Promotion scheme not found');
+          this.throwNotFound(
+        'prm_id',
+        prmId,
+        'Promotion scheme not found',
+        PromotionSchemeErrorCode.SCHEME_NOT_FOUND,
+      );
         }
 
         const data: Prisma.PromotionSchemeUncheckedUpdateInput = {
@@ -438,6 +459,7 @@ export class PromotionSchemeService {
               message:
                 `Cannot change prm_benefit while ${existing.slabs.length} slab band(s) exist. ` +
                 'Send the retyped bands as `slabs` in this same call, or delete them first.',
+              code: PromotionSchemeErrorCode.BENEFIT_CHANGE_WITH_SLABS,
             },
           ]);
         }
@@ -562,7 +584,11 @@ export class PromotionSchemeService {
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) {
           this.throwBadRequest('Validation failed', [
-            { field: 'prm_approved_on', message: 'prm_approved_on must be a valid datetime' },
+            {
+              field: 'prm_approved_on',
+              message: 'prm_approved_on must be a valid datetime',
+              code: PromotionSchemeErrorCode.INVALID_DATETIME,
+            },
           ]);
         }
         data.prmApprovedOn = parsed;
@@ -650,7 +676,11 @@ export class PromotionSchemeService {
     });
     if (clash) {
       this.throwConflict('Duplicate promotion code', [
-        { field: 'prm_code', message: `prm_code ${code} already exists for this company` },
+        {
+          field: 'prm_code',
+          message: `prm_code ${code} already exists for this company`,
+          code: PromotionSchemeErrorCode.CODE_EXISTS,
+        },
       ]);
     }
   }
@@ -671,7 +701,12 @@ export class PromotionSchemeService {
         where: { prbId: row.prb_id, prbPrmId: prmId, prbIsDeleted: false },
       });
       if (!existing) {
-        this.throwNotFound('prb_id', row.prb_id, 'Promotion scheme branch row not found');
+        this.throwNotFound(
+        'prb_id',
+        row.prb_id,
+        'Promotion scheme branch row not found',
+        PromotionSchemeErrorCode.SCHEME_ROW_NOT_FOUND,
+      );
       }
       const data: Prisma.PromotionSchemeBranchUncheckedUpdateInput = {
         prbModifiedOn: new Date(),
@@ -742,7 +777,12 @@ export class PromotionSchemeService {
         })
       : null;
     if (row.prp_id && !existing) {
-      this.throwNotFound('prp_id', row.prp_id, 'Promotion scheme party row not found');
+      this.throwNotFound(
+        'prp_id',
+        row.prp_id,
+        'Promotion scheme party row not found',
+        PromotionSchemeErrorCode.SCHEME_ROW_NOT_FOUND,
+      );
     }
 
     // The row as it will stand once this write lands — the stored values
@@ -836,7 +876,12 @@ export class PromotionSchemeService {
         })
       : null;
     if (row.pri_id && !existing) {
-      this.throwNotFound('pri_id', row.pri_id, 'Promotion scheme item row not found');
+      this.throwNotFound(
+        'pri_id',
+        row.pri_id,
+        'Promotion scheme item row not found',
+        PromotionSchemeErrorCode.SCHEME_ROW_NOT_FOUND,
+      );
     }
 
     const slno = row.pri_slno ?? existing?.priSlno ?? index + 1;
@@ -981,7 +1026,12 @@ export class PromotionSchemeService {
         })
       : null;
     if (row.prs_id && !existing) {
-      this.throwNotFound('prs_id', row.prs_id, 'Promotion scheme slab row not found');
+      this.throwNotFound(
+        'prs_id',
+        row.prs_id,
+        'Promotion scheme slab row not found',
+        PromotionSchemeErrorCode.SCHEME_ROW_NOT_FOUND,
+      );
     }
 
     // prs_benefit MIRRORS the header. The composite FK would refuse anything
@@ -995,6 +1045,7 @@ export class PromotionSchemeService {
         {
           field: 'prs_benefit',
           message: `prs_benefit must match the scheme's prm_benefit (${scheme.prmBenefit})`,
+          code: PromotionSchemeErrorCode.SLAB_BENEFIT_MISMATCH,
         },
       ]);
     }
@@ -1167,7 +1218,12 @@ export class PromotionSchemeService {
       where: { prmId, prmIsDeleted: false },
     });
     if (!scheme) {
-      this.throwNotFound('prm_id', prmId, 'Promotion scheme not found');
+      this.throwNotFound(
+        'prm_id',
+        prmId,
+        'Promotion scheme not found',
+        PromotionSchemeErrorCode.SCHEME_NOT_FOUND,
+      );
     }
     return scheme;
   }
@@ -1394,6 +1450,7 @@ export class PromotionSchemeService {
           {
             field,
             message: `Rows ${first + 1} and ${index + 1} target the same scope`,
+            code: PromotionSchemeErrorCode.DUPLICATE_ROW_SCOPE,
           },
         ]);
       }
@@ -1460,11 +1517,17 @@ export class PromotionSchemeService {
     throwSalesConflict<PromotionSchemeErrorDetail, PromotionSchemeErrorResponse>(message, errors);
   }
 
-  private throwNotFound(field: string, value: string, message: string): never {
+  private throwNotFound(
+    field: string,
+    value: string,
+    message: string,
+    code: PromotionSchemeErrorCode,
+  ): never {
     throwSalesNotFound<PromotionSchemeErrorDetail, PromotionSchemeErrorResponse>(
       message,
       field,
       `${field} ${value} was not found`,
+      code,
     );
   }
 }

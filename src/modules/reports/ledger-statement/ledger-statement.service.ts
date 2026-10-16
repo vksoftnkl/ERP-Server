@@ -229,6 +229,7 @@ export class LedgerStatementService {
         'Voucher not found',
         'voucherId',
         `No voucher ${q.voucherId} in ${q.accYear} for this company`,
+        LEDGER_STATEMENT_ERROR.VOUCHER_NOT_FOUND,
       );
     }
     const legs = await this.legsOf([{ vid: q.voucherId, vyr: q.accYear }]);
@@ -419,7 +420,12 @@ export class LedgerStatementService {
       SELECT led_company_id FROM accounts.acc_ledger_master
        WHERE led_id = ${q.ledgerId}::uuid AND led_is_deleted = false`;
     if (!led) {
-      throwAccountsNotFound('Ledger not found', 'ledgerId', `No live ledger ${q.ledgerId}`);
+      throwAccountsNotFound(
+        'Ledger not found',
+        'ledgerId',
+        `No live ledger ${q.ledgerId}`,
+        LEDGER_STATEMENT_ERROR.LEDGER_NOT_FOUND,
+      );
     }
     if (led.led_company_id !== null && led.led_company_id !== q.companyId) {
       refuse(

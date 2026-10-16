@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { coverPostedVoucher } from '../../../common/posting/money-lines';
 import { assertVoucherBooksReconcile } from '../vouchers/voucher-books.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -65,6 +66,8 @@ import {
 import type { ReceiptErrorDetail, ReceiptPostPayload } from './types/receipt-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { CASH_TENDER_TYPE_ID, TillEventCode } from '../../till/types/till-enum';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.2 — THE transaction.
@@ -164,6 +167,7 @@ export class ReceiptPostingService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: 'onAccount',
+          code: ACC.INVALID,
           message:
             'onAccount is required when post is true — it is the figure that proves the client and the server read the same receipt',
         },
@@ -411,6 +415,11 @@ export class ReceiptPostingService {
       tenderIdByRow,
       registerByTenderRow,
     });
+    // Notes 126 §1: every cash / bank leg of every voucher this receipt wrote
+    // carries a tender row by now; a gap is a bug, refused rather than booked.
+    for (const v of byKey.values()) {
+      await coverPostedVoucher(tx, { voucherId: v.voucherId, accYear: v.accYear }, { createdBy: actor });
+    }
 
     // ── 14 · The bill caches ───────────────────────────────────────────────
     // The TypeScript replacement for tr_abj_refresh_balance. A post-dated row
@@ -559,6 +568,7 @@ export class ReceiptPostingService {
     throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be posted', [
       {
         field: 'avhVoucherId',
+        code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_DRAFT,
         message:
           `${header.avhVoucherRefno ?? header.avhVoucherId} is ${status}, and only a DRAFT may be ` +
           'posted.' +
@@ -588,6 +598,7 @@ export class ReceiptPostingService {
         throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
           {
             field: `allocations.${index}.writeoffApprovedBy`,
+            code: ACC.WRITEOFF_APPROVER,
             message:
               `Writing off ${bill.writeoff.toFixed(2)} on ${bill.docRefno} needs an approver ` +
               `(accounts.writeoff_approval_above is ${threshold.toFixed(2)})`,
@@ -836,6 +847,7 @@ export class ReceiptPostingService {
         throwAccountsBadRequest<ReceiptErrorDetail>('Allocation could not be completed', [
           {
             field: 'tenders',
+            code: ACC.INVALID,
             message: `The allocation names a voucher "${key}" that has no instrument`,
           },
         ]);
@@ -1317,6 +1329,7 @@ export class ReceiptPostingService {
         throwAccountsBadRequest<ReceiptErrorDetail>('The voucher does not balance', [
           {
             field: 'avhVoucherId',
+            code: VCH.UNBALANCED,
             message:
               `${voucher.voucherRefno} is out by ${totals.difference.toFixed(2)} ` +
               `(debit ${totals.totalDebit.toFixed(2)}, credit ${totals.totalCredit.toFixed(2)})`,

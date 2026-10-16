@@ -14,6 +14,7 @@ import {
   ItemCustRateListMeta,
   ItemCustRatePayload,
 } from './types/item-cust-rate-api.types';
+import { ItemCustRateErrorCode } from './types/item-cust-rate-error-codes';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
@@ -303,6 +304,7 @@ export class ItemsCustRatesMasterService {
       throwMasterBadRequest<ItemCustRateErrorDetail>('Validation failed', [
         {
           field: 'csr_valid_to',
+          code: ItemCustRateErrorCode.VALID_TO_BEFORE_FROM,
           message: 'csr_valid_to must be greater than or equal to csr_valid_from',
         },
       ]);
@@ -318,7 +320,11 @@ export class ItemsCustRatesMasterService {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
       throwMasterBadRequest<ItemCustRateErrorDetail>('Validation failed', [
-        { field: fieldName, message: `${fieldName} must be a valid date` },
+        {
+          field: fieldName,
+          code: ItemCustRateErrorCode.DATE_INVALID,
+          message: `${fieldName} must be a valid date`,
+        },
       ]);
     }
     return parsedDate;
@@ -358,11 +364,21 @@ export class ItemsCustRatesMasterService {
     throwOnUniqueConstraintError<ItemCustRateErrorDetail>(
       error,
       'Item customer rate already exists',
-      [{ field: 'csr_id', message: 'Duplicate item customer rate is not allowed' }],
+      [
+        {
+          field: 'csr_id',
+          code: ItemCustRateErrorCode.DUPLICATE,
+          message: 'Duplicate item customer rate is not allowed',
+        },
+      ],
     );
     if (isForeignKeyConstraintError(error)) {
       throwMasterBadRequest<ItemCustRateErrorDetail>('Invalid relation reference', [
-        { field: 'csr_customer_id', message: 'Referenced relation does not exist' },
+        {
+          field: 'csr_customer_id',
+          code: ItemCustRateErrorCode.REFERENCE_INVALID,
+          message: 'Referenced relation does not exist',
+        },
       ]);
     }
   }
@@ -372,6 +388,7 @@ export class ItemsCustRatesMasterService {
       'Item customer rate not found',
       'csr_id',
       `No active item customer rate found with id ${csrId}`,
+      ItemCustRateErrorCode.NOT_FOUND,
     );
   }
 }

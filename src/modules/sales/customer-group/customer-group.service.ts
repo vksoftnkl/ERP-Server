@@ -8,6 +8,7 @@ import {
   CustomerGroupErrorResponse,
   CustomerGroupPayload,
 } from './types/customer-group-api.types';
+import { CustomerGroupErrorCode } from './types/customer-group-error-codes';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -67,6 +68,7 @@ export class CustomerGroupService {
         'Customer group not found',
         'cgrId',
         `No active customer group found with id ${cgrId}`,
+        CustomerGroupErrorCode.NOT_FOUND,
       );
     }
 
@@ -87,6 +89,7 @@ export class CustomerGroupService {
           'Customer group not found',
           'cgrId',
           `No active customer group found with id ${cgrId}`,
+          CustomerGroupErrorCode.NOT_FOUND,
         );
       }
 
@@ -104,6 +107,7 @@ export class CustomerGroupService {
             {
               field: 'cgrId',
               message: `Customer group ${cgrId} is used by ${customerCount} customer(s).`,
+              code: CustomerGroupErrorCode.HAS_CUSTOMERS,
             },
           ],
         );
@@ -127,6 +131,7 @@ export class CustomerGroupService {
           'Customer group not found',
           'cgrId',
           `No active customer group found with id ${cgrId}`,
+          CustomerGroupErrorCode.NOT_FOUND,
         );
       }
 
@@ -168,7 +173,7 @@ export class CustomerGroupService {
     const normalizedName = normalizeRequiredText<
       CustomerGroupErrorDetail,
       CustomerGroupErrorResponse
-    >(saveCustomerGroupDto.cgrName, 'cgrName');
+    >(saveCustomerGroupDto.cgrName, 'cgrName', undefined, CustomerGroupErrorCode.NAME_REQUIRED);
     const companyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
       ? (saveCustomerGroupDto.cgrCompanyId ?? null)
       : null;
@@ -217,6 +222,7 @@ export class CustomerGroupService {
           {
             field: 'cgrName',
             message: 'Duplicate customer group name is not allowed',
+            code: CustomerGroupErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -243,13 +249,14 @@ export class CustomerGroupService {
             'Customer group not found',
             'cgrId',
             `No active customer group found with id ${cgrId}`,
+            CustomerGroupErrorCode.NOT_FOUND,
           );
         }
 
         const normalizedName = normalizeRequiredText<
           CustomerGroupErrorDetail,
           CustomerGroupErrorResponse
-        >(saveCustomerGroupDto.cgrName, 'cgrName');
+        >(saveCustomerGroupDto.cgrName, 'cgrName', undefined, CustomerGroupErrorCode.NAME_REQUIRED);
         const nextCompanyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
           ? (saveCustomerGroupDto.cgrCompanyId ?? null)
           : existing.cgrCompanyId;
@@ -298,6 +305,7 @@ export class CustomerGroupService {
           {
             field: 'cgrName',
             message: 'Duplicate customer group name is not allowed',
+            code: CustomerGroupErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -330,6 +338,7 @@ export class CustomerGroupService {
           {
             field: 'cgrCompanyId',
             message: `No active company found with id ${companyId}`,
+            code: CustomerGroupErrorCode.COMPANY_NOT_FOUND,
           },
         ],
       );
@@ -370,6 +379,7 @@ export class CustomerGroupService {
           {
             field: 'cgrName',
             message: 'Duplicate customer group name is not allowed for this company',
+            code: CustomerGroupErrorCode.NAME_EXISTS,
           },
         ],
       );

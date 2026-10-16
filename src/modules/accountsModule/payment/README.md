@@ -249,9 +249,11 @@ paid partly to a bill and partly on account failed earlier still: its ChqBnc did
   goes through. A company row with `stl_enforce = REFUSE` answers 422 instead. The expense voucher
   and the register's payment types run the same helper.
 - **CASH_PAYMENT** (1,000 shipped, Supervisor, counter) — in a till session, a cash part above the
-  rule's threshold is **reported, not enforced**, until phase 3 builds the approval gate:
-  `approval` on the post's answer, an INFO `TILL_APPROVAL_REQUIRED` in `warnings[]`, and the
-  `PAYMENT_POSTED` event's payload.
+  rule's threshold goes through the gate (notes 124 §5, till README "The approval gate"): under
+  `till.approval_gate` WARN (as shipped) it posts with `approval` on the answer, an INFO
+  `TILL_APPROVAL_REQUIRED` in `warnings[]`, the `PAYMENT_POSTED` payload, and a PENDING request in
+  the approvers' inbox (`approval.approvalId`); under REFUSE 428 until `approvalId` on
+  PostPaymentDto names an approved request for this voucher (srcDocType `PAYMENT`).
 
 ## Tests
 

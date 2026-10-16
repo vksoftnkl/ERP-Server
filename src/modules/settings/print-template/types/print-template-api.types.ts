@@ -1,6 +1,14 @@
-export type { SettingsErrorDetail as PrintTemplateErrorDetail } from 'src/common/types/module-api.types';
-export type { SettingsErrorResponse as PrintTemplateErrorResponse } from 'src/common/types/module-api.types';
+import type {
+  SettingsErrorDetail,
+  SettingsErrorResponse,
+} from 'src/common/types/module-api.types';
+import type { PrintTemplateErrorCode } from './print-template-error-codes';
+
 export type { SettingsSuccessResponse as PrintTemplateSuccessResponse } from 'src/common/types/module-api.types';
+
+/** Notes 119 — every refusal this module raises carries one of its own codes. */
+export type PrintTemplateErrorDetail = SettingsErrorDetail & { code: PrintTemplateErrorCode };
+export type PrintTemplateErrorResponse = SettingsErrorResponse<PrintTemplateErrorDetail>;
 
 /**
  * §4 — where the rows come from. Hangs off the VERSION, not the template: a

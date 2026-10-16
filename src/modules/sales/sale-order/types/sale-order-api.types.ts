@@ -240,6 +240,8 @@ export type SaleOrderTenderPayload = TenderDetailPayload & {
 export type SaleOrderErrorDetail = {
   field: string;
   message: string;
+  /** Notes 119: what the client words its box by (SALES_* or this module's own code). */
+  code: string;
 };
 export type SaleOrderErrorResponse = {
   statusCode?: number;

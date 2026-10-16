@@ -15,6 +15,7 @@ import {
   StateCodeMasterListMeta,
   StateCodeMasterPayload,
 } from './types/state-code-master-api.types';
+import { StateCodeMasterErrorCode } from './types/state-code-master-error-codes';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -72,7 +73,13 @@ export class StateCodeMasterService {
     if (!result) {
       throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         'No configured grid found for state code master list',
-        [],
+        [
+          {
+            field: 'list',
+            message: 'No configured grid found for state code master list',
+            code: StateCodeMasterErrorCode.GRID_NOT_CONFIGURED,
+          },
+        ],
       );
     }
     return result;
@@ -88,6 +95,7 @@ export class StateCodeMasterService {
         'State code not found',
         'stateCode',
         `No active state code found with code ${stateCode}`,
+        StateCodeMasterErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -104,6 +112,7 @@ export class StateCodeMasterService {
           'State code not found',
           'stateCode',
           `No active state code found with code ${stateCode}`,
+          StateCodeMasterErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -121,6 +130,7 @@ export class StateCodeMasterService {
           'State code not found',
           'stateCode',
           `No active state code found with code ${stateCode}`,
+          StateCodeMasterErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -157,7 +167,7 @@ export class StateCodeMasterService {
     const normalizedName = normalizeRequiredText<
       StateCodeMasterErrorDetail,
       StateCodeMasterErrorResponse
-    >(saveStateCodeMasterDto.stateName, 'stateName');
+    >(saveStateCodeMasterDto.stateName, 'stateName', undefined, StateCodeMasterErrorCode.NAME_REQUIRED);
     const now = new Date();
     const createdBy = resolveActor(
       saveStateCodeMasterDto.createdBy,
@@ -196,7 +206,13 @@ export class StateCodeMasterService {
       throwOnUniqueConstraintError<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         error,
         'State code already exists',
-        [{ field: 'stateCode', message: 'Duplicate stateCode is not allowed' }],
+        [
+          {
+            field: 'stateCode',
+            message: 'Duplicate stateCode is not allowed',
+            code: StateCodeMasterErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -214,12 +230,13 @@ export class StateCodeMasterService {
             'State code not found',
             'stateCode',
             `No active state code found with code ${stateCode}`,
+            StateCodeMasterErrorCode.NOT_FOUND,
           );
         }
         const normalizedName = normalizeRequiredText<
           StateCodeMasterErrorDetail,
           StateCodeMasterErrorResponse
-        >(saveStateCodeMasterDto.stateName, 'stateName');
+        >(saveStateCodeMasterDto.stateName, 'stateName', undefined, StateCodeMasterErrorCode.NAME_REQUIRED);
         await this.ensureStateNameIsUnique(tx, normalizedName, stateCode);
         const data: Prisma.StateCodeUncheckedUpdateInput = {
           stateName: normalizedName,
@@ -257,7 +274,13 @@ export class StateCodeMasterService {
       throwOnUniqueConstraintError<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         error,
         'State code already exists',
-        [{ field: 'stateCode', message: 'Duplicate stateCode is not allowed' }],
+        [
+          {
+            field: 'stateCode',
+            message: 'Duplicate stateCode is not allowed',
+            code: StateCodeMasterErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -279,7 +302,13 @@ export class StateCodeMasterService {
     if (existing) {
       throwFixedConflict<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         'State name already exists',
-        [{ field: 'stateName', message: 'Duplicate stateName is not allowed' }],
+        [
+          {
+            field: 'stateName',
+            message: 'Duplicate stateName is not allowed',
+            code: StateCodeMasterErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
     }
   }
@@ -291,7 +320,13 @@ export class StateCodeMasterService {
     if (!normalized || normalized.length !== 2) {
       throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         'Validation failed',
-        [{ field: fieldName, message: `${fieldName} must be a 2-character code` }],
+        [
+          {
+            field: fieldName,
+            message: `${fieldName} must be a 2-character code`,
+            code: StateCodeMasterErrorCode.CODE_INVALID,
+          },
+        ],
       );
     }
     return normalized;

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, StockAdjReason } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { GetStockAdjReasonsQueryDto } from './dto/get-stock-adj-reasons-query.dto';
@@ -6,6 +6,8 @@ import {
   StockAdjReasonsGetMeta,
   StockAdjReasonsPayload,
 } from './types/stock-adj-reasons-api.types';
+import { StockAdjReasonsErrorCode } from './types/stock-adj-reasons-error-codes';
+import { throwNotFound } from 'src/common/utils/module-shared.utils';
 
 type StockAdjReasonRecord = Pick<
   StockAdjReason,
@@ -71,7 +73,8 @@ export class StockAdjReasonsService {
     });
 
     if (queryDto.sarId !== undefined && records.length === 0) {
-      throw new NotFoundException(`Stock adjustment reason not found for sarId ${queryDto.sarId}`);
+      const message = `Stock adjustment reason not found for sarId ${queryDto.sarId}`;
+      throwNotFound(message, 'sarId', message, StockAdjReasonsErrorCode.NOT_FOUND);
     }
 
     const items = records.map((record) => this.toPayload(record));

@@ -7,6 +7,7 @@ import {
   CompanyGroupMasterErrorDetail,
   CompanyGroupMasterPayload,
 } from './types/company-group-master-api.types';
+import { CompanyGroupErrorCode } from './types/company-group-master-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -47,6 +48,7 @@ export class CompanyGroupMasterService {
         'Company group not found',
         'cogGroupId',
         `No active company group found with id ${cogGroupId}`,
+        CompanyGroupErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -64,6 +66,7 @@ export class CompanyGroupMasterService {
           'Company group not found',
           'cogGroupId',
           `No active company group found with id ${cogGroupId}`,
+          CompanyGroupErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -84,6 +87,7 @@ export class CompanyGroupMasterService {
           'Company group not found',
           'cogGroupId',
           `No active company group found with id ${cogGroupId}`,
+          CompanyGroupErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -159,7 +163,13 @@ export class CompanyGroupMasterService {
       throwOnUniqueConstraintError<CompanyGroupMasterErrorDetail>(
         error,
         'Company group already exists',
-        [{ field: 'cogGroupName', message: 'Duplicate company group unique value is not allowed' }],
+        [
+          {
+            field: 'cogGroupName',
+            message: 'Duplicate company group unique value is not allowed',
+            code: CompanyGroupErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -181,6 +191,7 @@ export class CompanyGroupMasterService {
             'Company group not found',
             'cogGroupId',
             `No active company group found with id ${cogGroupId}`,
+            CompanyGroupErrorCode.NOT_FOUND,
           );
         }
         const groupName = normalizeRequiredText<CompanyGroupMasterErrorDetail>(
@@ -226,7 +237,13 @@ export class CompanyGroupMasterService {
       throwOnUniqueConstraintError<CompanyGroupMasterErrorDetail>(
         error,
         'Company group already exists',
-        [{ field: 'cogGroupName', message: 'Duplicate company group unique value is not allowed' }],
+        [
+          {
+            field: 'cogGroupName',
+            message: 'Duplicate company group unique value is not allowed',
+            code: CompanyGroupErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -257,7 +274,11 @@ export class CompanyGroupMasterService {
     });
     if (existing) {
       throwAccountsConflict<CompanyGroupMasterErrorDetail>('Company group name already exists', [
-        { field: 'cogGroupName', message: 'Duplicate cogGroupName is not allowed' },
+        {
+          field: 'cogGroupName',
+          message: 'Duplicate cogGroupName is not allowed',
+          code: CompanyGroupErrorCode.NAME_TAKEN,
+        },
       ]);
     }
   }

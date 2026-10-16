@@ -1,8 +1,19 @@
 import type { PtaPrinterSource, PtaScope } from '../print-template-assignment.constants';
 
-export type { SettingsErrorDetail as PrintTemplateAssignmentErrorDetail } from 'src/common/types/module-api.types';
-export type { SettingsErrorResponse as PrintTemplateAssignmentErrorResponse } from 'src/common/types/module-api.types';
+import type {
+  SettingsErrorDetail,
+  SettingsErrorResponse,
+} from 'src/common/types/module-api.types';
+import type { PrintTemplateAssignmentErrorCode } from './print-template-assignment-error-codes';
+
 export type { SettingsSuccessResponse as PrintTemplateAssignmentSuccessResponse } from 'src/common/types/module-api.types';
+
+/** Notes 119 — every refusal this module raises carries one of its own codes. */
+export type PrintTemplateAssignmentErrorDetail = SettingsErrorDetail & {
+  code: PrintTemplateAssignmentErrorCode;
+};
+export type PrintTemplateAssignmentErrorResponse =
+  SettingsErrorResponse<PrintTemplateAssignmentErrorDetail>;
 
 export interface PrintTemplateAssignmentPayload {
   ptaId: string;

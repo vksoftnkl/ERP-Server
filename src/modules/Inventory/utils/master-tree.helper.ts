@@ -4,6 +4,11 @@ import {
   throwInventoryConflict,
 } from 'src/common/utils/module-service.utils';
 import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils';
+import { GodownErrorCode } from '../godowns-master/types/godown-error-codes';
+import { ItemBrandErrorCode } from '../items-brand-master/types/item-brand-error-codes';
+import { ItemCategoryErrorCode } from '../items-category-master/types/item-category-error-codes';
+import { ItemGroupErrorCode } from '../items-group-master/types/item-group-error-codes';
+import { ItemSectionErrorCode } from '../items-section-master/types/item-section-error-codes';
 
 /**
  * THE HIERARCHY RULES every tree master shares (notes 70 §B): item group,
@@ -24,6 +29,21 @@ import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils
  * still links its children) and stop at MAX_DEPTH, so legacy data with a cycle
  * in it cannot loop.
  */
+/**
+ * The `errors[].code` (notes 119) each hierarchy rule refuses with. The codes
+ * belong to the master's own module enum; the helper only carries them.
+ */
+export interface MasterTreeCodes {
+  /** B3 — the parent named is the node itself. */
+  selfParent: string;
+  /** B3 — the parent named sits inside the node's own subtree. */
+  parentInSubtree: string;
+  /** B4 — delete refused while live children sit under the node. */
+  hasLiveChildren: string;
+  /** Restore refused while the node's parent is deleted. */
+  parentDeleted: string;
+}
+
 export interface MasterTree {
   /** Schema-qualified table. */
   table: string;
@@ -38,6 +58,7 @@ export interface MasterTree {
   parentField: string;
   /** The payload field the id arrives in. */
   idField: string;
+  codes: MasterTreeCodes;
 }
 
 export const ITEM_GROUP_TREE: MasterTree = {
@@ -50,6 +71,12 @@ export const ITEM_GROUP_TREE: MasterTree = {
   label: 'item group',
   parentField: 'itg_parent_id',
   idField: 'itg_id',
+  codes: {
+    selfParent: ItemGroupErrorCode.SELF_PARENT,
+    parentInSubtree: ItemGroupErrorCode.PARENT_IN_SUBTREE,
+    hasLiveChildren: ItemGroupErrorCode.HAS_CHILDREN,
+    parentDeleted: ItemGroupErrorCode.PARENT_DELETED,
+  },
 };
 
 export const ITEM_BRAND_TREE: MasterTree = {
@@ -62,6 +89,12 @@ export const ITEM_BRAND_TREE: MasterTree = {
   label: 'item brand',
   parentField: 'brand_parent_id',
   idField: 'brand_id',
+  codes: {
+    selfParent: ItemBrandErrorCode.SELF_PARENT,
+    parentInSubtree: ItemBrandErrorCode.PARENT_IN_SUBTREE,
+    hasLiveChildren: ItemBrandErrorCode.HAS_CHILDREN,
+    parentDeleted: ItemBrandErrorCode.PARENT_DELETED,
+  },
 };
 
 export const ITEM_SECTION_TREE: MasterTree = {
@@ -74,6 +107,12 @@ export const ITEM_SECTION_TREE: MasterTree = {
   label: 'item section',
   parentField: 'sec_parent_id',
   idField: 'sec_id',
+  codes: {
+    selfParent: ItemSectionErrorCode.SELF_PARENT,
+    parentInSubtree: ItemSectionErrorCode.PARENT_IN_SUBTREE,
+    hasLiveChildren: ItemSectionErrorCode.HAS_CHILDREN,
+    parentDeleted: ItemSectionErrorCode.PARENT_DELETED,
+  },
 };
 
 export const ITEM_CATEGORY_TREE: MasterTree = {
@@ -86,6 +125,12 @@ export const ITEM_CATEGORY_TREE: MasterTree = {
   label: 'item category',
   parentField: 'category_parent_id',
   idField: 'category_id',
+  codes: {
+    selfParent: ItemCategoryErrorCode.SELF_PARENT,
+    parentInSubtree: ItemCategoryErrorCode.PARENT_IN_SUBTREE,
+    hasLiveChildren: ItemCategoryErrorCode.HAS_CHILDREN,
+    parentDeleted: ItemCategoryErrorCode.PARENT_DELETED,
+  },
 };
 
 export const GODOWN_TREE: MasterTree = {
@@ -98,6 +143,12 @@ export const GODOWN_TREE: MasterTree = {
   label: 'godown location',
   parentField: 'gdl_parent_id',
   idField: 'gdl_id',
+  codes: {
+    selfParent: GodownErrorCode.SELF_PARENT,
+    parentInSubtree: GodownErrorCode.PARENT_IN_SUBTREE,
+    hasLiveChildren: GodownErrorCode.HAS_CHILDREN,
+    parentDeleted: GodownErrorCode.PARENT_DELETED,
+  },
 };
 
 /**
@@ -140,6 +191,7 @@ export async function assertNotUnderOwnSubtree(
     throwInventoryBadRequest<InventoryErrorDetail>(`This ${tree.label} cannot be its own parent`, [
       {
         field: tree.parentField,
+        code: tree.codes.selfParent,
         message: `${tree.parentField} cannot be the same as ${tree.idField}`,
       },
     ]);
@@ -164,6 +216,7 @@ export async function assertNotUnderOwnSubtree(
       [
         {
           field: tree.parentField,
+          code: tree.codes.parentInSubtree,
           message:
             `${tree.parentField} ${newParentId} is below this ${tree.label} in the tree; ` +
             'moving it there would make a loop.',
@@ -234,6 +287,7 @@ export async function assertNoLiveChildren(
     throwInventoryConflict<InventoryErrorDetail>(`This ${tree.label} still has live children`, [
       {
         field: tree.idField,
+        code: tree.codes.hasLiveChildren,
         message:
           `${count} live ${tree.label}${count === 1 ? '' : 's'} sit under it ` +
           `(${(row?.names ?? []).join(', ')}${count > 3 ? ', …' : ''}). ` +
@@ -266,6 +320,7 @@ export async function assertParentLive(
     throwInventoryConflict<InventoryErrorDetail>(`The parent ${tree.label} is deleted`, [
       {
         field: tree.parentField,
+        code: tree.codes.parentDeleted,
         message: `Restore the parent ${tree.label} ${parentId} first, or move this row after restoring it.`,
       },
     ]);
@@ -304,7 +359,7 @@ export async function assertNoLiveReferences(
   client: RawClient,
   references: readonly LiveReference[],
   id: string,
-  what: { label: string; idField: string },
+  what: { label: string; idField: string; inUseCode: string },
 ): Promise<void> {
   const used = (await countLiveReferences(client, references, id)).filter((ref) => ref.count > 0);
   if (!used.length) {
@@ -313,6 +368,7 @@ export async function assertNoLiveReferences(
   throwInventoryConflict<InventoryErrorDetail>(`This ${what.label} is still in use`, [
     {
       field: what.idField,
+      code: what.inUseCode,
       message:
         `Used by ${used.map((ref) => `${ref.count} ${ref.label}`).join(', ')}. ` +
         `Re-point or delete those first; a deleted ${what.label} would vanish from every picker ` +
@@ -328,7 +384,15 @@ export async function assertNoLiveReferences(
 export function assertDeleteState(
   isDeleted: boolean,
   wantDeleted: boolean,
-  what: { label: string; idField: string; restoreRoute: string },
+  what: {
+    label: string;
+    idField: string;
+    restoreRoute: string;
+    /** Refusing a DELETE of a row that is already deleted. */
+    alreadyDeletedCode: string;
+    /** Refusing a RESTORE of a row that is not deleted. */
+    notDeletedCode: string;
+  },
 ): void {
   if (isDeleted === wantDeleted) {
     throwInventoryConflict<InventoryErrorDetail>(
@@ -336,6 +400,7 @@ export function assertDeleteState(
       [
         {
           field: what.idField,
+          code: wantDeleted ? what.alreadyDeletedCode : what.notDeletedCode,
           message: wantDeleted
             ? `Nothing to delete. To bring it back use POST ${what.restoreRoute}.`
             : 'Nothing to restore.',

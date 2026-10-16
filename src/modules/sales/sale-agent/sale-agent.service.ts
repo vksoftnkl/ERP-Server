@@ -10,6 +10,7 @@ import {
   SaleAgentErrorResponse,
   SaleAgentPayload,
 } from './types/sale-agent-api.types';
+import { SaleAgentErrorCode } from './types/sale-agent-error-codes';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -96,6 +97,7 @@ export class SaleAgentService {
         'Sale agent not found',
         'saId',
         `No active sale agent found with id ${saId}`,
+        SaleAgentErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -113,6 +115,7 @@ export class SaleAgentService {
           'Sale agent not found',
           'saId',
           `No active sale agent found with id ${saId}`,
+          SaleAgentErrorCode.NOT_FOUND,
         );
       }
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
@@ -134,6 +137,7 @@ export class SaleAgentService {
           'Sale agent not found',
           'saId',
           `No active sale agent found with id ${saId}`,
+          SaleAgentErrorCode.NOT_FOUND,
         );
       }
       // Soft-delete the linked account ledger (shares sa_id as its PK) alongside the sale
@@ -185,6 +189,8 @@ export class SaleAgentService {
     const normalizedName = normalizeRequiredText<SaleAgentErrorDetail, SaleAgentErrorResponse>(
       saveSaleAgentDto.saName,
       'saName',
+      undefined,
+      SaleAgentErrorCode.NAME_REQUIRED,
     );
     const normalizedCode = normalizeNullableString(saveSaleAgentDto.saCode) ?? null;
     const companyId = saveSaleAgentDto.saCompanyId;
@@ -261,11 +267,14 @@ export class SaleAgentService {
             'Sale agent not found',
             'saId',
             `No active sale agent found with id ${saId}`,
+            SaleAgentErrorCode.NOT_FOUND,
           );
         }
         const normalizedName = normalizeRequiredText<SaleAgentErrorDetail, SaleAgentErrorResponse>(
           saveSaleAgentDto.saName,
           'saName',
+          undefined,
+          SaleAgentErrorCode.NAME_REQUIRED,
         );
         const nextCompanyId = saveSaleAgentDto.saCompanyId;
         const nextGroupId = saveSaleAgentDto.saGroupId;
@@ -326,6 +335,7 @@ export class SaleAgentService {
                   {
                     field: 'saName',
                     message: 'Duplicate sale agent name is not allowed for this company',
+                    code: SaleAgentErrorCode.NAME_EXISTS,
                   },
                 ],
               );
@@ -371,6 +381,7 @@ export class SaleAgentService {
         {
           field: 'saCompanyId',
           message: `No active company found with id ${companyId}`,
+          code: SaleAgentErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -396,6 +407,7 @@ export class SaleAgentService {
         {
           field: 'saBranchId',
           message: `No active branch found with id ${branchId}`,
+          code: SaleAgentErrorCode.BRANCH_NOT_FOUND,
         },
       ]);
     }
@@ -417,6 +429,7 @@ export class SaleAgentService {
           {
             field: 'saGroupId',
             message: `No active sale agent group found with id ${groupId}`,
+            code: SaleAgentErrorCode.GROUP_NOT_FOUND,
           },
         ],
       );
@@ -455,6 +468,7 @@ export class SaleAgentService {
           {
             field: 'saName',
             message: 'Duplicate sale agent name is not allowed for this company',
+            code: SaleAgentErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -496,6 +510,7 @@ export class SaleAgentService {
           {
             field: 'saCode',
             message: 'Duplicate sale agent code is not allowed for this company',
+            code: SaleAgentErrorCode.CODE_EXISTS,
           },
         ],
       );
@@ -509,6 +524,7 @@ export class SaleAgentService {
         {
           field: 'saName',
           message: 'Duplicate sale agent is not allowed',
+          code: SaleAgentErrorCode.DUPLICATE,
         },
       ],
     );
@@ -519,6 +535,7 @@ export class SaleAgentService {
           {
             field: 'request',
             message: 'Referenced company, branch or sale agent group does not exist',
+            code: SaleAgentErrorCode.REFERENCE_NOT_FOUND,
           },
         ],
       );
@@ -544,6 +561,7 @@ export class SaleAgentService {
           {
             field: 'request',
             message: 'At least one account group must exist to provision the sale agent ledger',
+            code: SaleAgentErrorCode.NO_ACCOUNT_GROUP,
           },
         ],
       );

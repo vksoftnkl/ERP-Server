@@ -1,6 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -42,11 +41,14 @@ import { ItemPriceExceptionFilter } from './item-price-exception.filter';
 import { ItemsPriceMasterService } from './items-price-master.service';
 import {
   ItemPriceDeleteResult,
+  ItemPriceErrorDetail,
   ItemPriceListItem,
   ItemPriceListMeta,
   ItemPricePayload,
   ItemPriceSuccessResponse,
 } from './types/item-price-api.types';
+import { ItemPriceErrorCode } from './types/item-price-error-codes';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   hasRequestPayload,
@@ -66,7 +68,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemPriceSuccessSingleDto,
   ItemPriceSuccessListDto,
 )
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-prices')
 @UseFilters(ItemPriceExceptionFilter)
 export class ItemsPriceMasterController {
@@ -195,9 +197,9 @@ export class ItemsPriceMasterController {
 
     const ipmId = typeof query.ipm_id === 'string' ? query.ipm_id : undefined;
     if (!ipmId?.trim()) {
-      throw new BadRequestException({
-        message: ['ipm_id is required'],
-      });
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
+        { field: 'ipm_id', code: ItemPriceErrorCode.ID_REQUIRED, message: 'ipm_id is required' },
+      ]);
     }
 
     return await validateDto(

@@ -1,4 +1,5 @@
-import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
+import type { PrintTemplateErrorDetail } from '../types/print-template-api.types';
+import { PrintTemplateErrorCode } from '../types/print-template-error-codes';
 import { PTD_SQL_MAX_LENGTH, PTD_SQL_MIN_LENGTH } from '../print-template.constants';
 
 /**
@@ -57,17 +58,18 @@ function countMatches(subject: string, pattern: RegExp): number {
  * `field` names the DTO key, not the column, because that is what the caller
  * sent — the same convention the rest of the module's errors use.
  */
-export function collectDatasetSqlErrors(sql: string, field: string): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+export function collectDatasetSqlErrors(sql: string, field: string): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   const norm = normalizeDatasetSql(sql);
-  const push = (message: string): void => {
-    errors.push({ field, message });
+  const push = (code: PrintTemplateErrorCode, message: string): void => {
+    errors.push({ field, code, message });
   };
 
   // ck_ptd_sql_size — checked first: everything below reads better against a
   // query that is at least plausibly a query.
   if (sql.length < PTD_SQL_MIN_LENGTH || sql.length > PTD_SQL_MAX_LENGTH) {
     push(
+      PrintTemplateErrorCode.SQL_SIZE,
       `${field} must be between ${PTD_SQL_MIN_LENGTH} and ${PTD_SQL_MAX_LENGTH} characters ` +
         `(this one is ${sql.length})`,
     );
@@ -80,6 +82,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // the damage is already done.
   if (/\$[A-Za-z_0-9]*\$/.test(sql)) {
     push(
+      PrintTemplateErrorCode.SQL_DOLLAR_QUOTE,
       'Dollar quoting ($$ … $$) is not allowed — it hides text from the normaliser that every ' +
         "other check reads. Use ordinary '…' literals.",
     );
@@ -90,6 +93,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // guess what the query means.
   if (norm.includes("'") || norm.includes('"')) {
     push(
+      PrintTemplateErrorCode.SQL_UNPAIRED_QUOTE,
       "An unpaired quote survived normalisation. Check that every '…' literal is closed and " +
         "that a literal apostrophe is doubled ('it''s'), and that every \"identifier\" is closed.",
     );
@@ -98,6 +102,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // ck_ptd_sql_no_residual_comment
   if (/\/\*|\*\//.test(norm)) {
     push(
+      PrintTemplateErrorCode.SQL_OPEN_COMMENT,
       'An unterminated or nested block comment was left behind. PostgreSQL allows /* nested */ ' +
         'comments, which this stripper deliberately does not — remove them.',
     );
@@ -106,12 +111,15 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // ck_ptd_sql_single_statement. Literals are already tokens by now, so a
   // semicolon inside a string cannot reach this. One trailing ';' is allowed.
   if (/;/.test(norm.replace(/\s*;\s*$/, ''))) {
-    push('Only one statement is allowed. A single trailing ";" is fine, anything after it is not.');
+    push(
+      PrintTemplateErrorCode.SQL_MULTI_STATEMENT,
+      'Only one statement is allowed. A single trailing ";" is fine, anything after it is not.',
+    );
   }
 
   // ck_ptd_sql_read_only_start. A leading '(' allows (SELECT …) UNION (SELECT …).
   if (!/^\(*\s*(select|with)\b/.test(norm.trim())) {
-    push('A dataset query must start with SELECT or WITH.');
+    push(PrintTemplateErrorCode.SQL_NOT_SELECT, 'A dataset query must start with SELECT or WITH.');
   }
 
   // ck_ptd_sql_no_write. With one-statement and SELECT-only already enforced,
@@ -121,6 +129,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   const write = norm.match(/\b(insert|update|delete|merge|truncate|copy|grant|revoke)\b/);
   if (write) {
     push(
+      PrintTemplateErrorCode.SQL_WRITES,
       `A dataset query may not write. Found "${write[1]}" — a data-modifying CTE is still a ` +
         'write. If the word is part of a column name such as last_updated_on, it is safe and ' +
         'this guard did not fire on it.',
@@ -134,6 +143,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   );
   if (escape) {
     push(
+      PrintTemplateErrorCode.SQL_ESCAPE,
       `"${escape[1]}" reaches outside the query — the filesystem, the network or the catalog — ` +
         'and is not allowed in a dataset query.',
     );
@@ -144,6 +154,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // arr[2:5]. Say so, rather than leaving the author to work it out.
   if (/:(?![a-z_])/.test(norm)) {
     push(
+      PrintTemplateErrorCode.SQL_BAD_COLON,
       'A ":" that is not a parameter. Parameters are :name — lower case, starting with a letter ' +
         'or underscore. Note that an array slice such as arr[2:5] trips this too; rewrite it ' +
         'with a function.',
@@ -161,6 +172,7 @@ export function collectDatasetSqlErrors(sql: string, field: string): ModuleError
   // a better message than the constraint name gives. This is that message.
   if (countMatches(sql.replace(/::/g, ' '), /:[A-Za-z_]/g) !== countMatches(norm, /:[A-Za-z_]/g)) {
     push(
+      PrintTemplateErrorCode.SQL_QUOTED_PARAM,
       'A parameter is written inside a string literal or a comment. Parameters are BOUND, not ' +
         "pasted: write  x = :company_id , never  x = ':company_id' . (A :name mentioned in a " +
         '"--" comment reads the same way to this check — move it out of the comment.)',

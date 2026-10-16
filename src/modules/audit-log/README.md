@@ -8,7 +8,7 @@ API for browsing those logs.
 - **Base route:** `audit-logs` (also aliased as `audit-log`) — API-versioned via `API_VERSION`
 - **Swagger tag:** `Audit Logs`
 - **Auth:** Bearer `access-token` (required)
-- **Response cache:** `@CacheTTL(60)` on the controller
+- **Response cache:** `@CacheTTL(1)` on the controller
 - **Primary table:** `audit_log` (`audit` schema) — PK `logId` (`uuidv7`)
 - **Screen catalog table:** `audit_screen` (`audit` schema) — PK `screenId` (autoincrement), FK
   `AuditLog.logScreenId → screenId`

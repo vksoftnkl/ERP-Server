@@ -388,6 +388,7 @@ export class LoyaltyStatusService {
         'Loyalty member not found',
         'memberId',
         `No live member ${q.memberId} in this company`,
+        LOYALTY_STATUS_ERROR.MEMBER_NOT_FOUND,
       );
     }
 
@@ -1650,6 +1651,7 @@ export class LoyaltyStatusService {
         'Loyalty member not found',
         'memberId',
         `No live member ${memberId} in this company`,
+        LOYALTY_STATUS_ERROR.MEMBER_NOT_FOUND,
       );
     }
   }

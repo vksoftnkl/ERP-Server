@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as CustomerGroupErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as CustomerGroupErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { CustomerGroupErrorCode } from './customer-group-error-codes';
+
+/** Notes 119: every refusal names its code — see customer-group-error-codes.ts. */
+export interface CustomerGroupErrorDetail extends SalesErrorDetail {
+  code: CustomerGroupErrorCode;
+}
+export type CustomerGroupErrorResponse = SalesErrorResponse<CustomerGroupErrorDetail>;
 export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface CustomerGroupPayload {

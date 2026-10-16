@@ -8,6 +8,7 @@ import {
   SaleFreightChargeErrorResponse,
   SaleFreightChargePayload,
 } from './types/sale-freight-charges-api.types';
+import { SaleFreightChargeErrorCode } from './types/sale-freight-charges-error-codes';
 import {
   DEFAULT_ACTOR,
   applyPresentFields,
@@ -113,6 +114,7 @@ export class SaleFreightChargeService {
         'Sale freight charge not found',
         'frId',
         `No active sale freight charge found with id ${frId}`,
+        SaleFreightChargeErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -130,6 +132,7 @@ export class SaleFreightChargeService {
           'Sale freight charge not found',
           'frId',
           `No active sale freight charge found with id ${frId}`,
+          SaleFreightChargeErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -150,6 +153,7 @@ export class SaleFreightChargeService {
           'Sale freight charge not found',
           'frId',
           `No active sale freight charge found with id ${frId}`,
+          SaleFreightChargeErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -198,6 +202,7 @@ export class SaleFreightChargeService {
             'Sale freight charge not found',
             'frId',
             `No active sale freight charge found with id ${frId}`,
+            SaleFreightChargeErrorCode.NOT_FOUND,
           );
         }
         const data: Prisma.SaleFreightChargeUncheckedUpdateInput = {
@@ -240,6 +245,7 @@ export class SaleFreightChargeService {
         {
           field: 'frFromKm',
           message: 'Duplicate sale freight charge range is not allowed',
+          code: SaleFreightChargeErrorCode.RANGE_EXISTS,
         },
       ],
     );
@@ -250,6 +256,7 @@ export class SaleFreightChargeService {
           {
             field: 'request',
             message: 'Referenced company or branch does not exist',
+            code: SaleFreightChargeErrorCode.REFERENCE_NOT_FOUND,
           },
         ],
       );

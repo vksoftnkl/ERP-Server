@@ -122,6 +122,8 @@ export class TenderSettlementExceptionService {
         await assertAccYearWritable(tx, head.asiCompanyId, accYear, 'accYear');
         await assertVoucherPartitionExists(tx, accYear, 'accYear');
         const posted = await this.posting.postLegs(tx, {
+          // Notes 126 §1: the payout's bank line takes that bank's BANK tender.
+          money: { bankTender: 'BANK' },
           header: {
             companyId: head.asiCompanyId,
             branchId: head.asiBranchId,
@@ -297,6 +299,8 @@ export class TenderSettlementExceptionService {
         await assertVoucherPartitionExists(tx, accYear, 'accYear');
         const session = await this.realSession(tx, row.sessionId);
         voucher = await this.posting.postLegs(tx, {
+          // Notes 126 §1: the payout's bank line takes that bank's BANK tender.
+          money: { bankTender: 'BANK' },
           header: {
             companyId: row.companyId,
             branchId: row.branchId,

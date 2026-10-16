@@ -7,7 +7,7 @@ or by barcode.
 - **Base route:** `item-price-details` (API-versioned — every route carries `@Version(API_VERSION)`)
 - **Swagger tag:** `Item Price Details`
 - **Auth:** Bearer `access-token` (required)
-- **Response caching:** `@CacheTTL(60)` (60 seconds)
+- **Response caching:** `@CacheTTL(1)` (1 second)
 - **Primary tables (all read-only):**
   - `item_master` — PK `item_id`
   - `item_price_master` — PK `ipm_id`, FK `ipm_item_id → item_id`

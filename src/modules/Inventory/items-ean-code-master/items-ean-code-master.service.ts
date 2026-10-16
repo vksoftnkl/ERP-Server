@@ -13,6 +13,7 @@ import {
   ItemEanCodeListMeta,
   ItemEanCodePayload,
 } from './types/item-ean-code-api.types';
+import { ItemEanErrorCode } from './types/item-ean-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -137,6 +138,7 @@ export class ItemsEanCodeMasterService {
         'Item EAN code not found',
         'ean_id',
         `No active item EAN code found with id ${eanId}`,
+        ItemEanErrorCode.NOT_FOUND,
       );
     }
 
@@ -211,6 +213,7 @@ export class ItemsEanCodeMasterService {
         'Item EAN code not found',
         'ean_id',
         `No item EAN code found with id ${eanId}`,
+        ItemEanErrorCode.NOT_FOUND,
       );
     }
 
@@ -235,6 +238,7 @@ export class ItemsEanCodeMasterService {
         'Item EAN code not found',
         'ean_id',
         `No item EAN code found with id ${eanId}`,
+        ItemEanErrorCode.NOT_FOUND,
       );
     }
 
@@ -276,6 +280,7 @@ export class ItemsEanCodeMasterService {
       throwInventoryBadRequest<ItemEanCodeErrorDetail>('Validation failed', [
         {
           field: 'ean_code',
+          code: ItemEanErrorCode.CODE_REQUIRED,
           message: 'ean_code is required',
         },
       ]);
@@ -338,6 +343,7 @@ export class ItemsEanCodeMasterService {
         'Item EAN code not found',
         'ean_id',
         `No active item EAN code found with id ${eanId}`,
+        ItemEanErrorCode.NOT_FOUND,
       );
     }
 
@@ -346,6 +352,7 @@ export class ItemsEanCodeMasterService {
       throwInventoryBadRequest<ItemEanCodeErrorDetail>('Validation failed', [
         {
           field: 'ean_code',
+          code: ItemEanErrorCode.CODE_REQUIRED,
           message: 'ean_code cannot be empty',
         },
       ]);
@@ -463,11 +470,19 @@ export class ItemsEanCodeMasterService {
 
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemEanCodeErrorDetail>(error, 'EAN code already exists', [
-      { field: 'ean_code', message: 'Duplicate ean_code is not allowed' },
+      {
+        field: 'ean_code',
+        code: ItemEanErrorCode.CODE_TAKEN,
+        message: 'Duplicate ean_code is not allowed',
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemEanCodeErrorDetail>('Invalid relation reference', [
-        { field: 'ean_unit_id', message: 'Referenced relation does not exist' },
+        {
+          field: 'ean_unit_id',
+          code: ItemEanErrorCode.UNKNOWN_REFERENCE,
+          message: 'Referenced relation does not exist',
+        },
       ]);
     }
   }

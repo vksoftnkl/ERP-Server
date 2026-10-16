@@ -12,6 +12,7 @@ import {
   LedItcEligibility,
   LedObType,
 } from './types/account-ledger-master-api.types';
+import { AccountLedgerErrorCode } from './types/account-ledger-master-error-codes';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -86,7 +87,13 @@ export class AccountLedgerMastersService {
       throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(
         error,
         'Account ledger already exists',
-        [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }],
+        [
+          {
+            field: 'ledName',
+            message: 'Duplicate ledName is not allowed',
+            code: AccountLedgerErrorCode.NAME_TAKEN,
+          },
+        ],
       );
       throw error;
     }
@@ -111,6 +118,7 @@ export class AccountLedgerMastersService {
           'Account ledger not found',
           'ledId',
           `No active account ledger found with id ${ledId}`,
+          AccountLedgerErrorCode.NOT_FOUND,
         );
       }
       return this.toPayload(record);
@@ -141,6 +149,7 @@ export class AccountLedgerMastersService {
           'Account ledger not found',
           'ledId',
           `No active account ledger found with id ${ledId}`,
+          AccountLedgerErrorCode.NOT_FOUND,
         );
       }
       await this.ensureLedgerHasNoOwner(tx, ledId, existing.ledName);
@@ -162,6 +171,7 @@ export class AccountLedgerMastersService {
           'Account ledger not found',
           'ledId',
           `No active account ledger found with id ${ledId}`,
+          AccountLedgerErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -220,6 +230,7 @@ export class AccountLedgerMastersService {
           message: `This ledger belongs to ${roles}. Delete it from the ${masters} ${
             owners.length === 1 ? 'master' : 'masters'
           }.`,
+          code: AccountLedgerErrorCode.OWNED_BY_MASTER,
         },
       ],
     );
@@ -275,7 +286,13 @@ export class AccountLedgerMastersService {
       throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(
         error,
         'Account ledger already exists',
-        [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }],
+        [
+          {
+            field: 'ledName',
+            message: 'Duplicate ledName is not allowed',
+            code: AccountLedgerErrorCode.NAME_TAKEN,
+          },
+        ],
       );
       throw error;
     }
@@ -352,7 +369,13 @@ export class AccountLedgerMastersService {
       throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(
         error,
         'Account ledger already exists',
-        [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }],
+        [
+          {
+            field: 'ledName',
+            message: 'Duplicate ledName is not allowed',
+            code: AccountLedgerErrorCode.NAME_TAKEN,
+          },
+        ],
       );
       throw error;
     }
@@ -377,6 +400,7 @@ export class AccountLedgerMastersService {
         'Account ledger not found',
         'ledId',
         `No active account ledger found with id ${ledId}`,
+        AccountLedgerErrorCode.NOT_FOUND,
       );
     }
     const normalizedName = normalizeRequiredText<AccountLedgerMasterErrorDetail>(
@@ -448,6 +472,7 @@ export class AccountLedgerMastersService {
         {
           field: 'ledGroupId',
           message: `No active account group found with id ${groupId}`,
+          code: AccountLedgerErrorCode.GROUP_NOT_FOUND,
         },
       ]);
     }
@@ -539,7 +564,7 @@ export class AccountLedgerMastersService {
         message = `Ledger "${ledgerName}" already exists as a shared ledger, which this company also sees`;
       }
       throwAccountsConflict<AccountLedgerMasterErrorDetail>('Account ledger name already exists', [
-        { field: 'ledName', message },
+        { field: 'ledName', message, code: AccountLedgerErrorCode.NAME_TAKEN },
       ]);
     }
   }
@@ -876,6 +901,7 @@ export class AccountLedgerMastersService {
           'Ledger bank account not found',
           'lbaId',
           `No active ledger bank account found with id ${lbaId}`,
+          AccountLedgerErrorCode.BANK_ACCOUNT_NOT_FOUND,
         );
       }
       return this.toBankAccountPayload(record);
@@ -891,6 +917,7 @@ export class AccountLedgerMastersService {
           'Account ledger not found',
           'ledId',
           `No active account ledger found with id ${ledId}`,
+          AccountLedgerErrorCode.NOT_FOUND,
         );
       }
       const where: Prisma.AccLedgerBankAccountWhereInput = {
@@ -908,7 +935,11 @@ export class AccountLedgerMastersService {
     }
     // Neither identifier supplied.
     throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Validation failed', [
-      { field: 'ledId', message: 'Provide either lbaId or ledId' },
+      {
+        field: 'ledId',
+        message: 'Provide either lbaId or ledId',
+        code: AccountLedgerErrorCode.ID_REQUIRED,
+      },
     ]);
   }
   // Soft delete a single bank account by its own id (lba_id). GST/audit retention means
@@ -924,6 +955,7 @@ export class AccountLedgerMastersService {
           'Ledger bank account not found',
           'lbaId',
           `No active ledger bank account found with id ${lbaId}`,
+          AccountLedgerErrorCode.BANK_ACCOUNT_NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -942,6 +974,7 @@ export class AccountLedgerMastersService {
           'Ledger bank account not found',
           'lbaId',
           `No active ledger bank account found with id ${lbaId}`,
+          AccountLedgerErrorCode.BANK_ACCOUNT_NOT_FOUND,
         );
       }
       await this.auditLogService.logEntityChange(
@@ -1016,6 +1049,7 @@ export class AccountLedgerMastersService {
               {
                 field: 'lbaId',
                 message: `No active bank account ${item.lbaId} found for this ledger`,
+                code: AccountLedgerErrorCode.BANK_ACCOUNT_NOT_FOUND,
               },
             ],
           );
@@ -1055,6 +1089,7 @@ export class AccountLedgerMastersService {
         {
           field: 'lbaIsDefault',
           message: 'Only one bank account can be marked as default per ledger',
+          code: AccountLedgerErrorCode.BANK_ACCOUNT_DEFAULTS,
         },
       ]);
     }
@@ -1096,6 +1131,7 @@ export class AccountLedgerMastersService {
           {
             field: 'lbaAccountNo',
             message: 'Duplicate lbaAccountNo is not allowed for this ledger',
+            code: AccountLedgerErrorCode.BANK_ACCOUNT_DUPLICATE,
           },
         ],
       );

@@ -30,6 +30,8 @@ import { assertAccYearWritable, assertHeaderScope } from './payment.guards';
 import { AmendPaymentDto } from './dto/amend-payment.dto';
 import { DrCr, PaymentSettingKey, PdcStatus, VoucherStatus } from './types/payment-enum';
 import type { PaymentAmendPayload, PaymentErrorDetail } from './types/payment-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * R20 — `POST /payments/amend`, editing a POSTED payment WHOLE, behind
@@ -200,6 +202,7 @@ export class PaymentAmendService {
     throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
       {
         field: PaymentSettingKey.ALLOW_POSTED_AMEND,
+        code: ACC.AMEND_OFF,
         message:
           'Editing a posted payment is switched off for this company ' +
           `(${PaymentSettingKey.ALLOW_POSTED_AMEND} is false). Cancel the payment and re-enter it, ` +
@@ -214,6 +217,7 @@ export class PaymentAmendService {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
         {
           field: 'avhVoucherId',
+          code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_POSTED,
           message:
             `${header.avhVoucherRefno ?? header.avhVoucherId} is ${status}. Only a POSTED payment is amended` +
             (status === VoucherStatus.DRAFT
@@ -228,6 +232,7 @@ export class PaymentAmendService {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
         {
           field: 'avhVoucherId',
+          code: ACC.PDC_VOUCHER,
           message:
             'This is a post-dated cheque voucher, not a payment. Amend the payment it belongs to and its ' +
             'cheques are rewritten with it.',
@@ -253,6 +258,7 @@ export class PaymentAmendService {
     throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
       {
         field: 'avhPartyId',
+        code: ACC.PARTY_LOCKED,
         message:
           `${header.avhVoucherRefno ?? header.avhVoucherId} was paid to "${nameOf(header.avhPartyId)}" and an amend ` +
           `cannot move it to "${nameOf(partyId)}". The payment keeps its number and the supplier's advice ` +
@@ -268,6 +274,7 @@ export class PaymentAmendService {
     throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
       {
         field: 'baseRevision',
+        code: ACC.REVISION_STALE,
         message:
           `This payment has been amended since you opened it (now revision ${header.avhRevisionNo}, ` +
           `you sent ${baseRevision}). Reload it and make the change again.`,
@@ -479,6 +486,7 @@ export class PaymentAmendService {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be amended', [
         {
           field: 'avhVoucherId',
+          code: VCH.TDS_DEPOSITED,
           message:
             `The TDS on ${header.avhVoucherRefno} was deposited under challan ${deposited.atd_challan_no} — ` +
             'correct it with a 26Q revision, not an amend',

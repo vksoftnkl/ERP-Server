@@ -216,6 +216,9 @@ afterAll(async () => {
         SELECT tct_id FROM accounts.till_count WHERE tct_session_id = ANY(${ids}::uuid[]))`;
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM accounts.till_cash_movement WHERE tcm_branch_id = ${branchId}::uuid`;
+    // notes 126: the till's transfers carry the server's tender rows (td_src_doc_type 'VOUCHER'),
+    // which name the branch — the temporary branch is not deleted while they stand
+    await prisma.$executeRaw`DELETE FROM accounts.acc_tender_detail WHERE td_branch_id = ${branchId}::uuid`;
     const vouchers = await prisma.$queryRaw<{ id: string; y: string }[]>`
       SELECT avh_voucher_id::text AS id, avh_acc_year AS y FROM accounts.acc_voucher_header
        WHERE avh_branch_id = ${branchId}::uuid`;
@@ -280,7 +283,9 @@ describe('notes 117 · the session exceptions', () => {
       approverPin: '0000',
     });
     expectStatus(self, 403);
-    expect(firstError(self).code).toBe('TILL_APPROVER_SELF');
+    // notes 127 §6: its own code and sentence, not the variance one
+    expect(firstError(self).code).toBe('TILL_FORCE_CLOSE_SELF');
+    expect(firstError(self).message).toMatch(/cannot force-close their own session/);
     const wrong = await postAs('prathap', officePc, 'sessions/force-close', {
       ...body,
       approverPin: '0000',

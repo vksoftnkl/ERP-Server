@@ -30,6 +30,7 @@ import {
   AppSettingValuePayload,
   AppSettingsErrorDetail,
 } from './types/app-settings-api.types';
+import { AppSettingsErrorCode } from './types/app-settings-error-codes';
 
 /**
  * One row of `public.fn_app_settings_effective`, verbatim.
@@ -157,6 +158,7 @@ export class AppSettingValueService {
       throwOnUniqueConstraintError<AppSettingsErrorDetail>(error, 'Override already exists', [
         {
           field: this.fieldPath(index, 'asvScope'),
+          code: AppSettingsErrorCode.OVERRIDE_EXISTS,
           message:
             `An override for "${saveDto.asvSettingKey}" already exists on this ` +
             `${saveDto.asvScope} target`,
@@ -421,6 +423,7 @@ export class AppSettingValueService {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Unknown setting', [
         {
           field: this.fieldPath(index, 'asvSettingKey'),
+          code: AppSettingsErrorCode.UNKNOWN_KEY,
           message: `No setting exists with key "${asvSettingKey}"`,
         },
       ]);
@@ -429,6 +432,7 @@ export class AppSettingValueService {
       throwSettingsConflict<AppSettingsErrorDetail>('Setting is retired', [
         {
           field: this.fieldPath(index, 'asvSettingKey'),
+          code: AppSettingsErrorCode.RETIRED,
           message: `"${asvSettingKey}" has been retired and can no longer be overridden`,
         },
       ]);
@@ -445,6 +449,7 @@ export class AppSettingValueService {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Scope is too deep', [
         {
           field: this.fieldPath(index, 'asvScope'),
+          code: AppSettingsErrorCode.SCOPE_TOO_DEEP,
           message:
             `"${def.asdKey}" may not be overridden below ${def.asdMaxScope} scope ` +
             `(asked for ${asvScope})`,
@@ -498,6 +503,7 @@ export class AppSettingValueService {
         if (!supplied) {
           details.push({
             field: this.fieldPath(index, field),
+            code: AppSettingsErrorCode.TARGET_ID_REQUIRED,
             message: `${field} is required when asvScope is ${asvScope}`,
           });
           continue;
@@ -508,6 +514,7 @@ export class AppSettingValueService {
       if (supplied) {
         details.push({
           field: this.fieldPath(index, field),
+          code: AppSettingsErrorCode.TARGET_ID_NOT_ALLOWED,
           message:
             `${field} must be omitted when asvScope is ${asvScope} — an override carries the id ` +
             'its scope names and nothing else',
@@ -529,12 +536,14 @@ export class AppSettingValueService {
     if (saveDto.asvSettingKey && saveDto.asvSettingKey !== existing.asvSettingKey) {
       details.push({
         field: this.fieldPath(index, 'asvSettingKey'),
+        code: AppSettingsErrorCode.TARGET_IMMUTABLE,
         message: `asvSettingKey cannot be changed (stored value is "${existing.asvSettingKey}")`,
       });
     }
     if (saveDto.asvScope && saveDto.asvScope !== (existing.asvScope as AppSettingScope)) {
       details.push({
         field: this.fieldPath(index, 'asvScope'),
+        code: AppSettingsErrorCode.TARGET_IMMUTABLE,
         message: `asvScope cannot be changed (stored value is ${existing.asvScope})`,
       });
     }
@@ -543,6 +552,7 @@ export class AppSettingValueService {
       if (supplied !== undefined && (supplied ?? null) !== existing[field]) {
         details.push({
           field: this.fieldPath(index, field),
+          code: AppSettingsErrorCode.TARGET_IMMUTABLE,
           message:
             `${field} cannot be changed. Point an override somewhere else by resetting this one ` +
             'and setting the new target',
@@ -596,6 +606,7 @@ export class AppSettingValueService {
     throwSettingsBadRequest<AppSettingsErrorDetail>('Scope target does not exist', [
       {
         field: this.fieldPath(index, field),
+        code: AppSettingsErrorCode.TARGET_NOT_FOUND,
         message: `No active ${SCOPE_ID_LABEL[field]} found with id ${id}`,
       },
     ]);
@@ -606,6 +617,7 @@ export class AppSettingValueService {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Validation failed', [
         {
           field: this.fieldPath(index, 'asvScope'),
+          code: AppSettingsErrorCode.FIELD_REQUIRED,
           message: 'asvScope must be provided when setting an override',
         },
       ]);
@@ -619,6 +631,7 @@ export class AppSettingValueService {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Validation failed', [
         {
           field: this.fieldPath(index, field),
+          code: AppSettingsErrorCode.FIELD_REQUIRED,
           message: `${field} must be provided when setting an override`,
         },
       ]);
@@ -648,6 +661,7 @@ export class AppSettingValueService {
       'Override not found',
       index === undefined ? 'asvId' : this.fieldPath(index, 'asvId'),
       `No override found with id ${asvId}`,
+      AppSettingsErrorCode.OVERRIDE_NOT_FOUND,
     );
   }
 

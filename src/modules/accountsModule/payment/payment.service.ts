@@ -100,6 +100,8 @@ import type {
   PaymentTender,
   PaymentTenderCheque,
 } from './types/payment-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.1, §5.4 and R14 for the PAYMENT — everything a payment does that is not
@@ -154,6 +156,7 @@ export class PaymentService {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'avhVoucherDate',
+          code: VCH.DATE_OUTSIDE_YEAR,
           message: `${dto.avhVoucherDate} falls in ${derivedYear}, but the payment says ${dto.avhAccYear}`,
         },
       ]);
@@ -201,12 +204,18 @@ export class PaymentService {
         'Payment not found',
         'avhVoucherId',
         `No payment ${dto.avhVoucherId} in ${dto.avhAccYear}`,
+        VCH.NOT_FOUND,
       );
     }
     if (existing && (existing.avhIsDeleted || !this.isEditableStatus(existing.avhVoucherStatus))) {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be edited', [
         {
           field: 'avhVoucherId',
+          code: existing.avhIsDeleted
+            ? VCH.NOT_FOUND
+            : statusOf(existing) === VoucherStatus.CANCELLED
+              ? VCH.CANCELLED
+              : VCH.NOT_DRAFT,
           message:
             `${existing.avhVoucherRefno ?? dto.avhVoucherId} is ${existing.avhVoucherStatus}. ` +
             'Only a DRAFT may be edited here; use /payments/update-header for narration, or ' +
@@ -682,6 +691,7 @@ export class PaymentService {
       throwAccountsBadRequest<PaymentErrorDetail>('Only the header may be edited', [
         {
           field: rejected[0],
+          code: ACC.POSTED_FIELDS,
           message:
             `${rejected.join(', ')} cannot be changed on a posted payment. Money is changed by ` +
             'cancelling and re-entering (R3).',
@@ -699,7 +709,11 @@ export class PaymentService {
       });
       if (statusOf(header) === VoucherStatus.CANCELLED) {
         throwAccountsConflict<PaymentErrorDetail>('Payment cannot be edited', [
-          { field: 'avhVoucherId', message: 'A cancelled payment is closed to edits' },
+          {
+            field: 'avhVoucherId',
+            code: VCH.CANCELLED,
+            message: 'A cancelled payment is closed to edits',
+          },
         ]);
       }
       await assertAccYearWritable(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
@@ -775,6 +789,7 @@ export class PaymentService {
         throwAccountsConflict<PaymentErrorDetail>('Payment cannot be deleted', [
           {
             field: 'avhVoucherId',
+            code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_DRAFT,
             message:
               `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
               (status === VoucherStatus.POSTED
@@ -787,6 +802,7 @@ export class PaymentService {
         throwAccountsConflict<PaymentErrorDetail>('Payment cannot be deleted', [
           {
             field: 'avhVoucherId',
+            code: ACC.PDC_VOUCHER,
             message:
               'This is a post-dated cheque voucher, not a payment. It belongs to the payment ' +
               `${header.avhAgainstVoucherId} and leaves play only when that one is cancelled.`,
@@ -864,6 +880,7 @@ export class PaymentService {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be deleted', [
         {
           field: 'avhVoucherId',
+          code: ACC.INVALID,
           message:
             `This draft has ${legs} voucher leg(s) and ${adjustments} bill adjustment row(s) against it, ` +
             'which a draft cannot have (R10). Deleting it would orphan them — have the voucher looked at first.',
@@ -898,6 +915,7 @@ export class PaymentService {
         'Payment not found',
         'avhVoucherId',
         `No payment ${voucherId} in ${accYear}`,
+        VCH.NOT_FOUND,
       );
     }
     if (header.avhPartyId === null) {
@@ -905,6 +923,7 @@ export class PaymentService {
         'Payment not found',
         'avhPartyId',
         `Voucher ${voucherId} in ${accYear} carries no party, so it is not a payment`,
+        VCH.NOT_FOUND,
       );
     }
     return { ...header, avhPartyId: header.avhPartyId };
@@ -942,6 +961,7 @@ export class PaymentService {
       throwAccountsBadRequest<PaymentErrorDetail>('Posting mode is not supported', [
         {
           field: 'accounts.pdc_posting_mode',
+          code: ACC.PDC_ALLOCATION,
           message:
             'accounts.pdc_posting_mode is ON_CLEARING, which moves allocation into the cheques ' +
             'screens — not built yet. Set it to ON_RECEIPT to post payments.',
@@ -955,7 +975,11 @@ export class PaymentService {
     });
     if (tenders.length === 0) {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-        { field: 'tenders', message: 'A payment with no instruments is a journal, not a payment' },
+        {
+          field: 'tenders',
+          code: ACC.NO_TENDER,
+          message: 'A payment with no instruments is a journal, not a payment',
+        },
       ]);
     }
     for (const tender of tenders) {
@@ -978,6 +1002,7 @@ export class PaymentService {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'avhEmployeeId',
+          code: ACC.INVALID,
           message:
             'A payment is made by ONE person. The column is an array because every voucher ' +
             "header's is, not because a payment may be shared.",
@@ -988,6 +1013,7 @@ export class PaymentService {
       throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
         {
           field: 'avhEmployeeId',
+          code: ACC.PAYER_REQUIRED,
           message: 'accounts.payment_salesman_mandatory is on — a payment must say who made it',
         },
       ]);

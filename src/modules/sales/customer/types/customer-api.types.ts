@@ -3,7 +3,12 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-export type CustomerErrorDetail = ModuleApiErrorDetail;
+import type { CustomerErrorCode } from './customer-error-codes';
+
+/** Notes 119: every refusal names its code — see customer-error-codes.ts. */
+export interface CustomerErrorDetail extends ModuleApiErrorDetail {
+  code: CustomerErrorCode;
+}
 export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
 export type CustomerSuccessResponse<
   T,

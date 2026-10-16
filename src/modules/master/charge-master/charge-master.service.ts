@@ -17,6 +17,7 @@ import {
   ChargeTaxDetail,
   resolveChargeModules,
 } from './types/charge-master-api.types';
+import { CHARGE_ERROR } from './types/charge-master-error-codes';
 import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import {
   DEFAULT_ACTOR,
@@ -105,7 +106,11 @@ export class ChargeMasterService {
     const { chgId, chgModule } = getChargeMasterQueryDto;
     if (chgId && chgModule) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Ambiguous charge lookup', [
-        { field: 'chgId', message: 'Send either chgId or chgModule, not both' },
+        {
+          field: 'chgId',
+          message: 'Send either chgId or chgModule, not both',
+          code: CHARGE_ERROR.LOOKUP_AMBIGUOUS,
+        },
       ]);
     }
     if (chgId) {
@@ -115,7 +120,11 @@ export class ChargeMasterService {
       return this.getByModule(chgModule);
     }
     throwMasterBadRequest<ChargeMasterErrorDetail>('Missing charge lookup', [
-      { field: 'chgId', message: 'Either chgId or chgModule is required' },
+      {
+        field: 'chgId',
+        message: 'Either chgId or chgModule is required',
+        code: CHARGE_ERROR.LOOKUP_MISSING,
+      },
     ]);
   }
   async getById(chgId: string): Promise<ChargeMasterPayload> {
@@ -351,7 +360,11 @@ export class ChargeMasterService {
     });
     if (!ledger) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Ledger does not exist', [
-        { field: 'chgLedgerCode', message: `No active ledger found with id ${ledgerCode}` },
+        {
+          field: 'chgLedgerCode',
+          message: `No active ledger found with id ${ledgerCode}`,
+          code: CHARGE_ERROR.LEDGER_NOT_FOUND,
+        },
       ]);
     }
     return ledger;
@@ -385,6 +398,7 @@ export class ChargeMasterService {
           field: 'chgTaxId',
           message:
             'chgTaxId is only meaningful on a charge that carries its own GST — set chgTaxApl and leave chgBeforeTax false, or clear chgTaxId',
+          code: CHARGE_ERROR.TAX_NOT_APPLICABLE,
         },
       ]);
     }
@@ -407,7 +421,11 @@ export class ChargeMasterService {
     });
     if (existing) {
       throwMasterConflict<ChargeMasterErrorDetail>('Charge code already exists', [
-        { field: 'chgCode', message: 'Duplicate charge code is not allowed' },
+        {
+          field: 'chgCode',
+          message: 'Duplicate charge code is not allowed',
+          code: CHARGE_ERROR.CODE_DUPLICATE,
+        },
       ]);
     }
   }
@@ -426,7 +444,11 @@ export class ChargeMasterService {
       }
       if (value === null) {
         if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
+          details.push({
+            field: guard.field,
+            message: `${guard.field} is required`,
+            code: CHARGE_ERROR.VALUE_REQUIRED,
+          });
         }
         continue;
       }
@@ -434,6 +456,7 @@ export class ChargeMasterService {
         details.push({
           field: guard.field,
           message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+          code: CHARGE_ERROR.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -496,6 +519,7 @@ export class ChargeMasterService {
           {
             field: 'chgRole',
             message: `Only one ${role} charge is allowed per module`,
+            code: CHARGE_ERROR.ROLE_DUPLICATE,
           },
         ],
       );
@@ -509,11 +533,19 @@ export class ChargeMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ChargeMasterErrorDetail>(error, 'Charge already exists', [
-      { field: 'chgCode', message: 'Duplicate charge is not allowed' },
+      {
+        field: 'chgCode',
+        message: 'Duplicate charge is not allowed',
+        code: CHARGE_ERROR.DUPLICATE,
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Invalid relation reference', [
-        { field: 'request', message: 'Referenced ledger or tax rate does not exist' },
+        {
+          field: 'request',
+          message: 'Referenced ledger or tax rate does not exist',
+          code: CHARGE_ERROR.REFERENCE_INVALID,
+        },
       ]);
     }
   }
@@ -522,6 +554,7 @@ export class ChargeMasterService {
       'Charge not found',
       'chgId',
       `No active charge found with id ${chgId}`,
+      CHARGE_ERROR.NOT_FOUND,
     );
   }
   // The rate the entry screens price the charge at (CHG-TAX). The charge's own

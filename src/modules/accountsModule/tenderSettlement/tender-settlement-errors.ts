@@ -7,7 +7,7 @@ import { buildErrorResponse } from 'src/common/utils/module-shared.utils';
 import { SETTLEMENT_ERROR_STATUS, SettlementErrorCode } from './types/tender-settlement-enum';
 
 export type SettlementErrorDetail = ModuleApiErrorDetail & {
-  code?: string;
+  code: string;
   [key: string]: unknown;
 };
 

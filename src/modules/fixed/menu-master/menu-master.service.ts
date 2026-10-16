@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { Menu } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -8,6 +8,8 @@ import {
   MenuMasterPayload,
   MenuMasterUserPermissions,
 } from './types/menu-master-api.types';
+import { MenuMasterErrorCode } from './types/menu-master-error-codes';
+import { buildErrorResponse, throwNotFound } from 'src/common/utils/module-shared.utils';
 type BaseMenuFields = Pick<
   Menu,
   | 'menuId'
@@ -59,7 +61,12 @@ export class MenuMasterService {
   async getUserMenu(): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
     const userId = this.requestContextService.getUserId();
     if (!userId) {
-      throw new UnauthorizedException('Unable to resolve the current user from the access token');
+      const message = 'Unable to resolve the current user from the access token';
+      throw new UnauthorizedException(
+        buildErrorResponse(message, [
+          { field: 'userId', message, code: MenuMasterErrorCode.USER_UNRESOLVED },
+        ]),
+      );
     }
     const userMenus = await this.prisma.userMenus.findMany({
       where: {
@@ -145,7 +152,8 @@ export class MenuMasterService {
     const foundIds = new Set(existing.map((r) => r.menuId));
     const missing = menuIds.filter((id) => !foundIds.has(id));
     if (missing.length > 0) {
-      throw new NotFoundException(`Menu(s) not found for menuId(s): ${missing.join(', ')}`);
+      const message = `Menu(s) not found for menuId(s): ${missing.join(', ')}`;
+      throwNotFound(message, 'menuId', message, MenuMasterErrorCode.NOT_FOUND);
     }
     // Pin menuIsActive to its current value so any DB trigger cannot flip it
     // when menuVisibility is set to false.

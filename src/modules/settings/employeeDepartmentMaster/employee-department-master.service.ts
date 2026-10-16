@@ -8,6 +8,7 @@ import {
   EmployeeDepartmentMasterErrorResponse,
   EmployeeDepartmentMasterPayload,
 } from './types/employee-department-master-api.types';
+import { EmployeeDepartmentMasterErrorCode } from './types/employee-department-master-error-codes';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -73,6 +74,7 @@ export class EmployeeDepartmentMasterService {
           {
             field: 'edptId',
             message: `Employee department ${edptId} is used by ${activeEmployeesCount} employee(s).`,
+            code: EmployeeDepartmentMasterErrorCode.IN_USE,
           },
         ]);
       }
@@ -272,6 +274,7 @@ export class EmployeeDepartmentMasterService {
           {
             field: 'edptName',
             message: 'Duplicate edptName is not allowed',
+            code: EmployeeDepartmentMasterErrorCode.NAME_DUPLICATE,
           },
         ],
       );
@@ -311,13 +314,19 @@ export class EmployeeDepartmentMasterService {
           {
             field: 'edptCode',
             message: 'Duplicate edptCode is not allowed',
+            code: EmployeeDepartmentMasterErrorCode.CODE_DUPLICATE,
           },
         ],
       );
     }
   }
   private normalizeRequiredName(value: string): string {
-    return normalizeRequiredText<EmployeeDepartmentMasterErrorDetail>(value, 'edptName');
+    return normalizeRequiredText<EmployeeDepartmentMasterErrorDetail>(
+      value,
+      'edptName',
+      undefined,
+      EmployeeDepartmentMasterErrorCode.NAME_REQUIRED,
+    );
   }
   private toPayload(record: EmployeeDepartment): EmployeeDepartmentMasterPayload {
     return {
@@ -343,6 +352,7 @@ export class EmployeeDepartmentMasterService {
         {
           field: 'edptName',
           message: 'Duplicate employee department unique value is not allowed',
+          code: EmployeeDepartmentMasterErrorCode.DUPLICATE,
         },
       ],
     );
@@ -352,6 +362,7 @@ export class EmployeeDepartmentMasterService {
       'Employee department not found',
       'edptId',
       `No active employee department found with id ${edptId}`,
+      EmployeeDepartmentMasterErrorCode.NOT_FOUND,
     );
   }
   private throwBadRequest(message: string, errors: EmployeeDepartmentMasterErrorDetail[]): never {

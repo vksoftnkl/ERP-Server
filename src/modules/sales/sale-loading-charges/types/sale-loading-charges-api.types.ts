@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as SaleLoadingChargeErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as SaleLoadingChargeErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { SaleLoadingChargeErrorCode } from './sale-loading-charges-error-codes';
+
+/** Notes 119: every refusal names its code — see sale-loading-charges-error-codes.ts. */
+export interface SaleLoadingChargeErrorDetail extends SalesErrorDetail {
+  code: SaleLoadingChargeErrorCode;
+}
+export type SaleLoadingChargeErrorResponse = SalesErrorResponse<SaleLoadingChargeErrorDetail>;
 export type { SalesSuccessResponse as SaleLoadingChargeSuccessResponse } from 'src/common/types/module-api.types';
 export interface SaleLoadingChargePayload {
   ilcId: string;

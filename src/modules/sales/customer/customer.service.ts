@@ -11,6 +11,7 @@ import {
   CustomerErrorResponse,
   CustomerPayload,
 } from './types/customer-api.types';
+import { CustomerErrorCode } from './types/customer-error-codes';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -221,7 +222,11 @@ export class CustomerService {
       // A client may echo the link it created the customer with; only a different ledger is wrong.
       if (saveCustomerDto.cusLinkLedId && saveCustomerDto.cusLinkLedId !== saveCustomerDto.cusId) {
         throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
-          { field: 'cusLinkLedId', message: 'cusLinkLedId applies to a create only' },
+          {
+            field: 'cusLinkLedId',
+            message: 'cusLinkLedId applies to a create only',
+            code: CustomerErrorCode.LINK_LEDGER_ON_UPDATE,
+          },
         ]);
       }
       return this.updateCustomer(saveCustomerDto);
@@ -240,6 +245,7 @@ export class CustomerService {
         'Customer not found',
         'cusId',
         `No active customer found with id ${cusId}`,
+        CustomerErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(record);
@@ -259,6 +265,7 @@ export class CustomerService {
           'Customer not found',
           'cusId',
           `No active customer found with id ${cusId}`,
+          CustomerErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -279,6 +286,7 @@ export class CustomerService {
           'Customer not found',
           'cusId',
           `No active customer found with id ${cusId}`,
+          CustomerErrorCode.NOT_FOUND,
         );
       }
       // Soft delete the linked account ledger (shares cus_id as its PK) so it can't stay active
@@ -347,11 +355,13 @@ export class CustomerService {
         const normalizedName = normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
           dto.cusName ?? '',
           'cusName',
+          undefined,
+          CustomerErrorCode.NAME_REQUIRED,
         );
         const normalizedStateName = normalizeRequiredText<
           CustomerErrorDetail,
           CustomerErrorResponse
-        >(dto.cusStateName, 'cusStateName');
+        >(dto.cusStateName, 'cusStateName', undefined, CustomerErrorCode.STATE_NAME_REQUIRED);
         const normalizedStateCode = this.normalizeStateCode(dto.cusStateCode);
         const now = new Date();
         const createdBy = resolveActor(dto.cusCreatedBy, this.requestContextService.getUserId());
@@ -423,6 +433,7 @@ export class CustomerService {
           {
             field: 'cusName',
             message: 'Duplicate customer details are not allowed',
+            code: CustomerErrorCode.DUPLICATE,
           },
         ],
       );
@@ -447,7 +458,11 @@ export class CustomerService {
     const previous = await tx.customer.findUnique({ where: { cusId } });
     if (previous && !previous.cusIsDeleted) {
       throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>('Customer already exists', [
-        { field: 'cusLinkLedId', message: `Ledger "${ledger.ledName}" is already a customer` },
+        {
+          field: 'cusLinkLedId',
+          message: `Ledger "${ledger.ledName}" is already a customer`,
+          code: CustomerErrorCode.LINK_LEDGER_ALREADY_CUSTOMER,
+        },
       ]);
     }
     let saved: Customer;
@@ -495,7 +510,11 @@ export class CustomerService {
     const ledger = await tx.accLedgerMaster.findFirst({ where: { ledId, ledIsDeleted: false } });
     if (!ledger) {
       throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Ledger does not exist', [
-        { field: 'cusLinkLedId', message: `No active account ledger found with id ${ledId}` },
+        {
+          field: 'cusLinkLedId',
+          message: `No active account ledger found with id ${ledId}`,
+          code: CustomerErrorCode.LINK_LEDGER_NOT_FOUND,
+        },
       ]);
     }
     if (ledger.ledLedgerType !== 'PARTY' && !(await this.findSupplierRole(tx, ledId))) {
@@ -505,6 +524,7 @@ export class CustomerService {
           {
             field: 'cusLinkLedId',
             message: `Ledger "${ledger.ledName}" is a ${ledger.ledLedgerType ?? 'untyped'} ledger; only a PARTY ledger can be a customer`,
+            code: CustomerErrorCode.LINK_LEDGER_NOT_PARTY,
           },
         ],
       );
@@ -561,12 +581,18 @@ export class CustomerService {
             'Customer not found',
             'cusId',
             `No active customer found with id ${cusId}`,
+            CustomerErrorCode.NOT_FOUND,
           );
         }
         const normalizedStateName = normalizeRequiredText<
           CustomerErrorDetail,
           CustomerErrorResponse
-        >(saveCustomerDto.cusStateName, 'cusStateName');
+        >(
+          saveCustomerDto.cusStateName,
+          'cusStateName',
+          undefined,
+          CustomerErrorCode.STATE_NAME_REQUIRED,
+        );
         const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
         const nextAreaId = hasOwnProperty(saveCustomerDto, 'cusAreaId')
           ? saveCustomerDto.cusAreaId
@@ -645,6 +671,7 @@ export class CustomerService {
                   {
                     field: 'cusName',
                     message: 'Duplicate customer name is not allowed for this company',
+                    code: CustomerErrorCode.NAME_EXISTS,
                   },
                 ],
               );
@@ -678,6 +705,7 @@ export class CustomerService {
           {
             field: 'cusName',
             message: 'Duplicate customer details are not allowed',
+            code: CustomerErrorCode.DUPLICATE,
           },
         ],
       );
@@ -752,6 +780,7 @@ export class CustomerService {
         {
           field: 'cusAreaId',
           message: `No active area found with id ${areaId}`,
+          code: CustomerErrorCode.AREA_NOT_FOUND,
         },
       ]);
     }
@@ -777,6 +806,7 @@ export class CustomerService {
         {
           field: 'cusCompanyId',
           message: `No active company found with id ${companyId}`,
+          code: CustomerErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -798,6 +828,7 @@ export class CustomerService {
           {
             field: 'cusGroupId',
             message: `No active customer group found with id ${groupId}`,
+            code: CustomerErrorCode.GROUP_NOT_FOUND,
           },
         ],
       );
@@ -825,6 +856,7 @@ export class CustomerService {
         {
           field: 'cusStateCode',
           message: `No active state found with code ${stateCode}`,
+          code: CustomerErrorCode.STATE_NOT_FOUND,
         },
       ]);
     }
@@ -886,6 +918,7 @@ export class CustomerService {
         {
           field: 'cusStateCode',
           message: 'cusStateCode must be exactly 2 characters',
+          code: CustomerErrorCode.STATE_CODE_INVALID,
         },
       ]);
     }
@@ -904,6 +937,7 @@ export class CustomerService {
         {
           field,
           message: `${field} must be a valid ISO date`,
+          code: CustomerErrorCode.INVALID_DATE,
         },
       ]);
     }

@@ -8,6 +8,7 @@ import {
   SaleLoadingChargeErrorResponse,
   SaleLoadingChargePayload,
 } from './types/sale-loading-charges-api.types';
+import { SaleLoadingChargeErrorCode } from './types/sale-loading-charges-error-codes';
 import {
   DEFAULT_ACTOR,
   applyPresentFields,
@@ -125,6 +126,7 @@ export class SaleLoadingChargeService {
         'Sale loading charge not found',
         'ilcId',
         `No active sale loading charge found with id ${ilcId}`,
+        SaleLoadingChargeErrorCode.NOT_FOUND,
       );
     }
 
@@ -145,6 +147,7 @@ export class SaleLoadingChargeService {
           'Sale loading charge not found',
           'ilcId',
           `No active sale loading charge found with id ${ilcId}`,
+          SaleLoadingChargeErrorCode.NOT_FOUND,
         );
       }
 
@@ -167,6 +170,7 @@ export class SaleLoadingChargeService {
           'Sale loading charge not found',
           'ilcId',
           `No active sale loading charge found with id ${ilcId}`,
+          SaleLoadingChargeErrorCode.NOT_FOUND,
         );
       }
 
@@ -221,6 +225,7 @@ export class SaleLoadingChargeService {
             'Sale loading charge not found',
             'ilcId',
             `No active sale loading charge found with id ${ilcId}`,
+            SaleLoadingChargeErrorCode.NOT_FOUND,
           );
         }
 
@@ -270,6 +275,7 @@ export class SaleLoadingChargeService {
         {
           field: 'ilcFromWeight',
           message: 'Duplicate sale loading charge range is not allowed',
+          code: SaleLoadingChargeErrorCode.RANGE_EXISTS,
         },
       ],
     );
@@ -284,6 +290,7 @@ export class SaleLoadingChargeService {
             field: 'ilcFromWeight',
             message:
               'Weight range overlaps an existing slab for this company/branch. Slabs may touch at a boundary (0-100, 100-200) but not overlap.',
+            code: SaleLoadingChargeErrorCode.RANGE_OVERLAPS,
           },
         ],
       );
@@ -295,6 +302,7 @@ export class SaleLoadingChargeService {
           {
             field: 'request',
             message: 'Referenced company or branch does not exist',
+            code: SaleLoadingChargeErrorCode.REFERENCE_NOT_FOUND,
           },
         ],
       );

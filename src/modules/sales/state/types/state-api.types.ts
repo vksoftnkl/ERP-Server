@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as StateErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as StateErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { StateErrorCode } from './state-error-codes';
+
+/** Notes 119: every refusal names its code — see state-error-codes.ts. */
+export interface StateErrorDetail extends SalesErrorDetail {
+  code: StateErrorCode;
+}
+export type StateErrorResponse = SalesErrorResponse<StateErrorDetail>;
 export type { SalesSuccessResponse as StateSuccessResponse } from 'src/common/types/module-api.types';
 export interface StatePayload {
   stmId: string;

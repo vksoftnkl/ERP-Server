@@ -17,6 +17,7 @@ import {
   UiTableMasterPayload,
   UiTableColumnPayload,
 } from './types/ui-table-master-api.types';
+import { UiTableMasterErrorCode } from './types/ui-table-master-error-codes';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -117,6 +118,7 @@ export class UiTableMasterService {
         'UI table not found',
         'uiTblId',
         `No active UI table found with id ${uiTblId}`,
+        UiTableMasterErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record as UitableWithColumns);
@@ -137,6 +139,7 @@ export class UiTableMasterService {
             'UI table column not found',
             'uiTblClmId',
             `No active UI table column found with id ${item.uiTblClmId}`,
+            UiTableMasterErrorCode.COLUMN_NOT_FOUND,
           );
         }
         // Each width is written only when the caller actually sent it. The browser
@@ -178,6 +181,7 @@ export class UiTableMasterService {
             'UI table column not found',
             'uiTblClmId',
             `No active UI table column found with id ${item.uiTblClmId}`,
+            UiTableMasterErrorCode.COLUMN_NOT_FOUND,
           );
         }
         const data: Prisma.UitableColumnsUncheckedUpdateInput = {
@@ -208,6 +212,7 @@ export class UiTableMasterService {
           'UI table not found',
           'uiTblId',
           `No active UI table found with id ${uiTblId}`,
+          UiTableMasterErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -226,6 +231,7 @@ export class UiTableMasterService {
           'UI table not found',
           'uiTblId',
           `No active UI table found with id ${uiTblId}`,
+          UiTableMasterErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload({ ...existing, uiTableColumns: [] });
@@ -267,6 +273,7 @@ export class UiTableMasterService {
           'UI table column not found',
           'uiTblClmId',
           `No active UI table column found with id ${uiTblClmId}`,
+          UiTableMasterErrorCode.COLUMN_NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -360,7 +367,13 @@ export class UiTableMasterService {
       throwOnUniqueConstraintError<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         error,
         'UI table already exists',
-        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
+        [
+          {
+            field: 'uiTblName',
+            message: 'Duplicate uiTblName is not allowed',
+            code: UiTableMasterErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -380,6 +393,7 @@ export class UiTableMasterService {
             'UI table not found',
             'uiTblId',
             `No active UI table found with id ${uiTblId}`,
+            UiTableMasterErrorCode.NOT_FOUND,
           );
         }
         const actor = resolveActor(null, this.requestContextService.getUserId());
@@ -450,7 +464,13 @@ export class UiTableMasterService {
       throwOnUniqueConstraintError<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         error,
         'UI table already exists',
-        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
+        [
+          {
+            field: 'uiTblName',
+            message: 'Duplicate uiTblName is not allowed',
+            code: UiTableMasterErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -477,7 +497,13 @@ export class UiTableMasterService {
     if (!normalizedName) {
       throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         'Validation failed',
-        [{ field: 'uiTblClmName', message: 'uiTblClmName must not be empty' }],
+        [
+          {
+            field: 'uiTblClmName',
+            message: 'uiTblClmName must not be empty',
+            code: UiTableMasterErrorCode.COLUMN_NAME_REQUIRED,
+          },
+        ],
       );
     }
     const now = new Date();
@@ -526,7 +552,13 @@ export class UiTableMasterService {
     if (existing) {
       throwFixedConflict<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         'UI table name already exists',
-        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
+        [
+          {
+            field: 'uiTblName',
+            message: 'Duplicate uiTblName is not allowed',
+            code: UiTableMasterErrorCode.NAME_DUPLICATE,
+          },
+        ],
       );
     }
   }
@@ -535,7 +567,13 @@ export class UiTableMasterService {
     if (!trimmed) {
       throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         'Validation failed',
-        [{ field: 'uiTblName', message: 'uiTblName must not be empty' }],
+        [
+          {
+            field: 'uiTblName',
+            message: 'uiTblName must not be empty',
+            code: UiTableMasterErrorCode.NAME_REQUIRED,
+          },
+        ],
       );
     }
     return trimmed;
@@ -591,7 +629,7 @@ export class UiTableMasterService {
     if (!/^\d+$/.test(normalized)) {
       throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         'Validation failed',
-        [{ field, message: `${field} must be a numeric id` }],
+        [{ field, message: `${field} must be a numeric id`, code: UiTableMasterErrorCode.ID_INVALID }],
       );
     }
     return BigInt(normalized);

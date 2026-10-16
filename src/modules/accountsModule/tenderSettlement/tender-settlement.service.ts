@@ -138,7 +138,11 @@ export class TenderSettlementService {
         throwSettlementDetails(
           SettlementErrorCode.FORMAT_INVALID,
           'The statement format cannot be used',
-          checked.problems.map((message) => ({ field: 'format', message })),
+          checked.problems.map((message) => ({
+            field: 'format',
+            message,
+            code: SettlementErrorCode.FORMAT_INVALID,
+          })),
         );
       }
       format = checked.format;
@@ -222,6 +226,7 @@ export class TenderSettlementService {
           parsed.problems.slice(0, 200).map((p) => ({
             field: 'file',
             message: `Line ${p.lineNo}: ${p.message}`,
+            code: SettlementErrorCode.FILE_INVALID,
             lineNo: p.lineNo,
           })),
         );
@@ -636,6 +641,8 @@ export class TenderSettlementService {
 
       const payoutDate = iso(head.asiPayoutDate);
       const voucher = await this.posting.postLegs(tx, {
+        // Notes 126 §1: the payout's bank line takes that bank's BANK tender.
+        money: { bankTender: 'BANK' },
         header: {
           companyId: head.asiCompanyId,
           branchId: head.asiBranchId,
@@ -1415,7 +1422,11 @@ export class TenderSettlementService {
       throwSettlementDetails(
         SettlementErrorCode.FORMAT_INVALID,
         `${tender.tndName}'s statement format cannot be used`,
-        checked.problems.map((message) => ({ field: 'format', message })),
+        checked.problems.map((message) => ({
+          field: 'format',
+          message,
+          code: SettlementErrorCode.FORMAT_INVALID,
+        })),
       );
     }
     return checked.format;

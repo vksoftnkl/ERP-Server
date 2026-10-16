@@ -1,6 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -42,11 +41,14 @@ import { ItemUnitConversionExceptionFilter } from './item-unit-conversion-except
 import { ItemUnitConversionService } from './item-unit-conversion.service';
 import {
   ItemUnitConversionDeleteResult,
+  ItemUnitConversionErrorDetail,
   ItemUnitConversionListItem,
   ItemUnitConversionListMeta,
   ItemUnitConversionPayload,
   ItemUnitConversionSuccessResponse,
 } from './types/item-unit-conversion-api.types';
+import { ItemUnitConversionErrorCode } from './types/item-unit-conversion-error-codes';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   hasRequestPayload,
@@ -66,7 +68,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemUnitConversionSuccessSingleDto,
   ItemUnitConversionSuccessListDto,
 )
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-unit-conversions')
 @UseFilters(ItemUnitConversionExceptionFilter)
 export class ItemUnitConversionController {
@@ -201,9 +203,13 @@ export class ItemUnitConversionController {
 
     const iucId = typeof query.iuc_id === 'string' ? query.iuc_id : undefined;
     if (!iucId?.trim()) {
-      throw new BadRequestException({
-        message: ['iuc_id is required'],
-      });
+      throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
+        {
+          field: 'iuc_id',
+          code: ItemUnitConversionErrorCode.ID_REQUIRED,
+          message: 'iuc_id is required',
+        },
+      ]);
     }
 
     return await validateDto(

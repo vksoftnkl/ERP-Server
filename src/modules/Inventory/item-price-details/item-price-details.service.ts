@@ -13,6 +13,7 @@ import {
   ItemPriceDetailPayload,
   ItemPriceDetailTaxPayload,
 } from './types/item-price-detail-api.types';
+import { ItemPriceDetailErrorCode } from './types/item-price-detail-error-codes';
 import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 @Injectable()
@@ -34,6 +35,7 @@ export class ItemPriceDetailsService {
         'Item not found',
         'barcode',
         `No active item found with barcode ${barcode}`,
+        ItemPriceDetailErrorCode.BARCODE_NOT_FOUND,
       );
     }
     return this.getByItemId(itemRecord.itemId);
@@ -51,6 +53,7 @@ export class ItemPriceDetailsService {
         'Item not found',
         'item_id',
         `No active item found with id ${itemId}`,
+        ItemPriceDetailErrorCode.ITEM_NOT_FOUND,
       );
     }
     const [priceRecords, unitConversions, taxRecord] = await Promise.all([

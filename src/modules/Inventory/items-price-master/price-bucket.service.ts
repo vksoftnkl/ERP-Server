@@ -13,6 +13,7 @@ import {
   type BucketTrackFlags,
 } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { bucketKeyOfRow, sameBucket, toDay, type BucketKey } from './price-resolver';
+import { ItemPriceErrorCode } from './types/item-price-error-codes';
 
 /** The setting whose level a sale-price bucket mirrors (slt_sale_price's doctrine). */
 export const DEFAULT_PRICE_LEVEL_SETTING_KEY = 'sales.default_price_level';
@@ -138,6 +139,7 @@ export class PriceBucketService {
             [
               {
                 field: 'prices',
+                code: ItemPriceErrorCode.BUCKET_COLLISION,
                 message:
                   `${describe(a)} and ${describe(b)} are one price once the item no longer ` +
                   'tracks what tells them apart. Delete one of them, then save again.',
@@ -159,6 +161,7 @@ export class PriceBucketService {
           [
             {
               field: 'prices',
+              code: ItemPriceErrorCode.REBUCKET_ABOVE_MRP,
               message:
                 `${describe(index)} sells above its MRP. A price per MRP cannot exceed that ` +
                 'MRP; correct the price, then change the tracking.',

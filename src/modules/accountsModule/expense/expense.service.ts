@@ -22,7 +22,11 @@ import {
   throwAccountsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
-import { TillApprovalService } from '../../till/services/till-approval.service';
+import {
+  TillApprovalService,
+  type GateAsk,
+  type GateVerdict,
+} from '../../till/services/till-approval.service';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { TillErrorCode, TillEventCode } from '../../till/types/till-enum';
 import type { TillApprovalNeed } from '../../till/types/till-api.types';
@@ -36,6 +40,7 @@ import {
 import {
   newGuardContext,
   throwRefusals,
+  VCH,
   type VoucherErrorDetail,
   type VoucherGuardContext,
 } from '../vouchers/vouchers.errors';
@@ -126,7 +131,11 @@ export class ExpenseService {
     const voucherId = await this.prisma.$transaction(async (tx) => {
       if (accYearOf(new Date(`${dto.voucherDate}T00:00:00Z`)) !== dto.accYear) {
         throwAccountsBadRequest('Validation failed', [
-          { field: 'voucherDate', message: `${dto.voucherDate} is not in the year ${dto.accYear}` },
+          {
+            field: 'voucherDate',
+            code: VCH.DATE_OUTSIDE_YEAR,
+            message: `${dto.voucherDate} is not in the year ${dto.accYear}`,
+          },
         ]);
       }
       await assertAccYearWritable(tx, dto.companyId, dto.accYear, 'accYear');
@@ -144,6 +153,7 @@ export class ExpenseService {
         throwAccountsConflict('Expense voucher is not a draft', [
           {
             field: 'voucherId',
+            code: VCH.NOT_DRAFT,
             message: `Voucher ${existing.avhVoucherRefno ?? dto.voucherId} is ${existing.avhVoucherStatus}: only a DRAFT is edited`,
           },
         ]);
@@ -206,6 +216,32 @@ export class ExpenseService {
         avhUserId: actor,
         avhDraftLines: draft as unknown as Prisma.InputJsonValue,
       };
+      // Notes 124 §7: look for the clash before writing (as the register's
+      // docRefnoClash does) — on a year partition Postgres names the violated
+      // index `acc_voucher_header_<year>_avh_company_id_avh_party_id_av_idx`,
+      // which the catch below cannot tell from any other unique rule.
+      if (common.avhDocRefno && common.avhPartyId) {
+        const [held] = await tx.$queryRaw<{ ref: string | null; status: string }[]>`
+          SELECT COALESCE(x.avh_voucher_refno, x.avh_usr_refno) AS ref, x.avh_voucher_status AS status
+            FROM accounts.acc_voucher_header x
+           WHERE x.avh_company_id = ${dto.companyId}::uuid
+             AND x.avh_party_id = ${common.avhPartyId}::uuid
+             AND x.avh_voucher_type_id = ${type.vchrTypeId}::int
+             AND x.avh_acc_year = ${dto.accYear}::char(9)
+             AND x.avh_doc_refno = ${common.avhDocRefno}
+             AND x.avh_is_deleted = false
+             AND x.avh_voucher_status <> 'CANCELLED'
+             AND (${existing?.avhVoucherId ?? null}::uuid IS NULL
+                  OR x.avh_voucher_id <> ${existing?.avhVoucherId ?? null}::uuid)
+           LIMIT 1`;
+        if (held) {
+          this.throwGstBillDuplicate(
+            'saved',
+            draft.gstBill,
+            held.ref ? `${held.ref}, ${held.status}` : held.status,
+          );
+        }
+      }
       let id: string;
       try {
         id = existing
@@ -237,8 +273,15 @@ export class ExpenseService {
         // ux_avh_doc_refno: one live (DRAFT or POSTED, never CANCELLED) voucher
         // of a type per supplier per invoice no in a year. The only unique rule
         // a draft header can trip -- and it answered a 500 (notes 103 / 104).
+        // A race past the check above: the parent's name, its columns, or a
+        // year partition's auto-named copy (…_avh_company_id_avh_party_id_av_idx).
         const what = violatedConstraintOf(error);
-        if (isUniqueConstraintError(error) && (what === null || what.includes('avh_doc_refno'))) {
+        if (
+          isUniqueConstraintError(error) &&
+          (what === null ||
+            what.includes('avh_doc_refno') ||
+            what.includes('avh_company_id_avh_party_id'))
+        ) {
           this.throwGstBillDuplicate('saved', draft.gstBill, null);
         }
         throw error;
@@ -365,6 +408,7 @@ export class ExpenseService {
           sessionId: dto.sessionId ?? null,
           field: 'sessionId',
           hasCash: tenders.some((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID),
+          cashOut: cashPaidOut(tenders),
         });
       } catch (error: unknown) {
         this.refusalFromTill(ctx, error);
@@ -388,8 +432,21 @@ export class ExpenseService {
         tenders,
         total: derived.payload.total,
         inSession: !!route.ref,
+        sessionId: route.ref?.tssId ?? null,
+        approvalId: null,
         ctx,
       });
+      if (checks.gate.state === 'REFUSE') {
+        // Notes 124 §5: /post answers 428 until an approved request is brought.
+        ctx.refusals.push({
+          code: TillErrorCode.APPROVAL_REQUIRED,
+          field: 'approvalId',
+          message:
+            `An expense of ${derived.payload.total.toFixed(2)} at a till needs an approval at ` +
+            `${checks.gate.need.minRole} or above: ask for one (/till/approvals/request, srcDocType EXPENSE) ` +
+            'and post with its approvalId',
+        });
+      }
       return {
         ok: ctx.refusals.length === 0,
         derived: {
@@ -408,7 +465,7 @@ export class ExpenseService {
   //  Post
   // ═════════════════════════════════════════════════════════════════════════
 
-  async post(key: ExpenseKey): Promise<ExpensePostPayload> {
+  async post(key: ExpenseKey & { approvalId?: string | null }): Promise<ExpensePostPayload> {
     const actor = this.actor();
     const ctx = newGuardContext({ dryRun: false, canOverride: false });
     let approval: TillApprovalNeed | null = null;
@@ -419,6 +476,7 @@ export class ExpenseService {
         throwAccountsConflict('Expense voucher cannot be posted', [
           {
             field: 'voucherId',
+            code: VCH.NOT_DRAFT,
             message: `Voucher ${header.avhVoucherRefno ?? key.voucherId} is ${header.avhVoucherStatus}: only a DRAFT posts`,
           },
         ]);
@@ -435,6 +493,7 @@ export class ExpenseService {
         sessionId: header.avhSessionId,
         field: 'sessionId',
         hasCash: tenders.some((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID),
+        cashOut: cashPaidOut(tenders),
       });
       const derived = await this.derive(tx, {
         companyId: key.companyId,
@@ -455,11 +514,22 @@ export class ExpenseService {
         tenders,
         total: derived.payload.total,
         inSession: !!route.ref,
+        sessionId: route.ref?.tssId ?? null,
+        approvalId: key.approvalId ?? null,
         ctx,
       });
       approval = checks.approval;
       if (ctx.refusals.length > 0) {
         throwRefusals('Expense voucher cannot be posted', ctx.refusals);
+      }
+      if (checks.gate.state === 'REFUSE') {
+        this.approvals.throwApprovalRequired(checks.gate.need, checks.gateAsk);
+      }
+      // Notes 124 §5: an approved request brought is taken; under WARN a
+      // PENDING one is filed for an approver to review after the fact.
+      const approvalId = await this.approvals.settleGate(tx, checks.gateAsk, checks.gate);
+      if (approval && approvalId) {
+        approval = { ...approval, approvalId };
       }
 
       const actorName = await this.actorName(tx, actor);
@@ -606,6 +676,7 @@ export class ExpenseService {
         throwAccountsConflict('Expense voucher cannot be cancelled', [
           {
             field: 'voucherId',
+            code: VCH.NOT_POSTED,
             message: `Voucher ${header.avhVoucherRefno ?? key.voucherId} is ${header.avhVoucherStatus}: only a POSTED voucher is cancelled`,
           },
         ]);
@@ -626,7 +697,11 @@ export class ExpenseService {
       );
       if (!mirror) {
         throwAccountsConflict('Expense voucher cannot be cancelled', [
-          { field: 'voucherId', message: 'There is no live posted voucher to reverse' },
+          {
+            field: 'voucherId',
+            code: VCH.NOT_POSTED,
+            message: 'There is no live posted voucher to reverse',
+          },
         ]);
       }
       await tx.accTenderDetail.updateMany({
@@ -821,7 +896,12 @@ export class ExpenseService {
   ): Promise<DerivedExpense> {
     const company = await loadCompanyFacts(tx, input.companyId);
     if (!company) {
-      throwAccountsNotFound('Company not found', 'companyId', `No company ${input.companyId}`);
+      throwAccountsNotFound(
+        'Company not found',
+        'companyId',
+        `No company ${input.companyId}`,
+        ExpenseErrorCode.COMPANY_NOT_FOUND,
+      );
     }
     const lineLedgerIds = input.draft.lines.map((l) => l.ledgerId);
     const ledgers = await loadLedgerFacts(tx, input.companyId, [
@@ -893,7 +973,8 @@ export class ExpenseService {
    *     and expenses of the day (no supplier: this voucher alone). WARN as
    *     shipped, never blocks; a company REFUSE row refuses.
    *   · the EXPENSE approval rule on the TOTAL, when the voucher books into a
-   *     till session. Reported, never enforced, until phase 3 builds the gate.
+   *     till session — the gate (notes 124 §5): WARN posts and files a request
+   *     for the inbox; till.approval_gate REFUSE wants an approved one (428).
    */
   private async moneyChecks(
     tx: Tx,
@@ -907,9 +988,18 @@ export class ExpenseService {
       tenders: Awaited<ReturnType<typeof normalisePaymentTenders>>;
       total: number;
       inSession: boolean;
+      /** The till session the voucher books into (notes 124 §5: the request names it). */
+      sessionId: string | null;
+      /** An approved EXPENSE request the client brings (/post only). */
+      approvalId: string | null;
       ctx: VoucherGuardContext;
     },
-  ): Promise<{ approval: TillApprovalNeed | null; limit40A3: CashPaymentLimitFinding | null }> {
+  ): Promise<{
+    approval: TillApprovalNeed | null;
+    limit40A3: CashPaymentLimitFinding | null;
+    gate: GateVerdict;
+    gateAsk: GateAsk;
+  }> {
     const cash = input.tenders
       .filter((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID)
       .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
@@ -937,28 +1027,41 @@ export class ExpenseService {
         field: limit40A3.field,
       });
     }
-    const approval = input.inSession
-      ? await this.approvals.assess(tx, {
-          companyId: input.companyId,
-          branchId: input.branchId,
-          event: 'EXPENSE',
-          onDate: input.voucherDate,
-          amount: new Prisma.Decimal(input.total),
-        })
-      : null;
-    if (approval) {
+    const gateAsk: GateAsk = {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      tenantId: null,
+      accYear: input.accYear,
+      event: 'EXPENSE',
+      onDate: input.voucherDate,
+      amount: new Prisma.Decimal(input.total),
+      requesterId: this.actor(),
+      deviceId: this.requestContext.getDeviceId() ?? null,
+      sessionId: input.sessionId,
+      counterId: null,
+      srcDocType: EXPENSE_SRC_DOC_TYPE,
+      srcDocId: input.voucherId ?? '',
+      srcRefno: null,
+      approvalId: input.approvalId,
+      field: 'approvalId',
+    };
+    const gate: GateVerdict = input.inSession
+      ? await this.approvals.assessGate(tx, gateAsk)
+      : { state: 'NONE' };
+    const approval = gate.state === 'NONE' ? null : gate.need;
+    if (gate.state === 'WARN') {
       input.ctx.warnings.push({
         code: TillErrorCode.APPROVAL_REQUIRED,
         level: 'INFO',
         overridable: false,
         message:
           `An expense of ${input.total.toFixed(2)} at a till is above the EXPENSE threshold of ` +
-          `${approval.threshold.toFixed(2)} (${approval.minRole}): recorded for review — ` +
-          'the approval gate is not built yet',
+          `${gate.need.threshold.toFixed(2)} (${gate.need.minRole}): it posts, and waits in the ` +
+          'approvers’ inbox for review',
         field: 'tenders',
       });
     }
-    return { approval, limit40A3 };
+    return { approval, limit40A3, gate, gateAsk };
   }
 
   /** §4.3: a large expense with no GST bill WARNs (accounts.expense_gst_bill_above; 0 = never). Never blocks. */
@@ -1304,8 +1407,8 @@ export class ExpenseService {
     if (line !== undefined || tender !== undefined) {
       throwAccountsBadRequest('Validation failed', [
         line !== undefined
-          ? { field: 'lines', message: `Line row ${line} appears twice` }
-          : { field: 'tenders', message: `Tender row ${tender} appears twice` },
+          ? { field: 'lines', code: VCH.INVALID, message: `Line row ${line} appears twice` }
+          : { field: 'tenders', code: VCH.INVALID, message: `Tender row ${tender} appears twice` },
       ]);
     }
   }
@@ -1314,7 +1417,11 @@ export class ExpenseService {
     const raw = header.avhDraftLines as unknown as ExpenseDraftLines | null;
     if (!raw || raw.version !== 1 || !Array.isArray(raw.lines)) {
       throwAccountsConflict('Expense voucher has no lines', [
-        { field: 'voucherId', message: 'The voucher carries no expense lines (avh_draft_lines)' },
+        {
+          field: 'voucherId',
+          code: ExpenseErrorCode.NO_LINES,
+          message: 'The voucher carries no expense lines (avh_draft_lines)',
+        },
       ]);
     }
     return raw;
@@ -1330,6 +1437,7 @@ export class ExpenseService {
         'Voucher type not found',
         'voucherType',
         `The ${EXPENSE_VOUCHER_TYPE_CODE} voucher type is missing or inactive`,
+        ExpenseErrorCode.TYPE_NOT_SET_UP,
       );
     }
     return type;
@@ -1350,6 +1458,7 @@ export class ExpenseService {
         'Expense voucher not found',
         'voucherId',
         `No expense voucher ${key.voucherId} in ${key.accYear} for this branch`,
+        VCH.NOT_FOUND,
       );
     }
     return header;
@@ -1387,4 +1496,13 @@ function taxabilityOf(rate: string): RegisterDetailLine['taxability'] {
     default:
       return 'TAXABLE';
   }
+}
+
+/** What the CASH tenders pay out of the drawer (notes 122 §5). */
+function cashPaidOut(
+  tenders: readonly { tenderTypeId: number; amount: Prisma.Decimal }[],
+): Prisma.Decimal {
+  return tenders
+    .filter((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID)
+    .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
 }

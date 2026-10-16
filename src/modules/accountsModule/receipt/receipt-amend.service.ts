@@ -26,6 +26,8 @@ import { flipSide, todayUtc } from './receipt.utils';
 import { AmendReceiptDto } from './dto/amend-receipt.dto';
 import { DrCr, ReceiptSettingKey, VoucherStatus } from './types/receipt-enum';
 import type { ReceiptAmendPayload, ReceiptErrorDetail } from './types/receipt-api.types';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * R20 — `POST /receipts/amend`, editing a POSTED receipt WHOLE.
@@ -367,6 +369,7 @@ export class ReceiptAmendService {
     throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
       {
         field: ReceiptSettingKey.ALLOW_POSTED_AMEND,
+        code: ACC.AMEND_OFF,
         message:
           'Editing a posted receipt is switched off for this company ' +
           `(${ReceiptSettingKey.ALLOW_POSTED_AMEND} is false). Cancel the receipt and re-enter ` +
@@ -390,6 +393,7 @@ export class ReceiptAmendService {
       throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
         {
           field: 'avhVoucherId',
+          code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_POSTED,
           message:
             `${header.avhVoucherRefno ?? header.avhVoucherId} is ${status}. Only a POSTED ` +
             'receipt is amended' +
@@ -408,6 +412,7 @@ export class ReceiptAmendService {
       throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
         {
           field: 'avhVoucherId',
+          code: ACC.PDC_VOUCHER,
           message:
             'This is a post-dated cheque voucher, not a receipt. Amend the receipt it belongs ' +
             'to and its cheques are rewritten with it.',
@@ -476,6 +481,7 @@ export class ReceiptAmendService {
     throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
       {
         field: 'avhPartyId',
+        code: ACC.PARTY_LOCKED,
         message:
           `${header.avhVoucherRefno ?? header.avhVoucherId} was received from ` +
           `"${nameOf(header.avhPartyId)}" and an amend cannot move it to ` +
@@ -510,6 +516,7 @@ export class ReceiptAmendService {
     throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
       {
         field: 'baseRevision',
+        code: ACC.REVISION_STALE,
         message:
           `This receipt has been amended since you opened it (now revision ` +
           `${header.avhRevisionNo}, you sent ${baseRevision}). Reload it and make the change ` +

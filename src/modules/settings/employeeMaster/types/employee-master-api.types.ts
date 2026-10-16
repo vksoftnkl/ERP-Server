@@ -3,8 +3,9 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-// `code` names a refusal the client branches on, e.g. EMP_LEDGER_HAS_BALANCE on delete.
-export type EmployeeMasterErrorDetail = ModuleApiErrorDetail & { code?: string };
+// `code` names a refusal the client branches on, e.g. EMP_LEDGER_HAS_BALANCE on delete —
+// every member of EmployeeMasterErrorCode (./employee-master-error-codes.ts), notes 119.
+export type EmployeeMasterErrorDetail = ModuleApiErrorDetail & { code: string };
 export type EmployeeMasterErrorResponse = ModuleApiErrorResponse<EmployeeMasterErrorDetail>;
 export type EmployeeMasterSuccessResponse<
   T,

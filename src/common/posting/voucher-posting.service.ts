@@ -13,6 +13,7 @@ import type {
   VoucherLegSource,
   VoucherPostingResult,
 } from './voucher-leg.types';
+import { coverMoneyLines, retireMoneyLineRows } from './money-lines';
 
 /** `ck_avh_device_type` accepts these; anything else becomes NULL. */
 const DEVICE_TYPES = new Set(['PC', 'WEB', 'MOBILE', 'POS', 'DESKTOP']);
@@ -388,6 +389,37 @@ export class VoucherPostingService {
         av_created_by
       )
       VALUES ${Prisma.join(values)}`;
+
+    // Notes 126 §1: every line on a CASH / BANK ledger carries a tender. An
+    // amend's legs are judged afresh: the rows written for the old ones go.
+    if (doc.header.restateVoucherId) {
+      await retireMoneyLineRows(tx, voucherId, doc.header.createdBy ?? 'SYSTEM');
+    }
+    if (doc.money?.deferred) {
+      return;
+    }
+    await coverMoneyLines(
+      tx,
+      {
+        voucherId,
+        accYear: doc.header.accYear,
+        companyId: doc.header.companyId,
+        branchId: doc.header.branchId,
+        tenantId: doc.header.tenantId ?? null,
+        voucherDate: doc.header.voucherDate,
+        srcModule: doc.header.srcModule ?? null,
+        srcDocType: doc.header.srcDocType ?? null,
+        srcDocId: doc.header.srcDocId ?? null,
+        partyId: doc.header.partyId,
+        sessionId: doc.header.sessionId ?? null,
+        deviceId: doc.header.deviceId ?? null,
+        userId: doc.header.userId,
+        createdBy: doc.header.createdBy ?? 'SYSTEM',
+        bankTender: doc.money?.bankTender ?? null,
+        docLabel: describe(doc.header),
+      },
+      legs.map((leg, i) => ({ ledgerId: ledgerByLeg[i] ?? '', drCr: leg.drCr, amount: Math.abs(leg.amount) })),
+    );
   }
 
   /**

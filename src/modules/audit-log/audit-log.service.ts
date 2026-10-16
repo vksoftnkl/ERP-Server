@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { AuditScreenType, Prisma } from '@prisma/client';
 import { isIP } from 'node:net';
 import { RequestContextService } from '../../common/request-context/request-context.service';
@@ -13,6 +13,8 @@ import {
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
 import { getAuditScreenSql } from './audit-screen-sql.constants';
+import { throwBadRequest } from '../../common/utils/module-shared.utils';
+import { AuditLogErrorCode, type AuditLogErrorDetail } from './types/audit-log-error-codes';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
@@ -277,7 +279,11 @@ export class AuditLogService {
       },
     });
     if (!screen) {
-      throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
+      throwAuditLogInvalid(
+        `No active audit screen found with id ${input.screenId}`,
+        'screenId',
+        AuditLogErrorCode.SCREEN_NOT_FOUND,
+      );
     }
     // Snapshot SQL templates are intentionally disabled.
     return null;
@@ -386,7 +392,11 @@ export class AuditLogService {
     const dateTo = queryDto.date_to ? this.parseDateBoundary(queryDto.date_to, 'end') : undefined;
 
     if (dateFrom && dateTo && dateFrom > dateTo) {
-      throw new BadRequestException('date_from must be less than or equal to date_to');
+      throwAuditLogInvalid(
+        'date_from must be less than or equal to date_to',
+        'date_from',
+        AuditLogErrorCode.DATE_RANGE_INVALID,
+      );
     }
 
     if (dateFrom || dateTo) {
@@ -464,7 +474,7 @@ export class AuditLogService {
     const prismaAction = action as unknown as Prisma.AuditLogUncheckedCreateInput['logAction'];
     const normalizedTableName = input.tableName.trim();
     if (!normalizedTableName) {
-      throw new BadRequestException('tableName is required for audit log');
+      throwAuditLogInvalid('tableName is required for audit log', 'tableName', AuditLogErrorCode.TABLE_NAME_REQUIRED);
     }
     const resolvedUserId = this.resolveAuditUserId(input.userId);
     const resolvedIpAddress = this.resolveAuditIpAddress();
@@ -518,13 +528,19 @@ export class AuditLogService {
       }
     }
     if (!isModifiedRecordProvided && modifiedRecord === null) {
-      throw new BadRequestException('modifiedRecord is required when auto snapshot is unavailable');
+      throwAuditLogInvalid(
+        'modifiedRecord is required when auto snapshot is unavailable',
+        'modifiedRecord',
+        AuditLogErrorCode.RECORD_REQUIRED,
+      );
     }
     if (action === 'insert') {
       const insertOriginalRecord = originalRecord ?? modifiedRecord;
       if (insertOriginalRecord === null) {
-        throw new BadRequestException(
+        throwAuditLogInvalid(
           'originalRecord or modifiedRecord is required for insert audit log',
+          'modifiedRecord',
+          AuditLogErrorCode.RECORD_REQUIRED,
         );
       }
       await this.createAuditLog(
@@ -547,8 +563,10 @@ export class AuditLogService {
       return;
     }
     if (action === 'update' && (originalRecord === null || modifiedRecord === null)) {
-      throw new BadRequestException(
+      throwAuditLogInvalid(
         'originalRecord and modifiedRecord are required for update audit log',
+        'originalRecord',
+        AuditLogErrorCode.RECORD_REQUIRED,
       );
     }
     const changedFields = this.computeChangedFields(originalRecord, modifiedRecord);
@@ -592,11 +610,15 @@ export class AuditLogService {
     const tableName = input.tableName.trim();
     const docId = this.normalizePk(input.docId);
     if (!tableName || docId === null) {
-      throw new BadRequestException('tableName and docId are required for a document revision');
+      throwAuditLogInvalid(
+        'tableName and docId are required for a document revision',
+        'docId',
+        AuditLogErrorCode.REVISION_KEY_REQUIRED,
+      );
     }
     const after = this.toNullableJson(input.after);
     if (after === null) {
-      throw new BadRequestException('after is required for a document revision');
+      throwAuditLogInvalid('after is required for a document revision', 'after', AuditLogErrorCode.REVISION_AFTER_REQUIRED);
     }
     const before = this.toNullableJson(input.before);
     const screen = await this.resolveAuditScreen(
@@ -670,7 +692,7 @@ export class AuditLogService {
   ): Promise<ResolvedAuditScreen> {
     if (input.screenId !== undefined) {
       if (!Number.isInteger(input.screenId) || input.screenId <= 0) {
-        throw new BadRequestException('screenId must be a positive integer');
+        throwAuditLogInvalid('screenId must be a positive integer', 'screenId', AuditLogErrorCode.SCREEN_ID_INVALID);
       }
       const existingScreen = await tx.auditScreen.findFirst({
         where: {
@@ -684,7 +706,11 @@ export class AuditLogService {
         },
       });
       if (!existingScreen) {
-        throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
+        throwAuditLogInvalid(
+          `No active audit screen found with id ${input.screenId}`,
+          'screenId',
+          AuditLogErrorCode.SCREEN_NOT_FOUND,
+        );
       }
       const resolvedScreen = await this.syncAuditScreenSqlIfNeeded(tx, existingScreen);
       return {
@@ -694,7 +720,7 @@ export class AuditLogService {
     }
     const screenName = input.screenName?.trim();
     if (!screenName) {
-      throw new BadRequestException('Either screenId or screenName is required');
+      throwAuditLogInvalid('Either screenId or screenName is required', 'screenName', AuditLogErrorCode.SCREEN_REQUIRED);
     }
     const existingScreen = await tx.auditScreen.findFirst({
       where: {
@@ -770,7 +796,7 @@ export class AuditLogService {
       case 'cancel':
         return normalizedAction;
       default:
-        throw new BadRequestException(`Unsupported audit action: ${action}`);
+        throwAuditLogInvalid(`Unsupported audit action: ${action}`, 'action', AuditLogErrorCode.ACTION_UNSUPPORTED);
     }
   }
   private parseDateBoundary(value: string, boundary: 'start' | 'end'): Date {
@@ -781,7 +807,11 @@ export class AuditLogService {
     }
     const parsed = new Date(normalized);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException(`Invalid date value: ${value}`);
+      throwAuditLogInvalid(
+        `Invalid date value: ${value}`,
+        boundary === 'start' ? 'date_from' : 'date_to',
+        AuditLogErrorCode.DATE_INVALID,
+      );
     }
     return parsed;
   }
@@ -1536,7 +1566,11 @@ export class AuditLogService {
       case 'settings':
         return 'settings';
       default:
-        throw new BadRequestException(`Unsupported audit screen type: ${screenType}`);
+        throwAuditLogInvalid(
+          `Unsupported audit screen type: ${screenType}`,
+          'screenType',
+          AuditLogErrorCode.SCREEN_TYPE_UNSUPPORTED,
+        );
     }
   }
   private projectAuditRecord(
@@ -1857,4 +1891,9 @@ export class AuditLogService {
     }
     return isIP(normalized) === 0 ? null : normalized;
   }
+}
+
+/** Notes 119: an audit refusal — the same 400 and message as before, with its code. */
+function throwAuditLogInvalid(message: string, field: string, code: AuditLogErrorCode): never {
+  throwBadRequest<AuditLogErrorDetail>(message, [{ field, message, code }]);
 }

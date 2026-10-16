@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { categoryMaster, Prisma } from '@prisma/client';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import { ItemCategoryErrorDetail, ItemCategoryPayload } from './types/item-category-api.types';
+import { ItemCategoryErrorCode } from './types/item-category-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -38,6 +39,9 @@ const ITEM_CATEGORY_DELETE_STATE = {
   label: 'item category',
   idField: 'category_id',
   restoreRoute: '/item-categories/restore',
+  alreadyDeletedCode: ItemCategoryErrorCode.ALREADY_DELETED,
+  notDeletedCode: ItemCategoryErrorCode.NOT_DELETED,
+  inUseCode: ItemCategoryErrorCode.IN_USE,
 };
 @Injectable()
 export class ItemsCategoryMasterService {
@@ -64,6 +68,7 @@ export class ItemsCategoryMasterService {
         'Item category not found',
         'category_id',
         `No active item category found with id ${categoryId}`,
+        ItemCategoryErrorCode.NOT_FOUND,
       );
     }
     const parentName = await this.getParentName(record.categoryParentId);
@@ -105,6 +110,7 @@ export class ItemsCategoryMasterService {
           'Item category not found',
           'category_id',
           `No item category found with id ${categoryId}`,
+          ItemCategoryErrorCode.NOT_FOUND,
         );
       }
       assertDeleteState(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
@@ -146,6 +152,7 @@ export class ItemsCategoryMasterService {
           'Item category not found',
           'category_id',
           `No item category found with id ${categoryId}`,
+          ItemCategoryErrorCode.NOT_FOUND,
         );
       }
       if (nextDeleted) {
@@ -258,6 +265,7 @@ export class ItemsCategoryMasterService {
             'Item category not found',
             'category_id',
             `No active item category found with id ${categoryId}`,
+            ItemCategoryErrorCode.NOT_FOUND,
           );
         }
         if (saveItemCategoryDto.category_parent_id === categoryId) {
@@ -266,6 +274,8 @@ export class ItemsCategoryMasterService {
             [
               {
                 field: 'category_parent_id',
+
+                code: ItemCategoryErrorCode.SELF_PARENT,
                 message: 'category_parent_id cannot be same as category_id',
               },
             ],
@@ -354,6 +364,8 @@ export class ItemsCategoryMasterService {
       throwInventoryBadRequest<ItemCategoryErrorDetail>('Parent item category does not exist', [
         {
           field: 'category_parent_id',
+
+          code: ItemCategoryErrorCode.PARENT_NOT_FOUND,
           message: `No active item category found with id ${parentId}`,
         },
       ]);
@@ -596,6 +608,8 @@ export class ItemsCategoryMasterService {
       throwInventoryBadRequest<ItemCategoryErrorDetail>('Invalid base64 image provided', [
         {
           field: 'category_photo',
+
+          code: ItemCategoryErrorCode.PHOTO_INVALID,
           message: 'category_photo must be a non-empty base64 string',
         },
       ]);
@@ -606,6 +620,8 @@ export class ItemsCategoryMasterService {
       throwInventoryBadRequest<ItemCategoryErrorDetail>('Invalid base64 image provided', [
         {
           field: 'category_photo',
+
+          code: ItemCategoryErrorCode.PHOTO_INVALID,
           message: 'category_photo must be valid base64 content',
         },
       ]);
@@ -645,7 +661,13 @@ export class ItemsCategoryMasterService {
     throwOnUniqueConstraintError<ItemCategoryErrorDetail>(
       error,
       'Item category name already exists',
-      [{ field: 'category_name', message: 'Duplicate category_name is not allowed' }],
+      [
+        {
+          field: 'category_name',
+          code: ItemCategoryErrorCode.NAME_TAKEN,
+          message: 'Duplicate category_name is not allowed',
+        },
+      ],
     );
   }
 }

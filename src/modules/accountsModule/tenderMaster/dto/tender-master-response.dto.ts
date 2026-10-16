@@ -26,8 +26,12 @@ export class TenderMasterPayloadDto {
   tndName!: string;
   @ApiProperty()
   tndShortName!: string;
-  @ApiProperty({ format: 'uuid' })
-  tndLedgerId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'Null only on TEMP_CR / CREDIT / LOYALTY, which post no tender leg (notes 126 §5).',
+  })
+  tndLedgerId!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   tndSettlementLedgerId!: string | null;
   @ApiPropertyOptional({

@@ -32,6 +32,7 @@ import {
   SUPPLY_NATURES,
 } from '../../accountsModule/ledgerRole/ledger-map.helper';
 import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
+import { TaxRateErrorCode } from './types/tax-rate-error-codes';
 import { collectTaxRateLedgerErrors } from './utils/tax-rate-ledger.guard';
 import {
   CESS_BASES,
@@ -172,7 +173,7 @@ export class TaxRateMasterService {
   async getById(taxId: string): Promise<TaxRatePayload> {
     const row = await this.findWithLines(this.prisma, taxId);
     if (!row) {
-      this.throwNotFound('tax_id', taxId, 'Tax rate not found');
+      this.throwNotFound('tax_id', taxId, 'Tax rate not found', TaxRateErrorCode.NOT_FOUND);
     }
     return toTaxRatePayload(row);
   }
@@ -233,7 +234,7 @@ export class TaxRateMasterService {
       select: { taxId: true, taxName: true },
     });
     if (!rate) {
-      this.throwNotFound('tax_id', query.tax_id, 'Tax rate not found');
+      this.throwNotFound('tax_id', query.tax_id, 'Tax rate not found', TaxRateErrorCode.NOT_FOUND);
     }
 
     const supplyNature = query.supply_nature ?? null;
@@ -241,6 +242,7 @@ export class TaxRateMasterService {
       throwTaxRateBadRequest('Validation failed', [
         {
           field: 'supply_nature',
+          code: TaxRateErrorCode.SUPPLY_NATURE_INVALID,
           message: `supply_nature must be ${SUPPLY_NATURES.join(' or ')}, or omitted for the answer that serves both`,
         },
       ]);
@@ -346,7 +348,7 @@ export class TaxRateMasterService {
       .$transaction(async (tx) => {
         const existing = await this.findWithLines(tx, taxId);
         if (!existing) {
-          this.throwNotFound('tax_id', taxId, 'Tax rate not found');
+          this.throwNotFound('tax_id', taxId, 'Tax rate not found', TaxRateErrorCode.NOT_FOUND);
         }
 
         const data: Prisma.TaxRateMasterUncheckedUpdateInput = {
@@ -402,7 +404,7 @@ export class TaxRateMasterService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.findWithLines(tx, taxId);
       if (!existing || existing.taxIsDeleted) {
-        this.throwNotFound('tax_id', taxId, 'Tax rate not found');
+        this.throwNotFound('tax_id', taxId, 'Tax rate not found', TaxRateErrorCode.NOT_FOUND);
       }
       // C3 — a rate an item, a ledger, a charge or an open tax-history window
       // still points at is not deleted: the picker would stop offering it while
@@ -410,6 +412,7 @@ export class TaxRateMasterService {
       await assertNoLiveReferences(tx, TAX_RATE_REFERENCES, taxId, {
         label: 'tax rate',
         idField: 'tax_id',
+        inUseCode: TaxRateErrorCode.IN_USE,
       });
 
       const actor = this.resolveWriteActor(modifiedBy);
@@ -525,13 +528,14 @@ export class TaxRateMasterService {
     const errors: ModuleErrorDetail[] = [];
 
     if (!rate.taxName) {
-      pushError(errors, 'tax_name', 'tax_name is required');
+      pushError(errors, 'tax_name', 'tax_name is required', TaxRateErrorCode.NAME_REQUIRED);
     }
     if (!TAX_TAXABILITIES.includes(rate.taxTaxability as (typeof TAX_TAXABILITIES)[number])) {
       pushError(
         errors,
         'tax_taxability',
         `tax_taxability must be one of ${TAX_TAXABILITIES.join(', ')}`,
+        TaxRateErrorCode.TAXABILITY_INVALID,
       );
     }
     if (rate.taxRatePerc < 0 || rate.taxRatePerc > MAX_TAX_RATE_PERC) {
@@ -539,6 +543,7 @@ export class TaxRateMasterService {
         errors,
         'tax_rate_perc',
         `tax_rate_perc must be between 0 and ${MAX_TAX_RATE_PERC}`,
+        TaxRateErrorCode.PERC_OUT_OF_RANGE,
       );
     }
 
@@ -574,6 +579,7 @@ export class TaxRateMasterService {
           'tax_taxability',
           `A ${rate.taxTaxability} rate charges nothing by definition — the rate and both cess ` +
             'figures must all be 0. Use ZERO_RATED for an export, which is taxable at 0%.',
+          TaxRateErrorCode.EXEMPT_NOT_ZERO,
         );
       }
     }
@@ -594,12 +600,25 @@ export class TaxRateMasterService {
         errors,
         `${prefix}_basis`,
         `${prefix}_basis must be one of ${CESS_BASES.join(', ')}`,
+        TaxRateErrorCode.CESS_BASIS_INVALID,
       );
       return;
     }
-    if (perc < 0) pushError(errors, `${prefix}_perc`, `${prefix}_perc must not be negative`);
+    if (perc < 0) {
+      pushError(
+        errors,
+        `${prefix}_perc`,
+        `${prefix}_perc must not be negative`,
+        TaxRateErrorCode.CESS_NEGATIVE,
+      );
+    }
     if (perUnit < 0) {
-      pushError(errors, `${prefix}_per_unit`, `${prefix}_per_unit must not be negative`);
+      pushError(
+        errors,
+        `${prefix}_per_unit`,
+        `${prefix}_per_unit must not be negative`,
+        TaxRateErrorCode.CESS_NEGATIVE,
+      );
     }
 
     const wantsPerc = basis === 'PERCENT' || basis === 'BOTH';
@@ -610,6 +629,7 @@ export class TaxRateMasterService {
         errors,
         `${prefix}_perc`,
         `${prefix}_basis is ${basis}, so ${prefix}_perc must be > 0`,
+        TaxRateErrorCode.CESS_BASIS_MISMATCH,
       );
     }
     if (!wantsPerc && perc !== 0) {
@@ -617,6 +637,7 @@ export class TaxRateMasterService {
         errors,
         `${prefix}_perc`,
         `${prefix}_basis is ${basis}, so ${prefix}_perc must be 0`,
+        TaxRateErrorCode.CESS_BASIS_MISMATCH,
       );
     }
     if (wantsPerUnit && perUnit <= 0) {
@@ -624,6 +645,7 @@ export class TaxRateMasterService {
         errors,
         `${prefix}_per_unit`,
         `${prefix}_basis is ${basis}, so ${prefix}_per_unit must be > 0`,
+        TaxRateErrorCode.CESS_BASIS_MISMATCH,
       );
     }
     if (!wantsPerUnit && perUnit !== 0) {
@@ -631,6 +653,7 @@ export class TaxRateMasterService {
         errors,
         `${prefix}_per_unit`,
         `${prefix}_basis is ${basis}, so ${prefix}_per_unit must be 0`,
+        TaxRateErrorCode.CESS_BASIS_MISMATCH,
       );
     }
   }
@@ -662,6 +685,7 @@ export class TaxRateMasterService {
       throwTaxRateConflict('Tax rate name already exists', [
         {
           field: 'tax_name',
+          code: TaxRateErrorCode.NAME_TAKEN,
           message: `"${clash.taxName}" is already in use by rate ${clash.taxId}`,
         },
       ]);
@@ -688,6 +712,7 @@ export class TaxRateMasterService {
       throwTaxRateConflict('Tax rate code already exists', [
         {
           field: 'tax_code',
+          code: TaxRateErrorCode.CODE_TAKEN,
           message: `"${clash.taxCode}" is already in use by rate ${clash.taxId}`,
         },
       ]);
@@ -704,7 +729,12 @@ export class TaxRateMasterService {
       select: { taxId: true },
     });
     if (!target) {
-      this.throwNotFound('tax_supersedes_id', supersedesId, 'Superseded tax rate not found');
+      this.throwNotFound(
+        'tax_supersedes_id',
+        supersedesId,
+        'Superseded tax rate not found',
+        TaxRateErrorCode.SUPERSEDED_NOT_FOUND,
+      );
     }
   }
 
@@ -721,7 +751,11 @@ export class TaxRateMasterService {
     if (!supersedesId) return;
     if (supersedesId === taxId) {
       throwTaxRateBadRequest('Validation failed', [
-        { field: 'tax_supersedes_id', message: 'A tax rate cannot supersede itself' },
+        {
+          field: 'tax_supersedes_id',
+          code: TaxRateErrorCode.SELF_SUPERSEDE,
+          message: 'A tax rate cannot supersede itself',
+        },
       ]);
     }
 
@@ -736,6 +770,7 @@ export class TaxRateMasterService {
         throwTaxRateBadRequest('Validation failed', [
           {
             field: 'tax_supersedes_id',
+            code: TaxRateErrorCode.SUPERSEDE_LOOP,
             message: 'That rate already supersedes this one — the chain would loop',
           },
         ]);
@@ -795,7 +830,12 @@ export class TaxRateMasterService {
         where: { trlId: line.trl_id, trlTaxId: taxId, trlIsDeleted: false },
       });
       if (!existing) {
-        this.throwNotFound('trl_id', line.trl_id, 'Tax rate ledger line not found on this rate');
+        this.throwNotFound(
+          'trl_id',
+          line.trl_id,
+          'Tax rate ledger line not found on this rate',
+          TaxRateErrorCode.LINE_NOT_FOUND,
+        );
       }
 
       const data: Prisma.TaxRateLedgerUncheckedUpdateInput = {
@@ -927,11 +967,17 @@ export class TaxRateMasterService {
     );
   }
 
-  private throwNotFound(field: string, value: string, message: string): never {
+  private throwNotFound(
+    field: string,
+    value: string,
+    message: string,
+    code: TaxRateErrorCode,
+  ): never {
     throwInventoryNotFound<TaxRateErrorDetail, TaxRateErrorResponse>(
       message,
       field,
       `${field} ${value} was not found`,
+      code,
     );
   }
 }

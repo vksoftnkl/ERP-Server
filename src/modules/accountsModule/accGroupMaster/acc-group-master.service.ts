@@ -24,6 +24,7 @@ import {
   AccGroupMasterNature,
   AccGroupMasterType,
 } from './types/acc-group-master-enum';
+import { AccGroupErrorCode } from './types/acc-group-master-error-codes';
 const ACC_GROUP_MASTER_TABLE_NAME = 'account groups';
 const ACC_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Account Group Master';
 type AccGroupMasterWriteClient = AccountsWriteClient;
@@ -59,6 +60,7 @@ export class AccGroupMasterService {
         'Account group not found',
         'accGroupId',
         `No active account group found with id ${accGroupId}`,
+        AccGroupErrorCode.NOT_FOUND,
       );
     }
     const parentName = await this.getParentName(record.accGroupParentId);
@@ -78,6 +80,7 @@ export class AccGroupMasterService {
           'Account group not found',
           'accGroupId',
           `No active account group found with id ${accGroupId}`,
+          AccGroupErrorCode.NOT_FOUND,
         );
       }
       if (existing.accGroupIsReserved) {
@@ -87,6 +90,7 @@ export class AccGroupMasterService {
             {
               field: 'accGroupId',
               message: `Account group ${accGroupId} is reserved and cannot be deleted`,
+              code: AccGroupErrorCode.RESERVED_DELETE,
             },
           ],
         );
@@ -104,6 +108,7 @@ export class AccGroupMasterService {
             {
               field: 'accGroupId',
               message: `Account group ${accGroupId} has child groups. Reassign or delete them first.`,
+              code: AccGroupErrorCode.HAS_CHILDREN,
             },
           ],
         );
@@ -121,6 +126,7 @@ export class AccGroupMasterService {
             {
               field: 'accGroupId',
               message: `Account group ${accGroupId} is used by ${ledgerCount} ledger(s).`,
+              code: AccGroupErrorCode.HAS_LEDGERS,
             },
           ],
         );
@@ -143,6 +149,7 @@ export class AccGroupMasterService {
           'Account group not found',
           'accGroupId',
           `No active account group found with id ${accGroupId}`,
+          AccGroupErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -188,6 +195,7 @@ export class AccGroupMasterService {
             {
               field: 'accGroupParentId',
               message: 'accGroupParentId is required to create an account group',
+              code: AccGroupErrorCode.PARENT_REQUIRED,
             },
           ]);
         }
@@ -232,13 +240,20 @@ export class AccGroupMasterService {
       throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(
         error,
         'Account group already exists',
-        [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }],
+        [
+          {
+            field: 'accGroupName',
+            message: 'Duplicate accGroupName is not allowed',
+            code: AccGroupErrorCode.NAME_TAKEN,
+          },
+        ],
       );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<AccGroupMasterErrorDetail>('Invalid reference value provided', [
           {
             field: 'accGroupCompanyId',
             message: 'Referenced company or parent account group does not exist',
+            code: AccGroupErrorCode.REFERENCE_INVALID,
           },
         ]);
       }
@@ -262,6 +277,7 @@ export class AccGroupMasterService {
             'Account group not found',
             'accGroupId',
             `No active account group found with id ${accGroupId}`,
+            AccGroupErrorCode.NOT_FOUND,
           );
         }
         if (existing.accGroupIsReserved) {
@@ -271,6 +287,7 @@ export class AccGroupMasterService {
               {
                 field: 'accGroupId',
                 message: `Account group ${accGroupId} is reserved and cannot be edited`,
+                code: AccGroupErrorCode.RESERVED_EDIT,
               },
             ],
           );
@@ -286,6 +303,7 @@ export class AccGroupMasterService {
               {
                 field: 'accGroupParentId',
                 message: 'accGroupParentId cannot be same as accGroupId',
+                code: AccGroupErrorCode.OWN_PARENT,
               },
             ],
           );
@@ -303,6 +321,7 @@ export class AccGroupMasterService {
             {
               field: 'accGroupParentId',
               message: 'Parent cannot be a child of the same account group',
+              code: AccGroupErrorCode.CIRCULAR,
             },
           ]);
         }
@@ -357,13 +376,20 @@ export class AccGroupMasterService {
       throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(
         error,
         'Account group already exists',
-        [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }],
+        [
+          {
+            field: 'accGroupName',
+            message: 'Duplicate accGroupName is not allowed',
+            code: AccGroupErrorCode.NAME_TAKEN,
+          },
+        ],
       );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<AccGroupMasterErrorDetail>('Invalid reference value provided', [
           {
             field: 'accGroupCompanyId',
             message: 'Referenced company or parent account group does not exist',
+            code: AccGroupErrorCode.REFERENCE_INVALID,
           },
         ]);
       }
@@ -392,6 +418,7 @@ export class AccGroupMasterService {
         {
           field: 'accGroupParentId',
           message: `No active account group found with id ${parentId}`,
+          code: AccGroupErrorCode.PARENT_NOT_FOUND,
         },
       ]);
     }
@@ -466,7 +493,7 @@ export class AccGroupMasterService {
         message = `Account group "${groupName}" already exists as a shared group, which this company also sees`;
       }
       throwAccountsConflict<AccGroupMasterErrorDetail>('Account group name already exists', [
-        { field: 'accGroupName', message },
+        { field: 'accGroupName', message, code: AccGroupErrorCode.NAME_TAKEN },
       ]);
     }
   }

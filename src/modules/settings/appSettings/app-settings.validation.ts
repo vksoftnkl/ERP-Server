@@ -5,6 +5,7 @@ import {
   APP_SETTING_SCOPE_RANK,
   AppSettingsErrorDetail,
 } from './types/app-settings-api.types';
+import { AppSettingsErrorCode } from './types/app-settings-error-codes';
 
 /**
  * The rules one catalog row imposes on a value — the columns
@@ -98,6 +99,7 @@ export function validateSettingValue(
     return [
       {
         field,
+        code: AppSettingsErrorCode.VALUE_WRONG_TYPE,
         message: `"${value}" is not a valid ${rules.asdDataType} for setting "${rules.asdKey}"`,
       },
     ];
@@ -106,6 +108,7 @@ export function validateSettingValue(
   if (rules.asdAllowedValues && !rules.asdAllowedValues.includes(value)) {
     details.push({
       field,
+      code: AppSettingsErrorCode.VALUE_NOT_ALLOWED,
       message:
         `"${value}" is not one of the allowed values for setting "${rules.asdKey}" ` +
         `(${rules.asdAllowedValues.join(', ')})`,
@@ -121,12 +124,14 @@ export function validateSettingValue(
     if (rules.asdMinValue !== null && numeric < rules.asdMinValue) {
       details.push({
         field,
+        code: AppSettingsErrorCode.VALUE_BELOW_MIN,
         message: `${numeric} is below the minimum ${rules.asdMinValue} for setting "${rules.asdKey}"`,
       });
     }
     if (rules.asdMaxValue !== null && numeric > rules.asdMaxValue) {
       details.push({
         field,
+        code: AppSettingsErrorCode.VALUE_ABOVE_MAX,
         message: `${numeric} is above the maximum ${rules.asdMaxValue} for setting "${rules.asdKey}"`,
       });
     }

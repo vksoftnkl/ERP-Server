@@ -1,6 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -41,11 +40,14 @@ import { ItemQtyPriceExceptionFilter } from './item-qty-price-exception.filter';
 import { ItemsQtyPriceMasterService } from './items-qty-price-master.service';
 import {
   ItemQtyPriceDeleteResult,
+  ItemQtyPriceErrorDetail,
   ItemQtyPriceListItem,
   ItemQtyPriceListMeta,
   ItemQtyPricePayload,
   ItemQtyPriceSuccessResponse,
 } from './types/item-qty-price-api.types';
+import { ItemQtyPriceErrorCode } from './types/item-qty-price-error-codes';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   hasRequestPayload,
@@ -65,7 +67,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemQtyPriceSuccessSingleDto,
   ItemQtyPriceSuccessListDto,
 )
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-qty-prices')
 @UseFilters(ItemQtyPriceExceptionFilter)
 export class ItemsQtyPriceMasterController {
@@ -223,9 +225,13 @@ export class ItemsQtyPriceMasterController {
 
   private async resolveSavePayload(body: unknown): Promise<SaveItemQtyPriceDto[]> {
     if (!Array.isArray(body)) {
-      throw new BadRequestException({
-        message: ['Request payload must be an array of item qty prices'],
-      });
+      throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
+        {
+          field: 'request',
+          code: ItemQtyPriceErrorCode.PAYLOAD_NOT_ARRAY,
+          message: 'Request payload must be an array of item qty prices',
+        },
+      ]);
     }
 
     return (await validateSingleOrArrayDto(body, SaveItemQtyPriceDto)) as SaveItemQtyPriceDto[];
@@ -257,9 +263,9 @@ export class ItemsQtyPriceMasterController {
     }
 
     if (!iqpId?.trim()) {
-      throw new BadRequestException({
-        message: ['iqp_id is required'],
-      });
+      throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
+        { field: 'iqp_id', code: ItemQtyPriceErrorCode.ID_REQUIRED, message: 'iqp_id is required' },
+      ]);
     }
 
     return await validateDto(

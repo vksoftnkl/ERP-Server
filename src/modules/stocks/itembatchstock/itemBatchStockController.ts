@@ -26,7 +26,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Batch Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-batch-stock')
 @UseFilters(ItemBatchStockExceptionFilter)
 export class ItemBatchStockController {

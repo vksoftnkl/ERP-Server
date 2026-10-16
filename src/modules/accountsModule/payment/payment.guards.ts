@@ -18,6 +18,8 @@ import {
   PAYABLE_BILL_TYPES,
   PAYMENT_VOUCHER_TYPE_CODE,
 } from './types/payment-enum';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * The checks shared by the payment's services. The year, the partition and
@@ -72,11 +74,16 @@ export async function loadPayee(
       'Party not found',
       field,
       `No ledger ${partyId} is visible to this company`,
+      VCH.PARTY_NOT_FOUND,
     );
   }
   if (!facts.isActive) {
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-      { field, message: `"${facts.name}" is inactive and cannot be paid` },
+      {
+        field,
+        code: VCH.LEDGER_INACTIVE,
+        message: `"${facts.name}" is inactive and cannot be paid`,
+      },
     ]);
   }
   const money = isMoneyLedger(facts);
@@ -84,6 +91,7 @@ export async function loadPayee(
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
       {
         field,
+        code: ACC.PARTY_IS_CASH,
         message:
           `"${facts.name}" is a cash / bank ledger (${facts.groupName}). Moving money between ` +
           'cash and bank is a Contra — use the Voucher Register, not a payment.',
@@ -125,6 +133,7 @@ export async function loadPaymentVoucherType(
       'avhVoucherTypeId',
       `accounts.acc_voucher_types has no active row with vchr_type_code = '${PAYMENT_VOUCHER_TYPE_CODE}'. ` +
         'Run migration 20260929090000.',
+      ACC.TYPE_NOT_SET_UP,
     );
   }
   return {
@@ -154,6 +163,7 @@ export function assertHeaderScope(
       'Payment not found',
       'avhVoucherId',
       `No payment ${keys.voucherId} at this company / branch / year`,
+      VCH.NOT_FOUND,
     );
   }
 }
@@ -182,16 +192,25 @@ export function assertPayableUsable(
       'Bill not found',
       expect.field,
       `No live bill ${expect.billId}`,
+      VCH.BILL_NOT_FOUND,
     );
   }
   if (bill.ablPartyId !== expect.partyId) {
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-      { field: expect.field, message: `Bill ${bill.ablDocRefno} belongs to another party` },
+      {
+        field: expect.field,
+        code: VCH.BILL_WRONG_PARTY,
+        message: `Bill ${bill.ablDocRefno} belongs to another party`,
+      },
     ]);
   }
   if (bill.ablCompanyId !== expect.companyId) {
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
-      { field: expect.field, message: `Bill ${bill.ablDocRefno} belongs to another company` },
+      {
+        field: expect.field,
+        code: VCH.BILL_WRONG_PARTY,
+        message: `Bill ${bill.ablDocRefno} belongs to another company`,
+      },
     ]);
   }
   const allowed: readonly string[] =
@@ -200,6 +219,7 @@ export function assertPayableUsable(
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
       {
         field: expect.field,
+        code: VCH.BILL_WRONG_SIDE,
         message:
           `Bill ${bill.ablDocRefno} is a ${bill.ablBillType} bill and cannot be settled as ` +
           `${expect.kind === 'PAYABLE' ? 'a payable' : 'a debit we hold'} by a payment`,
@@ -211,6 +231,7 @@ export function assertPayableUsable(
     throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
       {
         field: expect.field,
+        code: VCH.BILL_WRONG_SIDE,
         message:
           `Bill ${bill.ablDocRefno} sits on the ${bill.ablDrCr} side of this party's account, ` +
           `and a ${expect.kind === 'PAYABLE' ? 'payable' : 'held debit'} must be ${wantSide}`,

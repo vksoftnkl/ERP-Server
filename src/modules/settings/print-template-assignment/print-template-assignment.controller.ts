@@ -47,6 +47,7 @@ import {
   PrintTemplateAssignmentResolution,
   PrintTemplateAssignmentSuccessResponse,
 } from './types/print-template-assignment-api.types';
+import { PrintTemplateAssignmentErrorCode } from './types/print-template-assignment-error-codes';
 
 @ApiTags('Print Template Assignments')
 @ApiBearerAuth('access-token')
@@ -137,6 +138,7 @@ export class PrintTemplateAssignmentController {
       >('No company to resolve against', [
         {
           field: 'companyId',
+          code: PrintTemplateAssignmentErrorCode.COMPANY_MISSING,
           message:
             'An assignment is resolved within one company. None was sent and the session carries ' +
             'none — re-authenticate against a company, or name one.',

@@ -39,6 +39,8 @@ import {
 import { CancelPaymentDto } from './dto/post-payment.dto';
 import { DrCr, PdcStatus, VoucherStatus } from './types/payment-enum';
 import type { PaymentCancelPayload, PaymentErrorDetail } from './types/payment-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.3 — cancel: unmaking a posted payment. `receipt-cancel.service.ts`,
@@ -87,6 +89,7 @@ export class PaymentCancelService {
         throwAccountsConflict<PaymentErrorDetail>('Payment cannot be cancelled', [
           {
             field: 'avhVoucherId',
+            code: statusOf(header) === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_POSTED,
             message:
               `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
               'Only a POSTED payment is cancelled; a DRAFT is simply not posted.',
@@ -97,6 +100,7 @@ export class PaymentCancelService {
         throwAccountsConflict<PaymentErrorDetail>('Payment cannot be cancelled', [
           {
             field: 'avhVoucherId',
+            code: ACC.PDC_VOUCHER,
             message:
               'This is a post-dated cheque voucher, not a payment. Cancel the payment it belongs to ' +
               'and both are reversed together.',
@@ -396,6 +400,7 @@ export class PaymentCancelService {
       throwAccountsBadRequest<PaymentErrorDetail>('The reversal does not balance', [
         {
           field: 'avhVoucherId',
+          code: VCH.UNBALANCED,
           message:
             `The reversal of ${voucher.avhVoucherRefno} is out by ${totals.difference.toFixed(2)}. ` +
             'The original voucher is unbalanced; nothing has been changed.',
@@ -489,6 +494,7 @@ export class PaymentCancelService {
       throwAccountsConflict<PaymentErrorDetail>('Payment cannot be cancelled', [
         {
           field: 'avhVoucherId',
+          code: VCH.TDS_DEPOSITED,
           message:
             `The TDS on ${header.avhVoucherRefno} was deposited under challan ${deposited.atd_challan_no} — ` +
             'correct it with a 26Q revision, not a cancel',

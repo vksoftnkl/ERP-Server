@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import { throwStockNotFound } from 'src/common/utils/module-service.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
 import type {
   StockErrorDetail,
   StockErrorResponse,
@@ -72,6 +73,7 @@ export async function resolveDeviceCode(
       'Device not found',
       'deviceId',
       `No device master row ${deviceId}. svh_device_id is NOT NULL and the device is the number series — register the device before raising documents on it.`,
+      StockErrorCode.DEVICE_NOT_FOUND,
     );
   }
   if (device.devIsBlocked || !device.devIsActive) {
@@ -81,6 +83,7 @@ export async function resolveDeviceCode(
       device.devBlockReason?.trim()
         ? `Device ${deviceId} is blocked: ${device.devBlockReason.trim()}`
         : `Device ${deviceId} is blocked or inactive.`,
+      StockErrorCode.DEVICE_BLOCKED,
     );
   }
   const code = device.devDeviceUid?.trim() || device.devDeviceName?.trim();

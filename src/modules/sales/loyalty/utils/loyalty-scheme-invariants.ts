@@ -1,3 +1,4 @@
+import { LoyaltyErrorCode } from '../types/loyalty-error-codes';
 import { PromotionLoyaltyPointsErrorDetail } from '../types/promotion-loyalty-points-api.types';
 import {
   LSC_APPLY_ON,
@@ -81,12 +82,18 @@ const vocabulary = (
 ): PromotionLoyaltyPointsErrorDetail[] =>
   allowed.includes(value)
     ? ok
-    : [{ field, message: `${field} must be one of ${allowed.join(', ')}` }];
+    : [
+        {
+          field,
+          message: `${field} must be one of ${allowed.join(', ')}`,
+          code: LoyaltyErrorCode.VALUE_NOT_ALLOWED,
+        },
+      ];
 
 const notNegative = (field: string, value: number | null): PromotionLoyaltyPointsErrorDetail[] =>
   value === null || (Number.isFinite(value) && value >= 0)
     ? ok
-    : [{ field, message: `${field} must be 0 or more` }];
+    : [{ field, message: `${field} must be 0 or more`, code: LoyaltyErrorCode.NEGATIVE_VALUE }];
 
 const inRange = (
   field: string,
@@ -96,12 +103,18 @@ const inRange = (
 ): PromotionLoyaltyPointsErrorDetail[] =>
   Number.isFinite(value) && value >= minimum && value <= maximum
     ? ok
-    : [{ field, message: `${field} must be between ${minimum} and ${maximum}` }];
+    : [
+        {
+          field,
+          message: `${field} must be between ${minimum} and ${maximum}`,
+          code: LoyaltyErrorCode.OUT_OF_RANGE,
+        },
+      ];
 
 const greaterThanZero = (field: string, value: number): PromotionLoyaltyPointsErrorDetail[] =>
   Number.isFinite(value) && value > 0
     ? ok
-    : [{ field, message: `${field} must be greater than 0` }];
+    : [{ field, message: `${field} must be greater than 0`, code: LoyaltyErrorCode.NOT_ABOVE_ZERO }];
 
 const wholeBetween = (
   field: string,
@@ -111,7 +124,13 @@ const wholeBetween = (
 ): PromotionLoyaltyPointsErrorDetail[] =>
   Number.isInteger(value) && value >= minimum && value <= maximum
     ? ok
-    : [{ field, message: `${field} must be a whole number between ${minimum} and ${maximum}` }];
+    : [
+        {
+          field,
+          message: `${field} must be a whole number between ${minimum} and ${maximum}`,
+          code: LoyaltyErrorCode.OUT_OF_RANGE,
+        },
+      ];
 
 // ─── shape ────────────────────────────────────────────────────────────────────
 
@@ -123,6 +142,7 @@ export const ckLscCodeShape: SchemeInvariant = (s) =>
         {
           field: 'lsc_code',
           message: 'lsc_code may contain only letters, digits, underscore and hyphen',
+          code: LoyaltyErrorCode.CODE_SHAPE,
         },
       ];
 
@@ -191,6 +211,7 @@ export const ckLscExpiryDays: SchemeInvariant = (s) => [
           field: 'lsc_points_valid_days',
           message:
             'lsc_points_valid_days must be greater than 0 when lsc_expiry_basis is EARN_DATE',
+          code: LoyaltyErrorCode.EXPIRY_DAYS_REQUIRED,
         },
       ]),
 ];
@@ -201,7 +222,13 @@ export const ckLscExpiryDays: SchemeInvariant = (s) => [
 export const ckLscDates: SchemeInvariant = (s) =>
   s.lscEndDate.getTime() >= s.lscStartDate.getTime()
     ? ok
-    : [{ field: 'lsc_end_date', message: 'lsc_end_date must be on or after lsc_start_date' }];
+    : [
+        {
+          field: 'lsc_end_date',
+          message: 'lsc_end_date must be on or after lsc_start_date',
+          code: LoyaltyErrorCode.END_BEFORE_START,
+        },
+      ];
 
 /**
  * ck_lsc_time_pair — both ends of the window or neither.
@@ -216,6 +243,7 @@ export const ckLscTimePair: SchemeInvariant = (s) =>
         {
           field: 'lsc_valid_to_time',
           message: 'Send both lsc_valid_from_time and lsc_valid_to_time, or neither',
+          code: LoyaltyErrorCode.TIME_PAIR_INCOMPLETE,
         },
       ];
 
@@ -227,6 +255,7 @@ export const ckLscWeekdays: SchemeInvariant = (s) =>
         {
           field: 'lsc_valid_weekdays',
           message: 'lsc_valid_weekdays must be comma-separated MON,TUE,WED,THU,FRI,SAT,SUN',
+          code: LoyaltyErrorCode.WEEKDAYS_INVALID,
         },
       ];
 
@@ -272,6 +301,7 @@ export const ckLscRedeemRate: SchemeInvariant = (s) =>
           field: 'lsc_redeem_value_per_point',
           message:
             'lsc_redeem_value_per_point must be greater than 0 once lsc_allow_point_redeem is true',
+          code: LoyaltyErrorCode.REDEEM_RATE_REQUIRED,
         },
       ];
 
@@ -285,6 +315,7 @@ export const ckLscApproved: SchemeInvariant = (s) =>
         {
           field: 'lsc_approved_by',
           message: 'lsc_approved_by is required once lsc_status is APPROVED',
+          code: LoyaltyErrorCode.SCHEME_APPROVER_REQUIRED,
         },
       ];
 
@@ -338,7 +369,13 @@ export type BranchInvariant = (row: EffectiveBranchRow) => PromotionLoyaltyPoint
 export const ckLsbSlno: BranchInvariant = (r) =>
   Number.isInteger(r.lsbSlno) && r.lsbSlno > 0
     ? ok
-    : [{ field: 'lsb_slno', message: 'lsb_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'lsb_slno',
+          message: 'lsb_slno must be a whole number greater than 0',
+          code: LoyaltyErrorCode.SLNO_INVALID,
+        },
+      ];
 
 export const BRANCH_INVARIANTS: ReadonlyMap<string, BranchInvariant> = new Map([
   ['ck_lsb_slno', ckLsbSlno],
@@ -368,7 +405,13 @@ export const ckLspKind: PartyInvariant = (r) => vocabulary('lsp_kind', r.lspKind
 export const ckLspSlno: PartyInvariant = (r) =>
   Number.isInteger(r.lspSlno) && r.lspSlno > 0
     ? ok
-    : [{ field: 'lsp_slno', message: 'lsp_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'lsp_slno',
+          message: 'lsp_slno must be a whole number greater than 0',
+          code: LoyaltyErrorCode.SLNO_INVALID,
+        },
+      ];
 
 /**
  * ck_lsp_match_priority — BETWEEN 0 AND 9. Narrowest wins, so this is the column
@@ -419,6 +462,7 @@ export const ckLsiExclude: ItemInvariant = (r) =>
         {
           field: 'lsi_is_exclude',
           message: 'An exclude row earns nothing — leave lsi_points at 0 and lsi_factor at 1',
+          code: LoyaltyErrorCode.EXCLUDE_ROW_EARNS,
         },
       ];
 
@@ -433,7 +477,13 @@ export const ckLsiValues: ItemInvariant = (r) => [
 export const ckLsiSlno: ItemInvariant = (r) =>
   Number.isInteger(r.lsiSlno) && r.lsiSlno > 0
     ? ok
-    : [{ field: 'lsi_slno', message: 'lsi_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'lsi_slno',
+          message: 'lsi_slno must be a whole number greater than 0',
+          code: LoyaltyErrorCode.SLNO_INVALID,
+        },
+      ];
 
 /**
  * ck_lsi_match_priority — BETWEEN 0 AND 9. Most specific wins; seeded by kind
@@ -477,7 +527,13 @@ export const ckLssBand: SlabInvariant = (r) => [
   ...notNegative('lss_exceeds', r.lssExceeds),
   ...(r.lssUpto === null || r.lssUpto > r.lssExceeds
     ? ok
-    : [{ field: 'lss_upto', message: 'lss_upto must be greater than lss_exceeds' }]),
+    : [
+        {
+          field: 'lss_upto',
+          message: 'lss_upto must be greater than lss_exceeds',
+          code: LoyaltyErrorCode.SLAB_BAND_INVALID,
+        },
+      ]),
 ];
 
 /** ck_lss_values — lss_each > 0, points >= 0, factor > 0, max_points >= 0. */
@@ -492,7 +548,13 @@ export const ckLssValues: SlabInvariant = (r) => [
 export const ckLssSlno: SlabInvariant = (r) =>
   Number.isInteger(r.lssSlno) && r.lssSlno > 0
     ? ok
-    : [{ field: 'lss_slno', message: 'lss_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'lss_slno',
+          message: 'lss_slno must be a whole number greater than 0',
+          code: LoyaltyErrorCode.SLNO_INVALID,
+        },
+      ];
 
 export const SLAB_INVARIANTS: ReadonlyMap<string, SlabInvariant> = new Map([
   ['ck_lss_band', ckLssBand],
@@ -536,13 +598,25 @@ export const ckLsgValidity: GiftInvariant = (r) =>
   r.lsgValidUpto === null ||
   r.lsgValidUpto.getTime() >= r.lsgValidFrom.getTime()
     ? ok
-    : [{ field: 'lsg_valid_upto', message: 'lsg_valid_upto must be on or after lsg_valid_from' }];
+    : [
+        {
+          field: 'lsg_valid_upto',
+          message: 'lsg_valid_upto must be on or after lsg_valid_from',
+          code: LoyaltyErrorCode.END_BEFORE_START,
+        },
+      ];
 
 /** ck_lsg_slno — lsg_slno > 0 */
 export const ckLsgSlno: GiftInvariant = (r) =>
   Number.isInteger(r.lsgSlno) && r.lsgSlno > 0
     ? ok
-    : [{ field: 'lsg_slno', message: 'lsg_slno must be a whole number greater than 0' }];
+    : [
+        {
+          field: 'lsg_slno',
+          message: 'lsg_slno must be a whole number greater than 0',
+          code: LoyaltyErrorCode.SLNO_INVALID,
+        },
+      ];
 
 export const GIFT_INVARIANTS: ReadonlyMap<string, GiftInvariant> = new Map([
   ['ck_lsg_qty', ckLsgQty],

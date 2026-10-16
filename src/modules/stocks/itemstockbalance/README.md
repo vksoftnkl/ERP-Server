@@ -8,7 +8,7 @@ stock bucket, plus per-batch stock lookups. All quantities are additionally conv
 - **Base route:** `item-stock-balance` (each route is API-versioned via `API_VERSION`)
 - **Swagger tag:** `Item Stock Balance`
 - **Auth:** Bearer `access-token` (declared via `@ApiBearerAuth`)
-- **Caching:** controller-level `@CacheTTL(60)` (60s)
+- **Caching:** controller-level `@CacheTTL(1)` (1s)
 - **Primary table:** `item_stock_balance` (`inventory` schema) — PK `isbId`, unique scope
   `uq_isb_balance_scope` = accYear + companyId + branchId + godownId + itemId + unitId + stockBucket
 - **Batch table:** `item_batch_stock` (`inventory` schema) — PK `ibsId`, joined to `ItemBatchMaster` (`batch`)

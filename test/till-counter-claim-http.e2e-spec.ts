@@ -315,7 +315,7 @@ describe('Rules 3 and 4 · the counter line of S1', () => {
 
 describe('Opening', () => {
   let linkedSession: string;
-  let tabASession: { tssId: string; tssSessionNo: string };
+  let tabASession: { tssId: string; tssSessionNo: string; tssAccYear: string };
 
   it('a linked PC opens only on its counter: claim LINKED (test 1)', async () => {
     const elsewhere = await open('tester', dev.linkedPc, { counterId: ctr.free1 });
@@ -469,6 +469,43 @@ describe('Opening', () => {
       const [bill] = await prisma.$queryRaw<{ s: string; c: string }[]>`
         SELECT sb_session_id::text AS s, sb_counter_id::text AS c FROM sales.sale_bill WHERE sb_id = ${sbId}::uuid`;
       expect(bill).toEqual({ s: tabASession.tssId, c: ctr.free1 });
+    });
+
+    it('notes 122 §1 — while the picked counter’s drawer waits for an approver, the tablet takes no cash: TILL_SESSION_NOT_OPEN', async () => {
+      const key = {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: tabASession.tssAccYear,
+        tssId: tabASession.tssId,
+      };
+      expectStatus(await postAs('tester1', dev.tabA, 'till/sessions/end-billing', key), 200);
+      // Short by the bill (tolerance 10, one recount): the second count sends it for approval.
+      const short = { ...key, lines: [{ tenderTypeId: 1, enteredAmount: 1 }] };
+      expectStatus(await postAs('tester1', dev.tabA, 'till/sessions/count', short), 200);
+      const last = await postAs('tester1', dev.tabA, 'till/sessions/count', short);
+      expectStatus(last, 200);
+      expect(last.body.data.tssStatus).toBe('PENDING_APPROVAL');
+
+      const created = await postAs(
+        'tester1',
+        dev.tabA,
+        'bills/create',
+        billBody({
+          custId: WALK_IN,
+          custName: WALK_IN_NAME,
+          lines: [{ item, qty: 1, rate: 100 }],
+          usrRefno: `E2E-CLAIM-${tag}-PA`,
+        }),
+      );
+      expectStatus(created, 201);
+      const draftId: string = created.body.data.sbId;
+      try {
+        const res = await postAs('tester1', dev.tabA, 'bills/post', billKeys(draftId));
+        expectStatus(res, 409);
+        expect(codeOf(res)).toBe('TILL_SESSION_NOT_OPEN');
+      } finally {
+        await postAs('tester1', dev.tabA, 'bills/delete', billKeys(draftId));
+      }
     });
   });
 });

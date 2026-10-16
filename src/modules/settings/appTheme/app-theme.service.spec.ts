@@ -42,10 +42,22 @@ describe('AppThemeService.validateTokens', () => {
     expect(
       refusal({ primary: 'red', 'button.bg': '#FFFFFF', text: null, focus: '#12345' }),
     ).toEqual([
-      { field: 'tokens.primary', message: 'not a colour: #rrggbb or #rrggbbaa' },
-      { field: 'tokens.button.bg', message: 'unknown token' },
-      { field: 'tokens.text', message: 'not a colour: #rrggbb or #rrggbbaa' },
-      { field: 'tokens.focus', message: 'not a colour: #rrggbb or #rrggbbaa' },
+      {
+        field: 'tokens.primary',
+        code: 'THM_TOKEN_NOT_COLOUR',
+        message: 'not a colour: #rrggbb or #rrggbbaa',
+      },
+      { field: 'tokens.button.bg', code: 'THM_TOKEN_UNKNOWN', message: 'unknown token' },
+      {
+        field: 'tokens.text',
+        code: 'THM_TOKEN_NOT_COLOUR',
+        message: 'not a colour: #rrggbb or #rrggbbaa',
+      },
+      {
+        field: 'tokens.focus',
+        code: 'THM_TOKEN_NOT_COLOUR',
+        message: 'not a colour: #rrggbb or #rrggbbaa',
+      },
     ]);
   });
 });

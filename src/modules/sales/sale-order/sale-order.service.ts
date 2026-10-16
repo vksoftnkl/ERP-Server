@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { tillSessionIdOrNull } from '../../till/till-session-id';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import {
   resolveDefaultSaleGodowns,
@@ -36,6 +37,8 @@ import {
   SaleOrderSrcDocPendingAmount,
   SaleOrderTenderPayload,
 } from './types/sale-order-api.types';
+import { SaleOrderErrorCode } from './types/sale-order-error-codes';
+import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 // Which sale bills draw quantity down off an order line. Imported rather than
 // restated so the two modules can never disagree about what "billed" means; the
 // dependency only points this way, so it adds no cycle to the sale-bill module
@@ -467,6 +470,7 @@ function toDateOrNull(value: unknown, field: string): Date | null | undefined {
       {
         field,
         message: `${field} must be a valid ISO date`,
+        code: SaleOrderErrorCode.INVALID_DATE,
       },
     ]);
   }
@@ -691,6 +695,7 @@ export class SaleOrderService {
         'Order not found',
         'soId',
         `No active order found with id ${soId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // txn_charge_detail is polymorphic (no FK to sale_order), so the applied
@@ -775,6 +780,7 @@ export class SaleOrderService {
           {
             field: 'ablSrcDocType',
             message: `ablSrcDocType is required — the document discriminator the bill row carries, e.g. ${SALE_ORDER_DOC_TYPES.join(', ')}`,
+            code: SaleOrderErrorCode.SRC_DOC_TYPE_REQUIRED,
           },
         ],
       );
@@ -787,6 +793,7 @@ export class SaleOrderService {
           {
             field: 'ablSrcAccYear',
             message: 'ablSrcAccYear must be in the YYYY-YYYY form, e.g. 2026-2027',
+            code: SaleOrderErrorCode.ACC_YEAR_INVALID,
           },
         ],
       );
@@ -829,6 +836,7 @@ export class SaleOrderService {
           'Order not found',
           'soId',
           `No active order found with id ${soId}`,
+          SALES_ERROR_CODES.NOT_FOUND,
         );
       }
       // Money the company still HOLDS blocks the delete: an order whose advance
@@ -843,6 +851,7 @@ export class SaleOrderService {
               field: 'soAdvanceBalanceAmt',
               message:
                 'The order still holds an advance balance; refund, forfeit or transfer it before deleting',
+              code: SaleOrderErrorCode.ADVANCE_HELD,
             },
           ],
         );
@@ -876,6 +885,7 @@ export class SaleOrderService {
           'Order not found',
           'soId',
           `No active order found with id ${soId}`,
+          SALES_ERROR_CODES.NOT_FOUND,
         );
       }
       // Cascade the soft delete to the order's line items so no line stays
@@ -993,6 +1003,7 @@ export class SaleOrderService {
         {
           field: 'srcModule',
           message: `srcModule must be one of ${SALE_ORDER_CANCEL_SRC_MODULES.join(', ')} for a sales order`,
+          code: SaleOrderErrorCode.SRC_MODULE_INVALID,
         },
       ]);
     }
@@ -1031,6 +1042,7 @@ export class SaleOrderService {
           'Order not found',
           'srcDocId',
           `No active order or order line found with id ${srcDocId} in accounting year ${srcAccYear}`,
+          SALES_ERROR_CODES.NOT_FOUND,
         );
       }
       return this.cancelOrderOpenLines(tx, {
@@ -1084,6 +1096,7 @@ export class SaleOrderService {
             message:
               `No active order found with id ${target.soId} in accounting year ` +
               `${target.soAccYear}`,
+            code: SALES_ERROR_CODES.NOT_FOUND,
           },
         ]);
       }
@@ -1190,6 +1203,7 @@ export class SaleOrderService {
             message:
               'The order still holds an advance balance; refund, forfeit or transfer it before ' +
               'cancelling the remaining quantity',
+            code: SaleOrderErrorCode.ADVANCE_HELD,
           },
         ],
       );
@@ -1299,6 +1313,7 @@ export class SaleOrderService {
         'Order not found',
         'srcDocId',
         `No active order found with id ${existing.soId} in accounting year ${srcAccYear}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // Only a real status MOVE is a step in the trail, the same rule the
@@ -1642,6 +1657,7 @@ export class SaleOrderService {
                 `year ${srcAccYear}. ${ref.fields.docId} takes the sale order LINE's soi_id ` +
                 `(or the order's so_id with ${ref.fields.lineNo ?? 'a line number'}), and ` +
                 `${ref.fields.accYear} takes that order's OWN accounting year, not the bill's.`,
+              code: SALES_ERROR_CODES.NOT_FOUND,
             },
           ]);
         }
@@ -1706,6 +1722,7 @@ export class SaleOrderService {
         {
           field: fields.docId,
           message: `No active order found with id ${soId} in accounting year ${soAccYear}`,
+          code: SALES_ERROR_CODES.NOT_FOUND,
         },
       ]);
     }
@@ -1737,6 +1754,7 @@ export class SaleOrderService {
           message:
             `Order ${order.soOrderRefno || soId} has no active line numbered ` +
             unknownLineNos.join(', '),
+          code: SALES_ERROR_CODES.LINE_NOT_FOUND,
         },
       ]);
     }
@@ -1968,6 +1986,7 @@ export class SaleOrderService {
         'Order not found',
         fields.docId,
         `No active order found with id ${soId} in accounting year ${soAccYear}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     // Only a real status MOVE is a step in the trail — an edit that leaves the
@@ -2076,6 +2095,7 @@ export class SaleOrderService {
     tx: Prisma.TransactionClient,
     saveOrderDto: SaveSaleOrderDto,
   ): Promise<SaleOrderPayload> {
+    saveOrderDto.soSessionId = await tillSessionIdOrNull(tx, saveOrderDto.soSessionId);
     const normalizedCustName = normalizeRequiredText<SaleOrderErrorDetail, SaleOrderErrorResponse>(
       saveOrderDto.soCustName ?? '',
       'soCustName',
@@ -2215,6 +2235,7 @@ export class SaleOrderService {
     tx: Prisma.TransactionClient,
     saveOrderDto: SaveSaleOrderDto,
   ): Promise<SaleOrderPayload> {
+    saveOrderDto.soSessionId = await tillSessionIdOrNull(tx, saveOrderDto.soSessionId);
     const soId = saveOrderDto.soId!;
     const existing = await tx.saleOrder.findFirst({
       where: {
@@ -2227,6 +2248,7 @@ export class SaleOrderService {
         'Order not found',
         'soId',
         `No active order found with id ${soId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
@@ -2383,6 +2405,7 @@ export class SaleOrderService {
             {
               field: 'soiLineNo',
               message: `An order line already exists with line number ${lineNo}`,
+              code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
             },
           ],
         );
@@ -2394,6 +2417,7 @@ export class SaleOrderService {
             'Order item not found',
             'soiId',
             `No active order line found with id ${inputItem.soiId} on this order`,
+            SALES_ERROR_CODES.LINE_NOT_FOUND,
           );
         }
         keptIds.add(inputItem.soiId);
@@ -2620,6 +2644,7 @@ export class SaleOrderService {
           {
             field: 'soiLineNo',
             message: 'An order line already exists with this line number',
+            code: SALES_ERROR_CODES.LINE_NO_DUPLICATE,
           },
         ],
       };
@@ -2631,6 +2656,7 @@ export class SaleOrderService {
           field: 'soOrderRefno',
           message:
             'An order already exists with this order number in this company/branch/year scope',
+          code: SaleOrderErrorCode.ORDER_NO_TAKEN,
         },
       ],
     };
@@ -2663,7 +2689,11 @@ export class SaleOrderService {
       }
       if (value === null) {
         if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
+          details.push({
+            field: guard.field,
+            message: `${guard.field} is required`,
+            code: SALES_ERROR_CODES.FIELD_REQUIRED,
+          });
         }
         continue;
       }
@@ -2671,6 +2701,7 @@ export class SaleOrderService {
         details.push({
           field: guard.field,
           message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+          code: SaleOrderErrorCode.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -2707,7 +2738,11 @@ export class SaleOrderService {
     ];
     for (const [field, amount] of amounts) {
       if (amount.isNegative()) {
-        details.push({ field, message: `${field} must not be negative` });
+        details.push({
+          field,
+          message: `${field} must not be negative`,
+          code: SaleOrderErrorCode.NEGATIVE_VALUE,
+        });
       }
     }
     const expectedBalance = roundAmount(recd.minus(adjusted).minus(refund).minus(forfeit));
@@ -2717,6 +2752,7 @@ export class SaleOrderService {
         details.push({
           field: 'soAdvanceBalanceAmt',
           message: 'soAdvanceBalanceAmt must not be negative',
+          code: SaleOrderErrorCode.NEGATIVE_VALUE,
         });
       }
       // Both sides rounded to the paisa the column keeps, then compared for
@@ -2727,6 +2763,7 @@ export class SaleOrderService {
           message:
             'soAdvanceBalanceAmt must equal soAdvanceRecdAmt − soAdvanceAdjustedAmt − ' +
             'soAdvanceRefundAmt − soAdvanceForfeitAmt (ck_so_advance_balance)',
+          code: SaleOrderErrorCode.ADVANCE_BALANCE_MISMATCH,
         });
       }
     } else if (expectedBalance.isNegative()) {
@@ -2737,6 +2774,7 @@ export class SaleOrderService {
         message:
           'The advance roll-ups use more than was received: received − adjusted − refunded − ' +
           'forfeited must not be negative',
+        code: SaleOrderErrorCode.ADVANCE_OVERUSED,
       });
     }
     // A percentage policy needs a percentage; a fixed one needs an amount.
@@ -2746,12 +2784,14 @@ export class SaleOrderService {
       details.push({
         field: 'soAdvancePerc',
         message: "soAdvancePerc must be greater than 0 when soAdvancePolicy is 'PERC'",
+        code: SaleOrderErrorCode.ADVANCE_PERC_REQUIRED,
       });
     }
     if (policy === 'FIXED' && required.lessThanOrEqualTo(0)) {
       details.push({
         field: 'soAdvanceRequired',
         message: "soAdvanceRequired must be greater than 0 when soAdvancePolicy is 'FIXED'",
+        code: SaleOrderErrorCode.ADVANCE_AMOUNT_REQUIRED,
       });
     }
     if (details.length > 0) {
@@ -2892,6 +2932,7 @@ export class SaleOrderService {
         details.push({
           field: 'soiFreeType',
           message: `soiFreeType must be one of: ${SALE_ORDER_ITEM_FREE_TYPES.join(', ')}`,
+          code: SaleOrderErrorCode.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -2906,6 +2947,7 @@ export class SaleOrderService {
         details.push({
           field: 'soiLineStatus',
           message: `soiLineStatus must be one of: ${SALE_ORDER_ITEM_LINE_STATUSES.join(', ')}`,
+          code: SaleOrderErrorCode.VALUE_NOT_ALLOWED,
         });
       }
     }
@@ -2916,6 +2958,7 @@ export class SaleOrderService {
         details.push({
           field: 'soiSize',
           message: 'soiSize must not be blank; omit it or send null instead',
+          code: SaleOrderErrorCode.SIZE_BLANK,
         });
       }
     }
@@ -2929,16 +2972,25 @@ export class SaleOrderService {
       ['soiCancelledQty', cancelledQty],
     ] as Array<[string, Prisma.Decimal]>) {
       if (qty.isNegative()) {
-        details.push({ field, message: `${field} must not be negative` });
+        details.push({
+          field,
+          message: `${field} must not be negative`,
+          code: SaleOrderErrorCode.NEGATIVE_VALUE,
+        });
       }
     }
     if (inputItem.soiPendingQty !== undefined && dec(inputItem.soiPendingQty).isNegative()) {
-      details.push({ field: 'soiPendingQty', message: 'soiPendingQty must not be negative' });
+      details.push({
+        field: 'soiPendingQty',
+        message: 'soiPendingQty must not be negative',
+        code: SaleOrderErrorCode.NEGATIVE_VALUE,
+      });
     }
     if (reservedQty.isNegative() || reservedQty.greaterThan(orderQty)) {
       details.push({
         field: 'soiReservedQty',
         message: 'soiReservedQty must be between 0 and soiOrderQty (ck_soi_reserved)',
+        code: SaleOrderErrorCode.RESERVED_OUT_OF_RANGE,
       });
     }
     if (details.length > 0) {
@@ -2989,6 +3041,7 @@ export class SaleOrderService {
             message:
               'soiDeliveredQty + soiCancelledQty must not exceed soiNetQty ' +
               '(soi_pending_qty is derived from the three and ck_soi_qty_signs keeps it positive)',
+            code: SaleOrderErrorCode.QTY_OVER_NET,
           },
         ],
       );
@@ -3009,6 +3062,7 @@ export class SaleOrderService {
             message:
               'soiPendingQty is derived by the database as soiNetQty − soiDeliveredQty − ' +
               'soiCancelledQty and cannot be set; omit it or send the derived value',
+            code: SaleOrderErrorCode.PENDING_QTY_DERIVED,
           },
         ],
       );
@@ -3022,6 +3076,7 @@ export class SaleOrderService {
           {
             field,
             message: `${field} must be provided when creating this entry`,
+            code: SALES_ERROR_CODES.LINE_FIELD_REQUIRED,
           },
         ],
       );

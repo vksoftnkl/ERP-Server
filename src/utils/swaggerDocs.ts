@@ -104,6 +104,7 @@ import { TillModule } from '../modules/till/till.module';
 import { StockAdjustmentModule } from '../modules/stocks/stock-adjustment/stock-adjustment.module';
 import { StockPostingModule } from '../modules/stocks/posting/stock-posting.module';
 import { TxnStatusModule } from '../modules/txn-status/txn-status.module';
+import { ErrorMessagesModule } from '../modules/error-messages/error-messages.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -865,6 +866,16 @@ export const swaggerModuleDocuments = [
       'status step is still DRAFT, HELD, CONFIRMED or IN_TRANSIT, with counts per module, doc ' +
       'type and status',
     include: [TxnStatusModule],
+  },
+  {
+    path: 'error-messages',
+    title: 'Error Messages API',
+    description:
+      'GET /error-messages (notes 120) — the plain wording for every error code from ' +
+      'fixed.error_message, for the apps to cache: one language per call (query, else ' +
+      'Accept-Language, else en), and `since` = the version held answers `unchanged: true` with ' +
+      'no rows. Login only, no menu right',
+    include: [ErrorMessagesModule],
   },
   {
     path: 'audit-logs',

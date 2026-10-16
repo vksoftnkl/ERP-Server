@@ -131,6 +131,8 @@ afterAll(async () => {
   const ids = sessions.map((s) => s.tssId);
   if (ids.length > 0) {
     await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_session_id = ANY(${ids}::uuid[])`;
+    // Notes 124 §5: an open whose count differs files a FLOAT_MISMATCH request (WARN).
+    await prisma.$executeRaw`DELETE FROM accounts.till_approval WHERE tap_session_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM accounts.till_variance WHERE tvr_session_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ANY(${ids}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM accounts.till_cash_movement WHERE tcm_session_id = ANY(${ids}::uuid[])`;

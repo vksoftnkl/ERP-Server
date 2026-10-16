@@ -92,6 +92,7 @@ export class TillSlipCheckService {
          AND t.td_acc_year   = ${session.tssAccYear}::char(9)
          AND t.td_tender_id  = ${key.tenderId}::uuid
          AND t.td_is_deleted = false AND t.td_is_voided = false
+         AND t.td_src_doc_type <> 'VOUCHER'
          AND CASE t.td_src_doc_type
                WHEN 'SALE_BILL'   THEN b.sb_status = 'POSTED'
                WHEN 'SALE_RETURN' THEN r.sr_status = 'POSTED'

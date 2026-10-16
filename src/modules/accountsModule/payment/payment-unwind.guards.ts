@@ -4,6 +4,8 @@ import { BillType, CANCELLABLE_PDC_STATUSES } from './types/payment-enum';
 import { paymentChequeFilter, type PaymentChequeScope } from './payment-cheque-links';
 import { ZERO } from '../receipt/receipt.utils';
 import type { PaymentErrorDetail } from './types/payment-api.types';
+import { ACC } from '../receipt/types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * The refusals that guard EVERY unwind of a posted payment — cancel and amend
@@ -50,6 +52,7 @@ export async function assertIssuedChequesStillHeld(
     throwAccountsConflict<PaymentErrorDetail>(refusal(verb), [
       {
         field: 'avhVoucherId',
+        code: VCH.CHEQUE_MOVED,
         message:
           `Cheque ${first.apdInstrumentNo} is ${first.apdStatus}. Once our cheque has been acted on ` +
           `the payment behind it cannot be ${verb} here — unwind it on the Issued Cheques screen ` +
@@ -77,6 +80,7 @@ export async function assertNoSettledTransfer(
     throwAccountsConflict<PaymentErrorDetail>(refusal(verb), [
       {
         field: 'avhVoucherId',
+        code: ACC.TENDER_SETTLED,
         message:
           `Tender row ${settled.tdRowNo}${settled.tdRefNo ? ` (${settled.tdRefNo})` : ''} is SETTLED ` +
           `by the bank${settled.tdSettledOn ? ` on ${settled.tdSettledOn.toISOString().slice(0, 10)}` : ''}. ` +
@@ -118,6 +122,7 @@ export async function assertAdvancesUntouched(
       throwAccountsConflict<PaymentErrorDetail>(refusal(verb), [
         {
           field: 'avhVoucherId',
+          code: VCH.ADVANCE_SPENT,
           message:
             `The advance from ${advance.ablDocRefno} has already been used — ` +
             `${advance.ablBillAmount.minus(pending).toFixed(2)} of it is settling a purchase bill. ` +

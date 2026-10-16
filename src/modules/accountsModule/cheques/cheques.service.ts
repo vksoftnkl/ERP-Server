@@ -30,6 +30,7 @@ import type {
   ChequeRow,
   DepositSlipPayload,
 } from './types/cheque-api.types';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.1 and §4.8 — the reads. Nothing here writes.
@@ -204,6 +205,7 @@ export class ChequesService {
           'Cheque not found',
           'apdId',
           `No live cheque ${query.apdId} at this company / branch in ${query.apdAccYear}`,
+          VCH.CHEQUE_NOT_FOUND,
         );
       }
 
@@ -405,6 +407,7 @@ export class ChequesService {
         'Cheque not found',
         'apdId',
         `No live cheque ${query.apdId} at this company / branch in ${query.apdAccYear}`,
+        VCH.CHEQUE_NOT_FOUND,
       );
     }
 
@@ -498,6 +501,7 @@ export class ChequesService {
         'Bank ledger not found',
         'bankLedgerId',
         `No ledger ${query.bankLedgerId} is visible to this company`,
+        VCH.LEDGER_NOT_FOUND,
       );
     }
 

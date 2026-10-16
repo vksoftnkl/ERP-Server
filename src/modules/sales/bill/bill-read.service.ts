@@ -9,6 +9,8 @@ import { loadDayClosed } from '../posting/sales.guards';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import { STATUTORY_CODES } from '../../../common/posting/statutory.types';
+import { SALES_ERROR_CODES } from '../posting/types/posting.types';
+import { SaleBillErrorCode } from './types/sale-bill-error-codes';
 import {
   SALES_MENU_ID,
   TENDER_TYPE,
@@ -417,6 +419,7 @@ export class BillReadService {
         'Customer not found',
         'partyId',
         `No customer found with id ${q.partyId}`,
+        SaleBillErrorCode.CUSTOMER_NOT_FOUND,
       );
     }
 
@@ -675,6 +678,7 @@ export class BillReadService {
         'Bill not found',
         'sbId',
         `No active bill found with id ${keys.sbId}`,
+        SALES_ERROR_CODES.NOT_FOUND,
       );
     }
     const tenders = await this.prisma.$queryRaw<

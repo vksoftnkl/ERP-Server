@@ -35,19 +35,30 @@ export function tillErrorCodeOf(error: unknown): TillErrorCode | null {
     : null;
 }
 
-/** 400 for a shape the DTO could not express (two fields that only make sense together). */
-export function throwTillBadRequest(message: string, field: string): never {
+/**
+ * 400 for a shape the DTO could not express (two fields that only make sense together).
+ * Notes 119: coded like every other till refusal — always 400, whatever the code.
+ */
+export function throwTillBadRequest(code: TillErrorCode, message: string, field: string): never {
   throw new HttpException(
-    buildErrorResponse<TillErrorDetail, TillErrorResponse>(message, [{ field, message }]),
+    buildErrorResponse<TillErrorDetail, TillErrorResponse>(message, [{ field, message, code }]),
     400,
   );
 }
 
-/** 404 for a master or a document that is not there (or not in the caller's company). */
-export function throwTillNotFound(what: string, field: string, id: string | number): never {
+/**
+ * 404 for a master or a document that is not there (or not in the caller's company).
+ * Notes 119: `code` names WHAT was not found (TILL_SESSION_NOT_FOUND …) — always 404.
+ */
+export function throwTillNotFound(
+  code: TillErrorCode,
+  what: string,
+  field: string,
+  id: string | number,
+): never {
   const message = `${what} ${id} was not found`;
   throw new HttpException(
-    buildErrorResponse<TillErrorDetail, TillErrorResponse>(message, [{ field, message }]),
+    buildErrorResponse<TillErrorDetail, TillErrorResponse>(message, [{ field, message, code }]),
     404,
   );
 }

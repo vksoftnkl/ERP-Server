@@ -1,4 +1,5 @@
-import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
+import type { PrintTemplateErrorDetail } from '../types/print-template-api.types';
+import { PrintTemplateErrorCode } from '../types/print-template-error-codes';
 import {
   PTD_DATASET_NO_MAX,
   PTD_DATASET_NO_MIN,
@@ -54,20 +55,22 @@ export interface EffectiveTemplate {
 }
 
 /** ck_ptl_code_shape */
-function checkTemplateCodeShape(template: EffectiveTemplate, errors: ModuleErrorDetail[]): void {
+function checkTemplateCodeShape(template: EffectiveTemplate, errors: PrintTemplateErrorDetail[]): void {
   if (!PTL_CODE_PATTERN.test(template.ptlCode)) {
     errors.push({
       field: 'ptlCode',
+      code: PrintTemplateErrorCode.CODE_INVALID,
       message: 'ptlCode may contain only letters, digits, underscore and hyphen',
     });
   }
 }
 
 /** ck_ptl_not_own_fork */
-function checkTemplateNotOwnFork(template: EffectiveTemplate, errors: ModuleErrorDetail[]): void {
+function checkTemplateNotOwnFork(template: EffectiveTemplate, errors: PrintTemplateErrorDetail[]): void {
   if (template.ptlForkedFromId !== null && template.ptlForkedFromId === template.ptlId) {
     errors.push({
       field: 'ptlForkedFromId',
+      code: PrintTemplateErrorCode.OWN_FORK,
       message: 'A template cannot be forked from itself',
     });
   }
@@ -78,12 +81,13 @@ function checkTemplateNotOwnFork(template: EffectiveTemplate, errors: ModuleErro
  * design was cloned but not from which revision, which is the only part that
  * makes the record useful when the shipped original later changes.
  */
-function checkTemplateForkPair(template: EffectiveTemplate, errors: ModuleErrorDetail[]): void {
+function checkTemplateForkPair(template: EffectiveTemplate, errors: PrintTemplateErrorDetail[]): void {
   const hasId = template.ptlForkedFromId !== null;
   const hasRev = template.ptlForkedFromRev !== null;
   if (hasId !== hasRev) {
     errors.push({
       field: hasId ? 'ptlForkedFromRev' : 'ptlForkedFromId',
+      code: PrintTemplateErrorCode.FORK_PAIR,
       message:
         'ptlForkedFromId and ptlForkedFromRev are a pair — send both to record where a clone ' +
         'came from, or neither',
@@ -92,14 +96,18 @@ function checkTemplateForkPair(template: EffectiveTemplate, errors: ModuleErrorD
 }
 
 /** ck_ptl_sort */
-function checkTemplateSortOrder(template: EffectiveTemplate, errors: ModuleErrorDetail[]): void {
+function checkTemplateSortOrder(template: EffectiveTemplate, errors: PrintTemplateErrorDetail[]): void {
   if (!Number.isInteger(template.ptlSortOrder) || template.ptlSortOrder < 0) {
-    errors.push({ field: 'ptlSortOrder', message: 'ptlSortOrder must be 0 or more' });
+    errors.push({
+      field: 'ptlSortOrder',
+      code: PrintTemplateErrorCode.SORT_ORDER_INVALID,
+      message: 'ptlSortOrder must be 0 or more',
+    });
   }
 }
 
-export function collectTemplateInvariantErrors(template: EffectiveTemplate): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+export function collectTemplateInvariantErrors(template: EffectiveTemplate): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   checkTemplateCodeShape(template, errors);
   checkTemplateNotOwnFork(template, errors);
   checkTemplateForkPair(template, errors);
@@ -132,11 +140,12 @@ export interface EffectiveVersion {
 function checkVersionStatus(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!(PTV_STATUSES as readonly string[]).includes(version.ptvStatus)) {
     errors.push({
       field: at(path, 'ptvStatus'),
+      code: PrintTemplateErrorCode.STATUS_INVALID,
       message: `ptvStatus must be one of ${PTV_STATUSES.join(', ')}`,
     });
   }
@@ -146,11 +155,12 @@ function checkVersionStatus(
 function checkVersionEngine(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!(PTV_ENGINES as readonly string[]).includes(version.ptvEngine)) {
     errors.push({
       field: at(path, 'ptvEngine'),
+      code: PrintTemplateErrorCode.ENGINE_INVALID,
       message: `ptvEngine must be one of ${PTV_ENGINES.join(', ')}`,
     });
   }
@@ -167,12 +177,13 @@ function checkVersionEngine(
 function checkVersionBody(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   const length = version.ptvBody.length;
   if (length < PTV_BODY_MIN_LENGTH || length > PTV_BODY_MAX_LENGTH) {
     errors.push({
       field: at(path, 'ptvBody'),
+      code: PrintTemplateErrorCode.BODY_SIZE,
       message: `ptvBody must be between ${PTV_BODY_MIN_LENGTH} and ${PTV_BODY_MAX_LENGTH} characters`,
     });
     return;
@@ -186,6 +197,7 @@ function checkVersionBody(
   } catch {
     errors.push({
       field: at(path, 'ptvBody'),
+      code: PrintTemplateErrorCode.BODY_NOT_JSON_OBJECT,
       message: `ptvBody must be a JSON object when ptvEngine is ${PTV_JSON_ENGINE} — it did not parse as JSON`,
     });
     return;
@@ -193,6 +205,7 @@ function checkVersionBody(
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     errors.push({
       field: at(path, 'ptvBody'),
+      code: PrintTemplateErrorCode.BODY_NOT_JSON_OBJECT,
       message: `ptvBody must be a JSON OBJECT when ptvEngine is ${PTV_JSON_ENGINE} — an array, a number or null will not do`,
     });
   }
@@ -202,11 +215,12 @@ function checkVersionBody(
 function checkVersionRevNo(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!Number.isInteger(version.ptvRevNo) || version.ptvRevNo <= 0) {
     errors.push({
       field: at(path, 'ptvRevNo'),
+      code: PrintTemplateErrorCode.REV_NO_INVALID,
       message: 'ptvRevNo must be a positive integer',
     });
   }
@@ -216,11 +230,12 @@ function checkVersionRevNo(
 function checkVersionOrientation(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!(PTV_ORIENTATIONS as readonly string[]).includes(version.ptvOrientation)) {
     errors.push({
       field: at(path, 'ptvOrientation'),
+      code: PrintTemplateErrorCode.ORIENTATION_INVALID,
       message: `ptvOrientation must be one of ${PTV_ORIENTATIONS.join(', ')}`,
     });
   }
@@ -236,17 +251,19 @@ function checkVersionOrientation(
 function checkVersionGeometry(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (version.ptvWidthMm !== null && !(version.ptvWidthMm > 0)) {
     errors.push({
       field: at(path, 'ptvWidthMm'),
+      code: PrintTemplateErrorCode.PAPER_SIZE_INVALID,
       message: 'ptvWidthMm must be greater than 0, or null to take it from the paper',
     });
   }
   if (version.ptvHeightMm !== null && !(version.ptvHeightMm > 0)) {
     errors.push({
       field: at(path, 'ptvHeightMm'),
+      code: PrintTemplateErrorCode.PAPER_SIZE_INVALID,
       message: 'ptvHeightMm must be greater than 0, or null to take it from the paper',
     });
   }
@@ -258,7 +275,11 @@ function checkVersionGeometry(
   ];
   for (const [field, value] of margins) {
     if (!(value >= 0)) {
-      errors.push({ field: at(path, field), message: `${field} must be 0 or more` });
+      errors.push({
+        field: at(path, field),
+        code: PrintTemplateErrorCode.MARGIN_INVALID,
+        message: `${field} must be 0 or more`,
+      });
     }
   }
   if (
@@ -269,6 +290,7 @@ function checkVersionGeometry(
   ) {
     errors.push({
       field: at(path, 'ptvColumns'),
+      code: PrintTemplateErrorCode.COLUMNS_INVALID,
       message:
         `ptvColumns must be between ${PTV_COLUMNS_MIN} and ${PTV_COLUMNS_MAX}, or null for a ` +
         'page engine where characters per line mean nothing',
@@ -285,11 +307,12 @@ function checkVersionGeometry(
 function checkVersionPublished(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (version.ptvStatus === 'PUBLISHED' && !version.ptvApprovedBy) {
     errors.push({
       field: at(path, 'ptvApprovedBy'),
+      code: PrintTemplateErrorCode.APPROVER_REQUIRED,
       message: 'A PUBLISHED version must name its approver in ptvApprovedBy',
     });
   }
@@ -299,11 +322,12 @@ function checkVersionPublished(
 function checkVersionLang(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!PTV_LANG_PATTERN.test(version.ptvLang)) {
     errors.push({
       field: at(path, 'ptvLang'),
+      code: PrintTemplateErrorCode.LANG_INVALID,
       message: 'ptvLang must look like "en" or "en-IN" — two lower-case letters, optional -REGION',
     });
   }
@@ -327,7 +351,7 @@ function checkVersionLang(
 function checkVersionParams(
   version: EffectiveVersion,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   const params = version.ptvParams;
   if (params === null || params === undefined) {
@@ -336,6 +360,7 @@ function checkVersionParams(
   if (!Array.isArray(params)) {
     errors.push({
       field: at(path, 'ptvParams'),
+      code: PrintTemplateErrorCode.PARAMS_NOT_ARRAY,
       message: 'ptvParams must be a JSON array of prompt declarations, or null',
     });
     return;
@@ -345,7 +370,11 @@ function checkVersionParams(
   params.forEach((entry, index) => {
     const field = at(path, `ptvParams[${index}]`);
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      errors.push({ field, message: 'Each ptvParams entry must be an object' });
+      errors.push({
+        field,
+        code: PrintTemplateErrorCode.PARAM_NOT_OBJECT,
+        message: 'Each ptvParams entry must be an object',
+      });
       return;
     }
     const record = entry as Record<string, unknown>;
@@ -353,6 +382,7 @@ function checkVersionParams(
     if (typeof name !== 'string' || !PTV_PARAM_NAME_PATTERN.test(name)) {
       errors.push({
         field: `${field}.name`,
+        code: PrintTemplateErrorCode.PARAM_NAME_INVALID,
         message: 'name must be lower snake case, starting with a letter — it is what :name binds',
       });
     } else {
@@ -360,6 +390,7 @@ function checkVersionParams(
       if (first !== undefined) {
         errors.push({
           field: `${field}.name`,
+          code: PrintTemplateErrorCode.PARAM_NAME_TAKEN,
           message: `Prompts ${first + 1} and ${index + 1} both declare "${name}"`,
         });
       }
@@ -372,14 +403,23 @@ function checkVersionParams(
     ) {
       errors.push({
         field: `${field}.type`,
+        code: PrintTemplateErrorCode.PARAM_TYPE_INVALID,
         message: `type must be one of ${PTV_PARAM_TYPES.join(', ')}`,
       });
     }
     if (record.required !== undefined && typeof record.required !== 'boolean') {
-      errors.push({ field: `${field}.required`, message: 'required must be true or false' });
+      errors.push({
+        field: `${field}.required`,
+        code: PrintTemplateErrorCode.PARAM_REQUIRED_INVALID,
+        message: 'required must be true or false',
+      });
     }
     if (record.label !== undefined && typeof record.label !== 'string') {
-      errors.push({ field: `${field}.label`, message: 'label must be a string' });
+      errors.push({
+        field: `${field}.label`,
+        code: PrintTemplateErrorCode.PARAM_LABEL_INVALID,
+        message: 'label must be a string',
+      });
     }
   });
 }
@@ -387,8 +427,8 @@ function checkVersionParams(
 export function collectVersionInvariantErrors(
   version: EffectiveVersion,
   path = '',
-): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   checkVersionStatus(version, path, errors);
   checkVersionEngine(version, path, errors);
   checkVersionBody(version, path, errors);
@@ -420,11 +460,12 @@ export interface EffectiveDataset {
 function checkDatasetRole(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!(PTD_ROLES as readonly string[]).includes(dataset.ptdRole)) {
     errors.push({
       field: at(path, 'ptdRole'),
+      code: PrintTemplateErrorCode.DATASET_ROLE_INVALID,
       message: `ptdRole must be one of ${PTD_ROLES.join(', ')}`,
     });
   }
@@ -434,11 +475,12 @@ function checkDatasetRole(
 function checkDatasetSourceKind(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!(PTD_SOURCE_KINDS as readonly string[]).includes(dataset.ptdSourceKind)) {
     errors.push({
       field: at(path, 'ptdSourceKind'),
+      code: PrintTemplateErrorCode.DATASET_SOURCE_KIND_INVALID,
       message: `ptdSourceKind must be one of ${PTD_SOURCE_KINDS.join(', ')}`,
     });
   }
@@ -451,13 +493,14 @@ function checkDatasetSourceKind(
 function checkDatasetSourceBiconditional(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   const isProvider = dataset.ptdSourceKind === 'PROVIDER';
   const isSql = dataset.ptdSourceKind === 'SQL';
   if (isProvider !== (dataset.ptdProviderCode !== null)) {
     errors.push({
       field: at(path, 'ptdProviderCode'),
+      code: PrintTemplateErrorCode.DATASET_SOURCE_MISMATCH,
       message: isProvider
         ? 'A PROVIDER dataset must name ptdProviderCode'
         : 'ptdProviderCode belongs to a PROVIDER dataset — clear it or set ptdSourceKind to PROVIDER',
@@ -466,6 +509,7 @@ function checkDatasetSourceBiconditional(
   if (isSql !== (dataset.ptdSql !== null)) {
     errors.push({
       field: at(path, 'ptdSql'),
+      code: PrintTemplateErrorCode.DATASET_SOURCE_MISMATCH,
       message: isSql
         ? 'A SQL dataset must carry ptdSql'
         : 'ptdSql belongs to a SQL dataset — clear it or set ptdSourceKind to SQL',
@@ -482,13 +526,14 @@ function checkDatasetSourceBiconditional(
 function checkDatasetMasterIsZero(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   const isMaster = dataset.ptdRole === 'MASTER';
   const isZero = dataset.ptdDatasetNo === PTD_MASTER_DATASET_NO;
   if (isMaster !== isZero) {
     errors.push({
       field: at(path, 'ptdDatasetNo'),
+      code: PrintTemplateErrorCode.DATASET_MASTER_NUMBER,
       message: isMaster
         ? `The MASTER dataset must be number ${PTD_MASTER_DATASET_NO}`
         : `Dataset number ${PTD_MASTER_DATASET_NO} is reserved for the MASTER — number a DETAIL from 1`,
@@ -500,7 +545,7 @@ function checkDatasetMasterIsZero(
 function checkDatasetNoRange(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (
     !Number.isInteger(dataset.ptdDatasetNo) ||
@@ -509,6 +554,7 @@ function checkDatasetNoRange(
   ) {
     errors.push({
       field: at(path, 'ptdDatasetNo'),
+      code: PrintTemplateErrorCode.DATASET_NO_INVALID,
       message: `ptdDatasetNo must be between ${PTD_DATASET_NO_MIN} and ${PTD_DATASET_NO_MAX}`,
     });
   }
@@ -519,11 +565,12 @@ function checkDatasetNoRange(
 function checkDatasetNameShape(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (!PTD_NAME_PATTERN.test(dataset.ptdName)) {
     errors.push({
       field: at(path, 'ptdName'),
+      code: PrintTemplateErrorCode.DATASET_NAME_INVALID,
       message: 'ptdName must be lower snake case, starting with a letter — "items", "bill_header"',
     });
   }
@@ -533,11 +580,12 @@ function checkDatasetNameShape(
 function checkDatasetProviderShape(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (dataset.ptdProviderCode !== null && !PTD_PROVIDER_PATTERN.test(dataset.ptdProviderCode)) {
     errors.push({
       field: at(path, 'ptdProviderCode'),
+      code: PrintTemplateErrorCode.DATASET_PROVIDER_INVALID,
       message: 'ptdProviderCode must be dotted lower snake case — "sales.bill.tax_summary"',
     });
   }
@@ -547,7 +595,7 @@ function checkDatasetProviderShape(
 function checkDatasetParent(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (dataset.ptdParentNo === null) {
     return;
@@ -555,12 +603,14 @@ function checkDatasetParent(
   if (dataset.ptdParentNo === dataset.ptdDatasetNo) {
     errors.push({
       field: at(path, 'ptdParentNo'),
+      code: PrintTemplateErrorCode.DATASET_OWN_PARENT,
       message: 'A dataset cannot be its own parent',
     });
   }
   if (dataset.ptdRole === 'MASTER') {
     errors.push({
       field: at(path, 'ptdParentNo'),
+      code: PrintTemplateErrorCode.DATASET_MASTER_HAS_PARENT,
       message: 'The MASTER dataset is the header context and has no parent',
     });
   }
@@ -570,13 +620,14 @@ function checkDatasetParent(
 function checkDatasetLinkFields(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   const hasParent = dataset.ptdParentNo !== null;
   const hasLink = dataset.ptdLinkFields !== null;
   if (hasParent !== hasLink) {
     errors.push({
       field: hasParent ? at(path, 'ptdLinkFields') : at(path, 'ptdParentNo'),
+      code: PrintTemplateErrorCode.DATASET_LINK_PAIR,
       message:
         'ptdParentNo and ptdLinkFields are a pair — a nested dataset must say WHICH dataset it ' +
         'hangs off and HOW the rows match',
@@ -585,6 +636,7 @@ function checkDatasetLinkFields(
   if (dataset.ptdLinkFields !== null && !PTD_LINK_FIELDS_PATTERN.test(dataset.ptdLinkFields)) {
     errors.push({
       field: at(path, 'ptdLinkFields'),
+      code: PrintTemplateErrorCode.DATASET_LINK_FIELDS_INVALID,
       message:
         'ptdLinkFields must be parent=child pairs, comma separated, no spaces — ' +
         '"sbi_id=line_id" or "sb_id=bill_id,sbi_slno=slno". Both sides are output columns; ' +
@@ -601,7 +653,7 @@ function checkDatasetLinkFields(
 function checkDatasetLimits(
   dataset: EffectiveDataset,
   path: string,
-  errors: ModuleErrorDetail[],
+  errors: PrintTemplateErrorDetail[],
 ): void {
   if (
     !Number.isInteger(dataset.ptdRowLimit) ||
@@ -610,6 +662,7 @@ function checkDatasetLimits(
   ) {
     errors.push({
       field: at(path, 'ptdRowLimit'),
+      code: PrintTemplateErrorCode.DATASET_ROW_LIMIT_INVALID,
       message: `ptdRowLimit must be between ${PTD_ROW_LIMIT_MIN} and ${PTD_ROW_LIMIT_MAX}`,
     });
   }
@@ -620,6 +673,7 @@ function checkDatasetLimits(
   ) {
     errors.push({
       field: at(path, 'ptdTimeoutMs'),
+      code: PrintTemplateErrorCode.DATASET_TIMEOUT_INVALID,
       message: `ptdTimeoutMs must be between ${PTD_TIMEOUT_MS_MIN} and ${PTD_TIMEOUT_MS_MAX} ms`,
     });
   }
@@ -628,8 +682,8 @@ function checkDatasetLimits(
 export function collectDatasetInvariantErrors(
   dataset: EffectiveDataset,
   path = '',
-): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   checkDatasetRole(dataset, path, errors);
   checkDatasetSourceKind(dataset, path, errors);
   checkDatasetSourceBiconditional(dataset, path, errors);
@@ -660,8 +714,8 @@ export function collectDatasetInvariantErrors(
  */
 export function collectDatasetSetInvariantErrors(
   datasets: Array<{ dataset: EffectiveDataset; path: string }>,
-): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   const byNumber = new Map<number, number>();
   const byName = new Map<string, number>();
   const masters: number[] = [];
@@ -673,6 +727,7 @@ export function collectDatasetSetInvariantErrors(
     if (clashNumber !== undefined) {
       errors.push({
         field: at(path, 'ptdDatasetNo'),
+        code: PrintTemplateErrorCode.DATASET_NO_TAKEN,
         message: `Datasets ${clashNumber + 1} and ${index + 1} both claim number ${dataset.ptdDatasetNo}`,
       });
     } else {
@@ -684,6 +739,7 @@ export function collectDatasetSetInvariantErrors(
     if (clashName !== undefined) {
       errors.push({
         field: at(path, 'ptdName'),
+        code: PrintTemplateErrorCode.DATASET_NAME_TAKEN,
         message: `Datasets ${clashName + 1} and ${index + 1} are both named "${dataset.ptdName}"`,
       });
     } else {
@@ -702,6 +758,7 @@ export function collectDatasetSetInvariantErrors(
     const [, second] = masters;
     errors.push({
       field: at(datasets[second].path, 'ptdRole'),
+      code: PrintTemplateErrorCode.DATASET_MASTER_TWICE,
       message: `A version may hold at most one MASTER dataset; rows ${masters
         .map((index) => index + 1)
         .join(', ')} all claim it`,
@@ -714,6 +771,7 @@ export function collectDatasetSetInvariantErrors(
     if (dataset.ptdParentNo !== null && !byNumber.has(dataset.ptdParentNo)) {
       errors.push({
         field: at(path, 'ptdParentNo'),
+        code: PrintTemplateErrorCode.DATASET_PARENT_MISSING,
         message: `No dataset in this version is numbered ${dataset.ptdParentNo}`,
       });
     }
@@ -730,8 +788,8 @@ export function collectDatasetSetInvariantErrors(
 function collectParentCycleErrors(
   datasets: Array<{ dataset: EffectiveDataset; path: string }>,
   byNumber: Map<number, number>,
-): ModuleErrorDetail[] {
-  const errors: ModuleErrorDetail[] = [];
+): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
   datasets.forEach(({ dataset, path }) => {
     const seen = new Set<number>([dataset.ptdDatasetNo]);
     let parentNo = dataset.ptdParentNo;
@@ -739,6 +797,7 @@ function collectParentCycleErrors(
       if (seen.has(parentNo)) {
         errors.push({
           field: at(path, 'ptdParentNo'),
+          code: PrintTemplateErrorCode.DATASET_PARENT_CYCLE,
           message: `Dataset "${dataset.ptdName}" is nested inside itself through dataset ${parentNo}`,
         });
         return;

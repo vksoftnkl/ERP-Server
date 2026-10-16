@@ -5,7 +5,10 @@ import type {
 } from 'src/common/types/module-api.types';
 import { UserType } from './user-administration.enum';
 
-export type UserAdminErrorDetail = ModuleApiErrorDetail;
+/** `code` (notes 119): a UserAdminErrorCode — USER_ROLE_RESERVED for the SUPER ADMIN guard (notes 125 §3). */
+export interface UserAdminErrorDetail extends ModuleApiErrorDetail {
+  code: string;
+}
 export type UserAdminErrorResponse = ModuleApiErrorResponse<UserAdminErrorDetail>;
 export type UserAdminSuccessResponse<
   T,

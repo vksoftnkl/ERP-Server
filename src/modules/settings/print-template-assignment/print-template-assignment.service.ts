@@ -32,6 +32,7 @@ import {
   PrintTemplateAssignmentPayload,
   PrintTemplateAssignmentResolution,
 } from './types/print-template-assignment-api.types';
+import { PrintTemplateAssignmentErrorCode } from './types/print-template-assignment-error-codes';
 
 const PTA_RELATIONS = {
   company: { select: { compName: true } },
@@ -119,6 +120,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid assignment scope', [
         {
           field: 'ptaCompanyId',
+          code: PrintTemplateAssignmentErrorCode.COMPANY_NOT_STATED,
           message:
             'State the company this assignment is for. Send null explicitly to make it the default for EVERY company — which only a shipped design may be.',
         },
@@ -210,6 +212,7 @@ export class PrintTemplateAssignmentService {
         'Print template assignment not found',
         'ptaId',
         `No active print template assignment found with id ${ptaId}`,
+        PrintTemplateAssignmentErrorCode.NOT_FOUND,
       );
     }
 
@@ -319,6 +322,7 @@ export class PrintTemplateAssignmentService {
         'No print template assigned for this scope',
         'purposeId',
         `No active assignment resolves for company ${queryDto.companyId}, purpose ${queryDto.purposeId}, output mode ${outputMode} — not at the counter, the branch, the company, nor as an every-company default`,
+        PrintTemplateAssignmentErrorCode.NONE_RESOLVES,
       );
     }
 
@@ -371,6 +375,7 @@ export class PrintTemplateAssignmentService {
           'Print template assignment not found',
           'ptaId',
           `No active print template assignment found with id ${ptaId}`,
+          PrintTemplateAssignmentErrorCode.NOT_FOUND,
         );
       }
 
@@ -395,6 +400,7 @@ export class PrintTemplateAssignmentService {
           'Print template assignment not found',
           'ptaId',
           `No active print template assignment found with id ${ptaId}`,
+          PrintTemplateAssignmentErrorCode.NOT_FOUND,
         );
       }
 
@@ -447,6 +453,7 @@ export class PrintTemplateAssignmentService {
             'Print template assignment not found',
             'ptaId',
             `No active print template assignment found with id ${ptaId}`,
+            PrintTemplateAssignmentErrorCode.NOT_FOUND,
           );
         }
 
@@ -546,6 +553,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid relation reference', [
         {
           field: 'ptaTemplateId',
+          code: PrintTemplateAssignmentErrorCode.TEMPLATE_NOT_FOUND,
           message: `No active print template found with id ${templateId}`,
         },
       ]);
@@ -564,6 +572,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid assignment scope', [
         {
           field: 'ptaTemplateId',
+          code: PrintTemplateAssignmentErrorCode.TEMPLATE_PRIVATE,
           message:
             companyId === null
               ? `An assignment for EVERY company may only name a design that ships with the product. Template ${template.ptlCode} is private to company ${templateKey} — every other company's till would otherwise render it.`
@@ -591,6 +600,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid assignment scope', [
         {
           field: 'ptaBranchId',
+          code: PrintTemplateAssignmentErrorCode.DEVICE_NEEDS_BRANCH,
           message:
             'A counter-scoped assignment must also name its branch: a counter belongs to a branch, so a device row with no branch is a rung of the ladder nobody can reach.',
         },
@@ -604,6 +614,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid assignment scope', [
         {
           field: 'ptaCompanyId',
+          code: PrintTemplateAssignmentErrorCode.BRANCH_NEEDS_COMPANY,
           message:
             'A branch-scoped assignment must also name its company: a branch belongs to a company, so an every-company row that names a branch is a rung of the ladder nobody can reach.',
         },
@@ -620,6 +631,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid printer selection', [
         {
           field: 'ptaPrinterName',
+          code: PrintTemplateAssignmentErrorCode.PRINTER_BOTH,
           message:
             'Give the registered profile OR the bare queue name, not both. The bare name is a fallback for a printer nobody has registered — it is never a copy of a profile name, because it goes stale the day the profile is renamed.',
         },
@@ -634,6 +646,7 @@ export class PrintTemplateAssignmentService {
     >(error, 'An assignment already exists for this scope', [
       {
         field: 'ptaPurposeId',
+        code: PrintTemplateAssignmentErrorCode.ALREADY_EXISTS,
         message:
           "One choice per (company, branch, counter, purpose, output mode) — and the every-company row counts as its own scope. Update the existing assignment instead of adding a second: default-ness is the row's existence, so there is no flag to clear.",
       },
@@ -646,6 +659,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid relation reference', [
         {
           field: 'request',
+          code: PrintTemplateAssignmentErrorCode.REFERENCE_INVALID,
           message:
             'Referenced company, branch, counter, purpose, template or printer profile does not exist',
         },
@@ -660,6 +674,7 @@ export class PrintTemplateAssignmentService {
       >('Invalid assignment', [
         {
           field: 'request',
+          code: PrintTemplateAssignmentErrorCode.DB_REFUSED,
           message: `The database refused this row: ${constraint}`,
         },
       ]);

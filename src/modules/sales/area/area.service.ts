@@ -9,6 +9,7 @@ import {
   AreaMasterCreateResult,
   AreaPayload,
 } from './types/area-api.types';
+import { AreaErrorCode } from './types/area-error-codes';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -62,6 +63,8 @@ export class AreaService {
     const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
       dto.armName,
       'armName',
+      undefined,
+      AreaErrorCode.NAME_REQUIRED,
     );
     const actor = resolveActor(dto.armCreatedBy, userId);
     const now = new Date();
@@ -96,6 +99,7 @@ export class AreaService {
               {
                 field: 'parentId',
                 message: `No active account group found with id ${parentId}`,
+                code: AreaErrorCode.PARENT_GROUP_NOT_FOUND,
               },
             ],
           );
@@ -174,6 +178,7 @@ export class AreaService {
           {
             field: 'armName',
             message: 'Duplicate armName is not allowed',
+            code: AreaErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -192,6 +197,7 @@ export class AreaService {
         'Area not found',
         'armId',
         `No active area found with id ${armId}`,
+        AreaErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(record);
@@ -211,6 +217,7 @@ export class AreaService {
           'Area not found',
           'armId',
           `No active area found with id ${armId}`,
+          AreaErrorCode.NOT_FOUND,
         );
       }
       const customerCount = await tx.customer.count({
@@ -226,6 +233,7 @@ export class AreaService {
             {
               field: 'armId',
               message: `Area ${armId} is used by ${customerCount} customer(s).`,
+              code: AreaErrorCode.HAS_CUSTOMERS,
             },
           ],
         );
@@ -248,6 +256,7 @@ export class AreaService {
           'Area not found',
           'armId',
           `No active area found with id ${armId}`,
+          AreaErrorCode.NOT_FOUND,
         );
       }
       // Mirror the soft delete onto the linked account group (shares arm_id as its PK) so it
@@ -361,11 +370,14 @@ export class AreaService {
             'Area not found',
             'armId',
             `No active area found with id ${armId}`,
+            AreaErrorCode.NOT_FOUND,
           );
         }
         const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
           saveAreaDto.armName,
           'armName',
+          undefined,
+          AreaErrorCode.NAME_REQUIRED,
         );
         const nextCityId = hasOwnProperty(saveAreaDto, 'armCityId')
           ? saveAreaDto.armCityId
@@ -430,6 +442,7 @@ export class AreaService {
           {
             field: 'armName',
             message: 'Duplicate armName is not allowed',
+            code: AreaErrorCode.NAME_EXISTS,
           },
         ],
       );
@@ -462,6 +475,7 @@ export class AreaService {
         {
           field: 'armCityId',
           message: `No active city found with id ${cityId}`,
+          code: AreaErrorCode.CITY_NOT_FOUND,
         },
       ]);
     }
@@ -499,6 +513,7 @@ export class AreaService {
           {
             field: 'armName',
             message: 'Duplicate area name is not allowed for this city',
+            code: AreaErrorCode.NAME_EXISTS,
           },
         ],
       );

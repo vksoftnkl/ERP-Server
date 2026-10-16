@@ -1,12 +1,4 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  NotFoundException,
-  Query,
-  UseInterceptors,
-  Version,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseInterceptors, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -25,6 +17,8 @@ import { ConfiguredGridRunResponseDto } from './dto/configured-grid-run-response
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
 import { ConfiguredGridCacheInterceptor } from './utils/configured-sql-cache-interceptor';
 import { API_VERSION } from '../constants/api-version';
+import { throwBadRequest, throwNotFound } from '../utils/module-shared.utils';
+import { GridRunErrorCode, type GridRunErrorDetail } from './types/grid-run-error-codes';
 @UseInterceptors(ConfiguredGridCacheInterceptor)
 @ApiTags('Configured Grid SQL')
 @ApiBearerAuth('access-token')
@@ -69,15 +63,23 @@ export class ConfiguredGridSqlController {
       try {
         parsed = JSON.parse(rawGridParam);
       } catch {
-        throw new BadRequestException('grid_param must be valid JSON');
+        throwGridRunInvalid('grid_param must be valid JSON', 'grid_param', GridRunErrorCode.PARAM_NOT_JSON);
       }
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new BadRequestException('grid_param must be a JSON object');
+        throwGridRunInvalid(
+          'grid_param must be a JSON object',
+          'grid_param',
+          GridRunErrorCode.PARAM_NOT_OBJECT,
+        );
       }
       gridPrm = parsed as Record<string, unknown>;
       for (const [key, val] of Object.entries(gridPrm)) {
         if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
-          throw new BadRequestException(`Invalid parameter name in grid_PRM: "${key}"`);
+          throwGridRunInvalid(
+            `Invalid parameter name in grid_PRM: "${key}"`,
+            'grid_param',
+            GridRunErrorCode.PARAM_NAME_INVALID,
+          );
         }
         if (
           val !== null &&
@@ -86,12 +88,18 @@ export class ConfiguredGridSqlController {
           typeof val !== 'number' &&
           typeof val !== 'string'
         ) {
-          throw new BadRequestException(
+          throwGridRunInvalid(
             `Unsupported value type for grid_PRM.${key}: ${typeof val}`,
+            'grid_param',
+            GridRunErrorCode.PARAM_VALUE_UNSUPPORTED,
           );
         }
         if (typeof val === 'number' && !Number.isFinite(val)) {
-          throw new BadRequestException(`Non-finite number for grid_PRM.${key}`);
+          throwGridRunInvalid(
+            `Non-finite number for grid_PRM.${key}`,
+            'grid_param',
+            GridRunErrorCode.PARAM_VALUE_NOT_FINITE,
+          );
         }
       }
     }
@@ -102,10 +110,19 @@ export class ConfiguredGridSqlController {
     });
     const candidate = candidates[0];
     if (!candidate) {
-      throw new NotFoundException(`Grid with id ${query.grid_id} not found`);
+      throwNotFound<GridRunErrorDetail>(
+        `Grid with id ${query.grid_id} not found`,
+        'grid_id',
+        `Grid with id ${query.grid_id} not found`,
+        GridRunErrorCode.GRID_NOT_FOUND,
+      );
     }
     if (!candidate.gridSql) {
-      throw new BadRequestException(`Grid ${query.grid_id} has no configured SQL`);
+      throwGridRunInvalid(
+        `Grid ${query.grid_id} has no configured SQL`,
+        'grid_id',
+        GridRunErrorCode.SQL_MISSING,
+      );
     }
     const tableName =
       this.configuredGridSqlService.extractTopLevelFromTableName(candidate.gridSql) ?? '';
@@ -114,7 +131,11 @@ export class ConfiguredGridSqlController {
       tableName,
     });
     if (!validation.isValid) {
-      throw new BadRequestException(`Invalid grid SQL: ${validation.message}`);
+      throwGridRunInvalid(
+        `Invalid grid SQL: ${validation.message}`,
+        'grid_id',
+        GridRunErrorCode.SQL_INVALID,
+      );
     }
     let baseSql = validation.normalizedSql;
     let params: unknown[] = [];
@@ -158,8 +179,12 @@ export class ConfiguredGridSqlController {
           unboundTokens.length > 0
             ? ` Pass a value for ${unboundTokens.join(', ')} in grid_param.`
             : '';
-        throw new BadRequestException(
+        // Notes 119: a token left unbound is the request's omission (PARAM_MISSING);
+        // anything else is the stored SQL itself (SQL_FAILED).
+        throwGridRunInvalid(
           `Grid ${query.grid_id} configured SQL failed: ${(error as Error).message}.${hint}`,
+          unboundTokens.length > 0 ? 'grid_param' : 'grid_id',
+          unboundTokens.length > 0 ? GridRunErrorCode.PARAM_MISSING : GridRunErrorCode.SQL_FAILED,
         );
       }
       throw error;
@@ -173,4 +198,9 @@ export class ConfiguredGridSqlController {
       },
     };
   }
+}
+
+/** Notes 119: a /run refusal — the same 400 and message as before, with its code. */
+function throwGridRunInvalid(message: string, field: string, code: GridRunErrorCode): never {
+  throwBadRequest<GridRunErrorDetail>(message, [{ field, message, code }]);
 }

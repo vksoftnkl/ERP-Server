@@ -19,6 +19,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   CancelExpenseDto,
   ExpenseKeyDto,
+  PostExpenseDto,
   ExpenseLedgerPickQueryDto,
   ExpenseReasonQueryDto,
   SaveExpenseDto,
@@ -78,7 +79,8 @@ export class ExpenseController {
       'refusals (EXPENSE_TOTAL_MISMATCH, EXPENSE_LEDGER_NOT_EXPENSE, EXPENSE_GST_INCOMPLETE, TILL_SESSION_REQUIRED …), ' +
       'warnings (EXPENSE_GST_BILL_MISSING; STATUTORY_40A3 — cash to one payee in a day above the 40A(3) ' +
       'limit, a refusal under a company REFUSE row; TILL_APPROVAL_REQUIRED, INFO) and `approval`: what the ' +
-      'EXPENSE rule would ask in a till session, reported until phase 3 builds the gate. Saves nothing. ' +
+      'EXPENSE rule asks in a till session (notes 124 §5: under till.approval_gate REFUSE a refusal ' +
+      'TILL_APPROVAL_REQUIRED on approvalId — /post wants an approved request). Saves nothing. ' +
       'Menu 277 VIEW.',
   })
   @ApiOkResponse({ description: '{ ok, derived, refusals, warnings, approval }' })
@@ -103,7 +105,10 @@ export class ExpenseController {
       'On a device in a till session the CASH rows are that drawer (the voucher carries the session); on a ' +
       'back-office device in a branch that runs a till they come from the default safe (till.backoffice_cash_from ' +
       '= SAFE) or are refused (REFUSE). The answer carries the warnings /validate gave (40A(3), the EXPENSE ' +
-      'approval need — neither blocks). Menu 277 POST.',
+      'approval need). Notes 124 §5 — the EXPENSE rule in a till session: under till.approval_gate WARN (as ' +
+      'shipped) it posts and a PENDING request waits in the approvers’ inbox (`approval.approvalId`); under ' +
+      'REFUSE → 428 TILL_APPROVAL_REQUIRED until `approvalId` names an approved request for this voucher. ' +
+      'Menu 277 POST.',
   })
   @ApiCreatedResponse({ description: 'The posted voucher' })
   @ApiUnprocessableEntityResponse({
@@ -115,7 +120,7 @@ export class ExpenseController {
     description:
       'Not a DRAFT · TILL_SESSION_REQUIRED · TILL_SESSION_WRONG_DEVICE · TILL_SESSION_NOT_YOURS',
   })
-  async post(@Body() dto: ExpenseKeyDto): Promise<ExpenseSuccessResponse<ExpensePostPayload>> {
+  async post(@Body() dto: PostExpenseDto): Promise<ExpenseSuccessResponse<ExpensePostPayload>> {
     await this.requireRight('post', 'post an expense voucher');
     const data = await this.expenses.post(dto);
     return { success: true, message: `Expense voucher ${data.voucherNo} posted`, data };

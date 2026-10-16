@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemSectionErrorDetail, ItemSectionPayload } from './types/item-section-api.types';
+import { ItemSectionErrorCode } from './types/item-section-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -39,6 +40,9 @@ const ITEM_SECTION_DELETE_STATE = {
   label: 'item section',
   idField: 'sec_id',
   restoreRoute: '/item-sections/restore',
+  alreadyDeletedCode: ItemSectionErrorCode.ALREADY_DELETED,
+  notDeletedCode: ItemSectionErrorCode.NOT_DELETED,
+  inUseCode: ItemSectionErrorCode.IN_USE,
 };
 
 @Injectable()
@@ -65,6 +69,7 @@ export class ItemsSectionMasterService {
         'Item section not found',
         'sec_id',
         `No active item section found with id ${secId}`,
+        ItemSectionErrorCode.NOT_FOUND,
       );
     }
     const parentName = await this.getParentName(record.secParentId);
@@ -107,6 +112,7 @@ export class ItemsSectionMasterService {
           'Item section not found',
           'sec_id',
           `No item section found with id ${secId}`,
+          ItemSectionErrorCode.NOT_FOUND,
         );
       }
 
@@ -138,6 +144,7 @@ export class ItemsSectionMasterService {
           'Item section not found',
           'sec_id',
           `No item section found with id ${secId}`,
+          ItemSectionErrorCode.NOT_FOUND,
         );
       }
 
@@ -250,13 +257,20 @@ export class ItemsSectionMasterService {
             'Item section not found',
             'sec_id',
             `No active item section found with id ${secId}`,
+            ItemSectionErrorCode.NOT_FOUND,
           );
         }
 
         if (saveItemSectionDto.sec_parent_id === secId) {
           throwInventoryBadRequest<ItemSectionErrorDetail>(
             'Item section cannot be its own parent',
-            [{ field: 'sec_parent_id', message: 'sec_parent_id cannot be same as sec_id' }],
+            [
+              {
+                field: 'sec_parent_id',
+                code: ItemSectionErrorCode.SELF_PARENT,
+                message: 'sec_parent_id cannot be same as sec_id',
+              },
+            ],
           );
         }
 
@@ -337,7 +351,11 @@ export class ItemsSectionMasterService {
 
     if (!parent) {
       throwInventoryBadRequest<ItemSectionErrorDetail>('Parent item section does not exist', [
-        { field: 'sec_parent_id', message: `No active item section found with id ${parentId}` },
+        {
+          field: 'sec_parent_id',
+          code: ItemSectionErrorCode.PARENT_NOT_FOUND,
+          message: `No active item section found with id ${parentId}`,
+        },
       ]);
     }
 
@@ -525,7 +543,11 @@ export class ItemsSectionMasterService {
     if (Buffer.isBuffer(photo)) {
       if (photo.length === 0) {
         throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid image provided', [
-          { field: 'sec_photo', message: 'sec_photo must contain binary image data' },
+          {
+            field: 'sec_photo',
+            code: ItemSectionErrorCode.PHOTO_INVALID,
+            message: 'sec_photo must contain binary image data',
+          },
         ]);
       }
       return new Uint8Array(photo);
@@ -534,7 +556,11 @@ export class ItemsSectionMasterService {
     if (photo instanceof Uint8Array) {
       if (photo.length === 0) {
         throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid image provided', [
-          { field: 'sec_photo', message: 'sec_photo must contain binary image data' },
+          {
+            field: 'sec_photo',
+            code: ItemSectionErrorCode.PHOTO_INVALID,
+            message: 'sec_photo must contain binary image data',
+          },
         ]);
       }
       return new Uint8Array(photo);
@@ -543,7 +569,11 @@ export class ItemsSectionMasterService {
     const trimmed = photo.trim();
     if (!trimmed) {
       throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid base64 image provided', [
-        { field: 'sec_photo', message: 'sec_photo must be a non-empty base64 string' },
+        {
+          field: 'sec_photo',
+          code: ItemSectionErrorCode.PHOTO_INVALID,
+          message: 'sec_photo must be a non-empty base64 string',
+        },
       ]);
     }
 
@@ -552,7 +582,11 @@ export class ItemsSectionMasterService {
 
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
       throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid base64 image provided', [
-        { field: 'sec_photo', message: 'sec_photo must be valid base64 content' },
+        {
+          field: 'sec_photo',
+          code: ItemSectionErrorCode.PHOTO_INVALID,
+          message: 'sec_photo must be valid base64 content',
+        },
       ]);
     }
 
@@ -593,7 +627,13 @@ export class ItemsSectionMasterService {
     throwOnUniqueConstraintError<ItemSectionErrorDetail>(
       error,
       'Item section name already exists',
-      [{ field: 'sec_name', message: 'Duplicate sec_name is not allowed' }],
+      [
+        {
+          field: 'sec_name',
+          code: ItemSectionErrorCode.NAME_TAKEN,
+          message: 'Duplicate sec_name is not allowed',
+        },
+      ],
     );
   }
 }

@@ -45,6 +45,8 @@ import type {
   ChequeBouncePayload,
   ChequeErrorDetail,
 } from './types/cheque-api.types';
+import { CHQ } from './types/cheque-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.4 — THE transaction of this module.
@@ -135,7 +137,11 @@ export class ChequeBounceService {
         // ck_apd_bounced refuses a BOUNCED row with no reason, and this is that
         // rule said to the person who has to fix it.
         throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
-          { field: 'reason', message: 'A bounce has to say why the bank sent it back' },
+          {
+            field: 'reason',
+            code: CHQ.REASON_REQUIRED,
+            message: 'A bounce has to say why the bank sent it back',
+          },
         ]);
       }
 
@@ -148,6 +154,7 @@ export class ChequeBounceService {
         throwAccountsBadRequest<ChequeErrorDetail>('Nothing to post', [
           {
             field: 'apdId',
+            code: VCH.CHEQUE_STATE,
             message:
               `${cheque.apdInstrumentNo} was posted ON_CLEARING, so nothing stands behind it to ` +
               'reverse. With no charges on either side there is no voucher to write — record ' +
@@ -389,6 +396,7 @@ export class ChequeBounceService {
       throwAccountsBadRequest<ChequeErrorDetail>('Cheque has no deposit bank', [
         {
           field: 'bankCharge',
+          code: CHQ.BANK_MISSING,
           message:
             `${params.cheque.apdInstrumentNo} names no bank ledger, so there is nowhere to ` +
             'credit the return fee the bank took. Record the bounce without a bank charge, or ' +

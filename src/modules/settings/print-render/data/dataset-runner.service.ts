@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrintTemplateDataset } from '@prisma/client';
 import { PgService } from 'src/database/pg/pg.service';
-import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
 import { PTV_CONTEXT_PARAMS } from '../../print-template/print-template.constants';
-import { RenderContext, ResolvedDataset } from '../types/print-render-api.types';
+import {
+  PrintRenderErrorDetail,
+  RenderContext,
+  ResolvedDataset,
+} from '../types/print-render-api.types';
+import { PrintRenderErrorCode } from '../types/print-render-error-codes';
 import { DatasetBindError, bindDatasetSql, withRowLimit } from './dataset-sql-binder';
 import { hasContextDefault, isServerOwnedParam } from './render-params';
 import { PrintDataProviderRegistry } from './print-data-provider.registry';
@@ -54,7 +58,7 @@ export interface DatasetRunResult {
 export class DatasetRunError extends Error {
   constructor(
     message: string,
-    readonly details: ModuleErrorDetail[],
+    readonly details: PrintRenderErrorDetail[],
   ) {
     super(message);
     this.name = 'DatasetRunError';
@@ -151,6 +155,7 @@ export class DatasetRunnerService {
       throw new DatasetRunError(`Dataset '${dataset.ptdName}' is SQL-sourced but has no query`, [
         {
           field: `datasets.${dataset.ptdName}.ptdSql`,
+          code: PrintRenderErrorCode.DATASET_NO_SQL,
           message:
             'ptdSourceKind is SQL and ptdSql is empty. One of the two is wrong — ' +
             'ck_ptd_source_biconditional normally prevents this pairing.',
@@ -166,7 +171,11 @@ export class DatasetRunnerService {
     } catch (error) {
       if (error instanceof DatasetBindError) {
         throw new DatasetRunError(`Dataset '${dataset.ptdName}' cannot be bound`, [
-          { field: `datasets.${dataset.ptdName}.ptdSql`, message: error.message },
+          {
+            field: `datasets.${dataset.ptdName}.ptdSql`,
+            code: PrintRenderErrorCode.DATASET_BIND_FAILED,
+            message: error.message,
+          },
         ]);
       }
       throw error;
@@ -204,6 +213,7 @@ export class DatasetRunnerService {
         [
           {
             field: `datasets.${dataset.ptdName}.ptdSql`,
+            code: timedOut ? PrintRenderErrorCode.DATASET_TIMED_OUT : PrintRenderErrorCode.DATASET_FAILED,
             message: timedOut
               ? `The query was cancelled at ${dataset.ptdTimeoutMs}ms (ptdTimeoutMs). ` +
                 'Either the query needs an index for this filter, or the limit is too low.'
@@ -228,6 +238,7 @@ export class DatasetRunnerService {
         [
           {
             field: `datasets.${dataset.ptdName}.ptdProviderCode`,
+            code: PrintRenderErrorCode.PROVIDER_UNKNOWN,
             message:
               `No provider is registered as '${code}'. Registered: ${this.providers.codes().join(', ') || 'none'}. ` +
               'A provider is code, so a template that names one this build does not carry cannot ' +
@@ -252,7 +263,11 @@ export class DatasetRunnerService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Provider '${code}' failed for dataset '${dataset.ptdName}': ${message}`);
       throw new DatasetRunError(`Dataset '${dataset.ptdName}' failed to load`, [
-        { field: `datasets.${dataset.ptdName}.ptdProviderCode`, message },
+        {
+          field: `datasets.${dataset.ptdName}.ptdProviderCode`,
+          code: PrintRenderErrorCode.PROVIDER_FAILED,
+          message,
+        },
       ]);
     }
   }

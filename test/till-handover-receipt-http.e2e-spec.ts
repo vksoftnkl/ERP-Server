@@ -907,7 +907,12 @@ describe('notes 114 · a one-person shop', () => {
       expect(data<Approved>(res)).toEqual(
         expect.objectContaining({
           outcome: 'APPROVED',
-          session: expect.objectContaining({ receiptState: 'APPROVED', receivedBy: TESTER1 }),
+          selfApproval: 'SINGLE_OPERATOR',
+          session: expect.objectContaining({
+            receiptState: 'APPROVED',
+            receivedBy: TESTER1,
+            receivedBySelf: true,
+          }),
         }),
       );
     } finally {
@@ -915,6 +920,55 @@ describe('notes 114 · a one-person shop', () => {
         DELETE FROM public.app_setting_value
          WHERE asv_setting_key = 'till.single_operator' AND asv_branch_id = ${BRANCH}::uuid
            AND asv_created_by = 'e2e-receipt'`;
+    }
+  });
+});
+
+describe('notes 127 §3 · the cashier approves their own cash when the rule allows self', () => {
+  it('a CASH_VARIANCE rule with tar_allow_self lets the session’s cashier approve it — with their PIN, journalled', async () => {
+    const s = await openSession();
+    await closeSession(s);
+    // without the rule: refused as before
+    const before = await approveAs('tester1', s, {}, '1357');
+    expectStatus(before, 403);
+    expect(firstError(before).code).toBe('TILL_RECEIVER_SELF');
+
+    const [ruleRow] = await prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO accounts.till_approval_rule
+        (tar_company_id, tar_branch_id, tar_event_code, tar_mode, tar_threshold_amount, tar_allow_self, tar_remarks, tar_created_by)
+      VALUES (${COMPANY}::uuid, ${BRANCH}::uuid, 'CASH_VARIANCE', 'OVER_AMOUNT', 0, true, 'notes 127 §3 e2e', 'e2e-receipt')
+      RETURNING tar_id::text AS id`;
+    const [pin] = await prisma.$queryRaw<{ hash: string | null }[]>`
+      SELECT usr_pin_hash AS hash FROM public.user_master WHERE usr_id = ${TESTER1}::uuid`;
+    await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${await hashSecret('1357')} WHERE usr_id = ${TESTER1}::uuid`;
+    try {
+      // always with their PIN: none → refused (single_operator's exemption is not this)
+      const none = await approveAs('tester1', s, {}, null);
+      expectStatus(none, 403);
+      expect(firstError(none)).toEqual(
+        expect.objectContaining({ code: 'TILL_RECEIVER_PIN_REQUIRED', field: 'approverPin' }),
+      );
+      const res = await approveAs('tester1', s, {}, '1357');
+      expectStatus(res, 200);
+      expect(data<Approved>(res)).toEqual(
+        expect.objectContaining({
+          outcome: 'APPROVED',
+          selfApproval: 'RULE',
+          session: expect.objectContaining({
+            receiptState: 'APPROVED',
+            receivedBy: TESTER1,
+            receivedBySelf: true,
+          }),
+        }),
+      );
+      const events = await prisma.$queryRaw<{ payload: { selfApproved: boolean; selfApproval: string } }[]>`
+        SELECT tev_payload AS payload FROM accounts.till_event
+         WHERE tev_session_id = ${s.tssId}::uuid AND tev_event_code = 'CASH_RECEIVED'`;
+      expect(events.length).toBeGreaterThan(0);
+      expect(events.every((e) => e.payload.selfApproved && e.payload.selfApproval === 'RULE')).toBe(true);
+    } finally {
+      await prisma.$executeRaw`DELETE FROM accounts.till_approval_rule WHERE tar_id = ${ruleRow.id}::uuid`;
+      await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${pin?.hash ?? null} WHERE usr_id = ${TESTER1}::uuid`;
     }
   });
 });

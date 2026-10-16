@@ -1805,6 +1805,10 @@ model AccTenderDetail {
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
   //   ck_td_src_doc_type admits 'EXPENSE' since 20261008110000 (the ExpV tender rows).
+  //   Notes 126 (20261016120000): ck_td_src_doc_type admits 'VOUCHER' — a row the server wrote
+  //   for a cash / bank line no document row covered (src doc = td_voucher_id = the voucher) —
+  //   and ck_td_src_module 'TILL' (the till's own transfers). ix_td_voucher (td_voucher_id) and
+  //   ix_td_src_doc (td_src_doc_id) join a voucher to its tender rows (money-lines.ts).
   // Partial index (DB-only) for the till's expected-cash query (20261008110000):
   //   CREATE INDEX ix_td_session ON accounts.acc_tender_detail
   //       (td_session_id, td_acc_year, td_tender_type_id, td_src_doc_type)
@@ -1880,7 +1884,8 @@ model AccTenderMaster {
   tndShortName            String    @db.VarChar(30)                                @map("tnd_short_name")
 
   // accounting
-  tndLedgerId             String    @db.Uuid                                       @map("tnd_ledger_id")
+  /// Optional only for TEMP_CR / CREDIT / LOYALTY, which post no tender leg (notes 126 §5, ck_tnd_ledger_required).
+  tndLedgerId             String?   @db.Uuid                                       @map("tnd_ledger_id")
   tndSettlementLedgerId   String?   @db.Uuid                                       @map("tnd_settlement_ledger_id")
   tndSettlementDays       Int       @default(0) @db.SmallInt                       @map("tnd_settlement_days")
   tndBankAccountId        String?   @db.Uuid                                       @map("tnd_bank_account_id")
@@ -1938,7 +1943,7 @@ model AccTenderMaster {
   company                 Company               @relation(fields: [tndCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_company")
   branch                  BranchMaster?         @relation(fields: [tndBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_branch")
   tenderType              AccTenderType         @relation(fields: [tndTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_type")
-  ledger                  AccLedgerMaster       @relation("TenderLedger", fields: [tndLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_ledger")
+  ledger                  AccLedgerMaster?      @relation("TenderLedger", fields: [tndLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_ledger")
   settlementLedger        AccLedgerMaster?      @relation("TenderSettlementLedger", fields: [tndSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_settlement_ledger")
   surchargeLedger         AccLedgerMaster?      @relation("TenderSurchargeLedger", fields: [tndSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_surcharge_ledger")
   bankAccount             AccLedgerBankAccount? @relation(fields: [tndBankAccountId], references: [lbaId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_bank_account")
@@ -1957,7 +1962,8 @@ model AccTenderMaster {
   //   ix_tnd_position           btree (tnd_company_id, tnd_display_position)  WHERE tnd_is_active = true AND tnd_is_deleted = false
   // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
   //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
-  //   ck_tnd_effective_range, ck_tnd_colour
+  //   ck_tnd_effective_range, ck_tnd_colour, ck_tnd_ledger_required (notes 126: a ledger on every
+  //   type but TEMP_CR / CREDIT / LOYALTY, 20261016120000)
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   // The VOUCHER tender (type 11) a batch settles through. NULL on the batch
   // means the branch default; the rate and the floor stay owned here.

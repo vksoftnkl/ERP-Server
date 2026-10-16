@@ -35,7 +35,8 @@ export type {
   ChargeDetailGuardedField,
   ChargeDetailGuardedValues,
 } from '../../charge-master/types/charge-master-api.types';
-export type ChargeDetailErrorDetail = ModuleApiErrorDetail;
+/** Every Charge Detail refusal names its `code` (CHARGE_DETAIL_ERROR, or VALIDATION_* from the filter). */
+export type ChargeDetailErrorDetail = ModuleApiErrorDetail & { code: string };
 export type ChargeDetailErrorResponse = ModuleApiErrorResponse<ChargeDetailErrorDetail>;
 export type ChargeDetailSuccessResponse<
   T,

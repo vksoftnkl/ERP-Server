@@ -27,6 +27,7 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
+import { CompanyMasterErrorCode } from './types/company-master-error-codes';
 import { BranchMasterService } from '../branchMaster/branch-master.service';
 
 const COMPANY_MASTER_TABLE_NAME = 'companys';
@@ -271,6 +272,7 @@ export class CompanyMasterService {
           'Company not found',
           'compId',
           `No company found with id ${compId}`,
+          CompanyMasterErrorCode.NOT_FOUND,
         );
       }
       if (!existing.compIsDeleted) {
@@ -278,6 +280,7 @@ export class CompanyMasterService {
           {
             field: 'compId',
             message: `${existing.compName} is live; only a deleted company can be restored`,
+            code: CompanyMasterErrorCode.NOT_DELETED,
           },
         ]);
       }
@@ -531,6 +534,7 @@ export class CompanyMasterService {
         {
           field: 'compName',
           message: 'Duplicate compName is not allowed',
+          code: CompanyMasterErrorCode.NAME_DUPLICATE,
         },
       ]);
     }
@@ -566,6 +570,7 @@ export class CompanyMasterService {
         {
           field: 'compCode',
           message: 'Duplicate compCode is not allowed',
+          code: CompanyMasterErrorCode.CODE_DUPLICATE,
         },
       ]);
     }
@@ -601,6 +606,7 @@ export class CompanyMasterService {
         {
           field: 'compGstinNo',
           message: 'Duplicate compGstinNo is not allowed',
+          code: CompanyMasterErrorCode.GSTIN_DUPLICATE,
         },
       ]);
     }
@@ -632,7 +638,12 @@ export class CompanyMasterService {
     applyPresentFields(data, saveCompanyMasterDto, COMPANY_MASTER_OPTIONAL_FIELDS);
   }
   private normalizeRequiredName(value: string, field: string): string {
-    return normalizeRequiredText<CompanyMasterErrorDetail>(value, field);
+    return normalizeRequiredText<CompanyMasterErrorDetail>(
+      value,
+      field,
+      undefined,
+      CompanyMasterErrorCode.NAME_REQUIRED,
+    );
   }
   private normalizeLengthCode(value: string, length: number, field: string): string {
     const normalized = value.trim().toUpperCase();
@@ -641,6 +652,7 @@ export class CompanyMasterService {
         {
           field,
           message: `${field} must be exactly ${length} characters`,
+          code: CompanyMasterErrorCode.STATE_CODE_INVALID,
         },
       ]);
     }
@@ -748,6 +760,7 @@ export class CompanyMasterService {
       {
         field: 'compName',
         message: 'Duplicate company unique value is not allowed',
+        code: CompanyMasterErrorCode.DUPLICATE,
       },
     ]);
   }
@@ -767,6 +780,7 @@ export class CompanyMasterService {
         {
           field: 'compId',
           message: `${existing.compName} is the default company; make another company the default first`,
+          code: CompanyMasterErrorCode.DEFAULT_UNDELETABLE,
         },
       ]);
     }
@@ -780,6 +794,7 @@ export class CompanyMasterService {
           message:
             `Used by ${used.map((ref) => `${ref.count} ${ref.label}`).join(', ')}. ` +
             'Delete those first; a deleted company would leave them under books nobody can open.',
+          code: CompanyMasterErrorCode.IN_USE,
         },
       ]);
     }
@@ -806,6 +821,7 @@ export class CompanyMasterService {
         {
           field: 'compFinYearFrom',
           message: `A financial year begins on 1 April; compFinYearFrom is ${isoDay(from)}`,
+          code: CompanyMasterErrorCode.FIN_YEAR_FROM_INVALID,
         },
       ]);
     }
@@ -814,6 +830,7 @@ export class CompanyMasterService {
         {
           field: 'compFinYearTo',
           message: `A financial year ends on 31 March; compFinYearTo is ${isoDay(to)}`,
+          code: CompanyMasterErrorCode.FIN_YEAR_TO_INVALID,
         },
       ]);
     }
@@ -822,6 +839,7 @@ export class CompanyMasterService {
         {
           field: 'compFinYearTo',
           message: `A year from ${isoDay(from)} ends on ${from.getUTCFullYear() + 1}-03-31; compFinYearTo is ${isoDay(to)}`,
+          code: CompanyMasterErrorCode.FIN_YEAR_SPAN_INVALID,
         },
       ]);
     }
@@ -838,6 +856,7 @@ export class CompanyMasterService {
         {
           field: 'compBooksBeginFrom',
           message: `compBooksBeginFrom must fall inside the first year, ${isoDay(begin)} to ${isoDay(end)}`,
+          code: CompanyMasterErrorCode.BOOKS_BEGIN_OUTSIDE_YEAR,
         },
       ]);
     }
@@ -865,13 +884,24 @@ export class CompanyMasterService {
     stateCode: string,
     pan: string | null | undefined,
   ): string | null {
-    const check = checkGstin(gstin, stateCode, pan, {
-      gstin: 'compGstinNo',
-      stateCode: 'compStateCode',
-      pan: 'compPanNo',
-    });
+    const fields = { gstin: 'compGstinNo', stateCode: 'compStateCode', pan: 'compPanNo' };
+    const check = checkGstin(gstin, stateCode, pan, fields);
     if (check.errors.length) {
-      this.throwBadRequest('Validation failed', check.errors);
+      // checkGstin (settings/shared) names no code: the field tells a PAN
+      // mismatch, and of the GSTIN's two refusals only the state one opens
+      // with "GSTIN ".
+      this.throwBadRequest(
+        'Validation failed',
+        check.errors.map((error) => ({
+          ...error,
+          code:
+            error.field === fields.pan
+              ? CompanyMasterErrorCode.PAN_GSTIN_MISMATCH
+              : error.message.startsWith('GSTIN ')
+                ? CompanyMasterErrorCode.GSTIN_STATE_MISMATCH
+                : CompanyMasterErrorCode.GSTIN_INVALID,
+        })),
+      );
     }
     return check.panFromGstin;
   }
@@ -892,13 +922,21 @@ export class CompanyMasterService {
     const dataUrl = /^data:([^;,]*)((?:;[^;,]*)*),(.*)$/s.exec(value.trim());
     if (dataUrl && !dataUrl[2].split(';').includes('base64')) {
       this.throwBadRequest('Invalid signature image', [
-        { field, message: `${field} must be base64-encoded` },
+        {
+          field,
+          message: `${field} must be base64-encoded`,
+          code: CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+        },
       ]);
     }
     const base64 = (dataUrl ? dataUrl[3] : value).replace(/\s+/g, '');
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length % 4 !== 0) {
       this.throwBadRequest('Invalid signature image', [
-        { field, message: `${field} must be valid base64 content` },
+        {
+          field,
+          message: `${field} must be valid base64 content`,
+          code: CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+        },
       ]);
     }
     const bytes = Buffer.from(base64, 'base64');
@@ -907,13 +945,18 @@ export class CompanyMasterService {
         {
           field,
           message: `${field} must be at most ${SIGNATURE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes.length / 1024)} KB`,
+          code: CompanyMasterErrorCode.SIGNATURE_TOO_LARGE,
         },
       ]);
     }
     const type = SIGNATURE_IMAGE_TYPES.find(([, isType]) => isType(bytes))?.[0];
     if (!type) {
       this.throwBadRequest('Invalid signature image', [
-        { field, message: `${field} must be a PNG, JPEG, GIF or WebP image` },
+        {
+          field,
+          message: `${field} must be a PNG, JPEG, GIF or WebP image`,
+          code: CompanyMasterErrorCode.SIGNATURE_NOT_IMAGE,
+        },
       ]);
     }
     return `data:${type};base64,${bytes.toString('base64')}`;
@@ -923,6 +966,7 @@ export class CompanyMasterService {
       'Company not found',
       'compId',
       `No active company found with id ${compId}`,
+      CompanyMasterErrorCode.NOT_FOUND,
     );
   }
   /**
@@ -943,7 +987,11 @@ export class CompanyMasterService {
     });
     if (!theme) {
       this.throwBadRequest('Validation failed', [
-        { field: 'compStylesheetId', message: `theme ${thmId} is not active` },
+        {
+          field: 'compStylesheetId',
+          message: `theme ${thmId} is not active`,
+          code: CompanyMasterErrorCode.THEME_INACTIVE,
+        },
       ]);
     }
   }

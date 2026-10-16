@@ -36,6 +36,13 @@ import {
   type StockAdjustmentDocKind,
   type StockAdjustmentSaveKind,
 } from './stock-adjustment.rules';
+import { StockErrorCode } from '../types/stock-error-codes';
+
+/** What check() says about one line: the refusal's code and its sentence. */
+interface LineVerdict {
+  code: StockErrorCode;
+  message: string;
+}
 
 /** One line as every check below sees it — from the payload at save, from the rows at validate / post. */
 interface AdjustmentLine {
@@ -202,6 +209,7 @@ export class StockAdjustmentService {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(`This ${rules.displayName.toLowerCase()} cannot be saved`, [
         {
           field: 'header.linkSrcModule',
+          code: StockErrorCode.ADJ_FOREIGN_LINK,
           message: `An adjustment is the stock module's own document: linkSrcModule may be ${STOCK_SRC_MODULE} or empty, not ${linkModule}. A ${linkModule} document moves its stock through its own module.`,
         },
       ]);
@@ -345,7 +353,7 @@ export class StockAdjustmentService {
     // The adjustment rule for a line wins over the shared preflight's: it is
     // the more specific sentence, and both are refused at post anyway.
     const byLineNo = new Map<number, string>();
-    for (const [index, message] of verdict) {
+    for (const [index, { message }] of verdict) {
       byLineNo.set(lines[index].lineNo, message);
     }
     return shared.map((row) => ({ ...row, problem: byLineNo.get(row.lineNo) ?? row.problem }));
@@ -513,11 +521,11 @@ export class StockAdjustmentService {
     header: HeaderFacts,
     lines: AdjustmentLine[],
     reasons: Map<string, ReasonRow>,
-  ): Promise<Map<number, string>> {
-    const out = new Map<number, string>();
-    const say = (line: AdjustmentLine, message: string) => {
+  ): Promise<Map<number, LineVerdict>> {
+    const out = new Map<number, LineVerdict>();
+    const say = (line: AdjustmentLine, code: StockErrorCode, message: string) => {
       if (!out.has(line.index)) {
-        out.set(line.index, `Line ${line.lineNo}: ${message}`);
+        out.set(line.index, { code, message: `Line ${line.lineNo}: ${message}` });
       }
     };
     const kind = header.kind;
@@ -526,13 +534,13 @@ export class StockAdjustmentService {
     // ── the header's godown, and every line in it ─────────────────────────
     for (const line of lines) {
       if (docGodown && line.godownId !== docGodown) {
-        say(line, 'sits in a different godown from the document. One adjustment, one godown.');
+        say(line, StockErrorCode.ADJ_LINE_OTHER_GODOWN, 'sits in a different godown from the document. One adjustment, one godown.');
       }
       if (line.freeBaseQty > 0) {
-        say(line, 'carries a free quantity. An adjustment has no free goods: state the quantity.');
+        say(line, StockErrorCode.ADJ_FREE_QTY_NOT_ALLOWED, 'carries a free quantity. An adjustment has no free goods: state the quantity.');
       }
       if (line.baseQty <= 0) {
-        say(line, 'has no quantity.');
+        say(line, StockErrorCode.ADJ_QTY_REQUIRED, 'has no quantity.');
       }
     }
 
@@ -543,19 +551,20 @@ export class StockAdjustmentService {
         if (line.toBucket) {
           say(
             line,
+            StockErrorCode.TO_BUCKET_NOT_ALLOWED,
             `names a bucket to move to (${line.toBucket}), but this is a ${STOCK_ADJUSTMENT_RULES[kind].displayName.toLowerCase()}. A document is all moves or none: key the move as Move stock.`,
           );
         }
         continue;
       }
       if (line.keyedNegative) {
-        say(line, 'moves a negative quantity. State the quantity moved; the buckets say which way it goes.');
+        say(line, StockErrorCode.ADJ_MOVE_QTY_NEGATIVE, 'moves a negative quantity. State the quantity moved; the buckets say which way it goes.');
       } else if (!line.toBucket) {
-        say(line, `names no bucket to move to. A move takes the stock out of ${line.bucket} and into another bucket — name it (toBucket). A document is all moves or none.`);
+        say(line, StockErrorCode.MOVE_TO_BUCKET_REQUIRED, `names no bucket to move to. A move takes the stock out of ${line.bucket} and into another bucket — name it (toBucket). A document is all moves or none.`);
       } else if (line.toBucket === line.bucket) {
-        say(line, `moves stock from ${line.bucket} into ${line.bucket}. Pick a different bucket.`);
+        say(line, StockErrorCode.MOVE_SAME_BUCKET, `moves stock from ${line.bucket} into ${line.bucket}. Pick a different bucket.`);
       } else if (!line.lotId) {
-        say(line, 'names no lot. A move is about one lot — the lot is what names the supplier the stock goes back to. Pick it from the balance.');
+        say(line, StockErrorCode.LINE_LOT_REQUIRED, 'names no lot. A move is about one lot — the lot is what names the supplier the stock goes back to. Pick it from the balance.');
       }
     }
 
@@ -563,15 +572,15 @@ export class StockAdjustmentService {
     for (const line of lines) {
       const reason = line.reasonId ? reasons.get(line.reasonId) : undefined;
       if (!line.reasonId) {
-        say(line, 'names no reason, and the header names none either. Every adjustment line says why.');
+        say(line, StockErrorCode.ADJ_REASON_REQUIRED, 'names no reason, and the header names none either. Every adjustment line says why.');
         continue;
       }
       if (!reason) {
-        say(line, `names a reason (${line.reasonId}) this company cannot see.`);
+        say(line, StockErrorCode.REASON_NOT_FOUND, `names a reason (${line.reasonId}) this company cannot see.`);
         continue;
       }
       if (!reason.srm_is_active) {
-        say(line, `cites ${reason.srm_code} (${reason.srm_name}), which is inactive.`);
+        say(line, StockErrorCode.REASON_INACTIVE, `cites ${reason.srm_code} (${reason.srm_name}), which is inactive.`);
         continue;
       }
       if (moving) {
@@ -581,16 +590,18 @@ export class StockAdjustmentService {
         if (!this.allowsMove(reason)) {
           say(
             line,
+            StockErrorCode.ADJ_MOVE_REASON_REQUIRED,
             `cites ${reason.srm_code} (${reason.srm_name}), which is not a stock-move reason. Cite MOVE_DAMAGED, MOVE_SALEABLE or a reason of your own that allows BUCKET_OUT / BUCKET_IN.`,
           );
         } else if (reason.srm_require_remarks && !line.remarks) {
-          say(line, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
+          say(line, StockErrorCode.REASON_REMARK_REQUIRED, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
         }
         continue;
       }
       if (this.onlyMove(reason)) {
         say(
           line,
+          StockErrorCode.ADJ_MOVE_REASON_NOT_ALLOWED,
           `cites ${reason.srm_code} (${reason.srm_name}), a stock-move reason. Key it as Move stock and name the bucket the stock moves to.`,
         );
         continue;
@@ -598,20 +609,21 @@ export class StockAdjustmentService {
       if (kind !== 'ADJUSTMENT' && reason.srm_direction === 'IN') {
         say(
           line,
+          StockErrorCode.ADJ_REASON_INWARD,
           `cites ${reason.srm_code} (${reason.srm_name}), which brings stock IN. A ${STOCK_ADJUSTMENT_RULES[kind].displayName.toLowerCase()} only takes stock out.`,
         );
         continue;
       }
       if (reason.srm_direction === 'IN' && line.sign < 0) {
-        say(line, `cites ${reason.srm_code} (${reason.srm_name}), which brings stock IN, with a negative quantity.`);
+        say(line, StockErrorCode.ADJ_REASON_SIGN_MISMATCH, `cites ${reason.srm_code} (${reason.srm_name}), which brings stock IN, with a negative quantity.`);
         continue;
       }
       if (reason.srm_direction === 'BOTH' && kind === 'ADJUSTMENT' && line.sign === 0) {
-        say(line, `cites ${reason.srm_code} (${reason.srm_name}), whose direction is BOTH: the quantity must be signed (+ in, − out).`);
+        say(line, StockErrorCode.ADJ_QTY_SIGN_REQUIRED, `cites ${reason.srm_code} (${reason.srm_name}), whose direction is BOTH: the quantity must be signed (+ in, − out).`);
         continue;
       }
       if (reason.srm_require_remarks && !line.remarks) {
-        say(line, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
+        say(line, StockErrorCode.REASON_REMARK_REQUIRED, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
         continue;
       }
     }
@@ -636,7 +648,7 @@ export class StockAdjustmentService {
       }
       const direction = this.directionOf(line, reasons);
       if (kind === 'EXPIRY_WRITEOFF' && !line.lotId) {
-        say(line, 'names no lot. An expiry write-off is about one lot and its expiry date — pick it from the balance.');
+        say(line, StockErrorCode.LINE_LOT_REQUIRED, 'names no lot. An expiry write-off is about one lot and its expiry date — pick it from the balance.');
         continue;
       }
       if (!line.lotId) {
@@ -644,22 +656,23 @@ export class StockAdjustmentService {
       }
       const lot = lots.get(line.lotId);
       if (!lot) {
-        say(line, 'names a lot that does not exist. Pick the holding from the balance.');
+        say(line, StockErrorCode.LOT_NOT_FOUND, 'names a lot that does not exist. Pick the holding from the balance.');
         continue;
       }
       if (lot.slt_item_id !== line.itemId) {
-        say(line, 'names a lot that belongs to a different item.');
+        say(line, StockErrorCode.LOT_OTHER_ITEM, 'names a lot that belongs to a different item.');
         continue;
       }
       if (kind === 'EXPIRY_WRITEOFF') {
         if (!lot.slt_expiry_date) {
-          say(line, `lot ${lot.slt_batch_no ?? line.lotId} has no expiry date. Use a damage write-off.`);
+          say(line, StockErrorCode.ADJ_LOT_NO_EXPIRY, `lot ${lot.slt_batch_no ?? line.lotId} has no expiry date. Use a damage write-off.`);
           continue;
         }
         const expiry = isoDate(lot.slt_expiry_date) as string;
         if (expiry > cutoff) {
           say(
             line,
+            StockErrorCode.ADJ_LOT_NOT_EXPIRED,
             `lot ${lot.slt_batch_no ?? line.lotId} expires on ${expiry}, after ${cutoff}${graceDays ? ` (document date + ${graceDays} days' grace)` : ''}. Not expired yet: use a damage write-off.`,
           );
           continue;
@@ -673,6 +686,7 @@ export class StockAdjustmentService {
           shortReported.add(key);
           say(
             line,
+            StockErrorCode.INSUFFICIENT_STOCK,
             `${moving ? 'moves' : 'takes'} ${asked} but this godown holds ${have} of ${lot.slt_batch_no ? `batch ${lot.slt_batch_no}` : 'that lot'} in the ${line.bucket} bucket. ${
               moving ? 'Moving stock you do not have is a data error.' : 'Writing off stock you do not have is a data error, not a sale.'
             }`,
@@ -693,7 +707,7 @@ export class StockAdjustmentService {
           if (code === RELOT_OUT_CODE) {
             bucket.out += line.baseQty;
             if (!line.lotId) {
-              say(line, 'is the OUT half of a re-lot and must name the lot it leaves.');
+              say(line, StockErrorCode.ADJ_RELOT_OUT_LOT_REQUIRED, 'is the OUT half of a re-lot and must name the lot it leaves.');
             } else {
               bucket.outLots.add(line.lotId);
             }
@@ -708,11 +722,11 @@ export class StockAdjustmentService {
         for (const [, pair] of perItem) {
           const line = pair.first;
           if (Math.abs(pair.out - pair.in) > 0.000001) {
-            say(line, `re-lot does not balance for this item: ${pair.out} out of the old lot against ${pair.in} into the new one. A half on its own is shrinkage — cite PILFERAGE or DAMAGE instead.`);
+            say(line, StockErrorCode.ADJ_RELOT_UNBALANCED, `re-lot does not balance for this item: ${pair.out} out of the old lot against ${pair.in} into the new one. A half on its own is shrinkage — cite PILFERAGE or DAMAGE instead.`);
           } else if ([...pair.inLots].some((id) => pair.outLots.has(id))) {
-            say(line, 're-lot moves stock from a lot into the same lot. The IN half states the CORRECT identity.');
+            say(line, StockErrorCode.ADJ_RELOT_SAME_LOT, 're-lot moves stock from a lot into the same lot. The IN half states the CORRECT identity.');
           } else if (pair.uoms.size > 1) {
-            say(line, 're-lot halves are keyed in different base units.');
+            say(line, StockErrorCode.ADJ_RELOT_UNIT_MISMATCH, 're-lot halves are keyed in different base units.');
           }
         }
 
@@ -733,6 +747,7 @@ export class StockAdjustmentService {
           const tracked = resolved.get(line.index)?.tracked ?? [];
           say(
             line,
+            StockErrorCode.ADJ_RELOT_SAME_LOT,
             tracked.length === 0
               ? 're-lots an item that tracks no lot identity (no batch, expiry, MRP, sale price, serial or supplier): all of its stock in a bucket is one lot, so the IN half lands back on the lot the OUT half leaves. There is nothing to re-lot — change the item\'s tracking policy first if it should carry an identity.'
               : `re-lot lands back on the lot the OUT half leaves: this item tracks ${tracked.join(', ')}, and the IN half states the same ${tracked.length === 1 ? 'value' : 'values'} as that lot. State the CORRECT identity.`,
@@ -877,6 +892,7 @@ export class StockAdjustmentService {
         `This ${rules.displayName.toLowerCase()} cannot be posted`,
         same.map((r) => ({
           field: `lines.${r.in_line_no}`,
+          code: StockErrorCode.ADJ_RELOT_SAME_LOT,
           message: `Line ${r.in_line_no} (${r.item_name}): the IN half of the re-lot resolved to the lot line ${r.out_line_no} takes the stock out of — the pair would move it from a lot into the same lot. State the CORRECT identity.`,
         })),
       );
@@ -928,18 +944,18 @@ export class StockAdjustmentService {
     const { fromGodownId, toGodownId, kind } = header;
     if (kind === BUCKET_MOVE_KIND && toGodownId && toGodownId !== fromGodownId) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('This stock move cannot be saved', [
-        { field: 'toGodownId', message: 'A move changes the bucket, not the godown: name the godown once, in fromGodownId. Moving stock between godowns is a transfer.' },
+        { field: 'toGodownId', code: StockErrorCode.ADJ_ONE_GODOWN, message: 'A move changes the bucket, not the godown: name the godown once, in fromGodownId. Moving stock between godowns is a transfer.' },
       ]);
     }
     if (kind === 'ADJUSTMENT') {
       if (!fromGodownId && !toGodownId) {
         throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('This stock adjustment cannot be saved', [
-          { field: 'fromGodownId', message: 'An adjustment names the godown it adjusts: fromGodownId (outward, or a sheet with both signs) or toGodownId (inward).' },
+          { field: 'fromGodownId', code: StockErrorCode.ADJ_GODOWN_REQUIRED, message: 'An adjustment names the godown it adjusts: fromGodownId (outward, or a sheet with both signs) or toGodownId (inward).' },
         ]);
       }
       if (fromGodownId && toGodownId && fromGodownId !== toGodownId) {
         throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('This stock adjustment cannot be saved', [
-          { field: 'toGodownId', message: 'One adjustment, one godown. A sheet with both signs names it once, in fromGodownId; moving stock between godowns is a transfer.' },
+          { field: 'toGodownId', code: StockErrorCode.ADJ_ONE_GODOWN, message: 'One adjustment, one godown. A sheet with both signs names it once, in fromGodownId; moving stock between godowns is a transfer.' },
         ]);
       }
       return fromGodownId ?? toGodownId;
@@ -950,7 +966,7 @@ export class StockAdjustmentService {
   private refuse(
     rules: StockVoucherTypeRules,
     title: string,
-    verdict: Map<number, string>,
+    verdict: Map<number, LineVerdict>,
     lines: AdjustmentLine[],
   ): void {
     if (verdict.size === 0) {
@@ -960,7 +976,7 @@ export class StockAdjustmentService {
       title,
       [...verdict.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([index, message]) => ({ field: `lines.${index}`, message: `${message}${lines[index].itemName ? ` (${lines[index].itemName})` : ''}` })),
+        .map(([index, { code, message }]) => ({ field: `lines.${index}`, code, message: `${message}${lines[index].itemName ? ` (${lines[index].itemName})` : ''}` })),
     );
   }
 
@@ -1012,6 +1028,7 @@ export class StockAdjustmentService {
         'Stock adjustment not found',
         'svhId',
         `No adjustment, issue, damage or expiry write-off ${svhId} in ${accYear} for this company and branch.`,
+        StockErrorCode.ADJ_NOT_FOUND,
       );
     }
     // A sale bill, a challan or a return moves its stock through a SHADOW
@@ -1023,6 +1040,7 @@ export class StockAdjustmentService {
         'Stock adjustment not found',
         'svhId',
         `${row.svh_refno ?? svhId} is the stock movement of a ${row.svh_link_src_module} ${row.svh_link_src_doc_type ?? 'document'}, not an adjustment. It is posted and cancelled with that document.`,
+        StockErrorCode.ADJ_OTHER_MODULE_DOC,
       );
     }
     const kind: StockAdjustmentSaveKind = row.is_move ? BUCKET_MOVE_KIND : row.svh_voucher_type;

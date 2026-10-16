@@ -7,7 +7,7 @@ updated, listed and soft-deleted independently of the live authentication flow.
 - **Base route:** `user-login-sessions` (API-versioned — every route carries `@Version(API_VERSION)`)
 - **Swagger tag:** `User Login Sessions`
 - **Auth:** Bearer `access-token` (required)
-- **Cache:** controller sets `@CacheTTL(60)`
+- **Cache:** controller sets `@CacheTTL(1)`
 - **Primary table:** `user_login_sessions` (`audit` schema) — PK `ulsId`
 
 ## Files

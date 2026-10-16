@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemBrandErrorDetail, ItemBrandPayload } from './types/item-brand-api.types';
+import { ItemBrandErrorCode } from './types/item-brand-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -38,6 +39,9 @@ const ITEM_BRAND_DELETE_STATE = {
   label: 'item brand',
   idField: 'brand_id',
   restoreRoute: '/item-brands/restore',
+  alreadyDeletedCode: ItemBrandErrorCode.ALREADY_DELETED,
+  notDeletedCode: ItemBrandErrorCode.NOT_DELETED,
+  inUseCode: ItemBrandErrorCode.IN_USE,
 };
 @Injectable()
 export class ItemsBrandMasterService {
@@ -64,6 +68,7 @@ export class ItemsBrandMasterService {
         'Item brand not found',
         'brand_id',
         `No active item brand found with id ${brandId}`,
+        ItemBrandErrorCode.NOT_FOUND,
       );
     }
     const parentName = await this.getParentName(record.brand_parent_id);
@@ -105,6 +110,7 @@ export class ItemsBrandMasterService {
           'Item brand not found',
           'brand_id',
           `No item brand found with id ${brandId}`,
+          ItemBrandErrorCode.NOT_FOUND,
         );
       }
       assertDeleteState(existing.brand_is_deleted, wantDeleted, ITEM_BRAND_DELETE_STATE);
@@ -141,6 +147,7 @@ export class ItemsBrandMasterService {
           'Item brand not found',
           'brand_id',
           `No item brand found with id ${brandId}`,
+          ItemBrandErrorCode.NOT_FOUND,
         );
       }
       if (nextDeleted) {
@@ -247,12 +254,15 @@ export class ItemsBrandMasterService {
             'Item brand not found',
             'brand_id',
             `No active item brand found with id ${brandId}`,
+            ItemBrandErrorCode.NOT_FOUND,
           );
         }
         if (saveItemBrandDto.brand_parent_id === brandId) {
           throwInventoryBadRequest<ItemBrandErrorDetail>('Item brand cannot be its own parent', [
             {
               field: 'brand_parent_id',
+
+              code: ItemBrandErrorCode.SELF_PARENT,
               message: 'brand_parent_id cannot be same as brand_id',
             },
           ]);
@@ -340,6 +350,8 @@ export class ItemsBrandMasterService {
       throwInventoryBadRequest<ItemBrandErrorDetail>('Parent item brand does not exist', [
         {
           field: 'brand_parent_id',
+
+          code: ItemBrandErrorCode.PARENT_NOT_FOUND,
           message: `No active item brand found with id ${parentId}`,
         },
       ]);
@@ -562,6 +574,8 @@ export class ItemsBrandMasterService {
       throwInventoryBadRequest<ItemBrandErrorDetail>('Invalid base64 image provided', [
         {
           field: 'brand_photo',
+
+          code: ItemBrandErrorCode.PHOTO_INVALID,
           message: 'brand_photo must be a non-empty base64 string',
         },
       ]);
@@ -572,6 +586,8 @@ export class ItemsBrandMasterService {
       throwInventoryBadRequest<ItemBrandErrorDetail>('Invalid base64 image provided', [
         {
           field: 'brand_photo',
+
+          code: ItemBrandErrorCode.PHOTO_INVALID,
           message: 'brand_photo must be valid base64 content',
         },
       ]);
@@ -603,7 +619,11 @@ export class ItemsBrandMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemBrandErrorDetail>(error, 'Item brand name already exists', [
-      { field: 'brand_name', message: 'Duplicate brand_name is not allowed' },
+      {
+        field: 'brand_name',
+        code: ItemBrandErrorCode.NAME_TAKEN,
+        message: 'Duplicate brand_name is not allowed',
+      },
     ]);
   }
 }

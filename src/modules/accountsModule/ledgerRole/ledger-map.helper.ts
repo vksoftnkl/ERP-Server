@@ -4,6 +4,7 @@ import {
   throwBadRequest,
   throwNotFound,
 } from 'src/common/utils/module-service.utils';
+import { LedgerRoleErrorCode } from './types/ledger-role-error-codes';
 
 /**
  * accounts.fn_ledger_for, in the application layer — the read side of the
@@ -87,6 +88,11 @@ export interface ResolveRoleLedgerOptions {
   where: string;
   /** Message on the 400 raised by the throwing form. */
   message?: string;
+  /**
+   * `code` on every error of that 400 — the caller's "nothing maps this role"
+   * code. Defaults to LEDGER_ROLE_NOT_MAPPED.
+   */
+  code?: string;
 }
 
 /** Which table answered, and with what. */
@@ -193,6 +199,7 @@ export async function resolveRoleLedgers(
       `${options.where}: "${unknownRole.role}" is not a posting role`,
       unknownRole.field ?? unknownRole.role,
       `accounts.acc_ledger_role has no row for ${unknownRole.role}`,
+      LedgerRoleErrorCode.UNKNOWN_ROLE,
     );
   }
 
@@ -245,7 +252,7 @@ export async function requireRoleLedgers(
   options: ResolveRoleLedgerOptions,
 ): Promise<Map<string, ResolvedRoleLedger>> {
   const resolved = await resolveRoleLedgers(client, requests, options);
-  const errors = describeUnresolved(requests, resolved, options.where);
+  const errors = describeUnresolved(requests, resolved, options.where, options.code);
   if (errors.length > 0) {
     throwBadRequest(options.message ?? 'Validation failed', errors);
   }
@@ -263,7 +270,7 @@ export async function collectRoleLedgerGapErrors(
   options: ResolveRoleLedgerOptions,
 ): Promise<ModuleErrorDetail[]> {
   const resolved = await resolveRoleLedgers(client, requests, options);
-  return describeUnresolved(requests, resolved, options.where);
+  return describeUnresolved(requests, resolved, options.where, options.code);
 }
 
 // ─── Precedence ──────────────────────────────────────────────────────────────
@@ -376,6 +383,7 @@ function describeUnresolved(
   requests: readonly RoleLedgerRequest[],
   resolved: ReadonlyMap<string, ResolvedRoleLedger | null>,
   where: string,
+  code?: string,
 ): ModuleErrorDetail[] {
   const errors: ModuleErrorDetail[] = [];
   const reported = new Set<string>();
@@ -387,6 +395,7 @@ function describeUnresolved(
     reported.add(key);
     errors.push({
       field: request.field ?? request.role,
+      code: code ?? LedgerRoleErrorCode.NOT_MAPPED,
       message:
         `${where}: nothing maps "${request.role}"` +
         `${request.supplyNature ? ` for ${request.supplyNature} supply` : ''} to a ledger` +

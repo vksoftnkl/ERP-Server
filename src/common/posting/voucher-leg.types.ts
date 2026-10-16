@@ -100,6 +100,18 @@ export interface VoucherHeaderInput {
 export interface VoucherLegSource {
   header: VoucherHeaderInput;
   legs: VoucherLeg[];
+  /**
+   * Notes 126 — how the server may label a BANK line no tender row covers
+   * (money-lines.ts): BANK = the bank's own BANK tender (a remittance, a
+   * settlement payout, a bank tender's till variance), CHEQUE = the CHEQUE
+   * tender. Left out = such a line is refused (reported on a SALES document).
+   * A CASH line is always labelled with the branch's CASH tender.
+   */
+  /**
+   * `deferred`: the document writes its tender rows AFTER the legs (the
+   * register's instruments) — it calls `coverPostedVoucher` itself once they exist.
+   */
+  money?: { bankTender?: 'BANK' | 'CHEQUE' | null; deferred?: boolean };
 }
 
 export interface VoucherPostingResult {

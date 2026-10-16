@@ -8,6 +8,7 @@ import {
   EmployeeDesignationMasterErrorResponse,
   EmployeeDesignationMasterPayload,
 } from './types/employee-designation-master-api.types';
+import { EmployeeDesignationMasterErrorCode } from './types/employee-designation-master-error-codes';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -84,6 +85,7 @@ export class EmployeeDesignationMasterService {
           {
             field: 'edId',
             message: `Employee designation ${edId} is used by ${activeEmployeesCount} employee(s).`,
+            code: EmployeeDesignationMasterErrorCode.IN_USE,
           },
         ]);
       }
@@ -315,6 +317,7 @@ export class EmployeeDesignationMasterService {
           {
             field: 'edName',
             message: 'Duplicate edName is not allowed',
+            code: EmployeeDesignationMasterErrorCode.NAME_DUPLICATE,
           },
         ],
       );
@@ -357,6 +360,7 @@ export class EmployeeDesignationMasterService {
           {
             field: 'edCode',
             message: 'Duplicate edCode is not allowed',
+            code: EmployeeDesignationMasterErrorCode.CODE_DUPLICATE,
           },
         ],
       );
@@ -388,7 +392,12 @@ export class EmployeeDesignationMasterService {
   }
 
   private normalizeRequiredName(value: string): string {
-    return normalizeRequiredText<EmployeeDesignationMasterErrorDetail>(value, 'edName');
+    return normalizeRequiredText<EmployeeDesignationMasterErrorDetail>(
+      value,
+      'edName',
+      undefined,
+      EmployeeDesignationMasterErrorCode.NAME_REQUIRED,
+    );
   }
 
   private toPayload(record: EmployeeDesignation): EmployeeDesignationMasterPayload {
@@ -416,6 +425,7 @@ export class EmployeeDesignationMasterService {
         {
           field: 'edName',
           message: 'Duplicate employee designation unique value is not allowed',
+          code: EmployeeDesignationMasterErrorCode.DUPLICATE,
         },
       ],
     );
@@ -426,6 +436,7 @@ export class EmployeeDesignationMasterService {
       'Employee designation not found',
       'edId',
       `No active employee designation found with id ${edId}`,
+      EmployeeDesignationMasterErrorCode.NOT_FOUND,
     );
   }
 

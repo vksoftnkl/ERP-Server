@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemGroupErrorDetail, ItemGroupPayload } from './types/item-group-api.types';
+import { ItemGroupErrorCode } from './types/item-group-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -44,6 +45,9 @@ const ITEM_GROUP_DELETE_STATE = {
   label: 'item group',
   idField: 'itg_id',
   restoreRoute: '/item-groups/restore',
+  alreadyDeletedCode: ItemGroupErrorCode.ALREADY_DELETED,
+  notDeletedCode: ItemGroupErrorCode.NOT_DELETED,
+  inUseCode: ItemGroupErrorCode.IN_USE,
 };
 @Injectable()
 export class ItemsGroupMasterService {
@@ -72,6 +76,7 @@ export class ItemsGroupMasterService {
         'Item group not found',
         'itg_id',
         `No active item group found with id ${itgId}`,
+        ItemGroupErrorCode.NOT_FOUND,
       );
     }
     const parentName = await this.resolveParentName(record.itgParentId);
@@ -114,6 +119,7 @@ export class ItemsGroupMasterService {
           'Item group not found',
           'itg_id',
           `No item group found with id ${itgId}`,
+          ItemGroupErrorCode.NOT_FOUND,
         );
       }
 
@@ -152,6 +158,7 @@ export class ItemsGroupMasterService {
           'Item group not found',
           'itg_id',
           `No item group found with id ${itgId}`,
+          ItemGroupErrorCode.NOT_FOUND,
         );
       }
 
@@ -275,12 +282,14 @@ export class ItemsGroupMasterService {
             'Item group not found',
             'itg_id',
             `No active item group found with id ${itgId}`,
+            ItemGroupErrorCode.NOT_FOUND,
           );
         }
         if (saveItemGroupDto.itg_parent_id === itgId) {
           throwInventoryBadRequest<ItemGroupErrorDetail>('Item group cannot be its own parent', [
             {
               field: 'itg_parent_id',
+              code: ItemGroupErrorCode.SELF_PARENT,
               message: 'itg_parent_id cannot be same as itg_id',
             },
           ]);
@@ -374,6 +383,7 @@ export class ItemsGroupMasterService {
       throwInventoryBadRequest<ItemGroupErrorDetail>('Parent item group does not exist', [
         {
           field: 'itg_parent_id',
+          code: ItemGroupErrorCode.PARENT_NOT_FOUND,
           message: `No active item group found with id ${parentId}`,
         },
       ]);
@@ -614,6 +624,7 @@ export class ItemsGroupMasterService {
       throwInventoryBadRequest<ItemGroupErrorDetail>('Invalid base64 image provided', [
         {
           field: 'itg_photo',
+          code: ItemGroupErrorCode.PHOTO_INVALID,
           message: 'itg_photo must be a non-empty base64 string',
         },
       ]);
@@ -624,6 +635,7 @@ export class ItemsGroupMasterService {
       throwInventoryBadRequest<ItemGroupErrorDetail>('Invalid base64 image provided', [
         {
           field: 'itg_photo',
+          code: ItemGroupErrorCode.PHOTO_INVALID,
           message: 'itg_photo must be valid base64 content',
         },
       ]);
@@ -664,7 +676,11 @@ export class ItemsGroupMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemGroupErrorDetail>(error, 'Item group name already exists', [
-      { field: 'itg_name', message: 'Duplicate itg_name is not allowed' },
+      {
+        field: 'itg_name',
+        code: ItemGroupErrorCode.NAME_TAKEN,
+        message: 'Duplicate itg_name is not allowed',
+      },
     ]);
   }
 }

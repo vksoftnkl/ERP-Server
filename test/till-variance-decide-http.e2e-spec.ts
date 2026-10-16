@@ -19,7 +19,8 @@ import { BRANCH, COMPANY, data, expectStatus, prisma } from './helpers/payment-e
  *       no 285 grant (TILL_APPROVER_NO_GRANT); a grant whose ceiling is below
  *       the gap (TILL_APPROVER_LIMIT); the EITHER channel with no remote
  *       authority wants the till PIN, and a wrong one is journalled PIN_FAIL
- *       (TILL_APPROVER_PIN)
+ *       (TILL_APPROVER_PIN); an approver with none set is TILL_APPROVER_NO_PIN
+ *       (notes 122 §8, not journalled)
  *   A1  RECOUNT by PIN: back to COUNTING, uncounted, with one more attempt —
  *       the close refused until the next count (notes 112), which replaces
  *       the variances; APPROVE EXPENSE remotely: the variances carry
@@ -281,13 +282,19 @@ describe('A2 · who may decide', () => {
 
   it('EITHER with no remote authority wants the till PIN; a wrong PIN is refused and journalled PIN_FAIL', async () => {
     await prisma.$executeRaw`UPDATE accounts.till_approval_authority SET taa_max_amount = 1000 WHERE taa_id = ${grantId}::uuid`;
+    // Notes 122 §8: an approver with no till PIN at all is told so, not "wrong PIN".
+    const noPinSet = await decideAs('prathap', s, { decision: 'RECOUNT', approverPin: '2468' });
+    expectStatus(noPinSet, 422);
+    expect(firstError(noPinSet)).toEqual(
+      expect.objectContaining({ code: 'TILL_APPROVER_NO_PIN', field: 'approverPin' }),
+    );
+
+    await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${await hashSecret('2468')} WHERE usr_id = ${PRATHAP}::uuid`;
     const noPin = await decideAs('prathap', s, { decision: 'RECOUNT' });
     expectStatus(noPin, 403);
     expect(firstError(noPin)).toEqual(
       expect.objectContaining({ code: 'TILL_APPROVER_PIN', field: 'approverPin' }),
     );
-
-    await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${await hashSecret('2468')} WHERE usr_id = ${PRATHAP}::uuid`;
     const wrong = await decideAs('prathap', s, { decision: 'RECOUNT', approverPin: '0000' });
     expectStatus(wrong, 403);
     expect(firstError(wrong).code).toBe('TILL_APPROVER_PIN');
@@ -459,5 +466,117 @@ describe('A1 / A3 · APPROVE', () => {
     const again = await decideAs('prathap', s, { decision: 'RECOUNT' });
     expectStatus(again, 409);
     expect(firstError(again).code).toBe('TILL_SESSION_NOT_OPEN');
+  });
+});
+
+describe('Notes 124 · a CLOSED session, force-close wording, the day safe', () => {
+  it('§1 a drawer gap left PENDING on a CLOSED session (closed before notes 112): RECOUNT refused, APPROVE posts the TVar at once and the session stays CLOSED', async () => {
+    const s = await pendingSession();
+    // As VIJI PC-261012-02 was closed on 2026-10-12: CLOSED, its cash gap PENDING.
+    await prisma.$executeRaw`
+      UPDATE accounts.till_session
+         SET tss_status = 'CLOSED', tss_closed_on = now(), tss_closed_by = tss_operator_id,
+             tss_handed_over = tss_cash_counted, tss_float_left = 0
+       WHERE tss_id = ${s.tssId}::uuid`;
+
+    const recount = await decideAs('prathap', s, { decision: 'RECOUNT' });
+    expectStatus(recount, 400);
+    expect(firstError(recount).field).toBe('decision');
+
+    const self = await decideAs('tester1', s, {
+      decision: 'APPROVE',
+      treatment: 'EXPENSE',
+      reasonId: countErrorReason,
+    });
+    expectStatus(self, 403);
+    expect(firstError(self).code).toBe('TILL_APPROVER_SELF');
+
+    const res = await decideAs('prathap', s, {
+      decision: 'APPROVE',
+      treatment: 'EXPENSE',
+      reasonId: countErrorReason,
+      note: 'Closed before notes 112, decided after',
+    });
+    expectStatus(res, 200);
+    const d = data<{ tapId: string; session: { tssStatus: string; tssVarianceStatus: string } }>(
+      res,
+    );
+    expect(d.session).toEqual(
+      expect.objectContaining({ tssStatus: 'CLOSED', tssVarianceStatus: 'ACCEPTED' }),
+    );
+    const [posted] = await liveVariances(s);
+    expect(posted).toEqual(
+      expect.objectContaining({ treatment: 'EXPENSE', status: 'POSTED', approval_id: d.tapId }),
+    );
+    expect(await legsOf(posted.voucher_id!)).toEqual([
+      { dr_cr: 'DR', ledger: shortExcessLedger, amount: '100.00' },
+      { dr_cr: 'CR', ledger: tillCashLedger, amount: '100.00' },
+    ]);
+    expect(await sessionRow(s)).toEqual(
+      expect.objectContaining({ status: 'CLOSED', close_approval_id: d.tapId }),
+    );
+
+    // Nothing left to decide: refused as any CLOSED session was.
+    const again = await decideAs('prathap', s, {
+      decision: 'APPROVE',
+      treatment: 'EXPENSE',
+      reasonId: countErrorReason,
+    });
+    expectStatus(again, 409);
+    expect(firstError(again).code).toBe('TILL_SESSION_NOT_OPEN');
+  });
+
+  it('§8 the cashier force-closing their own session is told so (TILL_APPROVER_SELF, event FORCE_CLOSE)', async () => {
+    const [reason] = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT trs_id::text AS id FROM accounts.till_reason
+       WHERE trs_company_id IS NULL AND trs_category = 'FORCE_CLOSE' AND NOT trs_is_deleted
+       ORDER BY trs_code LIMIT 1`;
+    const open = await postAs('tester1', tillPc, 'sessions/open', {
+      companyId: COMPANY,
+      branchId: BRANCH,
+      floatMode: 'ISSUED',
+      floatIssued: 500,
+      lines: [{ tenderTypeId: 1, denominationId: note500, qty: 1 }],
+    });
+    expectStatus(open, 201);
+    const s = data<Session>(open);
+    sessions.push(s);
+
+    const res = await postAs('tester1', officePc, 'sessions/force-close', {
+      ...key(s),
+      reasonId: reason.id,
+      approverPin: '1234',
+      notes: 'e2e',
+      lines: [{ tenderTypeId: 1, denominationId: note500, qty: 1 }],
+    });
+    expectStatus(res, 403);
+    expect(firstError(res)).toEqual(
+      expect.objectContaining({ code: 'TILL_APPROVER_SELF', event: 'FORCE_CLOSE' }),
+    );
+    expect(String(firstError(res).message)).toMatch(/cannot force-close their own session/);
+
+    // Leave the counter free: count it exact and close it.
+    expectStatus(await postAs('tester1', tillPc, 'sessions/end-billing', key(s)), 200);
+    const exact = { ...key(s), lines: [{ tenderTypeId: 1, denominationId: note500, qty: 1 }] };
+    expect(
+      data<{ outcome: string }>(await postAs('tester1', tillPc, 'sessions/count', exact)).outcome,
+    ).toBe('ACCEPTED');
+    expectStatus(await postAs('tester1', tillPc, 'sessions/close', key(s)), 200);
+  });
+
+  it('§3 days/get says how much cash was handed over and not yet received, beside the safe', async () => {
+    const res = await http()
+      .get('/api/v1/till/days/get')
+      .query({ companyId: COMPANY, branchId: BRANCH, accYear: sessions[0].tssAccYear })
+      .set('Authorization', as('tester1', officePc));
+    expectStatus(res, 200);
+    const safe = data<{ safe: Record<string, unknown> }>(res).safe;
+    expect(safe).toEqual(
+      expect.objectContaining({
+        belowZero: expect.any(Boolean),
+        awaitingOpening: expect.any(Number),
+        awaiting: expect.any(Number),
+      }),
+    );
   });
 });

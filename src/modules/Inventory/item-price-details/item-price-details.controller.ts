@@ -41,7 +41,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemPriceDetailTaxPayloadDto,
   ItemPriceDetailPayloadDto,
 )
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {

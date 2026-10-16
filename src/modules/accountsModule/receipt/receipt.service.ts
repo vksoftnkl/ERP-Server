@@ -94,6 +94,8 @@ import type {
   ReceiptPayload,
   ReceiptTender,
 } from './types/receipt-api.types';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.1, §5.4 and R14 — everything a receipt does that is not posting or
@@ -182,6 +184,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: 'avhVoucherDate',
+          code: VCH.DATE_OUTSIDE_YEAR,
           message: `${dto.avhVoucherDate} falls in ${derivedYear}, but the receipt says ${dto.avhAccYear}`,
         },
       ]);
@@ -239,6 +242,7 @@ export class ReceiptService {
           'Receipt not found',
           'avhVoucherId',
           `No receipt ${dto.avhVoucherId} in ${dto.avhAccYear}`,
+          VCH.NOT_FOUND,
         );
       }
       if (
@@ -251,6 +255,11 @@ export class ReceiptService {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be edited', [
           {
             field: 'avhVoucherId',
+            code: existing.avhIsDeleted
+              ? VCH.NOT_FOUND
+              : statusOf(existing) === VoucherStatus.CANCELLED
+                ? VCH.CANCELLED
+                : VCH.NOT_DRAFT,
             message:
               `${existing.avhVoucherRefno ?? dto.avhVoucherId} is ${existing.avhVoucherStatus}. ` +
               'Only a DRAFT may be edited here; use /receipts/update-header for narration, or ' +
@@ -831,6 +840,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Only the header may be edited', [
         {
           field: rejected[0],
+          code: ACC.POSTED_FIELDS,
           message:
             `${rejected.join(', ')} cannot be changed on a posted receipt. Money is changed by ` +
             'cancelling and re-entering (R3).',
@@ -848,7 +858,11 @@ export class ReceiptService {
       });
       if (statusOf(header) === VoucherStatus.CANCELLED) {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be edited', [
-          { field: 'avhVoucherId', message: 'A cancelled receipt is closed to edits' },
+          {
+            field: 'avhVoucherId',
+            code: VCH.CANCELLED,
+            message: 'A cancelled receipt is closed to edits',
+          },
         ]);
       }
       await assertAccYearWritable(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
@@ -993,6 +1007,7 @@ export class ReceiptService {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
           {
             field: 'avhVoucherId',
+            code: status === VoucherStatus.CANCELLED ? VCH.CANCELLED : VCH.NOT_DRAFT,
             message:
               `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
               (status === VoucherStatus.POSTED
@@ -1010,6 +1025,7 @@ export class ReceiptService {
         throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
           {
             field: 'avhVoucherId',
+            code: ACC.PDC_VOUCHER,
             message:
               'This is a post-dated cheque voucher, not a receipt. It belongs to the receipt ' +
               `${header.avhAgainstVoucherId} and leaves play only when that one is cancelled.`,
@@ -1114,6 +1130,7 @@ export class ReceiptService {
       throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
         {
           field: 'avhVoucherId',
+          code: ACC.INVALID,
           message:
             `This draft has ${legs} voucher leg(s) and ${adjustments} bill adjustment row(s) ` +
             'against it, which a draft cannot have (R10). Deleting it would orphan them. It has ' +
@@ -1151,6 +1168,7 @@ export class ReceiptService {
         'Receipt not found',
         'avhVoucherId',
         `No receipt ${voucherId} in ${accYear}`,
+        VCH.NOT_FOUND,
       );
     }
     // See StoredHeader: a receipt without a party is not a case, it is a broken row.
@@ -1159,6 +1177,7 @@ export class ReceiptService {
         'Receipt not found',
         'avhPartyId',
         `Voucher ${voucherId} in ${accYear} carries no party, so it is not a receipt`,
+        VCH.NOT_FOUND,
       );
     }
     return { ...header, avhPartyId: header.avhPartyId };
@@ -1212,6 +1231,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Posting mode is not supported', [
         {
           field: 'accounts.pdc_posting_mode',
+          code: ACC.PDC_ALLOCATION,
           message:
             'accounts.pdc_posting_mode is ON_CLEARING, which moves allocation into the Received ' +
             'Cheques screen — not built yet. Set it to ON_RECEIPT to post receipts.',
@@ -1228,6 +1248,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: 'tenders',
+          code: ACC.NO_TENDER,
           message: 'A receipt with no instruments is a journal, not a receipt',
         },
       ]);
@@ -1248,6 +1269,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: 'avhEmployeeId',
+          code: ACC.INVALID,
           message:
             'A receipt is collected by ONE person. The column is an array because every voucher ' +
             "header's is, not because a collection may be shared.",
@@ -1258,6 +1280,7 @@ export class ReceiptService {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: 'avhEmployeeId',
+          code: ACC.COLLECTOR_REQUIRED,
           message:
             'accounts.receipt_salesman_mandatory is on — a receipt must say who collected it',
         },

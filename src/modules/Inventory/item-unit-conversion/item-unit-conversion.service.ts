@@ -13,6 +13,7 @@ import {
   ItemUnitConversionListMeta,
   ItemUnitConversionPayload,
 } from './types/item-unit-conversion-api.types';
+import { ItemUnitConversionErrorCode } from './types/item-unit-conversion-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
@@ -146,6 +147,7 @@ export class ItemUnitConversionService {
         'Item unit conversion not found',
         'iuc_id',
         `No item unit conversion found with id ${iucId}`,
+        ItemUnitConversionErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -268,6 +270,7 @@ export class ItemUnitConversionService {
         'Item unit conversion not found',
         'iuc_id',
         `No item unit conversion found with id ${iucId}`,
+        ItemUnitConversionErrorCode.NOT_FOUND,
       );
     }
     const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
@@ -333,6 +336,7 @@ export class ItemUnitConversionService {
         'Item unit conversion not found',
         'iuc_id',
         `No item unit conversion found with id ${iucId}`,
+        ItemUnitConversionErrorCode.NOT_FOUND,
       );
     }
     const nextDeleted = !existing.iucIsDeleted;
@@ -377,6 +381,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
         {
           field: 'iuc_to_base_factor',
+          code: ItemUnitConversionErrorCode.FACTOR_NOT_POSITIVE,
           message: 'iuc_to_base_factor must be greater than 0',
         },
       ]);
@@ -385,6 +390,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
         {
           field: 'iuc_unit_factor',
+          code: ItemUnitConversionErrorCode.UNIT_FACTOR_NOT_POSITIVE,
           message: 'iuc_unit_factor must be greater than 0',
         },
       ]);
@@ -394,6 +400,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
         {
           field: 'iuc_uom_weight',
+          code: ItemUnitConversionErrorCode.WEIGHT_NEGATIVE,
           message: 'iuc_uom_weight cannot be negative',
         },
       ]);
@@ -405,6 +412,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
         {
           field: 'iuc_unit_id',
+          code: ItemUnitConversionErrorCode.BASE_ROW_UNIT_MISMATCH,
           message: 'Base unit conversion row must use the selected base unit as iuc_unit_id',
         },
       ]);
@@ -437,12 +445,14 @@ export class ItemUnitConversionService {
     if (!(row.toBaseFactor > 0)) {
       errors.push({
         field: 'iuc_to_base_factor',
+        code: ItemUnitConversionErrorCode.FACTOR_NOT_POSITIVE,
         message: 'iuc_to_base_factor must be greater than 0',
       });
     } else if (row.isBaseUnit && row.toBaseFactor !== 1) {
       // chk_iuc_base_row: base row must convert to itself (factor 1)
       errors.push({
         field: 'iuc_to_base_factor',
+        code: ItemUnitConversionErrorCode.BASE_ROW_FACTOR_NOT_ONE,
         message: 'Base unit conversion row must use iuc_to_base_factor = 1',
       });
     }
@@ -450,6 +460,7 @@ export class ItemUnitConversionService {
     if (row.uomWeight < 0) {
       errors.push({
         field: 'iuc_uom_weight',
+        code: ItemUnitConversionErrorCode.WEIGHT_NEGATIVE,
         message: 'iuc_uom_weight cannot be negative',
       });
     }
@@ -457,6 +468,7 @@ export class ItemUnitConversionService {
     if (row.isBaseUnit && row.unitId !== row.baseUnitId) {
       errors.push({
         field: 'iuc_unit_id',
+        code: ItemUnitConversionErrorCode.BASE_ROW_UNIT_MISMATCH,
         message: 'Base unit conversion row must use the selected base unit as iuc_unit_id',
       });
     }
@@ -641,6 +653,7 @@ export class ItemUnitConversionService {
     throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
       {
         field: 'iuc_unit_factor',
+        code: ItemUnitConversionErrorCode.UNIT_FACTOR_MISSING,
         message: `Missing iuc_unit_factor for unit row ${currentRow.unitId}`,
       },
     ]);
@@ -764,6 +777,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
         {
           field: fieldName,
+          code: ItemUnitConversionErrorCode.DATE_INVALID,
           message: `${fieldName} must be a valid date`,
         },
       ]);
@@ -818,6 +832,7 @@ export class ItemUnitConversionService {
       [
         {
           field: 'iuc_unit_id',
+          code: ItemUnitConversionErrorCode.DUPLICATE,
           message:
             'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed',
         },
@@ -827,6 +842,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Invalid relation reference', [
         {
           field: 'request',
+          code: ItemUnitConversionErrorCode.REFERENCE_NOT_FOUND,
           message: 'Referenced item, unit, or base unit does not exist',
         },
       ]);
@@ -836,7 +852,13 @@ export class ItemUnitConversionService {
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>(
         'Cannot delete item unit conversion',
-        [{ field: 'iuc_id', message: 'Item unit conversion is referenced by related records' }],
+        [
+          {
+            field: 'iuc_id',
+            code: ItemUnitConversionErrorCode.IN_USE,
+            message: 'Item unit conversion is referenced by related records',
+          },
+        ],
       );
     }
   }

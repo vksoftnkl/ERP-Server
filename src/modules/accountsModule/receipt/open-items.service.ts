@@ -50,6 +50,7 @@ import {
   toNullableAmount,
   ZERO,
 } from './receipt.utils';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §4.1 and §4.2 — everything the receipt screen reads before a single figure is
@@ -880,6 +881,7 @@ export class OpenItemsService {
         'Receipt not found',
         'voucherId',
         `No receipt ${query.voucherId} in ${query.accYear} for this company and branch`,
+        VCH.NOT_FOUND,
       );
     }
 

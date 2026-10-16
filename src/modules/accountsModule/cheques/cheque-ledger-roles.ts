@@ -5,6 +5,7 @@ import {
   type ResolvedRoleLedger,
 } from '../ledgerRole/ledger-map.helper';
 import { ChequeLedgerRole } from './types/cheque-enum';
+import { ACC } from '../receipt/types/acc-error-codes';
 
 /**
  * The two ledgers this module posts to that are not a party, a bank the
@@ -55,6 +56,7 @@ export function requireChequeRoleLedgers(
       branchId: scope.branchId,
       where: 'cheque',
       message: 'Posting ledgers are not configured',
+      code: ACC.ROLE_UNMAPPED,
     },
   );
 }

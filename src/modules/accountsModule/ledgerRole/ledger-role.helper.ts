@@ -4,6 +4,7 @@ import {
   throwBadRequest,
   throwNotFound,
 } from 'src/common/utils/module-service.utils';
+import { LedgerRoleErrorCode } from './types/ledger-role-error-codes';
 
 /**
  * Validates a ledger against the posting role it is being mapped to —
@@ -134,6 +135,7 @@ export async function collectRoleLedgerErrors(
       `${options.where}: "${unknownRole.role}" is not a posting role`,
       unknownRole.field,
       `accounts.acc_ledger_role has no row for ${unknownRole.role}`,
+      LedgerRoleErrorCode.UNKNOWN_ROLE,
     );
   }
 
@@ -141,12 +143,16 @@ export async function collectRoleLedgerErrors(
   for (const ref of refs) {
     const ledger = ledgerById.get(ref.ledgerId);
     if (!ledger) {
-      errors.push({ field: ref.field, message: `No ledger found with id ${ref.ledgerId}` });
+      errors.push({
+        field: ref.field,
+        message: `No ledger found with id ${ref.ledgerId}`,
+        code: LedgerRoleErrorCode.LEDGER_NOT_FOUND,
+      });
       continue;
     }
     const problem = describeMismatch(roleByName.get(ref.role)!, ledger, companyId);
     if (problem) {
-      errors.push({ field: ref.field, message: problem });
+      errors.push({ field: ref.field, message: problem.message, code: problem.code });
     }
   }
 
@@ -162,21 +168,33 @@ function describeMismatch(
   role: RoleExpectation,
   ledger: LedgerFacts,
   companyId: string | null,
-): string | null {
+): { code: LedgerRoleErrorCode; message: string } | null {
   const nature = ledger.accGroupMaster?.accGroupNature ?? null;
 
   if (role.alrWantType && ledger.ledLedgerType !== role.alrWantType) {
-    return `${role.alrLabel} needs a ${role.alrWantType} ledger, but "${ledger.ledName}" is ${describe(ledger.ledLedgerType)}`;
+    return {
+      code: LedgerRoleErrorCode.WRONG_LEDGER_TYPE,
+      message: `${role.alrLabel} needs a ${role.alrWantType} ledger, but "${ledger.ledName}" is ${describe(ledger.ledLedgerType)}`,
+    };
   }
   if (role.alrWantDuty && ledger.ledGstDutyHead !== role.alrWantDuty) {
-    return `${role.alrLabel} needs duty head "${role.alrWantDuty}", but "${ledger.ledName}" has ${describe(ledger.ledGstDutyHead)}`;
+    return {
+      code: LedgerRoleErrorCode.WRONG_DUTY_HEAD,
+      message: `${role.alrLabel} needs duty head "${role.alrWantDuty}", but "${ledger.ledName}" has ${describe(ledger.ledGstDutyHead)}`,
+    };
   }
   if (role.alrWantNature && nature !== role.alrWantNature) {
-    return `${role.alrLabel} must sit under a ${role.alrWantNature} group, but "${ledger.ledName}" is under ${describe(nature)}`;
+    return {
+      code: LedgerRoleErrorCode.WRONG_GROUP_NATURE,
+      message: `${role.alrLabel} must sit under a ${role.alrWantNature} group, but "${ledger.ledName}" is under ${describe(nature)}`,
+    };
   }
   // A mapping with no company of its own must name a global ledger.
   if (ledger.ledCompanyId !== null && (companyId === null || ledger.ledCompanyId !== companyId)) {
-    return `"${ledger.ledName}" belongs to one company, and this mapping is shared — its ledger must be global`;
+    return {
+      code: LedgerRoleErrorCode.LEDGER_NOT_GLOBAL,
+      message: `"${ledger.ledName}" belongs to one company, and this mapping is shared — its ledger must be global`,
+    };
   }
   return null;
 }

@@ -148,6 +148,7 @@ export class GstConfigSupport {
       `${what} not found`,
       field,
       `No ${what.toLowerCase()} found with id ${id}`,
+      GST_CODES.NOT_FOUND,
     );
   }
 
@@ -207,13 +208,13 @@ export class GstConfigSupport {
         'Duplicate',
         'id',
         `Refused by ${constraint || 'a unique index'}.`,
-        'GST_DUPLICATE',
+        GST_CODES.DUPLICATE,
       );
     }
     const check = violatedCheckOf(error);
     if (check) {
       this.badRequest([
-        { field: CHECK_FIELDS[check] ?? check, message: `refused by ${check}`, code: 'GST_CHECK' },
+        { field: CHECK_FIELDS[check] ?? check, message: `refused by ${check}`, code: GST_CODES.CHECK },
       ]);
     }
   }
@@ -240,6 +241,7 @@ export class GstConfigSupport {
         errors.push({
           field: spec.key,
           message: `${spec.key} is both given and in clear; send one`,
+          code: GST_CODES.SECRET_GIVEN_AND_CLEARED,
         });
       }
     }

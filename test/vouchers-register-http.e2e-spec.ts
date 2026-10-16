@@ -74,6 +74,9 @@ interface Fixtures {
   tax18: string;
   tax12: string;
   inputCgst: string;
+  /** notes 126 §6 — the money side is a tender: the branch's CASH one and Kvb's own BANK one. */
+  cashTender: string;
+  kvbTender: string;
 }
 
 const prisma = new PrismaClient();
@@ -191,6 +194,14 @@ function pngPayload(over: Record<string, unknown> = {}, docRefno = `SFS/${fx.tag
 
 const post = (path: string, body: object) =>
   h.http.post(`${V}/${path}`).set('Authorization', BEARER).send(body);
+
+/**
+ * notes 126 §6 — a Receipt / Payment never types its cash / bank line: the party's line carries
+ * the instrument and the money leg is generated from its tender. Cash in at the CASH tender; a
+ * payment out of Kvb by its own BANK (NEFT) tender, which names the bank it leaves.
+ */
+const cashIn = () => ({ tenderId: fx.cashTender });
+const neftOut = (refNo: string) => ({ tenderId: fx.kvbTender, bankLedgerId: LEDGER.KVB, refNo });
 const get = (path: string, query: Record<string, unknown>) =>
   h.http.get(`${V}/${path}`).set('Authorization', BEARER).query(query);
 
@@ -206,6 +217,16 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     const [icg] = await prisma.$queryRaw<
       { alm_ledger_id: string }[]
     >`SELECT alm_ledger_id FROM accounts.acc_ledger_map WHERE alm_role = 'INPUT_CGST' AND alm_is_deleted = false LIMIT 1`;
+    const tenderOf = async (typeId: number, ledgerId: string): Promise<string> => {
+      const [t] = await prisma.$queryRaw<{ tnd_id: string }[]>`
+        SELECT tnd_id::text FROM accounts.acc_tender_master
+         WHERE tnd_company_id = ${COMPANY}::uuid AND tnd_type_id = ${typeId}::int
+           AND tnd_ledger_id = ${ledgerId}::uuid AND (tnd_branch_id IS NULL OR tnd_branch_id = ${BRANCH}::uuid)
+           AND tnd_is_active AND NOT tnd_is_deleted
+         ORDER BY (tnd_branch_id IS NULL), tnd_created_on LIMIT 1`;
+      if (!t) throw new Error(`no live tender of type ${typeId} on ledger ${ledgerId}`);
+      return t.tnd_id;
+    };
 
     fx = {
       tag,
@@ -236,6 +257,8 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       tax18: t18.tax_id,
       tax12: t12.tax_id,
       inputCgst: icg.alm_ledger_id,
+      cashTender: await tenderOf(1, LEDGER.CASH),
+      kvbTender: await tenderOf(6, LEDGER.KVB),
     };
 
     // A company-scoped 194C / FIRM rate with no thresholds, so 25,000 deducts (the PNG).
@@ -402,7 +425,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     expect(await pick('Jrl', 'CR')).toContain(LEDGER.CASH);
   });
 
-  it('POST /validate — RcpV Cr Cash and PmtV Dr Cash are refused as a Contra; Jrl Dr Cash / Cr Bank passes (notes 56)', async () => {
+  it('POST /validate — RcpV Cr Cash and PmtV Dr Cash are refused as a Contra; every typed cash / bank line wants a tender; a Journal on cash / bank has no money side (notes 56, 126 §6)', async () => {
     const lines = (dr: string, cr: string) => [
       { rowNo: 1, drCr: 'DR', ledgerId: dr, amount: 2500 },
       { rowNo: 2, drCr: 'CR', ledgerId: cr, amount: 2500 },
@@ -414,21 +437,30 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       typeCode,
       date: today(),
     });
-    const refusals = (res: { body: { data: { refusals: { code: string; line?: number; message: string }[] } } }) =>
-      res.body.data.refusals;
+    type Refusal = { code: string; line?: number; message: string };
+    const refusals = (res: { body: { data: { refusals: Refusal[] } } }) => res.body.data.refusals;
+    const linesOf = (rs: Refusal[], code: string) =>
+      rs.filter((r) => r.code === code).map((r) => r.line).sort();
 
+    // notes (56) still names the Contra on the line that makes it one; notes 126 §6 adds that a
+    // Receipt / Payment never types its money side — both cash / bank lines want the tender list.
     const deposit = await post('validate', { header: header('RcpV'), lines: lines(LEDGER.KVB, LEDGER.CASH) });
     expectStatus(deposit, 200);
     expect(deposit.body.data.ok).toBe(false);
-    expect(refusals(deposit).map((r) => r.code)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(refusals(deposit)[0].line).toBe(2);
-    expect(refusals(deposit)[0].message).toMatch(/cash to bank is a Contra/);
+    const depositSide = refusals(deposit).filter((r) => r.code === 'VCH_LEDGER_SIDE');
+    expect(depositSide.map((r) => r.line)).toEqual([2]);
+    expect(depositSide[0].message).toMatch(/cash to bank is a Contra/);
+    expect(linesOf(refusals(deposit), 'VCH_MONEY_LINE_NO_TENDER')).toEqual([1, 2]);
+    expect(refusals(deposit).find((r) => r.code === 'VCH_MONEY_LINE_NO_TENDER')?.message).toMatch(
+      /the money side is picked from the tender list/,
+    );
 
     const withdrawal = await post('validate', { header: header('PmtV'), lines: lines(LEDGER.CASH, LEDGER.KVB) });
     expectStatus(withdrawal, 200);
-    expect(refusals(withdrawal).map((r) => r.code)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(refusals(withdrawal)[0].line).toBe(1);
-    expect(refusals(withdrawal)[0].message).toMatch(/bank to cash is a Contra/);
+    const withdrawalSide = refusals(withdrawal).filter((r) => r.code === 'VCH_LEDGER_SIDE');
+    expect(withdrawalSide.map((r) => r.line)).toEqual([1]);
+    expect(withdrawalSide[0].message).toMatch(/bank to cash is a Contra/);
+    expect(linesOf(refusals(withdrawal), 'VCH_MONEY_LINE_NO_TENDER')).toEqual([1, 2]);
 
     const expense = await post('validate', { header: header('RcpV'), lines: lines(fx.stationery, fx.customer) });
     expectStatus(expense, 200);
@@ -436,34 +468,62 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     expect(refusals(expense).find((r) => r.code === 'VCH_LEDGER_SIDE')?.message).toMatch(
       /may not be debited on a Receipt Voucher — the DR side takes cash or bank only/,
     );
+    // no cash / bank ledger on it, so nothing for the tender rule to say
+    expect(refusals(expense).map((r) => r.code)).not.toContain('VCH_MONEY_LINE_NO_TENDER');
 
+    // notes 126 §6: a Journal has no money side — bank charges go on a Payment with the bank's tender
     const journal = await post('validate', { header: header('Jrl'), lines: lines(LEDGER.CASH, LEDGER.KVB) });
     expectStatus(journal, 200);
-    expect(journal.body.data.ok).toBe(true);
+    expect(journal.body.data.ok).toBe(false);
+    expect(refusals(journal).map((r) => r.code)).toEqual([
+      'VCH_MONEY_LEDGER_NOT_ALLOWED',
+      'VCH_MONEY_LEDGER_NOT_ALLOWED',
+    ]);
+    expect(linesOf(refusals(journal), 'VCH_MONEY_LEDGER_NOT_ALLOWED')).toEqual([1, 2]);
+    expect(refusals(journal)[0].message).toMatch(/is a cash \/ bank ledger, and a .* has no money side/);
   });
 
   // ─── §11.1 #3 · a Contra with a Sundry Debtors ledger ────────────────────
 
-  it('POST /validate — a Contra with a customer ledger is refused on the side rule; Cheques in Hand on any type (#3, #11)', async () => {
-    const res = await post('validate', {
-      header: {
-        companyId: COMPANY,
-        branchId: BRANCH,
-        accYear: ACC_YEAR,
-        typeCode: 'Con',
-        date: today(),
-      },
-      lines: [
-        { rowNo: 1, drCr: 'CR', ledgerId: LEDGER.CASH, amount: 85000 },
-        { rowNo: 2, drCr: 'DR', ledgerId: fx.customer, amount: 85000 },
-      ],
-    });
+  it('POST /validate — a Contra with a customer ledger is refused on the side rule; each Contra side names its tender (126 §6); Cheques in Hand on any type (#3, #11)', async () => {
+    const contra = (lines: object[]) =>
+      post('validate', {
+        header: {
+          companyId: COMPANY,
+          branchId: BRANCH,
+          accYear: ACC_YEAR,
+          typeCode: 'Con',
+          date: today(),
+        },
+        lines,
+      });
+    const cashOut = { rowNo: 1, drCr: 'CR', ledgerId: LEDGER.CASH, amount: 85000, tenderId: fx.cashTender };
+    type Refusal = { code: string; line?: number; message: string };
+
+    // the cash side names its CASH tender, so every refusal is on the customer's line: the side
+    // rule (#3), and — a Contra line being a money line — no tender to name
+    const res = await contra([cashOut, { rowNo: 2, drCr: 'DR', ledgerId: fx.customer, amount: 85000 }]);
     expectStatus(res, 200);
     expect(res.body.data.ok).toBe(false);
-    expect(res.body.data.refusals.map((r: { code: string }) => r.code)).toEqual([
-      'VCH_LEDGER_SIDE',
+    const refused: Refusal[] = res.body.data.refusals;
+    expect(refused.map((r) => r.code).sort()).toEqual(['VCH_LEDGER_SIDE', 'VCH_MONEY_LINE_NO_TENDER']);
+    expect(refused.every((r) => r.line === 2)).toBe(true);
+
+    // cash → Kvb: each side its own tender passes; the bank on the CASH tender, or on none, does not
+    const toBank = { rowNo: 2, drCr: 'DR', ledgerId: LEDGER.KVB, amount: 85000 };
+    const fits = await contra([cashOut, { ...toBank, tenderId: fx.kvbTender }]);
+    expectStatus(fits, 200);
+    expect(fits.body.data.refusals).toEqual([]);
+    expect(fits.body.data.ok).toBe(true);
+    const wrong = await contra([cashOut, { ...toBank, tenderId: fx.cashTender }]);
+    expect(wrong.body.data.refusals.map((r: Refusal) => [r.code, r.line])).toEqual([
+      ['VCH_INSTRUMENT_TENDER', 2],
     ]);
-    expect(res.body.data.refusals[0].line).toBe(2);
+    expect(wrong.body.data.refusals[0].message).toMatch(/takes its own BANK tender/);
+    const bare = await contra([cashOut, toBank]);
+    expect(bare.body.data.refusals.map((r: Refusal) => [r.code, r.line])).toEqual([
+      ['VCH_MONEY_LINE_NO_TENDER', 2],
+    ]);
 
     const cheque = await post('validate', {
       header: {
@@ -482,6 +542,18 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       'VCH_INSTRUMENT_LEDGER',
     ]);
     expect(cheque.body.data.refusals[0].message).toMatch(/51 \/ 52/);
+
+    // a tenderId is a Contra line's: anywhere else it is refused, not ignored
+    const stray = await post('validate', {
+      header: { companyId: COMPANY, branchId: BRANCH, accYear: ACC_YEAR, typeCode: 'Jrl', date: today() },
+      lines: [
+        { rowNo: 1, drCr: 'DR', ledgerId: fx.housekeeping, amount: 100, tenderId: fx.cashTender },
+        { rowNo: 2, drCr: 'CR', ledgerId: fx.stationery, amount: 100 },
+      ],
+    });
+    expect(stray.body.data.refusals.map((r: { code: string; line: number }) => [r.code, r.line])).toEqual([
+      ['VCH_INSTRUMENT_NOT_ALLOWED', 1],
+    ]);
   });
 
   // ─── §11.1 #1 · the Journal ──────────────────────────────────────────────
@@ -869,9 +941,16 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
   it('POST /post — a Payment Voucher allocates its party line: a remainder previews as an ADVANCE (notes 57), over-allocation is refused (#10); then it settles the PurA bill', async () => {
     // notes (53): a Payment names its parties on the lines. The supplier is
     // 194C, so its line would deduct TDS; the tick is cleared to pay 5,000 flat.
+    // notes 126 §6: the bank side is the line's NEFT instrument, not a typed Kvb line.
     const payLines = [
-      { rowNo: 1, drCr: 'DR', ledgerId: fx.supplier, amount: 5000, tdsBase: false },
-      { rowNo: 2, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 5000 },
+      {
+        rowNo: 1,
+        drCr: 'DR',
+        ledgerId: fx.supplier,
+        amount: 5000,
+        tdsBase: false,
+        instrument: neftOut(`NEFT${fx.tag}P`),
+      },
     ];
     const pay = (allocated: number) => ({
       header: {
@@ -1101,6 +1180,27 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     };
   }
 
+  /**
+   * Where a no-device CASH instrument posts (notes 126 §2, TillSessionService.routeMoneyDoc): the
+   * branch's default safe where the branch runs a till (an active counter needing a session),
+   * else the CASH tender's own ledger.
+   */
+  const backOfficeCashLedger = async (): Promise<string> => {
+    const [till] = await prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM accounts.till_counter
+       WHERE tcn_company_id = ${COMPANY}::uuid AND tcn_branch_id = ${BRANCH}::uuid
+         AND tcn_is_active AND NOT tcn_is_deleted AND tcn_requires_session`;
+    if (Number(till.n) === 0) return LEDGER.CASH;
+    const safes = await prisma.$queryRaw<{ tsf_ledger_id: string; tsf_is_default: boolean }[]>`
+      SELECT tsf_ledger_id::text, tsf_is_default FROM accounts.till_safe
+       WHERE tsf_company_id = ${COMPANY}::uuid AND tsf_branch_id = ${BRANCH}::uuid
+         AND tsf_is_active AND NOT tsf_is_deleted
+       ORDER BY tsf_created_on`;
+    const safe = safes.find((r) => r.tsf_is_default) ?? (safes.length === 1 ? safes[0] : undefined);
+    if (!safe) throw new Error('this branch runs a till but has no default safe (TILL_SAFE_MISSING)');
+    return safe.tsf_ledger_id;
+  };
+
   const pending = async (billId: string): Promise<number> => {
     const [b] = await prisma.$queryRaw<{ abl_pending_amount: unknown }[]>`
       SELECT abl_pending_amount FROM accounts.acc_bill_balance WHERE abl_id = ${billId}::uuid`;
@@ -1132,15 +1232,15 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         date: today(),
         remarks: `E2E-VCH-${fx.tag} collection run`,
       },
+      // notes 126 §6: each customer's line brings its cash in (no typed Cash line)
       lines: [
-        { rowNo: 1, drCr: 'DR', ledgerId: LEDGER.CASH, amount: 15000 },
-        { rowNo: 2, drCr: 'CR', ledgerId: custA, amount: 10000 },
-        { rowNo: 3, drCr: 'CR', ledgerId: custB, amount: 5000 },
+        { rowNo: 1, drCr: 'CR', ledgerId: custA, amount: 10000, instrument: cashIn() },
+        { rowNo: 2, drCr: 'CR', ledgerId: custB, amount: 5000, instrument: cashIn() },
       ],
       allocations: [
-        { lineRowNo: 2, ...a1, amount: 6000 },
-        { lineRowNo: 2, ...a2, amount: 4000 },
-        { lineRowNo: 3, ...b1, amount: bAllocated },
+        { lineRowNo: 1, ...a1, amount: 6000 },
+        { lineRowNo: 1, ...a2, amount: 4000 },
+        { lineRowNo: 2, ...b1, amount: bAllocated },
       ],
     });
 
@@ -1148,7 +1248,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     expectStatus(short, 200);
     expect(short.body.data.ok).toBe(true);
     expect(short.body.data.derived.bills).toEqual([
-      expect.objectContaining({ lineRowNo: 3, partyId: custB, billType: 'ADVANCE', side: 'CR', amount: 1000 }),
+      expect.objectContaining({ lineRowNo: 2, partyId: custB, billType: 'ADVANCE', side: 'CR', amount: 1000 }),
     ]);
     expect(JSON.stringify(short.body.data.derived.bills)).not.toContain(custA);
 
@@ -1193,29 +1293,26 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         date: today(),
         remarks: `E2E-VCH-${fx.tag} advance receipt`,
       },
-      lines: [
-        { rowNo: 1, drCr: 'DR', ledgerId: LEDGER.CASH, amount: 16000 },
-        { rowNo: 2, drCr: 'CR', ledgerId: cust, amount: 16000 },
-      ],
+      lines: [{ rowNo: 1, drCr: 'CR', ledgerId: cust, amount: 16000, instrument: cashIn() }],
       allocations,
     });
 
     // over: 15,000 + 5,000 set against a party amount of 16,000
     const over = await post('post', receipt([
-      { lineRowNo: 2, ...c1, amount: 15000 },
-      { lineRowNo: 2, ...c2, amount: 5000 },
+      { lineRowNo: 1, ...c1, amount: 15000 },
+      { lineRowNo: 1, ...c2, amount: 5000 },
     ]));
     expect(over.status).toBe(422);
     expect(codesOf(over)).toEqual(['VCH_BILLWISE_SHORT']);
     expect(JSON.stringify(over.body)).toContain('is allocated against a party amount of');
 
     // validate says so before Post
-    const preview = await post('validate', receipt([{ lineRowNo: 2, ...c1, amount: 15000 }]));
+    const preview = await post('validate', receipt([{ lineRowNo: 1, ...c1, amount: 15000 }]));
     expectStatus(preview, 200);
     expect(preview.body.data.ok).toBe(true);
     expect(preview.body.data.derived.bills).toEqual([
       expect.objectContaining({
-        lineRowNo: 2,
+        lineRowNo: 1,
         partyId: cust,
         billType: 'ADVANCE',
         side: 'CR',
@@ -1226,7 +1323,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     ]);
 
     // short: the 1,000 remainder is one ADVANCE CR bill on the customer
-    const ok = await post('post', receipt([{ lineRowNo: 2, ...c1, amount: 15000 }]));
+    const ok = await post('post', receipt([{ lineRowNo: 1, ...c1, amount: 15000 }]));
     expectStatus(ok, 201);
     const voucherId = ok.body.data.header.voucherId as string;
     expect(await pending(c1.billId)).toBe(0);
@@ -1317,10 +1414,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         date: today(),
         remarks: `E2E-VCH-${fx.tag} advance payment`,
       },
-      lines: [
-        { rowNo: 1, drCr: 'DR', ledgerId: sup, amount: 9800 },
-        { rowNo: 2, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 9800 },
-      ],
+      lines: [{ rowNo: 1, drCr: 'DR', ledgerId: sup, amount: 9800, instrument: neftOut(`NEFT${fx.tag}T`) }],
       allocations: [{ lineRowNo: 1, ...bill, amount: 9000 }],
     });
     expectStatus(res, 201);
@@ -1371,9 +1465,8 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         remarks: `E2E-VCH-${fx.tag} payment run`,
       },
       lines: [
-        { rowNo: 1, drCr: 'DR', ledgerId: supA, amount: 9800 },
-        { rowNo: 2, drCr: 'DR', ledgerId: supB, amount: 4900 },
-        { rowNo: 3, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 14700 },
+        { rowNo: 1, drCr: 'DR', ledgerId: supA, amount: 9800, instrument: neftOut(`NEFT${fx.tag}A`) },
+        { rowNo: 2, drCr: 'DR', ledgerId: supB, amount: 4900, instrument: neftOut(`NEFT${fx.tag}B`) },
       ],
       allocations: [
         { lineRowNo: 1, ...billA, amount: 10000 },
@@ -1386,6 +1479,25 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       data.legs.filter((l: { ledgerId: string }) => l.ledgerId === ledgerId);
     expect(legOf(supA).map((l: { amount: number }) => l.amount)).toEqual([10000]);
     expect(legOf(supB).map((l: { amount: number }) => l.amount)).toEqual([5000]);
+    // notes 126 §6 / §1: the bank side is generated from each line's instrument — the net — and
+    // each bank leg carries its BANK tender row
+    expect(
+      legOf(LEDGER.KVB)
+        .map((l: { drCr: string; amount: number; generated: boolean }) => [l.drCr, l.amount, l.generated])
+        .sort((x: [string, number], y: [string, number]) => y[1] - x[1]),
+    ).toEqual([
+      ['CR', 9800, true],
+      ['CR', 4900, true],
+    ]);
+    const tenderRows = await prisma.$queryRaw<{ td_tender_id: string; td_dr_cr: string; td_amount: unknown }[]>`
+      SELECT td_tender_id::text, td_dr_cr, td_amount FROM accounts.acc_tender_detail
+       WHERE td_src_doc_id = ${data.header.voucherId}::uuid AND td_tender_ledger_id = ${LEDGER.KVB}::uuid
+         AND td_is_deleted = false
+       ORDER BY td_amount DESC`;
+    expect(tenderRows.map((r) => [r.td_tender_id, r.td_dr_cr.trim(), num(r.td_amount)])).toEqual([
+      [fx.kvbTender, 'CR', 9800],
+      [fx.kvbTender, 'CR', 4900],
+    ]);
     expect(
       data.legs
         .filter((l: { role: string | null }) => l.role === 'TDS_PAYABLE')
@@ -1584,13 +1696,16 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       totalCredit: 11000,
       partyId: null,
     });
+    // notes 126 §2: a call with no device is the BACK OFFICE, and in a branch that runs a till its
+    // cash comes into the branch's default safe (routeMoneyDoc), not the till's Cash In Hand. The
+    // preview above still names the CASH tender's own ledger — /validate does not route.
     expect(
       d.legs
         .filter((l: { generated: boolean }) => l.generated)
         .map((l: { ledgerId: string; amount: number }) => [l.ledgerId, l.amount]),
     ).toEqual([
       [LEDGER.CHEQUES, 6000],
-      [LEDGER.CASH, 5000],
+      [await backOfficeCashLedger(), 5000],
     ]);
     expect(d.legs.find((l: { ledgerId: string }) => l.ledgerId === custA).instrument).toMatchObject(
       { isCheque: true, refNo: `E2E${fx.tag}A`, pdcStatus: 'HELD', voucherId: d.header.voucherId },

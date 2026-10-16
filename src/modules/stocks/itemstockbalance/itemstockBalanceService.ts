@@ -13,6 +13,7 @@ import {
   ItemStockBalanceErrorResponse,
   ItemStockBalancePayload,
 } from './types/item-stock-balance-api.types';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 /**
  * The unit shape a price payload reports (base unit, factors, slno, is_* flags)
@@ -645,6 +646,7 @@ export class ItemStockBalanceService {
       this.buildErrorResponse('Item stock balance not found', [
         {
           field: 'scope',
+          code: StockErrorCode.BALANCE_NOT_FOUND,
           message:
             `No item stock balance found for acc year ${queryDto.isb_acc_year}, ` +
             `company ${queryDto.isb_company_id}, branch ${queryDto.isb_branch_id}, ` +
@@ -660,6 +662,7 @@ export class ItemStockBalanceService {
       this.buildErrorResponse('Item price master not found', [
         {
           field: 'ipm_item_id',
+          code: StockErrorCode.ITEM_PRICE_NOT_FOUND,
           message: `No item price master found for item ${itemId} and unit ${unitId}`,
         },
       ]),

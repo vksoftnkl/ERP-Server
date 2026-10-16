@@ -174,9 +174,9 @@ export async function loadMasters(): Promise<Masters> {
 
   return {
     bankTenderId: bank.tndId,
-    bankLedgerId: bank.tndLedgerId,
+    bankLedgerId: bank.tndLedgerId!,
     cashTenderId: cash.tndId,
-    cashLedgerId: cash.tndLedgerId,
+    cashLedgerId: cash.tndLedgerId!,
     chequeTenderId: cheque.tndId,
     aCashLedgerId: cashLedger[0].led_id,
     ledgerByRole: (role: string): string => {

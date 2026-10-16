@@ -1,5 +1,11 @@
-export type { PurchaseErrorDetail as SupplierGroupErrorDetail } from 'src/common/types/module-api.types';
-export type { PurchaseErrorResponse as SupplierGroupErrorResponse } from 'src/common/types/module-api.types';
+import type { PurchaseErrorDetail, PurchaseErrorResponse } from 'src/common/types/module-api.types';
+import type { SupplierGroupErrorCode } from './supplier-group-error-codes';
+
+/** Notes 119: every refusal names its code — see supplier-group-error-codes.ts. */
+export interface SupplierGroupErrorDetail extends PurchaseErrorDetail {
+  code: SupplierGroupErrorCode;
+}
+export type SupplierGroupErrorResponse = PurchaseErrorResponse<SupplierGroupErrorDetail>;
 export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/types/module-api.types';
 export interface SupplierGroupPayload {
   spgId: string;

@@ -22,7 +22,7 @@ import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Audit Logs')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller(['audit-logs', 'audit-log'])
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}

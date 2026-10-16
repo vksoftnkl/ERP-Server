@@ -87,6 +87,14 @@ export const VCH = {
   BOOK_INVALID: 'VCH_BOOK_INVALID',
   // notes (64) — a cheque's on-account share has been spent off the advance
   ADVANCE_SPENT: 'VCH_ADVANCE_SPENT',
+
+  // notes 126 — every line on a CASH / BANK ledger carries a tender
+  /** A cash / bank line with no tender, and none the server may pick (a BANK line, from a document). */
+  MONEY_LINE_NO_TENDER: 'VCH_MONEY_LINE_NO_TENDER',
+  /** No tender master fits this cash / bank ledger: create its tender in Tender Master. */
+  NO_TENDER_FOR_LEDGER: 'VCH_NO_TENDER_FOR_LEDGER',
+  /** §6 — a Journal, Debit / Credit Note or Purchase / Sales (Accounting) has no money side. */
+  MONEY_LEDGER_NOT_ALLOWED: 'VCH_MONEY_LEDGER_NOT_ALLOWED',
 } as const;
 
 export type VoucherErrorCode = (typeof VCH)[keyof typeof VCH];

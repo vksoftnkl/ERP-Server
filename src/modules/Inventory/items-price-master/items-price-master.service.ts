@@ -13,6 +13,7 @@ import {
   ItemPriceListMeta,
   ItemPricePayload,
 } from './types/item-price-api.types';
+import { ItemPriceErrorCode } from './types/item-price-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
@@ -45,24 +46,38 @@ const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
  * The price table's CHECKs, in words. The database is the last line; what it
  * must not do is answer a shopkeeper with a constraint name.
  */
-const CHECK_MESSAGES: Readonly<Record<string, { field: string; message: string }>> = {
+const CHECK_MESSAGES: Readonly<
+  Record<string, { field: string; code: ItemPriceErrorCode; message: string }>
+> = {
   ck_ipm_not_above_mrp: {
     field: 'ipm_max_price',
+    code: ItemPriceErrorCode.ABOVE_MRP,
     message:
       'A price for one MRP cannot be above that MRP. Lower the selling price, or correct the MRP.',
   },
   ck_ipm_bucket_mrp_is_max: {
     field: 'ipm_max_price',
+    code: ItemPriceErrorCode.MRP_BUCKET_MISMATCH,
     message: "A price row's MRP bucket and its MRP must be the same figure.",
   },
-  ck_ipm_bucket_mrp: { field: 'ipm_max_price', message: 'An MRP bucket must be above zero.' },
+  ck_ipm_bucket_mrp: {
+    field: 'ipm_max_price',
+    code: ItemPriceErrorCode.MRP_BUCKET_NOT_POSITIVE,
+    message: 'An MRP bucket must be above zero.',
+  },
   ck_ipm_bucket_sp: {
     field: 'ipm_sales_price_a',
+    code: ItemPriceErrorCode.SP_BUCKET_NOT_POSITIVE,
     message: 'A sale-price bucket must be above zero.',
   },
-  ck_ipm_dates: { field: 'request', message: 'A price cannot end before it starts.' },
+  ck_ipm_dates: {
+    field: 'request',
+    code: ItemPriceErrorCode.DATES_REVERSED,
+    message: 'A price cannot end before it starts.',
+  },
   chk_ipm_nonnegative: {
     field: 'request',
+    code: ItemPriceErrorCode.NEGATIVE_FIGURE,
     message: 'Prices, charges and points cannot be negative.',
   },
 };
@@ -172,6 +187,7 @@ export class ItemsPriceMasterService {
         'Item price not found',
         'ipm_id',
         `No item price found with id ${ipmId}`,
+        ItemPriceErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -243,6 +259,7 @@ export class ItemsPriceMasterService {
         'Item price not found',
         'ipm_id',
         `No item price found with id ${ipmId}`,
+        ItemPriceErrorCode.NOT_FOUND,
       );
     }
     const nextDeleted = !existing.ipmIsDeleted;
@@ -286,6 +303,7 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_profit_type',
+          code: ItemPriceErrorCode.PROFIT_TYPE_REQUIRED,
           message: 'ipm_profit_type is required',
         },
       ]);
@@ -343,6 +361,7 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_profit_type',
+          code: ItemPriceErrorCode.PROFIT_TYPE_REQUIRED,
           message: 'ipm_profit_type cannot be empty',
         },
       ]);
@@ -358,6 +377,7 @@ export class ItemsPriceMasterService {
         'Item price not found',
         'ipm_id',
         `No item price found with id ${ipmId}`,
+        ItemPriceErrorCode.NOT_FOUND,
       );
     }
     const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
@@ -541,6 +561,7 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_uc_unit_id',
+          code: ItemPriceErrorCode.UNIT_NOT_FOUND,
           message: `Unit conversion ${saveItemPriceDto.ipm_uc_unit_id} does not exist for item ${saveItemPriceDto.ipm_item_id}`,
         },
       ]);
@@ -657,6 +678,7 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: fieldName,
+          code: ItemPriceErrorCode.DATE_INVALID,
           message: `${fieldName} must be a valid date`,
         },
       ]);
@@ -731,7 +753,11 @@ export class ItemsPriceMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemPriceErrorDetail>(error, 'Item price already exists', [
-      { field: 'ipm_item_id', message: 'Duplicate item price configuration is not allowed' },
+      {
+        field: 'ipm_item_id',
+        code: ItemPriceErrorCode.DUPLICATE,
+        message: 'Duplicate item price configuration is not allowed',
+      },
     ]);
     // ex_ipm_overlap: one price per company, branch, unit and bucket (MRP /
     // sale price) at a time. It replaced uq_item_price_master_scope, so this
@@ -740,6 +766,7 @@ export class ItemsPriceMasterService {
       throwInventoryConflict<ItemPriceErrorDetail>('Item price already exists', [
         {
           field: 'ipm_uc_unit_id',
+          code: ItemPriceErrorCode.DUPLICATE,
           message:
             'This unit already has a price at this company, branch and MRP. Edit that row instead of adding another.',
         },
@@ -755,6 +782,7 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
         {
           field: 'request',
+          code: ItemPriceErrorCode.REFERENCE_NOT_FOUND,
           message: 'Referenced company, branch, item, unit, base unit, or godown does not exist',
         },
       ]);
@@ -763,7 +791,11 @@ export class ItemsPriceMasterService {
   private handleDeleteError(error: unknown): void {
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Cannot delete item price', [
-        { field: 'ipm_id', message: 'Item price is referenced by related records' },
+        {
+          field: 'ipm_id',
+          code: ItemPriceErrorCode.IN_USE,
+          message: 'Item price is referenced by related records',
+        },
       ]);
     }
   }

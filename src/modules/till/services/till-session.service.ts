@@ -11,8 +11,9 @@ import {
   sessionNumber,
 } from '../till-dates';
 import { throwTill, throwTillBadRequest, throwTillNotFound, tillErrorCodeOf } from '../till-errors';
+import { resolveRoleLedgers } from '../../accountsModule/ledgerRole/ledger-map.helper';
 import type { TillSettings } from '../till.settings';
-import { TillApprovalService } from './till-approval.service';
+import { TillApprovalService, type GateAsk, type GateVerdict } from './till-approval.service';
 import { TillDayService } from './till-day.service';
 import { TillEventService } from './till-event.service';
 import { TillLedgerService, type TenderExpectation } from './till-ledger.service';
@@ -41,6 +42,7 @@ import {
   TillVarianceDecision,
   TillVarianceStage,
   TillVarianceTreatment,
+  CASH_IN_TRANSIT_ROLE,
   TILL_CASH_AWAITING_ROLE,
   VARIANCE_STATUS_OF_TREATMENT,
 } from '../types/till-enum';
@@ -157,6 +159,8 @@ export class TillSessionService {
     /** Counted ≠ issued: the FLOAT_MISMATCH reason (notes 98 §2). */
     reasonId?: string | null;
     notes?: string | null;
+    /** Notes 124 §5: an approved FLOAT_MISMATCH request for this counter. */
+    approvalId?: string | null;
   }): Promise<TillSessionPayload> {
     const caller = await this.context.caller();
     const deviceId = this.requireDevice(caller);
@@ -253,6 +257,33 @@ export class TillSessionService {
             reasonId: input.reasonId ?? null,
             notes: input.notes ?? null,
           });
+      // Notes 124 §5 — the FLOAT_MISMATCH gate. There is no session yet, so an
+      // approval asked for before the open names the counter; under
+      // till.approval_gate REFUSE the open waits for one (428).
+      const floatAsk: GateAsk = {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        tenantId: input.tenantId ?? null,
+        accYear: day.tbdAccYear,
+        event: 'FLOAT_MISMATCH',
+        onDate: day.businessDate,
+        amount: floatVariance.abs(),
+        requesterId: caller.userId,
+        deviceId,
+        sessionId: null,
+        counterId: counter.tcnId,
+        srcDocType: 'TILL_COUNTER',
+        srcDocId: counter.tcnId,
+        srcRefno: counter.tcnCode,
+        approvalId: input.approvalId ?? null,
+        field: 'approvalId',
+      };
+      const floatGate: GateVerdict = floatReason
+        ? await this.approval.assessGate(tx, floatAsk)
+        : { state: 'NONE' };
+      if (floatGate.state === 'REFUSE') {
+        this.approval.throwApprovalRequired(floatGate.need, floatAsk);
+      }
 
       // ── the row ──────────────────────────────────────────────────────
       const daySeq = await this.nextDaySeq(tx, counter.tcnId, day.businessDate);
@@ -377,6 +408,31 @@ export class TillSessionService {
             reasonId: floatReason.trsId,
             voucherId,
           });
+          // The approval: an approved request is taken and named on the
+          // variance; under WARN one is filed on the session, for the inbox,
+          // and lands on the variance when decided.
+          const tapId = await this.approval.settleGate(
+            tx,
+            floatGate.state === 'APPROVED'
+              ? { ...floatAsk, sessionId: session.tssId }
+              : {
+                  ...floatAsk,
+                  sessionId: session.tssId,
+                  srcDocType: 'TILL_SESSION',
+                  srcDocId: session.tssId,
+                  srcRefno: session.tssSessionNo,
+                  payload: { tvrId: variance.tvrId },
+                },
+            floatGate,
+          );
+          if (tapId && floatGate.state === 'APPROVED') {
+            await tx.tillVariance.update({
+              where: {
+                tvrId_tvrAccYear: { tvrId: variance.tvrId, tvrAccYear: variance.tvrAccYear },
+              },
+              data: { tvrApprovalId: tapId },
+            });
+          }
         }
       }
 
@@ -446,10 +502,18 @@ export class TillSessionService {
     const caller = await this.context.caller();
     const deviceId = this.requireDevice(caller);
     if (scope.deviceId && scope.deviceId !== deviceId) {
-      throwTillBadRequest('deviceId is not the device this login came from', 'deviceId');
+      throwTillBadRequest(
+        TillErrorCode.NOT_THIS_LOGIN,
+        'deviceId is not the device this login came from',
+        'deviceId',
+      );
     }
     if (scope.userId && scope.userId !== caller.userId) {
-      throwTillBadRequest('userId is not the user of this login', 'userId');
+      throwTillBadRequest(
+        TillErrorCode.NOT_THIS_LOGIN,
+        'userId is not the user of this login',
+        'userId',
+      );
     }
     await this.knownDevice(this.prisma, deviceId);
     const settings = await this.context.settings({
@@ -542,7 +606,7 @@ export class TillSessionService {
       include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     const settings = await this.context.settings({
       companyId: key.companyId,
@@ -567,7 +631,7 @@ export class TillSessionService {
       include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     return this.toPayload(session, true);
   }
@@ -729,7 +793,7 @@ export class TillSessionService {
       },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     let serverSeq: number | null = null;
     if (sync.lastClientSeq !== undefined && sync.lastClientSeq !== null) {
@@ -1261,10 +1325,14 @@ export class TillSessionService {
     const caller = await this.context.caller();
     const approve = input.decision === TillVarianceDecision.APPROVE;
     if (!input.note.trim()) {
-      throwTillBadRequest('A decision note is required', 'note');
+      throwTillBadRequest(TillErrorCode.NOTE_REQUIRED, 'A decision note is required', 'note');
     }
     if (approve && !(APPROVABLE_TREATMENTS as readonly string[]).includes(input.treatment ?? '')) {
-      throwTillBadRequest('APPROVE names a treatment: EXPENSE, RECOVER or SUSPENSE', 'treatment');
+      throwTillBadRequest(
+        TillErrorCode.TREATMENT_REQUIRED,
+        'APPROVE names a treatment: EXPENSE, RECOVER or SUSPENSE',
+        'treatment',
+      );
     }
     if (input.tcmId) {
       return this.decideReceive(key, input, input.tcmId, caller);
@@ -1281,72 +1349,20 @@ export class TillSessionService {
       },
     });
     if (!peek) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
+    }
+    if ((peek.tssStatus as TillSessionStatus) === TillSessionStatus.CLOSED) {
+      return this.decideAfterClose(key, input, peek, caller);
     }
     this.assertPendingApproval(peek);
     const ask = this.varianceAsk(await this.pendingVariances(this.prisma, peek));
-    const businessDate = isoDateOf(peek.tssBusinessDate);
-    const rule = await this.approval.ruleOrDefault(this.prisma, {
-      companyId: key.companyId,
-      branchId: key.branchId,
-      event: ask.event,
-      onDate: businessDate,
-    });
-
-    // 2 · the approver (A2), before anything is written.
-    let verdict: Awaited<ReturnType<TillApprovalService['assertApprover']>>;
-    try {
-      verdict = await this.approval.assertApprover(this.prisma, {
-        companyId: key.companyId,
-        branchId: key.branchId,
-        event: ask.event,
-        amount: ask.amount,
-        rule,
-        approverId: caller.userId,
-        requesterId: peek.tssOperatorId,
-        pin: input.approverPin,
-      });
-    } catch (error: unknown) {
-      if (input.approverPin?.trim() && tillErrorCodeOf(error) === TillErrorCode.APPROVER_PIN) {
-        await this.events.log(this.prisma, {
-          companyId: peek.tssCompanyId,
-          branchId: peek.tssBranchId,
-          accYear: peek.tssAccYear,
-          code: TillEventCode.PIN_FAIL,
-          sessionId: peek.tssId,
-          dayId: peek.tssDayId,
-          counterId: peek.tssCounterId,
-          deviceId: caller.deviceId ?? peek.tssDeviceId,
-          userId: caller.userId,
-          srcRefno: peek.tssSessionNo,
-          payload: { action: 'decide-variance', event: ask.event },
-        });
-      }
-      throw error;
-    }
-
-    // 3 · what an APPROVE needs: its reason, and RECOVER's ledger.
-    const treatment = approve ? (input.treatment as TillVarianceTreatment) : null;
-    const reason = approve
-      ? await this.varianceReason(this.prisma, {
-          companyId: key.companyId,
-          reasonId: input.reasonId,
-          event: ask.event,
-        })
-      : null;
-    let recoveryLedgerId: string | null = null;
-    if (treatment === TillVarianceTreatment.RECOVER) {
-      const staff = await this.staffLedgerOf(this.prisma, peek.tssOperatorId);
-      if (!staff.ledgerId) {
-        throwTill(
-          TillErrorCode.LEDGER_UNMAPPED,
-          `RECOVER posts to the cashier’s staff advance ledger, and ${staff.login} has none (an employee with a loan ledger, notes 95)`,
-          'treatment',
-          { treatment, operatorId: peek.tssOperatorId },
-        );
-      }
-      recoveryLedgerId = staff.ledgerId;
-    }
+    // 2 · the approver (A2), before anything is written; 3 · the reason, RECOVER's ledger.
+    const { rule, verdict, treatment, reason, recoveryLedgerId } = await this.judgeCloseDecision(
+      peek,
+      ask,
+      input,
+      caller,
+    );
 
     const tapId = await this.prisma.$transaction(async (tx) => {
       const session = await this.lock(tx, key, [TillSessionStatus.PENDING_APPROVAL]);
@@ -1486,6 +1502,264 @@ export class TillSessionService {
   }
 
   /**
+   * A close-stage decision's checks, before anything is written: the event's
+   * rule on the business date; the approver (A2) with the session's cashier as
+   * the requester, a wrong PIN journalled PIN_FAIL here (outside the
+   * transaction that would roll it back); an APPROVE's reason and RECOVER's
+   * ledger (the cashier's staff advance).
+   */
+  private async judgeCloseDecision(
+    peek: TillSession,
+    ask: { event: 'CASH_VARIANCE' | 'NONCASH_VARIANCE'; amount: Prisma.Decimal },
+    input: DecideVarianceInput,
+    caller: TillCaller,
+  ) {
+    const rule = await this.approval.ruleOrDefault(this.prisma, {
+      companyId: peek.tssCompanyId,
+      branchId: peek.tssBranchId,
+      event: ask.event,
+      onDate: isoDateOf(peek.tssBusinessDate),
+    });
+    let verdict: Awaited<ReturnType<TillApprovalService['assertApprover']>>;
+    try {
+      verdict = await this.approval.assertApprover(this.prisma, {
+        companyId: peek.tssCompanyId,
+        branchId: peek.tssBranchId,
+        event: ask.event,
+        amount: ask.amount,
+        rule,
+        approverId: caller.userId,
+        requesterId: peek.tssOperatorId,
+        pin: input.approverPin,
+      });
+    } catch (error: unknown) {
+      if (input.approverPin?.trim() && tillErrorCodeOf(error) === TillErrorCode.APPROVER_PIN) {
+        await this.events.log(this.prisma, {
+          companyId: peek.tssCompanyId,
+          branchId: peek.tssBranchId,
+          accYear: peek.tssAccYear,
+          code: TillEventCode.PIN_FAIL,
+          sessionId: peek.tssId,
+          dayId: peek.tssDayId,
+          counterId: peek.tssCounterId,
+          deviceId: caller.deviceId ?? peek.tssDeviceId,
+          userId: caller.userId,
+          srcRefno: peek.tssSessionNo,
+          payload: { action: 'decide-variance', event: ask.event },
+        });
+      }
+      throw error;
+    }
+
+    const treatment =
+      input.decision === TillVarianceDecision.APPROVE
+        ? (input.treatment as TillVarianceTreatment)
+        : null;
+    const reason = treatment
+      ? await this.varianceReason(this.prisma, {
+          companyId: peek.tssCompanyId,
+          reasonId: input.reasonId,
+          event: ask.event,
+        })
+      : null;
+    let recoveryLedgerId: string | null = null;
+    if (treatment === TillVarianceTreatment.RECOVER) {
+      const staff = await this.staffLedgerOf(this.prisma, peek.tssOperatorId);
+      if (!staff.ledgerId) {
+        throwTill(
+          TillErrorCode.LEDGER_UNMAPPED,
+          `RECOVER posts to the cashier’s staff advance ledger, and ${staff.login} has none (an employee with a loan ledger, notes 95)`,
+          'treatment',
+          { treatment, operatorId: peek.tssOperatorId },
+        );
+      }
+      recoveryLedgerId = staff.ledgerId;
+    }
+    return { rule, verdict, treatment, reason, recoveryLedgerId };
+  }
+
+  /**
+   * Notes 124 §1 (notes 112 §3) — a drawer gap still PENDING on a CLOSED
+   * session: closed before notes 112 made `/close` refuse one, so no voucher
+   * holds it. Decided as on a PENDING_APPROVAL session (same rule, approver,
+   * reason, till_approval row and VARIANCE_DECIDED), but only APPROVE — the
+   * cash was handed over at the close, so there is nothing to recount — and
+   * the TVar posts at once, as the close would have: against till cash, dated
+   * the session's business date. The session stays CLOSED. A slip gap is not
+   * decided here (the slip check decides it, notes 99), and with no drawer gap
+   * pending a CLOSED session is refused as before.
+   */
+  private async decideAfterClose(
+    key: SessionKey,
+    input: DecideVarianceInput,
+    peek: TillSession,
+    caller: TillCaller,
+  ): Promise<TillVarianceDecisionPayload> {
+    const drawerPending = async (client: Client, session: TillSession) =>
+      (await this.pendingVariances(client, session)).filter((v) => !isSlipVariance(v));
+    const pending = await drawerPending(this.prisma, peek);
+    if (pending.length === 0) {
+      this.assertPendingApproval(peek);
+    }
+    if (input.decision !== TillVarianceDecision.APPROVE) {
+      throwTillBadRequest(
+        TillErrorCode.RECOUNT_NOT_ALLOWED,
+        `Session ${peek.tssSessionNo} is CLOSED and its cash was handed over: there is nothing to recount. APPROVE the gap with a treatment (SUSPENSE to look into it)`,
+        'decision',
+      );
+    }
+    const ask = this.varianceAsk(pending);
+    const { rule, verdict, treatment, reason, recoveryLedgerId } = await this.judgeCloseDecision(
+      peek,
+      ask,
+      input,
+      caller,
+    );
+    const posted = treatment as (typeof APPROVABLE_TREATMENTS)[number];
+
+    const tapId = await this.prisma.$transaction(async (tx) => {
+      const session = await this.lock(tx, key, [TillSessionStatus.CLOSED]);
+      const rows = await drawerPending(tx, session);
+      if (rows.length === 0) {
+        throwTill(
+          TillErrorCode.VARIANCE_NOT_PENDING,
+          `Session ${session.tssSessionNo} has no drawer variance waiting for a decision`,
+          'tssId',
+        );
+      }
+      const now = new Date();
+      const id = await this.approval.record(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        tenantId: session.tssTenantId,
+        accYear: session.tssAccYear,
+        event: ask.event,
+        sessionId: session.tssId,
+        counterId: session.tssCounterId,
+        srcDocType: 'TILL_SESSION',
+        srcDocId: session.tssId,
+        srcRefno: session.tssSessionNo,
+        amount: ask.amount,
+        rule,
+        verdict,
+        requestedBy: session.tssOperatorId,
+        requestedOn: session.tssCountedOn ?? session.tssClosedOn ?? now,
+        reasonId: reason!.trsId,
+        status: 'APPROVED',
+        decidedBy: caller.userId,
+        decidedOn: now,
+        decidedDeviceId: caller.deviceId,
+        decisionNote: input.note.trim(),
+        payload: {
+          decision: input.decision,
+          treatment,
+          afterClose: true,
+          variances: rows.map((v) => ({
+            tvrId: v.tvrId,
+            tenderTypeId: v.tvrTenderTypeId,
+            variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)).toFixed(2),
+          })),
+        },
+      });
+
+      const postingSession = this.postingSession(session, isoDateOf(session.tssBusinessDate));
+      const tillCash = await this.ledger.tillCashTender(
+        tx,
+        session.tssCompanyId,
+        session.tssBranchId,
+      );
+      for (const v of rows) {
+        await tx.tillVariance.update({
+          where: { tvrId_tvrAccYear: { tvrId: v.tvrId, tvrAccYear: v.tvrAccYear } },
+          data: {
+            tvrTreatment: posted,
+            tvrReasonId: reason!.trsId,
+            tvrRecoveryLedgerId: recoveryLedgerId,
+            tvrApprovalId: id,
+            tvrDecidedBy: caller.userId,
+            tvrDecidedOn: now,
+            tvrNotes: input.note.trim(),
+            tvrModifiedOn: now,
+            tvrModifiedBy: caller.actorName,
+          },
+        });
+        await this.posting.postVariance(tx, {
+          session: postingSession,
+          tvrId: v.tvrId,
+          tenderLedgerId:
+            v.tvrTenderTypeId === CASH_TENDER_TYPE_ID
+              ? tillCash.ledgerId
+              : await this.tenderLedger(tx, v.tvrTenderId, v.tvrTenderTypeId),
+          tenderLabel:
+            v.tvrTenderTypeId === CASH_TENDER_TYPE_ID ? 'Cash' : `tender type ${v.tvrTenderTypeId}`,
+          variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)),
+          treatment: posted,
+          recoveryLedgerId,
+          caller,
+        });
+      }
+      await tx.tillSession.update({
+        where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+        data: {
+          tssVarianceStatus: (await this.hasAnyPending(tx, session))
+            ? TillSessionVarianceStatus.PENDING
+            : VARIANCE_STATUS_OF_TREATMENT[posted],
+          tssCloseApprovalId: session.tssCloseApprovalId ?? id,
+          tssModifiedOn: now,
+          tssModifiedBy: caller.actorName,
+        },
+      });
+      await this.events.log(tx, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        accYear: session.tssAccYear,
+        code: TillEventCode.VARIANCE_DECIDED,
+        sessionId: session.tssId,
+        dayId: session.tssDayId,
+        counterId: session.tssCounterId,
+        deviceId: caller.deviceId ?? session.tssDeviceId,
+        userId: caller.userId,
+        srcDocType: 'TILL_SESSION',
+        srcDocId: session.tssId,
+        srcRefno: session.tssSessionNo,
+        amount: ask.amount,
+        reasonId: reason!.trsId,
+        approvalId: id,
+        payload: {
+          stage: 'CLOSE',
+          afterClose: true,
+          decision: input.decision,
+          treatment,
+          event: ask.event,
+          amount: ask.amount.toFixed(2),
+          requiredRole: rule.tar_min_role,
+          approverRole: verdict.role,
+          channel: verdict.channel,
+          implicitGrant: verdict.implicit,
+          grantId: verdict.grantId,
+          reasonId: reason!.trsId,
+          recoveryLedgerId,
+          variances: rows.map((v) => v.tvrId),
+        },
+      });
+      return id;
+    });
+
+    return {
+      tapId,
+      decision: input.decision,
+      event: ask.event,
+      amount: num(ask.amount),
+      requiredRole: rule.tar_min_role,
+      approverRole: verdict.role,
+      channel: verdict.channel,
+      treatment,
+      tcmId: null,
+      session: await this.get(key),
+    };
+  }
+
+  /**
    * Notes 113 §4 — a received bag's difference (its RECEIVE-stage variance,
    * PENDING because it was out of tolerance), decided as a close variance is:
    * the CASH_VARIANCE rule, an approver who is neither the receiver (the
@@ -1504,6 +1778,7 @@ export class TillSessionService {
   ): Promise<TillVarianceDecisionPayload> {
     if (input.decision !== TillVarianceDecision.APPROVE) {
       throwTillBadRequest(
+        TillErrorCode.RECOUNT_NOT_ALLOWED,
         'A received bag is not recounted: APPROVE its difference with a treatment (SUSPENSE to look into it)',
         'decision',
       );
@@ -1521,7 +1796,7 @@ export class TillSessionService {
       },
     });
     if (!peek) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     const pendingOf = (client: Client) =>
       client.tillVariance.findFirst({
@@ -2452,7 +2727,7 @@ export class TillSessionService {
       },
     });
     if (!session) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     return session;
   }
@@ -2515,6 +2790,12 @@ export class TillSessionService {
        * never blocked by it.
        */
       cashIn?: boolean;
+      /**
+       * The CASH the document pays OUT of the drawer (a payment, an expense, a
+       * refund): under till.cash_out_over_expected = REFUSE it may not exceed
+       * the drawer's expected cash (notes 122 §5, TILL_CASH_SHORT_IN_DRAWER).
+       */
+      cashOut?: Prisma.Decimal | null;
     },
   ): Promise<LiveSessionRef | null> {
     const caller = await this.context.caller(client);
@@ -2527,14 +2808,16 @@ export class TillSessionService {
       tcnCashAlertLimit: true,
       tcnCashBlockLimit: true,
     } as const;
-    // The session this device holds: the drawer it picked, linked or not.
+    // The session this device holds: the drawer it picked, linked or not —
+    // counted and waiting for an approver included (notes 122 §1: an
+    // unlinked till whose session was PENDING_APPROVAL took cash with none).
     const held = await client.tillSession.findFirst({
       where: {
         tssDeviceId: caller.deviceId,
         tssCompanyId: scope.companyId,
         tssBranchId: scope.branchId,
         tssIsDeleted: false,
-        tssStatus: { in: LIVE_SESSION_STATUSES as TillSessionStatus[] },
+        tssStatus: { in: HOLDING_SESSION_STATUSES as TillSessionStatus[] },
       },
       orderBy: { tssOpenedOn: 'desc' },
     });
@@ -2553,40 +2836,47 @@ export class TillSessionService {
           },
           select: limits,
         });
-    if (!counter || (!held && !counter.tcnRequiresSession)) {
-      return null;
-    }
-    const settings = await this.context.settings({
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-      deviceId: caller.deviceId,
-      userId: caller.userId,
-    });
-    if (!held && !settings.requireSession) {
-      return null;
-    }
-
-    // The session the document names, when it IS a till session; else (no id,
-    // or today's random client uuid, which names nothing) the device's live
-    // one, else the linked counter's — which, run from another device, is
-    // refused by assertLive (§3.1).
+    // The session the document names, when it IS a till session (today's
+    // random client uuid, or a login session id, names nothing).
     const named =
       scope.sessionId && isUuidLike(scope.sessionId)
         ? await client.tillSession.findFirst({
             where: { tssId: scope.sessionId, tssIsDeleted: false },
           })
         : null;
+    let settings: TillSettings | null = null;
+    const settingsHere = async () =>
+      (settings ??= await this.context.settings({
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        deviceId: caller.deviceId,
+        userId: caller.userId,
+      }));
+    const governed =
+      !!held || (!!counter && counter.tcnRequiresSession && (await settingsHere()).requireSession);
+    // A device the till does not govern posts as before — unless a document
+    // that moves drawer money names a real till session: that one is judged
+    // like any other (notes 122 §1), so cash never lands in a drawer that is
+    // no longer taking money.
+    if (!governed && (!named || scope.optional)) {
+      return null;
+    }
+
+    // The session named; else the device's own; else the linked counter's —
+    // which, run from another device, is refused by assertLive (§3.1).
     const session =
       named ??
       held ??
-      (await client.tillSession.findFirst({
-        where: {
-          tssCounterId: counter.tcnId,
-          tssIsDeleted: false,
-          tssStatus: { in: LIVE_SESSION_STATUSES as TillSessionStatus[] },
-        },
-        orderBy: { tssOpenedOn: 'desc' },
-      }));
+      (counter
+        ? await client.tillSession.findFirst({
+            where: {
+              tssCounterId: counter.tcnId,
+              tssIsDeleted: false,
+              tssStatus: { in: LIVE_SESSION_STATUSES as TillSessionStatus[] },
+            },
+            orderBy: { tssOpenedOn: 'desc' },
+          })
+        : null);
     if (!session) {
       if (scope.optional) {
         return null;
@@ -2596,6 +2886,15 @@ export class TillSessionService {
         'This counter has no open till session: open one (Open Till) before taking money',
         scope.field,
       );
+    }
+    if (
+      scope.optional &&
+      !named &&
+      (session.tssStatus as TillSessionStatus) !== TillSessionStatus.OPEN
+    ) {
+      // A document that moves no drawer money needs no session (48 §3.1): the
+      // device's drawer being counted is no reason to refuse it.
+      return null;
     }
     const status = session.tssStatus as TillSessionStatus;
     if (named && status !== TillSessionStatus.OPEN && status !== TillSessionStatus.SUSPENDED) {
@@ -2650,9 +2949,10 @@ export class TillSessionService {
     // REV 2 §2.7 — past the business-day cut-off a session bills no more: it is
     // ended and counted (or force-closed), and the next bill needs a session on
     // the new business date. Logged outside the refused transaction.
+    const { dayCutoff, cashOutOverExpected } = await settingsHere();
     const today = scope.docTime
-      ? await businessDateAt(client, scope.docTime, settings.dayCutoff)
-      : await businessDateNow(client, settings.dayCutoff);
+      ? await businessDateAt(client, scope.docTime, dayCutoff)
+      : await businessDateNow(client, dayCutoff);
     if (today !== ref.businessDate) {
       await this.events.log(this.prisma, {
         companyId: session.tssCompanyId,
@@ -2667,20 +2967,20 @@ export class TillSessionService {
         payload: {
           sessionDate: ref.businessDate,
           businessDateNow: today,
-          cutoff: settings.dayCutoff,
+          cutoff: dayCutoff,
         },
       });
       throwTill(
         TillErrorCode.SESSION_DAY_ENDED,
         `Session ${session.tssSessionNo} belongs to business date ${ref.businessDate}; it is now ${today} ` +
-          `(cut-off ${settings.dayCutoff}). End and count it, then open a session for today.`,
+          `(cut-off ${dayCutoff}). End and count it, then open a session for today.`,
         scope.field,
         { sessionDate: ref.businessDate, businessDate: today },
       );
     }
     // The limits are the drawer's: the session's counter.
     const drawer =
-      session.tssCounterId === counter.tcnId
+      session.tssCounterId === counter?.tcnId
         ? counter
         : await client.tillCounter.findUniqueOrThrow({
             where: { tcnId: session.tssCounterId },
@@ -2694,6 +2994,22 @@ export class TillSessionService {
           `The drawer is over its block limit (${num(dec(drawer.tcnCashBlockLimit))}): a pickup or a drop first`,
           scope.field,
           { blockLimit: num(dec(drawer.tcnCashBlockLimit)), event: 'CASH_LIMIT_OVERRIDE' },
+        );
+      }
+    }
+    // Notes 122 §5 — cash paid out never takes the drawer below nothing. The
+    // expectation counts POSTED documents only, so this one is not in it yet.
+    // The figure itself stays out of the refusal: a blind cashier never sees it.
+    const cashOut = dec(scope.cashOut);
+    if (cashOut.greaterThan(0) && cashOutOverExpected === 'REFUSE') {
+      const cash = await this.cashState(client, session, drawer);
+      if (cashOut.greaterThan(cash.cash)) {
+        throwTill(
+          TillErrorCode.CASH_SHORT_IN_DRAWER,
+          `The drawer does not hold ${num(cashOut)} in cash: pay less in cash, top the drawer up first, ` +
+            'or pay by bank (till.cash_out_over_expected = REFUSE)',
+          scope.field,
+          { sessionNo: session.tssSessionNo, cashOut: num(cashOut) },
         );
       }
     }
@@ -2816,6 +3132,8 @@ export class TillSessionService {
       hasCash: boolean;
       /** A receipt: money INTO the drawer, so the block limit applies. */
       cashIn?: boolean;
+      /** The CASH the document pays out of the drawer (notes 122 §5). */
+      cashOut?: Prisma.Decimal | null;
     },
   ): Promise<{
     ref: LiveSessionRef | null;
@@ -2825,9 +3143,6 @@ export class TillSessionService {
   }> {
     const none = { ref: null, cashLedgerId: null, safeName: null };
     const caller = await this.context.caller(client);
-    if (!caller.deviceId) {
-      return none;
-    }
     const settings = await this.context.settings({
       companyId: scope.companyId,
       branchId: scope.branchId,
@@ -2837,14 +3152,19 @@ export class TillSessionService {
     if (!settings.moneyDocsInSession) {
       return none;
     }
-    const ref = await this.resolveForMoney(client, {
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-      sessionId: scope.sessionId,
-      field: scope.field,
-      optional: !scope.hasCash,
-      cashIn: scope.cashIn,
-    });
+    // Notes 126 §2: a call with no device id is a BACK-OFFICE call — its cash
+    // comes from the safe (or is refused under REFUSE) — never a pass.
+    const ref = caller.deviceId
+      ? await this.resolveForMoney(client, {
+          companyId: scope.companyId,
+          branchId: scope.branchId,
+          sessionId: scope.sessionId,
+          field: scope.field,
+          optional: !scope.hasCash,
+          cashIn: scope.cashIn,
+          cashOut: scope.cashOut,
+        })
+      : null;
     if (ref || !scope.hasCash) {
       return { ...none, ref };
     }
@@ -2984,40 +3304,65 @@ export class TillSessionService {
   }
 
   /**
-   * 48 §2.2 — on a device holding a live session, a journal or contra with a
-   * leg on the till cash ledger is refused (TILL_CASH_LEDGER_DIRECT): cash
-   * enters or leaves a drawer only through a document that writes a tender
-   * row, or a till movement. Back-office devices are not checked.
+   * 48 §2.2, widened by notes 126 §2 — in a branch that runs a till, a journal
+   * or contra never has a leg on the till's own cash: the till cash ledger, a
+   * safe's, Till cash awaiting receipt or Cash in transit (TILL_CASH_LEDGER_DIRECT),
+   * from ANY device or none. That cash moves only through a till movement or
+   * the Cash Office (pickup, drop, remittance), so the safe book and the books
+   * move together. A branch with no till posts as before (the rollout rule).
    */
   async assertNoTillCashLeg(
     client: Tx | PrismaService,
     scope: { companyId: string; branchId: string; ledgerIds: readonly string[]; field: string },
   ): Promise<void> {
-    const caller = await this.context.caller(client);
-    if (!caller.deviceId || scope.ledgerIds.length === 0) {
+    if (scope.ledgerIds.length === 0) {
       return;
     }
-    const held = await client.tillSession.findFirst({
+    const tillHere = await client.tillCounter.findFirst({
       where: {
-        tssDeviceId: caller.deviceId,
-        tssCompanyId: scope.companyId,
-        tssBranchId: scope.branchId,
-        tssIsDeleted: false,
-        tssStatus: { in: [...LIVE_SESSION_STATUSES] },
+        tcnCompanyId: scope.companyId,
+        tcnBranchId: scope.branchId,
+        tcnIsDeleted: false,
+        tcnIsActive: true,
+        tcnRequiresSession: true,
       },
-      select: { tssSessionNo: true },
+      select: { tcnId: true },
     });
-    if (!held) {
+    if (!tillHere) {
       return;
     }
+    const guarded = new Map<string, string>();
     const cash = await this.ledger.tillCashTender(client as Tx, scope.companyId, scope.branchId);
-    if (scope.ledgerIds.includes(cash.ledgerId)) {
+    guarded.set(cash.ledgerId, 'the till cash ledger');
+    const safes = await client.tillSafe.findMany({
+      where: {
+        tsfCompanyId: scope.companyId,
+        tsfBranchId: scope.branchId,
+        tsfIsDeleted: false,
+        tsfIsActive: true,
+      },
+      select: { tsfLedgerId: true, tsfName: true },
+    });
+    for (const safe of safes) {
+      guarded.set(safe.tsfLedgerId, `safe ${safe.tsfName}'s ledger`);
+    }
+    const roles = await resolveRoleLedgers(
+      client as Tx,
+      [{ role: TILL_CASH_AWAITING_ROLE }, { role: CASH_IN_TRANSIT_ROLE }],
+      { companyId: scope.companyId, branchId: scope.branchId, where: 'till' },
+    );
+    for (const hit of roles.values()) {
+      if (hit) {
+        guarded.set(hit.ledgerId, `${hit.ledgerName ?? 'the till'} ledger`);
+      }
+    }
+    const touched = scope.ledgerIds.find((id) => guarded.has(id));
+    if (touched) {
       throwTill(
         TillErrorCode.CASH_LEDGER_DIRECT,
-        `This device is in till session ${held.tssSessionNo}: cash leaves or enters the drawer through a ` +
-          'receipt, payment, expense voucher or till movement, never a journal or contra on the till cash ledger',
+        `This branch runs a till: ${guarded.get(touched)} moves only through a till movement or the Cash ` +
+          'Office (pickup, drop, remittance), never a journal or contra',
         scope.field,
-        { sessionNo: held.tssSessionNo },
       );
     }
   }
@@ -3346,6 +3691,7 @@ export class TillSessionService {
         );
       }
       throwTillBadRequest(
+        TillErrorCode.COUNTER_REQUIRED,
         'This device is linked to no counter: name one of the free counters (counterId)',
         'counterId',
       );
@@ -3632,7 +3978,7 @@ export class TillSessionService {
          AND tss_is_deleted = false
        FOR UPDATE`;
     if (locked.length === 0) {
-      throwTillNotFound('Till session', 'tssId', key.tssId);
+      throwTillNotFound(TillErrorCode.SESSION_NOT_FOUND, 'Till session', 'tssId', key.tssId);
     }
     const session = await tx.tillSession.findUniqueOrThrow({
       where: { tssId_tssAccYear: { tssId: key.tssId, tssAccYear: key.accYear } },
@@ -4173,10 +4519,10 @@ export class TillSessionService {
           select: { tndLedgerId: true },
         })
       : null;
-    if (!tender) {
+    if (!tender?.tndLedgerId) {
       throwTill(
         TillErrorCode.LEDGER_UNMAPPED,
-        `A tender type ${typeId} variance names no tender, so it has no ledger to post to`,
+        `A tender type ${typeId} variance names no tender with a ledger, so it has nothing to post to`,
         'tvrTenderId',
       );
     }
@@ -4402,12 +4748,15 @@ export class TillSessionService {
             }),
           )
         : [],
-      ...(await this.receiptOf(movements)),
+      ...(await this.receiptOf(movements, session.tssOperatorId)),
     };
   }
 
   /** Notes 114 — the session's cash receipt: its state, what still waits, the latest receipt. */
-  private async receiptOf(movements: Parameters<typeof receiptStateOf>[0]) {
+  private async receiptOf(
+    movements: Parameters<typeof receiptStateOf>[0],
+    operatorId: string | null,
+  ) {
     const bags = movements.filter(
       (m) => m.tcmStatus === 'POSTED' && !m.tcmIsDeleted && m.tcmReceiptStatus !== null,
     );
@@ -4430,6 +4779,7 @@ export class TillSessionService {
       receivedBy: latest?.tcmReceivedBy ?? null,
       receivedByName: receiver ? receiver.usrDisplayName?.trim() || receiver.usrLoginName : null,
       receivedOn: latest?.tcmReceivedOn?.toISOString() ?? null,
+      receivedBySelf: !!latest?.tcmReceivedBy && latest.tcmReceivedBy === operatorId,
     };
   }
 

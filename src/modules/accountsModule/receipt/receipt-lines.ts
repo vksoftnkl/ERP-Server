@@ -18,6 +18,8 @@ import type { SaveReceiptOtherLineDto, SaveReceiptTenderDto } from './dto/save-r
 import type { ReceiptParty, ReceiptWriteClient } from './receipt.guards';
 import type { ReceiptSettings } from './receipt.settings';
 import { money, toDateOnly, trimOrNull, ZERO } from './receipt.utils';
+import { ACC } from './types/acc-error-codes';
+import { VCH } from '../vouchers/vouchers.errors';
 
 /**
  * §5.1 rules 3 and 4 — turning what the client sent into what the module
@@ -100,6 +102,7 @@ export async function normaliseTenders(
     throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
       {
         field: 'tenders',
+        code: ACC.NO_TENDER,
         message:
           'A receipt with no instruments is a journal, not a receipt. Even a receipt settled ' +
           'entirely from a credit the party holds needs a journal voucher instead.',
@@ -139,7 +142,11 @@ export async function normaliseTenders(
 
     if (seenRowNos.has(tender.tdRowNo)) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        { field: field('tdRowNo'), message: `Row number ${tender.tdRowNo} appears twice` },
+        {
+          field: field('tdRowNo'),
+          code: ACC.INVALID,
+          message: `Row number ${tender.tdRowNo} appears twice`,
+        },
       ]);
     }
     seenRowNos.add(tender.tdRowNo);
@@ -150,11 +157,16 @@ export async function normaliseTenders(
         'Tender not found',
         field('tdTenderId'),
         `No live tender with id ${tender.tdTenderId}`,
+        ACC.TENDER_NOT_FOUND,
       );
     }
     if (!master.tndIsActive) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        { field: field('tdTenderId'), message: `Tender "${master.tndName}" is inactive` },
+        {
+          field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
+          message: `Tender "${master.tndName}" is inactive`,
+        },
       ]);
     }
     // A tender belongs to a company, and optionally to one branch of it. NULL
@@ -163,6 +175,7 @@ export async function normaliseTenders(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" belongs to another company`,
         },
       ]);
@@ -171,6 +184,7 @@ export async function normaliseTenders(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('tdTenderId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" is not available at this branch`,
         },
       ]);
@@ -182,6 +196,7 @@ export async function normaliseTenders(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('tdTenderTypeId'),
+          code: ACC.TENDER_NOT_USABLE,
           message: `Tender "${master.tndName}" is type ${master.tndTypeId}, not ${tender.tdTenderTypeId}`,
         },
       ]);
@@ -190,7 +205,11 @@ export async function normaliseTenders(
     const amount = money(tender.tdAmount);
     if (amount.lessThanOrEqualTo(0)) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        { field: field('tdAmount'), message: 'A tender row must carry more than zero' },
+        {
+          field: field('tdAmount'),
+          code: VCH.LINE_AMOUNT,
+          message: 'A tender row must carry more than zero',
+        },
       ]);
     }
 
@@ -209,6 +228,7 @@ export async function normaliseTenders(
         throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
           {
             field: field(missing[0]),
+            code: VCH.CHEQUE_DETAILS,
             message: `A cheque needs ${missing.join(', ')}`,
           },
         ]);
@@ -223,6 +243,7 @@ export async function normaliseTenders(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('tdReceivedAmt'),
+          code: ACC.CHANGE_WRONG,
           message:
             `Received ${received.toFixed(2)} less change ${change.toFixed(2)} is ` +
             `${received.minus(change).toFixed(2)}, but the row is for ${amount.toFixed(2)}`,
@@ -243,7 +264,19 @@ export async function normaliseTenders(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('tdTenderLedgerId'),
+          code: ACC.TENDER_LEDGER_FIXED,
           message: `Tender "${master.tndName}" does not allow its ledger to be changed`,
+        },
+      ]);
+    }
+
+    if (!tenderLedgerId) {
+      // Notes 126 §5: TEMP_CR / CREDIT / LOYALTY carry no ledger — they move no money in.
+      throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
+        {
+          field: field('tdTenderId'),
+          code: VCH.INSTRUMENT_TENDER,
+          message: `Tender "${master.tndName}" posts to no ledger: it cannot take money on a receipt`,
         },
       ]);
     }
@@ -251,11 +284,14 @@ export async function normaliseTenders(
     const surchargePerc = master.tndEditSurcharge
       ? money(tender.tdSurchargePerc ?? master.tndSurchargePerc)
       : money(master.tndSurchargePerc);
+    // The surcharge is INSIDE the instrument (SURCHARGE_RECOVERED is a split of
+    // tdAmount, not an addition to it): 200 + 1% comes in as 202.00, of which
+    // 202 × 1 / 101 = 2.00 is surcharge — not 202 × 1% = 2.02 (notes 107).
     const surchargeAmt = master.tndEditSurcharge
       ? money(tender.tdSurchargeAmt ?? master.tndSurchargeAmount)
       : money(
           surchargePerc.greaterThan(0)
-            ? amount.times(surchargePerc).dividedBy(100)
+            ? amount.times(surchargePerc).dividedBy(surchargePerc.plus(100))
             : master.tndSurchargeAmount,
         );
 
@@ -418,13 +454,18 @@ export async function normaliseOtherLines(
 
     if (amount.lessThanOrEqualTo(0)) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        { field: field('amount'), message: 'An other-ledger line must carry more than zero' },
+        {
+          field: field('amount'),
+          code: VCH.LINE_AMOUNT,
+          message: 'An other-ledger line must carry more than zero',
+        },
       ]);
     }
     if (Boolean(line.role) === Boolean(line.ledgerId)) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('role'),
+          code: ACC.INVALID,
           message:
             'Give the line either a role — which every report can find again — or a ledger ' +
             'chosen by hand. Not both, and not neither.',
@@ -438,6 +479,7 @@ export async function normaliseOtherLines(
         throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
           {
             field: field('role'),
+            code: ACC.INVALID,
             message:
               `"${line.role}" is not a role a receipt may post to. Use one of ` +
               `${Object.keys(ROLE_SIDE).join(', ')}, or pick a ledger by hand.`,
@@ -448,6 +490,7 @@ export async function normaliseOtherLines(
         throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
           {
             field: field('drCr'),
+            code: ACC.INVALID,
             message: `${line.role} posts ${side}, not ${line.drCr}`,
           },
         ]);
@@ -457,6 +500,7 @@ export async function normaliseOtherLines(
         throwAccountsBadRequest<ReceiptErrorDetail>('Posting ledgers are not configured', [
           {
             field: field('role'),
+            code: ACC.ROLE_UNMAPPED,
             message: `Nothing maps "${line.role}" to a ledger — accounts.acc_ledger_map has no row for it`,
           },
         ]);
@@ -468,6 +512,7 @@ export async function normaliseOtherLines(
         throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
           {
             field: field('settlesBill'),
+            code: ACC.INVALID,
             message:
               `${line.role} cannot settle a bill — it is not a deduction the customer withheld ` +
               'from what they owe. Leave settlesBill off.',
@@ -496,11 +541,16 @@ export async function normaliseOtherLines(
         'Ledger not found',
         field('ledgerId'),
         `No live ledger ${line.ledgerId} is visible to this company`,
+        VCH.LEDGER_NOT_FOUND,
       );
     }
     if (!ledger.ledIsActive) {
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        { field: field('ledgerId'), message: `"${ledger.ledName}" is inactive` },
+        {
+          field: field('ledgerId'),
+          code: VCH.LEDGER_INACTIVE,
+          message: `"${ledger.ledName}" is inactive`,
+        },
       ]);
     }
     // A line pointing at the party would settle their bill with their own
@@ -510,6 +560,7 @@ export async function normaliseOtherLines(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: field('ledgerId'),
+          code: ACC.PARTY_AS_LINE,
           message: `"${ledger.ledName}" is the party of this receipt and cannot also be a line on it`,
         },
       ]);
@@ -575,6 +626,7 @@ function seedInstrumentSplit(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: spec.field,
+          code: ACC.INVALID,
           message:
             `The payload carries ${supplied.toFixed(2)} of ${spec.what}, but no tender row has any. ` +
             'Put it on the instrument it came from.',
@@ -589,6 +641,7 @@ function seedInstrumentSplit(
       throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
         {
           field: spec.field,
+          code: ACC.INVALID,
           message:
             `The tenders carry ${spec.total.toFixed(2)} of ${spec.what} and the ${spec.role} line ` +
             `says ${supplied.toFixed(2)}. They must agree.`,
@@ -607,6 +660,7 @@ function seedInstrumentSplit(
     throwAccountsBadRequest<ReceiptErrorDetail>('Posting ledgers are not configured', [
       {
         field: spec.field,
+        code: ACC.ROLE_UNMAPPED,
         message:
           `The tenders carry ${spec.total.toFixed(2)} of ${spec.what}, and nothing maps ` +
           `"${spec.role}" to a ledger`,

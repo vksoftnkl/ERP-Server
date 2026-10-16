@@ -133,6 +133,8 @@ afterAll(async () => {
   if (session) {
     const s = session.tssId;
     await prisma.$executeRaw`DELETE FROM accounts.till_event WHERE tev_session_id = ${s}::uuid OR tev_device_id = ${deviceId}::uuid`;
+    // Notes 124 §5: a money document over its rule in the session files a request (WARN).
+    await prisma.$executeRaw`DELETE FROM accounts.till_approval WHERE tap_session_id = ${s}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_variance WHERE tvr_session_id = ${s}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_session_id = ${s}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_cash_movement WHERE tcm_session_id = ${s}::uuid`;
@@ -189,6 +191,10 @@ describe('A cash bill on a counter’s device', () => {
     expectStatus(created, 201);
     sbId = created.body.data.sbId;
     billAmt = Number(created.body.data.sbBillAmt);
+    // Notes 122 §3: an id that names no till session is not kept.
+    const [stored] = await prisma.$queryRaw<{ s: string | null }[]>`
+      SELECT sb_session_id::text AS s FROM sales.sale_bill WHERE sb_id = ${sbId}::uuid`;
+    expect(stored.s).toBeNull();
     const res = await post('bills/post', billKeys(sbId));
     expectStatus(res, 409);
     expect(res.body.errors[0].code).toBe('TILL_SESSION_REQUIRED');

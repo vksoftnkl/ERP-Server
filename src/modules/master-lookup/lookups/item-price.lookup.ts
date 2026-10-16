@@ -20,6 +20,7 @@ import {
   ItemUnitCyclePayload,
 } from '../types/master-lookup-api.types';
 import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
+import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
 import { nextIucIdInCycle, priceForLevel, selectUnitRate } from '../utils/item-price.utils';
 import {
   HEADLINE_KEY,
@@ -183,6 +184,7 @@ export class ItemPriceLookup {
         {
           field: company_id ? 'branch_id' : 'company_id',
           message: "loading_type 'auto' requires both company_id and branch_id",
+          code: MasterLookupErrorCode.LOADING_SCOPE_REQUIRED,
         },
       ]);
     }
@@ -192,6 +194,7 @@ export class ItemPriceLookup {
         {
           field: 'item_id',
           message: `loading_type 'auto' needs a weight: the item's unit conversion carries no UOM weight to match a slab on`,
+          code: MasterLookupErrorCode.LOADING_WEIGHT_MISSING,
         },
       ]);
     }
@@ -301,6 +304,7 @@ export class ItemPriceLookup {
         'Lot not found',
         'lot_id',
         `No lot ${query.lot_id} found for item ${query.item_id}`,
+        MasterLookupErrorCode.LOT_NOT_FOUND,
       );
     }
     return { mrp: toNullableNumber(lot.sltMrp), salePrice: toNullableNumber(lot.sltSalePrice) };
@@ -472,6 +476,7 @@ export class ItemPriceLookup {
         'Item not found',
         'item_id',
         `No active item found for id ${item_id}`,
+        MasterLookupErrorCode.ITEM_NOT_FOUND,
       );
     }
     const caller: PriceCallerScope = { companyId: company_id ?? null, branchId: branch_id ?? null };
@@ -487,6 +492,7 @@ export class ItemPriceLookup {
         unit_id
           ? `No active price row found for item ${item_id} and unit ${unit_id}`
           : `No active price row configured for item ${item_id}`,
+        MasterLookupErrorCode.PRICE_NOT_FOUND,
       );
     }
     const unitRows = liveRows.filter((row) => row.ipmUcUnitId === unitPick.ipmUcUnitId);
@@ -529,6 +535,7 @@ export class ItemPriceLookup {
               : 'this unit'
         }, and no headline row to fall back to` +
           (priced.length ? `. Priced: ${priced.join(', ')}.` : '.'),
+        MasterLookupErrorCode.BUCKET_PRICE_NOT_FOUND,
       );
     }
     const rate = resolved.row;

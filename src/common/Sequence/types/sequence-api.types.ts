@@ -1,6 +1,9 @@
+import type { SequenceErrorCode } from './sequence-error-codes';
+
 export interface SequenceErrorDetail {
   field: string;
   message: string;
+  code: SequenceErrorCode;
 }
 
 export interface SequenceErrorResponse {

@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
+import { VCH } from '../vouchers/vouchers.errors';
+import { ACC } from './types/acc-error-codes';
 import { BillAdjType, BillSettlementMode, BillType, DrCr } from './types/receipt-enum';
 import { distributeProRata, money, sum, ZERO } from './receipt.utils';
 
@@ -110,22 +112,25 @@ import { distributeProRata, money, sum, ZERO } from './receipt.utils';
  * under the request (a bill was paid while the operator was typing) and is a
  * 409; `VALIDATION` means the request never added up and is a 400.
  */
+/** Notes 124 — every engine refusal names the code the screen words it by. */
+export type AllocationErrorDetail = ModuleErrorDetail & { code: string };
+
 export class AllocationError extends Error {
   constructor(
     readonly kind: 'CONFLICT' | 'VALIDATION',
     message: string,
-    readonly details: ModuleErrorDetail[],
+    readonly details: AllocationErrorDetail[],
   ) {
     super(message);
     this.name = 'AllocationError';
   }
 }
 
-function conflict(message: string, details: ModuleErrorDetail[]): never {
+function conflict(message: string, details: AllocationErrorDetail[]): never {
   throw new AllocationError('CONFLICT', message, details);
 }
 
-function invalid(message: string, details: ModuleErrorDetail[]): never {
+function invalid(message: string, details: AllocationErrorDetail[]): never {
   throw new AllocationError('VALIDATION', message, details);
 }
 
@@ -444,6 +449,7 @@ export function allocate(input: AllocationInput): AllocationResult {
     invalid('Allocation could not be completed', [
       {
         field: `allocations.${unfilled}.amount`,
+        code: VCH.UNBALANCED,
         message:
           `Bill ${bills[unfilled].docRefno} is short by ${capacity[unfilled].toFixed(2)} — ` +
           `the ${sides.direction === 'OUT' ? 'payment' : 'receipt'} does not carry enough money, ` +
@@ -463,6 +469,7 @@ export function allocate(input: AllocationInput): AllocationResult {
     invalid('Validation failed', [
       {
         field: 'onAccount',
+        code: ACC.INVALID,
         message:
           `The server holds ${totalOnAccount.toFixed(2)} on account, not ` +
           `${money(input.claimedOnAccount).toFixed(2)}. The client's figure is a preview; ` +
@@ -492,6 +499,7 @@ function assertBillsFit(bills: readonly AllocationBill[], sides: Sides): void {
       invalid('Validation failed', [
         {
           field: `allocations.${index}.billId`,
+          code: ACC.INVALID,
           message: `Bill ${bill.docRefno} appears twice. Send one row per bill with the total.`,
         },
       ]);
@@ -508,6 +516,7 @@ function assertBillsFit(bills: readonly AllocationBill[], sides: Sides): void {
       invalid('Validation failed', [
         {
           field: `allocations.${index}.amount`,
+          code: VCH.LINE_AMOUNT,
           message:
             `Bill ${bill.docRefno}: amount, discount, write-off and round-off are all ` +
             'positive figures',
@@ -518,6 +527,7 @@ function assertBillsFit(bills: readonly AllocationBill[], sides: Sides): void {
       invalid('Validation failed', [
         {
           field: `allocations.${index}.amount`,
+          code: VCH.LINE_AMOUNT,
           message: `Bill ${bill.docRefno} settles nothing. Leave it out rather than sending a zero row.`,
         },
       ]);
@@ -528,6 +538,7 @@ function assertBillsFit(bills: readonly AllocationBill[], sides: Sides): void {
       conflict(`Bill moved while this ${doc} was being entered`, [
         {
           field: `allocations.${index}.amount`,
+          code: ACC.BILL_MOVED,
           message:
             `Bill ${bill.docRefno} has ${money(bill.pendingAmount).toFixed(2)} pending, but this ` +
             `${doc} settles ${settled.toFixed(2)} against it`,
@@ -546,6 +557,7 @@ function assertCreditsFit(credits: readonly AllocationCredit[], sides: Sides): v
       invalid('Validation failed', [
         {
           field: `creditsApplied.${index}.billId`,
+          code: ACC.INVALID,
           message: `Credit ${credit.docRefno} appears twice. Send one row per credit with the total.`,
         },
       ]);
@@ -556,6 +568,7 @@ function assertCreditsFit(credits: readonly AllocationCredit[], sides: Sides): v
       invalid('Validation failed', [
         {
           field: `creditsApplied.${index}.amount`,
+          code: VCH.LINE_AMOUNT,
           message: `Credit ${credit.docRefno} applies nothing. Leave it out.`,
         },
       ]);
@@ -564,6 +577,7 @@ function assertCreditsFit(credits: readonly AllocationCredit[], sides: Sides): v
       conflict(`Credit moved while this ${doc} was being entered`, [
         {
           field: `creditsApplied.${index}.amount`,
+          code: ACC.CREDIT_MOVED,
           message:
             `Credit ${credit.docRefno} has ${money(credit.pendingAmount).toFixed(2)} left, but this ` +
             `${doc} applies ${money(credit.amount).toFixed(2)} of it`,
@@ -616,6 +630,7 @@ function assertIdentity(input: AllocationInput, sides: Sides): void {
     invalid(`The ${doc} does not balance`, [
       {
         field: 'onAccount',
+        code: VCH.UNBALANCED,
         message:
           `${sides.moved} ${moneyMoved.toFixed(2)} + deductions ${deductions.toFixed(2)} + credits ` +
           `${credits.toFixed(2)} = ${left.toFixed(2)}, but allocated ${allocated.toFixed(2)} + ` +
@@ -636,6 +651,7 @@ function assertIdentity(input: AllocationInput, sides: Sides): void {
     invalid('Validation failed', [
       {
         field: 'otherLines',
+        code: ACC.OTHER_LINE_UNFUNDED,
         message:
           `Other ${sides.direction === 'OUT' ? 'charges' : 'income'} of ${extras.toFixed(2)} ` +
           `needs money that has ${sides.direction === 'OUT' ? 'left' : 'arrived'}, and only ` +
@@ -695,6 +711,7 @@ function reserveDeductions(
       invalid('Validation failed', [
         {
           field: 'otherLineBills',
+          code: ACC.INVALID,
           message:
             `Line ${lineNo} is pinned to a bill, but it is not a deduction that settles one. ` +
             `Only a ${sides.deduction} other-ledger line with settlesBill can be pinned.`,
@@ -706,6 +723,7 @@ function reserveDeductions(
       invalid('Validation failed', [
         {
           field: 'otherLineBills',
+          code: ACC.INVALID,
           message:
             `Line ${lineNo} is ${money(line.amount).toFixed(2)} but its pins add up to ` +
             `${pinnedTotal.toFixed(2)}. Pin all of a line or none of it.`,
@@ -719,6 +737,7 @@ function reserveDeductions(
         invalid('Validation failed', [
           {
             field: 'otherLineBills',
+            code: ACC.INVALID,
             message: `Line ${lineNo} is pinned to a bill this document does not allocate against`,
           },
         ]);
@@ -790,6 +809,7 @@ function takeFromBill(
     invalid('Validation failed', [
       {
         field,
+        code: VCH.BILL_OVERSPENT,
         message:
           `Bill ${bills[index].docRefno} has room for ${capacity[index].toFixed(2)} more, but ` +
           `${amount.toFixed(2)} was aimed at it. Raise the bill's amount or lower the line.`,
@@ -1036,6 +1056,7 @@ function addReductions(
         invalid('Validation failed', [
           {
             field: 'allocations.writeoffApprovedBy',
+            code: ACC.WRITEOFF_APPROVER,
             message: `Writing off ${writeoff.toFixed(2)} on ${bill.docRefno} needs an approver`,
           },
         ]);
@@ -1129,6 +1150,7 @@ function collectOnAccount(
       invalid('Validation failed', [
         {
           field: 'creditsApplied',
+          code: ACC.CREDIT_OVERSPENT,
           message:
             `${source.credit?.docRefno ?? 'A credit'} has ${source.remaining.toFixed(2)} left over. ` +
             'A credit may only be applied to a bill — it cannot be held on account again. ' +

@@ -16,6 +16,7 @@ import type {
   StockReasonPickerQueryDto,
 } from './dto/stock-reason.dto';
 import { BUCKET_MOVE_KIND, STOCK_ADJUSTMENT_RULES, type StockAdjustmentKind } from './stock-adjustment.rules';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 export interface StockReasonRow {
   srmId: string;
@@ -142,7 +143,7 @@ export class StockReasonsService {
     const rows = await this.list(companyId, true);
     const row = rows.find((r) => r.srmId === srmId);
     if (!row) {
-      throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${srmId} visible to this company.`);
+      throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${srmId} visible to this company.`, StockErrorCode.REASON_NOT_FOUND);
     }
     return row;
   }
@@ -183,7 +184,7 @@ export class StockReasonsService {
       `;
       if (!ledger) {
         throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Stock reason cannot be saved', [
-          { field: 'glLedgerId', message: `No ledger ${dto.glLedgerId}.` },
+          { field: 'glLedgerId', code: StockErrorCode.REASON_LEDGER_NOT_FOUND, message: `No ledger ${dto.glLedgerId}.` },
         ]);
       }
     }
@@ -197,19 +198,19 @@ export class StockReasonsService {
          WHERE r.srm_id = ${dto.srmId}::uuid AND r.srm_is_deleted = false
       `;
       if (!existing) {
-        throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${dto.srmId}.`);
+        throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${dto.srmId}.`, StockErrorCode.REASON_NOT_FOUND);
       }
       if (existing.srm_company_id === null) {
         throwStockConflict<StockErrorDetail, StockErrorResponse>('Shared reasons are read-only', [
-          { field: 'srmId', message: `${existing.srm_code} is shared with every company. To change it for this company, create the company's own row with the same code; it then hides the shared one.` },
+          { field: 'srmId', code: StockErrorCode.REASON_SHARED_READ_ONLY, message: `${existing.srm_code} is shared with every company. To change it for this company, create the company's own row with the same code; it then hides the shared one.` },
         ]);
       }
       if (existing.srm_company_id !== dto.companyId) {
-        throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${dto.srmId} for this company.`);
+        throwStockNotFound<StockErrorDetail, StockErrorResponse>('Stock reason not found', 'srmId', `No stock reason ${dto.srmId} for this company.`, StockErrorCode.REASON_NOT_FOUND);
       }
       if (existing.srm_code !== code && Number(existing.cited) > 0) {
         throwStockConflict<StockErrorDetail, StockErrorResponse>('Code is immutable once used', [
-          { field: 'code', message: `${existing.srm_code} is cited by ${Number(existing.cited)} ledger rows; its code cannot change. Deactivate it and create another.` },
+          { field: 'code', code: StockErrorCode.REASON_CODE_LOCKED, message: `${existing.srm_code} is cited by ${Number(existing.cited)} ledger rows; its code cannot change. Deactivate it and create another.` },
         ]);
       }
       await this.assertCodeFree(dto.companyId, code, dto.srmId);
@@ -244,7 +245,7 @@ export class StockReasonsService {
     const row = await this.getOne(dto.companyId, dto.srmId);
     if (row.isShared) {
       throwStockConflict<StockErrorDetail, StockErrorResponse>('Shared reasons are read-only', [
-        { field: 'srmId', message: `${row.code} is shared with every company and cannot be deactivated here. Create the company's own inactive row with the same code to hide it.` },
+        { field: 'srmId', code: StockErrorCode.REASON_SHARED_READ_ONLY, message: `${row.code} is shared with every company and cannot be deactivated here. Create the company's own inactive row with the same code to hide it.` },
       ]);
     }
     const now = new Date();
@@ -277,7 +278,7 @@ export class StockReasonsService {
     `;
     if (clash) {
       throwStockConflict<StockErrorDetail, StockErrorResponse>('Code already in use', [
-        { field: 'code', message: `This company already has a reason coded ${code}.` },
+        { field: 'code', code: StockErrorCode.REASON_CODE_TAKEN, message: `This company already has a reason coded ${code}.` },
       ]);
     }
   }

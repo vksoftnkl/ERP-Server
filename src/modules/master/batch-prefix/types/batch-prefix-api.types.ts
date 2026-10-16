@@ -4,7 +4,8 @@ import type {
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
 import type { ModuleListMeta } from 'src/common/types/module-list.types';
-export type BatchPrefixErrorDetail = ModuleApiErrorDetail;
+/** Every Batch Prefix refusal names its `code` (BATCH_PREFIX_ERROR, or VALIDATION_* from the filter). */
+export type BatchPrefixErrorDetail = ModuleApiErrorDetail & { code: string };
 export type BatchPrefixErrorResponse = ModuleApiErrorResponse<BatchPrefixErrorDetail>;
 export type BatchPrefixSuccessResponse<
   T,

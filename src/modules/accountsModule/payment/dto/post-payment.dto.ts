@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, ValidateNested } from 'class-validator';
-import { RequiredNumber, UpperMaxString } from 'src/common/dto/dtoDecorators';
+import { NullableUuid, RequiredNumber, UpperMaxString } from 'src/common/dto/dtoDecorators';
 import {
   PostReceiptAllocationDto,
   PostReceiptCreditDto,
@@ -66,6 +66,17 @@ export class PostPaymentDto extends PaymentKeysDto {
   })
   @RequiredNumber(0)
   onAccount!: number;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Notes 124 §5 — an APPROVED CASH_PAYMENT request for this voucher (/till/approvals/request with ' +
+      'srcDocType PAYMENT and this voucher id), when till.approval_gate REFUSE answered 428 ' +
+      'TILL_APPROVAL_REQUIRED. Taken by the post; a wrong one → 422 TILL_APPROVAL_INVALID.',
+  })
+  @NullableUuid()
+  approvalId?: string | null;
 }
 
 export class CancelPaymentDto extends PaymentKeysDto {

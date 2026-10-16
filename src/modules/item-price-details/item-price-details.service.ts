@@ -12,6 +12,7 @@ import {
   ItemPriceDetailErrorResponse,
   ItemPriceDetailTaxPayload,
 } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
+import { ItemPriceDetailErrorCode } from 'src/modules/Inventory/item-price-details/types/item-price-detail-error-codes';
 import { ItemPayload } from 'src/modules/Inventory/items-master/types/item-api.types';
 import { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { ItemUnitConversionPayload } from 'src/modules/Inventory/item-unit-conversion/types/item-unit-conversion-api.types';
@@ -265,6 +266,7 @@ export class ItemPriceDetailsService {
       this.buildErrorResponse('Item not found', [
         {
           field: 'item_id',
+          code: ItemPriceDetailErrorCode.ITEM_NOT_FOUND,
           message: `No active item found with id ${itemId}`,
         },
       ]),

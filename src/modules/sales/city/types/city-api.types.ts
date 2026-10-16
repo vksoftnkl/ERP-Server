@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as CityErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as CityErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { CityErrorCode } from './city-error-codes';
+
+/** Notes 119: every refusal names its code — see city-error-codes.ts. */
+export interface CityErrorDetail extends SalesErrorDetail {
+  code: CityErrorCode;
+}
+export type CityErrorResponse = SalesErrorResponse<CityErrorDetail>;
 export type { SalesSuccessResponse as CitySuccessResponse } from 'src/common/types/module-api.types';
 export interface CityPayload {
   ctmId: string;

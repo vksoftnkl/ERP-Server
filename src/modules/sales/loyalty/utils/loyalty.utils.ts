@@ -24,6 +24,7 @@ import {
   PromotionLoyaltyPointsErrorDetail,
   PromotionLoyaltyPointsErrorResponse,
 } from '../types/promotion-loyalty-points-api.types';
+import { LoyaltyErrorCode } from '../types/loyalty-error-codes';
 
 export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -190,8 +191,8 @@ export function throwConflict(message: string, errors: PromotionLoyaltyPointsErr
   );
 }
 
-export function fieldError(field: string, message: string): never {
-  throwBadRequest('Validation failed', [{ field, message }]);
+export function fieldError(field: string, message: string, code: LoyaltyErrorCode): never {
+  throwBadRequest('Validation failed', [{ field, message, code }]);
 }
 
 // ─── Format helpers ───────────────────────────────────────────────────────────
@@ -244,14 +245,14 @@ export function resolveActorUuid(...candidates: Array<string | null | undefined>
 
 export function requireString(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    fieldError(field, `${field} is required`);
+    fieldError(field, `${field} is required`, LoyaltyErrorCode.FIELD_REQUIRED);
   }
   return value.trim();
 }
 
 export function requireUuid(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
-    fieldError(field, `${field} must be a valid uuid`);
+    fieldError(field, `${field} must be a valid uuid`, LoyaltyErrorCode.INVALID_UUID);
   }
   return value;
 }
@@ -272,10 +273,18 @@ export function requireNumber(
   maxValue?: number,
 ): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minValue) {
-    fieldError(field, `${field} must be a number greater than or equal to ${minValue}`);
+    fieldError(
+      field,
+      `${field} must be a number greater than or equal to ${minValue}`,
+      LoyaltyErrorCode.NUMBER_BELOW_MINIMUM,
+    );
   }
   if (maxValue !== undefined && value > maxValue) {
-    fieldError(field, `${field} must be less than or equal to ${maxValue}`);
+    fieldError(
+      field,
+      `${field} must be less than or equal to ${maxValue}`,
+      LoyaltyErrorCode.NUMBER_ABOVE_MAXIMUM,
+    );
   }
   return value;
 }
@@ -287,7 +296,7 @@ export function requireInteger(
   maxValue?: number,
 ): number {
   if (!Number.isInteger(value)) {
-    fieldError(field, `${field} must be an integer`);
+    fieldError(field, `${field} must be an integer`, LoyaltyErrorCode.NOT_WHOLE_NUMBER);
   }
   return requireNumber(value as number, field, minValue, maxValue);
 }
@@ -295,11 +304,11 @@ export function requireInteger(
 export function parseDateOnly(value: string | undefined | null, field: string): Date {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   if (!trimmed) {
-    fieldError(field, `${field} is required`);
+    fieldError(field, `${field} is required`, LoyaltyErrorCode.FIELD_REQUIRED);
   }
   const parsed = new Date(`${trimmed.slice(0, 10)}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) {
-    fieldError(field, `${field} must be a valid date (YYYY-MM-DD)`);
+    fieldError(field, `${field} must be a valid date (YYYY-MM-DD)`, LoyaltyErrorCode.INVALID_DATE);
   }
   return parsed;
 }
@@ -315,7 +324,11 @@ export function parseNullableDateOnly(
 export function parseTimeToUtcDate(value: string, field: string): Date {
   const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim());
   if (!match) {
-    fieldError(field, `${field} must be a valid time (HH:mm or HH:mm:ss)`);
+    fieldError(
+      field,
+      `${field} must be a valid time (HH:mm or HH:mm:ss)`,
+      LoyaltyErrorCode.INVALID_TIME,
+    );
   }
   const [, hours, minutes, seconds] = match;
   return new Date(Date.UTC(1970, 0, 1, Number(hours), Number(minutes), Number(seconds ?? 0)));
@@ -570,7 +583,11 @@ export function handleLoyaltyWriteError(error: unknown): void {
   }
   if (error.code === 'P2002') {
     throwConflict('Duplicate loyalty data is not allowed', [
-      { field: 'request', message: 'A record with the same unique values already exists' },
+      {
+        field: 'request',
+        message: 'A record with the same unique values already exists',
+        code: LoyaltyErrorCode.DUPLICATE_RECORD,
+      },
     ]);
     return;
   }
@@ -579,6 +596,7 @@ export function handleLoyaltyWriteError(error: unknown): void {
       {
         field: resolveForeignKeyField(error),
         message: 'Referenced master record was not found or is inactive',
+        code: LoyaltyErrorCode.REFERENCE_NOT_FOUND,
       },
     ]);
     return;
@@ -587,7 +605,11 @@ export function handleLoyaltyWriteError(error: unknown): void {
   const constraint = typeof error.meta?.constraint === 'string' ? error.meta.constraint : undefined;
   if (constraint?.startsWith('ck_ls')) {
     throwBadRequest('Validation failed', [
-      { field: 'request', message: `Database constraint ${constraint} rejected this row` },
+      {
+        field: 'request',
+        message: `Database constraint ${constraint} rejected this row`,
+        code: LoyaltyErrorCode.CHECK_REJECTED,
+      },
     ]);
   }
 }

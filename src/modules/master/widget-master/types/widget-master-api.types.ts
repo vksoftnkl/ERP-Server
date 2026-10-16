@@ -4,7 +4,8 @@ import type {
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
 
-export type WidgetMasterErrorDetail = ModuleApiErrorDetail;
+/** Every Widget refusal names its `code` (WIDGET_ERROR, or VALIDATION_* from the filter). */
+export type WidgetMasterErrorDetail = ModuleApiErrorDetail & { code: string };
 export type WidgetMasterErrorResponse = ModuleApiErrorResponse<WidgetMasterErrorDetail>;
 export type WidgetMasterSuccessResponse<
   T,

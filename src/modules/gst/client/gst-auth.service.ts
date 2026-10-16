@@ -205,6 +205,7 @@ export class GstAuthService {
         'GST credential not found',
         'gccId',
         `No GST credential found with id ${gccId}`,
+        GST_CODES.NOT_FOUND,
       );
     }
     if (credential.gccIsDeleted || credential.provider.gpvIsDeleted) {

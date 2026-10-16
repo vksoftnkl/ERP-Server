@@ -17,6 +17,7 @@ import {
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { SaaAddrType } from './types/ledger-shipping-address-enum';
+import { LedgerShippingAddressErrorCode } from './types/ledger-shipping-address-error-codes';
 import {
   DEFAULT_COUNTRY_CODE,
   assertSaaAddrType,
@@ -60,6 +61,7 @@ export class LedgerShippingAddressService {
         'Ledger shipping address not found',
         'saaId',
         `No active ledger shipping address found with id ${saaId}`,
+        LedgerShippingAddressErrorCode.NOT_FOUND,
       );
     }
 
@@ -105,6 +107,7 @@ export class LedgerShippingAddressService {
           'Ledger shipping address not found',
           'saaId',
           `No active ledger shipping address found with id ${saaId}`,
+          LedgerShippingAddressErrorCode.NOT_FOUND,
         );
       }
 
@@ -127,6 +130,7 @@ export class LedgerShippingAddressService {
           'Ledger shipping address not found',
           'saaId',
           `No active ledger shipping address found with id ${saaId}`,
+          LedgerShippingAddressErrorCode.NOT_FOUND,
         );
       }
 
@@ -238,6 +242,7 @@ export class LedgerShippingAddressService {
           {
             field: 'saaId',
             message: 'Duplicate ledger shipping address unique value is not allowed',
+            code: LedgerShippingAddressErrorCode.DUPLICATE,
           },
         ],
       );
@@ -264,6 +269,7 @@ export class LedgerShippingAddressService {
             'Ledger shipping address not found',
             'saaId',
             `No active ledger shipping address found with id ${saaId}`,
+            LedgerShippingAddressErrorCode.NOT_FOUND,
           );
         }
 
@@ -346,6 +352,7 @@ export class LedgerShippingAddressService {
           {
             field: 'saaId',
             message: 'Duplicate ledger shipping address unique value is not allowed',
+            code: LedgerShippingAddressErrorCode.DUPLICATE,
           },
         ],
       );
@@ -372,6 +379,7 @@ export class LedgerShippingAddressService {
         {
           field: 'saaLedgerId',
           message: `No active ledger found with id ${ledgerId}`,
+          code: LedgerShippingAddressErrorCode.LEDGER_NOT_FOUND,
         },
       ]);
     }
@@ -396,6 +404,7 @@ export class LedgerShippingAddressService {
         {
           field: 'saaCompanyId',
           message: `No active company found with id ${companyId}`,
+          code: LedgerShippingAddressErrorCode.COMPANY_NOT_FOUND,
         },
       ]);
     }
@@ -420,6 +429,7 @@ export class LedgerShippingAddressService {
         {
           field: 'saaBranchId',
           message: `No active branch found with id ${branchId}`,
+          code: LedgerShippingAddressErrorCode.BRANCH_NOT_FOUND,
         },
       ]);
     }

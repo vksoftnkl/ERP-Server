@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiForbiddenResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -20,7 +22,6 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { Public } from '../../../common/decorators/public.decorator';
 import {
   UserAdminErrorResponseDto,
   UserAdminSuccessDeleteDto,
@@ -32,8 +33,15 @@ import { UserAdministrationService } from './user-administration.service';
 import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
-@Public()
+// Notes 125 §3: no longer @Public — the SUPER ADMIN guard has to know who is calling, and an
+// anonymous caller could create users. Both clients send the login token on these routes.
 @ApiTags('User Administration')
+@ApiBearerAuth('access-token')
+@ApiForbiddenResponse({
+  type: UserAdminErrorResponseDto,
+  description:
+    'USER_ROLE_RESERVED — only a SUPER ADMIN makes a user SUPER ADMIN, or changes / deletes one',
+})
 @CacheTTL(1)
 @Controller('user-administration')
 @UseFilters(UserAdministrationExceptionFilter)

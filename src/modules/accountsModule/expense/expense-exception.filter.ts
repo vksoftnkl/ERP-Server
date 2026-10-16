@@ -12,8 +12,8 @@ import { AccountsExceptionFilter } from 'src/common/utils/module-exception-filte
  */
 @Catch()
 export class ExpenseExceptionFilter extends AccountsExceptionFilter<
-  ModuleApiErrorDetail & { code?: string },
-  ModuleApiErrorResponse<ModuleApiErrorDetail & { code?: string }>
+  ModuleApiErrorDetail & { code: string },
+  ModuleApiErrorResponse<ModuleApiErrorDetail & { code: string }>
 > {
   constructor() {
     super(

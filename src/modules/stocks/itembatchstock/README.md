@@ -7,7 +7,7 @@ branch, and godown scope.
 - **Base route:** `item-batch-stock` (API-versioned via `API_VERSION`)
 - **Swagger tag:** `Item Batch Stock`
 - **Auth:** Bearer `access-token` (required)
-- **Response cache:** `@CacheTTL(60)` (60 s)
+- **Response cache:** `@CacheTTL(1)` (1 s)
 - **Primary table:** `item_batch_stock` (`inventory` schema) — PK `ibsId`
 - **Joined table:** `item_batch_master` — PK `btmId`, FK `ibsBatchId → btmId` (included as `batch`)
 - **Also read:** `item_price_master` — PK `ipmId`, for unit-factor conversion (not written)

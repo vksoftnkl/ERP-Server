@@ -235,6 +235,9 @@ afterAll(async () => {
         SELECT tct_id FROM accounts.till_count WHERE tct_branch_id = ${branchId}::uuid)`;
     await prisma.$executeRaw`DELETE FROM accounts.till_count WHERE tct_branch_id = ${branchId}::uuid`;
     await prisma.$executeRaw`DELETE FROM accounts.till_cash_movement WHERE tcm_branch_id = ${branchId}::uuid`;
+    // notes 126: the till's transfers carry the server's tender rows (td_src_doc_type 'VOUCHER'),
+    // which name the branch — the temporary branch is not deleted while they stand
+    await prisma.$executeRaw`DELETE FROM accounts.acc_tender_detail WHERE td_branch_id = ${branchId}::uuid`;
     const vouchers = await prisma.$queryRaw<{ id: string; y: string }[]>`
       SELECT avh_voucher_id::text AS id, avh_acc_year AS y FROM accounts.acc_voucher_header
        WHERE avh_branch_id = ${branchId}::uuid`;

@@ -36,7 +36,7 @@ headline row the item always had; one set is "stock of this item at THIS MRP sel
 | File | Purpose |
 | --- | --- |
 | [items-price-master.module.ts](items-price-master.module.ts) | Module wiring — imports `AuditLogModule`, **exports the service** for reuse |
-| [items-price-master.controller.ts](items-price-master.controller.ts) | HTTP routes + Swagger docs; class-level `@CacheTTL(60)` |
+| [items-price-master.controller.ts](items-price-master.controller.ts) | HTTP routes + Swagger docs; class-level `@CacheTTL(1)` |
 | [items-price-master.service.ts](items-price-master.service.ts) | Business logic, persistence, unit-conversion sync, audit logging |
 | [price-bucket.service.ts](price-bucket.service.ts) | Derives a row's bucket from the stock track policy; re-keys an item's rows |
 | [price-resolver.ts](price-resolver.ts) | The one rule for which row prices a line (pure; the till can reuse it) |

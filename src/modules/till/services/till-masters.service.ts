@@ -52,6 +52,13 @@ const SCREEN = 'Till Masters';
  * shared by every company. A company does not edit them; it adds its own row,
  * which wins (approval rules: branch > company > shipped).
  */
+/** Notes 119 — the code assertOwnRow's 404 carries, by the master it guards. */
+const OWN_ROW_NOT_FOUND = {
+  reason: TillErrorCode.REASON_NOT_FOUND,
+  denomination: TillErrorCode.DENOMINATION_NOT_FOUND,
+  'approval rule': TillErrorCode.APPROVAL_RULE_NOT_FOUND,
+} as const;
+
 @Injectable()
 export class TillMastersService {
   constructor(
@@ -72,18 +79,26 @@ export class TillMastersService {
         ? await tx.tillCounter.findFirst({ where: { tcnId: dto.tcnId, tcnIsDeleted: false } })
         : null;
       if (dto.tcnId && !existing) {
-        throwTillNotFound('Counter', 'tcnId', dto.tcnId);
+        throwTillNotFound(TillErrorCode.COUNTER_NOT_FOUND, 'Counter', 'tcnId', dto.tcnId);
       }
       if (
         existing &&
         (existing.tcnCompanyId !== dto.tcnCompanyId || existing.tcnBranchId !== dto.tcnBranchId)
       ) {
-        throwTillBadRequest('A counter stays in the branch it was created in', 'tcnBranchId');
+        throwTillBadRequest(
+          TillErrorCode.MASTER_SCOPE_FIXED,
+          'A counter stays in the branch it was created in',
+          'tcnBranchId',
+        );
       }
       const code = dto.tcnCode.trim().toUpperCase();
       const kind = (dto.tcnKind ?? existing?.tcnKind ?? 'POS').toUpperCase();
       if (!(TILL_COUNTER_KINDS as readonly string[]).includes(kind)) {
-        throwTillBadRequest(`tcnKind must be one of ${TILL_COUNTER_KINDS.join(', ')}`, 'tcnKind');
+        throwTillBadRequest(
+          TillErrorCode.VALUE_NOT_ALLOWED,
+          `tcnKind must be one of ${TILL_COUNTER_KINDS.join(', ')}`,
+          'tcnKind',
+        );
       }
       const drawerMode = (
         dto.tcnDrawerMode ??
@@ -91,12 +106,20 @@ export class TillMastersService {
         TillDrawerMode.DRAWER
       ).toUpperCase();
       if (!(Object.values(TillDrawerMode) as string[]).includes(drawerMode)) {
-        throwTillBadRequest('tcnDrawerMode must be DRAWER, TRAY or NONE', 'tcnDrawerMode');
+        throwTillBadRequest(
+          TillErrorCode.VALUE_NOT_ALLOWED,
+          'tcnDrawerMode must be DRAWER, TRAY or NONE',
+          'tcnDrawerMode',
+        );
       }
       const alert = dec(dto.tcnCashAlertLimit ?? num(existing?.tcnCashAlertLimit));
       const block = dec(dto.tcnCashBlockLimit ?? num(existing?.tcnCashBlockLimit));
       if (!block.isZero() && !alert.isZero() && block.lessThan(alert)) {
-        throwTillBadRequest('The block limit cannot be below the alert limit', 'tcnCashBlockLimit');
+        throwTillBadRequest(
+          TillErrorCode.BLOCK_BELOW_ALERT,
+          'The block limit cannot be below the alert limit',
+          'tcnCashBlockLimit',
+        );
       }
 
       const clash = await tx.$queryRaw<{ tcn_id: string }[]>`
@@ -105,7 +128,11 @@ export class TillMastersService {
            AND upper(tcn_code) = ${code} AND tcn_is_deleted = false
            AND tcn_id <> COALESCE(${dto.tcnId ?? null}::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`;
       if (clash.length > 0) {
-        throwTillBadRequest(`Counter code ${code} is already used in this branch`, 'tcnCode');
+        throwTillBadRequest(
+          TillErrorCode.MASTER_DUPLICATE,
+          `Counter code ${code} is already used in this branch`,
+          'tcnCode',
+        );
       }
 
       const deviceId =
@@ -121,7 +148,11 @@ export class TillMastersService {
           select: { tcnCode: true },
         });
         if (other) {
-          throwTillBadRequest(`That device already drives counter ${other.tcnCode}`, 'tcnDeviceId');
+          throwTillBadRequest(
+            TillErrorCode.DEVICE_ALREADY_LINKED,
+            `That device already drives counter ${other.tcnCode}`,
+            'tcnDeviceId',
+          );
         }
       }
       if (existing && deviceId !== existing.tcnDeviceId) {
@@ -144,7 +175,11 @@ export class TillMastersService {
           select: { tsfId: true },
         });
         if (!safe) {
-          throwTillBadRequest('tcnSafeId must be a safe of the same branch', 'tcnSafeId');
+          throwTillBadRequest(
+            TillErrorCode.SAFE_OTHER_BRANCH,
+            'tcnSafeId must be a safe of the same branch',
+            'tcnSafeId',
+          );
         }
       }
 
@@ -195,7 +230,7 @@ export class TillMastersService {
       where: { tcnId, tcnCompanyId: companyId, tcnIsDeleted: false },
     });
     if (!row) {
-      throwTillNotFound('Counter', 'tcnId', tcnId);
+      throwTillNotFound(TillErrorCode.COUNTER_NOT_FOUND, 'Counter', 'tcnId', tcnId);
     }
     return this.counterPayload(this.prisma, row);
   }
@@ -207,7 +242,7 @@ export class TillMastersService {
         where: { tcnId, tcnCompanyId: companyId, tcnIsDeleted: false },
       });
       if (!row) {
-        throwTillNotFound('Counter', 'tcnId', tcnId);
+        throwTillNotFound(TillErrorCode.COUNTER_NOT_FOUND, 'Counter', 'tcnId', tcnId);
       }
       await this.assertNoLiveSession(tx, tcnId, 'tcnId', 'close it first');
       // Soft delete, and the device let go: ux_tcn_device ignores deleted rows,
@@ -246,13 +281,17 @@ export class TillMastersService {
         ? await tx.tillSafe.findFirst({ where: { tsfId: dto.tsfId, tsfIsDeleted: false } })
         : null;
       if (dto.tsfId && !existing) {
-        throwTillNotFound('Safe', 'tsfId', dto.tsfId);
+        throwTillNotFound(TillErrorCode.SAFE_NOT_FOUND, 'Safe', 'tsfId', dto.tsfId);
       }
       if (
         existing &&
         (existing.tsfCompanyId !== dto.tsfCompanyId || existing.tsfBranchId !== dto.tsfBranchId)
       ) {
-        throwTillBadRequest('A safe stays in the branch it was created in', 'tsfBranchId');
+        throwTillBadRequest(
+          TillErrorCode.MASTER_SCOPE_FIXED,
+          'A safe stays in the branch it was created in',
+          'tsfBranchId',
+        );
       }
       const code = dto.tsfCode.trim().toUpperCase();
       const clash = await tx.$queryRaw<{ tsf_id: string }[]>`
@@ -261,7 +300,11 @@ export class TillMastersService {
            AND upper(tsf_code) = ${code} AND tsf_is_deleted = false
            AND tsf_id <> COALESCE(${dto.tsfId ?? null}::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`;
       if (clash.length > 0) {
-        throwTillBadRequest(`Safe code ${code} is already used in this branch`, 'tsfCode');
+        throwTillBadRequest(
+          TillErrorCode.MASTER_DUPLICATE,
+          `Safe code ${code} is already used in this branch`,
+          'tsfCode',
+        );
       }
       // The ledger: the one named, else the SAFE_CASH role's (47 §10.1).
       const ledgerId =
@@ -326,7 +369,7 @@ export class TillMastersService {
       where: { tsfId, tsfCompanyId: companyId, tsfIsDeleted: false },
     });
     if (!row) {
-      throwTillNotFound('Safe', 'tsfId', tsfId);
+      throwTillNotFound(TillErrorCode.SAFE_NOT_FOUND, 'Safe', 'tsfId', tsfId);
     }
     return this.safePayload(this.prisma, row);
   }
@@ -338,7 +381,7 @@ export class TillMastersService {
         where: { tsfId, tsfCompanyId: companyId, tsfIsDeleted: false },
       });
       if (!row) {
-        throwTillNotFound('Safe', 'tsfId', tsfId);
+        throwTillNotFound(TillErrorCode.SAFE_NOT_FOUND, 'Safe', 'tsfId', tsfId);
       }
       const counters = await tx.tillCounter.count({
         where: { tcnSafeId: tsfId, tcnIsDeleted: false },
@@ -384,12 +427,13 @@ export class TillMastersService {
         ? await tx.tillReason.findFirst({ where: { trsId: dto.trsId, trsIsDeleted: false } })
         : null;
       if (dto.trsId && !existing) {
-        throwTillNotFound('Till reason', 'trsId', dto.trsId);
+        throwTillNotFound(TillErrorCode.REASON_NOT_FOUND, 'Till reason', 'trsId', dto.trsId);
       }
       this.assertOwnRow(existing?.trsCompanyId, dto.trsCompanyId, 'trsId', 'reason');
       const category = dto.trsCategory.trim().toUpperCase();
       if (!(TILL_REASON_CATEGORIES as readonly string[]).includes(category)) {
         throwTillBadRequest(
+          TillErrorCode.VALUE_NOT_ALLOWED,
           `trsCategory must be one of ${TILL_REASON_CATEGORIES.join(', ')}`,
           'trsCategory',
         );
@@ -433,6 +477,7 @@ export class TillMastersService {
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           throwTillBadRequest(
+            TillErrorCode.MASTER_DUPLICATE,
             `Reason ${category} / ${code} already exists for this company`,
             'trsCode',
           );
@@ -451,7 +496,7 @@ export class TillMastersService {
       },
     });
     if (!row) {
-      throwTillNotFound('Till reason', 'trsId', trsId);
+      throwTillNotFound(TillErrorCode.REASON_NOT_FOUND, 'Till reason', 'trsId', trsId);
     }
     return this.reasonPayload(this.prisma, row);
   }
@@ -461,7 +506,7 @@ export class TillMastersService {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.tillReason.findFirst({ where: { trsId, trsIsDeleted: false } });
       if (!row) {
-        throwTillNotFound('Till reason', 'trsId', trsId);
+        throwTillNotFound(TillErrorCode.REASON_NOT_FOUND, 'Till reason', 'trsId', trsId);
       }
       this.assertOwnRow(row.trsCompanyId, companyId, 'trsId', 'reason');
       await tx.tillReason.update({
@@ -493,11 +538,15 @@ export class TillMastersService {
         ? await tx.tillDenomination.findFirst({ where: { tdnId: dto.tdnId, tdnIsDeleted: false } })
         : null;
       if (dto.tdnId && !existing) {
-        throwTillNotFound('Denomination', 'tdnId', dto.tdnId);
+        throwTillNotFound(TillErrorCode.DENOMINATION_NOT_FOUND, 'Denomination', 'tdnId', dto.tdnId);
       }
       this.assertOwnRow(existing?.tdnCompanyId, dto.tdnCompanyId, 'tdnId', 'denomination');
       if (dto.tdnValue <= 0) {
-        throwTillBadRequest('tdnValue must be above zero', 'tdnValue');
+        throwTillBadRequest(
+          TillErrorCode.DENOMINATION_VALUE_INVALID,
+          'tdnValue must be above zero',
+          'tdnValue',
+        );
       }
       const data = {
         tdnCurrency: (dto.tdnCurrency ?? existing?.tdnCurrency ?? 'INR').toUpperCase(),
@@ -536,7 +585,11 @@ export class TillMastersService {
         return payload;
       } catch (error) {
         if (isUniqueConstraintError(error)) {
-          throwTillBadRequest('That value and kind already exist for this company', 'tdnValue');
+          throwTillBadRequest(
+            TillErrorCode.MASTER_DUPLICATE,
+            'That value and kind already exist for this company',
+            'tdnValue',
+          );
         }
         throw error;
       }
@@ -552,7 +605,7 @@ export class TillMastersService {
       },
     });
     if (!row) {
-      throwTillNotFound('Denomination', 'tdnId', tdnId);
+      throwTillNotFound(TillErrorCode.DENOMINATION_NOT_FOUND, 'Denomination', 'tdnId', tdnId);
     }
     return this.denominationPayload(row);
   }
@@ -586,7 +639,7 @@ export class TillMastersService {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.tillDenomination.findFirst({ where: { tdnId, tdnIsDeleted: false } });
       if (!row) {
-        throwTillNotFound('Denomination', 'tdnId', tdnId);
+        throwTillNotFound(TillErrorCode.DENOMINATION_NOT_FOUND, 'Denomination', 'tdnId', tdnId);
       }
       this.assertOwnRow(row.tdnCompanyId, companyId, 'tdnId', 'denomination');
       await tx.tillDenomination.update({
@@ -618,11 +671,20 @@ export class TillMastersService {
         ? await tx.tillApprovalRule.findFirst({ where: { tarId: dto.tarId, tarIsDeleted: false } })
         : null;
       if (dto.tarId && !existing) {
-        throwTillNotFound('Approval rule', 'tarId', dto.tarId);
+        throwTillNotFound(
+          TillErrorCode.APPROVAL_RULE_NOT_FOUND,
+          'Approval rule',
+          'tarId',
+          dto.tarId,
+        );
       }
       this.assertOwnRow(existing?.tarCompanyId, dto.tarCompanyId, 'tarId', 'approval rule');
       if (existing && existing.tarBranchId !== (dto.tarBranchId ?? null)) {
-        throwTillBadRequest('A rule keeps its scope; add a branch rule instead', 'tarBranchId');
+        throwTillBadRequest(
+          TillErrorCode.MASTER_SCOPE_FIXED,
+          'A rule keeps its scope; add a branch rule instead',
+          'tarBranchId',
+        );
       }
       const event = dto.tarEventCode.trim().toUpperCase();
       const mode = dto.tarMode.trim().toUpperCase();
@@ -680,6 +742,7 @@ export class TillMastersService {
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           throwTillBadRequest(
+            TillErrorCode.MASTER_DUPLICATE,
             `A ${event} rule already starts on that date at this scope`,
             'tarEffectiveFrom',
           );
@@ -698,7 +761,7 @@ export class TillMastersService {
       },
     });
     if (!row) {
-      throwTillNotFound('Approval rule', 'tarId', tarId);
+      throwTillNotFound(TillErrorCode.APPROVAL_RULE_NOT_FOUND, 'Approval rule', 'tarId', tarId);
     }
     return this.rulePayload(row);
   }
@@ -708,7 +771,7 @@ export class TillMastersService {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.tillApprovalRule.findFirst({ where: { tarId, tarIsDeleted: false } });
       if (!row) {
-        throwTillNotFound('Approval rule', 'tarId', tarId);
+        throwTillNotFound(TillErrorCode.APPROVAL_RULE_NOT_FOUND, 'Approval rule', 'tarId', tarId);
       }
       this.assertOwnRow(row.tarCompanyId, companyId, 'tarId', 'approval rule');
       await tx.tillApprovalRule.update({
@@ -742,17 +805,30 @@ export class TillMastersService {
           })
         : null;
       if (dto.taaId && !existing) {
-        throwTillNotFound('Approval authority', 'taaId', dto.taaId);
+        throwTillNotFound(
+          TillErrorCode.APPROVAL_AUTHORITY_NOT_FOUND,
+          'Approval authority',
+          'taaId',
+          dto.taaId,
+        );
       }
       if (dto.taaBranchId && !dto.taaCompanyId) {
-        throwTillBadRequest('A branch grant names its company', 'taaCompanyId');
+        throwTillBadRequest(
+          TillErrorCode.GRANT_COMPANY_REQUIRED,
+          'A branch grant names its company',
+          'taaCompanyId',
+        );
       }
       const user = await tx.userMaster.findFirst({
         where: { usrId: dto.taaUserId, usrIsDeleted: false },
         select: { usrId: true },
       });
       if (!user) {
-        throwTillBadRequest('taaUserId must be an existing user', 'taaUserId');
+        throwTillBadRequest(
+          TillErrorCode.USER_UNKNOWN,
+          'taaUserId must be an existing user',
+          'taaUserId',
+        );
       }
       const role = dto.taaRole.trim().toUpperCase();
       this.assertIn(role, TILL_APPROVER_ROLES, 'taaRole');
@@ -768,7 +844,11 @@ export class TillMastersService {
             : null
           : dto.taaValidTo;
       if (validFrom && validTo && validTo < validFrom) {
-        throwTillBadRequest('taaValidTo cannot be before taaValidFrom', 'taaValidTo');
+        throwTillBadRequest(
+          TillErrorCode.VALID_TO_BEFORE_FROM,
+          'taaValidTo cannot be before taaValidFrom',
+          'taaValidTo',
+        );
       }
       const data = {
         taaUserId: dto.taaUserId,
@@ -819,7 +899,12 @@ export class TillMastersService {
       },
     });
     if (!row) {
-      throwTillNotFound('Approval authority', 'taaId', taaId);
+      throwTillNotFound(
+        TillErrorCode.APPROVAL_AUTHORITY_NOT_FOUND,
+        'Approval authority',
+        'taaId',
+        taaId,
+      );
     }
     return this.authorityPayload(this.prisma, row);
   }
@@ -835,7 +920,12 @@ export class TillMastersService {
         },
       });
       if (!row) {
-        throwTillNotFound('Approval authority', 'taaId', taaId);
+        throwTillNotFound(
+          TillErrorCode.APPROVAL_AUTHORITY_NOT_FOUND,
+          'Approval authority',
+          'taaId',
+          taaId,
+        );
       }
       await tx.tillApprovalAuthority.update({
         where: { taaId },
@@ -864,7 +954,7 @@ export class TillMastersService {
     rowCompanyId: string | null | undefined,
     companyId: string,
     field: string,
-    what: string,
+    what: keyof typeof OWN_ROW_NOT_FOUND,
   ): void {
     if (rowCompanyId === undefined) {
       return; // a new row
@@ -876,7 +966,7 @@ export class TillMastersService {
       );
     }
     if (rowCompanyId !== companyId) {
-      throwTillNotFound(what, field, 'in this company');
+      throwTillNotFound(OWN_ROW_NOT_FOUND[what], what, field, 'in this company');
     }
   }
 
@@ -886,7 +976,11 @@ export class TillMastersService {
 
   private assertIn(value: string, allowed: readonly string[], field: string): void {
     if (!allowed.includes(value)) {
-      throwTillBadRequest(`${field} must be one of ${allowed.join(', ')}`, field);
+      throwTillBadRequest(
+        TillErrorCode.VALUE_NOT_ALLOWED,
+        `${field} must be one of ${allowed.join(', ')}`,
+        field,
+      );
     }
   }
 
@@ -902,7 +996,11 @@ export class TillMastersService {
       select: { devDeviceType: true, devDeviceUid: true, devBranchId: true, devIsBlocked: true },
     });
     if (!device) {
-      throwTillBadRequest('tcnDeviceId must be a registered device', 'tcnDeviceId');
+      throwTillBadRequest(
+        TillErrorCode.COUNTER_DEVICE_UNREGISTERED,
+        'tcnDeviceId must be a registered device',
+        'tcnDeviceId',
+      );
     }
     const uid = device.devDeviceUid.trim().toUpperCase();
     if (
@@ -911,15 +1009,24 @@ export class TillMastersService {
       uid.startsWith('WEB-')
     ) {
       throwTillBadRequest(
+        TillErrorCode.COUNTER_DEVICE_WEB,
         'A web client cannot drive a counter: bind a Desktop or Mobile device',
         'tcnDeviceId',
       );
     }
     if (device.devIsBlocked) {
-      throwTillBadRequest('That device is blocked', 'tcnDeviceId');
+      throwTillBadRequest(
+        TillErrorCode.COUNTER_DEVICE_BLOCKED,
+        'That device is blocked',
+        'tcnDeviceId',
+      );
     }
     if (device.devBranchId && device.devBranchId !== branchId) {
-      throwTillBadRequest('That device is registered to another branch', 'tcnDeviceId');
+      throwTillBadRequest(
+        TillErrorCode.COUNTER_DEVICE_OTHER_BRANCH,
+        'That device is registered to another branch',
+        'tcnDeviceId',
+      );
     }
   }
 
@@ -938,7 +1045,11 @@ export class TillMastersService {
       select: { ledId: true },
     });
     if (!ledger) {
-      throwTillBadRequest(`${field} must be a ledger of this company`, field);
+      throwTillBadRequest(
+        TillErrorCode.LEDGER_NOT_IN_COMPANY,
+        `${field} must be a ledger of this company`,
+        field,
+      );
     }
   }
 

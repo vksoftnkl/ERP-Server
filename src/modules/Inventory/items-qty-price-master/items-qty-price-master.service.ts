@@ -14,6 +14,7 @@ import {
   ItemQtyPriceListMeta,
   ItemQtyPricePayload,
 } from './types/item-qty-price-api.types';
+import { ItemQtyPriceErrorCode } from './types/item-qty-price-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -245,6 +246,8 @@ export class ItemsQtyPriceMasterService {
       label: 'qty price slab',
       idField: 'iqp_id',
       restoreRoute: '/item-qty-prices/restore',
+      alreadyDeletedCode: ItemQtyPriceErrorCode.ALREADY_DELETED,
+      notDeletedCode: ItemQtyPriceErrorCode.NOT_DELETED,
     });
     const wasDeleted = existing.iqpIsDeleted;
     const nextDeleted = wantDeleted;
@@ -438,6 +441,7 @@ export class ItemsQtyPriceMasterService {
       throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
         {
           field: 'iqp_effective_to',
+          code: ItemQtyPriceErrorCode.DATE_RANGE_INVALID,
           message: 'iqp_effective_to must be greater than or equal to iqp_effective_from',
         },
       ]);
@@ -453,6 +457,7 @@ export class ItemsQtyPriceMasterService {
       throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
         {
           field: 'iqp_to_qty',
+          code: ItemQtyPriceErrorCode.QTY_RANGE_INVALID,
           message: 'iqp_to_qty must be greater than iqp_from_qty',
         },
       ]);
@@ -462,7 +467,11 @@ export class ItemsQtyPriceMasterService {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
       throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
-        { field: fieldName, message: `${fieldName} must be a valid date` },
+        {
+          field: fieldName,
+          code: ItemQtyPriceErrorCode.DATE_INVALID,
+          message: `${fieldName} must be a valid date`,
+        },
       ]);
     }
     return parsedDate;
@@ -480,7 +489,11 @@ export class ItemsQtyPriceMasterService {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
       throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
-        { field: fieldName, message: `${fieldName} must be a valid date` },
+        {
+          field: fieldName,
+          code: ItemQtyPriceErrorCode.DATE_INVALID,
+          message: `${fieldName} must be a valid date`,
+        },
       ]);
     }
     return parsedDate;
@@ -527,12 +540,17 @@ export class ItemsQtyPriceMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemQtyPriceErrorDetail>(error, 'Item qty price already exists', [
-      { field: 'iqp_item_id', message: 'Duplicate qty price slab is not allowed' },
+      {
+        field: 'iqp_item_id',
+        code: ItemQtyPriceErrorCode.DUPLICATE,
+        message: 'Duplicate qty price slab is not allowed',
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Invalid relation reference', [
         {
           field: 'iqp_item_id',
+          code: ItemQtyPriceErrorCode.REFERENCE_NOT_FOUND,
           message: 'Referenced item, unit, company, branch, or party does not exist',
         },
       ]);
@@ -543,6 +561,7 @@ export class ItemsQtyPriceMasterService {
       'Item qty price not found',
       'iqp_id',
       `No item qty price found with id ${iqpId}`,
+      ItemQtyPriceErrorCode.NOT_FOUND,
     );
   }
 }

@@ -84,6 +84,7 @@ export class GstProviderPartsService {
             {
               field: 'gpsRefreshMarginMinutes',
               message: `must be below gpsTokenTtlMinutes (${ttl}): renewing that early renews forever`,
+              code: GST_CODES.REFRESH_MARGIN_TOO_LONG,
             },
           ]);
         }
@@ -243,6 +244,7 @@ export class GstProviderPartsService {
             {
               field: successPath === null ? 'gpeSuccessPath' : 'gpeSuccessValue',
               message: 'gpeSuccessPath and gpeSuccessValue are set together, or neither',
+              code: GST_CODES.PAIR_INCOMPLETE,
             },
           ]);
         }
@@ -396,12 +398,14 @@ export class GstProviderPartsService {
             field: 'gfmDefaultValue',
             message:
               'a required field may not carry a default: it would hide the absence the flag catches',
+            code: GST_CODES.REQUIRED_FIELD_DEFAULT,
           });
         }
         if (transform === 'DATETIME_MASK' && formatMask === null) {
           errors.push({
             field: 'gfmFormatMask',
             message: 'DATETIME_MASK parses with gfmFormatMask; set it',
+            code: GST_CODES.FORMAT_MASK_REQUIRED,
           });
         }
         if (errors.length) {
@@ -536,6 +540,7 @@ export class GstProviderPartsService {
                 field,
                 message:
                   'treat-as SUCCESS completes the document with a value taken from the error: say where it is and what it becomes',
+                code: GST_CODES.SUCCESS_MAPPING_INCOMPLETE,
               })),
           );
         }
@@ -711,6 +716,7 @@ export class GstProviderPartsService {
       .map(([name]) => ({
         field: `gpeHeaders.${name}`,
         message: 'a header needs a name and a string value (a template such as "{gstin}")',
+        code: GST_CODES.HEADER_INVALID,
       }));
     if (errors.length) {
       this.support.badRequest(errors);

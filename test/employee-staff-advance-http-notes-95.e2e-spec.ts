@@ -155,8 +155,7 @@ describe('Notes 95 acceptance over HTTP (e2e, live DB, writes)', () => {
   });
 
   it('4 · usrPin "4321" → usrPinSet true and no hash; "" → false', async () => {
-    const created = await api()
-      .post(`${USERS}/create`)
+    const created = await auth(api().post(`${USERS}/create`))
       .send({
         usrLoginName: `ZT95-PIN-${stamp}`,
         usrPassword: 'zt-secret-95',
@@ -167,26 +166,23 @@ describe('Notes 95 acceptance over HTTP (e2e, live DB, writes)', () => {
     const usrId = data<{ usrId: string }>(created).usrId;
     userIds.push(usrId);
 
-    const got = await api().get(`${USERS}/get`).query({ usrId });
+    const got = await auth(api().get(`${USERS}/get`)).query({ usrId });
     expectStatus(got, 200);
     expect(data<{ usrPinSet: boolean }>(got).usrPinSet).toBe(true);
     expect(JSON.stringify(got.body)).not.toMatch(/scrypt\$|usrPinHash/);
 
-    const cleared = await api()
-      .post(`${USERS}/create`)
+    const cleared = await auth(api().post(`${USERS}/create`))
       .send({ usrId, usrLoginName: `ZT95-PIN-${stamp}`, usrPin: '' });
     expectStatus(cleared, 201);
     expect(data<{ usrPinSet: boolean }>(cleared).usrPinSet).toBe(false);
 
-    const short = await api()
-      .post(`${USERS}/create`)
+    const short = await auth(api().post(`${USERS}/create`))
       .send({ usrId, usrLoginName: `ZT95-PIN-${stamp}`, usrPin: '12' });
     expectStatus(short, 400);
   });
 
   it('5 · a second active user on the same employee is a 409 on usrEmployeeId; 6 · GET names both links', async () => {
-    const first = await api()
-      .post(`${USERS}/create`)
+    const first = await auth(api().post(`${USERS}/create`))
       .send({
         usrLoginName: `ZT95-EMP1-${stamp}`,
         usrPassword: 'zt-secret-95',
@@ -197,8 +193,7 @@ describe('Notes 95 acceptance over HTTP (e2e, live DB, writes)', () => {
     const usrId = data<{ usrId: string }>(first).usrId;
     userIds.push(usrId);
 
-    const second = await api()
-      .post(`${USERS}/create`)
+    const second = await auth(api().post(`${USERS}/create`))
       .send({
         usrLoginName: `ZT95-EMP2-${stamp}`,
         usrPassword: 'zt-secret-95',
@@ -210,7 +205,7 @@ describe('Notes 95 acceptance over HTTP (e2e, live DB, writes)', () => {
       'usrEmployeeId',
     );
 
-    const user = await api().get(`${USERS}/get`).query({ usrId });
+    const user = await auth(api().get(`${USERS}/get`)).query({ usrId });
     expect(data<{ usrEmployeeName: string }>(user).usrEmployeeName).toBe(`ZT Ravi K ${stamp}`);
     const employee = await auth(api().get(`${EMPLOYEES}/get`)).query({ empId });
     expect(data<{ empLoanLedgerName: string }>(employee).empLoanLedgerName).toBe(

@@ -115,20 +115,25 @@ export enum WriteOffTreatment {
 
 /** §7's codes, plus the few the build needed. */
 export enum SettlementErrorCode {
+  /** The same payout file was imported already (void that import to read it again). */
   FILE_DUPLICATE = 'SETTLEMENT_FILE_DUPLICATE',
+  /** The tender has no statement format (column map) set yet. */
   FORMAT_MISSING = 'SETTLEMENT_FORMAT_MISSING',
   /** The column map is not usable (a required column unnamed, an unknown date format). */
   FORMAT_INVALID = 'SETTLEMENT_FORMAT_INVALID',
   /** A row of the file could not be read (a date, an amount, net ≠ gross − fee − tax). */
   FILE_INVALID = 'SETTLEMENT_FILE_INVALID',
+  /** The tender or the file's terminals belong to another store: import it there. */
   OTHER_STORE = 'SETTLEMENT_OTHER_STORE',
   /** A terminal id / VPA on a line names no tender of this company. */
   TERMINAL_UNKNOWN = 'SETTLEMENT_TERMINAL_UNKNOWN',
   /** The tender has no settlement (bank) ledger: there is nowhere to post the payout. */
   BANK_MISSING = 'SETTLEMENT_BANK_MISSING',
+  /** The tender row is already settled by another statement line. */
   TD_ALREADY_MATCHED = 'SETTLEMENT_TD_ALREADY_MATCHED',
   /** The tender row cannot take this line (another tender, settled, voided, wrong side). */
   TD_NOT_CANDIDATE = 'SETTLEMENT_TD_NOT_CANDIDATE',
+  /** The payout's Dr and Cr do not agree: its lines and totals disagree. */
   NOT_BALANCED = 'SETTLEMENT_NOT_BALANCED',
   /** A suggestion waits for a person: confirm or unlink it before posting. */
   SUGGESTIONS_OPEN = 'SETTLEMENT_SUGGESTIONS_OPEN',
@@ -136,6 +141,7 @@ export enum SettlementErrorCode {
   STATE = 'SETTLEMENT_STATE',
   /** A posted payout something has since built on (a resolution, a written-off chargeback). */
   POSTED_LOCKED = 'SETTLEMENT_POSTED_LOCKED',
+  /** No such settlement import, line or tender row in this store. */
   NOT_FOUND = 'SETTLEMENT_NOT_FOUND',
   /** Menu 278 OVERRIDE stands in for the NONCASH_WRITE_OFF approval until phase 3. */
   WRITE_OFF_NEEDS_APPROVAL = 'NONCASH_WRITE_OFF_NEEDS_APPROVAL',
@@ -145,6 +151,7 @@ export enum SettlementErrorCode {
   LEDGER_INVALID = 'SETTLEMENT_LEDGER_INVALID',
   /** A role (TENDER_SUSPENSE, BANK_CHARGES …) has no ledger on the Ledger Map. */
   LEDGER_UNMAPPED = 'SETTLEMENT_LEDGER_UNMAPPED',
+  /** The reason named is not a live NONCASH reason (Till Masters → reasons). */
   REASON_INVALID = 'SETTLEMENT_REASON_INVALID',
 }
 

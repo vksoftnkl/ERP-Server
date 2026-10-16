@@ -44,7 +44,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('User Login Sessions')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('user-login-sessions')
 @UseFilters(UserLoginSessionsExceptionFilter)
 export class UserLoginSessionsController {

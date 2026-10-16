@@ -193,6 +193,18 @@ export class OpenTillSessionDto extends TillScopeDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
   notes?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Notes 124 §5 — counted ≠ issued under till.approval_gate REFUSE: an APPROVED FLOAT_MISMATCH request for ' +
+      'this counter (/till/approvals/request with srcDocType TILL_COUNTER, srcDocId the counter, the difference ' +
+      'as amount), after the open answered 428 TILL_APPROVAL_REQUIRED. Taken by the open; a wrong one → 422 ' +
+      'TILL_APPROVAL_INVALID. Under WARN (as shipped) the open goes through and a request waits in the inbox.',
+  })
+  @NullableUuid()
+  approvalId?: string | null;
 }
 
 export class SuspendTillSessionDto extends TillSessionKeyDto {
@@ -304,7 +316,7 @@ export class DecideTillVarianceDto extends TillSessionKeyDto {
     nullable: true,
     description:
       'The approver’s till PIN (usr_pin_hash, notes 95). Required when the rule’s channel is COUNTER; on EITHER it ' +
-      'stands in for remote authority (taa_can_remote). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+      'stands in for remote authority (taa_can_remote). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL; none set → 422 TILL_APPROVER_NO_PIN.',
   })
   @NullableString(20)
   approverPin?: string | null;
@@ -386,7 +398,7 @@ export class ForceCloseTillSessionDto extends TillSessionKeyDto {
     nullable: true,
     description:
       'The caller’s till PIN for the FORCE_CLOSE rule (STORE_MANAGER, EITHER: a PIN, else remote authority). ' +
-      'Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+      'Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL; none set → 422 TILL_APPROVER_NO_PIN.',
   })
   @NullableString(20)
   approverPin?: string | null;

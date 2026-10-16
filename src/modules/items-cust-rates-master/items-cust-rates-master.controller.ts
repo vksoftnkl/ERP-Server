@@ -43,7 +43,7 @@ import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Item Customer Rates')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('item-cust-rates')
 @UseFilters(ItemCustRateExceptionFilter)
 export class ItemsCustRatesMasterController {

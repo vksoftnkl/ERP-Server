@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { GodownLocation, Prisma } from '@prisma/client';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownErrorDetail, GodownPayload } from './types/godown-api.types';
+import { GodownErrorCode } from './types/godown-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -54,6 +55,9 @@ const GODOWN_DELETE_STATE = {
   label: 'godown location',
   idField: 'gdl_id',
   restoreRoute: '/godowns/restore',
+  alreadyDeletedCode: GodownErrorCode.ALREADY_DELETED,
+  notDeletedCode: GodownErrorCode.NOT_DELETED,
+  inUseCode: GodownErrorCode.IN_USE,
 };
 @Injectable()
 export class GodownsMasterService {
@@ -76,6 +80,7 @@ export class GodownsMasterService {
         'Godown location not found',
         'gdl_id',
         `No active godown location found with id ${gdlId}`,
+        GodownErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(record);
@@ -114,6 +119,7 @@ export class GodownsMasterService {
           'Godown location not found',
           'gdl_id',
           `No godown location found with id ${gdlId}`,
+          GodownErrorCode.NOT_FOUND,
         );
       }
 
@@ -152,6 +158,7 @@ export class GodownsMasterService {
           'Godown location not found',
           'gdl_id',
           `No godown location found with id ${gdlId}`,
+          GodownErrorCode.NOT_FOUND,
         );
       }
 
@@ -339,7 +346,11 @@ export class GodownsMasterService {
         if (saveGodownDto.gdl_name !== undefined) {
           if (!saveGodownDto.gdl_name?.trim()) {
             throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-              { field: 'gdl_name', message: 'gdl_name cannot be empty' },
+              {
+                field: 'gdl_name',
+                code: GodownErrorCode.NAME_REQUIRED,
+                message: 'gdl_name cannot be empty',
+              },
             ]);
           }
 
@@ -448,13 +459,17 @@ export class GodownsMasterService {
     const gdlName = saveGodownDto.gdl_name?.trim();
     if (!gdlName) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_name', message: 'gdl_name is required' },
+        { field: 'gdl_name', code: GodownErrorCode.NAME_REQUIRED, message: 'gdl_name is required' },
       ]);
     }
 
     if (!saveGodownDto.gdl_branch_id) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_branch_id', message: 'gdl_branch_id is required' },
+        {
+          field: 'gdl_branch_id',
+          code: GodownErrorCode.BRANCH_REQUIRED,
+          message: 'gdl_branch_id is required',
+        },
       ]);
     }
 
@@ -514,6 +529,7 @@ export class GodownsMasterService {
         'Godown location not found',
         'gdl_id',
         `No active godown location found with id ${gdlId}`,
+        GodownErrorCode.NOT_FOUND,
       );
     }
 
@@ -534,7 +550,11 @@ export class GodownsMasterService {
 
     if (params.currentId && params.parentId === params.currentId) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_parent_id', message: 'gdl_parent_id cannot be the same as gdl_id' },
+        {
+          field: 'gdl_parent_id',
+          code: GodownErrorCode.SELF_PARENT,
+          message: 'gdl_parent_id cannot be the same as gdl_id',
+        },
       ]);
     }
 
@@ -543,6 +563,7 @@ export class GodownsMasterService {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
         {
           field: 'gdl_parent_id',
+          code: GodownErrorCode.PARENT_NOT_FOUND,
           message: `No active parent location found with id ${params.parentId}`,
         },
       ]);
@@ -553,6 +574,7 @@ export class GodownsMasterService {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
         {
           field: 'gdl_parent_id',
+          code: GodownErrorCode.PARENT_OTHER_BRANCH,
           message: 'Parent location must belong to the same gdl_branch_id',
         },
       ]);
@@ -780,7 +802,11 @@ export class GodownsMasterService {
     if (hasOwnProperty(saveGodownDto, 'gdl_type') && saveGodownDto.gdl_type !== undefined) {
       if (!saveGodownDto.gdl_type.trim()) {
         throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-          { field: 'gdl_type', message: 'gdl_type cannot be empty' },
+          {
+            field: 'gdl_type',
+            code: GodownErrorCode.TYPE_REQUIRED,
+            message: 'gdl_type cannot be empty',
+          },
         ]);
       }
       data.gdlType = saveGodownDto.gdl_type.trim();
@@ -850,11 +876,19 @@ export class GodownsMasterService {
   }
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<GodownErrorDetail>(error, 'Godown location already exists', [
-      { field: 'gdl_name', message: 'Duplicate gdl_name under the same parent is not allowed' },
+      {
+        field: 'gdl_name',
+        code: GodownErrorCode.NAME_TAKEN,
+        message: 'Duplicate gdl_name under the same parent is not allowed',
+      },
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_parent_id', message: 'Invalid gdl_parent_id reference' },
+        {
+          field: 'gdl_parent_id',
+          code: GodownErrorCode.PARENT_NOT_FOUND,
+          message: 'Invalid gdl_parent_id reference',
+        },
       ]);
     }
   }

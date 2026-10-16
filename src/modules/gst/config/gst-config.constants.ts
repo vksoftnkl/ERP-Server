@@ -149,28 +149,80 @@ export const GST_PROVIDERS_MENU = { parent: 60, name: 'GST Providers' } as const
 export const GST_CREDENTIALS_MENU = { parent: 60, name: 'GST Credentials' } as const;
 export type GstMenu = typeof GST_PROVIDERS_MENU | typeof GST_CREDENTIALS_MENU;
 
-/** The `code` on each refusal these routes raise, for the client to branch on. */
+/**
+ * The `code` on each refusal these routes raise, for the client to branch on
+ * (notes 119: the client words its box by this alone). The module's one code
+ * set — /gst/* and the GST Providers / GST Credentials screens.
+ */
 export const GST_CODES = {
+  /** Another provider (live, or deleted: restore it instead) already has that gpvCode. */
   PROVIDER_CODE_DUPLICATE: 'GST_PROVIDER_CODE_DUPLICATE',
+  /** An edit tried to rename a provider's gpvCode. */
   PROVIDER_CODE_FIXED: 'GST_PROVIDER_CODE_FIXED',
+  /** Deleting a provider live company credentials still sign in through. */
   PROVIDER_IN_USE: 'GST_PROVIDER_IN_USE',
+  /** Reserved: a deleted provider named where a live one is needed. */
   PROVIDER_DELETED: 'GST_PROVIDER_DELETED',
+  /** The provider already has a live service for that service + environment. */
   SERVICE_DUPLICATE: 'GST_SERVICE_DUPLICATE',
+  /** The service already has a live endpoint for that action. */
   ENDPOINT_DUPLICATE: 'GST_ENDPOINT_DUPLICATE',
+  /** The endpoint already maps that field in that direction. */
   FIELD_MAP_DUPLICATE: 'GST_FIELD_MAP_DUPLICATE',
+  /** The provider already maps that error code. */
   ERROR_MAP_DUPLICATE: 'GST_ERROR_MAP_DUPLICATE',
+  /** The provider already has a live account for that environment and service. */
   ACCOUNT_DUPLICATE: 'GST_ACCOUNT_DUPLICATE',
+  /** Another live, active credential is already the primary (priority 1) for that scope. */
   CREDENTIAL_PRIMARY_EXISTS: 'GST_CREDENTIAL_PRIMARY_EXISTS',
+  /** Another live credential already holds that priority for that scope. */
   CREDENTIAL_PRIORITY_TAKEN: 'GST_CREDENTIAL_PRIORITY_TAKEN',
+  /** An edit tried to move a child row (service, endpoint, map …) to another parent. */
   PARENT_FIXED: 'GST_PARENT_FIXED',
+  /** A write to (or through) a deleted row: restore it first. */
   ALREADY_DELETED: 'GST_ALREADY_DELETED',
+  /** Restore of a row that is not deleted. */
   NOT_DELETED: 'GST_NOT_DELETED',
+  /** Neither the company nor the branch has a GSTIN to sign in as. */
   NO_GSTIN: 'GST_NO_GSTIN',
+  /** 503 — the server's GST_CRED_KEY (secret encryption key) is missing or malformed. */
   CRED_KEY_MISSING: 'GST_CRED_KEY_MISSING',
+  /** Another sign-in for this credential holds the lease. */
   AUTH_BUSY: 'GST_AUTH_BUSY',
+  /** Too many sign-ins for this GSTIN in the window (NIC blocks at 5 per 15 minutes). */
   AUTH_RATE_LIMIT: 'GST_AUTH_RATE_LIMIT',
+  /** The provider has no service with an AUTH endpoint for the credential's service/environment. */
   NO_AUTH_ENDPOINT: 'GST_NO_AUTH_ENDPOINT',
+  /** The credential lacks a value the sign-in needs (user name, password, client id …). */
   CREDENTIAL_INCOMPLETE: 'GST_CREDENTIAL_INCOMPLETE',
+  /** The service encrypts sign-in with a public key that is not set or not on this server. */
   PUBLIC_KEY_MISSING: 'GST_PUBLIC_KEY_MISSING',
+  /** 503 — a provider / service / account / credential on the route is switched off. */
   SWITCHED_OFF: 'GST_SWITCHED_OFF',
+  /** A provider, service, endpoint, map, account, credential or branch id names no row. */
+  NOT_FOUND: 'GST_NOT_FOUND',
+  /** A unique index refused the write and no named duplicate matched it. */
+  DUPLICATE: 'GST_DUPLICATE',
+  /** A gst_* CHECK constraint refused the value of the field it names. */
+  CHECK: 'GST_CHECK',
+  /** A "valid upto" date before its "valid from" (credential, account). */
+  VALID_UPTO_BEFORE_FROM: 'GST_VALID_UPTO_BEFORE_FROM',
+  /** A new company credential with no password. */
+  PASSWORD_REQUIRED: 'GST_PASSWORD_REQUIRED',
+  /** One of a pair set together or not at all was given alone (clientId/clientSecret, gpeSuccessPath/Value). */
+  PAIR_INCOMPLETE: 'GST_PAIR_INCOMPLETE',
+  /** The credential's branch belongs to another company. */
+  BRANCH_OTHER_COMPANY: 'GST_BRANCH_OTHER_COMPANY',
+  /** A service's refresh margin is not below its token lifetime. */
+  REFRESH_MARGIN_TOO_LONG: 'GST_REFRESH_MARGIN_TOO_LONG',
+  /** A required field map that also carries a default value. */
+  REQUIRED_FIELD_DEFAULT: 'GST_REQUIRED_FIELD_DEFAULT',
+  /** A DATETIME_MASK field map with no gfmFormatMask. */
+  FORMAT_MASK_REQUIRED: 'GST_FORMAT_MASK_REQUIRED',
+  /** A treat-as-SUCCESS error map without gemExtractPath / gemCanonicalField. */
+  SUCCESS_MAPPING_INCOMPLETE: 'GST_SUCCESS_MAPPING_INCOMPLETE',
+  /** An endpoint header with an empty name or a non-string value. */
+  HEADER_INVALID: 'GST_HEADER_INVALID',
+  /** A secret both given and named in `clear` on the same save. */
+  SECRET_GIVEN_AND_CLEARED: 'GST_SECRET_GIVEN_AND_CLEARED',
 } as const;

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { throwSalesBadRequest, throwSalesConflict } from 'src/common/utils/module-service.utils';
+import { SaleBillErrorCode } from '../../modules/sales/bill/types/sale-bill-error-codes';
 
 /**
  * One requested settlement of the invoice against a credit. The sale bill's
@@ -16,7 +17,7 @@ export interface BillAdjustmentInput {
   adjType?: string;
   settlementMode?: string;
 }
-type BillErrorDetail = { field: string; message: string };
+type BillErrorDetail = { field: string; message: string; code: SaleBillErrorCode };
 type BillErrorResponse = {
   statusCode?: number;
   success: false;
@@ -186,6 +187,7 @@ function normalizeRequest(adjustments: BillAdjustmentInput[]): BillAdjustmentInp
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
         {
           field: `adjustments[${index}].amount`,
+          code: SaleBillErrorCode.ADJUSTMENT_AMOUNT_NOT_POSITIVE,
           message: `An adjustment must be for a positive amount; got ${amount.toString()}.`,
         },
       ]);
@@ -199,6 +201,7 @@ function normalizeRequest(adjustments: BillAdjustmentInput[]): BillAdjustmentInp
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
         {
           field: `adjustments[${index}].againstBillAccYear`,
+          code: SaleBillErrorCode.ADJUSTMENT_YEAR_CONFLICT,
           message:
             `Credit ${adjustment.againstBillId} is named twice with two different accounting ` +
             `years (${existing.againstBillAccYear} and ${adjustment.againstBillAccYear}).`,
@@ -502,6 +505,7 @@ async function lockCredit(
     throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
       {
         field: `adjustments[${index}].againstBillId`,
+        code: SaleBillErrorCode.ADJUSTMENT_CREDIT_NOT_FOUND,
         message:
           `No open credit ${adjustment.againstBillId} in accounting year ` +
           `${adjustment.againstBillAccYear} for this company. Re-open the adjustment panel and pick again.`,
@@ -514,6 +518,7 @@ async function lockCredit(
     throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
       {
         field: `adjustments[${index}].againstBillId`,
+        code: SaleBillErrorCode.ADJUSTMENT_CREDIT_OTHER_PARTY,
         message: `Credit ${credit.abl_doc_refno ?? credit.abl_id} belongs to a different party.`,
       },
     ]);
@@ -522,6 +527,7 @@ async function lockCredit(
     throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
       {
         field: `adjustments[${index}].againstBillId`,
+        code: SaleBillErrorCode.ADJUSTMENT_NOT_A_CREDIT,
         message:
           `${credit.abl_doc_refno ?? credit.abl_id} is a ${credit.abl_dr_cr.trim()} balance — the ` +
           'party owes it, so it cannot settle this bill.',
@@ -551,6 +557,7 @@ function deriveRouting(
     throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
       {
         field: `adjustments[${index}].againstBillId`,
+        code: SaleBillErrorCode.ADJUSTMENT_TYPE_NOT_ALLOWED,
         message:
           `${credit.ablDocRefno ?? credit.ablId} is a ${credit.ablBillType} balance. Only ` +
           `${Object.keys(CREDIT_ROUTING).join(' and ')} credits can be adjusted against a sale bill.`,
@@ -569,6 +576,7 @@ function ensureCreditCovers(credit: LockedCredit, amount: Prisma.Decimal, index:
   throwSalesConflict<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
     {
       field: `adjustments[${index}].amount`,
+      code: SaleBillErrorCode.ADJUSTMENT_OVER_PENDING,
       message:
         `Credit ${credit.ablDocRefno ?? credit.ablId} has only ` +
         `${credit.ablPendingAmount.toString()} left, but ${amount.toString()} was adjusted ` +

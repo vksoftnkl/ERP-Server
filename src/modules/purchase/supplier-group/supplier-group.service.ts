@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSupplierGroupDto } from './dto/save-supplier-group.dto';
 import { SupplierGroupPayload } from './types/supplier-group-api.types';
+import { SupplierGroupErrorCode } from './types/supplier-group-error-codes';
 import {
   DEFAULT_ACTOR,
   PurchaseWriteClient,
@@ -47,6 +48,7 @@ export class SupplierGroupService {
         'Supplier group not found',
         'spgId',
         `No active supplier group found with id ${spgId}`,
+        SupplierGroupErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -62,6 +64,7 @@ export class SupplierGroupService {
           'Supplier group not found',
           'spgId',
           `No active supplier group found with id ${spgId}`,
+          SupplierGroupErrorCode.NOT_FOUND,
         );
       }
       const supplierCount = await tx.supplier.count({
@@ -72,6 +75,7 @@ export class SupplierGroupService {
           {
             field: 'spgId',
             message: `Supplier group ${spgId} is used by ${supplierCount} supplier(s).`,
+            code: SupplierGroupErrorCode.HAS_SUPPLIERS,
           },
         ]);
       }
@@ -90,6 +94,7 @@ export class SupplierGroupService {
           'Supplier group not found',
           'spgId',
           `No active supplier group found with id ${spgId}`,
+          SupplierGroupErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -127,7 +132,12 @@ export class SupplierGroupService {
       saveSupplierGroupDto.spgCreatedBy,
       this.requestContextService.getUserId(),
     );
-    const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
+    const normalizedName = normalizeRequiredText(
+          saveSupplierGroupDto.spgName,
+          'spgName',
+          undefined,
+          SupplierGroupErrorCode.NAME_REQUIRED,
+        );
     const data: Prisma.SupplierGroupUncheckedCreateInput = {
       spgName: normalizedName,
       spgCreatedOn: now,
@@ -158,7 +168,11 @@ export class SupplierGroupService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError(error, 'Supplier group name already exists', [
-        { field: 'spgName', message: 'Duplicate supplier group name is not allowed' },
+        {
+          field: 'spgName',
+          message: 'Duplicate supplier group name is not allowed',
+          code: SupplierGroupErrorCode.NAME_EXISTS,
+        },
       ]);
       throw error;
     }
@@ -178,9 +192,15 @@ export class SupplierGroupService {
             'Supplier group not found',
             'spgId',
             `No active supplier group found with id ${spgId}`,
+            SupplierGroupErrorCode.NOT_FOUND,
           );
         }
-        const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
+        const normalizedName = normalizeRequiredText(
+          saveSupplierGroupDto.spgName,
+          'spgName',
+          undefined,
+          SupplierGroupErrorCode.NAME_REQUIRED,
+        );
         await this.ensureNameIsUnique(tx, normalizedName, spgId);
         const data: Prisma.SupplierGroupUncheckedUpdateInput = {
           spgName: normalizedName,
@@ -212,7 +232,11 @@ export class SupplierGroupService {
       });
     } catch (error: unknown) {
       throwOnUniqueConstraintError(error, 'Supplier group name already exists', [
-        { field: 'spgName', message: 'Duplicate supplier group name is not allowed' },
+        {
+          field: 'spgName',
+          message: 'Duplicate supplier group name is not allowed',
+          code: SupplierGroupErrorCode.NAME_EXISTS,
+        },
       ]);
       throw error;
     }
@@ -233,7 +257,11 @@ export class SupplierGroupService {
     });
     if (existing) {
       throwPurchaseConflict('Supplier group name already exists', [
-        { field: 'spgName', message: 'Duplicate supplier group name is not allowed' },
+        {
+          field: 'spgName',
+          message: 'Duplicate supplier group name is not allowed',
+          code: SupplierGroupErrorCode.NAME_EXISTS,
+        },
       ]);
     }
   }

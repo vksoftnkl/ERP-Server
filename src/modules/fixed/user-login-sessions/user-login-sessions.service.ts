@@ -15,6 +15,7 @@ import {
   UserLoginSessionsListMeta,
   UserLoginSessionsPayload,
 } from './types/user-login-sessions-api.types';
+import { UserLoginSessionsErrorCode } from './types/user-login-sessions-error-codes';
 import {
   DEFAULT_ACTOR,
   applyPresentFields,
@@ -79,6 +80,7 @@ export class UserLoginSessionsService {
         'No configured grid found for user login sessions list',
         'list',
         'No configured grid found',
+        UserLoginSessionsErrorCode.GRID_NOT_CONFIGURED,
       );
     }
     return result;
@@ -92,6 +94,7 @@ export class UserLoginSessionsService {
         'User login session not found',
         'ulsId',
         `No active user login session found with id ${ulsId}`,
+        UserLoginSessionsErrorCode.NOT_FOUND,
       );
     }
     return this.toPayload(record);
@@ -107,6 +110,7 @@ export class UserLoginSessionsService {
           'User login session not found',
           'ulsId',
           `No active user login session found with id ${ulsId}`,
+          UserLoginSessionsErrorCode.NOT_FOUND,
         );
       }
       const modifiedOn = new Date();
@@ -127,6 +131,7 @@ export class UserLoginSessionsService {
           'User login session not found',
           'ulsId',
           `No active user login session found with id ${ulsId}`,
+          UserLoginSessionsErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -199,7 +204,13 @@ export class UserLoginSessionsService {
       throwOnUniqueConstraintError<UserLoginSessionsErrorDetail, UserLoginSessionsErrorResponse>(
         error,
         'User login session already exists',
-        [{ field: 'ulsSessionId', message: 'Duplicate session is not allowed' }],
+        [
+          {
+            field: 'ulsSessionId',
+            message: 'Duplicate session is not allowed',
+            code: UserLoginSessionsErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -219,6 +230,7 @@ export class UserLoginSessionsService {
             'User login session not found',
             'ulsId',
             `No active user login session found with id ${ulsId}`,
+            UserLoginSessionsErrorCode.NOT_FOUND,
           );
         }
         const data: Prisma.UserLoginSessionUncheckedUpdateInput = {
@@ -258,7 +270,13 @@ export class UserLoginSessionsService {
       throwOnUniqueConstraintError<UserLoginSessionsErrorDetail, UserLoginSessionsErrorResponse>(
         error,
         'User login session already exists',
-        [{ field: 'ulsSessionId', message: 'Duplicate session is not allowed' }],
+        [
+          {
+            field: 'ulsSessionId',
+            message: 'Duplicate session is not allowed',
+            code: UserLoginSessionsErrorCode.DUPLICATE,
+          },
+        ],
       );
       throw error;
     }

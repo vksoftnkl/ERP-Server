@@ -1,5 +1,11 @@
-export type { SalesErrorDetail as SaleFreightChargeErrorDetail } from 'src/common/types/module-api.types';
-export type { SalesErrorResponse as SaleFreightChargeErrorResponse } from 'src/common/types/module-api.types';
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { SaleFreightChargeErrorCode } from './sale-freight-charges-error-codes';
+
+/** Notes 119: every refusal names its code — see sale-freight-charges-error-codes.ts. */
+export interface SaleFreightChargeErrorDetail extends SalesErrorDetail {
+  code: SaleFreightChargeErrorCode;
+}
+export type SaleFreightChargeErrorResponse = SalesErrorResponse<SaleFreightChargeErrorDetail>;
 export type { SalesSuccessResponse as SaleFreightChargeSuccessResponse } from 'src/common/types/module-api.types';
 export interface SaleFreightChargePayload {
   frId: string;

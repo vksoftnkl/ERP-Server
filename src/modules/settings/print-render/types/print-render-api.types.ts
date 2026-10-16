@@ -1,8 +1,15 @@
+import type {
+  SettingsErrorDetail,
+  SettingsErrorResponse,
+} from 'src/common/types/module-api.types';
 import { OutputMode } from '../definition/template-definition.schema';
+import type { PrintRenderErrorCode } from './print-render-error-codes';
 
-export type { SettingsErrorDetail as PrintRenderErrorDetail } from 'src/common/types/module-api.types';
-export type { SettingsErrorResponse as PrintRenderErrorResponse } from 'src/common/types/module-api.types';
 export type { SettingsSuccessResponse as PrintRenderSuccessResponse } from 'src/common/types/module-api.types';
+
+/** Notes 119 — every refusal this module raises carries one of its own codes. */
+export type PrintRenderErrorDetail = SettingsErrorDetail & { code: PrintRenderErrorCode };
+export type PrintRenderErrorResponse = SettingsErrorResponse<PrintRenderErrorDetail>;
 
 /**
  * What the render already knows — the DEFAULT value of each context name.

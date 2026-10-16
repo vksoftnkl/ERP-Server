@@ -32,6 +32,7 @@ import {
   type CarryForwardPayload,
   type OpeningBalanceErrorDetail,
 } from './types/opening-balance-api.types';
+import { OpeningBalanceErrorCode } from './types/opening-balance-error-codes';
 
 /**
  * §5.2 — closing one year into the next.
@@ -61,6 +62,7 @@ export class CarryForwardService {
         {
           field: 'toAccYear',
           message: `${toAccYear} does not follow ${fromAccYear} — a carry-forward moves one year at a time`,
+          code: OpeningBalanceErrorCode.CARRY_NOT_NEXT_YEAR,
         },
       ]);
     }
@@ -119,6 +121,7 @@ export class CarryForwardService {
                   `${fromAccYear} has a profit and loss result of ${money(profitAndLoss).abs().toFixed(2)} ` +
                   'that must be carried onto a ledger, but no ledger is mapped to the ' +
                   'RETAINED_EARNINGS role for this company. Map it in Posting Ledgers first.',
+                code: OpeningBalanceErrorCode.RETAINED_EARNINGS_UNMAPPED,
               },
             ]);
           }
@@ -696,6 +699,7 @@ export class CarryForwardService {
         {
           field,
           message: `"${accYear}" is not an accounting year — expected YYYY-YYYY with the second half one greater than the first`,
+          code: OpeningBalanceErrorCode.ACC_YEAR_INVALID,
         },
       ]);
     }

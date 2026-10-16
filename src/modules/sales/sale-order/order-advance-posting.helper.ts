@@ -1,10 +1,12 @@
 import { Prisma } from '@prisma/client';
+import { coverPostedVoucher, retireMoneyLineRows } from 'src/common/posting/money-lines';
 import { throwSalesBadRequest } from 'src/common/utils/module-service.utils';
 import {
   allocateVoucherNumber,
   allocateVoucherSlno,
 } from 'src/common/Sequence/voucher-sequence.helper';
 import { SaleOrderErrorDetail, SaleOrderErrorResponse } from './types/sale-order-api.types';
+import { SaleOrderErrorCode } from './types/sale-order-error-codes';
 import { cancelOrderPdcRegister, syncOrderPdcRegister } from './order-pdc-posting.helper';
 import type { PdcChequeDetail } from '../posting/pdc-register.helper';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
@@ -266,6 +268,10 @@ export async function postOrderAdvanceToAccounts(
   });
   await markPosted(tx, header.avhVoucherId, order.soAccYear, order.soUserId, postedOn);
   await stampTenderVoucher(tx, order, header.avhVoucherId);
+  // Notes 126 §1 — reported, never refused: an order advance is the counter's.
+  await coverPostedVoucher(tx, { voucherId: header.avhVoucherId, accYear: order.soAccYear }, {
+    createdBy: actor,
+  });
   // A cheque is not only money: it is an instrument the company now holds and
   // must deposit, chase and, if it bounces, reopen. That life is the cheque
   // register's, so every type 5 tender opens a row there alongside the receipt.
@@ -619,6 +625,7 @@ async function resolveSurchargeLedgers(
               `Tender line ${tender.tdRowNo} (${byId.get(tender.tdTenderId)?.tndName ?? 'unknown tender'}) ` +
               'charges a surcharge but neither the line nor its tender master names a surcharge ledger, ' +
               'so the receipt cannot be posted.',
+            code: SaleOrderErrorCode.SURCHARGE_LEDGER_MISSING,
           },
         ],
       );
@@ -649,6 +656,7 @@ function ensureLedgersDiffer(
             message:
               `Tender line ${tender.tdRowNo} pays into the same ledger it would be credited to, ` +
               'so it has no entry to make. Point the tender or the advance ledger somewhere else.',
+            code: SaleOrderErrorCode.TENDER_LEDGER_CLASH,
           },
         ],
       );
@@ -836,6 +844,7 @@ async function ensureNotPreviouslyCancelled(
           field: 'tenders',
           message:
             'This order already had an advance receipt posted and cancelled in accounts; it cannot be posted again. Raise the receipt separately instead.',
+          code: SaleOrderErrorCode.ADVANCE_RECEIPT_CANCELLED,
         },
       ],
     );
@@ -911,6 +920,10 @@ async function resyncPostedVoucher(
     keepPostedOn: true,
   });
   await stampTenderVoucher(tx, order, live.avhVoucherId);
+  await retireMoneyLineRows(tx, live.avhVoucherId, actor);
+  await coverPostedVoucher(tx, { voucherId: live.avhVoucherId, accYear: live.avhAccYear }, {
+    createdBy: actor,
+  });
   // The instruments follow the edit too: a cheque line added on this save is
   // registered now, an edited one re-synced, and one that is gone — or is no
   // longer a cheque — gives its register row up.
@@ -1228,6 +1241,7 @@ async function ensureAdvanceCanBeRetired(
         message:
           `The advance on order ${bill.ablDocRefno} has already been settled against in accounts, ` +
           'so it cannot be taken back out. Reverse the settlement first.',
+        code: SaleOrderErrorCode.ADVANCE_SETTLED,
       },
     ],
   );
@@ -1300,6 +1314,7 @@ function ensureNothingSettledAgainstAdvance(
             `The advance on order ${bill.ablDocRefno} already has ${settled.toString()} settled ` +
             `against it in accounts, so it cannot be changed to ${amount.toString()}. ` +
             'Reverse the settlement first.',
+          code: SaleOrderErrorCode.ADVANCE_SETTLED,
         },
       ],
     );

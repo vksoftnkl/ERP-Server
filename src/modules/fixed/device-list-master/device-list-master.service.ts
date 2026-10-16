@@ -16,7 +16,11 @@ import {
   DeviceListMasterListMeta,
   DeviceListMasterPayload,
 } from './types/device-list-master-api.types';
-import { DevicePlatform, DeviceType } from './types/device-list-master-enum';
+import {
+  DeviceListMasterErrorCode,
+  DevicePlatform,
+  DeviceType,
+} from './types/device-list-master-enum';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -62,7 +66,13 @@ function normalizeDeviceType(value: unknown): DeviceType | undefined {
   if (typeof value !== 'string') {
     throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
       'Validation failed',
-      [{ field: 'devDeviceType', message: 'devDeviceType must be a string' }],
+      [
+        {
+          field: 'devDeviceType',
+          message: 'devDeviceType must be a string',
+          code: DeviceListMasterErrorCode.TYPE_INVALID,
+        },
+      ],
     );
   }
   const normalized = value.trim();
@@ -76,6 +86,7 @@ function normalizeDeviceType(value: unknown): DeviceType | undefined {
         {
           field: 'devDeviceType',
           message: `devDeviceType must be one of: ${DEVICE_TYPE_VALUES.join(', ')}`,
+          code: DeviceListMasterErrorCode.TYPE_INVALID,
         },
       ],
     );
@@ -91,6 +102,7 @@ function normalizeDeviceUid(value: string | undefined, deviceType: DeviceType): 
       value ?? '',
       'devDeviceUid',
       'devDeviceUid is required when devDeviceType is Desktop',
+      DeviceListMasterErrorCode.UID_REQUIRED,
     );
   }
   const trimmed = value?.trim();
@@ -106,7 +118,13 @@ function normalizeDevicePlatform(value: unknown): DevicePlatform | null | undefi
   if (typeof value !== 'string') {
     throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
       'Validation failed',
-      [{ field: 'devPlatform', message: 'devPlatform must be a string' }],
+      [
+        {
+          field: 'devPlatform',
+          message: 'devPlatform must be a string',
+          code: DeviceListMasterErrorCode.PLATFORM_INVALID,
+        },
+      ],
     );
   }
   const normalized = value.trim();
@@ -120,6 +138,7 @@ function normalizeDevicePlatform(value: unknown): DevicePlatform | null | undefi
         {
           field: 'devPlatform',
           message: `devPlatform must be one of: ${DEVICE_PLATFORM_VALUES.join(', ')}`,
+          code: DeviceListMasterErrorCode.PLATFORM_INVALID,
         },
       ],
     );
@@ -164,7 +183,13 @@ export class DeviceListMasterService {
     if (!result) {
       throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
         'No configured grid found for device list master',
-        [],
+        [
+          {
+            field: 'list',
+            message: 'No configured grid found for device list master',
+            code: DeviceListMasterErrorCode.GRID_NOT_CONFIGURED,
+          },
+        ],
       );
     }
     return result;
@@ -178,6 +203,7 @@ export class DeviceListMasterService {
         'Device not found',
         'devId',
         `No active device found with id ${devId}`,
+        DeviceListMasterErrorCode.NOT_FOUND,
       );
     }
     const payload = this.toPayload(record);
@@ -229,6 +255,7 @@ export class DeviceListMasterService {
           'Device not found',
           'devId',
           `No active device found with id ${devId}`,
+          DeviceListMasterErrorCode.NOT_FOUND,
         );
       }
       const sessionCount = await tx.userLoginSession.count({
@@ -241,6 +268,7 @@ export class DeviceListMasterService {
             {
               field: 'devId',
               message: `Device ${devId} is used in ${sessionCount} login session(s).`,
+              code: DeviceListMasterErrorCode.IN_USE,
             },
           ],
         );
@@ -260,6 +288,7 @@ export class DeviceListMasterService {
           'Device not found',
           'devId',
           `No active device found with id ${devId}`,
+          DeviceListMasterErrorCode.NOT_FOUND,
         );
       }
       const originalRecord = this.toPayload(existing);
@@ -343,7 +372,13 @@ export class DeviceListMasterService {
       throwOnUniqueConstraintError<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
         error,
         'Device already exists',
-        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
+        [
+          {
+            field: 'devDeviceUid',
+            message: 'Duplicate devDeviceUid is not allowed',
+            code: DeviceListMasterErrorCode.UID_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -362,6 +397,7 @@ export class DeviceListMasterService {
             'Device not found',
             'devId',
             `No active device found with id ${devId}`,
+            DeviceListMasterErrorCode.NOT_FOUND,
           );
         }
         const normalizedDeviceType =
@@ -418,7 +454,13 @@ export class DeviceListMasterService {
       throwOnUniqueConstraintError<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
         error,
         'Device already exists',
-        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
+        [
+          {
+            field: 'devDeviceUid',
+            message: 'Duplicate devDeviceUid is not allowed',
+            code: DeviceListMasterErrorCode.UID_DUPLICATE,
+          },
+        ],
       );
       throw error;
     }
@@ -441,7 +483,13 @@ export class DeviceListMasterService {
     if (existing) {
       throwFixedConflict<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
         'Device UID already exists',
-        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
+        [
+          {
+            field: 'devDeviceUid',
+            message: 'Duplicate devDeviceUid is not allowed',
+            code: DeviceListMasterErrorCode.UID_DUPLICATE,
+          },
+        ],
       );
     }
   }

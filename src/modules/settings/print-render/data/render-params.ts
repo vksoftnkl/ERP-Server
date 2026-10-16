@@ -1,4 +1,5 @@
-import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
+import type { PrintRenderErrorDetail } from '../types/print-render-api.types';
+import { PrintRenderErrorCode } from '../types/print-render-error-codes';
 import {
   PTV_CONTEXT_PARAMS,
   PTV_PARAM_NAME_PATTERN,
@@ -55,7 +56,7 @@ export function isServerOwnedParam(name: string): boolean {
 export class RenderParamError extends Error {
   constructor(
     message: string,
-    readonly details: ModuleErrorDetail[],
+    readonly details: PrintRenderErrorDetail[],
   ) {
     super(message);
     this.name = 'RenderParamError';
@@ -70,8 +71,8 @@ export class RenderParamError extends Error {
  * coercion, so binding it would mean sending PostgreSQL a value of a shape
  * nobody chose.
  */
-export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: ModuleErrorDetail[] } {
-  const errors: ModuleErrorDetail[] = [];
+export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: PrintRenderErrorDetail[] } {
+  const errors: PrintRenderErrorDetail[] = [];
   const specs: ParamSpec[] = [];
 
   if (raw === null || raw === undefined) return { specs, errors };
@@ -79,6 +80,7 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
   if (!Array.isArray(raw)) {
     errors.push({
       field: 'ptvParams',
+      code: PrintRenderErrorCode.PARAMS_NOT_ARRAY,
       message: `ptvParams must be a JSON array of prompts; this revision holds ${typeof raw}.`,
     });
     return { specs, errors };
@@ -88,7 +90,11 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
     const path = `ptvParams[${index}]`;
 
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      errors.push({ field: path, message: 'Each prompt must be an object.' });
+      errors.push({
+        field: path,
+        code: PrintRenderErrorCode.PARAM_NOT_OBJECT,
+        message: 'Each prompt must be an object.',
+      });
       continue;
     }
 
@@ -98,6 +104,7 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
     if (!PTV_PARAM_NAME_PATTERN.test(name)) {
       errors.push({
         field: `${path}.name`,
+        code: PrintRenderErrorCode.PARAM_NAME_INVALID,
         message: `'${name}' is not a usable prompt name — lower case, starting with a letter, ${'letters, digits and underscores only'}.`,
       });
       continue;
@@ -107,6 +114,7 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
     if (!(PTV_PARAM_TYPES as readonly string[]).includes(type)) {
       errors.push({
         field: `${path}.type`,
+        code: PrintRenderErrorCode.PARAM_TYPE_INVALID,
         message: `'${String(record.type)}' is not a prompt type. One of: ${PTV_PARAM_TYPES.join(', ')}.`,
       });
       continue;
@@ -132,7 +140,7 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
  * string, and a numeric id arriving as text makes PostgreSQL pick a different
  * plan or refuse the comparison outright.
  */
-function coerce(spec: ParamSpec, value: unknown, errors: ModuleErrorDetail[]): unknown {
+function coerce(spec: ParamSpec, value: unknown, errors: PrintRenderErrorDetail[]): unknown {
   if (value === null || value === undefined || value === '') return null;
 
   switch (spec.type) {
@@ -141,6 +149,7 @@ function coerce(spec: ParamSpec, value: unknown, errors: ModuleErrorDetail[]): u
       if (!Number.isFinite(parsed)) {
         errors.push({
           field: `params.${spec.name}`,
+          code: PrintRenderErrorCode.PARAM_NOT_NUMBER,
           message: `'${spec.label}' expects a number; got '${toScalarText(value)}'.`,
         });
         return null;
@@ -161,6 +170,7 @@ function coerce(spec: ParamSpec, value: unknown, errors: ModuleErrorDetail[]): u
       if (!iso) {
         errors.push({
           field: `params.${spec.name}`,
+          code: PrintRenderErrorCode.PARAM_NOT_DATE,
           message: `'${spec.label}' expects a date as YYYY-MM-DD; got '${text}'.`,
         });
         return null;
@@ -173,6 +183,7 @@ function coerce(spec: ParamSpec, value: unknown, errors: ModuleErrorDetail[]): u
       if (Number.isNaN(parsed.getTime())) {
         errors.push({
           field: `params.${spec.name}`,
+          code: PrintRenderErrorCode.PARAM_NOT_DATETIME,
           message: `'${spec.label}' expects a date and time; got '${toScalarText(value)}'.`,
         });
         return null;
@@ -187,6 +198,7 @@ function coerce(spec: ParamSpec, value: unknown, errors: ModuleErrorDetail[]): u
       ) {
         errors.push({
           field: `params.${spec.name}`,
+          code: PrintRenderErrorCode.PARAM_NOT_UUID,
           message: `'${spec.label}' expects an id; got '${text}'.`,
         });
         return null;
@@ -220,6 +232,7 @@ export function resolveRenderParams(
     if (isServerOwnedParam(name)) {
       errors.push({
         field: `params.${name}`,
+        code: PrintRenderErrorCode.PARAM_SERVER_OWNED,
         message:
           `'${name}' is the server's to decide — it comes from the authenticated session and ` +
           'cannot be sent with the request. Declaring it as a prompt is allowed; answering it ' +
@@ -230,6 +243,7 @@ export function resolveRenderParams(
     if (declared.has(name)) continue;
     errors.push({
       field: `params.${name}`,
+      code: PrintRenderErrorCode.PARAM_UNKNOWN,
       message: `This revision has no prompt named '${name}'. It asks for: ${
         specs.map((spec) => spec.name).join(', ') || 'nothing'
       }.`,
@@ -250,6 +264,7 @@ export function resolveRenderParams(
     if (coerced === null && spec.required && !hasContextDefault(spec.name)) {
       errors.push({
         field: `params.${spec.name}`,
+        code: PrintRenderErrorCode.PARAM_REQUIRED,
         message: `'${spec.label}' is required by this revision and was not answered.`,
       });
     }

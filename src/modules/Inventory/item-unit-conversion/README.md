@@ -15,7 +15,7 @@ converted to the base unit.
 | File | Purpose |
 | --- | --- |
 | [item-unit-conversion.module.ts](item-unit-conversion.module.ts) | Module wiring — imports `AuditLogModule`, **exports the service** for reuse |
-| [item-unit-conversion.controller.ts](item-unit-conversion.controller.ts) | HTTP routes + Swagger docs (`@CacheTTL(60)`) |
+| [item-unit-conversion.controller.ts](item-unit-conversion.controller.ts) | HTTP routes + Swagger docs (`@CacheTTL(1)`) |
 | [item-unit-conversion.service.ts](item-unit-conversion.service.ts) | Business logic, factor normalization, persistence, audit logging |
 | [item-unit-conversion-exception.filter.ts](item-unit-conversion-exception.filter.ts) | Extends `InventoryExceptionFilter`; maps DB/domain errors to the module's error shape (matches `iuc_*` field names) |
 | [dto/save-item-unit-conversion.dto.ts](dto/save-item-unit-conversion.dto.ts) | Single create/update payload |

@@ -2,7 +2,7 @@ import type { ModuleErrorDetail, ModuleErrorResponse } from 'src/common/utils/mo
 
 /** A refusal's detail; `code` (GST_*) is what the client branches on. */
 export interface GstErrorDetail extends ModuleErrorDetail {
-  code?: string;
+  code: string;
 }
 export type GstErrorResponse = ModuleErrorResponse<GstErrorDetail>;
 
