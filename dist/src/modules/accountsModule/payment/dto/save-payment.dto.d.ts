@@ -65,6 +65,7 @@ export declare class SaveDraftPaymentDto extends SavePaymentDto {
     post?: boolean;
     onAccount?: number;
     otherLineBills?: PostReceiptOtherLinePinDto[];
+    approvalId?: string | null;
 }
 export declare class UpdatePaymentHeaderDto extends ReceiptKeysDto {
     avhRemarks?: string | null;

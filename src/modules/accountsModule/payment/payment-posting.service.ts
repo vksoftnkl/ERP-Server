@@ -79,6 +79,7 @@ import {
   type GateVerdict,
 } from '../../till/services/till-approval.service';
 import { CASH_TENDER_TYPE_ID, TillErrorCode, TillEventCode } from '../../till/types/till-enum';
+import { tillErrorCodeOf } from '../../till/till-errors';
 import { VCH, throwRefusals, type VoucherWarning } from '../vouchers/vouchers.errors';
 import { checkCashPaymentLimit } from './cash-payment-limit';
 import { ACC } from '../receipt/types/acc-error-codes';
@@ -150,6 +151,15 @@ export class PaymentPostingService {
    *
    * The draft keeps its own actor rule (`avhUserId` falls back to the caller)
    * and the post keeps its (the caller), as the two routes do today.
+   *
+   * Notes 131 — the one refusal that keeps the draft: 428
+   * TILL_APPROVAL_REQUIRED (the CASH_PAYMENT gate under till.approval_gate
+   * REFUSE). The request it asks for must name a document, and a new payment
+   * has none until it is saved — so the post's writes roll back to a
+   * savepoint taken after the draft, the draft commits, and the 428 goes out
+   * naming it (srcDocType PAYMENT, srcDocId = its avhVoucherId), as the
+   * expense's draft-then-post does. The client posts again with that
+   * avhVoucherId and the approved request's `approvalId`.
    */
   async saveAndPost(dto: SaveDraftPaymentDto): Promise<PaymentPostPayload> {
     if (dto.onAccount === undefined || dto.onAccount === null) {
@@ -165,29 +175,46 @@ export class PaymentPostingService {
     const userId = this.requestContext.getUserId();
     const draftActor = resolveActor(dto.avhUserId, userId) ?? DEFAULT_ACTOR;
     const postActor = userId ?? DEFAULT_ACTOR;
-    const { post: _post, onAccount, otherLineBills, ...draft } = dto;
+    const { post: _post, onAccount, otherLineBills, approvalId, ...draft } = dto;
     void _post;
+    let approvalRequired: unknown = null;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const posted = await this.prisma.$transaction(async (tx) => {
         const saved = await this.paymentService.saveInTransaction(tx, draft, draftActor);
-        return this.postInTransaction(
-          tx,
-          {
-            avhVoucherId: saved.header.avhVoucherId,
-            avhCompanyId: dto.avhCompanyId,
-            avhBranchId: dto.avhBranchId,
-            avhAccYear: dto.avhAccYear,
-            allocations: dto.allocations ?? [],
-            creditsApplied: dto.creditsApplied ?? [],
-            otherLineBills: otherLineBills ?? [],
-            onAccount,
-          },
-          postActor,
-        );
+        await tx.$executeRaw`SAVEPOINT payment_one_call_post`;
+        try {
+          return await this.postInTransaction(
+            tx,
+            {
+              avhVoucherId: saved.header.avhVoucherId,
+              avhCompanyId: dto.avhCompanyId,
+              avhBranchId: dto.avhBranchId,
+              avhAccYear: dto.avhAccYear,
+              allocations: dto.allocations ?? [],
+              creditsApplied: dto.creditsApplied ?? [],
+              otherLineBills: otherLineBills ?? [],
+              onAccount,
+              approvalId: approvalId ?? null,
+            },
+            postActor,
+          );
+        } catch (error) {
+          if (tillErrorCodeOf(error) !== TillErrorCode.APPROVAL_REQUIRED) {
+            throw error;
+          }
+          await tx.$executeRaw`ROLLBACK TO SAVEPOINT payment_one_call_post`;
+          approvalRequired = error;
+          return null;
+        }
       }, POST_TRANSACTION_OPTIONS);
+      if (posted) {
+        return posted;
+      }
     } catch (error) {
       throw rethrowAllocationError(error);
     }
+    // Thrown after the commit: the draft it names now exists.
+    throw approvalRequired;
   }
 
   /** The steps, inside a transaction the CALLER owns. Public for `/payments/amend`. */

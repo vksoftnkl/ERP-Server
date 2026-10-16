@@ -180,7 +180,8 @@ charge is sent as `tdAmount: 5012.50, tdMdrAmt: 12.50`.
 - **D2a · Save and post in one call (notes 94 A + B / 106).** `/create` with `post: true` runs
   the draft and the post in ONE transaction (`PaymentPostingService.saveAndPost`); `onAccount` is
   required when posting, `allocations` / `creditsApplied` / `otherLineBills` are applied, a refusal
-  leaves no header, and the route is judged on the Post right alone — a Post-only user may raise a
+  leaves no header (except 428 TILL_APPROVAL_REQUIRED, notes 131: below), and the route is judged
+  on the Post right alone — a Post-only user may raise a
   payment this way. The response is the `/post` shape. `/receipts` does the same.
 - **D3 · `/open-items` refuses `mobile`.** It has its own query DTO.
 - **E1 · The write-off approver is kept** on the bill rows the BALANCES_WRITTEN_BACK line settles
@@ -254,6 +255,13 @@ paid partly to a bill and partly on account failed earlier still: its ChqBnc did
   `TILL_APPROVAL_REQUIRED` in `warnings[]`, the `PAYMENT_POSTED` payload, and a PENDING request in
   the approvers' inbox (`approval.approvalId`); under REFUSE 428 until `approvalId` on
   PostPaymentDto names an approved request for this voucher (srcDocType `PAYMENT`).
+- **Notes 131 — the gate on the one-call post.** `/create` with `post: true` takes `approvalId`
+  too. Its 428 is the one refusal that keeps the draft: the post's writes roll back to a savepoint
+  taken after the draft (`saveAndPost`), the draft commits, and the 428 names it (`srcDocType`
+  PAYMENT, `srcDocId` = its `avhVoucherId`). The client asks `/till/approvals/request` for that
+  document and calls `/create` again with that `avhVoucherId` and the `approvalId` (or `/post`).
+  A call without the `avhVoucherId` makes a second draft, which the request does not approve
+  (422 TILL_APPROVAL_INVALID, nothing saved). Receipts have no gate: no receipt rule answers 428.
 
 ## Tests
 

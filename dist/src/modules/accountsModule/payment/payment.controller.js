@@ -256,7 +256,12 @@ __decorate([
             'post. A bank row may carry a beneficiary. BANK_CHARGES is seeded from tdMdrAmt and, for a ' +
             'TDS-applicable party, TDS_PAYABLE is seeded from accounts.tds_rates — a client figure that ' +
             'disagrees is a 409.\n\n' +
-            'allocations[] and creditsApplied[] are REMEMBERED, not applied (notes 30).',
+            'allocations[] and creditsApplied[] are REMEMBERED, not applied (notes 30).\n\n' +
+            'With post: true, a cash payment out of a till drawer above the CASH_PAYMENT rule answers, under ' +
+            'till.approval_gate REFUSE, 428 TILL_APPROVAL_REQUIRED and KEEPS the payment as a DRAFT (notes 131): the ' +
+            'error names it (srcDocType PAYMENT, srcDocId = its avhVoucherId). Ask /till/approvals/request for that ' +
+            'document, then call again with avhVoucherId and approvalId. Under WARN (as shipped) it posts and the ' +
+            'request waits in the approvers’ inbox.',
     }),
     (0, swagger_1.ApiCreatedResponse)({
         description: 'The draft (PaymentDraftSuccessDto) — or, with post: true, the posted payment (PaymentPostSuccessDto, the /post shape).',
@@ -270,6 +275,12 @@ __decorate([
     (0, swagger_1.ApiBadRequestResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 428,
+        type: payment_response_dto_1.PaymentErrorResponseDto,
+        description: 'TILL_APPROVAL_REQUIRED (post: true only): the draft is kept; errors[0] names it (srcDocType, srcDocId) ' +
+            'with the event, amount, requiredRole and channel.',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_payment_dto_1.SaveDraftPaymentDto]),
@@ -290,6 +301,11 @@ __decorate([
     (0, swagger_1.ApiCreatedResponse)({ type: payment_response_dto_1.PaymentPostSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 428,
+        type: payment_response_dto_1.PaymentErrorResponseDto,
+        description: 'TILL_APPROVAL_REQUIRED: bring approvalId (an approved CASH_PAYMENT request for this voucher).',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [post_payment_dto_1.PostPaymentDto]),

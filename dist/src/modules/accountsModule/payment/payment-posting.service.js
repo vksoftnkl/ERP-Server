@@ -37,6 +37,7 @@ const payment_enum_1 = require("./types/payment-enum");
 const till_session_service_1 = require("../../till/services/till-session.service");
 const till_approval_service_1 = require("../../till/services/till-approval.service");
 const till_enum_1 = require("../../till/types/till-enum");
+const till_errors_1 = require("../../till/till-errors");
 const vouchers_errors_1 = require("../vouchers/vouchers.errors");
 const cash_payment_limit_1 = require("./cash-payment-limit");
 const acc_error_codes_1 = require("../receipt/types/acc-error-codes");
@@ -80,26 +81,43 @@ let PaymentPostingService = class PaymentPostingService {
         const userId = this.requestContext.getUserId();
         const draftActor = (0, module_service_utils_1.resolveActor)(dto.avhUserId, userId) ?? module_service_utils_1.DEFAULT_ACTOR;
         const postActor = userId ?? module_service_utils_1.DEFAULT_ACTOR;
-        const { post: _post, onAccount, otherLineBills, ...draft } = dto;
+        const { post: _post, onAccount, otherLineBills, approvalId, ...draft } = dto;
         void _post;
+        let approvalRequired = null;
         try {
-            return await this.prisma.$transaction(async (tx) => {
+            const posted = await this.prisma.$transaction(async (tx) => {
                 const saved = await this.paymentService.saveInTransaction(tx, draft, draftActor);
-                return this.postInTransaction(tx, {
-                    avhVoucherId: saved.header.avhVoucherId,
-                    avhCompanyId: dto.avhCompanyId,
-                    avhBranchId: dto.avhBranchId,
-                    avhAccYear: dto.avhAccYear,
-                    allocations: dto.allocations ?? [],
-                    creditsApplied: dto.creditsApplied ?? [],
-                    otherLineBills: otherLineBills ?? [],
-                    onAccount,
-                }, postActor);
+                await tx.$executeRaw `SAVEPOINT payment_one_call_post`;
+                try {
+                    return await this.postInTransaction(tx, {
+                        avhVoucherId: saved.header.avhVoucherId,
+                        avhCompanyId: dto.avhCompanyId,
+                        avhBranchId: dto.avhBranchId,
+                        avhAccYear: dto.avhAccYear,
+                        allocations: dto.allocations ?? [],
+                        creditsApplied: dto.creditsApplied ?? [],
+                        otherLineBills: otherLineBills ?? [],
+                        onAccount,
+                        approvalId: approvalId ?? null,
+                    }, postActor);
+                }
+                catch (error) {
+                    if ((0, till_errors_1.tillErrorCodeOf)(error) !== till_enum_1.TillErrorCode.APPROVAL_REQUIRED) {
+                        throw error;
+                    }
+                    await tx.$executeRaw `ROLLBACK TO SAVEPOINT payment_one_call_post`;
+                    approvalRequired = error;
+                    return null;
+                }
             }, POST_TRANSACTION_OPTIONS);
+            if (posted) {
+                return posted;
+            }
         }
         catch (error) {
             throw rethrowAllocationError(error);
         }
+        throw approvalRequired;
     }
     async postInTransaction(tx, dto, actor) {
         await this.lockHeader(tx, dto.avhVoucherId, dto.avhAccYear);

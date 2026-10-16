@@ -411,6 +411,7 @@ class SaveDraftPaymentDto extends SavePaymentDto {
     post;
     onAccount;
     otherLineBills;
+    approvalId;
 }
 exports.SaveDraftPaymentDto = SaveDraftPaymentDto;
 __decorate([
@@ -443,7 +444,10 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         default: false,
-        description: 'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. A refusal leaves no draft. Judged on the Post right alone.',
+        description: 'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. ' +
+            'A refusal leaves no draft — except 428 TILL_APPROVAL_REQUIRED (notes 131): the payment is kept as a DRAFT and the error names it ' +
+            '(srcDocType PAYMENT, srcDocId = its avhVoucherId), so /till/approvals/request can name it; post again with that avhVoucherId ' +
+            'and approvalId. Judged on the Post right alone.',
     }),
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
@@ -469,6 +473,18 @@ __decorate([
     (0, class_transformer_1.Type)(() => post_receipt_dto_1.PostReceiptOtherLinePinDto),
     __metadata("design:type", Array)
 ], SaveDraftPaymentDto.prototype, "otherLineBills", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Only with post: true — notes 131, the same as on /payments/post: an APPROVED CASH_PAYMENT request ' +
+            '(/till/approvals/request with srcDocType PAYMENT and the srcDocId the 428 TILL_APPROVAL_REQUIRED named). ' +
+            'Send it with avhVoucherId = that srcDocId: the request approves that draft, not a new one. Taken by the ' +
+            'post; a wrong one → 422 TILL_APPROVAL_INVALID, and the call saves nothing.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveDraftPaymentDto.prototype, "approvalId", void 0);
 class UpdatePaymentHeaderDto extends post_receipt_dto_1.ReceiptKeysDto {
     avhRemarks;
     avhUsrRefno;

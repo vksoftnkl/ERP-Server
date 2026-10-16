@@ -4,6 +4,7 @@ import { ArrayMaxSize, IsArray, IsIn, IsOptional, ValidateNested } from 'class-v
 import {
   NullableDateString,
   NullableString,
+  NullableUuid,
   OptionalBoolean,
   OptionalNumber,
   OptionalUuid,
@@ -374,11 +375,17 @@ export class SaveDraftPaymentDto extends SavePaymentDto {
    * off this same body, so `onAccount` is REQUIRED when posting (400 without
    * it). Judged on the Post right alone: a user with Post but not Create may
    * raise a payment this way (notes 94 A). Omitted or false saves a draft.
+   *
+   * Notes 131: the one refusal that keeps the draft is 428
+   * TILL_APPROVAL_REQUIRED — the CASH_PAYMENT gate needs a document to name.
    */
   @ApiPropertyOptional({
     default: false,
     description:
-      'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. A refusal leaves no draft. Judged on the Post right alone.',
+      'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. ' +
+      'A refusal leaves no draft — except 428 TILL_APPROVAL_REQUIRED (notes 131): the payment is kept as a DRAFT and the error names it ' +
+      '(srcDocType PAYMENT, srcDocId = its avhVoucherId), so /till/approvals/request can name it; post again with that avhVoucherId ' +
+      'and approvalId. Judged on the Post right alone.',
   })
   @OptionalBoolean()
   post?: boolean;
@@ -403,6 +410,18 @@ export class SaveDraftPaymentDto extends SavePaymentDto {
   @ValidateNested({ each: true })
   @Type(() => PostReceiptOtherLinePinDto)
   otherLineBills?: PostReceiptOtherLinePinDto[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Only with post: true — notes 131, the same as on /payments/post: an APPROVED CASH_PAYMENT request ' +
+      '(/till/approvals/request with srcDocType PAYMENT and the srcDocId the 428 TILL_APPROVAL_REQUIRED named). ' +
+      'Send it with avhVoucherId = that srcDocId: the request approves that draft, not a new one. Taken by the ' +
+      'post; a wrong one → 422 TILL_APPROVAL_INVALID, and the call saves nothing.',
+  })
+  @NullableUuid()
+  approvalId?: string | null;
 }
 
 /** §4.7 — `PUT /payments/update-header`. The four keys and the editable fields, nothing else. */

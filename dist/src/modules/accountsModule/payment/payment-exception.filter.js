@@ -14,7 +14,7 @@ const common_1 = require("@nestjs/common");
 const module_exception_filter_utils_1 = require("../../../common/utils/module-exception-filter.utils");
 let PaymentExceptionFilter = class PaymentExceptionFilter extends module_exception_filter_utils_1.AccountsExceptionFilter {
     constructor() {
-        super(/\b(avh[A-Z][a-zA-Z0-9]*|td[A-Z][a-zA-Z0-9]*|abl[A-Z][a-zA-Z0-9]*|abj[A-Z][a-zA-Z0-9]*|allocations(\.\d+)?(\.[a-zA-Z]+)?|creditsApplied(\.\d+)?(\.[a-zA-Z]+)?|otherLines(\.\d+)?(\.[a-zA-Z]+)?|otherLineBills|tenders(\.\d+)?(\.[a-zA-Z.]+)?|cheque(\.[a-zA-Z]+)?|beneficiary(\.[a-zA-Z]+)?|onAccount|companyId|branchId|accYear|partyId|billId|billAccYear|onDate|reason|editRemark|baseRevision)\b/);
+        super(/\b(avh[A-Z][a-zA-Z0-9]*|td[A-Z][a-zA-Z0-9]*|abl[A-Z][a-zA-Z0-9]*|abj[A-Z][a-zA-Z0-9]*|allocations(\.\d+)?(\.[a-zA-Z]+)?|creditsApplied(\.\d+)?(\.[a-zA-Z]+)?|otherLines(\.\d+)?(\.[a-zA-Z]+)?|otherLineBills|tenders(\.\d+)?(\.[a-zA-Z.]+)?|cheque(\.[a-zA-Z]+)?|beneficiary(\.[a-zA-Z]+)?|onAccount|approvalId|companyId|branchId|accYear|partyId|billId|billAccYear|onDate|reason|editRemark|baseRevision)\b/);
     }
 };
 exports.PaymentExceptionFilter = PaymentExceptionFilter;
