@@ -1509,6 +1509,8 @@ export class TillMovementService {
             amount: difference.abs(),
             rule: decision.rule,
             verdict: decision.verdict,
+            // notes 129 §1: tap_self_allowed says the session's own cashier decided it
+            ...(selfApproval ? { selfAllowed: true } : {}),
             requestedBy: session.tssOperatorId,
             requestedOn: anchor.tcmCreatedOn,
             reasonId: decision.reasonId,

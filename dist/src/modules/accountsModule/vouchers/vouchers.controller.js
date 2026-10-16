@@ -155,7 +155,10 @@ __decorate([
         summary: 'Ledgers legal on one side of one voucher type',
         description: 'The type’s vchr_dr_groups / vchr_cr_groups, a sub-group of a listed group counting, MINUS ' +
             'instrument-controlled ledgers (Cheques in Hand, PDC holding, card / UPI clearing — those ' +
-            'belong to Received / Issued Cheques, menus 51 / 52). Empty groups = any ledger.',
+            'belong to Received / Issued Cheques, menus 51 / 52). Empty groups = any ledger. Notes 130: never a ' +
+            'cash / bank ledger (led_ledger_type CASH / BANK, or under Cash-in-Hand / Bank Accounts / Bank OD A/c) ' +
+            'on any type — the money side is a tender (the instrument, a Contra line’s tenderId) — and nothing at ' +
+            'all on the money side of a Receipt (DR) / Payment (CR). Grid 119 is the same list.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: voucher_response_dto_1.LedgerPickSuccessDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: voucher_response_dto_1.VoucherErrorResponseDto }),

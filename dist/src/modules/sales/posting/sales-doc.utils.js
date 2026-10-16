@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SALES_MENU_ID = exports.SALES_VOUCHER_TYPE = exports.TENDER_TYPE = void 0;
+exports.SALES_MENU_ID = exports.SALES_VOUCHER_TYPE = exports.ON_ACCOUNT_TENDER_TYPES = exports.TENDER_TYPE = void 0;
 exports.round2 = round2;
 exports.round4 = round4;
 exports.money = money;
@@ -120,6 +120,11 @@ exports.TENDER_TYPE = {
     LOYALTY: 10,
     VOUCHER: 11,
 };
+exports.ON_ACCOUNT_TENDER_TYPES = [
+    exports.TENDER_TYPE.CREDIT,
+    exports.TENDER_TYPE.TEMP_CREDIT,
+    exports.TENDER_TYPE.RRN,
+];
 exports.SALES_VOUCHER_TYPE = {
     BILL: 3,
     ORDER: 4,

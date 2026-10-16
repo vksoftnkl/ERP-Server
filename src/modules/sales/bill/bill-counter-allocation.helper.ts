@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { TENDER_TYPE } from '../posting/sales-doc.utils';
+import { ON_ACCOUNT_TENDER_TYPES, TENDER_TYPE } from '../posting/sales-doc.utils';
 
 /**
  * notes (47) D1 / notes (49) item 2 — what the customer paid AT THE COUNTER is
@@ -37,11 +37,10 @@ const SETTLEMENT_MODE_BY_TYPE: Record<number, string> = {
   [TENDER_TYPE.WALLET]: 'WALLET',
   [TENDER_TYPE.CHEQUE]: 'CHEQUE',
   [TENDER_TYPE.BANK]: 'BANK',
-  [TENDER_TYPE.RRN]: 'BANK',
   [TENDER_TYPE.LOYALTY]: 'LOYALTY',
   [TENDER_TYPE.VOUCHER]: 'VOUCHER',
 };
-const NOT_SETTLING: number[] = [TENDER_TYPE.CREDIT, TENDER_TYPE.TEMP_CREDIT];
+const NOT_SETTLING: readonly number[] = ON_ACCOUNT_TENDER_TYPES;
 // A settling row moves the DR invoice, so it is a CR movement.
 const INVOICE_MOVEMENT = 'CR';
 const COUNTER_REMARKS = 'Paid at the counter';

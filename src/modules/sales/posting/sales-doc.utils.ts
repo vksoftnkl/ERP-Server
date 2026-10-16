@@ -162,6 +162,17 @@ export const TENDER_TYPE = {
   VOUCHER: 11,
 } as const;
 
+/**
+ * Tenders that move no money: the bill stays on the customer's account and writes
+ * no tender leg — CREDIT, TEMP_CREDIT, and (notes 129 §4) RRN, a bill settled
+ * against a sale return's credit note, which the bill-wise allocation knocks off.
+ */
+export const ON_ACCOUNT_TENDER_TYPES: readonly number[] = [
+  TENDER_TYPE.CREDIT,
+  TENDER_TYPE.TEMP_CREDIT,
+  TENDER_TYPE.RRN,
+];
+
 /** `accounts.acc_voucher_types.vchr_type_id` for every sales document. */
 export const SALES_VOUCHER_TYPE = {
   BILL: 3,

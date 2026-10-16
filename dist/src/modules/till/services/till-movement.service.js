@@ -1046,6 +1046,7 @@ let TillMovementService = class TillMovementService {
                         amount: difference.abs(),
                         rule: decision.rule,
                         verdict: decision.verdict,
+                        ...(selfApproval ? { selfAllowed: true } : {}),
                         requestedBy: session.tssOperatorId,
                         requestedOn: anchor.tcmCreatedOn,
                         reasonId: decision.reasonId,

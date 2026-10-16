@@ -1,7 +1,14 @@
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import type { SaveBillDto } from './dto/save-bill.dto';
 import type { BillChargePayload, BillTenderPayload } from './types/bill-api.types';
-import { TENDER_TYPE, isoDate, isoToday, num, round2 } from '../posting/sales-doc.utils';
+import {
+  ON_ACCOUNT_TENDER_TYPES,
+  TENDER_TYPE,
+  isoDate,
+  isoToday,
+  num,
+  round2,
+} from '../posting/sales-doc.utils';
 import { chargePostsSeparately } from '../posting/sales-leg.sources';
 import { decodeTempCredit, type TempCreditDetails } from './bill-temp-credit';
 
@@ -496,10 +503,10 @@ export function snapshotFromDto(
 // ─── derived figures every guard and leg builder reads ─────────────────────
 
 export function isCreditTender(t: BillSnapshotTender): boolean {
-  return t.tenderTypeId === TENDER_TYPE.CREDIT || t.tenderTypeId === TENDER_TYPE.TEMP_CREDIT;
+  return ON_ACCOUNT_TENDER_TYPES.includes(t.tenderTypeId);
 }
 
-/** Money that actually settled the bill: every tender but CREDIT / TEMP_CR. */
+/** Money that actually settled the bill: every tender but CREDIT / TEMP_CR / RRN. */
 export function settledByTenders(snap: BillSnapshot): number {
   return round2(snap.tenders.filter((t) => !isCreditTender(t)).reduce((s, t) => s + t.amount, 0));
 }

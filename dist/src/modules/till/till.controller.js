@@ -927,10 +927,13 @@ __decorate([
             'caller’s Till Approval Authority grant for CASH_VARIANCE covers it (DECIDED; 403 TILL_APPROVER_NO_GRANT / ' +
             'TILL_APPROVER_LIMIT otherwise, nothing written); without treatment it is PENDING for ' +
             'sessions/decide-variance with the answer’s tcmId, by another approver (SENT_FOR_APPROVAL). The caller is ' +
-            'never the session’s cashier (403 TILL_RECEIVER_SELF) unless till.single_operator — the supervisor who ' +
-            'closed it for the cashier may approve it (notes 116) — and types their till PIN ' +
-            '(the owner approving their own session under single_operator may leave it out). Till Sessions (273) ' +
-            'OVERRIDE.',
+            'not the session’s cashier (403 TILL_RECEIVER_SELF) unless till.single_operator, or (notes 127 §3 / 129 §1) ' +
+            'the company’s CASH_VARIANCE approval rule has tar_allow_self — the supervisor who closed it for the ' +
+            'cashier may approve it (notes 116). The caller always types their till PIN; only the owner approving ' +
+            'their own session under single_operator may leave it out. A self-approval is journalled: the answer’s ' +
+            'selfApproval (RULE | SINGLE_OPERATOR, null when by someone else), each CASH_RECEIVED till event’s payload ' +
+            'selfApproved / selfApproval, the session’s receivedBySelf, the Z rows’ received_by_self, and a gap decided ' +
+            'here files its till_approval with tap_self_allowed. Till Sessions (273) OVERRIDE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiForbiddenResponse)({

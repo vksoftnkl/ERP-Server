@@ -13,6 +13,7 @@ exports.PaymentPostingService = void 0;
 exports.rethrowAllocationError = rethrowAllocationError;
 const common_1 = require("@nestjs/common");
 const money_lines_1 = require("../../../common/posting/money-lines");
+const tender_detail_api_types_1 = require("../tenderDetail/types/tender-detail-api.types");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -487,7 +488,11 @@ let PaymentPostingService = class PaymentPostingService {
     async rebuildLines(tx, header, paymentDate, settings, party) {
         const draft = (0, payment_draft_lines_1.rehydratePaymentDraft)(header.avhDraftLines);
         const stored = await tx.accTenderDetail.findMany({
-            where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+            where: {
+                tdSrcDocId: header.avhVoucherId,
+                tdSrcDocType: tender_detail_api_types_1.TenderSrcDocType.PAYMENT,
+                tdIsDeleted: false,
+            },
             orderBy: { tdRowNo: 'asc' },
         });
         const tenders = await (0, payment_lines_1.normalisePaymentTenders)(tx, {
@@ -913,7 +918,7 @@ let PaymentPostingService = class PaymentPostingService {
     }
     async tenderIdsByRow(tx, voucherId) {
         const rows = await tx.accTenderDetail.findMany({
-            where: { tdSrcDocId: voucherId, tdIsDeleted: false },
+            where: { tdSrcDocId: voucherId, tdSrcDocType: tender_detail_api_types_1.TenderSrcDocType.PAYMENT, tdIsDeleted: false },
             select: { tdId: true, tdRowNo: true },
         });
         return new Map(rows.map((row) => [row.tdRowNo, row.tdId]));

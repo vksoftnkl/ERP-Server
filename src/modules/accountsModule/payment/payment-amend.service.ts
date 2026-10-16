@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { retireMoneyLineRows } from '../../../common/posting/money-lines';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
@@ -367,6 +368,11 @@ export class PaymentAmendService {
       where: { avVoucherId: { in: voucherIds }, avIsDeleted: false },
       data: { avIsDeleted: true, avModifiedOn: now, avModifiedBy: actor },
     });
+    // notes 128 §3: and the server's label rows on them (td_src_doc_type
+    // 'VOUCHER'), so the re-post's coverPostedVoucher judges the new legs afresh.
+    for (const voucherId of voucherIds) {
+      await retireMoneyLineRows(tx, voucherId, actor);
+    }
     // f · the old cheque vouchers, retired
     let pdcVouchersRemoved = 0;
     for (const voucher of vouchers) {

@@ -89,12 +89,15 @@ export class VoucherLookupsService {
     const groups = (q.side === 'DR' ? type.drGroups : type.crGroups).map((g) => g.groupId);
     const instrument = [...(await loadInstrumentLedgers(this.tx, q.companyId))];
     const limit = q.limit ?? 50;
-    // notes (56): on a Receipt / Payment the money side offers cash and bank
-    // ONLY and the other side never — the same rule `sideVerdict` refuses by,
-    // so the route and the Qt grid offer one list.
+    // Notes 130 (after 126 §6): the money side is a tender — the instrument, a
+    // Contra line's tender list — never a typed cash / bank ledger, which the
+    // derive refuses on every type. So no type offers one, and the money side
+    // of a Receipt (Dr) / Payment (Cr) offers nothing at all (`sideVerdict`
+    // refuses any other ledger there). Grid 119 is the same list (migration 20261016160000).
     const moneySide = moneySideOf(type.nature);
-    const moneyOnly = moneySide !== null && moneySide === q.side;
-    const noMoney = moneySide !== null && moneySide !== q.side;
+    if (moneySide !== null && moneySide === q.side) {
+      return { typeCode: type.typeCode, side: q.side, ledgers: [] };
+    }
     const moneyIds = [...MONEY_GROUP_IDS];
     const moneyNames = [...MONEY_GROUP_NAMES];
     const rows = await this.tx.$queryRaw<{ led_id: string }[]>`
@@ -117,8 +120,8 @@ export class VoucherLookupsService {
        WHERE (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND l.led_is_deleted = false AND l.led_is_active = true
          AND (${groups.length === 0} OR l.led_group_id IN (SELECT acc_group_id FROM allowed))
-         AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
-         AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
+         AND l.led_group_id NOT IN (SELECT acc_group_id FROM money)
+         AND COALESCE(upper(l.led_ledger_type), '') NOT IN ('CASH', 'BANK')
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
          AND ${looseSearchSql(['l.led_name', 'l.led_alias'], q.q)}
        ORDER BY l.led_name

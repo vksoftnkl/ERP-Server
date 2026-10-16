@@ -339,7 +339,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
 
   // ─── §6.2 the picker ─────────────────────────────────────────────────────
 
-  it('GET /ledger-pick — a Contra offers cash and bank, not a customer, not Cheques in Hand (#8 client, #11)', async () => {
+  it('GET /ledger-pick — a Contra offers no ledger: its lines are picked from the tender list (notes 130); Jrl lists the rest', async () => {
     const res = await get('ledger-pick', {
       companyId: COMPANY,
       branchId: BRANCH,
@@ -348,11 +348,8 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       limit: 200,
     });
     expect(res.status).toBe(200);
-    const ids = res.body.data.ledgers.map((l: { ledId: string }) => l.ledId);
-    expect(ids).toContain(LEDGER.CASH);
-    expect(ids).toContain(LEDGER.KVB);
-    expect(ids).not.toContain(fx.customer);
-    expect(ids).not.toContain(LEDGER.CHEQUES);
+    // Con's groups are cash / bank only, and the money side is a tender now.
+    expect(res.body.data.ledgers).toEqual([]);
 
     const any = await get('ledger-pick', {
       companyId: COMPANY,
@@ -376,7 +373,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
 
   // ─── notes (56) · the money side of a Receipt / Payment in the picker ────
 
-  it('GET /ledger-pick — RcpV DR offers cash and bank ONLY, RcpV CR never; PmtV the mirror; Jrl both (notes 56)', async () => {
+  it('GET /ledger-pick — no type offers cash / bank; RcpV DR and PmtV CR offer nothing (the instrument); the other side the rest (notes 56, 130)', async () => {
     const pick = async (typeCode: string, side: 'DR' | 'CR', q?: string) => {
       const res = await get('ledger-pick', {
         companyId: COMPANY,
@@ -391,13 +388,8 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     };
     const tagged = `E2E-VCH-${fx.tag}`;
 
-    // RECEIPT: DR is cash / bank only — no customer, no expense, and no Cheques in Hand.
-    const rcpDr = await pick('RcpV', 'DR');
-    expect(rcpDr).toContain(LEDGER.CASH);
-    expect(rcpDr).toContain(LEDGER.KVB);
-    expect(rcpDr).not.toContain(fx.customer);
-    expect(rcpDr).not.toContain(fx.stationery);
-    expect(rcpDr).not.toContain(LEDGER.CHEQUES);
+    // RECEIPT: DR is the money side — picked from the tender list, so no ledger at all.
+    expect(await pick('RcpV', 'DR')).toEqual([]);
     expect(await pick('RcpV', 'DR', tagged)).toEqual([]);
     // RECEIPT: CR never cash / bank — the customer is there, Cash and the bank are not.
     const rcpCr = await pick('RcpV', 'CR');
@@ -408,10 +400,7 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     );
 
     // PAYMENT: the mirror.
-    const pmtCr = await pick('PmtV', 'CR');
-    expect(pmtCr).toContain(LEDGER.CASH);
-    expect(pmtCr).toContain(LEDGER.KVB);
-    expect(pmtCr).not.toContain(fx.supplier);
+    expect(await pick('PmtV', 'CR')).toEqual([]);
     expect(await pick('PmtV', 'CR', tagged)).toEqual([]);
     const pmtDr = await pick('PmtV', 'DR');
     expect(pmtDr).not.toContain(LEDGER.CASH);
@@ -420,9 +409,12 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
       expect.arrayContaining([fx.supplier, fx.stationery]),
     );
 
-    // JOURNAL: no money side — both sides still offer Cash.
-    expect(await pick('Jrl', 'DR')).toContain(LEDGER.CASH);
-    expect(await pick('Jrl', 'CR')).toContain(LEDGER.CASH);
+    // JOURNAL: no money side (notes 126 §6), so neither side offers cash or a bank (notes 130).
+    for (const side of ['DR', 'CR'] as const) {
+      expect(await pick('Jrl', side, 'Cash In Hand')).not.toContain(LEDGER.CASH);
+      expect(await pick('Jrl', side, 'Kvb')).not.toContain(LEDGER.KVB);
+      expect(await pick('Jrl', side, tagged)).toContain(fx.customer);
+    }
   });
 
   it('POST /validate — RcpV Cr Cash and PmtV Dr Cash are refused as a Contra; every typed cash / bank line wants a tender; a Journal on cash / bank has no money side (notes 56, 126 §6)', async () => {

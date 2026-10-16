@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { coverPostedVoucher } from '../../../common/posting/money-lines';
+import { TenderSrcDocType } from '../tenderDetail/types/tender-detail-api.types';
 import { assertVoucherBooksReconcile } from '../vouchers/voucher-books.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -630,8 +631,14 @@ export class ReceiptPostingService {
   ): Promise<{ tenders: NormalisedTender[]; otherLines: NormalisedOtherLine[] }> {
     const draft = rehydrateDraft(header.avhDraftLines);
 
+    // Notes 128 §3: the receipt's own instruments — not a server label row
+    // (td_src_doc_type 'VOUCHER') that coverPostedVoucher wrote on the voucher.
     const stored = await tx.accTenderDetail.findMany({
-      where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+      where: {
+        tdSrcDocId: header.avhVoucherId,
+        tdSrcDocType: TenderSrcDocType.RECEIPT,
+        tdIsDeleted: false,
+      },
       orderBy: { tdRowNo: 'asc' },
     });
 
@@ -1293,7 +1300,8 @@ export class ReceiptPostingService {
     voucherId: string,
   ): Promise<Map<number, string>> {
     const rows = await tx.accTenderDetail.findMany({
-      where: { tdSrcDocId: voucherId, tdIsDeleted: false },
+      // notes 128 §3: a server label row numbers from 1 too — never pair it
+      where: { tdSrcDocId: voucherId, tdSrcDocType: TenderSrcDocType.RECEIPT, tdIsDeleted: false },
       select: { tdId: true, tdRowNo: true },
     });
     return new Map(rows.map((row) => [row.tdRowNo, row.tdId]));

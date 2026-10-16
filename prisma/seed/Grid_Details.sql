@@ -1707,21 +1707,24 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
          WHERE (m.led_company_id IS NULL OR m.led_company_id::text = 'icompany_id')
            AND m.led_is_deleted = false
            AND accounts.fn_is_cheques_in_hand_ledger(m.led_id))
-   AND (NOT EXISTS (SELECT 1 FROM accounts.acc_voucher_types t
-                     WHERE t.vchr_type_code = 'itype_code' AND t.vchr_nature IN ('RECEIPT', 'PAYMENT'))
-        OR EXISTS (
-                WITH RECURSIVE up AS (
-                    SELECT x.acc_group_parent_id, lower(x.acc_group_name) AS n, 0 AS d
-                      FROM accounts.acc_group_master x WHERE x.acc_group_id = l.led_group_id
-                    UNION ALL
-                    SELECT p.acc_group_parent_id, lower(p.acc_group_name), up.d + 1
-                      FROM up JOIN accounts.acc_group_master p ON p.acc_group_id = up.acc_group_parent_id
-                     WHERE up.d < 24)
-                SELECT 1 FROM up WHERE up.n IN ('cash-in-hand', 'bank accounts', 'bank od a/c'))
-           = EXISTS (SELECT 1 FROM accounts.acc_voucher_types t
-                      WHERE t.vchr_type_code = 'itype_code'
-                        AND ((t.vchr_nature = 'RECEIPT' AND 'iside' = 'DR')
-                          OR (t.vchr_nature = 'PAYMENT' AND 'iside' = 'CR'))))
+   -- notes 130: the money side is a tender (the instrument / a Contra line's
+   -- tender list), never a typed cash / bank ledger -- the server refuses one
+   -- (VCH_MONEY_LEDGER_NOT_ALLOWED / VCH_MONEY_LINE_NO_TENDER), on every type
+   AND COALESCE(l.led_ledger_type, '') NOT IN ('CASH', 'BANK')
+   AND NOT EXISTS (
+        WITH RECURSIVE up AS (
+            SELECT x.acc_group_parent_id, lower(x.acc_group_name) AS n, 0 AS d
+              FROM accounts.acc_group_master x WHERE x.acc_group_id = l.led_group_id
+            UNION ALL
+            SELECT p.acc_group_parent_id, lower(p.acc_group_name), up.d + 1
+              FROM up JOIN accounts.acc_group_master p ON p.acc_group_id = up.acc_group_parent_id
+             WHERE up.d < 24)
+        SELECT 1 FROM up WHERE up.n IN ('cash-in-hand', 'bank accounts', 'bank od a/c'))
+   -- ...and the money side of a Receipt (Dr) / Payment (Cr) lists nothing at all
+   AND NOT EXISTS (SELECT 1 FROM accounts.acc_voucher_types t
+                    WHERE t.vchr_type_code = 'itype_code'
+                      AND ((t.vchr_nature = 'RECEIPT' AND 'iside' = 'DR')
+                        OR (t.vchr_nature = 'PAYMENT' AND 'iside' = 'CR')))
  ORDER BY l.led_name$seed$)
     ,(120, 'MAIN LIST - CHEQUE BOOKS', 'notes (55): our cheque books for a company. ibank_ledger_id narrows to one bank, istatus to ACTIVE / FINISHED / CLOSED; '''' = all.', 'Bank'            , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT
        b.acb_id,

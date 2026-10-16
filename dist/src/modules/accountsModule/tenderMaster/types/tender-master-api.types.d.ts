@@ -4,7 +4,11 @@ export type { AccountsSuccessResponse as TenderMasterSuccessResponse } from "../
 import type { AccountsErrorDetail } from "../../../../common/types/module-api.types";
 export declare enum TenderMasterErrorCode {
     LEDGER_REQUIRED = "TENDER_LEDGER_REQUIRED",
-    LEDGER_TYPE = "TENDER_LEDGER_TYPE",
+    CASH_LEDGER_NOT_CASH = "TENDER_CASH_LEDGER_NOT_CASH",
+    CLEARING_LEDGER_IS_MONEY = "TENDER_CLEARING_LEDGER_IS_MONEY",
+    BANK_LEDGER_NOT_BANK = "TENDER_BANK_LEDGER_NOT_BANK",
+    CHEQUE_LEDGER_IS_MONEY = "TENDER_CHEQUE_LEDGER_IS_MONEY",
+    LEDGER_NOT_ALLOWED = "TENDER_LEDGER_NOT_ALLOWED",
     LEDGER_NOT_FOUND = "TENDER_LEDGER_NOT_FOUND",
     NOT_FOUND = "TENDER_NOT_FOUND",
     COMPANY_NOT_FOUND = "TENDER_COMPANY_NOT_FOUND",

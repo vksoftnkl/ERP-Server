@@ -10,7 +10,7 @@ import { ACC_YEAR, BRANCH, COMPANY, data, prisma } from './helpers/payment-e2e';
  * dev database.
  *
  *   tender master  CARD / WALLET / UPI never on a cash / bank ledger, CASH only on
- *                  a cash one, BANK only on a bank one (TENDER_LEDGER_TYPE);
+ *                  a cash one, BANK only on a bank one (notes 128 §2: a code each);
  *                  TEMP_CR / CREDIT / LOYALTY need no ledger
  *   §6 register    a Journal has no money side (VCH_MONEY_LEDGER_NOT_ALLOWED); a
  *                  Receipt Voucher's money is its instrument, never a typed line
@@ -95,19 +95,22 @@ afterAll(async () => {
 });
 
 describe('the tender master: the ledger fits the type (notes 126, the user’s addition)', () => {
+  // Notes 128 §2: one code per rule.
   it.each([
-    ['CARD on a bank ledger', 2, KVB],
-    ['WALLET on a bank ledger', 4, KVB],
-    ['CASH on a bank ledger', 1, KVB],
-    ['BANK on a cash ledger', 6, CASH_IN_HAND],
-    ['CHEQUE on a bank ledger', 5, KVB],
-    ['CASH on a clearing ledger', 1, CARD_CLEARING],
-  ])('%s → 400 TENDER_LEDGER_TYPE', async (_what, typeId, ledgerId) => {
+    ['CARD on a bank ledger', 2, KVB, 'TENDER_CLEARING_LEDGER_IS_MONEY'],
+    ['UPI on a cash ledger', 3, CASH_IN_HAND, 'TENDER_CLEARING_LEDGER_IS_MONEY'],
+    ['WALLET on a bank ledger', 4, KVB, 'TENDER_CLEARING_LEDGER_IS_MONEY'],
+    ['CASH on a bank ledger', 1, KVB, 'TENDER_CASH_LEDGER_NOT_CASH'],
+    ['CASH on a clearing ledger', 1, CARD_CLEARING, 'TENDER_CASH_LEDGER_NOT_CASH'],
+    ['BANK on a cash ledger', 6, CASH_IN_HAND, 'TENDER_BANK_LEDGER_NOT_BANK'],
+    ['CHEQUE on a bank ledger', 5, KVB, 'TENDER_CHEQUE_LEDGER_IS_MONEY'],
+    ['CREDIT with a ledger', 9, CARD_CLEARING, 'TENDER_LEDGER_NOT_ALLOWED'],
+    // notes 129 §4: RRN moves no money either
+    ['RRN with a ledger', 7, CARD_CLEARING, 'TENDER_LEDGER_NOT_ALLOWED'],
+  ])('%s (type %i, ledger %s) → 400 %s', async (_what, typeId, ledgerId, code) => {
     const res = await tenderMaster({ tndTypeId: String(typeId), tndName: `ZT126 ${tag} ${typeId}`, tndLedgerId: ledgerId });
     expect(res.status).toBe(400);
-    expect(firstError(res)).toEqual(
-      expect.objectContaining({ code: 'TENDER_LEDGER_TYPE', field: 'tndLedgerId' }),
-    );
+    expect(firstError(res)).toEqual(expect.objectContaining({ code, field: 'tndLedgerId' }));
   });
 
   it('a BANK tender with no ledger → 400 TENDER_LEDGER_REQUIRED; a TEMP_CR one needs none', async () => {

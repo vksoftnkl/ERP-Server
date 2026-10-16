@@ -40,6 +40,7 @@ export declare const TENDER_TYPE: {
     readonly LOYALTY: 10;
     readonly VOUCHER: 11;
 };
+export declare const ON_ACCOUNT_TENDER_TYPES: readonly number[];
 export declare const SALES_VOUCHER_TYPE: {
     readonly BILL: 3;
     readonly ORDER: 4;

@@ -57,8 +57,9 @@ let VoucherLookupsService = class VoucherLookupsService {
         const instrument = [...(await (0, voucher_facts_1.loadInstrumentLedgers)(this.tx, q.companyId))];
         const limit = q.limit ?? 50;
         const moneySide = (0, voucher_derive_1.moneySideOf)(type.nature);
-        const moneyOnly = moneySide !== null && moneySide === q.side;
-        const noMoney = moneySide !== null && moneySide !== q.side;
+        if (moneySide !== null && moneySide === q.side) {
+            return { typeCode: type.typeCode, side: q.side, ledgers: [] };
+        }
         const moneyIds = [...voucher_facts_1.MONEY_GROUP_IDS];
         const moneyNames = [...voucher_facts_1.MONEY_GROUP_NAMES];
         const rows = await this.tx.$queryRaw `
@@ -81,8 +82,8 @@ let VoucherLookupsService = class VoucherLookupsService {
        WHERE (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND l.led_is_deleted = false AND l.led_is_active = true
          AND (${groups.length === 0} OR l.led_group_id IN (SELECT acc_group_id FROM allowed))
-         AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
-         AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
+         AND l.led_group_id NOT IN (SELECT acc_group_id FROM money)
+         AND COALESCE(upper(l.led_ledger_type), '') NOT IN ('CASH', 'BANK')
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
          AND ${(0, loose_search_1.looseSearchSql)(['l.led_name', 'l.led_alias'], q.q)}
        ORDER BY l.led_name

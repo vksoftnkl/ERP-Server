@@ -23,6 +23,7 @@ import type { SalesLeg } from '../posting/types/sales-leg.types';
 import {
   SALES_MENU_ID,
   SALES_VOUCHER_TYPE,
+  ON_ACCOUNT_TENDER_TYPES,
   TENDER_TYPE,
   isoDate,
   isoToday,
@@ -313,7 +314,7 @@ export class BillRetenderService {
         const legs: SalesLeg[] = [];
         for (const t of newRows) {
           const typeId = Number(t.tdTenderTypeId);
-          if (typeId === TENDER_TYPE.CREDIT || typeId === TENDER_TYPE.TEMP_CREDIT) {
+          if (ON_ACCOUNT_TENDER_TYPES.includes(typeId)) {
             // Now on credit: the party takes the debit back.
             legs.push({
               ledgerId: bill.sbCustId,
@@ -339,10 +340,7 @@ export class BillRetenderService {
           }
         }
         for (const r of rows) {
-          if (
-            r.td_tender_type_id === TENDER_TYPE.CREDIT ||
-            r.td_tender_type_id === TENDER_TYPE.TEMP_CREDIT
-          ) {
+          if (ON_ACCOUNT_TENDER_TYPES.includes(r.td_tender_type_id)) {
             legs.push({
               ledgerId: bill.sbCustId,
               drCr: 'CR',
@@ -460,7 +458,7 @@ export class BillRetenderService {
         { tendered: Prisma.Decimal | null; settled: Prisma.Decimal | null }[]
       >`
         SELECT SUM(td_amount) AS tendered,
-               SUM(CASE WHEN td_tender_type_id IN (${TENDER_TYPE.CREDIT}, ${TENDER_TYPE.TEMP_CREDIT}) THEN 0 ELSE td_amount END) AS settled
+               SUM(CASE WHEN td_tender_type_id = ANY(${[...ON_ACCOUNT_TENDER_TYPES]}::int[]) THEN 0 ELSE td_amount END) AS settled
           FROM accounts.acc_tender_detail
          WHERE td_src_module = 'SALES' AND td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${bill.sbId}::uuid
            AND td_acc_year = ${bill.sbAccYear}::char(9) AND td_is_deleted = false AND td_is_voided = false`;

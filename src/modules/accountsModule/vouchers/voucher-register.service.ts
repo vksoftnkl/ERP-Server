@@ -1712,6 +1712,9 @@ export class VoucherRegisterService {
            ORDER BY x.apd_created_on DESC LIMIT 1) r ON true
        WHERE t.td_src_doc_id = ${s.avh_voucher_id}::uuid
          AND t.td_is_deleted = false AND t.td_is_voided = false
+         -- notes 128 §3: the voucher's instruments, not the server's label rows
+         -- (a Contra line's tender, a line coverPostedVoucher labelled)
+         AND t.td_src_doc_type <> 'VOUCHER'
        ORDER BY t.td_row_no`;
     const iso = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
     return rows.map((r) => ({

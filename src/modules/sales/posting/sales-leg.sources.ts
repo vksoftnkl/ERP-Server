@@ -153,7 +153,7 @@ export function buildBillLegs(input: BillLegInput): SalesLeg[] {
   //     bill raised against a DC, which already relieved the stock.
   legs.push(...buildCogsLegs(input.cogsAmount));
 
-  // 10 — tenders. A CREDIT or TEMP_CREDIT tender writes NO LEG: the party
+  // 10 — tenders. A CREDIT, TEMP_CREDIT or RRN tender writes NO LEG: the party
   //      stays debited, and that outstanding IS the receivable.
   for (const tender of input.tenders) {
     legs.push(...buildTenderLegs(tender, input.partyLedgerId));
@@ -298,9 +298,10 @@ export function buildCogsLegs(
  *
  * Three cases and they are genuinely different:
  *
- *  * CREDIT (type 9) and TEMP_CREDIT (type 8) write NOTHING. The party stays
- *    debited and that debit IS the outstanding — a leg here would settle a
- *    bill nobody has paid for.
+ *  * CREDIT (type 9), TEMP_CREDIT (type 8) and RRN (type 7, notes 129 §4 — a
+ *    bill settled against a sale return's credit note) write NOTHING. The
+ *    party stays debited and that debit IS the outstanding — a leg here would
+ *    settle a bill nobody has paid for.
  *  * LOYALTY (type 10) posts DR LOYALTY_REDEMPTION, and the tender master's
  *    own `tnd_ledger_id` is IGNORED: points are not money the shop received.
  *  * everything else posts DR its tender ledger / CR the party.

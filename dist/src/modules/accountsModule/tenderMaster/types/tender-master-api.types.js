@@ -4,7 +4,11 @@ exports.TenderMasterErrorCode = void 0;
 var TenderMasterErrorCode;
 (function (TenderMasterErrorCode) {
     TenderMasterErrorCode["LEDGER_REQUIRED"] = "TENDER_LEDGER_REQUIRED";
-    TenderMasterErrorCode["LEDGER_TYPE"] = "TENDER_LEDGER_TYPE";
+    TenderMasterErrorCode["CASH_LEDGER_NOT_CASH"] = "TENDER_CASH_LEDGER_NOT_CASH";
+    TenderMasterErrorCode["CLEARING_LEDGER_IS_MONEY"] = "TENDER_CLEARING_LEDGER_IS_MONEY";
+    TenderMasterErrorCode["BANK_LEDGER_NOT_BANK"] = "TENDER_BANK_LEDGER_NOT_BANK";
+    TenderMasterErrorCode["CHEQUE_LEDGER_IS_MONEY"] = "TENDER_CHEQUE_LEDGER_IS_MONEY";
+    TenderMasterErrorCode["LEDGER_NOT_ALLOWED"] = "TENDER_LEDGER_NOT_ALLOWED";
     TenderMasterErrorCode["LEDGER_NOT_FOUND"] = "TENDER_LEDGER_NOT_FOUND";
     TenderMasterErrorCode["NOT_FOUND"] = "TENDER_NOT_FOUND";
     TenderMasterErrorCode["COMPANY_NOT_FOUND"] = "TENDER_COMPANY_NOT_FOUND";

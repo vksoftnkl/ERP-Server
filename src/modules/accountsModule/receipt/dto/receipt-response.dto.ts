@@ -509,7 +509,9 @@ export class ReceiptTenderDto implements ReceiptTender {
 
   @ApiProperty({
     example: 0,
-    description: 'What the CUSTOMER was charged for paying this way. Income.',
+    description:
+      'What the CUSTOMER was charged for paying this way. Income, and INSIDE tdAmount: ' +
+      'round2(tdAmount × tdSurchargePerc / (100 + tdSurchargePerc)) — 202.00 at 1% carries 2.00 (notes 127 §4).',
   })
   tdSurchargeAmt!: number;
 

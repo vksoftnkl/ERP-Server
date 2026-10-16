@@ -11,11 +11,10 @@ const SETTLEMENT_MODE_BY_TYPE = {
     [sales_doc_utils_1.TENDER_TYPE.WALLET]: 'WALLET',
     [sales_doc_utils_1.TENDER_TYPE.CHEQUE]: 'CHEQUE',
     [sales_doc_utils_1.TENDER_TYPE.BANK]: 'BANK',
-    [sales_doc_utils_1.TENDER_TYPE.RRN]: 'BANK',
     [sales_doc_utils_1.TENDER_TYPE.LOYALTY]: 'LOYALTY',
     [sales_doc_utils_1.TENDER_TYPE.VOUCHER]: 'VOUCHER',
 };
-const NOT_SETTLING = [sales_doc_utils_1.TENDER_TYPE.CREDIT, sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT];
+const NOT_SETTLING = sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES;
 const INVOICE_MOVEMENT = 'CR';
 const COUNTER_REMARKS = 'Paid at the counter';
 const DROPPED_REMARKS = 'Tender no longer on the bill';

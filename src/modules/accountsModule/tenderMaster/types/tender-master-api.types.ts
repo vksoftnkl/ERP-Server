@@ -9,10 +9,20 @@ import type { AccountsErrorDetail } from 'src/common/types/module-api.types';
  * client words its box by the code alone: each string is an API contract.
  */
 export enum TenderMasterErrorCode {
-  /** Every type but TEMP_CR / CREDIT / LOYALTY names the ledger its money sits in. */
+  /** Every type but RRN / TEMP_CR / CREDIT / LOYALTY names the ledger its money sits in. */
   LEDGER_REQUIRED = 'TENDER_LEDGER_REQUIRED',
-  /** The ledger is the wrong kind for the type (CARD on a bank, CASH off Cash-in-Hand …). */
-  LEDGER_TYPE = 'TENDER_LEDGER_TYPE',
+  // Notes 128 §2 — the wrong ledger for the type, one code per rule (was one
+  // TENDER_LEDGER_TYPE), so the client can say which ledger the type wants.
+  /** A CASH tender on a ledger that is not CASH (led_ledger_type, Cash-in-Hand). */
+  CASH_LEDGER_NOT_CASH = 'TENDER_CASH_LEDGER_NOT_CASH',
+  /** A CARD / UPI / WALLET tender on a CASH or BANK ledger: it wants a clearing ledger. */
+  CLEARING_LEDGER_IS_MONEY = 'TENDER_CLEARING_LEDGER_IS_MONEY',
+  /** A BANK tender on a ledger that is not BANK (Bank Accounts). */
+  BANK_LEDGER_NOT_BANK = 'TENDER_BANK_LEDGER_NOT_BANK',
+  /** A CHEQUE tender on a CASH or BANK ledger: a received cheque sits in Cheques In Hand. */
+  CHEQUE_LEDGER_IS_MONEY = 'TENDER_CHEQUE_LEDGER_IS_MONEY',
+  /** An RRN / TEMP_CR / CREDIT / LOYALTY tender given a ledger: those post no tender leg. */
+  LEDGER_NOT_ALLOWED = 'TENDER_LEDGER_NOT_ALLOWED',
   /** A posting / settlement / surcharge ledger id names no live account ledger. */
   LEDGER_NOT_FOUND = 'TENDER_LEDGER_NOT_FOUND',
   /** No live (not deleted) tender has the tndId given (404). */

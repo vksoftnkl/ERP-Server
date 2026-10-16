@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { coverPostedVoucher } from '../../../common/posting/money-lines';
+import { TenderSrcDocType } from '../tenderDetail/types/tender-detail-api.types';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -694,8 +695,14 @@ export class PaymentPostingService {
     tds: PaymentTdsComputed | null;
   }> {
     const draft = rehydratePaymentDraft(header.avhDraftLines);
+    // Notes 128 §3: the payment's own instruments — not a server label row
+    // (td_src_doc_type 'VOUCHER') that coverPostedVoucher wrote on the voucher.
     const stored = await tx.accTenderDetail.findMany({
-      where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+      where: {
+        tdSrcDocId: header.avhVoucherId,
+        tdSrcDocType: TenderSrcDocType.PAYMENT,
+        tdIsDeleted: false,
+      },
       orderBy: { tdRowNo: 'asc' },
     });
 
@@ -1306,7 +1313,8 @@ export class PaymentPostingService {
     voucherId: string,
   ): Promise<Map<number, string>> {
     const rows = await tx.accTenderDetail.findMany({
-      where: { tdSrcDocId: voucherId, tdIsDeleted: false },
+      // notes 128 §3: a server label row numbers from 1 too — never pair it
+      where: { tdSrcDocId: voucherId, tdSrcDocType: TenderSrcDocType.PAYMENT, tdIsDeleted: false },
       select: { tdId: true, tdRowNo: true },
     });
     return new Map(rows.map((row) => [row.tdRowNo, row.tdId]));

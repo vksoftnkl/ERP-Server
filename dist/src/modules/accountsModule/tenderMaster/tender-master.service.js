@@ -18,7 +18,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const TENDER_TYPE_ID = { CASH: 1, CHEQUE: 5, BANK: 6 };
 const CLEARING_TENDER_TYPES = [2, 3, 4];
-const NO_LEDGER_TENDER_TYPES = [8, 9, 10];
+const NO_LEDGER_TENDER_TYPES = [7, 8, 9, 10];
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 const TENDER_SHORT_NAME_MAX_LENGTH = 30;
@@ -429,9 +429,12 @@ let TenderMasterService = class TenderMasterService {
         ]);
         if (!ledgerId) {
             if (!NO_LEDGER_TENDER_TYPES.includes(typeId)) {
-                refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_REQUIRED, 'Name the ledger the tender money sits in (only TEMP_CR, CREDIT and LOYALTY have none)');
+                refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_REQUIRED, 'Name the ledger the tender money sits in (only RRN, TEMP_CR, CREDIT and LOYALTY have none)');
             }
             return;
+        }
+        if (NO_LEDGER_TENDER_TYPES.includes(typeId)) {
+            refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_NOT_ALLOWED, 'RRN, TEMP_CR, CREDIT and LOYALTY tenders move no money: leave the ledger empty');
         }
         const ledger = await tx.accLedgerMaster.findUnique({
             where: { ledId: ledgerId },
@@ -441,18 +444,18 @@ let TenderMasterService = class TenderMasterService {
         const name = ledger?.ledName ?? 'that ledger';
         const isMoney = kind === 'CASH' || kind === 'BANK';
         if (typeId === TENDER_TYPE_ID.CASH && kind !== 'CASH') {
-            refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_TYPE, `${name} is not a cash ledger: a CASH tender posts to a ledger under Cash-in-Hand`);
+            refuse(tender_master_api_types_1.TenderMasterErrorCode.CASH_LEDGER_NOT_CASH, `${name} is not a cash ledger: a CASH tender posts to a ledger under Cash-in-Hand`);
         }
         if (CLEARING_TENDER_TYPES.includes(typeId) && isMoney) {
-            refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_TYPE, `${name} is a ${kind.toLowerCase()} ledger: card, UPI and wallet money is not in the bank until ` +
+            refuse(tender_master_api_types_1.TenderMasterErrorCode.CLEARING_LEDGER_IS_MONEY, `${name} is a ${kind.toLowerCase()} ledger: card, UPI and wallet money is not in the bank until ` +
                 'the payout — point the tender at a clearing ledger (like UPI Clearing) and set the bank as ' +
                 'its settlement ledger');
         }
         if (typeId === TENDER_TYPE_ID.BANK && kind !== 'BANK') {
-            refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_TYPE, `${name} is not a bank ledger: a BANK tender posts to a ledger under Bank Accounts`);
+            refuse(tender_master_api_types_1.TenderMasterErrorCode.BANK_LEDGER_NOT_BANK, `${name} is not a bank ledger: a BANK tender posts to a ledger under Bank Accounts`);
         }
         if (typeId === TENDER_TYPE_ID.CHEQUE && isMoney) {
-            refuse(tender_master_api_types_1.TenderMasterErrorCode.LEDGER_TYPE, `${name} is a ${kind.toLowerCase()} ledger: a received cheque sits in Cheques In Hand until it ` +
+            refuse(tender_master_api_types_1.TenderMasterErrorCode.CHEQUE_LEDGER_IS_MONEY, `${name} is a ${kind.toLowerCase()} ledger: a received cheque sits in Cheques In Hand until it ` +
                 'clears (an issued cheque leaves the bank of its cheque book)');
         }
     }

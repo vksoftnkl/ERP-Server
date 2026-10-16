@@ -317,7 +317,7 @@ function snapshotFromDto(dto, tenderMasters) {
     };
 }
 function isCreditTender(t) {
-    return t.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.CREDIT || t.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT;
+    return sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES.includes(t.tenderTypeId);
 }
 function settledByTenders(snap) {
     return (0, sales_doc_utils_1.round2)(snap.tenders.filter((t) => !isCreditTender(t)).reduce((s, t) => s + t.amount, 0));

@@ -102,10 +102,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'Where the money sits. Notes 126: CASH → a CASH ledger (Cash-in-Hand); CARD / UPI / WALLET → a ' +
-            'clearing ledger, never a cash or bank one (settled to the bank by TSet); BANK → a BANK ledger; ' +
-            'CHEQUE → Cheques In Hand (not cash / bank) — else 400 TENDER_LEDGER_TYPE. Left out / null only on ' +
-            'TEMP_CR / CREDIT / LOYALTY, which post no tender leg (else 400 TENDER_LEDGER_REQUIRED).',
+        description: 'Where the money sits. Notes 126 / 128 §2, each a 400 on tndLedgerId: CASH → a CASH ledger ' +
+            '(Cash-in-Hand), else TENDER_CASH_LEDGER_NOT_CASH; CARD / UPI / WALLET → a clearing ledger, never ' +
+            'a cash or bank one (settled to the bank by TSet), else TENDER_CLEARING_LEDGER_IS_MONEY; BANK → a ' +
+            'BANK ledger, else TENDER_BANK_LEDGER_NOT_BANK; CHEQUE → Cheques In Hand (not cash / bank), else ' +
+            'TENDER_CHEQUE_LEDGER_IS_MONEY. Left out / null on RRN / TEMP_CR / CREDIT / LOYALTY, which post no tender ' +
+            'leg (a ledger there → TENDER_LEDGER_NOT_ALLOWED); required on every other type ' +
+            '(TENDER_LEDGER_REQUIRED).',
     }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)

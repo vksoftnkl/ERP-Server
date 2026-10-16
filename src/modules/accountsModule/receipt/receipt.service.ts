@@ -1499,7 +1499,8 @@ export class ReceiptService {
     voucherId: string,
   ): Promise<ReceiptTender[]> {
     const rows = await client.accTenderDetail.findMany({
-      where: { tdSrcDocId: voucherId, tdIsDeleted: false },
+      // notes 128 §3: the document's instruments, not the server's label rows
+      where: { tdSrcDocId: voucherId, tdSrcDocType: TenderSrcDocType.RECEIPT, tdIsDeleted: false },
       select: {
         tdId: true,
         tdRowNo: true,

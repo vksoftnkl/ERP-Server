@@ -341,7 +341,8 @@ export class ApproveTillCashDto extends TillSessionKeyDto {
     description:
       'The caller’s own till PIN (usr_pin_hash, notes 95). None set → 422 TILL_RECEIVER_NO_PIN; none typed → ' +
       '403 TILL_RECEIVER_PIN_REQUIRED; wrong → 403 TILL_RECEIVER_PIN, journalled PIN_FAIL. May be left out only ' +
-      'under till.single_operator by the session’s own cashier.',
+      'under till.single_operator by the session’s own cashier; the cashier approving their own cash under a ' +
+      'CASH_VARIANCE rule with tar_allow_self always types it (notes 127 §3).',
   })
   @NullableString(20)
   approverPin?: string | null;

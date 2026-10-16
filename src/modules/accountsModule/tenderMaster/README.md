@@ -145,23 +145,25 @@ to the same conflict shape on `tndName` (`throwOnUniqueConstraintError`).
   name **Tender Master** (`screenType: 'master'`).
 - The acting user comes from `RequestContextService.getUserId()`, falling back to `DEFAULT_ACTOR`.
 
-## The ledger fits the type (notes 126)
+## The ledger fits the type (notes 126, codes notes 128 §2)
 
 A tender says HOW money moved, its ledger WHERE it sits. `ensureLedgerFitsType` refuses a wrong
-pair at save (400 on `tndLedgerId`), so it never reaches the counter:
+pair at save (400 on `tndLedgerId`), so it never reaches the counter. Notes 128 §2 gave each rule
+its own code (they were one `TENDER_LEDGER_TYPE`):
 
 | Type | `tndLedgerId` |
 |---|---|
-| CASH | a CASH ledger (`led_ledger_type`, from Cash-in-Hand) — else `TENDER_LEDGER_TYPE` |
-| CARD, UPI, WALLET | a clearing ledger, never CASH or BANK (the money is not in the bank until the payout; set the bank as the settlement ledger) — `TENDER_LEDGER_TYPE` |
-| BANK | a BANK ledger — `TENDER_LEDGER_TYPE` |
-| CHEQUE | not CASH / BANK (Cheques In Hand; an issued cheque leaves its book's bank) — `TENDER_LEDGER_TYPE` |
-| TEMP_CR, CREDIT, LOYALTY | **none needed** (they post no tender leg: the customer / LOYALTY_REDEMPTION takes it). `tnd_ledger_id` is nullable for these only (`ck_tnd_ledger_required`, migration `20261016120000`); a tender row of theirs names the party ledger (`TenderDetailService`) |
+| CASH | a CASH ledger (`led_ledger_type`, from Cash-in-Hand) — else `TENDER_CASH_LEDGER_NOT_CASH` |
+| CARD, UPI, WALLET | a clearing ledger, never CASH or BANK (the money is not in the bank until the payout; set the bank as the settlement ledger) — else `TENDER_CLEARING_LEDGER_IS_MONEY` |
+| BANK | a BANK ledger — else `TENDER_BANK_LEDGER_NOT_BANK` |
+| CHEQUE | not CASH / BANK (Cheques In Hand; an issued cheque leaves its book's bank) — else `TENDER_CHEQUE_LEDGER_IS_MONEY` |
+| RRN, TEMP_CR, CREDIT, LOYALTY | **none** (they post no tender leg: the customer / LOYALTY_REDEMPTION takes it) — a ledger → `TENDER_LEDGER_NOT_ALLOWED`. `tnd_ledger_id` is nullable for these only (`ck_tnd_ledger_required`, migrations `20261016120000`, RRN `20261016150000` — notes 129 §4: a bill settled against a sale return's credit note); a tender row of theirs names the party ledger (`TenderDetailService`) |
 | any other | required — `TENDER_LEDGER_REQUIRED` |
 
 Existing rows are judged when next saved. The dev box was cleaned on 2026-10-16: CARD → Card
 Settlement Clearing, WALLET → Wallet Clearing (both settle to Kvb in 1 day), TEMP.CR / CREDIT /
-LOYALTY → no ledger, "Cashin Hand" (an unused duplicate) inactive.
+LOYALTY → no ledger, "Cashin Hand" (an unused duplicate) inactive; RRN → no ledger (it pointed at
+SALES FREIGHT COLLECTION, an expense) by migration `20261016150000`.
 
 ## Relationship to tenderTypeMaster
 

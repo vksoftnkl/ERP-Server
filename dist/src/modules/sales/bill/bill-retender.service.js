@@ -212,7 +212,7 @@ let BillRetenderService = class BillRetenderService {
                 const legs = [];
                 for (const t of newRows) {
                     const typeId = Number(t.tdTenderTypeId);
-                    if (typeId === sales_doc_utils_1.TENDER_TYPE.CREDIT || typeId === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT) {
+                    if (sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES.includes(typeId)) {
                         legs.push({
                             ledgerId: bill.sbCustId,
                             drCr: 'DR',
@@ -239,8 +239,7 @@ let BillRetenderService = class BillRetenderService {
                     }
                 }
                 for (const r of rows) {
-                    if (r.td_tender_type_id === sales_doc_utils_1.TENDER_TYPE.CREDIT ||
-                        r.td_tender_type_id === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT) {
+                    if (sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES.includes(r.td_tender_type_id)) {
                         legs.push({
                             ledgerId: bill.sbCustId,
                             drCr: 'CR',
@@ -330,7 +329,7 @@ let BillRetenderService = class BillRetenderService {
             }
             const live = await tx.$queryRaw `
         SELECT SUM(td_amount) AS tendered,
-               SUM(CASE WHEN td_tender_type_id IN (${sales_doc_utils_1.TENDER_TYPE.CREDIT}, ${sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT}) THEN 0 ELSE td_amount END) AS settled
+               SUM(CASE WHEN td_tender_type_id = ANY(${[...sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES]}::int[]) THEN 0 ELSE td_amount END) AS settled
           FROM accounts.acc_tender_detail
          WHERE td_src_module = 'SALES' AND td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${bill.sbId}::uuid
            AND td_acc_year = ${bill.sbAccYear}::char(9) AND td_is_deleted = false AND td_is_voided = false`;

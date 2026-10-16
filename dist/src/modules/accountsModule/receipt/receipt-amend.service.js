@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReceiptAmendService = void 0;
 const common_1 = require("@nestjs/common");
+const money_lines_1 = require("../../../common/posting/money-lines");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
@@ -263,6 +264,9 @@ let ReceiptAmendService = class ReceiptAmendService {
             where: { avVoucherId: { in: voucherIds }, avIsDeleted: false },
             data: { avIsDeleted: true, avModifiedOn: now, avModifiedBy: actor },
         });
+        for (const voucherId of voucherIds) {
+            await (0, money_lines_1.retireMoneyLineRows)(tx, voucherId, actor);
+        }
         let pdcVouchersRemoved = 0;
         for (const voucher of vouchers) {
             if (voucher.avhVoucherId === header.avhVoucherId) {

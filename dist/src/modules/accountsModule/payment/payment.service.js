@@ -908,7 +908,7 @@ let PaymentService = class PaymentService {
     }
     async loadTenderPayload(client, voucherId) {
         const rows = await client.accTenderDetail.findMany({
-            where: { tdSrcDocId: voucherId, tdIsDeleted: false },
+            where: { tdSrcDocId: voucherId, tdSrcDocType: tender_detail_api_types_1.TenderSrcDocType.PAYMENT, tdIsDeleted: false },
             select: {
                 tdId: true,
                 tdRowNo: true,

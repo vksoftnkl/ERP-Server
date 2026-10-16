@@ -124,7 +124,15 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveReceiptTenderDto.prototype, "tdSurchargePerc", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ minimum: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        example: 2,
+        description: 'Notes 107 / 127 §4: the surcharge is INSIDE tdAmount (SURCHARGE_RECOVERED is a split of it, not an ' +
+            'addition). With a percentage the server works it out — round2(tdAmount × perc / (100 + perc)) — so ' +
+            '200 by UPI at 1% is tdAmount 202.00 with 2.00 surcharge (not 2.02), as on the sale bill; with no ' +
+            'percentage it is the master’s flat amount. Sent only when the master has tnd_edit_surcharge; ' +
+            'otherwise ignored.',
+    }),
     (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveReceiptTenderDto.prototype, "tdSurchargeAmt", void 0);
