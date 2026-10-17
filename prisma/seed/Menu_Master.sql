@@ -117,9 +117,12 @@ VALUES
     -- moved that to an Approve on Till Sessions (273): retired, menu_is_active false
     -- (20261014160000_till_approve_cash_notes_114). Notes 118 brought Cash Office back
     -- as a NEW id, 287 — the safe: balance, count, remittance (20261015100000_till_safe_notes_118).
+    -- 288 Till Reports is the Qt read-only report screen over grids 157 / 159-169
+    -- (notes 133, 20261017110000_till_reports_menu_notes_133).
     ,( 271,    1, 'Till'                                 , NULL                  , false,  18.10, NULL, NULL, NULL, true , true)
     ,( 272,  271, 'Open Till'                            , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 273,  271, 'Till Sessions'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
+    ,( 288,  271, 'Till Reports'                         , NULL                  , false,   2.50, NULL, NULL, NULL, true , false)
     ,( 274,  271, 'Business Day'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 286,  271, 'Cash Office'                          , NULL                  , false,   3.50, NULL, NULL, NULL, false, false)
     ,( 287,  271, 'Cash Office'                          , NULL                  , false,   3.60, NULL, NULL, NULL, true , false)
@@ -364,14 +367,15 @@ UPDATE fixed.menu_master
  WHERE menu_id = 263
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
--- Till (271-276 + 280-283 + 285-287, 20261008140000 / 20261009190000 / 20261009200000 / 20261013120000 / 20261014100000 / 20261015100000): what each till screen can do. The groups hold
+-- Till (271-276 + 280-283 + 285-288, 20261008140000 / 20261009190000 / 20261009200000 / 20261013120000 / 20261014100000 / 20261015100000 / 20261017110000): what each till screen can do. The groups hold
 -- VIEW only; Open Till is the cashier's own session (CREATE = open, EDIT = suspend /
 -- resume / count / close, PRINT = X read); Till Sessions is the supervisor's view
 -- (OVERRIDE = the expected figures a blind close hides); Business Day opens the day
 -- (CREATE) and closes / reopens it (EDIT, notes 117, 20261014180000);
 -- Cash Office 286 (retired by notes 114) listed the bags awaiting receipt (VIEW) and
 -- received them (CREATE); Cash Office 287 (notes 118) is the safe: VIEW the balance,
--- CREATE count / remit, OVERRIDE decide a safe gap.
+-- CREATE count / remit, OVERRIDE decide a safe gap; Till Reports 288 (notes 133) is
+-- a read-only report: view, print, export.
 -- Same guard as above: a site that edited a row keeps its edit.
 UPDATE fixed.menu_master m
    SET menu_verbs = v.verbs::text[]
@@ -381,7 +385,7 @@ UPDATE fixed.menu_master m
                (280, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (281, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'),
                (282, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (283, '{VIEW}'),
                (285, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (286, '{VIEW,CREATE,PRINT,EXPORT}'),
-               (287, '{VIEW,CREATE,PRINT,EXPORT,OVERRIDE}')
+               (287, '{VIEW,CREATE,PRINT,EXPORT,OVERRIDE}'), (288, '{VIEW,PRINT,EXPORT}')
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';

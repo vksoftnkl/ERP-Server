@@ -2,6 +2,7 @@ export declare const TILL_MENU: {
     readonly GROUP: 271;
     readonly OPEN_TILL: 272;
     readonly SESSIONS: 273;
+    readonly REPORTS: 288;
     readonly BUSINESS_DAY: 274;
     readonly MASTERS_GROUP: 283;
     readonly COUNTERS: 275;

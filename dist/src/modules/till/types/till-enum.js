@@ -6,6 +6,7 @@ exports.TILL_MENU = {
     GROUP: 271,
     OPEN_TILL: 272,
     SESSIONS: 273,
+    REPORTS: 288,
     BUSINESS_DAY: 274,
     MASTERS_GROUP: 283,
     COUNTERS: 275,

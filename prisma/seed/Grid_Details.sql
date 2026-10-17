@@ -1707,9 +1707,6 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
          WHERE (m.led_company_id IS NULL OR m.led_company_id::text = 'icompany_id')
            AND m.led_is_deleted = false
            AND accounts.fn_is_cheques_in_hand_ledger(m.led_id))
-   -- notes 130: the money side is a tender (the instrument / a Contra line's
-   -- tender list), never a typed cash / bank ledger -- the server refuses one
-   -- (VCH_MONEY_LEDGER_NOT_ALLOWED / VCH_MONEY_LINE_NO_TENDER), on every type
    AND COALESCE(l.led_ledger_type, '') NOT IN ('CASH', 'BANK')
    AND NOT EXISTS (
         WITH RECURSIVE up AS (
@@ -1720,7 +1717,6 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
               FROM up JOIN accounts.acc_group_master p ON p.acc_group_id = up.acc_group_parent_id
              WHERE up.d < 24)
         SELECT 1 FROM up WHERE up.n IN ('cash-in-hand', 'bank accounts', 'bank od a/c'))
-   -- ...and the money side of a Receipt (Dr) / Payment (Cr) lists nothing at all
    AND NOT EXISTS (SELECT 1 FROM accounts.acc_voucher_types t
                     WHERE t.vchr_type_code = 'itype_code'
                       AND ((t.vchr_nature = 'RECEIPT' AND 'iside' = 'DR')

@@ -12,6 +12,11 @@ export const TILL_MENU = {
   OPEN_TILL: 272,
   /** A supervisor's view of every session: VIEW · EXPORT · OVERRIDE (expected) · PRINT. */
   SESSIONS: 273,
+  /**
+   * Till Reports (notes 133): the Qt report screen over grids 157 / 159-169.
+   * VIEW · PRINT · EXPORT. No route reads it.
+   */
+  REPORTS: 288,
   /** VIEW · CREATE (Day Open). */
   BUSINESS_DAY: 274,
   /** The "Till Masters" group of the four master screens below (notes 102). VIEW only. */
