@@ -22,6 +22,12 @@ const PRINT_COUNTERS = {
     TILL_DAY_Z: (docId, accYear) => client_1.Prisma.sql `
     UPDATE accounts.till_business_day SET tbd_print_count = tbd_print_count + 1
      WHERE tbd_id = ${docId}::uuid AND tbd_acc_year = ${accYear}::char(9)`,
+    TILL_MOVEMENT: (docId, accYear) => client_1.Prisma.sql `
+    UPDATE accounts.till_cash_movement SET tcm_print_count = tcm_print_count + 1
+     WHERE tcm_id = ${docId}::uuid AND tcm_acc_year = ${accYear}::char(9)`,
+    TILL_REMIT: (docId, accYear) => client_1.Prisma.sql `
+    UPDATE accounts.till_cash_movement SET tcm_print_count = tcm_print_count + 1
+     WHERE tcm_id = ${docId}::uuid AND tcm_acc_year = ${accYear}::char(9)`,
 };
 let PrintLogService = PrintLogService_1 = class PrintLogService {
     prisma;

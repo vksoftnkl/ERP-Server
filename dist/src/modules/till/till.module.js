@@ -15,6 +15,7 @@ const till_controller_1 = require("./till.controller");
 const till_approval_controller_1 = require("./till-approval.controller");
 const till_masters_controller_1 = require("./till-masters.controller");
 const till_safe_controller_1 = require("./till-safe.controller");
+const till_review_controller_1 = require("./till-review.controller");
 const till_exception_filter_1 = require("./till-exception.filter");
 const till_context_service_1 = require("./till-context.service");
 const till_approval_service_1 = require("./services/till-approval.service");
@@ -27,6 +28,7 @@ const till_masters_service_1 = require("./services/till-masters.service");
 const till_movement_service_1 = require("./services/till-movement.service");
 const till_posting_service_1 = require("./services/till-posting.service");
 const till_print_service_1 = require("./services/till-print.service");
+const till_review_service_1 = require("./services/till-review.service");
 const till_safe_service_1 = require("./services/till-safe.service");
 const till_session_service_1 = require("./services/till-session.service");
 const till_slip_check_service_1 = require("./services/till-slip-check.service");
@@ -36,7 +38,13 @@ exports.TillModule = TillModule;
 exports.TillModule = TillModule = __decorate([
     (0, common_1.Module)({
         imports: [app_settings_module_1.AppSettingsModule, audit_log_module_1.AuditLogModule, posting_module_1.CommonPostingModule],
-        controllers: [till_controller_1.TillController, till_masters_controller_1.TillMastersController, till_safe_controller_1.TillSafeController, till_approval_controller_1.TillApprovalController],
+        controllers: [
+            till_controller_1.TillController,
+            till_masters_controller_1.TillMastersController,
+            till_safe_controller_1.TillSafeController,
+            till_approval_controller_1.TillApprovalController,
+            till_review_controller_1.TillReviewController,
+        ],
         providers: [
             till_approval_service_1.TillApprovalService,
             till_approval_gate_service_1.TillApprovalGateService,
@@ -47,6 +55,7 @@ exports.TillModule = TillModule = __decorate([
             till_ledger_service_1.TillLedgerService,
             till_posting_service_1.TillPostingService,
             till_print_service_1.TillPrintService,
+            till_review_service_1.TillReviewService,
             till_safe_service_1.TillSafeService,
             till_session_service_1.TillSessionService,
             till_masters_service_1.TillMastersService,

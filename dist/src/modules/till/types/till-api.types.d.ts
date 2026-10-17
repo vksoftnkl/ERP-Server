@@ -1,5 +1,5 @@
 import type { ModuleErrorDetail, ModuleErrorResponse } from '../../../common/utils/module-shared.utils';
-import type { TillCashReceiptState, TillCloseCheckCode, TillCloseCheckTone, TillCountKind, TillCountOutcome, TillDayStatus, TillErrorCode, TillFloatMode, TillHandoverReceipt, TillMovementKind, TillReceiptStatus, TillRemitMode, TillRemitStatus, TillSafeGapOutcome, TillSessionStatus, TillSessionVarianceStatus, TillVarianceDecision, TillVarianceStage, TillVarianceTreatment, TenderCloseMode } from './till-enum';
+import type { TillCashReceiptState, TillCloseCheckCode, TillCloseCheckTone, TillCountKind, TillCountOutcome, TillDayStatus, TillErrorCode, TillFloatMode, TillHandoverReceipt, TillMovementKind, TillReceiptStatus, TillRemitMode, TillRemitStatus, TillReviewOutcome, TillSafeGapOutcome, TillSessionStatus, TillSessionVarianceStatus, TillVarianceDecision, TillVarianceStage, TillVarianceTreatment, TenderCloseMode } from './till-enum';
 export interface TillErrorDetail extends ModuleErrorDetail {
     code: TillErrorCode;
     event?: string;
@@ -536,6 +536,8 @@ export interface TillApprovalNeed {
     ruleId: string | null;
     mode: string;
     threshold: number;
+    thresholdCount?: number;
+    count?: number | null;
     amount: number;
     minRole: string;
     channel: string;
@@ -813,4 +815,28 @@ export interface TillRemitConfirmPayload {
     varianceVoucherId: string | null;
     varianceVoucherNo: string | null;
     movement: TillMovementDetailPayload;
+}
+export interface TillReviewPayload {
+    tsrId: string;
+    tsrAccYear: string;
+    dayId: string | null;
+    sessionId: string | null;
+    sessionNo: string | null;
+    businessDate: string | null;
+    outcome: TillReviewOutcome;
+    note: string | null;
+    reviewedBy: string;
+    reviewedByName: string | null;
+    reviewedOn: string;
+    refVoucherId: string | null;
+    refVoucherAccYear: string | null;
+    refVoucherNo: string | null;
+    current: boolean;
+}
+export interface TillReviewCreatePayload {
+    review: TillReviewPayload;
+    supersedes: string | null;
+}
+export interface TillReviewListPayload {
+    reviews: TillReviewPayload[];
 }

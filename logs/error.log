@@ -20547,3 +20547,25 @@ DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e
 2026-10-16T07:13:43.416Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-16T07:13:46.850Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-16T10:19:47.175Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T11:20:01.213Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': till.day.header prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:20:01.213Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': till.day.sessions prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:20:01.213Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': till.day.tenders prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:20:04.687Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': till.day.header prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:20:04.687Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': till.day.sessions prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:20:04.687Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': till.day.tenders prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-10-17T11:45:54.383Z ERROR [DatasetRunnerService] Provider 'till.remit.lines' failed for dataset 'lines': A CLOSE_HANDOVER prints as its slip: purpose TILL_MOVEMENT
+2026-10-17T11:45:54.384Z ERROR [DatasetRunnerService] Provider 'till.remit.header' failed for dataset 'header': A CLOSE_HANDOVER prints as its slip: purpose TILL_MOVEMENT
+2026-10-17T13:24:29.695Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:24:31.904Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:26:16.416Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:29:47.928Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:30:07.492Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:35:12.386Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:35:23.540Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:35:32.634Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:35:42.532Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:35:51.483Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:36:14.871Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:36:20.205Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:36:37.700Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-17T13:37:31.787Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

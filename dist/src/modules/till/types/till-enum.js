@@ -1,12 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TILL_ERROR_STATUS = exports.TillErrorCode = exports.TillSettingKey = exports.VARIANCE_STATUS_OF_TREATMENT = exports.SAFE_GAP_TREATMENTS = exports.APPROVABLE_TREATMENTS = exports.TillVarianceDecision = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.TillVarianceStage = exports.TillHandoverReceipt = exports.CLOSE_EXCEPTION_CODES = exports.TillCloseCheckTone = exports.TillCloseCheckCode = exports.TillCashReceiptState = exports.TillReceiptStatus = exports.TillSafeGapOutcome = exports.CASH_IN_TRANSIT_ROLE = exports.TillRemitStatus = exports.TillRemitMode = exports.RECEIPT_MOVEMENTS = exports.TILL_CASH_AWAITING_ROLE = exports.RECEIVE_VOUCHER_TYPE = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
+exports.TillSettingKey = exports.VARIANCE_STATUS_OF_TREATMENT = exports.SAFE_GAP_TREATMENTS = exports.REVIEW_REF_OUTCOMES = exports.TillReviewOutcome = exports.APPROVABLE_TREATMENTS = exports.TillVarianceDecision = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.TillVarianceStage = exports.TillHandoverReceipt = exports.CLOSE_EXCEPTION_CODES = exports.TillCloseCheckTone = exports.TillCloseCheckCode = exports.TillCashReceiptState = exports.TillReceiptStatus = exports.TillSafeGapOutcome = exports.CASH_IN_TRANSIT_ROLE = exports.TillRemitStatus = exports.TillRemitMode = exports.RECEIPT_MOVEMENTS = exports.TILL_CASH_AWAITING_ROLE = exports.RECEIVE_VOUCHER_TYPE = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
+exports.TILL_ERROR_STATUS = exports.TillErrorCode = void 0;
 exports.approverRoleRank = approverRoleRank;
 exports.TILL_MENU = {
     GROUP: 271,
     OPEN_TILL: 272,
     SESSIONS: 273,
     REPORTS: 288,
+    CASH_POSITION: 289,
     BUSINESS_DAY: 274,
     MASTERS_GROUP: 283,
     COUNTERS: 275,
@@ -274,6 +276,9 @@ var TillEventCode;
     TillEventCode["SESSION_REOPEN"] = "SESSION_REOPEN";
     TillEventCode["SAFE_COUNT"] = "SAFE_COUNT";
     TillEventCode["REMIT_CONFIRMED"] = "REMIT_CONFIRMED";
+    TillEventCode["HO_REVIEW"] = "HO_REVIEW";
+    TillEventCode["BILL_VOID"] = "BILL_VOID";
+    TillEventCode["LINE_VOID"] = "LINE_VOID";
 })(TillEventCode || (exports.TillEventCode = TillEventCode = {}));
 exports.CLIENT_EVENT_CODES = [
     TillEventCode.DRAWER_OPEN_SALE,
@@ -288,6 +293,7 @@ exports.CLIENT_EVENT_CODES = [
     TillEventCode.LOGIN,
     TillEventCode.LOGOUT,
     TillEventCode.SYNC_PENDING_AT_CLOSE,
+    TillEventCode.LINE_VOID,
 ];
 exports.TILL_REASON_CATEGORIES = [
     'VARIANCE',
@@ -370,6 +376,20 @@ exports.APPROVABLE_TREATMENTS = [
     TillVarianceTreatment.EXPENSE,
     TillVarianceTreatment.RECOVER,
     TillVarianceTreatment.SUSPENSE,
+];
+var TillReviewOutcome;
+(function (TillReviewOutcome) {
+    TillReviewOutcome["OK"] = "OK";
+    TillReviewOutcome["QUERY"] = "QUERY";
+    TillReviewOutcome["ESCALATED"] = "ESCALATED";
+    TillReviewOutcome["RECOVERY_ORDERED"] = "RECOVERY_ORDERED";
+    TillReviewOutcome["WRITTEN_OFF"] = "WRITTEN_OFF";
+    TillReviewOutcome["SUSPENSE_CLEARED"] = "SUSPENSE_CLEARED";
+    TillReviewOutcome["BANK_MATCHED"] = "BANK_MATCHED";
+})(TillReviewOutcome || (exports.TillReviewOutcome = TillReviewOutcome = {}));
+exports.REVIEW_REF_OUTCOMES = [
+    TillReviewOutcome.WRITTEN_OFF,
+    TillReviewOutcome.SUSPENSE_CLEARED,
 ];
 exports.SAFE_GAP_TREATMENTS = [
     TillVarianceTreatment.EXPENSE,
@@ -515,6 +535,16 @@ var TillErrorCode;
     TillErrorCode["TREATMENT_REQUIRED"] = "TILL_TREATMENT_REQUIRED";
     TillErrorCode["RECOUNT_NOT_ALLOWED"] = "TILL_RECOUNT_NOT_ALLOWED";
     TillErrorCode["COUNTER_REQUIRED"] = "TILL_COUNTER_REQUIRED";
+    TillErrorCode["REVIEW_TARGET"] = "TILL_REVIEW_TARGET";
+    TillErrorCode["REVIEW_REF_PAIR"] = "TILL_REVIEW_REF_PAIR";
+    TillErrorCode["REVIEW_REF_NOT_ALLOWED"] = "TILL_REVIEW_REF_NOT_ALLOWED";
+    TillErrorCode["REVIEW_REF_NOT_FOUND"] = "TILL_REVIEW_REF_NOT_FOUND";
+    TillErrorCode["REVIEW_REF_NOT_POSTED"] = "TILL_REVIEW_REF_NOT_POSTED";
+    TillErrorCode["PRINT_WRONG_PURPOSE"] = "TILL_PRINT_WRONG_PURPOSE";
+    TillErrorCode["VOID_SESSION_CLOSED"] = "TILL_VOID_SESSION_CLOSED";
+    TillErrorCode["VOID_NO_SESSION"] = "TILL_VOID_NO_SESSION";
+    TillErrorCode["VOID_NOT_POSTED"] = "TILL_VOID_NOT_POSTED";
+    TillErrorCode["VOID_NOT_ALLOWED"] = "TILL_VOID_NOT_ALLOWED";
 })(TillErrorCode || (exports.TillErrorCode = TillErrorCode = {}));
 exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SESSION_REQUIRED]: 409,
@@ -627,5 +657,15 @@ exports.TILL_ERROR_STATUS = {
     [TillErrorCode.TREATMENT_REQUIRED]: 400,
     [TillErrorCode.RECOUNT_NOT_ALLOWED]: 400,
     [TillErrorCode.COUNTER_REQUIRED]: 400,
+    [TillErrorCode.REVIEW_TARGET]: 400,
+    [TillErrorCode.REVIEW_REF_PAIR]: 400,
+    [TillErrorCode.REVIEW_REF_NOT_ALLOWED]: 400,
+    [TillErrorCode.REVIEW_REF_NOT_FOUND]: 404,
+    [TillErrorCode.REVIEW_REF_NOT_POSTED]: 409,
+    [TillErrorCode.PRINT_WRONG_PURPOSE]: 400,
+    [TillErrorCode.VOID_SESSION_CLOSED]: 409,
+    [TillErrorCode.VOID_NO_SESSION]: 409,
+    [TillErrorCode.VOID_NOT_POSTED]: 409,
+    [TillErrorCode.VOID_NOT_ALLOWED]: 403,
 };
 //# sourceMappingURL=till-enum.js.map

@@ -17,6 +17,11 @@ export declare class PostBillDto extends BillKeysDto {
 export declare class CancelBillDto extends BillKeysDto {
     reason: string;
 }
+export declare class VoidBillDto extends BillKeysDto {
+    reasonId: string;
+    note?: string | null;
+    approvalId?: string | null;
+}
 export declare class AmendBillDto extends ValidateBillDto {
     sbId: string;
     baseRevision: number;

@@ -194,6 +194,26 @@ still PENDING counts under `VARIANCE_UNDECIDED`.
 **Not built:** SAFE_TRANSFER (balance reads it; no route), the remittances grid (user's), a safe
 count print.
 
+## Head office reviews (notes 134)
+
+`TillReviewController` / `TillReviewService`, judged on **Cash Position (289)**: `reviews/create`
+(CREATE) and `reviews/list` (VIEW). The Qt S11 screen reads its own grids 170-174; these routes only
+write and read `accounts.till_session_review` (47 §9, no table change).
+
+- **Append-only.** A review is never edited. A later review of the same day / session supersedes it:
+  `create` answers `supersedes` (the review it replaced) and every row carries `current` (the newest
+  of its day / session). A session review stores only `tsr_session_id`, a day review only
+  `tsr_day_id`; `list` by `dayId` therefore shows the day's own reviews, not its sessions'.
+- **Refusals.** Exactly one of `dayId` / `sessionId` (400 TILL_REVIEW_TARGET); a note unless OK
+  (400 TILL_NOTE_REQUIRED); the day / session must be this company's and branch's in `accYear` (404
+  TILL_DAY_NOT_FOUND / TILL_SESSION_NOT_FOUND). `refVoucherId` + `refVoucherAccYear` go together
+  (TILL_REVIEW_REF_PAIR), only on WRITTEN_OFF / SUSPENSE_CLEARED (TILL_REVIEW_REF_NOT_ALLOWED), and
+  name a voucher of the company (404 TILL_REVIEW_REF_NOT_FOUND) that is POSTED (409
+  TILL_REVIEW_REF_NOT_POSTED).
+- **Journal.** `HO_REVIEW` (ck_tev_code since 20261017120000): src doc `TILL_REVIEW` = the tsr_id,
+  the day (a session review: the session's day, counter and number), the reviewer as `tev_user_id`,
+  payload `outcome`, `note`, `refVoucherId`, `supersedes`.
+
 ## Day close and the session exceptions (notes 117)
 
 `TillDayCloseService` (close-check / close / reopen) and, in `TillSessionService`, `forceClose`,
@@ -216,7 +236,7 @@ the routes behave as before. Migration `20261014180000`: reason category **DAY_C
 - **CLOSING** stays in `ck_tbd_status` for a later two-step close; nothing writes it.
 - **Safe figures** (`tbd_safe_*`, SAFE_NOT_COUNTED) are notes 118 (above).
 
-## Printing (notes 117 §7)
+## Printing (notes 117 §7, notes 135)
 
 Purposes (migration `20261014181000`, `ppo_src_module` ACCOUNTS — `ck_ppo_src_module` has no TILL):
 `TILL_SESSION_Z`, `TILL_SESSION_X`, `TILL_DAY_Z` (the day X while open, the store Z once closed).
@@ -259,9 +279,65 @@ dataset has no field list in the designer, so the fields are here:
   closed_on, z_no, bill_count, net_sales, cash_expected, cash_counted, cash_variance, handed_over,
   float_left, receipt_state, force_closed, reopen_count.
 
+**Notes 135 — the movement slip and the remittance memo** (migration `20261017130000`, ACCOUNTS):
+`TILL_MOVEMENT` (one copy) and `TILL_REMIT` (two copies, labelled "Bank / Agency Copy" and "Store
+Copy"). `docId` = `tcm_id`, `accYear` = `tcm_acc_year`. Their providers read the `movements/get`
+payload under its rights — your own session's movement Open Till (272) VIEW, another's Till
+Sessions (273) VIEW, one with no session (a REMIT, a SAFE_TRANSFER) Cash Office (287) VIEW or 273
+VIEW — plus the names and numbers a slip prints. A REMIT prints only as `TILL_REMIT` and every
+other kind only as `TILL_MOVEMENT`: the other purpose is 400 `TILL_PRINT_WRONG_PURPOSE` on `docId`.
+The company / branch heading and the amount in words are the layout's (`company.profile`,
+`branch.profile`, `numToWords`).
+
+- `till.movement.header` (one): doc_no, doc_date, kind, kind_text (the slip's title: Float issue ·
+  Top-up · Pickup · Cash drop · Hand-over · Paid in · Change · Safe transfer), status (POSTED /
+  VOIDED — a voided slip prints VOID across it), voided_on, voided_by, void_reason, amount,
+  session_no, business_date, counter_code, counter_name, cashier (the session's; all null for a
+  SAFE_TRANSFER), safe_code, safe_name, to_safe_code, to_safe_name (SAFE_TRANSFER), reason,
+  ledger_name (PAID_IN), party_name, ref_no, ref_date, notes, bag_no, seal_no (DROP), gives,
+  receives (the two signature lines, by name — below), witness_verified_on (null = the second
+  person's PIN was not checked), receipt_status, received_by, received_on, received_amount (a
+  DROP / CLOSE_HANDOVER once received, notes 113 / 114), voucher_no (TFlt / TDrp / TPIn; null for
+  an EXCHANGE), created_on, print_count (the renders before this one: > 0 prints REPRINT),
+  printed_on.
+- `till.movement.lines` (many): face_value, denomination (`tdn_label`, "₹500"), qty, amount, side
+  (EXCHANGE only: IN = taken into the drawer, OUT = given out; null otherwise) — the cash lines of
+  the movement's count (`tcm_count_id`; a FLOAT_ISSUE's is the session's OPEN count, a
+  CLOSE_HANDOVER's its CLOSE count), face value high to low; a line keyed as an amount has no
+  face value / qty. Empty for a movement entered as an amount with no count (a DROP always). An
+  **EXCHANGE** stores two `till_count` rows, both `tct_movement_id` = the movement: `tcm_count_id`
+  names the IN count and the other row is the OUT count — that is how the sides are told apart.
+- `till.remit.header` (one): doc_no, doc_date, voucher_no (the CRem), mode, mode_text ("Deposited
+  at the bank" / "Handed to the cash collection agency"), status (DEPOSITED · IN_TRANSIT ·
+  CONFIRMED, or VOIDED once voided), voided_on, voided_by, void_reason, safe_code, safe_name,
+  bank_name (`tcm_ledger_id`'s name), bank_account_no, bank_ifsc, bank_branch (**null for now** —
+  notes 135 §2 option (b): no ledger column holds them, the memo leaves a line to write by hand;
+  (a) Bank Accounts ledger fields later, which the cheque deposit slip would share), amount,
+  bag_no, seal_no, cit_agency, slip_no, slip_date (`tcm_ref_no / _date`), done_by, approved_by
+  (the approver when REMITTANCE asked for one, else null), handed_to (always null: the agency
+  signs on the layout's line), bank_date, bank_ref, bank_amount, difference (bank_amount −
+  amount), confirmed_by, confirmed_on, confirm_voucher_no (the `remit-confirm`'s CRem) — these
+  seven null before `remit-confirm` — notes, created_on, print_count, printed_on.
+- `till.remit.lines` (many): face_value, denomination, qty, amount — the REMIT count sent as
+  `lines` on `movements/remit`, high to low; empty when none was.
+
+**Who gives and who receives** (`gives` / `receives`) is worked out from the session's cashier
+(`tss_operator_id`), not from which column holds whom: "the other person" is whichever of
+`tcm_done_by` / `tcm_witness_by` is not the cashier. A pickup / top-up keyed at the counter (notes
+110: done_by = the cashier, witness_by = the supervisor), one moved by `movements/change` (done_by
+= the supervisor) and the 4 pre-notes-110 test rows with the roles the other way round therefore
+all print the same, with nothing swapped by date. PICKUP: the cashier gives, the other receives.
+TOP_UP / FLOAT_ISSUE: the other gives, the cashier receives — a float the cashier issued at their
+own open (done_by = the cashier, no witness) leaves `gives` null, a supervisor-opened till names
+the supervisor. DROP / CLOSE_HANDOVER: the cashier gives, `received_by` receives (null until
+received: a blank line for a hand signature). PAID_IN: `party_name` gives, the cashier receives.
+EXCHANGE: the cashier gives, `receives` null. SAFE_TRANSFER (no session): `tcm_done_by` gives,
+`tcm_witness_by` receives (null when none).
+
 **Print counts:** `PrintLogService` bumps `tss_print_count` / `tbd_print_count` once per PRINT /
-REPRINT render (copy 1, SUCCESS) of a `TILL_SESSION_Z` / `TILL_DAY_Z` (`PRINT_COUNTERS`, keyed by
-`plg_src_doc_type`) — the first such writer; every other `*_print_count` is still untouched. An X
+REPRINT render (copy 1, SUCCESS) of a `TILL_SESSION_Z` / `TILL_DAY_Z`, and since notes 135
+`tcm_print_count` of a `TILL_MOVEMENT` / `TILL_REMIT` (`PRINT_COUNTERS`, keyed by
+`plg_src_doc_type`) — the first such writers; every other `*_print_count` is still untouched. An X
 is numbered by its X_REPORT events, not a counter.
 
 ## The expected cash (§5.4, server only)
@@ -497,8 +573,9 @@ TILL_APPROVER_SELF and the error carries `event`, so the wording catalogue keys 
   receipts (ExpV and 40A(3) are built — above). §2.18's law facts are data: the TCS 206C(1H) rows still active in
   `statutory_limits` need raising with Prathap.
 - The slip print templates (§9) are print-engine data, not built (the expense voucher's
-  `EXPENSE_VOUCHER` purpose is seeded; its template is designed in the template designer). The
-  Z / X / store Z purposes and their data are built (notes 117, "Printing" below).
+  `EXPENSE_VOUCHER` purpose is seeded; its template is designed in the template designer). All
+  five till purposes and their data are built — the Z / X / store Z (notes 117) and the movement
+  slip / remittance memo (notes 135), "Printing" below; their layouts are the user's.
 - **Cockpit + day** (phase 4): built by notes 117 (below) except the session void.
 - **Safe** (phase 5): built by notes 118 (above) except SAFE_TRANSFER. **HO review** (phase 6).
   Drop verification came forward as the notes 113 receive (above).
@@ -509,12 +586,17 @@ TILL_APPROVER_SELF and the error carries `event`, so the wording catalogue keys 
 
 ## Tests
 
+`test/till-review-http.e2e-spec.ts` (notes 134: every review refusal writing nothing, a session
+reviewed twice — the second supersedes the first, both journalled HO_REVIEW — and a day written off
+against a posted journal; reads an existing CLOSED session and deletes only its own reviews),
 `test/till-safe-http.e2e-spec.ts` (notes 118, on a TEMPORARY branch with a 10,000 opening
 balance on the safe ledger: the book before a count, the blind viewer, a float out and a hand-over
 in only once approved, a count within tolerance, decided in the step with the witness as second
 (and refused alone / with a wrong witness PIN), sent on and decided later with a second PIN, a bank
 deposit refused over the balance / to a non-bank ledger, voided, a CIT remittance confirmed 5 short,
-the refusals once confirmed / counted since, the day close freezing the safe figures),
+the refusals once confirmed / counted since, the day close freezing the safe figures; notes 135: the
+float's and the hand-over's slips and the two remittance memos as the providers hand them to a
+layout, each purpose refusing the other's document),
 `test/till-day-close-http.e2e-spec.ts` (notes 117, on a TEMPORARY branch (`till.day_close_safe_count`
 off there since notes 118) of the e2e company so no
 live day is ever closed: the X read, force close, session reopen, the close-check, a blocked /
@@ -539,7 +621,8 @@ cashier and a supervisor — two users, two app instances — every kind; notes 
 the office, the supervisor list, every supervisor refusal (stranger, self, no right, no PIN, none typed,
 wrong + PIN_FAIL), the signed pickup / top-up, a drop refused until the counter's safe is a drop safe;
 the notes 108 witness PINs on a change between counters, the gauge NORMAL → ALERT →
-BLOCKED → NORMAL, a void and its mirror, the close netting to the float left). The money-path
+BLOCKED → NORMAL, a void and its mirror, the close netting to the float left; notes 135: the
+exchange's slip lines telling IN from OUT). The money-path
 suite also refuses a bill on a BLOCKED drawer until a drop. Each suite registers its own
 device, so no other suite's device is ever governed. `test/expense-voucher-http.e2e-spec.ts` covers
 the receipt / payment / expense plan: the expense voucher end to end, paid-from-bank, the journal

@@ -1,3 +1,39 @@
+/**
+ * till-approval-gate.service.ts — the approval gate's routes (notes 124 §5, notes 105 Part B):
+ * `approvals/request · decide · cancel · get · pending`, served by TillApprovalController.
+ *
+ * Writes `till_approval` (status, the decision, the second signature, the approver / used marks
+ * in tap_rule_snapshot) and, on an approved FLOAT_MISMATCH, `till_variance.tvr_approval_id`;
+ * every write is journalled through TillEventService (APPROVAL_REQUESTED by fileRequest,
+ * APPROVAL_DECIDED, APPROVAL_EXPIRED, PIN_FAIL). The rule, the grants and the request row come
+ * from TillApprovalService (ruleOrDefault, assess, assertApprover, grantsOf, standing,
+ * fileRequest, ruleOfRequest).
+ *
+ * Flows:
+ *  - request: caller + settings + business date → the shape (amount ≥ 0, srcDocType with
+ *    srcDocId) → the session named (its year, its counter) or the caller's linked counter → the
+ *    rule and whether it asks (a real rule asking nothing → 422 TILL_APPROVAL_INVALID, needed:
+ *    false) → the reason → with `approverId`, judge() before anything is written (the approver's
+ *    PIN at the counter) → one transaction: the same caller's PENDING request for the same
+ *    document is reused, else fileRequest; an inline approver then lockRow + decideIn → get.
+ *  - decide: a note (400 TILL_NOTE_REQUIRED) → pendingRow (404 · 409 TILL_APPROVAL_EXPIRED ·
+ *    409 TILL_APPROVAL_NOT_PENDING) → judge() under ruleOfRequest's snapshot (a REJECT needs no
+ *    second signature) → in the transaction lockRow, PENDING again, decideIn (APPROVED /
+ *    REJECTED, APPROVAL_DECIDED) → get.
+ *  - cancel: pendingRow → whoever asked, else Till Sessions (273) OVERRIDE (403
+ *    TILL_APPROVAL_NOT_YOURS) → CANCELLED + logDecision (`status: CANCELLED`).
+ *  - get: one request with the session / counter / reason names, the people's display names
+ *    (namesOf) and `usedOn` from the snapshot.
+ *  - pending (the inbox): sweep() expires overdue requests → the caller's grants once (grantsOf)
+ *    → four reads, each an item with the route that decides it — REQUEST (approvals/decide),
+ *    SESSION_VARIANCE (sessions/decide-variance; `afterClose` for a CLOSED session's drawer gap),
+ *    RECEIVE_VARIANCE (decide-variance with tcmId), SAFE_VARIANCE (safes/decide-variance) — with
+ *    canDecide / cannotBecause from standing() against each item's requester(s); a variance's
+ *    amount is null without 273 OVERRIDE.
+ *  - judge / provePerson: the approver's verdict (assertApprover) and the second signature by
+ *    PIN; a wrong PIN is journalled PIN_FAIL outside any transaction and the refusal rethrown.
+ */
+
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillApproval } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -23,6 +59,7 @@ import { TillEventService } from './till-event.service';
 
 type Tx = Prisma.TransactionClient;
 
+/** A Decimal / number / string as a 2-place number; null and undefined read 0. */
 const num = (d: Prisma.Decimal | number | string | null | undefined): number =>
   d === null || d === undefined ? 0 : Number(new Prisma.Decimal(d).toFixed(2));
 
@@ -47,6 +84,7 @@ export interface RequestApprovalInput {
   secondPin?: string | null;
 }
 
+/** One till_approval row: the branch, its year (the partition) and tap_id. */
 export interface ApprovalKey {
   companyId: string;
   branchId: string;
@@ -97,6 +135,14 @@ export class TillApprovalGateService {
   //  request
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * File a request — or decide it at once when `approverId` types a PIN here. The amount is 0 or
+   * more and srcDocType / srcDocId go together (400); a named session must exist (404
+   * TILL_SESSION_NOT_FOUND); a rule row that asks nothing for the amount is 422
+   * TILL_APPROVAL_INVALID (`needed: false`); the reason must be an active till reason (422
+   * TILL_REASON_INVALID). The same caller asking again for the same document gets the PENDING
+   * request back. Answers the request as `get` reads it.
+   */
   async request(input: RequestApprovalInput): Promise<TillApprovalPayload> {
     const caller = await this.context.caller();
     const settings = await this.context.settings({
@@ -278,6 +324,12 @@ export class TillApprovalGateService {
   //  decide · cancel · get
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * The caller decides a PENDING request as its approver, under the rule snapshotted when it was
+   * filed. A note is required (400); the grant / PIN refusals are assertApprover's; a two-person
+   * rule being APPROVED wants `secondId` + `secondPin`. Not PENDING → 409
+   * TILL_APPROVAL_NOT_PENDING; past its expiry → 409 TILL_APPROVAL_EXPIRED.
+   */
   async decide(input: DecideApprovalInput): Promise<TillApprovalPayload> {
     const caller = await this.context.caller();
     if (!input.note?.trim()) {
@@ -319,6 +371,11 @@ export class TillApprovalGateService {
     return this.get(input);
   }
 
+  /**
+   * Whoever asked withdraws a PENDING request; anyone else needs Till Sessions (273) OVERRIDE
+   * (403 TILL_APPROVAL_NOT_YOURS). The row goes CANCELLED with a note naming the canceller, and
+   * APPROVAL_DECIDED is journalled with `status: CANCELLED`.
+   */
   async cancel(input: ApprovalKey & { note?: string | null }): Promise<TillApprovalPayload> {
     const caller = await this.context.caller();
     const tap = await this.pendingRow(input);
@@ -351,6 +408,12 @@ export class TillApprovalGateService {
     return this.get(input);
   }
 
+  /**
+   * One request as the client reads it (404 TILL_APPROVAL_NOT_FOUND): the session / counter /
+   * reason names, the requester's, decider's and second person's display names, the channel as
+   * requested (the snapshot's while PENDING, the one used once decided) and `usedOn` when a
+   * document has taken it.
+   */
   async get(key: ApprovalKey): Promise<TillApprovalPayload> {
     const tap = await this.prisma.tillApproval.findFirst({
       where: {
@@ -431,6 +494,12 @@ export class TillApprovalGateService {
   //  pending — the inbox
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * The inbox: every decision waiting in the branch, each with the route that makes it and
+   * whether THIS caller may (`canDecide` / `cannotBecause`, judged by standing() without a PIN).
+   * Expired requests are swept first (`expired` = how many). A variance's amount is shown only to
+   * a Till Sessions (273) OVERRIDE holder.
+   */
   async pending(scope: { companyId: string; branchId: string }): Promise<TillApprovalInboxPayload> {
     const caller = await this.context.caller();
     const expired = await this.sweep(scope, caller);
@@ -922,6 +991,7 @@ export class TillApprovalGateService {
     });
   }
 
+  /** APPROVAL_DECIDED on the request: its scope and document, the caller, `payload` + the event. */
   private async logDecision(
     tx: Tx,
     row: TillApproval,
@@ -976,6 +1046,7 @@ export class TillApprovalGateService {
     return tap;
   }
 
+  /** 409 TILL_APPROVAL_NOT_PENDING, naming the status the request is in. */
   private throwNotPending(tap: TillApproval): never {
     throwTill(
       TillErrorCode.APPROVAL_NOT_PENDING,
@@ -985,6 +1056,7 @@ export class TillApprovalGateService {
     );
   }
 
+  /** The request row under FOR UPDATE, read back through Prisma: a decision runs on it locked. */
   private async lockRow(tx: Tx, key: ApprovalKey): Promise<TillApproval> {
     await tx.$queryRaw`
       SELECT tap_id FROM accounts.till_approval
@@ -1038,6 +1110,7 @@ export class TillApprovalGateService {
     });
   }
 
+  /** Display names (else login names) of users by id, in one query; nulls skipped. */
   private async namesOf(ids: readonly (string | null)[]): Promise<Map<string, string>> {
     const wanted = [...new Set(ids.filter((id): id is string => !!id))];
     if (wanted.length === 0) {

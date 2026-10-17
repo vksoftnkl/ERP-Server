@@ -1,3 +1,19 @@
+/**
+ * Request bodies of the till masters — TillMastersController's counters · safes · reasons ·
+ * denominations · approval-rules · approval-authorities `/create`, and the `?id=&companyId=`
+ * key its `/get` and `/delete` take. Each save is served by TillMastersService (saveCounter,
+ * saveSafe, saveReason, saveDenomination, saveRule, saveAuthority) and answers the matching
+ * payload of types/till-api.types.ts (TillCounterPayload … TillApprovalAuthorityPayload).
+ *
+ * Flow of a save: the DTO (its id present = update, absent = create) → TillMastersService checks
+ * the values against the lists of types/till-enum.ts (TILL_COUNTER_KINDS, TillDrawerMode,
+ * TILL_REASON_CATEGORIES, TILL_APPROVAL_EVENTS / MODES / CHANNELS, TILL_APPROVER_ROLES — 400
+ * TILL_VALUE_NOT_ALLOWED), the keys (400 TILL_MASTER_DUPLICATE), the scope (400
+ * TILL_MASTER_SCOPE_FIXED) and the references named (device, safe, ledger, user) → writes the
+ * row and its audit log → the payload. A delete is soft (`*_is_deleted`) and refused while the
+ * row is in use (409 TILL_MASTER_IN_USE). The field names are the columns' (tcn_* · tsf_* ·
+ * trs_* · tdn_* · tar_* · taa_*), so TillExceptionFilter names the field it refuses.
+ */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 import {
@@ -22,6 +38,10 @@ import {
  * left out keeps its value; `null` clears a nullable one.
  */
 
+/**
+ * POST /till/counters/create — a till_counter (Till Counters, 275): its code, drawer, device
+ * link, safe, default float and cash limits.
+ */
 export class SaveTillCounterDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'Present = update.' })
   @OptionalUuid()
@@ -119,6 +139,7 @@ export class SaveTillCounterDto {
   tcnIsActive?: boolean;
 }
 
+/** POST /till/safes/create — a till_safe (Till Safes, 280): its ledger, insured limit, default and drop-safe flags. */
 export class SaveTillSafeDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'Present = update.' })
   @OptionalUuid()
@@ -176,6 +197,7 @@ export class SaveTillSafeDto {
   tsfIsActive?: boolean;
 }
 
+/** POST /till/reasons/create — a company's till_reason (Till Reasons, 281); shipped rows (company NULL) are read-only. */
 export class SaveTillReasonDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -232,6 +254,7 @@ export class SaveTillReasonDto {
   trsIsActive?: boolean;
 }
 
+/** POST /till/denominations/create — a note or coin (till_denomination) the count screens offer (Denominations, 282). */
 export class SaveTillDenominationDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'Present = update (a company row only).' })
   @OptionalUuid()
@@ -278,6 +301,10 @@ export class SaveTillDenominationDto {
   tdnIsActive?: boolean;
 }
 
+/**
+ * POST /till/approval-rules/create — a till_approval_rule (Till Approval Rules, 276): when an
+ * event asks for an approval (mode + threshold), from which level, through which channel.
+ */
 export class SaveTillApprovalRuleDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -357,6 +384,10 @@ export class SaveTillApprovalRuleDto {
   tarIsActive?: boolean;
 }
 
+/**
+ * POST /till/approval-authorities/create — a till_approval_authority grant (Till Approval
+ * Authority, 285): who may approve which event, where, at which level, up to how much.
+ */
 export class SaveTillApprovalAuthorityDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'Present = update.' })
   @OptionalUuid()
@@ -433,6 +464,7 @@ export class TillMasterKeyQueryDto {
   companyId!: string;
 }
 
+/** GET /till/denominations/list — the company's denominations, for the count screens. */
 export class TillDenominationListQueryDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()

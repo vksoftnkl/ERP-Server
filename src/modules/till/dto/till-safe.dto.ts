@@ -1,3 +1,21 @@
+/**
+ * Request shapes of the safe (notes 118, Cash Office 287) — TillSafeController's safes/balance
+ * (query) · safes/count · safes/decide-variance · movements/remit · movements/remit-confirm,
+ * served by TillSafeService. Every one extends TillScopeDto (company · branch); the count lines
+ * reuse TillCountLineDto from till-session.dto.ts.
+ *
+ * Flow: the DTO → TillSafeService (balance / count / decideVariance / remit / remitConfirm) →
+ * TillSafeBalancePayload · TillSafeCountPayload · TillSafeDecisionPayload · TillRemitPayload ·
+ * TillRemitConfirmPayload (types/till-api.types.ts).
+ *
+ * A gap beyond till.cash_tolerance is judged the same way on a count and on a CIT confirm, so
+ * both extend TillSafeGapDecisionDto: `treatment` + `reasonId` + `approverPin` decide it in the
+ * step under SAFE_VARIANCE, the witness (`witnessId` + `witnessPin`) being the second signature
+ * of the shipped two-person rule; left out, the gap is SENT_FOR_APPROVAL and
+ * DecideTillSafeVarianceDto decides it later with `secondId` + `secondPin`. A remittance goes
+ * RemitTillCashDto (BANK_DEPOSIT is DEPOSITED at once; CIT is IN_TRANSIT) → ConfirmTillRemitDto
+ * once the bank statement shows the CIT one.
+ */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -23,6 +41,7 @@ import {
 import { SAFE_GAP_TREATMENTS, TillRemitMode, type TillSafeGapTreatment } from '../types/till-enum';
 import { TillCountLineDto, TillScopeDto } from './till-session.dto';
 
+/** slipDate / bankDate are dates ('YYYY-MM-DD'), not timestamps: a remittance is dated by the day. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATE_MESSAGE = { message: '$property must be a date, YYYY-MM-DD' };
 

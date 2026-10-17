@@ -1,3 +1,27 @@
+/**
+ * till-masters.service.ts — the six till masters behind TillMastersController
+ * (`counters` · `safes` · `reasons` · `denominations` · `approval-rules` ·
+ * `approval-authorities`, each `/create` · `/get` · `/delete`, plus `denominations/list`; §6,
+ * S10): till_counter, till_safe, till_reason, till_denomination, till_approval_rule and
+ * till_approval_authority. This file is their only writer; the lists are designer grids.
+ *
+ * Flows (each verb one transaction, the caller from TillContextService):
+ * - save<Master>(dto): load the row when `dto.<pk>Id` names one (404 <MASTER>_NOT_FOUND when it
+ *   does not) → refuse a change of scope (MASTER_SCOPE_FIXED; assertOwnRow for a shipped row or
+ *   another company's) → normalise and check the values (assertIn → VALUE_NOT_ALLOWED, a code
+ *   clash → MASTER_DUPLICATE, a ledger → assertLedger, a counter's device →
+ *   assertTillDevice / DEVICE_ALREADY_LINKED / assertNoLiveSession, its safe →
+ *   SAFE_OTHER_BRANCH) → create or update → <master>Payload → logChange (AuditLogService,
+ *   insert / update).
+ * - get<Master>(id, companyId): the row (a shipped company-NULL row too for reasons,
+ *   denominations, rules and authorities) → <master>Payload, else 404.
+ * - delete<Master>(id, companyId): soft delete once nothing depends on it (a counter with a live
+ *   session, a safe with counters → MASTER_IN_USE; a shipped row never) → logChange 'cancel'.
+ * - listDenominations(companyId): the count screen's list — the company's rows and the shipped
+ *   ones they do not replace, valid today.
+ *
+ * TillLedgerService resolves a new safe's default ledger (the SAFE_CASH role's).
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -38,8 +62,11 @@ import type {
 } from '../dto/save-till-masters.dto';
 
 type Tx = Prisma.TransactionClient;
+/** A DTO number (or the stored value) as a Decimal; `fallback` when neither is given. */
 const dec = (v: number | null | undefined, fallback = 0) => new Prisma.Decimal(v ?? fallback);
+/** A Decimal column as the two-place number a payload carries; 0 for null. */
 const num = (v: Prisma.Decimal | null | undefined): number => (v ? Number(v.toFixed(2)) : 0);
+/** The screen name every audit row of this file carries. */
 const SCREEN = 'Till Masters';
 
 /**
@@ -59,6 +86,11 @@ const OWN_ROW_NOT_FOUND = {
   'approval rule': TillErrorCode.APPROVAL_RULE_NOT_FOUND,
 } as const;
 
+/**
+ * Create-or-update, read and soft-delete for each master, one transaction per verb: validate →
+ * write → payload → audit row. The design notes above (shipped rows, the house verbs) hold for
+ * every one of them.
+ */
 @Injectable()
 export class TillMastersService {
   constructor(
@@ -72,6 +104,15 @@ export class TillMastersService {
   //  Counter
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update a counter (by tcnId). Refuses: an unknown id (COUNTER_NOT_FOUND), a change
+   * of company / branch (MASTER_SCOPE_FIXED), a kind or drawer mode off the list
+   * (VALUE_NOT_ALLOWED), a block limit under the alert limit (BLOCK_BELOW_ALERT), a code already
+   * used in the branch (MASTER_DUPLICATE), a device that is unregistered / Web / blocked / another
+   * branch's (assertTillDevice) or already driving a counter (DEVICE_ALREADY_LINKED), a device
+   * re-pointed while a session is live (assertNoLiveSession), a safe of another branch
+   * (SAFE_OTHER_BRANCH). Then the write, counterPayload and the audit row.
+   */
   async saveCounter(dto: SaveTillCounterDto): Promise<TillCounterPayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -225,6 +266,7 @@ export class TillMastersService {
     });
   }
 
+  /** One counter of the company, with its device and safe names; 404 COUNTER_NOT_FOUND. */
   async getCounter(tcnId: string, companyId: string): Promise<TillCounterPayload> {
     const row = await this.prisma.tillCounter.findFirst({
       where: { tcnId, tcnCompanyId: companyId, tcnIsDeleted: false },
@@ -235,6 +277,10 @@ export class TillMastersService {
     return this.counterPayload(this.prisma, row);
   }
 
+  /**
+   * Soft-delete a counter: 404 when unknown, MASTER_IN_USE while a session is live on it
+   * (PENDING_APPROVAL included). The device link is cleared so the PC can drive its replacement.
+   */
   async deleteCounter(tcnId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -274,6 +320,12 @@ export class TillMastersService {
   //  Safe
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update a safe (by tsfId). Refuses an unknown id (SAFE_NOT_FOUND), a change of
+   * branch (MASTER_SCOPE_FIXED), a code already used in the branch (MASTER_DUPLICATE) and a
+   * ledger not of the company (assertLedger). The ledger defaults to the SAFE_CASH role's; a new
+   * default safe clears the branch's old one (ux_tsf_default). Then safePayload and the audit row.
+   */
   async saveSafe(dto: SaveTillSafeDto): Promise<TillSafePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -364,6 +416,7 @@ export class TillMastersService {
     });
   }
 
+  /** One safe of the company, with its ledger's name; 404 SAFE_NOT_FOUND. */
   async getSafe(tsfId: string, companyId: string): Promise<TillSafePayload> {
     const row = await this.prisma.tillSafe.findFirst({
       where: { tsfId, tsfCompanyId: companyId, tsfIsDeleted: false },
@@ -374,6 +427,10 @@ export class TillMastersService {
     return this.safePayload(this.prisma, row);
   }
 
+  /**
+   * Soft-delete a safe: 404 when unknown, MASTER_IN_USE while any counter drops into it. The
+   * default flag goes with it.
+   */
   async deleteSafe(tsfId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -420,6 +477,13 @@ export class TillMastersService {
   //  Reason
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update a till reason (by trsId): the company's own row only (assertOwnRow — a
+   * shipped row is never edited), a category off TILL_REASON_CATEGORIES refused
+   * (VALUE_NOT_ALLOWED), the ledger checked when named (assertLedger). The unique index on
+   * category / code per company surfaces as MASTER_DUPLICATE. Then reasonPayload and the audit
+   * row.
+   */
   async saveReason(dto: SaveTillReasonDto): Promise<TillReasonPayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -487,6 +551,7 @@ export class TillMastersService {
     });
   }
 
+  /** One reason — the company's own or a shipped one; 404 REASON_NOT_FOUND. */
   async getReason(trsId: string, companyId: string): Promise<TillReasonPayload> {
     const row = await this.prisma.tillReason.findFirst({
       where: {
@@ -501,6 +566,7 @@ export class TillMastersService {
     return this.reasonPayload(this.prisma, row);
   }
 
+  /** Soft-delete a company's own reason (assertOwnRow: never a shipped one); 404 when unknown. */
   async deleteReason(trsId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -531,6 +597,12 @@ export class TillMastersService {
   //  Denomination
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update a denomination (by tdnId): the company's own row only (assertOwnRow), a
+   * value at or below zero refused (DENOMINATION_VALUE_INVALID), the currency upper-cased (INR
+   * when unsaid), tdnValidTo kept / set / cleared as sent. A duplicate value and kind for the
+   * company surfaces as MASTER_DUPLICATE. Then denominationPayload and the audit row.
+   */
   async saveDenomination(dto: SaveTillDenominationDto): Promise<TillDenominationPayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -596,6 +668,7 @@ export class TillMastersService {
     });
   }
 
+  /** One denomination — the company's own or a shipped one; 404 DENOMINATION_NOT_FOUND. */
   async getDenomination(tdnId: string, companyId: string): Promise<TillDenominationPayload> {
     const row = await this.prisma.tillDenomination.findFirst({
       where: {
@@ -634,6 +707,7 @@ export class TillMastersService {
       .map((d) => this.denominationPayload(d));
   }
 
+  /** Soft-delete a company's own denomination (never a shipped one); 404 when unknown. */
   async deleteDenomination(tdnId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -664,6 +738,13 @@ export class TillMastersService {
   //  Approval rule
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update an approval rule (by tarId): the company's own row only (assertOwnRow), its
+   * scope kept (a branch rule stays one — MASTER_SCOPE_FIXED), event / mode / channel / role
+   * checked against the enums (assertIn), the defaults EITHER / SUPERVISOR / blocks the till /
+   * effective from 2000-01-01. A second rule of that event starting the same day at the same
+   * scope surfaces as MASTER_DUPLICATE. Then rulePayload and the audit row.
+   */
   async saveRule(dto: SaveTillApprovalRuleDto): Promise<TillApprovalRulePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -752,6 +833,7 @@ export class TillMastersService {
     });
   }
 
+  /** One approval rule — the company's own or a shipped one; 404 APPROVAL_RULE_NOT_FOUND. */
   async getRule(tarId: string, companyId: string): Promise<TillApprovalRulePayload> {
     const row = await this.prisma.tillApprovalRule.findFirst({
       where: {
@@ -766,6 +848,7 @@ export class TillMastersService {
     return this.rulePayload(row);
   }
 
+  /** Soft-delete a company's own approval rule (never a shipped one); 404 when unknown. */
   async deleteRule(tarId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -796,6 +879,12 @@ export class TillMastersService {
   //  Approval authority
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Create or update an approval authority grant (by taaId, notes 111): a branch grant names its
+   * company (GRANT_COMPANY_REQUIRED), the user must exist (USER_UNKNOWN), role and event checked
+   * (assertIn), taaValidTo never before taaValidFrom (VALID_TO_BEFORE_FROM); taaMaxAmount null =
+   * no ceiling. Then authorityPayload and the audit row.
+   */
   async saveAuthority(dto: SaveTillApprovalAuthorityDto): Promise<TillApprovalAuthorityPayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -890,6 +979,7 @@ export class TillMastersService {
     });
   }
 
+  /** One grant — the company's, or a company-NULL one; 404 APPROVAL_AUTHORITY_NOT_FOUND. */
   async getAuthority(taaId: string, companyId: string): Promise<TillApprovalAuthorityPayload> {
     const row = await this.prisma.tillApprovalAuthority.findFirst({
       where: {
@@ -909,6 +999,7 @@ export class TillMastersService {
     return this.authorityPayload(this.prisma, row);
   }
 
+  /** Soft-delete a grant of the company (or a company-NULL one); 404 when unknown. */
   async deleteAuthority(taaId: string, companyId: string): Promise<TillDeletePayload> {
     const caller = await this.context.caller();
     return this.prisma.$transaction(async (tx) => {
@@ -970,10 +1061,12 @@ export class TillMastersService {
     }
   }
 
+  /** The refusal for a shipped row touched: MASTER_IN_USE on `field` with the message given. */
   private forbidden(message: string, field: string): never {
     throwTill(TillErrorCode.MASTER_IN_USE, message, field);
   }
 
+  /** VALUE_NOT_ALLOWED unless `value` is one of `allowed` — an enum column's CHECK, by field. */
   private assertIn(value: string, allowed: readonly string[], field: string): void {
     if (!allowed.includes(value)) {
       throwTillBadRequest(
@@ -1030,6 +1123,7 @@ export class TillMastersService {
     }
   }
 
+  /** LEDGER_NOT_IN_COMPANY unless the ledger is live and the company's (or company-NULL). */
   private async assertLedger(
     tx: Tx,
     ledgerId: string,
@@ -1053,6 +1147,10 @@ export class TillMastersService {
     }
   }
 
+  /**
+   * MASTER_IN_USE while a session is live on the counter (OPEN / SUSPENDED / COUNTING, and
+   * PENDING_APPROVAL): a delete, or a device re-pointed, waits for it to close; `hint` says so.
+   */
   private async assertNoLiveSession(
     tx: Tx,
     counterId: string,
@@ -1076,6 +1174,11 @@ export class TillMastersService {
     }
   }
 
+  /**
+   * The masters' audit row (AuditLogService.logEntityChange, screen "Till Masters"): the payload
+   * before and after; the action insert / update by whether there was a before, or 'cancel' for
+   * a soft delete.
+   */
   private async logChange(
     tx: Tx,
     caller: TillCaller,
@@ -1144,6 +1247,7 @@ export class TillMastersService {
     };
   }
 
+  /** The row with its ledger's name (notes 101 §3). */
   private async safePayload(
     tx: Tx | PrismaService,
     r: Prisma.TillSafeGetPayload<object>,
@@ -1170,6 +1274,7 @@ export class TillMastersService {
     };
   }
 
+  /** The row with its ledger's name; `shipped` = a company-NULL row. */
   private async reasonPayload(
     tx: Tx | PrismaService,
     r: Prisma.TillReasonGetPayload<object>,
@@ -1197,6 +1302,7 @@ export class TillMastersService {
     };
   }
 
+  /** The row as the API shows it; `shipped` = a company-NULL row. */
   private denominationPayload(
     r: Prisma.TillDenominationGetPayload<object>,
   ): TillDenominationPayload {
@@ -1215,6 +1321,7 @@ export class TillMastersService {
     };
   }
 
+  /** The row as the API shows it (the percent to three places); `shipped` = a company-NULL row. */
   private rulePayload(r: Prisma.TillApprovalRuleGetPayload<object>): TillApprovalRulePayload {
     return {
       tarId: r.tarId,
@@ -1238,6 +1345,7 @@ export class TillMastersService {
     };
   }
 
+  /** The row with the grantee's display name (else login name). */
   private async authorityPayload(
     tx: Tx | PrismaService,
     r: Prisma.TillApprovalAuthorityGetPayload<object>,

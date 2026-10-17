@@ -44,6 +44,7 @@ const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
 const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
 const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const bill_api_types_1 = require("./types/bill-api.types");
 const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
@@ -211,6 +212,10 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             if (!ctx.rights.cancel) {
                 (0, sales_errors_1.throwSalesRight)('This user may not cancel on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_CANCEL);
             }
+            const live = await this.liveSessionOf(tx, bill.sbSessionId);
+            if (live) {
+                (0, sales_errors_1.throwSalesLocked)(`This bill is in the open till session ${live.tssSessionNo}: void it instead (/bills/void)`, posting_types_1.SALES_ERROR_CODES.USE_VOID, 'sbId', { sessionNo: live.tssSessionNo, sessionStatus: live.tssStatus });
+            }
             await this.till.assertCancellable(tx, {
                 sessionId: bill.sbSessionId,
                 srcDocType: 'SALE_BILL',
@@ -218,54 +223,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 accYear: bill.sbAccYear,
                 field: 'sbId',
             });
-            await this.assertUnwindable(tx, bill, ctx, dto.reason, 'cancel');
-            const items = await tx.saleBillItem.findMany({
-                where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
-            });
-            const reversal = await this.unwind(tx, bill, items, ctx, dto.reason, now);
-            const cancelled = await tx.saleBill.update({
-                where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-                data: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
-            });
-            await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
-            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
-                companyId: bill.sbCompanyId,
-                branchId: bill.sbBranchId,
-                tenantId: bill.sbTenantId,
-                accYear: bill.sbAccYear,
-                srcModule: bill_api_types_1.BILL_STATUS_SRC_MODULE,
-                srcDocType: bill_api_types_1.BILL_STATUS_SRC_DOC_TYPE,
-                srcDocId: bill.sbId,
-                srcDocRefno: bill.sbBillRefno,
-                event: txn_status_log_helper_1.TxnStatusEvent.CANCELLED,
-                fromStatus: bill_api_types_1.BILL_STATUS_POSTED,
-                toStatus: bill_api_types_1.BILL_STATUS_CANCELLED,
-                changedOn: now,
-                changedBy: ctx.actor,
-                remarks: dto.reason,
-                deviceId: bill.sbDeviceId,
-                sessionId: bill.sbSessionId,
-            });
-            await this.audit.logEntityChange({
-                action: 'cancel',
-                tableName: 'sale_bill',
-                screenName: 'Sale Bill',
-                screenType: 'transaction',
-                pk: bill.sbId,
-                displayName: bill.sbBillRefno || bill.sbId,
-                originalRecord: { sbStatus: bill_api_types_1.BILL_STATUS_POSTED },
-                modifiedRecord: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED },
-                userId: ctx.actor,
-                notes: `Bill cancelled: ${dto.reason}`,
-            }, tx);
-            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
-                companyId: bill.sbCompanyId,
-                accYear: bill.sbAccYear,
-                ledgerIds: [bill.sbCustId],
-                vouchers: bill.sbPostedVoucherId
-                    ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
-                    : [],
-            });
+            const reversal = await this.cancelIn(tx, bill, ctx, dto.reason, now);
             return {
                 sbId: bill.sbId,
                 sbCompanyId: bill.sbCompanyId,
@@ -276,6 +234,72 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 cancelledOn: now.toISOString(),
             };
         }, POST_TX_OPTIONS);
+    }
+    async liveSessionOf(tx, sessionId) {
+        if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+            return null;
+        }
+        const session = await tx.tillSession.findFirst({
+            where: { tssId: sessionId, tssIsDeleted: false },
+            select: { tssId: true, tssSessionNo: true, tssStatus: true },
+        });
+        if (!session ||
+            ![till_enum_1.TillSessionStatus.OPEN, till_enum_1.TillSessionStatus.SUSPENDED].includes(session.tssStatus)) {
+            return null;
+        }
+        return session;
+    }
+    async cancelIn(tx, bill, ctx, reason, now, opts = {}) {
+        const action = opts.action ?? 'cancel';
+        await this.assertUnwindable(tx, bill, ctx, reason, 'cancel');
+        const items = await tx.saleBillItem.findMany({
+            where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
+        });
+        const reversal = await this.unwind(tx, bill, items, ctx, reason, now);
+        const cancelled = await tx.saleBill.update({
+            where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+            data: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
+        });
+        await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
+        await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+            companyId: bill.sbCompanyId,
+            branchId: bill.sbBranchId,
+            tenantId: bill.sbTenantId,
+            accYear: bill.sbAccYear,
+            srcModule: bill_api_types_1.BILL_STATUS_SRC_MODULE,
+            srcDocType: bill_api_types_1.BILL_STATUS_SRC_DOC_TYPE,
+            srcDocId: bill.sbId,
+            srcDocRefno: bill.sbBillRefno,
+            event: txn_status_log_helper_1.TxnStatusEvent.CANCELLED,
+            fromStatus: bill_api_types_1.BILL_STATUS_POSTED,
+            toStatus: bill_api_types_1.BILL_STATUS_CANCELLED,
+            changedOn: now,
+            changedBy: ctx.actor,
+            remarks: reason,
+            deviceId: bill.sbDeviceId,
+            sessionId: bill.sbSessionId,
+        });
+        await this.audit.logEntityChange({
+            action: 'cancel',
+            tableName: 'sale_bill',
+            screenName: 'Sale Bill',
+            screenType: 'transaction',
+            pk: bill.sbId,
+            displayName: bill.sbBillRefno || bill.sbId,
+            originalRecord: { sbStatus: bill_api_types_1.BILL_STATUS_POSTED },
+            modifiedRecord: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED },
+            userId: ctx.actor,
+            notes: action === 'void' ? `Bill voided: ${reason}` : `Bill cancelled: ${reason}`,
+        }, tx);
+        await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            companyId: bill.sbCompanyId,
+            accYear: bill.sbAccYear,
+            ledgerIds: [bill.sbCustId],
+            vouchers: bill.sbPostedVoucherId
+                ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
+                : [],
+        });
+        return reversal;
     }
     async cancelResponse(tx, bill, now) {
         const [row] = bill.sbPostedVoucherId
@@ -1083,6 +1107,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     async unwind(tx, bill, items, ctx, reason, now, mode = 'cancel') {
         const actor = ctx.actor;
         let reversalRefno = null;
+        let reversalVoucherId = null;
         let restateVoucherId = null;
         if (bill.sbPostedVoucherId && mode === 'amend') {
             if (await this.legs.retireForRestate(tx, bill.sbPostedVoucherId, bill.sbAccYear, actor)) {
@@ -1096,6 +1121,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
           SELECT avh_voucher_refno FROM accounts.acc_voucher_header
            WHERE avh_voucher_id = ${r.voucherId}::uuid AND avh_acc_year = ${bill.sbAccYear}::char(9)`;
                 reversalRefno = row?.avh_voucher_refno ?? null;
+                reversalVoucherId = r.voucherId;
             }
         }
         await this.stock.cancel(tx, {
@@ -1209,7 +1235,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             await (0, bill_pdc_posting_helper_1.cancelBillPdcRegister)(tx, bill, reason, actor, now);
         }
         void items;
-        return { reversalRefno, restateVoucherId };
+        return { reversalRefno, reversalVoucherId, restateVoucherId };
     }
     async afterStatusChange(tx, bill, items, actor, now) {
         const sign = bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED ? 1 : -1;

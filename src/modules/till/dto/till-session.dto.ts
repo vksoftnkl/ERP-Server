@@ -1,3 +1,32 @@
+/**
+ * Request bodies and query strings of TillController's session, day, movement, event and
+ * slip-check routes (/till/days/*, /till/sessions/*, /till/movements/*, /till/events/batch):
+ * the class-validator shapes the pipe checks before the controller runs; a refused field
+ * reaches the client through TillExceptionFilter as the house error body.
+ *
+ * Flow of a shape: the DTO (here) → the controller judges the menu right and reads the caller
+ * from the token → an input object to the service (TillSessionService, TillDayService,
+ * TillDayCloseService, TillMovementService, TillSlipCheckService, TillEventService) → a payload
+ * interface of types/till-api.types.ts, wrapped in TillSuccessResponse.
+ *
+ * The keys build on each other: TillScopeDto (company · branch) → TillSessionKeyDto (+ accYear ·
+ * tssId), TillDayKeyDto (+ accYear · tbdId), TillMovementKeyDto (+ accYear · tcmId). The year
+ * rides with every id because till_session, till_business_day and till_cash_movement are
+ * partitioned by it. The safe, approval and review bodies live in their own files and extend
+ * TillScopeDto too.
+ *
+ * The session's life as these bodies drive it (README "Routes"):
+ *   sessions/open-check (TillOpenCheckQueryDto, advice only)
+ *   → sessions/open (OpenTillSessionDto: the counter claim, the float, the OPEN count)
+ *   → suspend / resume (SuspendTillSessionDto / TillSessionKeyDto)
+ *   → end-billing (EndBillingTillSessionDto, the device's sync report)
+ *   → count (CountTillSessionDto, one attempt a call)
+ *   → decide-variance (DecideTillVarianceDto) when the count was sent for approval
+ *   → close (CloseTillSessionDto, the float left) → approve-cash (ApproveTillCashDto)
+ *   with force-close / reopen / x-report (notes 117) beside them; the day's open / get /
+ *   close-check / close / reopen bodies sit above the sessions, and movements/create · change ·
+ *   void · receive and events/batch inside one.
+ */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -39,6 +68,10 @@ export class TillScopeDto {
   branchId!: string;
 }
 
+/**
+ * One existing session: the query of GET sessions/get · expected · movements/supervisors, the
+ * body of POST sessions/resume · x-report, and the base of every other session verb.
+ */
 export class TillSessionKeyDto extends TillScopeDto {
   @ApiProperty({
     example: '2026-2027',
@@ -128,6 +161,7 @@ export class TillOpenCheckQueryDto extends TillScopeDto {
   counterId?: string;
 }
 
+/** POST /till/sessions/open — the counter claim, the float and the opening count (§8 S1). */
 export class OpenTillSessionDto extends TillScopeDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -207,6 +241,7 @@ export class OpenTillSessionDto extends TillScopeDto {
   approvalId?: string | null;
 }
 
+/** POST /till/sessions/suspend (a break, idle); sessions/resume takes the bare key. */
 export class SuspendTillSessionDto extends TillSessionKeyDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -236,6 +271,11 @@ export class EndBillingTillSessionDto extends TillSessionKeyDto {
   lastClientSeq?: number;
 }
 
+/**
+ * POST /till/sessions/count — one attempt of the close count (§5.4): cash by denomination,
+ * card / UPI batches by amount + slips. Answered by TillCountResultPayload, never the figure
+ * to a blind cashier.
+ */
 export class CountTillSessionDto extends TillSessionKeyDto {
   @ApiProperty({
     type: () => TillCountLineDto,
@@ -261,6 +301,7 @@ export class CountTillSessionDto extends TillSessionKeyDto {
   notes?: string | null;
 }
 
+/** POST /till/sessions/close — once the count is final: what stays in the drawer, the rest is handed over. */
 export class CloseTillSessionDto extends TillSessionKeyDto {
   @ApiPropertyOptional({
     example: 2000,
@@ -477,6 +518,10 @@ export class TillDayCloseCountDto {
   floatLeft?: number | null;
 }
 
+/**
+ * The DAY_CLOSE_EXCEPTION of POST /till/days/close (notes 117 §2): the reason, the approver
+ * typing their PIN at this desk, and one count per live session the close force-closes.
+ */
 export class TillDayCloseExceptionDto {
   @ApiProperty({
     format: 'uuid',
@@ -554,6 +599,7 @@ export class ReopenTillDayDto extends TillDayKeyDto {
   notes?: string | null;
 }
 
+/** GET /till/days/get — one business day by id, or today's when tbdId is left out. */
 export class TillDayGetQueryDto extends TillScopeDto {
   @ApiPropertyOptional({
     example: '2026-2027',
@@ -568,6 +614,7 @@ export class TillDayGetQueryDto extends TillScopeDto {
   tbdId?: string;
 }
 
+/** POST /till/days/open — a manager's Day Open (the only way in under till.day_auto_open = false). */
 export class OpenTillDayDto extends TillScopeDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -632,6 +679,7 @@ export class TillClientEventDto {
   payload?: Record<string, unknown> | null;
 }
 
+/** POST /till/events/batch — a device's own facts, up to 500 a call (TillEventService.ingestBatch). */
 export class TillEventBatchDto extends TillScopeDto {
   @ApiProperty({ example: '2026-2027' })
   @UpperMaxString(9)
@@ -781,6 +829,7 @@ export class CreateTillMovementDto extends TillSessionKeyDto {
   notes?: string | null;
 }
 
+/** One movement: the query of GET /till/movements/get, the base of movements/void. */
 export class TillMovementKeyDto extends TillScopeDto {
   @ApiProperty({ example: '2026-2027' })
   @UpperMaxString(9)
@@ -791,6 +840,7 @@ export class TillMovementKeyDto extends TillScopeDto {
   tcmId!: string;
 }
 
+/** POST /till/movements/void — a hand-posted movement of a session still live, with a MOVEMENT_VOID reason (REV 2 §2.8). */
 export class VoidTillMovementDto extends TillMovementKeyDto {
   @ApiProperty({ format: 'uuid', description: 'till_reason, category MOVEMENT_VOID.' })
   @RequiredUuid()
@@ -934,6 +984,7 @@ export class TillSlipCheckQueryDto extends TillSessionKeyDto {
   tenderId!: string;
 }
 
+/** A paper slip the slip check found no tender row for (§4.2): paid on the machine, billed as another tender? */
 export class TillSlipWithoutRowDto {
   @ApiProperty({ example: 160 })
   @OptionalNumber(0)

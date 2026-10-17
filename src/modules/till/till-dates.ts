@@ -1,3 +1,13 @@
+/**
+ * till-dates.ts — the till's calendar: the business date, the financial year, the session number
+ * and the partition check. Pure helpers (no DI) shared by every till service.
+ *
+ * Flow at a session or day open: businessDateNow(cutoff) — or businessDateAt(doc time) for an
+ * offline document (REV 2 §2.7) — → accYearOf(date) names the year's partitions →
+ * assertTillPartitions() refuses a year that has none (422 TILL_YEAR_NOT_SET_UP) →
+ * sessionNumber(counter, date, seq) numbers the session. isoDateOf() / dateParam() move a DATE
+ * column between Prisma and 'YYYY-MM-DD' text without a zone shift.
+ */
 import { Prisma } from '@prisma/client';
 import { throwTill } from './till-errors';
 import { TillErrorCode } from './types/till-enum';

@@ -14,7 +14,7 @@ const common_1 = require("@nestjs/common");
 const module_exception_filter_utils_1 = require("../../../common/utils/module-exception-filter.utils");
 let BillExceptionFilter = class BillExceptionFilter extends module_exception_filter_utils_1.SalesExceptionFilter {
     constructor() {
-        super(/\b((?:sb|cd|td)[A-Za-z0-9]+|remarks|username)\b/);
+        super(/\b((?:sb|cd|td)[A-Za-z0-9]+|remarks|username|reasonId|note|approvalId)\b/);
     }
 };
 exports.BillExceptionFilter = BillExceptionFilter;

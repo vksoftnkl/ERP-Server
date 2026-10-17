@@ -5,6 +5,37 @@
  * with a constraint name.
  */
 
+/**
+ * Who reads what: TILL_MENU — the controllers' rights (TillContextService.requireRight);
+ * TillErrorCode + TILL_ERROR_STATUS — throwTill (till-errors.ts), one HTTP status per code;
+ * TillEventCode — TillEventService for the server's own rows, and CLIENT_EVENT_CODES, the only
+ * codes events/batch accepts; TillSettingKey — till.settings.ts; the master lists
+ * (TILL_COUNTER_KINDS, TillDrawerMode, TILL_REASON_CATEGORIES, TILL_APPROVAL_EVENTS / MODES /
+ * CHANNELS, TILL_APPROVER_ROLES) — TillMastersService's value checks; MOVEMENT_VOUCHER_TYPE /
+ * RECEIPT_MOVEMENTS — TillPostingService; VOIDABLE_MOVEMENTS / VARIANCE_STATUS_OF_TREATMENT —
+ * TillMovementService and TillSessionService; CLOSE_EXCEPTION_CODES — TillDayCloseService;
+ * approverRoleRank — TillApprovalService.assertApprover.
+ *
+ * The state machines the enums below spell out:
+ *   session (ck_tss_status)   OPEN ⇄ SUSPENDED → COUNTING → (PENDING_APPROVAL → COUNTING →)
+ *     CLOSED; sessions/reopen (notes 117) takes CLOSED back to COUNTING; VOIDED is in the
+ *     CHECK, no route writes it today. LIVE_SESSION_STATUSES hold the counter;
+ *     HOLDING_SESSION_STATUSES (+ PENDING_APPROVAL) hold the device and the operator too.
+ *   day (ck_tbd_status)       OPEN → CLOSED (→ OPEN again on days/reopen); CLOSING is in the
+ *     CHECK for a later two-step close, nothing writes it.
+ *   movement                  POSTED → VOIDED (tcm_status); a bag under till.handover_receipt
+ *     REQUIRED: AWAITING → RECEIVED (tcm_receipt_status, TillReceiptStatus); a REMIT:
+ *     DEPOSITED, or IN_TRANSIT → CONFIRMED (tcm_remit_status, TillRemitStatus).
+ *   variance                  OPEN → POSTED (→ REVERSED on a session reopen), its treatment
+ *     PENDING → WITHIN_TOLERANCE · EXPENSE · RECOVER · SUSPENSE · RETENDERED
+ *     (TillVarianceTreatment); the session's summary of it is TillSessionVarianceStatus, by
+ *     VARIANCE_STATUS_OF_TREATMENT once approved.
+ *   approval (till_approval)  PENDING → APPROVED · REJECTED · CANCELLED · EXPIRED
+ *     (TillApprovalStatus, in till-api.types.ts).
+ *   a count's answer          ACCEPTED · RECOUNT_REQUIRED · SENT_FOR_APPROVAL (TillCountOutcome);
+ *     a safe gap's EXACT · WITHIN_TOLERANCE · DECIDED · SENT_FOR_APPROVAL (TillSafeGapOutcome).
+ */
+
 /** Menus 271–276 (migration 20261008140000), 280–283 (notes 101 / 102), 285 (notes 111), 287 (notes 118). Rights are judged on these. */
 export const TILL_MENU = {
   GROUP: 271,
@@ -17,6 +48,11 @@ export const TILL_MENU = {
    * VIEW · PRINT · EXPORT. No route reads it.
    */
   REPORTS: 288,
+  /**
+   * Cash Position (notes 134): head office's every-branch screen over grids
+   * 170-174. VIEW · CREATE (add an HO review, /till/reviews/create) · EXPORT.
+   */
+  CASH_POSITION: 289,
   /** VIEW · CREATE (Day Open). */
   BUSINESS_DAY: 274,
   /** The "Till Masters" group of the four master screens below (notes 102). VIEW only. */
@@ -172,6 +208,7 @@ export const CASHIER_MOVEMENTS: readonly TillMovementKind[] = [
   TillMovementKind.PAID_IN,
   TillMovementKind.EXCHANGE,
 ];
+/** The two-signature kinds (notes 110): the cashier keys them, a supervisor with Till Sessions (273) OVERRIDE signs by PIN. */
 export const SUPERVISOR_MOVEMENTS: readonly TillMovementKind[] = [
   TillMovementKind.PICKUP,
   TillMovementKind.TOP_UP,
@@ -410,6 +447,15 @@ export enum TillEventCode {
   /** Notes 118 — a safe counted; a CIT remittance confirmed by the bank. */
   SAFE_COUNT = 'SAFE_COUNT',
   REMIT_CONFIRMED = 'REMIT_CONFIRMED',
+  /** Notes 134 — head office reviewed a day or a session (till_session_review). */
+  HO_REVIEW = 'HO_REVIEW',
+  /**
+   * Void bill (REV 2) — a sale bill voided in its live session (/bills/void,
+   * the server writes it with the till_void row) and a line removed or reduced
+   * on the sale bill screen (a device fact, reported through events/batch).
+   */
+  BILL_VOID = 'BILL_VOID',
+  LINE_VOID = 'LINE_VOID',
 }
 
 /**
@@ -431,6 +477,12 @@ export const CLIENT_EVENT_CODES: readonly TillEventCode[] = [
   TillEventCode.LOGIN,
   TillEventCode.LOGOUT,
   TillEventCode.SYNC_PENDING_AT_CLOSE,
+  /**
+   * Void bill (REV 2 §3.5): a line deleted or its qty lowered on a sale bill
+   * keyed in a till session — often on a draft never saved, so only the device
+   * sees it. BILL_VOID stays server-only (/bills/void writes it).
+   */
+  TillEventCode.LINE_VOID,
 ];
 
 /** ck_trs_category after 49. */
@@ -515,6 +567,7 @@ export const TILL_APPROVER_ROLES = [
   'AREA_MANAGER',
   'HO_FINANCE',
 ] as const;
+/** One of TILL_APPROVER_ROLES. */
 export type TillApproverRole = (typeof TILL_APPROVER_ROLES)[number];
 /** The level's rank in TILL_APPROVER_ROLES; −1 for a label outside the list. */
 export function approverRoleRank(role: string): number {
@@ -535,10 +588,28 @@ export const APPROVABLE_TREATMENTS = [
   TillVarianceTreatment.SUSPENSE,
 ] as const;
 /** Notes 118 — the treatments a safe gap takes: there is no cashier to RECOVER from. */
+/** ck_tsr_outcome — what head office made of a day or a session (notes 134). */
+export enum TillReviewOutcome {
+  OK = 'OK',
+  QUERY = 'QUERY',
+  ESCALATED = 'ESCALATED',
+  RECOVERY_ORDERED = 'RECOVERY_ORDERED',
+  WRITTEN_OFF = 'WRITTEN_OFF',
+  SUSPENSE_CLEARED = 'SUSPENSE_CLEARED',
+  BANK_MATCHED = 'BANK_MATCHED',
+}
+/** The outcomes that may name the journal head office raised (tsr_ref_voucher_id). */
+export const REVIEW_REF_OUTCOMES: readonly TillReviewOutcome[] = [
+  TillReviewOutcome.WRITTEN_OFF,
+  TillReviewOutcome.SUSPENSE_CLEARED,
+];
+
+/** Notes 118 — EXPENSE · SUSPENSE: what a safe gap (stage SAFE / REMIT) may take; no RECOVER, there is no cashier. */
 export const SAFE_GAP_TREATMENTS = [
   TillVarianceTreatment.EXPENSE,
   TillVarianceTreatment.SUSPENSE,
 ] as const;
+/** One of SAFE_GAP_TREATMENTS. */
 export type TillSafeGapTreatment = (typeof SAFE_GAP_TREATMENTS)[number];
 /** What the session's variance status becomes under each approved treatment (ck_tss_variance_status). */
 export const VARIANCE_STATUS_OF_TREATMENT: Readonly<
@@ -780,8 +851,40 @@ export enum TillErrorCode {
   RECOUNT_NOT_ALLOWED = 'TILL_RECOUNT_NOT_ALLOWED',
   /** The device is linked to no counter and the open named none: name one of the free counters. */
   COUNTER_REQUIRED = 'TILL_COUNTER_REQUIRED',
+
+  // ── Notes 134 — head office reviews ──
+  /** A review names neither a day nor a session, or both: exactly one. */
+  REVIEW_TARGET = 'TILL_REVIEW_TARGET',
+  /** refVoucherId without refVoucherAccYear, or the other way round. */
+  REVIEW_REF_PAIR = 'TILL_REVIEW_REF_PAIR',
+  /** A journal named on an outcome that raises none (only WRITTEN_OFF / SUSPENSE_CLEARED name one). */
+  REVIEW_REF_NOT_ALLOWED = 'TILL_REVIEW_REF_NOT_ALLOWED',
+  /** No voucher by that id and year in the company. */
+  REVIEW_REF_NOT_FOUND = 'TILL_REVIEW_REF_NOT_FOUND',
+  /** The voucher named is cancelled: a review cites a posted journal. */
+  REVIEW_REF_NOT_POSTED = 'TILL_REVIEW_REF_NOT_POSTED',
+
+  // ── Notes 135 — the movement slip and the remittance memo ──
+  /** A REMIT printed as TILL_MOVEMENT, or any other movement as TILL_REMIT. */
+  PRINT_WRONG_PURPOSE = 'TILL_PRINT_WRONG_PURPOSE',
+
+  // ── Void bill (REV 2) — /bills/void ──
+  /** The bill's session is counted or closed: make a sale return (cash), as assertCancellable says. */
+  VOID_SESSION_CLOSED = 'TILL_VOID_SESSION_CLOSED',
+  /** The bill names no till session (office / credit bill): cancel it. */
+  VOID_NO_SESSION = 'TILL_VOID_NO_SESSION',
+  /** Only a POSTED bill is voided (a DRAFT is deleted). */
+  VOID_NOT_POSTED = 'TILL_VOID_NOT_POSTED',
+  /** Not the session's cashier on its device, and no Till Sessions (273) OVERRIDE. */
+  VOID_NOT_ALLOWED = 'TILL_VOID_NOT_ALLOWED',
 }
 
+/**
+ * The HTTP status throwTill answers each code with (§7.3): 400 a shape the DTO could not refuse
+ * · 403 not a person this signature accepts · 404 not there · 409 the wrong state · 422 a value
+ * or a master to fix first · 428 an approval first. The comments below say which family a
+ * later code joined, and why.
+ */
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.SESSION_REQUIRED]: 409,
   [TillErrorCode.SESSION_NOT_OPEN]: 409,
@@ -910,4 +1013,14 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.TREATMENT_REQUIRED]: 400,
   [TillErrorCode.RECOUNT_NOT_ALLOWED]: 400,
   [TillErrorCode.COUNTER_REQUIRED]: 400,
+  [TillErrorCode.REVIEW_TARGET]: 400,
+  [TillErrorCode.REVIEW_REF_PAIR]: 400,
+  [TillErrorCode.REVIEW_REF_NOT_ALLOWED]: 400,
+  [TillErrorCode.REVIEW_REF_NOT_FOUND]: 404,
+  [TillErrorCode.REVIEW_REF_NOT_POSTED]: 409,
+  [TillErrorCode.PRINT_WRONG_PURPOSE]: 400,
+  [TillErrorCode.VOID_SESSION_CLOSED]: 409,
+  [TillErrorCode.VOID_NO_SESSION]: 409,
+  [TillErrorCode.VOID_NOT_POSTED]: 409,
+  [TillErrorCode.VOID_NOT_ALLOWED]: 403,
 };

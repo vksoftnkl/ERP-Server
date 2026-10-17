@@ -24,6 +24,7 @@ const bill_lifecycle_service_1 = require("./bill-lifecycle.service");
 const bill_read_service_1 = require("./bill-read.service");
 const bill_band_service_1 = require("./bill-band.service");
 const bill_retender_service_1 = require("./bill-retender.service");
+const bill_void_service_1 = require("./bill-void.service");
 const save_bill_dto_1 = require("./dto/save-bill.dto");
 const bill_lifecycle_dto_1 = require("./dto/bill-lifecycle.dto");
 const bill_response_dto_1 = require("./dto/bill-response.dto");
@@ -33,12 +34,14 @@ function wantsPost(dto) {
 let BillController = class BillController {
     billService;
     lifecycle;
+    voids;
     read;
     band;
     retenderService;
-    constructor(billService, lifecycle, read, band, retenderService) {
+    constructor(billService, lifecycle, voids, read, band, retenderService) {
         this.billService = billService;
         this.lifecycle = lifecycle;
+        this.voids = voids;
         this.read = read;
         this.band = band;
         this.retenderService = retenderService;
@@ -61,6 +64,12 @@ let BillController = class BillController {
     }
     async cancel(dto) {
         return this.ok('Bill cancelled successfully', await this.lifecycle.cancel(dto));
+    }
+    async void(dto) {
+        return this.ok('Bill voided successfully', await this.voids.void(dto));
+    }
+    async voidCheck(query) {
+        return this.ok('Void check', await this.voids.check(query));
     }
     async amend(dto) {
         return this.ok('Bill amended successfully', await this.lifecycle.amend(dto));
@@ -158,7 +167,11 @@ __decorate([
 __decorate([
     (0, common_1.Post)('cancel'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Cancel a POSTED bill by reversal (never a delete). Reason mandatory.' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Cancel a POSTED bill by reversal (never a delete). Reason mandatory.',
+        description: 'A bill whose till session still takes money (OPEN / SUSPENDED) is refused with 409 SALES_USE_VOID: ' +
+            'void it (/bills/void). A cash bill of a counted / closed session is a sale return (409 TILL_SESSION_CLOSED_USE_RETURN).',
+    }),
     (0, swagger_1.ApiOkResponse)({
         description: '{ ...keys, sbStatus: CANCELLED, reversalVoucherRefno, cancelledOn }',
     }),
@@ -167,6 +180,52 @@ __decorate([
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.CancelBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "cancel", null);
+__decorate([
+    (0, common_1.Post)('void'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Void a POSTED bill of a live till session: cancel’s unwind, a till_void evidence row, BILL_VOID',
+        description: 'The same reversal as /bills/cancel (status CANCELLED), plus one accounts.till_void row stamped once — ' +
+            'was the bill printed before the void (print_log PRINT / REPRINT SUCCESS of SALE_INVOICE / SALE_RECEIPT), ' +
+            'how many prints, a FAILED print, minutes after the post, the session’s n-th void — and a BILL_VOID till event. ' +
+            'Only while the bill’s session is OPEN / SUSPENDED (else 409 TILL_VOID_SESSION_CLOSED: make a sale return; ' +
+            'no till session → 409 TILL_VOID_NO_SESSION: cancel it). By the session’s cashier on its own device, or anyone ' +
+            'with Till Sessions (273) OVERRIDE (else 403 TILL_VOID_NOT_ALLOWED); menu 12 Cancel as well. reasonId names an ' +
+            'active VOID_BILL reason, note when it needs one (422 TILL_REASON_INVALID). The VOID_BILL rule ships NEVER; where a ' +
+            'company switched it on, the gate’s 428 TILL_APPROVAL_REQUIRED / approvalId contract applies. Idempotent on a voided bill.',
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        description: '{ ...keys, sbBillRefno, sbStatus: CANCELLED, voidedOn, reversalVoucherRefno, void: { … } }',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 428, type: bill_response_dto_1.BillErrorResponseDto, description: 'TILL_APPROVAL_REQUIRED' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [bill_lifecycle_dto_1.VoidBillDto]),
+    __metadata("design:returntype", Promise)
+], BillController.prototype, "void", null);
+__decorate([
+    (0, common_1.Get)('void-check'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'What the Void popup shows before a void: the door this bill takes, its prints, the minutes since post',
+        description: 'Reads only. route: VOID (live session) · RETURN (counted / closed) · CANCEL (no till) · VOIDED · CANCELLED · ' +
+            'NOT_POSTED, with the refusal code the void would answer; canVoid for THIS caller; the print_log evidence as it ' +
+            'stands (printed, printCount, lastPrintedOn, printFailed, prints[]); postedOn / minutesAfterPost; nextVoidNo; ' +
+            'the VOID_BILL reasons the company may pick; the existing void row when already voided. Menu 12 VIEW.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'sbId', required: true }),
+    (0, swagger_1.ApiQuery)({ name: 'sbCompanyId', required: true }),
+    (0, swagger_1.ApiQuery)({ name: 'sbBranchId', required: true }),
+    (0, swagger_1.ApiQuery)({ name: 'sbAccYear', required: true }),
+    (0, swagger_1.ApiOkResponse)({
+        description: '{ route, code, canVoid, session, printed, printCount, prints[], minutesAfterPost, nextVoidNo, reasons[], void }',
+    }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [bill_lifecycle_dto_1.BillKeysDto]),
+    __metadata("design:returntype", Promise)
+], BillController.prototype, "voidCheck", null);
 __decorate([
     (0, common_1.Post)('amend'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -323,6 +382,7 @@ exports.BillController = BillController = __decorate([
     (0, common_1.UseFilters)(bill_exception_filter_1.BillExceptionFilter),
     __metadata("design:paramtypes", [bill_service_1.BillService,
         bill_lifecycle_service_1.BillLifecycleService,
+        bill_void_service_1.BillVoidService,
         bill_read_service_1.BillReadService,
         bill_band_service_1.BillBandService,
         bill_retender_service_1.BillRetenderService])

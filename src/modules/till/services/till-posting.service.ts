@@ -1,3 +1,32 @@
+/**
+ * till-posting.service.ts — the till's book-keeping: THE writer of accounts.till_cash_movement
+ * and the poster / marker of accounts.till_variance (the variance rows themselves are written
+ * by TillSessionService, TillMovementService and TillSafeService, which call in here inside
+ * their own transaction). Every voucher goes through VoucherPostingService.postLegs with
+ * `money: { bankTender: 'BANK' }` (notes 126 §3: the server labels each cash leg with a CASH
+ * tender row, `td_src_doc_type 'VOUCHER'`, which the drawer's expected skips), and each write is
+ * journalled through TillEventService.
+ *
+ * Flows:
+ * - postMovement: a session movement — the voucher first (TFlt / TDrp / TPIn by kind; an
+ *   EXCHANGE none, numbered `<session no>/X<n>` instead; under notes 113 a DROP / CLOSE_HANDOVER
+ *   debits Till cash awaiting receipt and the row waits AWAITING) → the till_cash_movement row
+ *   with `tcm_doc_no` = the voucher's number → MOVEMENT_POSTED.
+ * - postRemit / postRemitConfirm (notes 118, no session): CRem Dr the bank or Cash in transit /
+ *   Cr the safe → the REMIT row DEPOSITED or IN_TRANSIT; the bank's credit later → CRem Dr
+ *   bank / Cr Cash in transit, the row CONFIRMED → REMIT_CONFIRMED.
+ * - postReceive (notes 113 / 114): TRcv Dr the safe / Cr awaiting for what was counted → the row
+ *   RECEIVED → CASH_RECEIVED.
+ * - voidMovement: reverseLegs (the original CANCELLED, a Rev mirror) → the row VOIDED →
+ *   MOVEMENT_VOIDED. reverseVariance does the same to a posted TVar on a reopen (REVERSED).
+ * - postVariance / postSafeVariance → postVarianceVoucher (TVar: a short drawer Dr the counter
+ *   ledger / Cr the tender's, an excess the other way; the counter ledger by treatment —
+ *   varianceCounterLedger) → markVariancePosted (POSTED; a zero gap with no voucher).
+ *
+ * §5.7 invariant: once a session closes, the till-cash legs carrying its id (a voided
+ * movement's original and its mirror net out) sum to tss_float_left − (CARRIED ?
+ * tss_float_issued : 0) — the shapes above are what keep it.
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
@@ -38,6 +67,7 @@ export interface PostingSession {
   businessDate: string;
 }
 
+/** What postMovement / postRemit answer: the row's id, its doc no and its voucher. */
 export interface PostedMovement {
   tcmId: string;
   docNo: string;
@@ -218,6 +248,14 @@ export class TillPostingService {
     private readonly events: TillEventService,
   ) {}
 
+  /**
+   * One session movement, voucher and row together. The voucher's other side: a PAID_IN's the
+   * ledger named, else the awaiting ledger (notes 113) or the safe's; INTO_TILL kinds debit till
+   * cash, the rest credit it. An EXCHANGE posts nothing and is numbered `<session no>/X<n>`.
+   * Programming errors (an awaiting ledger on a kind that never waits, no ledger for a voucher
+   * kind) throw plain Errors: the callers resolve the ledgers first. Answers the id, the doc no
+   * and the voucher id (null for an EXCHANGE).
+   */
   async postMovement(tx: Tx, input: MovementInput): Promise<PostedMovement> {
     const { session, kind, amount, safe, tillCash, caller } = input;
     const typeCode = MOVEMENT_VOUCHER_TYPE[kind];
@@ -975,6 +1013,7 @@ export class TillPostingService {
     return voucher.voucherId;
   }
 
+  /** The variance row POSTED, naming its TVar (none for a zero gap) and the voucher's year. */
   private async markVariancePosted(
     tx: Tx,
     tvrId: string,
@@ -1053,6 +1092,7 @@ export class TillPostingService {
     return type.vchrTypeId;
   }
 
+  /** A uuidv7 from the database, drawn before the row so the voucher's source can name it. */
   private async newId(tx: Tx): Promise<string> {
     const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT uuidv7()::text AS id`;
     return row.id;

@@ -5,6 +5,7 @@ import { hashSecret } from '../src/common/utils/secret-hash.utils';
 import { BEARER, BRANCH, COMPANY, bootApp, prisma } from './helpers/payment-e2e';
 import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from './helpers/menu-rights';
 import { dropTestDay } from './helpers/till-cleanup';
+import { TillMovementLinesProvider } from '../src/modules/settings/print-render/data/providers/till.providers';
 
 /**
  * Till build phase 2 — the drawer movements (§5, S3), their vouchers, voids and
@@ -449,6 +450,24 @@ describe('Till movements, voids and cash limits', () => {
       expect.objectContaining({ tcmKind: 'EXCHANGE', tcmVoucherId: null, tcmDocNo: `${session.tssSessionNo}/X1` }),
     );
     expect(res.body.data.counts.map((c: { tctKind: string }) => c.tctKind).sort()).toEqual(['FLOAT_ISSUE', 'PICKUP']);
+    // notes 135: the slip prints both sides — tcm_count_id is what came IN, the other count what went OUT
+    const lines = await cashierApp.get(TillMovementLinesProvider).resolve({
+      context: {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: session.tssAccYear,
+        docId: res.body.data.tcmId,
+        userId: TESTER1,
+        deviceId,
+      },
+      params: {},
+      lang: 'en',
+      rowLimit: 100,
+    });
+    expect(lines).toEqual([
+      { face_value: 500, denomination: expect.any(String), qty: 1, amount: 500, side: 'IN' },
+      { face_value: 100, denomination: expect.any(String), qty: 5, amount: 500, side: 'OUT' },
+    ]);
   });
 
   it('the supervisor voids the drop: its voucher mirrored, the row VOIDED; the open’s float is not voidable', async () => {

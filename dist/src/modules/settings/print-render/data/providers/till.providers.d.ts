@@ -48,4 +48,36 @@ export declare class TillDayTendersProvider implements PrintDataProvider {
     constructor(till: TillPrintService);
     resolve(request: ProviderRequest): Promise<PrintRow[]>;
 }
-export declare const TILL_PRINT_PROVIDERS: readonly [typeof TillSessionHeaderProvider, typeof TillSessionTendersProvider, typeof TillSessionMovementsProvider, typeof TillDayHeaderProvider, typeof TillDaySessionsProvider, typeof TillDayTendersProvider];
+export declare class TillMovementHeaderProvider implements PrintDataProvider {
+    private readonly till;
+    readonly code = "till.movement.header";
+    readonly label = "Till movement \u2014 slip header";
+    readonly cardinality: "one";
+    constructor(till: TillPrintService);
+    resolve(request: ProviderRequest): Promise<PrintRow>;
+}
+export declare class TillMovementLinesProvider implements PrintDataProvider {
+    private readonly till;
+    readonly code = "till.movement.lines";
+    readonly label = "Till movement \u2014 denominations";
+    readonly cardinality: "many";
+    constructor(till: TillPrintService);
+    resolve(request: ProviderRequest): Promise<PrintRow[]>;
+}
+export declare class TillRemitHeaderProvider implements PrintDataProvider {
+    private readonly till;
+    readonly code = "till.remit.header";
+    readonly label = "Till remittance \u2014 memo header";
+    readonly cardinality: "one";
+    constructor(till: TillPrintService);
+    resolve(request: ProviderRequest): Promise<PrintRow>;
+}
+export declare class TillRemitLinesProvider implements PrintDataProvider {
+    private readonly till;
+    readonly code = "till.remit.lines";
+    readonly label = "Till remittance \u2014 denominations";
+    readonly cardinality: "many";
+    constructor(till: TillPrintService);
+    resolve(request: ProviderRequest): Promise<PrintRow[]>;
+}
+export declare const TILL_PRINT_PROVIDERS: readonly [typeof TillSessionHeaderProvider, typeof TillSessionTendersProvider, typeof TillSessionMovementsProvider, typeof TillDayHeaderProvider, typeof TillDaySessionsProvider, typeof TillDayTendersProvider, typeof TillMovementHeaderProvider, typeof TillMovementLinesProvider, typeof TillRemitHeaderProvider, typeof TillRemitLinesProvider];

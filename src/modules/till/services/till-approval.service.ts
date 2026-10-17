@@ -1,3 +1,37 @@
+/**
+ * till-approval.service.ts — the approval RULES and who may decide under one.
+ *
+ * Owns no table of its own but writes `till_approval` (fileRequest: a PENDING request; record: a
+ * decision taken in one step) and reads `till_approval_rule`, `till_approval_authority` and
+ * `user_master` (usr_type, usr_pin_hash). Called by every till flow that asks "may this person
+ * decide this": sessions/decide-variance, approve-cash, force-close and reopen
+ * (TillSessionService), the day close / reopen (TillDayCloseService), the safe (TillSafeService),
+ * the gate's request / decide (TillApprovalGateService), and the money documents' gate (expense,
+ * payment, session open) through assessGate / settleGate.
+ *
+ * Flows:
+ *  - The rule: ruleFor → one `till_approval_rule` row (a branch row beats a company row beats the
+ *    shipped one, then the latest tar_effective_from on or before the date); ruleOrDefault falls
+ *    back to FALLBACK_RULE (ALWAYS, SUPERVISOR, EITHER, no self, blocks the till). assess / needOf
+ *    answer whether an amount trips it (ALWAYS · OVER_AMOUNT · OVER_COUNT with a `count`).
+ *  - assertApprover (notes 105 A2), reads only, in order: self (TILL_APPROVER_SELF worded by
+ *    selfRefusalOf; FORCE_CLOSE has TILL_FORCE_CLOSE_SELF; skipped under tar_allow_self or
+ *    `selfExempt`) → assertSecond for a two-person rule → grantsOf (a SUPER ADMIN's implicit
+ *    HO_FINANCE grant first, then the till_approval_authority rows active today) → level
+ *    (TILL_APPROVER_NO_GRANT) → ceiling (TILL_APPROVER_LIMIT) → channel: REMOTE wants
+ *    taa_can_remote; COUNTER, a typed PIN or no remote grant verifies usr_pin_hash
+ *    (TILL_APPROVER_NO_PIN · TILL_APPROVER_PIN) → the highest usable grant is the verdict. The
+ *    caller journals PIN_FAIL itself (assertApprover runs outside the transaction it would roll
+ *    back). standing() is steps 1–3 without the PIN, for the inbox's canDecide.
+ *  - The gate (notes 124 §5): assessGate (read-only: the rule; an `approvalId` brought is checked
+ *    by approvedFor; then NONE · APPROVED · REFUSE · WARN by till.approval_gate and
+ *    tar_blocks_till) → the caller throws throwApprovalRequired (428) on REFUSE → settleGate in
+ *    the document's transaction marks an APPROVED request used, or under WARN files one PENDING
+ *    request per event and document (fileRequest, APPROVAL_REQUESTED).
+ *  - record: the `till_approval` row of a decision taken in one call (A3), the rule snapshotted
+ *    (snapshotOf); ruleOfRequest reads a request's rule back from that snapshot.
+ */
+
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillApproval } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -22,6 +56,8 @@ export interface TillApprovalRuleRow {
   tar_event_code: string;
   tar_mode: string;
   tar_threshold_amount: Prisma.Decimal;
+  /** OVER_COUNT: the n-th event of the kind in the session that asks (void bill REV 2 §3.3). */
+  tar_threshold_count?: number;
   tar_channel: string;
   tar_min_role: string;
   tar_two_person: boolean;
@@ -60,6 +96,7 @@ export interface ApproverAsk {
   second?: { userId: string } | null;
 }
 
+/** What assertApprover answers: the grant that carried the decision, and how it was given. */
 export interface ApproverVerdict {
   /** The level the grant confers — HO_FINANCE for a SUPER ADMIN's implicit one. */
   role: TillApproverRole;
@@ -102,6 +139,7 @@ export interface ApprovalRecordInput {
   secondOn?: Date | null;
 }
 
+/** One approval grant as grantsOf reads it: a till_approval_authority row, or the implicit one. */
 interface Grant {
   id: string | null;
   role: string;
@@ -146,6 +184,12 @@ export interface GateAsk {
   approvalId: string | null;
   /** Where a refusal points. */
   field: string;
+  /**
+   * This document's ordinal among the session's events of this kind (the n-th
+   * void of the session, 1-based), for a rule in OVER_COUNT mode. Left out,
+   * OVER_COUNT answers no — as it does for every money document.
+   */
+  count?: number;
   /** Kept with a request filed under WARN (tap_rule_snapshot), e.g. the variance it is about. */
   payload?: Record<string, unknown>;
 }
@@ -199,9 +243,11 @@ const SELF_REFUSALS: Readonly<Record<string, string>> = {
   DAY_REOPEN: 'Whoever closed the business day cannot reopen it: another approver does',
   DAY_CLOSE_EXCEPTION:
     'Whoever closes the business day cannot also approve its exception: name another approver',
-  SAFE_VARIANCE: 'Whoever counted the safe does not decide its difference: the rule allows no self-approval',
+  SAFE_VARIANCE:
+    'Whoever counted the safe does not decide its difference: the rule allows no self-approval',
 };
 
+/** TILL_APPROVER_SELF's message for `event`: its own sentence, else the variance one. */
 function selfRefusalOf(event: string): string {
   return (
     SELF_REFUSALS[event] ??
@@ -215,6 +261,7 @@ const FALLBACK_RULE = (event: string): TillApprovalRuleRow => ({
   tar_event_code: event,
   tar_mode: 'ALWAYS',
   tar_threshold_amount: new Prisma.Decimal(0),
+  tar_threshold_count: 0,
   tar_channel: 'EITHER',
   tar_min_role: 'SUPERVISOR',
   tar_two_person: false,
@@ -245,13 +292,18 @@ export class TillApprovalService {
     private readonly events: TillEventService,
   ) {}
 
+  /**
+   * The one till_approval_rule row for an event on a date: active, this company's or every
+   * company's, this branch's or every branch's, effective on or before `onDate` — the branch row
+   * first, then the company row, then the latest effective date. Null when none is set up.
+   */
   async ruleFor(
     client: Client,
     scope: { companyId: string; branchId: string; event: string; onDate: string },
   ): Promise<(TillApprovalRuleRow & { tar_id: string }) | null> {
     const [row] = await client.$queryRaw<(TillApprovalRuleRow & { tar_id: string })[]>`
-      SELECT tar_id, tar_event_code, tar_mode, tar_threshold_amount, tar_channel, tar_min_role,
-             tar_two_person, tar_allow_self, tar_blocks_till, tar_expire_minutes
+      SELECT tar_id, tar_event_code, tar_mode, tar_threshold_amount, tar_threshold_count, tar_channel,
+             tar_min_role, tar_two_person, tar_allow_self, tar_blocks_till, tar_expire_minutes
         FROM accounts.till_approval_rule
        WHERE tar_event_code = ${scope.event}
          AND tar_is_active AND NOT tar_is_deleted
@@ -277,7 +329,8 @@ export class TillApprovalService {
    * Would `amount` need an approval under the event's rule? NEVER → no;
    * ALWAYS → yes; OVER_AMOUNT → above the threshold. OVER_COUNT and
    * OVER_PERCENT are per-session / per-figure rules no money document trips,
-   * so they answer no here.
+   * so they answer no here (the gate judges OVER_COUNT when the ask carries
+   * `count` — the void bill does).
    */
   async assess(
     client: Client,
@@ -308,7 +361,7 @@ export class TillApprovalService {
    */
   async assessGate(client: Client, ask: GateAsk): Promise<GateVerdict> {
     const rule = await this.ruleFor(client, ask);
-    const need = rule ? needOf(rule, ask.amount) : null;
+    const need = rule ? needOf(rule, ask.amount, ask.count) : null;
     if (!rule || !need) {
       return { state: 'NONE' };
     }
@@ -854,11 +907,23 @@ export class TillApprovalService {
 }
 
 /** What an event's rule asks of an amount (NEVER / OVER_COUNT / OVER_PERCENT: nothing here). */
-function needOf(rule: TillApprovalRuleRow & { tar_id: string }, amount: Prisma.Decimal) {
+/**
+ * ALWAYS asks; OVER_AMOUNT above `tar_threshold_amount`; OVER_COUNT once the
+ * document is past `tar_threshold_count` in its session (`count` = this one's
+ * ordinal, 1-based: a threshold of 2 lets two voids through and asks on the
+ * third) — only when the caller knows the count; NEVER and OVER_PERCENT never.
+ */
+function needOf(
+  rule: TillApprovalRuleRow & { tar_id: string },
+  amount: Prisma.Decimal,
+  count?: number,
+) {
   const threshold = new Prisma.Decimal(rule.tar_threshold_amount);
+  const thresholdCount = rule.tar_threshold_count ?? 0;
   const needed =
     rule.tar_mode === 'ALWAYS' ||
-    (rule.tar_mode === 'OVER_AMOUNT' && amount.greaterThan(threshold));
+    (rule.tar_mode === 'OVER_AMOUNT' && amount.greaterThan(threshold)) ||
+    (rule.tar_mode === 'OVER_COUNT' && count !== undefined && count > thresholdCount);
   if (!needed) {
     return null;
   }
@@ -867,6 +932,8 @@ function needOf(rule: TillApprovalRuleRow & { tar_id: string }, amount: Prisma.D
     ruleId: rule.tar_id,
     mode: rule.tar_mode,
     threshold: Number(threshold.toFixed(2)),
+    thresholdCount,
+    count: count ?? null,
     amount: Number(amount.toFixed(2)),
     minRole: rule.tar_min_role,
     channel: rule.tar_channel,
@@ -883,6 +950,7 @@ function snapshotOf(rule: TillApprovalRuleRow): Record<string, Prisma.InputJsonV
     ruleId: rule.tar_id,
     mode: rule.tar_mode,
     threshold: Number(new Prisma.Decimal(rule.tar_threshold_amount).toFixed(2)),
+    thresholdCount: rule.tar_threshold_count ?? 0,
     channel: rule.tar_channel,
     minRole: rule.tar_min_role,
     allowSelf: rule.tar_allow_self,
@@ -903,6 +971,7 @@ export function ruleOfRequest(tap: TillApproval): TillApprovalRuleRow {
     tar_event_code: tap.tapEventCode,
     tar_mode: typeof s.mode === 'string' ? s.mode : 'ALWAYS',
     tar_threshold_amount: new Prisma.Decimal(typeof s.threshold === 'number' ? s.threshold : 0),
+    tar_threshold_count: typeof s.thresholdCount === 'number' ? s.thresholdCount : 0,
     tar_channel: typeof s.channel === 'string' ? s.channel : tap.tapChannel,
     tar_min_role: tap.tapRequiredRole,
     tar_two_person: tap.tapTwoPerson,

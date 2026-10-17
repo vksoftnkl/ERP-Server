@@ -9,6 +9,7 @@ import { BillLifecycleService } from './bill-lifecycle.service';
 import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
+import { BillVoidService } from './bill-void.service';
 import { SaleOrderModule } from '../sale-order/sale-order.module';
 import { QuotationModule } from '../quotation/quotation.module';
 import { SalesPostingModule } from '../posting/posting.module';
@@ -38,7 +39,8 @@ import { TillModule } from '../../till/till.module';
     // /bills/retender recomputes the receivable after moving its counter rows.
     BillBalanceModule,
     // The till (§7.4): a bill posted on a counter's device posts in its live
-    // session; a cash bill of a counted session is not cancelled (D7).
+    // session; a cash bill of a counted session is not cancelled (D7); a bill
+    // of a live session is voided, not cancelled (void bill REV 2).
     TillModule,
   ],
   controllers: [BillController],
@@ -48,6 +50,9 @@ import { TillModule } from '../../till/till.module';
     BillLifecycleService,
     BillBandService,
     BillRetenderService,
+    // Void bill (REV 2): /bills/void and /bills/void-check — cancel's unwind
+    // plus the till_void evidence row and the BILL_VOID event.
+    BillVoidService,
     BillExceptionFilter,
   ],
   exports: [BillService, BillReadService],

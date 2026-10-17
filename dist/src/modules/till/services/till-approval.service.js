@@ -35,6 +35,7 @@ const FALLBACK_RULE = (event) => ({
     tar_event_code: event,
     tar_mode: 'ALWAYS',
     tar_threshold_amount: new client_1.Prisma.Decimal(0),
+    tar_threshold_count: 0,
     tar_channel: 'EITHER',
     tar_min_role: 'SUPERVISOR',
     tar_two_person: false,
@@ -51,8 +52,8 @@ let TillApprovalService = class TillApprovalService {
     }
     async ruleFor(client, scope) {
         const [row] = await client.$queryRaw `
-      SELECT tar_id, tar_event_code, tar_mode, tar_threshold_amount, tar_channel, tar_min_role,
-             tar_two_person, tar_allow_self, tar_blocks_till, tar_expire_minutes
+      SELECT tar_id, tar_event_code, tar_mode, tar_threshold_amount, tar_threshold_count, tar_channel,
+             tar_min_role, tar_two_person, tar_allow_self, tar_blocks_till, tar_expire_minutes
         FROM accounts.till_approval_rule
        WHERE tar_event_code = ${scope.event}
          AND tar_is_active AND NOT tar_is_deleted
@@ -74,7 +75,7 @@ let TillApprovalService = class TillApprovalService {
     }
     async assessGate(client, ask) {
         const rule = await this.ruleFor(client, ask);
-        const need = rule ? needOf(rule, ask.amount) : null;
+        const need = rule ? needOf(rule, ask.amount, ask.count) : null;
         if (!rule || !need) {
             return { state: 'NONE' };
         }
@@ -464,10 +465,12 @@ exports.TillApprovalService = TillApprovalService = __decorate([
     __metadata("design:paramtypes", [till_context_service_1.TillContextService,
         till_event_service_1.TillEventService])
 ], TillApprovalService);
-function needOf(rule, amount) {
+function needOf(rule, amount, count) {
     const threshold = new client_1.Prisma.Decimal(rule.tar_threshold_amount);
+    const thresholdCount = rule.tar_threshold_count ?? 0;
     const needed = rule.tar_mode === 'ALWAYS' ||
-        (rule.tar_mode === 'OVER_AMOUNT' && amount.greaterThan(threshold));
+        (rule.tar_mode === 'OVER_AMOUNT' && amount.greaterThan(threshold)) ||
+        (rule.tar_mode === 'OVER_COUNT' && count !== undefined && count > thresholdCount);
     if (!needed) {
         return null;
     }
@@ -476,6 +479,8 @@ function needOf(rule, amount) {
         ruleId: rule.tar_id,
         mode: rule.tar_mode,
         threshold: Number(threshold.toFixed(2)),
+        thresholdCount,
+        count: count ?? null,
         amount: Number(amount.toFixed(2)),
         minRole: rule.tar_min_role,
         channel: rule.tar_channel,
@@ -490,6 +495,7 @@ function snapshotOf(rule) {
         ruleId: rule.tar_id,
         mode: rule.tar_mode,
         threshold: Number(new client_1.Prisma.Decimal(rule.tar_threshold_amount).toFixed(2)),
+        thresholdCount: rule.tar_threshold_count ?? 0,
         channel: rule.tar_channel,
         minRole: rule.tar_min_role,
         allowSelf: rule.tar_allow_self,
@@ -505,6 +511,7 @@ function ruleOfRequest(tap) {
         tar_event_code: tap.tapEventCode,
         tar_mode: typeof s.mode === 'string' ? s.mode : 'ALWAYS',
         tar_threshold_amount: new client_1.Prisma.Decimal(typeof s.threshold === 'number' ? s.threshold : 0),
+        tar_threshold_count: typeof s.thresholdCount === 'number' ? s.thresholdCount : 0,
         tar_channel: typeof s.channel === 'string' ? s.channel : tap.tapChannel,
         tar_min_role: tap.tapRequiredRole,
         tar_two_person: tap.tapTwoPerson,

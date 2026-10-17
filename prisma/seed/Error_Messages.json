@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-15.5",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15",
+  "version": "2026-10-17.1",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -2401,6 +2401,46 @@
       "title": "Already done",
       "line": "Someone already did this.",
       "todo": "Refresh."
+    },
+    {
+      "code": "SALES_USE_VOID",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot cancel",
+      "line": "This bill is in an open till.",
+      "todo": "Void it instead (Void bill)."
+    },
+    {
+      "code": "TILL_VOID_SESSION_CLOSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot void",
+      "line": "This bill's till is counted or closed.",
+      "todo": "Make a Sale Return."
+    },
+    {
+      "code": "TILL_VOID_NO_SESSION",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot void",
+      "line": "This bill was not made in a till.",
+      "todo": "Cancel it instead."
+    },
+    {
+      "code": "TILL_VOID_NOT_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot void",
+      "line": "Only a posted bill can be voided.",
+      "todo": "Delete the draft instead."
+    },
+    {
+      "code": "TILL_VOID_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot void",
+      "line": "Only this till's cashier, on this PC, or a supervisor can void.",
+      "todo": "Ask a supervisor."
     }
   ]
 }

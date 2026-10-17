@@ -4084,6 +4084,70 @@ model TillVariance {
   @@schema("accounts")
 }
 
+// ----- prisma/accounts/TillVoid.prisma -----
+/// TILL VOID — one row per voided SALE_BILL (void bill design REV 2, migration
+/// 20261017150000). A void is a cancel that is recorded and shown: the same
+/// unwind runs and the status is CANCELLED; what makes it a void is this row,
+/// stamped ONCE by /bills/void inside the cancel's transaction and never
+/// recomputed. tvdWasPrinted is the control — a print_log PRINT / REPRINT
+/// SUCCESS row of a customer-facing purpose existed for the bill at the moment
+/// of the void. tvdApprovalId is set only where a company switched the
+/// VOID_BILL rule on (shipped NEVER).
+model TillVoid {
+  tvdId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tvd_id")
+  tvdCompanyId          String    @db.Uuid                             @map("tvd_company_id")
+  tvdBranchId           String    @db.Uuid                             @map("tvd_branch_id")
+  tvdTenantId           String?   @db.Uuid                             @map("tvd_tenant_id")
+  tvdAccYear            String    @db.Char(9)                          @map("tvd_acc_year")
+  /// ck_tvd_doc_type: SALE_BILL only.
+  tvdSrcDocType         String    @default("SALE_BILL") @db.VarChar(30) @map("tvd_src_doc_type")
+  tvdSrcDocId           String    @db.Uuid                             @map("tvd_src_doc_id")
+  tvdSrcDocRefno        String?   @db.VarChar(100)                     @map("tvd_src_doc_refno")
+  /// The bill's live session (OPEN / SUSPENDED at the void).
+  tvdSessionId          String    @db.Uuid                             @map("tvd_session_id")
+  /// The device the void was keyed on (the login token's), null for a web client.
+  tvdDeviceId           String?   @db.Uuid                             @map("tvd_device_id")
+  /// The session's operator.
+  tvdCashierId          String    @db.Uuid                             @map("tvd_cashier_id")
+  tvdVoidedBy           String    @db.Uuid                             @map("tvd_voided_by")
+  tvdVoidedOn           DateTime  @default(now()) @db.Timestamptz(6)   @map("tvd_voided_on")
+  /// sb_bill_amt.
+  tvdAmount             Decimal   @default(0) @db.Decimal(15, 2)       @map("tvd_amount")
+  /// The cash part of its tenders — what left the drawer's expected.
+  tvdCashAmount         Decimal   @default(0) @db.Decimal(15, 2)       @map("tvd_cash_amount")
+  tvdReasonId           String    @db.Uuid                             @map("tvd_reason_id")
+  tvdNote               String?   @db.VarChar(250)                     @map("tvd_note")
+  /// The bill's POSTED step in txn_status_log, else sb_bill_datetime.
+  tvdPostedOn           DateTime? @db.Timestamptz(6)                   @map("tvd_posted_on")
+  tvdMinutesAfterPost   Int       @default(0)                          @map("tvd_minutes_after_post")
+  /// THE control (stored, never recomputed).
+  tvdWasPrinted         Boolean   @default(false)                      @map("tvd_was_printed")
+  tvdPrintCount         Int       @default(0)                          @map("tvd_print_count")
+  tvdLastPrintedOn      DateTime? @db.Timestamptz(6)                   @map("tvd_last_printed_on")
+  /// A FAILED print row existed: the "printer didn't work" claim was true.
+  tvdPrintFailed        Boolean   @default(false)                      @map("tvd_print_failed")
+  /// The n-th void of the session (1, 2, 3 …).
+  tvdSessionVoidNo      Int       @default(1)                          @map("tvd_session_void_no")
+  tvdApprovalId         String?   @db.Uuid                             @map("tvd_approval_id")
+  tvdReversalVoucherId  String?   @db.Uuid                             @map("tvd_reversal_voucher_id")
+  tvdReversalAccYear    String?   @db.Char(9)                          @map("tvd_reversal_acc_year")
+  tvdSyncDate           DateTime? @db.Timestamptz(6)                   @map("tvd_sync_date")
+  tvdCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("tvd_created_on")
+  tvdCreatedBy          String?   @db.VarChar(50)                      @map("tvd_created_by")
+
+  @@id([tvdId, tvdAccYear], map: "pk_till_void")
+  @@unique([tvdSrcDocType, tvdSrcDocId, tvdAccYear], map: "ux_tvd_doc")
+  @@index([tvdSessionId, tvdAccYear, tvdVoidedOn], map: "ix_tvd_session")
+  @@index([tvdCompanyId, tvdBranchId, tvdVoidedOn], map: "ix_tvd_branch_on")
+  @@index([tvdCashierId, tvdAccYear, tvdVoidedOn], map: "ix_tvd_cashier")
+
+  // CHECKs (DB-only): ck_tvd_doc_type, ck_tvd_minutes, ck_tvd_amount,
+  // ck_tvd_print_count (was_printed = print_count > 0), ck_tvd_void_no,
+  // ck_tvd_reversal_pair, ck_tvd_acc_year_shape.
+  @@map("till_void")
+  @@schema("accounts")
+}
+
 // ----- prisma/auditlogs/auditLog.prisma -----
 /* =========================================================
    Enums

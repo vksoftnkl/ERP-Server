@@ -1,3 +1,18 @@
+/**
+ * till.module.ts — the Nest wiring of /api/v1/till/*.
+ *
+ * Flow of a request: the app's guard fills RequestContext (user, device) → one of the five
+ * controllers (each under TillExceptionFilter) → TillContextService (the right on a till menu,
+ * the caller, the till.* settings) → a service → the single writers: TillSessionService for
+ * till_session / till_count(_line), TillPostingService for till_cash_movement / till_variance and
+ * every till voucher (through CommonPostingModule), TillEventService for till_event (INSERT only).
+ *
+ * Imports: AppSettingsModule (the till.* keys), AuditLogModule (the masters' audit rows),
+ * CommonPostingModule (VoucherPostingService, the menu rights). Exports: what other modules call
+ * — the sales / accounts money paths (TillSessionService), the payment / expense gate
+ * (TillApprovalService), the journal for a re-tender / void / settlement (TillEventService),
+ * print-render's till.* providers (TillPrintService).
+ */
 import { Module } from '@nestjs/common';
 import { AppSettingsModule } from '../settings/appSettings/app-settings.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
@@ -6,6 +21,7 @@ import { TillController } from './till.controller';
 import { TillApprovalController } from './till-approval.controller';
 import { TillMastersController } from './till-masters.controller';
 import { TillSafeController } from './till-safe.controller';
+import { TillReviewController } from './till-review.controller';
 import { TillExceptionFilter } from './till-exception.filter';
 import { TillContextService } from './till-context.service';
 import { TillApprovalService } from './services/till-approval.service';
@@ -18,6 +34,7 @@ import { TillMastersService } from './services/till-masters.service';
 import { TillMovementService } from './services/till-movement.service';
 import { TillPostingService } from './services/till-posting.service';
 import { TillPrintService } from './services/till-print.service';
+import { TillReviewService } from './services/till-review.service';
 import { TillSafeService } from './services/till-safe.service';
 import { TillSessionService } from './services/till-session.service';
 import { TillSlipCheckService } from './services/till-slip-check.service';
@@ -34,10 +51,18 @@ import { TillSlipCheckService } from './services/till-slip-check.service';
  * TillSafeController / TillSafeService are the safe (notes 118, Cash Office 287).
  * TillApprovalController / TillApprovalGateService are the approval gate's
  * request · decide · cancel · inbox (notes 124 §5).
+ * TillReviewController / TillReviewService are head office's reviews of a day
+ * or a session (notes 134, Cash Position 289).
  */
 @Module({
   imports: [AppSettingsModule, AuditLogModule, CommonPostingModule],
-  controllers: [TillController, TillMastersController, TillSafeController, TillApprovalController],
+  controllers: [
+    TillController,
+    TillMastersController,
+    TillSafeController,
+    TillApprovalController,
+    TillReviewController,
+  ],
   providers: [
     TillApprovalService,
     TillApprovalGateService,
@@ -48,6 +73,7 @@ import { TillSlipCheckService } from './services/till-slip-check.service';
     TillLedgerService,
     TillPostingService,
     TillPrintService,
+    TillReviewService,
     TillSafeService,
     TillSessionService,
     TillMastersService,

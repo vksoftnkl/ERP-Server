@@ -2655,6 +2655,11 @@ let TillSessionService = class TillSessionService {
          AND tss_acc_year = ${(0, till_dates_1.accYearOf)(businessDate)}::char(9)`;
         return (row?.n ?? 0) + 1;
     }
+    async lockLive(tx, key, caller, opts) {
+        return opts.supervisor
+            ? this.lock(tx, key, [...MOVABLE])
+            : this.lockOwn(tx, key, caller, [...MOVABLE]);
+    }
     async lockOwn(tx, key, caller, statuses) {
         const session = await this.lock(tx, key, statuses);
         if (session.tssOperatorId !== caller.userId) {

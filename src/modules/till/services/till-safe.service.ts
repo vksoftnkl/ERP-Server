@@ -1,3 +1,59 @@
+/**
+ * till-safe.service.ts — the safe (notes 118, TILL_DESIGN §13 phase 5 / S9): its
+ * balance, its count, its gaps, and the remittance of its cash to the bank. Served by
+ * TillSafeController under Cash Office (287): GET safes/balance (`balance`), POST
+ * safes/count (`count`), POST safes/decide-variance (`decideVariance`), POST
+ * movements/remit (`remit`), POST movements/remit-confirm (`confirmRemit`); and by
+ * TillController's movements/void on a REMIT (`voidRemit`). TillDayCloseService reads
+ * `uncountedSafes` / `pendingGapsOfDay` for SAFE_NOT_COUNTED / VARIANCE_UNDECIDED and
+ * calls `refreshDay` to freeze the day's safe figures.
+ *
+ * Writes of its own: till_variance rows of stage SAFE / REMIT (no session —
+ * ck_tvr_owner) and tbd_safe_* / tbd_remitted on till_business_day. Everything else
+ * goes through the single writers: till_count via TillSessionService.writeSafeCount,
+ * till_cash_movement and the vouchers (TVar, CRem) via TillPostingService, till_approval
+ * via TillApprovalService.record, till_event via TillEventService.
+ *
+ * Flows
+ * - balance (GET safes/balance): `balance` — settings + `figuresVisible` (blind under
+ *   till.blind_close unless 287 or 273 OVERRIDE) → the safes → in one transaction
+ *   (`customPlans`) per safe `stateOf` (the last SAFE count → `flowsOf` after it → the
+ *   ledger's book via TillLedgerService.ledgerBalances → opening by COUNT / BOOK / ZERO
+ *   → expected = opening + in − out) → `statePayload` → plus the branch's CIT
+ *   remittances still IN_TRANSIT (`inTransit`).
+ * - count (POST safes/count): `count` — the active safe (`loadSafe`), `assertCashLines`;
+ *   BEFORE the transaction the witness's PIN (`provePerson`) and, with a `treatment`, a
+ *   peek at the gap and its judgement (`judgeGap`: SAFE_VARIANCE, the caller the
+ *   approver, selfExempt, the witness the second). THEN under `lockSafe` on today's day
+ *   (`dayFor`): `stateOf` again → writeSafeCount → TILL_SAFE_CHANGED if the gap moved
+ *   since the judgement → `raiseGap` (EXACT · WITHIN_TOLERANCE posted at once · DECIDED
+ *   with a till_approval row and the TVar · SENT_FOR_APPROVAL as PENDING +
+ *   APPROVAL_REQUESTED) → SAFE_COUNT journalled → `refreshDay`. Answers the count, the
+ *   gap and the safe's balance after it.
+ * - decide a gap later (POST safes/decide-variance): `decideVariance` — `pendingGap` →
+ *   `requesterOf` (who raised it) → the second person's PIN (`provePerson`) →
+ *   `judgeGap`; in the transaction: the row locked, approval.record APPROVED, the
+ *   variance takes the treatment, postSafeVariance against the safe's ledger (stage
+ *   SAFE) or Cash in transit (stage REMIT) dated today, VARIANCE_DECIDED.
+ * - remit (POST movements/remit): `remit` — amount > 0, mode BANK_DEPOSIT / CIT,
+ *   `assertBank`, `assertCashLines`; the REMITTANCE rule judged first (assess →
+ *   ruleOrDefault → assertApprover for `approverId`, channel COUNTER when not the
+ *   caller); a peek `assertWithinBalance` (TILL_REMIT_OVER_BALANCE); then under
+ *   `lockSafe`: `stateOf` + the check again → the Cash in transit ledger for CIT → the
+ *   approval row → an optional REMIT count that must equal the amount → postRemit
+ *   (CRem Dr bank / Cr safe DEPOSITED, or Dr Cash in transit / Cr safe IN_TRANSIT) →
+ *   `refreshDay`. Answers the movement (movements/get) and the safe after it.
+ * - confirm a CIT remittance (POST movements/remit-confirm): `confirmRemit` —
+ *   `loadRemit` + `assertInTransit`, the bank date between the doc date and today, the
+ *   witness's PIN and, with a `treatment`, `judgeGap` on credited − sent; in the
+ *   transaction: the row locked, postRemitConfirm (CRem Dr bank / Cr Cash in transit
+ *   dated the bank date, CONFIRMED) → `raiseGap` stage REMIT against Cash in transit.
+ * - void a remittance (movements/void on a REMIT): `voidRemit` — refused unless POSTED,
+ *   once CONFIRMED, once its day is CLOSED, or once the safe was counted since; a
+ *   MOVEMENT_VOID reason; posting.voidMovement mirrors the CRem → `refreshDay`.
+ * - the day's figures: `refreshDay` (tbd_safe_opening / _expected / _counted,
+ *   tbd_remitted — as of the business date), `uncountedSafes`, `pendingGapsOfDay`.
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillBusinessDay } from '@prisma/client';
 import { verifySecret } from '../../../common/utils/secret-hash.utils';
@@ -58,6 +114,7 @@ const num = (v: Prisma.Decimal | null | undefined): number => (v ? Number(v.toFi
 
 /** The approval rule a safe gap is decided under (47 §1.6). */
 const SAFE_VARIANCE = 'SAFE_VARIANCE';
+/** The approval rule a remittance is judged under (shipped NEVER: nothing asked). */
 const REMITTANCE = 'REMITTANCE';
 
 /** till_safe as the safe routes read it. */
@@ -89,6 +146,7 @@ interface SafeFlows {
   exchanges: number;
 }
 
+/** The safe's latest SAFE till_count — the opening every figure after it builds on. */
 interface LastCount {
   tctId: string;
   tctAccYear: string;
@@ -133,6 +191,10 @@ interface GapDecision {
   judged: Prisma.Decimal;
 }
 
+/**
+ * POST safes/count: the cash lines, an optional witness (id + till PIN), and a
+ * `treatment` + `reasonId` + `approverPin` to decide a gap beyond tolerance in the step.
+ */
 export interface SafeCountInput {
   companyId: string;
   branchId: string;
@@ -147,6 +209,10 @@ export interface SafeCountInput {
   approverPin?: string | null;
 }
 
+/**
+ * POST safes/decide-variance: a PENDING SAFE / REMIT gap, its treatment and reason, the
+ * caller's PIN, and on a two-person rule a second person's id + PIN.
+ */
 export interface SafeDecideInput {
   companyId: string;
   branchId: string;
@@ -160,6 +226,11 @@ export interface SafeDecideInput {
   secondPin?: string | null;
 }
 
+/**
+ * POST movements/remit: cash out of a safe to a bank ledger by BANK_DEPOSIT or CIT, the
+ * bag / seal / agency / slip details, an optional REMIT count (`lines`) and, when the
+ * REMITTANCE rule asks, the approver (default the caller) and their PIN.
+ */
 export interface RemitCreateInput {
   companyId: string;
   branchId: string;
@@ -179,6 +250,10 @@ export interface RemitCreateInput {
   approverPin?: string | null;
 }
 
+/**
+ * POST movements/remit-confirm: the bank's credit of a CIT remittance — date, reference,
+ * the amount when it differs — with a witness and a treatment to decide a gap in the step.
+ */
 export interface RemitConfirmCreateInput {
   companyId: string;
   branchId: string;
@@ -244,6 +319,12 @@ export class TillSafeService {
   //  §1 · the balance
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * GET safes/balance — every active safe of the branch, or the one named (404
+   * TILL_SAFE_NOT_FOUND), each as `stateOf` + `statePayload` under `customPlans`, plus the
+   * branch's CIT remittances still IN_TRANSIT. Money figures are null for a blind caller
+   * (`figuresVisible`). Cash Office (287) VIEW.
+   */
   async balance(scope: {
     companyId: string;
     branchId: string;
@@ -476,6 +557,12 @@ export class TillSafeService {
     };
   }
 
+  /**
+   * A SafeState as the API shows it: names, the insured limit and `overInsured`, the in /
+   * out breakdown, `drift` (book − expected), the last count with its difference,
+   * `countedToday`, the safe's own IN_TRANSIT remittances and its PENDING gaps. Every
+   * money figure is null when `visible` is false.
+   */
   private async statePayload(
     client: Client,
     state: SafeState,
@@ -1738,6 +1825,10 @@ export class TillSafeService {
     return { outcome, tvrId, treatment, tapId, voucherId };
   }
 
+  /**
+   * The VARIANCE_DECIDED payload of a safe gap decided in the step or later: who, under
+   * which rule, how.
+   */
   private decisionPayload(
     stage: string,
     decision: GapDecision,
@@ -1951,6 +2042,10 @@ export class TillSafeService {
     return { tbdId: day.tbdId, accYear: day.tbdAccYear, businessDate: day.businessDate };
   }
 
+  /**
+   * The safe named, of this company and branch, else 404 TILL_SAFE_NOT_FOUND; with
+   * `active` an inactive one is TILL_SAFE_MISSING (a count or a remittance needs a live safe).
+   */
   private async loadSafe(
     client: Client,
     key: { companyId: string; branchId: string; safeId: string },
@@ -1977,6 +2072,7 @@ export class TillSafeService {
     return { ...safe, tsfInsuredLimit: new Prisma.Decimal(safe.tsfInsuredLimit) };
   }
 
+  /** The active safes of the day's branch, by code — the set the day's figures sum over. */
   private async branchSafes(client: Client, day: TillBusinessDay): Promise<SafeRow[]> {
     const rows = await client.tillSafe.findMany({
       where: {
@@ -2016,6 +2112,7 @@ export class TillSafeService {
     return (await this.context.rights(TILL_MENU.SESSIONS)).override;
   }
 
+  /** A safe holds cash only: a line of any other tender type is TILL_COUNT_INVALID. */
   private assertCashLines(lines: TillCountLineInput[], field: string): void {
     lines.forEach((line, i) => {
       if (line.tenderTypeId !== CASH_TENDER_TYPE_ID) {
@@ -2024,6 +2121,10 @@ export class TillSafeService {
     });
   }
 
+  /**
+   * TILL_REMIT_OVER_BALANCE when more would leave the safe than it is expected to hold;
+   * the figure is named only to a caller who may see it.
+   */
   private assertWithinBalance(
     safe: SafeRow,
     amount: Prisma.Decimal,
@@ -2041,6 +2142,10 @@ export class TillSafeService {
     }
   }
 
+  /**
+   * `bankLedgerId` is an active ledger under Bank Accounts / Bank OD, else
+   * TILL_MOVEMENT_INVALID.
+   */
   private async assertBank(companyId: string, ledgerId: string): Promise<void> {
     const facts = await loadLedgerFacts(this.prisma, companyId, [ledgerId]);
     const bank = facts.get(ledgerId);
@@ -2053,6 +2158,10 @@ export class TillSafeService {
     }
   }
 
+  /**
+   * The movement named, of this company / branch / year (TILL_MOVEMENT_NOT_FOUND), and it
+   * must be a REMIT (TILL_MOVEMENT_INVALID).
+   */
   private async loadRemit(
     client: Client,
     key: { companyId: string; branchId: string; accYear: string; tcmId: string },
@@ -2083,6 +2192,10 @@ export class TillSafeService {
     return m;
   }
 
+  /**
+   * Only a POSTED CIT remittance still IN_TRANSIT can be confirmed: TILL_REMIT_NOT_IN_TRANSIT
+   * says which of the three it fails (voided, paid in by staff, already confirmed).
+   */
   private assertInTransit(m: {
     tcmDocNo: string;
     tcmStatus: string;
@@ -2187,6 +2300,7 @@ export class TillSafeService {
     };
   }
 
+  /** The SafeRef the posting service takes: id, ledger, name. */
   private safeRef(safe: SafeRow): SafeRef {
     return { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName };
   }
@@ -2205,14 +2319,17 @@ export class TillSafeService {
   }
 }
 
+/** What came into the safe: hand-overs, drops, pickups, transfers in, back-office receipts. */
 function inOf(f: SafeFlows): Prisma.Decimal {
   return f.handOvers.plus(f.drops).plus(f.pickups).plus(f.transfersIn).plus(f.receipts);
 }
 
+/** What left the safe: float issues, top-ups, remittances, transfers out, back-office payments. */
 function outOf(f: SafeFlows): Prisma.Decimal {
   return f.floatIssues.plus(f.topUps).plus(f.remittances).plus(f.transfersOut).plus(f.payments);
 }
 
+/** in − out: what the movements alone did (before any count the opening is book − this). */
 function netOf(f: SafeFlows): Prisma.Decimal {
   return inOf(f).minus(outOf(f));
 }

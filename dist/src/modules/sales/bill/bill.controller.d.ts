@@ -3,21 +3,25 @@ import { BillLifecycleService } from './bill-lifecycle.service';
 import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
+import { BillVoidService } from './bill-void.service';
 import { SaveBillDto } from './dto/save-bill.dto';
-import { AmendBillDto, BillTransportDto, CancelBillDto, DeleteBillDto, DeliveryStatusDto, PostBillDto, RetenderBillDto, UpdateRemarksDto, ValidateBillDto } from './dto/bill-lifecycle.dto';
+import { AmendBillDto, BillKeysDto, BillTransportDto, CancelBillDto, DeleteBillDto, DeliveryStatusDto, PostBillDto, RetenderBillDto, UpdateRemarksDto, ValidateBillDto, VoidBillDto } from './dto/bill-lifecycle.dto';
 import type { BillPayload, BillSuccessResponse } from './types/bill-api.types';
 export declare class BillController {
     private readonly billService;
     private readonly lifecycle;
+    private readonly voids;
     private readonly read;
     private readonly band;
     private readonly retenderService;
-    constructor(billService: BillService, lifecycle: BillLifecycleService, read: BillReadService, band: BillBandService, retenderService: BillRetenderService);
+    constructor(billService: BillService, lifecycle: BillLifecycleService, voids: BillVoidService, read: BillReadService, band: BillBandService, retenderService: BillRetenderService);
     private ok;
     save(dto: SaveBillDto): Promise<BillSuccessResponse<BillPayload>>;
     validate(dto: ValidateBillDto): Promise<BillSuccessResponse<Record<string, unknown>>>;
     post(dto: PostBillDto): Promise<BillSuccessResponse<BillPayload>>;
     cancel(dto: CancelBillDto): Promise<BillSuccessResponse<Record<string, unknown>>>;
+    void(dto: VoidBillDto): Promise<BillSuccessResponse<Record<string, unknown>>>;
+    voidCheck(query: BillKeysDto): Promise<BillSuccessResponse<Record<string, unknown>>>;
     amend(dto: AmendBillDto): Promise<BillSuccessResponse<BillPayload>>;
     remove(dto: DeleteBillDto): Promise<BillSuccessResponse<{
         sbId: string;

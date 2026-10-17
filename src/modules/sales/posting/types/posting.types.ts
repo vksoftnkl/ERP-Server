@@ -18,6 +18,8 @@ export const SALES_ERROR_CODES = {
   BILL_CANCELLED: 'SALES_BILL_CANCELLED',
   REVISION_STALE: 'SALES_REVISION_STALE',
   AMEND_OFF: 'SALES_AMEND_OFF',
+  /** Void bill (REV 2 §3.4): a bill in a live till session is voided (/bills/void), not cancelled. */
+  USE_VOID: 'SALES_USE_VOID',
 
   // Rights — the user_menus flags. The six screen verbs (VIEW … EXPORT) joined
   // the posting verbs for the Voucher Register, whose every call is judged on

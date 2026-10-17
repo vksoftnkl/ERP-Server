@@ -1,3 +1,17 @@
+/**
+ * Request shapes of the approval gate (notes 124 §5) — TillApprovalController's
+ * approvals/request · decide · cancel (bodies) and approvals/get (query), served by
+ * TillApprovalGateService; approvals/pending takes the bare TillScopeDto. Every shape extends
+ * TillScopeDto (company · branch).
+ *
+ * Flow: RequestTillApprovalDto → a PENDING till_approval row — or one decided at the counter in
+ * the same call by `approverId` + `approverPin` — → TillApprovalPayload. Then TillApprovalKeyDto
+ * (accYear · tapId) keys get / cancel, and DecideTillApprovalDto (APPROVE · REJECT, the caller's
+ * PIN by the rule's channel, a second person on a two-person rule) decides it →
+ * TillApprovalPayload again. The document an approval unlocks is named by `srcDocType` +
+ * `srcDocId`, as the 428 TILL_APPROVAL_REQUIRED named it; the document then brings the tapId as
+ * its `approvalId`.
+ */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 import {
@@ -110,6 +124,7 @@ export class TillApprovalKeyDto extends TillScopeDto {
   tapId!: string;
 }
 
+/** POST /till/approvals/cancel — whoever asked, else Till Sessions (273) OVERRIDE. */
 export class CancelTillApprovalDto extends TillApprovalKeyDto {
   @ApiPropertyOptional({ maxLength: 400, nullable: true })
   @NullableString(400)

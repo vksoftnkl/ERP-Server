@@ -1,3 +1,70 @@
+/**
+ * till-session.service.ts — the cashier's till session from open to close, the decisions and
+ * exceptions after it, and the hooks the money paths call (TILL_DESIGN.md REV 1 §5 / §7.4, REV 2,
+ * notes 98 / 105 / 112 / 113 / 114 / 117 / 122 / 124).
+ *
+ * What it owns (D11, "Single writers" in the README): the ONLY writer of accounts.till_session,
+ * till_count and till_count_line — a session's OPEN / CLOSE / RECOUNT counts (writeCount), a
+ * movement's count (writeMovementCount, for TillMovementService) and a safe's or a remittance's
+ * (writeSafeCount, for TillSafeService). It creates the OPEN / CLOSE rows of till_variance and
+ * gives every stage its treatment; TillPostingService posts them (TVar) and the movements (TFlt /
+ * TDrp / TRcv), TillEventService journals, TillApprovalService judges the approver.
+ *
+ * Who calls it: TillController (every sessions/* route but approve-cash, which is
+ * TillMovementService's); TillDayCloseService (lockForForce + forceCloseIn for the day-close
+ * exception, exceptionReason); TillMovementService / TillSafeService (priceLines,
+ * writeMovementCount / writeSafeCount, varianceReason, staffLedgerOf, hasAnyPending); the money
+ * paths — /bills/post, /bills/retender, /bills/cancel, /sale-returns/post, /receipts/post,
+ * /payments/post, the expense voucher and the voucher register — through resolveForMoney /
+ * routeMoneyDoc / routeCashToLedger / stampVoucher / stampTenderRows / assertNoTillCashLeg /
+ * assertMoneyDocCancellable / assertCancellable / logMoneyDoc, and /bills/void through lockLive.
+ *
+ * Flows. Each route is a lock plus a body (endBillingIn / countIn / closeIn), so a force close
+ * runs all three in one transaction (notes 117):
+ *  · open-check → open: requireDevice → knownDevice → settings; in one transaction claimCounter
+ *    (linked, or the free counter picked — the counter row locked) → assertCounterFree /
+ *    assertDeviceFree / assertOperatorFree → TillDayService.ensureOpenDay → the float (ISSUED
+ *    out of the counter's safe, CARRIED through carriedFrom, NONE) → priceLines (cash only) →
+ *    floatMismatchReason + the FLOAT_MISMATCH gate (assessGate) → nextDaySeq → the till_session
+ *    row → SESSION_OPEN → writeCount OPEN → postMovement FLOAT_ISSUE (TFlt) → counted ≠ issued:
+ *    an OPEN-stage till_variance posted at once as EXPENSE (postVariance), VARIANCE_DECIDED,
+ *    settleGate.
+ *  · suspend / resume: lockOwn (the cashier, on the session's device) → the status → the event.
+ *  · end-billing → count → close: assertDeviceSynced (REV 2 §2.6, logged outside the refused
+ *    transaction) → lockOwn → endBillingIn (held bills per till.close_with_holds; COUNTING);
+ *    lockForCount → countIn (TillLedgerService.expected → priceLines → assertCountable /
+ *    assertTerminalNamed → countedByTender → compare → writeCount → varianceRow per tender →
+ *    ACCEPTED / RECOUNT_REQUIRED / SENT_FOR_APPROVAL, PENDING_APPROVAL on the last attempt);
+ *    lockForCount → closeIn (428 while PENDING_APPROVAL; TILL_NOT_COUNTED with no final count or
+ *    an undecided drawer gap → postVariance for each CLOSE-stage TVar → postMovement
+ *    CLOSE_HANDOVER (TDrp; to Till cash awaiting receipt under till.handover_receipt REQUIRED) →
+ *    frozenTotals → the counter's Z → CLOSED, SESSION_CLOSE).
+ *  · decide-variance (notes 105 A): with tcmId → decideReceive (a received bag's RECEIVE gap:
+ *    APPROVE only, the TVar at once against the awaiting ledger); on a CLOSED session →
+ *    decideAfterClose (notes 124 §1: APPROVE only, the TVar at once); else assertPendingApproval
+ *    → varianceAsk → judgeCloseDecision (the rule, assertApprover with the cashier as requester,
+ *    the reason, RECOVER's staff ledger) → TillApprovalService.record → APPROVE: every PENDING
+ *    variance treated, COUNTING for /close; RECOUNT: COUNTING, uncounted, one more attempt (notes
+ *    112) → VARIANCE_DECIDED.
+ *  · force-close (notes 117 §4): peekSession → exceptionReason FORCE_CLOSE → exceptionApprover →
+ *    lock → record → forceCloseIn (endBillingIn at CASH_OFFICE → countIn forced → ACCEPTED:
+ *    closeIn, and for the day close receiveOwnHandOver; else SENT_FOR_APPROVAL) →
+ *    SESSION_FORCE_CLOSE.
+ *  · reopen (notes 117 §5): assertReopenable → exceptionReason REOPEN → exceptionApprover → lock
+ *    → record → voidMovement on the hand-over, reverseVariance on every posted CLOSE TVar → back
+ *    to COUNTING, uncounted, the Z kept → SESSION_REOPEN.
+ *  · x-report (notes 117 §6): lock (a live session) → the next xNo from the X_REPORT events →
+ *    X_REPORT → getWithExpected.
+ *  · the money paths (§7.4): resolveForMoney (the held, linked or named session → assertLive /
+ *    assertOwnedHere for a late arrival, the day cut-off, the cash block limit, cash out over
+ *    expected) → stampTenderRows / stampVoucher; routeMoneyDoc (a receipt / payment / expense's
+ *    cash: the session, the branch safe, or TILL_SESSION_REQUIRED) → routeCashToLedger;
+ *    assertNoTillCashLeg (journals and contras); assertMoneyDocCancellable / assertCancellable;
+ *    logMoneyDoc.
+ *  · reads: current / openCheck / get / getWithExpected → expectedVisible (the blind close) →
+ *    toPayload (the expectation, or the CLOSE rows frozen at close; movements; variances;
+ *    cashState; receiptOf / receiptStateOf).
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillCounter, type TillReason, type TillSession } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -68,10 +135,13 @@ type Client = Tx | PrismaService;
 const ZERO = new Prisma.Decimal(0);
 /** Billing: the drawer still takes money (the till strip shows its gauge). */
 const MOVABLE: readonly TillSessionStatus[] = [TillSessionStatus.OPEN, TillSessionStatus.SUSPENDED];
+/** A Decimal from a column or an input; null / undefined read as 0. */
 const dec = (v: Prisma.Decimal | number | string | null | undefined): Prisma.Decimal =>
   v === null || v === undefined ? ZERO : new Prisma.Decimal(v);
+/** A payload number: 2 places; null / undefined read as 0. */
 const num = (v: Prisma.Decimal | null | undefined): number => (v ? Number(v.toFixed(2)) : 0);
 
+/** What every sessions/* route names: company, branch and year scope the row, tssId picks it. */
 export interface SessionKey {
   companyId: string;
   branchId: string;
@@ -100,6 +170,10 @@ export interface DecideVarianceInput {
   tcmId?: string | null;
 }
 
+/**
+ * countedByTender's row: what the count's lines add up to for one tender — the one drawer for
+ * cash, one terminal (type + tender) for slips, with its slip count.
+ */
 interface CountedTender {
   key: string;
   tenderTypeId: number;
@@ -147,6 +221,25 @@ export class TillSessionService {
   //  Open
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * S1 — open a session on this device (plan-till-counter-claim, §5.2, notes 98 / 124). Before
+   * the transaction: a registered, usable device (requireDevice / knownDevice) and the till.*
+   * settings. In it: claimCounter (the linked counter, or the free one named — locked), one
+   * drawer per counter / device / cashier (assertCounterFree / assertDeviceFree /
+   * assertOperatorFree), the business day (TillDayService.ensureOpenDay: opened here under
+   * till.day_auto_open, else TILL_DAY_NOT_OPEN), the float — ISSUED (the amount named or the
+   * counter's default, out of the counter's safe: TILL_SAFE_MISSING without one), CARRIED (the
+   * last close's float left, carriedFrom), NONE for a counter with no drawer — then the
+   * opening count, cash only, priced by priceLines. Counted ≠ issued needs a FLOAT_MISMATCH
+   * reason (floatMismatchReason) and meets the FLOAT_MISMATCH gate (assessGate: 428 under
+   * till.approval_gate REFUSE). Then the row (sessionNumber, nextDaySeq; a race on the counter
+   * is TILL_COUNTER_BUSY through rethrowCounterTaken), SESSION_OPEN carrying the claim, the
+   * OPEN count (writeCount), the TFlt (postMovement FLOAT_ISSUE) and, on a mismatch, an
+   * OPEN-stage till_variance posted at once as EXPENSE (postVariance, VARIANCE_DECIDED with
+   * byDefault) with the gate settled on it (settleGate: an approved request named on the
+   * variance, or a WARN request filed on the session). Answers the session as its cashier
+   * sees it.
+   */
   async open(input: {
     companyId: string;
     branchId: string;
@@ -640,6 +733,10 @@ export class TillSessionService {
   //  During
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * A break / idle lock: OPEN → SUSPENDED, by the cashier on the session's own device (lockOwn);
+   * tss_suspend_count + 1, SESSION_SUSPEND with the reason named.
+   */
   async suspend(key: SessionKey, reasonId?: string | null): Promise<TillSessionPayload> {
     const caller = await this.context.caller();
     await this.prisma.$transaction(async (tx) => {
@@ -659,6 +756,10 @@ export class TillSessionService {
     return this.get(key, { asOperator: true });
   }
 
+  /**
+   * Back from a break: SUSPENDED → OPEN, by the cashier on the session's own device (lockOwn);
+   * SESSION_RESUME with how many minutes it was suspended.
+   */
   async resume(key: SessionKey): Promise<TillSessionPayload> {
     const caller = await this.context.caller();
     await this.prisma.$transaction(async (tx) => {
@@ -3478,6 +3579,7 @@ export class TillSessionService {
   //  Internals
   // ═════════════════════════════════════════════════════════════════════════
 
+  /** The login's device id, or TILL_DEVICE_REQUIRED: a session needs a registered device. */
   private requireDevice(caller: TillCaller): string {
     if (!caller.deviceId) {
       throwTill(
@@ -3570,6 +3672,10 @@ export class TillSessionService {
     };
   }
 
+  /**
+   * One counter of the open-check: code, name, default float and `carriedFrom` — the last
+   * CLOSED session's float left, null once a later session has carried it (lastClosed).
+   */
   private async counterRow(
     client: Tx | PrismaService,
     counter: TillCounter,
@@ -3731,6 +3837,7 @@ export class TillSessionService {
     return { counter, claim: TillCounterClaim.PICKED };
   }
 
+  /** The counter row FOR UPDATE for the rest of the transaction: opens on it queue here. */
   private async lockCounter(tx: Tx, tcnId: string): Promise<TillCounter> {
     await tx.$queryRaw`SELECT tcn_id FROM accounts.till_counter WHERE tcn_id = ${tcnId}::uuid FOR UPDATE`;
     return tx.tillCounter.findUniqueOrThrow({ where: { tcnId } });
@@ -3774,6 +3881,7 @@ export class TillSessionService {
     }
   }
 
+  /** One session per counter (§2.3): a live or PENDING_APPROVAL one on it is TILL_COUNTER_BUSY. */
   private async assertCounterFree(tx: Tx, counterId: string): Promise<void> {
     const live = await tx.tillSession.findFirst({
       where: {
@@ -3849,6 +3957,11 @@ export class TillSessionService {
     return reason;
   }
 
+  /**
+   * The CLOSED session whose float this CARRIED open inherits: the one named, else the
+   * counter's last close (lastClosed). None, or a float that a later session already carried,
+   * is TILL_FLOAT_INVALID on prevSessionId.
+   */
   private async carriedFrom(tx: Tx, counterId: string, prevSessionId: string | null) {
     const { prev, takenBy } = await this.lastClosed(tx, counterId, prevSessionId);
     if (!prev) {
@@ -3900,6 +4013,7 @@ export class TillSessionService {
     return { prev, takenBy: taken?.tssSessionNo ?? null };
   }
 
+  /** The counter's next tss_day_seq on the business date — the session number's last part. */
   private async nextDaySeq(tx: Tx, counterId: string, businessDate: string): Promise<number> {
     const [row] = await tx.$queryRaw<{ n: number }[]>`
       SELECT COALESCE(max(tss_day_seq), 0)::int AS n
@@ -3908,6 +4022,24 @@ export class TillSessionService {
          AND tss_business_date = ${businessDate}::date
          AND tss_acc_year = ${accYearOf(businessDate)}::char(9)`;
     return (row?.n ?? 0) + 1;
+  }
+
+  /**
+   * Void bill (REV 2 §3.2 step 3): the bill's session locked while it still
+   * takes money (OPEN / SUSPENDED — else 409 TILL_SESSION_NOT_OPEN), by its
+   * cashier on its own device (as end-billing), or by a supervisor — Till
+   * Sessions (273) OVERRIDE, judged by the caller — from anywhere. Exposed for
+   * the sales module, which owns /bills/void; the till keeps the lock rules.
+   */
+  async lockLive(
+    tx: Tx,
+    key: SessionKey,
+    caller: TillCaller,
+    opts: { supervisor: boolean },
+  ): Promise<TillSession> {
+    return opts.supervisor
+      ? this.lock(tx, key, [...MOVABLE])
+      : this.lockOwn(tx, key, caller, [...MOVABLE]);
   }
 
   /** The session row locked, and the caller its operator on its device. */
@@ -3968,6 +4100,11 @@ export class TillSessionService {
     return session;
   }
 
+  /**
+   * The session row FOR UPDATE, in this company / branch / year (else 404
+   * TILL_SESSION_NOT_FOUND) and in one of `statuses` (else 409 TILL_SESSION_NOT_OPEN naming
+   * what it needs). Every writer locks through here; lockOwn / lockForCount add who may.
+   */
   private async lock(tx: Tx, key: SessionKey, statuses: TillSessionStatus[]): Promise<TillSession> {
     const locked = await tx.$queryRaw<{ tss_id: string }[]>`
       SELECT tss_id FROM accounts.till_session
@@ -4369,6 +4506,13 @@ export class TillSessionService {
     return rows;
   }
 
+  /**
+   * The CLOSE-stage till_variance row of one compared tender: the expectation frozen into it
+   * (open, sales, refunds, receipts, payments, expenses, moved in / out, txn count), what was
+   * counted, the slip count on a SLIPS row, the tolerance, and the treatment — PENDING when out
+   * of tolerance and the count was SENT_FOR_APPROVAL or the row is a slip line (notes 99 §1),
+   * else WITHIN_TOLERANCE, decided by the counter now.
+   */
   private varianceRow(
     session: TillSession,
     row: ReturnType<TillSessionService['compare']>[number],
@@ -4412,6 +4556,12 @@ export class TillSessionService {
     };
   }
 
+  /**
+   * One till_count row of the session (OPEN / CLOSE / RECOUNT, or a movement's through
+   * writeMovementCount) with its till_count_line rows: the total counted, the expected, blind or
+   * not, who counted and witnessed, and on which device. The one place a session's count is
+   * written.
+   */
   private async writeCount(
     tx: Tx,
     session: TillSession,
@@ -4512,6 +4662,11 @@ export class TillSessionService {
     };
   }
 
+  /**
+   * The ledger a non-cash variance posts against: its tender's own
+   * (acc_tender_master.tnd_ledger_id). A variance naming no tender with a ledger is
+   * TILL_LEDGER_UNMAPPED.
+   */
   private async tenderLedger(tx: Tx, tenderId: string | null, typeId: number): Promise<string> {
     const tender = tenderId
       ? await tx.accTenderMaster.findUnique({
@@ -4529,6 +4684,11 @@ export class TillSessionService {
     return tender.tndLedgerId;
   }
 
+  /**
+   * The blind close (§5.4): whether the caller may see the expected / variance figures — always
+   * once CLOSED or VOIDED, always under an OPEN count (tss_count_mode, else till.blind_close),
+   * never the session's own cashier while blind; otherwise Till Sessions (273) OVERRIDE decides.
+   */
   private async expectedVisible(
     session: TillSession,
     settings: TillSettings,
@@ -4550,6 +4710,14 @@ export class TillSessionService {
     return (await this.context.rights(TILL_MENU.SESSIONS)).override;
   }
 
+  /**
+   * The sessions/get payload. Per tender the expectation (TillLedgerService.expected) — on a
+   * session no longer live, the figures frozen in its CLOSE-stage till_variance rows — and what
+   * the final count's lines add up to; `visible` false nulls every expected / variance figure
+   * (expectedVisible). Plus the counter, the cashier, the drop safe (dropSafeFor, notes 110 §3),
+   * the frozen totals, the cash gauge while billing (cashState — shown blind too), the
+   * movements, the variances (only when visible) and the receipt state (receiptOf, notes 114).
+   */
   private async toPayload(
     session: TillSession & {
       counter: { tcnCode: string; tcnName: string; tcnSafeId: string | null };
@@ -4783,6 +4951,7 @@ export class TillSessionService {
     };
   }
 
+  /** The session fields TillLedgerService.expected reads (ExpectationSession). */
   private expectationSession(session: TillSession) {
     return {
       tssId: session.tssId,
@@ -4794,6 +4963,7 @@ export class TillSessionService {
     };
   }
 
+  /** What TillPostingService stamps on a till voucher (PostingSession), dated `businessDate`. */
   private postingSession(session: TillSession, businessDate: string): PostingSession {
     return {
       tssId: session.tssId,
@@ -4809,6 +4979,10 @@ export class TillSessionService {
     };
   }
 
+  /**
+   * A till_event on the session — its day, counter and number filled in — by the caller, on
+   * their device or, from the office, the session's.
+   */
   private async logSessionEvent(
     tx: Tx,
     session: TillSession,
@@ -4833,10 +5007,12 @@ export class TillSessionService {
 }
 
 const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A uuid in shape — today's client sends a random one per run, which names no session (§4). */
 function isUuidLike(value: string): boolean {
   return UUID_LIKE.test(value);
 }
 
+/** The (type, tender) key a count line and an expectation row are matched on; '*' = none named. */
 function tenderKey(typeId: number, tenderId: string | null): string {
   return `${typeId}|${tenderId ?? '*'}`;
 }

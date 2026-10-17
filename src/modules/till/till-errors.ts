@@ -1,3 +1,14 @@
+/**
+ * till-errors.ts — how a till refusal leaves the server. Every TILL_* refusal is thrown here as an
+ * HttpException carrying the house error body; TillExceptionFilter passes it through unchanged.
+ *
+ *   throwTill()           — the general refusal: the status TILL_ERROR_STATUS gives the code
+ *                           (403 / 409 / 422 / 428 …) plus any extra detail the client reads
+ *   throwTillBadRequest() — always 400: a body shape the DTO cannot express (notes 119)
+ *   throwTillNotFound()   — always 404: a master or a document that is not there (notes 119)
+ *   tillErrorCodeOf()     — the code back out of a caught error, for a caller that reacts to one
+ *                           (a bill void, a payment letting 428 TILL_APPROVAL_REQUIRED through)
+ */
 import { HttpException } from '@nestjs/common';
 import { buildErrorResponse } from '../../common/utils/module-shared.utils';
 import { TILL_ERROR_STATUS, TillErrorCode } from './types/till-enum';

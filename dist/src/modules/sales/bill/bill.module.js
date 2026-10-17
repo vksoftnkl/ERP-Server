@@ -18,6 +18,7 @@ const bill_lifecycle_service_1 = require("./bill-lifecycle.service");
 const bill_read_service_1 = require("./bill-read.service");
 const bill_band_service_1 = require("./bill-band.service");
 const bill_retender_service_1 = require("./bill-retender.service");
+const bill_void_service_1 = require("./bill-void.service");
 const sale_order_module_1 = require("../sale-order/sale-order.module");
 const quotation_module_1 = require("../quotation/quotation.module");
 const posting_module_1 = require("../posting/posting.module");
@@ -45,6 +46,7 @@ exports.BillModule = BillModule = __decorate([
             bill_lifecycle_service_1.BillLifecycleService,
             bill_band_service_1.BillBandService,
             bill_retender_service_1.BillRetenderService,
+            bill_void_service_1.BillVoidService,
             bill_exception_filter_1.BillExceptionFilter,
         ],
         exports: [bill_service_1.BillService, bill_read_service_1.BillReadService],

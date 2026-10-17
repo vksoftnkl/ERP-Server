@@ -1,3 +1,45 @@
+/**
+ * till-movement.service.ts — the hand-posted movements of cash through a drawer
+ * (TillMovementService, §5 / build phase 2) and, since notes 113 / 114, the receipt of a
+ * cashier's hand-over or drop into the safe. Routes (till.controller.ts): movements/create ·
+ * supervisors · get · change · awaiting-receipt · receive · void, and sessions/approve-cash.
+ * It reads and locks accounts.till_session; every row it makes — till_cash_movement and its
+ * voucher, till_count(_line), till_variance, till_approval, till_event — goes through the
+ * single writers: TillPostingService (postMovement / voidMovement / postReceive /
+ * postVariance), TillSessionService (priceLines / writeMovementCount), TillApprovalService
+ * (ruleOrDefault / assertApprover / record) and TillEventService. A REMIT is
+ * TillSafeService's (notes 118; the controller sends its void there); FLOAT_ISSUE and
+ * CLOSE_HANDOVER are the session's own (till-session.service.ts).
+ *
+ * Flows:
+ * - create(): the kind must be hand-posted (CASHIER_MOVEMENTS / SUPERVISOR_MOVEMENTS) → a
+ *   PICKUP / TOP_UP proves its supervisor first (proveSupervisor → verifyPin, outside the
+ *   transaction so a PIN_FAIL stays journalled) → lockSession (OPEN / SUSPENDED) →
+ *   assertAtCounter / assertOperator → the amount from the denominations (assertCashLines,
+ *   priceLines; an EXCHANGE's IN and OUT sides must balance, a DROP is declared) →
+ *   loadReason → the other side: dropSafeFor (DROP, notes 110 §3) / safeFor (PICKUP, TOP_UP,
+ *   EXCHANGE) / assertLedger (PAID_IN) → the awaiting ledger for a DROP under
+ *   till.handover_receipt REQUIRED (notes 113) → writeMovementCount (IN; OUT too for an
+ *   EXCHANGE) → posting.postMovement (the row, its doc no, TFlt / TDrp / TPIn) → get().
+ * - change(): REV 2 §2.14 — both cashiers' PINs (checkWitnessPin, notes 108) → both
+ *   sessions locked in id order → a PICKUP on the giver and a TOP_UP on the taker, each
+ *   counted and posted through its own counter's safe.
+ * - supervisors() / get() / operatorOf(): reads for the screen and the controller's rights.
+ * - awaitingReceipt() → receive(): notes 113 — every bag judged (assertAwaiting, never the
+ *   caller's own) and the receiver's PIN before the transaction; then per bag, locked in
+ *   session / bag order: a blind DROP_VERIFY count, posting.postReceive (TRcv), and a
+ *   difference as the session's RECEIVE-stage till_variance — within tolerance postVariance
+ *   at once, beyond it PENDING with APPROVAL_REQUESTED for sessions/decide-variance.
+ * - approveCash(): notes 114 — a CLOSED session's awaiting bags as one total: awaitingOf →
+ *   the self rule and the PIN → a gap beyond tolerance decided in the step when `treatment`
+ *   is given (approval.assertApprover, the cashier the requester) → one transaction: the
+ *   bags received (postReceive; a gap on the hand-over first, then the drops newest first),
+ *   ONE RECEIVE variance, approval.record + postVariance when decided, VARIANCE_DECIDED /
+ *   APPROVAL_REQUESTED, tss_variance_status → the voucher numbers and sessions.get().
+ * - void(): REV 2 §2.8 — lockSession (OPEN / SUSPENDED / COUNTING with no final count), the
+ *   row re-read under the lock, VOIDABLE_MOVEMENTS only, never a RECEIVED bag, a
+ *   MOVEMENT_VOID reason → posting.voidMovement (the voucher mirrored, the row VOIDED).
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillSession } from '@prisma/client';
 import { loadRights } from '../../../common/posting/rights';
@@ -46,6 +88,7 @@ import type {
 
 type Tx = Prisma.TransactionClient;
 const ZERO = new Prisma.Decimal(0);
+/** A Decimal as a 2-dp number for the payloads; 0 for null. */
 const num = (v: Prisma.Decimal | null | undefined): number => (v ? Number(v.toFixed(2)) : 0);
 
 /** A drawer that has started being counted takes no movement and loses none. */
@@ -89,6 +132,7 @@ export interface ApproveCashInput {
   notes?: string | null;
 }
 
+/** movements/create (one kind per call); which fields are read, and refused, depends on the kind. */
 export interface CreateMovementInput {
   companyId: string;
   branchId: string;
@@ -157,6 +201,21 @@ export class TillMovementService {
     private readonly approval: TillApprovalService,
   ) {}
 
+  /**
+   * movements/create — one DROP / PAID_IN / EXCHANGE (the cashier alone) or PICKUP / TOP_UP
+   * (the cashier plus a supervisor's PIN, notes 110), by the session's cashier on its device
+   * while it still takes money. Refuses: a kind not posted by hand (TILL_MOVEMENT_INVALID on
+   * `kind`); lines on a DROP, outLines off an EXCHANGE, an EXCHANGE whose sides differ, an
+   * amount that is not what the denominations add up to, or nothing moved (all
+   * TILL_MOVEMENT_INVALID); a drawer not OPEN / SUSPENDED (TILL_SESSION_NOT_OPEN); another
+   * cashier or device (TILL_SESSION_NOT_YOURS / _WRONG_DEVICE; a pickup / top-up from the
+   * office TILL_MOVEMENT_AT_COUNTER); a counter with no drop safe (TILL_NO_DROP_SAFE) or a
+   * branch with none (TILL_SAFE_MISSING); a paid-in with no ledger. Steps, in one
+   * transaction after the supervisor is proven: lock → who signs (the witness is the proven
+   * supervisor, or the named one on the cashier kinds; never the caller) → the amount →
+   * loadReason → the safe / ledger → the awaiting ledger (DROP under REQUIRED) → the counts
+   * (tct_movement_id = the id drawn up front) → posting.postMovement. Answers get().
+   */
   async create(input: CreateMovementInput): Promise<TillMovementDetailPayload> {
     const caller = await this.context.caller();
     if (!CASHIER_MOVEMENTS.includes(input.kind) && !SUPERVISOR_MOVEMENTS.includes(input.kind)) {
@@ -1989,6 +2048,11 @@ export class TillMovementService {
     return session;
   }
 
+  /**
+   * The session row under FOR UPDATE for the rest of the transaction — this branch's, this
+   * year's, not deleted (404 TILL_SESSION_NOT_FOUND) — and in one of `statuses`
+   * (assertMovable; MOVABLE_STATUSES unless the caller says otherwise).
+   */
   private async lockSession(
     tx: Tx,
     key: { companyId: string; branchId: string; accYear: string; tssId: string },
@@ -2010,6 +2074,11 @@ export class TillMovementService {
     return session;
   }
 
+  /**
+   * The status gate: 409 TILL_SESSION_NOT_OPEN when the session is not in `statuses`, worded
+   * as "its drawer is being counted"; TILL_MOVEMENT_SESSION_CLOSED when the gate is a void's
+   * (VOIDABLE_STATUSES).
+   */
   private assertMovable(session: TillSession, statuses: readonly TillSessionStatus[]): void {
     if (!statuses.includes(session.tssStatus as TillSessionStatus)) {
       throwTill(
@@ -2057,6 +2126,10 @@ export class TillMovementService {
     this.assertOperator(session, caller);
   }
 
+  /**
+   * Every denomination line is CASH — a drawer moves no card money — else
+   * TILL_MOVEMENT_INVALID on `<field>.N.tenderTypeId`.
+   */
   private assertCashLines(lines: TillCountLineInput[], field: string): void {
     lines.forEach((line, i) => {
       if (line.tenderTypeId !== CASH_TENDER_TYPE_ID) {
@@ -2069,6 +2142,13 @@ export class TillMovementService {
     });
   }
 
+  /**
+   * The movement's reason (accounts.till_reason, 47 §1.4): a PICKUP / PAID_IN must name one of
+   * its category (REASON_CATEGORY), the other kinds may name any. The reason is active, not
+   * deleted, shared (no company) or this company's, of the category asked; trs_needs_note
+   * wants `notes`, trs_needs_ref wants `refNo`, and a trs_max_amount > 0 caps the amount.
+   * Every refusal is TILL_REASON_INVALID on the field at fault. Null when none was asked.
+   */
   private async loadReason(tx: Tx, input: CreateMovementInput, amount: Prisma.Decimal) {
     const category = REASON_CATEGORY[input.kind] ?? null;
     if (!input.reasonId) {
@@ -2117,6 +2197,7 @@ export class TillMovementService {
     return reason;
   }
 
+  /** A PAID_IN's ledger: not deleted, shared or this company's — else TILL_MOVEMENT_INVALID. */
   private async assertLedger(tx: Tx, ledgerId: string, companyId: string): Promise<void> {
     const ledger = await tx.accLedgerMaster.findFirst({
       where: {
@@ -2135,6 +2216,7 @@ export class TillMovementService {
     }
   }
 
+  /** The till_session row cut down to what TillPostingService stamps on a voucher and a row. */
   private postingSession(session: TillSession): PostingSession {
     return {
       tssId: session.tssId,
@@ -2150,6 +2232,7 @@ export class TillMovementService {
     };
   }
 
+  /** A uuidv7 from the database, drawn before the row so its voucher can name it (§5). */
   private async newId(tx: Tx): Promise<string> {
     const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT uuidv7()::text AS id`;
     return row.id;

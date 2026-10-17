@@ -20,6 +20,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
+  ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -32,9 +33,11 @@ import { BillLifecycleService } from './bill-lifecycle.service';
 import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
+import { BillVoidService } from './bill-void.service';
 import { SaveBillDto } from './dto/save-bill.dto';
 import {
   AmendBillDto,
+  BillKeysDto,
   BillTransportDto,
   CancelBillDto,
   DeleteBillDto,
@@ -43,6 +46,7 @@ import {
   RetenderBillDto,
   UpdateRemarksDto,
   ValidateBillDto,
+  VoidBillDto,
 } from './dto/bill-lifecycle.dto';
 import { BillErrorResponseDto, BillSuccessSingleDto } from './dto/bill-response.dto';
 import type { BillPayload, BillSuccessResponse } from './types/bill-api.types';
@@ -73,6 +77,7 @@ export class BillController {
   constructor(
     private readonly billService: BillService,
     private readonly lifecycle: BillLifecycleService,
+    private readonly voids: BillVoidService,
     private readonly read: BillReadService,
     private readonly band: BillBandService,
     private readonly retenderService: BillRetenderService,
@@ -141,12 +146,68 @@ export class BillController {
   // ── §2.4 ──────────────────────────────────────────────────────────────────
   @Post('cancel')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Cancel a POSTED bill by reversal (never a delete). Reason mandatory.' })
+  @ApiOperation({
+    summary: 'Cancel a POSTED bill by reversal (never a delete). Reason mandatory.',
+    description:
+      'A bill whose till session still takes money (OPEN / SUSPENDED) is refused with 409 SALES_USE_VOID: ' +
+      'void it (/bills/void). A cash bill of a counted / closed session is a sale return (409 TILL_SESSION_CLOSED_USE_RETURN).',
+  })
   @ApiOkResponse({
     description: '{ ...keys, sbStatus: CANCELLED, reversalVoucherRefno, cancelledOn }',
   })
   async cancel(@Body() dto: CancelBillDto): Promise<BillSuccessResponse<Record<string, unknown>>> {
     return this.ok('Bill cancelled successfully', await this.lifecycle.cancel(dto));
+  }
+
+  // ── Void bill (design REV 2, 2026-10-17) ──────────────────────────────────
+  @Post('void')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Void a POSTED bill of a live till session: cancel’s unwind, a till_void evidence row, BILL_VOID',
+    description:
+      'The same reversal as /bills/cancel (status CANCELLED), plus one accounts.till_void row stamped once — ' +
+      'was the bill printed before the void (print_log PRINT / REPRINT SUCCESS of SALE_INVOICE / SALE_RECEIPT), ' +
+      'how many prints, a FAILED print, minutes after the post, the session’s n-th void — and a BILL_VOID till event. ' +
+      'Only while the bill’s session is OPEN / SUSPENDED (else 409 TILL_VOID_SESSION_CLOSED: make a sale return; ' +
+      'no till session → 409 TILL_VOID_NO_SESSION: cancel it). By the session’s cashier on its own device, or anyone ' +
+      'with Till Sessions (273) OVERRIDE (else 403 TILL_VOID_NOT_ALLOWED); menu 12 Cancel as well. reasonId names an ' +
+      'active VOID_BILL reason, note when it needs one (422 TILL_REASON_INVALID). The VOID_BILL rule ships NEVER; where a ' +
+      'company switched it on, the gate’s 428 TILL_APPROVAL_REQUIRED / approvalId contract applies. Idempotent on a voided bill.',
+  })
+  @ApiOkResponse({
+    description:
+      '{ ...keys, sbBillRefno, sbStatus: CANCELLED, voidedOn, reversalVoucherRefno, void: { … } }',
+  })
+  @ApiResponse({ status: 428, type: BillErrorResponseDto, description: 'TILL_APPROVAL_REQUIRED' })
+  async void(@Body() dto: VoidBillDto): Promise<BillSuccessResponse<Record<string, unknown>>> {
+    return this.ok('Bill voided successfully', await this.voids.void(dto));
+  }
+
+  @Get('void-check')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'What the Void popup shows before a void: the door this bill takes, its prints, the minutes since post',
+    description:
+      'Reads only. route: VOID (live session) · RETURN (counted / closed) · CANCEL (no till) · VOIDED · CANCELLED · ' +
+      'NOT_POSTED, with the refusal code the void would answer; canVoid for THIS caller; the print_log evidence as it ' +
+      'stands (printed, printCount, lastPrintedOn, printFailed, prints[]); postedOn / minutesAfterPost; nextVoidNo; ' +
+      'the VOID_BILL reasons the company may pick; the existing void row when already voided. Menu 12 VIEW.',
+  })
+  @ApiQuery({ name: 'sbId', required: true })
+  @ApiQuery({ name: 'sbCompanyId', required: true })
+  @ApiQuery({ name: 'sbBranchId', required: true })
+  @ApiQuery({ name: 'sbAccYear', required: true })
+  @ApiOkResponse({
+    description:
+      '{ route, code, canVoid, session, printed, printCount, prints[], minutesAfterPost, nextVoidNo, reasons[], void }',
+  })
+  @ApiNotFoundResponse({ type: BillErrorResponseDto })
+  async voidCheck(
+    @Query() query: BillKeysDto,
+  ): Promise<BillSuccessResponse<Record<string, unknown>>> {
+    return this.ok('Void check', await this.voids.check(query));
   }
 
   // ── §2.5 ──────────────────────────────────────────────────────────────────

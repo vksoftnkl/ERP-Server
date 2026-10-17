@@ -5,7 +5,7 @@ import { requireDocument } from './provider.utils';
 
 /**
  * Notes 117 §7 — the till's print documents (purposes TILL_SESSION_Z,
- * TILL_SESSION_X, TILL_DAY_Z). The rows come from TillPrintService, built on
+ * TILL_SESSION_X, TILL_DAY_Z; notes 135: TILL_MOVEMENT, TILL_REMIT). The rows come from TillPrintService, built on
  * the very payloads /till/sessions/get and /till/days/get answer with, so a
  * print shows what the screen does: a live blind session printed by its own
  * cashier has no expected figure. docId = tss_id / tbd_id, accYear = the
@@ -88,7 +88,56 @@ export class TillDayTendersProvider implements PrintDataProvider {
   }
 }
 
-/** The six, for print-render.module.ts's explicit registry. */
+/**
+ * Notes 135 — TILL_MOVEMENT, the slip of one cash movement (every kind but a
+ * REMIT). docId = tcm_id, accYear = tcm_acc_year; movements/get's rights.
+ */
+@Injectable()
+export class TillMovementHeaderProvider implements PrintDataProvider {
+  readonly code = 'till.movement.header';
+  readonly label = 'Till movement — slip header';
+  readonly cardinality = 'one' as const;
+  constructor(private readonly till: TillPrintService) {}
+  async resolve(request: ProviderRequest): Promise<PrintRow> {
+    return this.till.movementHeader(docOf(request, this.code));
+  }
+}
+
+@Injectable()
+export class TillMovementLinesProvider implements PrintDataProvider {
+  readonly code = 'till.movement.lines';
+  readonly label = 'Till movement — denominations';
+  readonly cardinality = 'many' as const;
+  constructor(private readonly till: TillPrintService) {}
+  async resolve(request: ProviderRequest): Promise<PrintRow[]> {
+    return (await this.till.movementLines(docOf(request, this.code))).slice(0, request.rowLimit);
+  }
+}
+
+/** Notes 135 — TILL_REMIT, the memo that goes with a remittance's cash. docId = the REMIT's tcm_id. */
+@Injectable()
+export class TillRemitHeaderProvider implements PrintDataProvider {
+  readonly code = 'till.remit.header';
+  readonly label = 'Till remittance — memo header';
+  readonly cardinality = 'one' as const;
+  constructor(private readonly till: TillPrintService) {}
+  async resolve(request: ProviderRequest): Promise<PrintRow> {
+    return this.till.remitHeader(docOf(request, this.code));
+  }
+}
+
+@Injectable()
+export class TillRemitLinesProvider implements PrintDataProvider {
+  readonly code = 'till.remit.lines';
+  readonly label = 'Till remittance — denominations';
+  readonly cardinality = 'many' as const;
+  constructor(private readonly till: TillPrintService) {}
+  async resolve(request: ProviderRequest): Promise<PrintRow[]> {
+    return (await this.till.remitLines(docOf(request, this.code))).slice(0, request.rowLimit);
+  }
+}
+
+/** The ten, for print-render.module.ts's explicit registry. */
 export const TILL_PRINT_PROVIDERS = [
   TillSessionHeaderProvider,
   TillSessionTendersProvider,
@@ -96,4 +145,8 @@ export const TILL_PRINT_PROVIDERS = [
   TillDayHeaderProvider,
   TillDaySessionsProvider,
   TillDayTendersProvider,
+  TillMovementHeaderProvider,
+  TillMovementLinesProvider,
+  TillRemitHeaderProvider,
+  TillRemitLinesProvider,
 ] as const;

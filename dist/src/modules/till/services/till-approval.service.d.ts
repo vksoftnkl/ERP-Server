@@ -10,6 +10,7 @@ export interface TillApprovalRuleRow {
     tar_event_code: string;
     tar_mode: string;
     tar_threshold_amount: Prisma.Decimal;
+    tar_threshold_count?: number;
     tar_channel: string;
     tar_min_role: string;
     tar_two_person: boolean;
@@ -94,6 +95,7 @@ export interface GateAsk {
     srcRefno: string | null;
     approvalId: string | null;
     field: string;
+    count?: number;
     payload?: Record<string, unknown>;
 }
 export type GateVerdict = {

@@ -2,7 +2,14 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 
 import { hashSecret } from '../src/common/utils/secret-hash.utils';
-import { TillDayHeaderProvider } from '../src/modules/settings/print-render/data/providers/till.providers';
+import {
+  TillDayHeaderProvider,
+  TillMovementHeaderProvider,
+  TillMovementLinesProvider,
+  TillRemitHeaderProvider,
+  TillRemitLinesProvider,
+} from '../src/modules/settings/print-render/data/providers/till.providers';
+import type { PrintDataProvider } from '../src/modules/settings/print-render/data/print-data-provider.types';
 import { as, bootIdentityApp, PRATHAP, TESTER } from './helpers/identity-app';
 import {
   grantMenuRights,
@@ -112,6 +119,35 @@ async function closeCheck(dayId: string) {
 }
 const toneOf = (items: { code: string; tone: string }[], code: string) =>
   items.find((i) => i.code === code)?.tone;
+
+/** A till print provider's rows for one movement, as the render hands them to a layout (notes 135). */
+async function printed<T>(
+  provider: new (...args: never[]) => PrintDataProvider,
+  doc: { tcmId: string; tcmAccYear: string },
+  userId = TESTER1,
+): Promise<T> {
+  return (await app.get(provider).resolve({
+    context: {
+      companyId: COMPANY,
+      branchId,
+      accYear: doc.tcmAccYear,
+      docId: doc.tcmId,
+      userId,
+      deviceId: officePc,
+    },
+    params: {},
+    lang: 'en',
+    rowLimit: 100,
+  })) as T;
+}
+
+/** user_master's name as a print shows it: the display name, else the login. */
+async function nameOf(userId: string): Promise<string> {
+  const [u] = await prisma.$queryRaw<{ n: string }[]>`
+    SELECT COALESCE(NULLIF(btrim(usr_display_name), ''), usr_login_name) AS n
+      FROM public.user_master WHERE usr_id = ${userId}::uuid`;
+  return u.n;
+}
 
 async function legs(voucherId: string) {
   return prisma.$queryRaw<{ ledger: string; dr_cr: string; amount: string }[]>`
@@ -339,6 +375,54 @@ describe('notes 118 · the safe', () => {
     const now = await safe();
     expect(now).toEqual(expect.objectContaining({ expected: 10000, bookBalance: 10000, drift: 0 }));
     expect(now.out?.floatIssues).toBe(500);
+  });
+
+  it('notes 135 · the float’s and the hand-over’s slips: names, the count, the purpose', async () => {
+    const moved = await prisma.$queryRaw<{ tcmId: string; tcmAccYear: string; kind: string }[]>`
+      SELECT tcm_id::text AS "tcmId", tcm_acc_year AS "tcmAccYear", tcm_kind AS kind
+        FROM accounts.till_cash_movement
+       WHERE tcm_session_id = ${s.tssId}::uuid AND tcm_acc_year = ${s.tssAccYear}::char(9)`;
+    const float = moved.find((m) => m.kind === 'FLOAT_ISSUE')!;
+    const handover = moved.find((m) => m.kind === 'CLOSE_HANDOVER')!;
+    const cashier = await nameOf(TESTER1);
+
+    const f = await printed<Record<string, unknown>>(TillMovementHeaderProvider, float);
+    expect(f).toEqual(
+      expect.objectContaining({
+        kind: 'FLOAT_ISSUE',
+        kind_text: 'Float issue',
+        status: 'POSTED',
+        amount: 500,
+        cashier,
+        receives: cashier,
+        voucher_no: expect.stringMatching(/\S/),
+        print_count: 0,
+      }),
+    );
+    expect(f.doc_date).toMatch(/^\d{2}-\d{2}-\d{4}$/);
+    expect(f.created_on).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2} [AP]M$/);
+    // the float's count is the session's OPEN count, one ₹500
+    expect(await printed(TillMovementLinesProvider, float)).toEqual([
+      { face_value: 500, denomination: '₹500', qty: 1, amount: 500, side: null },
+    ]);
+
+    const h = await printed<Record<string, unknown>>(TillMovementHeaderProvider, handover);
+    expect(h).toEqual(
+      expect.objectContaining({
+        kind_text: 'Hand-over',
+        gives: cashier,
+        receives: await nameOf(PRATHAP),
+        receipt_status: 'RECEIVED',
+        received_by: await nameOf(PRATHAP),
+        received_amount: 500,
+      }),
+    );
+    expect(await printed(TillMovementLinesProvider, handover)).toEqual([
+      { face_value: 500, denomination: '₹500', qty: 1, amount: 500, side: null },
+    ]);
+
+    // a movement prints only as its slip: the memo refuses it
+    await expect(printed(TillRemitHeaderProvider, float)).rejects.toThrow(/TILL_MOVEMENT/);
   });
 
   it('§2 a blind count within tolerance posts at once; the day knows the safe was counted', async () => {
@@ -670,6 +754,50 @@ describe('notes 118 · the safe', () => {
     expectStatus(voidConfirmed, 409);
     expect(firstError(voidConfirmed).code).toBe('TILL_MOVEMENT_NOT_VOIDABLE');
     expect((await safe()).inTransit).toHaveLength(0);
+  });
+
+  it('notes 135 · the remittance memos: a confirmed CIT one with the bank’s figures, a bank deposit', async () => {
+    const memo = await printed<Record<string, unknown>>(TillRemitHeaderProvider, cit, TESTER);
+    expect(memo).toEqual(
+      expect.objectContaining({
+        mode: 'CIT',
+        mode_text: 'Handed to the cash collection agency',
+        status: 'CONFIRMED',
+        amount: 3000,
+        bag_no: `BAG${tag}`,
+        seal_no: `SEAL${tag}`,
+        cit_agency: 'E2E Secure Logistics',
+        bank_account_no: null,
+        bank_amount: 2995,
+        difference: -5,
+        bank_ref: `UTR${tag}`,
+        done_by: await nameOf(TESTER1),
+        confirmed_by: await nameOf(TESTER1),
+        voucher_no: expect.stringMatching(/\S/),
+        confirm_voucher_no: expect.stringMatching(/\S/),
+      }),
+    );
+    expect(memo.bank_name).toBeTruthy();
+    expect(await printed(TillRemitLinesProvider, cit, TESTER)).toEqual([
+      { face_value: 500, denomination: '₹500', qty: 6, amount: 3000 },
+    ]);
+
+    const slip = await printed<Record<string, unknown>>(TillRemitHeaderProvider, deposit);
+    expect(slip).toEqual(
+      expect.objectContaining({
+        mode: 'BANK_DEPOSIT',
+        mode_text: 'Deposited at the bank',
+        status: 'DEPOSITED',
+        amount: 2000,
+        slip_no: `SLIP${tag}`,
+        bank_amount: null,
+        difference: null,
+        confirmed_by: null,
+      }),
+    );
+    expect(await printed(TillRemitLinesProvider, deposit)).toEqual([]);
+    // a remittance prints only as its memo
+    await expect(printed(TillMovementHeaderProvider, cit)).rejects.toThrow(/TILL_REMIT/);
   });
 
   it('§3 a remittance the safe has been counted since is not voided', async () => {

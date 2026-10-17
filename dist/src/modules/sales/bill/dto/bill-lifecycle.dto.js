@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RetenderBillDto = exports.RetenderVoidDto = exports.VOID_REASONS = exports.BillTransportDto = exports.TransportBandDto = exports.TRANSPORT_DIRECTIONS = exports.TransportEndDto = exports.UpdateRemarksDto = exports.DeliveryStatusDto = exports.DELIVERY_EVENTS = exports.DeleteBillDto = exports.AmendBillDto = exports.CancelBillDto = exports.PostBillDto = exports.ValidateBillDto = exports.BillKeysDto = void 0;
+exports.RetenderBillDto = exports.RetenderVoidDto = exports.VOID_REASONS = exports.BillTransportDto = exports.TransportBandDto = exports.TRANSPORT_DIRECTIONS = exports.TransportEndDto = exports.UpdateRemarksDto = exports.DeliveryStatusDto = exports.DELIVERY_EVENTS = exports.DeleteBillDto = exports.AmendBillDto = exports.VoidBillDto = exports.CancelBillDto = exports.PostBillDto = exports.ValidateBillDto = exports.BillKeysDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -91,6 +91,33 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], CancelBillDto.prototype, "reason", void 0);
+class VoidBillDto extends BillKeysDto {
+    reasonId;
+    note;
+    approvalId;
+}
+exports.VoidBillDto = VoidBillDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'An active VOID_BILL reason (accounts.till_reason)' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], VoidBillDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 250,
+        description: 'Required when the reason has trs_needs_note',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(250),
+    __metadata("design:type", Object)
+], VoidBillDto.prototype, "note", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'An APPROVED till_approval for VOID_BILL on this bill (after a 428 TILL_APPROVAL_REQUIRED)',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], VoidBillDto.prototype, "approvalId", void 0);
 class AmendBillDto extends ValidateBillDto {
     baseRevision;
     editRemark;

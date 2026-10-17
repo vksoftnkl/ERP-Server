@@ -56,6 +56,17 @@ export declare class BillLifecycleService {
     private postDraftInTx;
     private afterPost;
     cancel(dto: CancelBillDto): Promise<Record<string, unknown>>;
+    liveSessionOf(tx: Prisma.TransactionClient, sessionId: string | null): Promise<{
+        tssId: string;
+        tssSessionNo: string;
+        tssStatus: string;
+    } | null>;
+    cancelIn(tx: Prisma.TransactionClient, bill: SaleBill, ctx: SalesCallContext, reason: string, now: Date, opts?: {
+        action?: 'cancel' | 'void';
+    }): Promise<{
+        reversalRefno: string | null;
+        reversalVoucherId: string | null;
+    }>;
     private cancelResponse;
     amend(dto: AmendBillDto): Promise<BillPayload>;
     runGuards(tx: Prisma.TransactionClient, snap: BillSnapshot, ctx: SalesCallContext, g: SalesGuardContext, opts: {

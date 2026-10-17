@@ -3,6 +3,7 @@ export declare const SALES_ERROR_CODES: {
     readonly BILL_CANCELLED: "SALES_BILL_CANCELLED";
     readonly REVISION_STALE: "SALES_REVISION_STALE";
     readonly AMEND_OFF: "SALES_AMEND_OFF";
+    readonly USE_VOID: "SALES_USE_VOID";
     readonly RIGHT_VIEW: "SALES_RIGHT_VIEW";
     readonly RIGHT_CREATE: "SALES_RIGHT_CREATE";
     readonly RIGHT_EDIT: "SALES_RIGHT_EDIT";

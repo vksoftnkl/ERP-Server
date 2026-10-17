@@ -244,6 +244,9 @@ export declare class TillSessionService {
     private carriedFrom;
     private lastClosed;
     private nextDaySeq;
+    lockLive(tx: Tx, key: SessionKey, caller: TillCaller, opts: {
+        supervisor: boolean;
+    }): Promise<TillSession>;
     private lockOwn;
     private lockForCount;
     private lock;

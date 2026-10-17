@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TILL_PRINT_PROVIDERS = exports.TillDayTendersProvider = exports.TillDaySessionsProvider = exports.TillDayHeaderProvider = exports.TillSessionMovementsProvider = exports.TillSessionTendersProvider = exports.TillSessionHeaderProvider = void 0;
+exports.TILL_PRINT_PROVIDERS = exports.TillRemitLinesProvider = exports.TillRemitHeaderProvider = exports.TillMovementLinesProvider = exports.TillMovementHeaderProvider = exports.TillDayTendersProvider = exports.TillDaySessionsProvider = exports.TillDayHeaderProvider = exports.TillSessionMovementsProvider = exports.TillSessionTendersProvider = exports.TillSessionHeaderProvider = void 0;
 const common_1 = require("@nestjs/common");
 const till_print_service_1 = require("../../../../till/services/till-print.service");
 const provider_utils_1 = require("./provider.utils");
@@ -124,6 +124,74 @@ exports.TillDayTendersProvider = TillDayTendersProvider = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [till_print_service_1.TillPrintService])
 ], TillDayTendersProvider);
+let TillMovementHeaderProvider = class TillMovementHeaderProvider {
+    till;
+    code = 'till.movement.header';
+    label = 'Till movement — slip header';
+    cardinality = 'one';
+    constructor(till) {
+        this.till = till;
+    }
+    async resolve(request) {
+        return this.till.movementHeader(docOf(request, this.code));
+    }
+};
+exports.TillMovementHeaderProvider = TillMovementHeaderProvider;
+exports.TillMovementHeaderProvider = TillMovementHeaderProvider = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [till_print_service_1.TillPrintService])
+], TillMovementHeaderProvider);
+let TillMovementLinesProvider = class TillMovementLinesProvider {
+    till;
+    code = 'till.movement.lines';
+    label = 'Till movement — denominations';
+    cardinality = 'many';
+    constructor(till) {
+        this.till = till;
+    }
+    async resolve(request) {
+        return (await this.till.movementLines(docOf(request, this.code))).slice(0, request.rowLimit);
+    }
+};
+exports.TillMovementLinesProvider = TillMovementLinesProvider;
+exports.TillMovementLinesProvider = TillMovementLinesProvider = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [till_print_service_1.TillPrintService])
+], TillMovementLinesProvider);
+let TillRemitHeaderProvider = class TillRemitHeaderProvider {
+    till;
+    code = 'till.remit.header';
+    label = 'Till remittance — memo header';
+    cardinality = 'one';
+    constructor(till) {
+        this.till = till;
+    }
+    async resolve(request) {
+        return this.till.remitHeader(docOf(request, this.code));
+    }
+};
+exports.TillRemitHeaderProvider = TillRemitHeaderProvider;
+exports.TillRemitHeaderProvider = TillRemitHeaderProvider = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [till_print_service_1.TillPrintService])
+], TillRemitHeaderProvider);
+let TillRemitLinesProvider = class TillRemitLinesProvider {
+    till;
+    code = 'till.remit.lines';
+    label = 'Till remittance — denominations';
+    cardinality = 'many';
+    constructor(till) {
+        this.till = till;
+    }
+    async resolve(request) {
+        return (await this.till.remitLines(docOf(request, this.code))).slice(0, request.rowLimit);
+    }
+};
+exports.TillRemitLinesProvider = TillRemitLinesProvider;
+exports.TillRemitLinesProvider = TillRemitLinesProvider = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [till_print_service_1.TillPrintService])
+], TillRemitLinesProvider);
 exports.TILL_PRINT_PROVIDERS = [
     TillSessionHeaderProvider,
     TillSessionTendersProvider,
@@ -131,5 +199,9 @@ exports.TILL_PRINT_PROVIDERS = [
     TillDayHeaderProvider,
     TillDaySessionsProvider,
     TillDayTendersProvider,
+    TillMovementHeaderProvider,
+    TillMovementLinesProvider,
+    TillRemitHeaderProvider,
+    TillRemitLinesProvider,
 ];
 //# sourceMappingURL=till.providers.js.map

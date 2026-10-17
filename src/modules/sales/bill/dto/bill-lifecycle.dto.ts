@@ -93,6 +93,33 @@ export class CancelBillDto extends BillKeysDto {
   reason!: string;
 }
 
+/**
+ * Void bill (REV 2 §3.2) — `/bills/void`: a cancel that is recorded and shown.
+ * The reason is one of the VOID_BILL list (a note when the reason needs one);
+ * `approvalId` only where a company switched the VOID_BILL rule on and the
+ * gate answered 428.
+ */
+export class VoidBillDto extends BillKeysDto {
+  @ApiProperty({ format: 'uuid', description: 'An active VOID_BILL reason (accounts.till_reason)' })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({
+    maxLength: 250,
+    description: 'Required when the reason has trs_needs_note',
+  })
+  @NullableStringStrict(250)
+  note?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'An APPROVED till_approval for VOID_BILL on this bill (after a 428 TILL_APPROVAL_REQUIRED)',
+  })
+  @NullableUuid()
+  approvalId?: string | null;
+}
+
 /** §2.5 — `/bills/amend`: R20 on the bill. */
 export class AmendBillDto extends ValidateBillDto {
   @ApiProperty({ format: 'uuid', description: 'Required on amend — the POSTED bill' })

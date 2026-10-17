@@ -1,3 +1,36 @@
+/**
+ * till-day-close.service.ts — the store's day close (notes 117, TILL_DESIGN §13 phase 4):
+ * `days/close-check`, `days/close` and `days/reopen`, served by TillController under Business
+ * Day (274) VIEW / EDIT.
+ *
+ * Writes `till_business_day` (status, the frozen totals, the store Z, the exception count and
+ * approval) and, through TillApprovalService.record, the DAY_CLOSE_EXCEPTION / DAY_REOPEN
+ * `till_approval` rows. The live sessions a close runs over are force-closed by
+ * TillSessionService.forceCloseIn; the day's safe figures are refreshed by
+ * TillSafeService.refreshDay. Reads sessions, movements, variances, SLIP_CHECK events, txn_hold
+ * and the safes (TillSafeService.uncountedSafes / pendingGapsOfDay, TillLedgerService.
+ * ledgerBalances). Journals DAY_CLOSE, DAY_REOPEN and PIN_FAIL through TillEventService.
+ *
+ * Flows:
+ *  - closeCheck: loadDay → check() builds one item per TillCloseCheckCode — RED SESSIONS_LIVE ·
+ *    SESSIONS_PENDING_APPROVAL · CASH_TO_APPROVE · VARIANCE_UNDECIDED · MOVEMENTS_UNPOSTED; AMBER
+ *    SLIP_GAPS · HELD_BILLS · SAFE_OVER_INSURED (safesOverInsured); SAFE_NOT_COUNTED RED under
+ *    till.day_close_safe_count, else AMBER — GREEN when its count is 0 → verdictOf answers
+ *    canClose (open, no RED) and canCloseWithException (every RED in CLOSE_EXCEPTION_CODES).
+ *  - close (notes 117 §2): loadDay + assertClosable → check(); any RED with no `exception` → 409
+ *    TILL_DAY_CLOSE_BLOCKED (blocked) → the exception judged before any write: every RED of
+ *    CLOSE_EXCEPTION_CODES, liveCounts (one count per live session, no drop AWAITING), the
+ *    DAY_CLOSE reason, the shipped FORCE_CLOSE "DAY_CLOSE" reason (shippedReason), dayApprover
+ *    (DAY_CLOSE_EXCEPTION: the caller requests, `approverId` approves) → one transaction: lockDay
+ *    → record the approval → per counted session lockForForce + forceCloseIn with receiveHandOver
+ *    (an outcome other than CLOSED rolls everything back) → check() again (a RED left outside the
+ *    exception → 409) → the CLOSED sessions' totals → refreshDay → the Z (the reopened day's own,
+ *    else nextZ under the advisory lock) → CLOSED, DAY_CLOSE → the day payload.
+ *  - reopen (notes 117 §3): loadDay → assertReopenable (CLOSED, no later CLOSED day) → the
+ *    DAY_REOPEN reason → dayApprover (the caller approves, the day's closer requested) → lockDay
+ *    → record → OPEN with the totals cleared, tbd_reopen_count + 1, the Z kept → DAY_REOPEN.
+ */
+
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillBusinessDay } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -35,6 +68,7 @@ type Tx = Prisma.TransactionClient;
 type Client = Tx | PrismaService;
 const ZERO = new Prisma.Decimal(0);
 
+/** One till_business_day row: the branch, its year (the partition) and tbd_id. */
 export interface DayKey {
   companyId: string;
   branchId: string;
@@ -49,6 +83,7 @@ export interface DayCloseCount {
   floatLeft?: number | null;
 }
 
+/** POST days/close: the day, a note, and the exception that lets it close over RED items. */
 export interface DayCloseInput extends DayKey {
   notes?: string | null;
   exception?: {
@@ -96,6 +131,10 @@ export class TillDayCloseService {
   //  The checklist
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * GET days/close-check (notes 117 §1): the day (404 TILL_DAY_NOT_FOUND), every item of
+   * check() and verdictOf's canClose / canCloseWithException. Reads only.
+   */
   async closeCheck(key: DayKey): Promise<TillDayCloseCheckPayload> {
     const day = await this.loadDay(this.prisma, key);
     const items = await this.check(this.prisma, day);
@@ -757,6 +796,10 @@ export class TillDayCloseService {
     return { day: await this.days.get(key), tapId };
   }
 
+  /**
+   * Only a CLOSED day reopens (409 TILL_DAY_NOT_CLOSED), and not under a later CLOSED day of the
+   * branch (409 TILL_DAY_LATER_CLOSED, naming it) — the safe's day chain.
+   */
   private async assertReopenable(client: Client, day: TillBusinessDay): Promise<void> {
     if ((day.tbdStatus as TillDayStatus) !== TillDayStatus.CLOSED) {
       throwTill(
@@ -789,6 +832,7 @@ export class TillDayCloseService {
 
   // ═════════════════════════════════════════════════════════════════════════
 
+  /** The day of this company / branch / year, not deleted — 404 TILL_DAY_NOT_FOUND. */
   private async loadDay(client: Client, key: DayKey): Promise<TillBusinessDay> {
     const day = await client.tillBusinessDay.findFirst({
       where: {
@@ -805,6 +849,7 @@ export class TillDayCloseService {
     return day;
   }
 
+  /** loadDay under FOR UPDATE: a close or a reopen runs on a locked row. */
   private async lockDay(tx: Tx, key: DayKey): Promise<TillBusinessDay> {
     await tx.$queryRaw`
       SELECT tbd_id FROM accounts.till_business_day
@@ -815,6 +860,7 @@ export class TillDayCloseService {
     return this.loadDay(tx, key);
   }
 
+  /** 409 TILL_DAY_CLOSED (with its Z) when the day is already CLOSED. */
   private assertClosable(day: TillBusinessDay): void {
     if ((day.tbdStatus as TillDayStatus) === TillDayStatus.CLOSED) {
       throwTill(
@@ -916,6 +962,10 @@ function redsOf(items: TillCloseCheckItem[]): TillCloseCheckItem[] {
   return items.filter((i) => i.tone === TillCloseCheckTone.RED);
 }
 
+/**
+ * canClose: the day is not CLOSED and nothing is RED. canCloseWithException: not CLOSED, something
+ * is RED, and every RED is of CLOSE_EXCEPTION_CODES.
+ */
 function verdictOf(
   day: TillBusinessDay,
   items: TillCloseCheckItem[],

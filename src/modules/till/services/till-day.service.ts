@@ -1,3 +1,30 @@
+/**
+ * till-day.service.ts — the business day (accounts.till_business_day, §5.3 / D2): one
+ * row per branch per trading date, above every session. This file owns OPENING the day
+ * and READING it. Its close, checklist, store Z and reopen are TillDayCloseService
+ * (notes 117); its safe figures (tbd_safe_*) are refreshed by TillSafeService.refreshDay
+ * (notes 118).
+ *
+ * Served by TillController: POST days/open (`open`) and GET days/get (`get`; the day
+ * close and TillPrintService read `get` too). Called in-transaction by
+ * TillSessionService.open and TillSafeService.dayFor (`ensureOpenDay`), so a session or
+ * a cash-office document always lands on an OPEN day of today's business date.
+ *
+ * Flows
+ * - Find / open the day: `ensureOpenDay` — businessDateNow (till.day_cutoff) →
+ *   accYearOf → assertTillPartitions → INSERT … ON CONFLICT DO NOTHING when the caller
+ *   may open it (a manager's Day Open always, a session only under till.day_auto_open)
+ *   → the row read back → none TILL_DAY_NOT_OPEN · CLOSING TILL_DAY_CLOSING · CLOSED
+ *   TILL_DAY_NOT_OPEN → DAY_OPEN journalled when this call created it.
+ * - Day Open (POST days/open): `open` — `ensureOpenDay` as MANAGER in its own
+ *   transaction, then `get` for the payload.
+ * - days/get: `get` — the day by id, or today's by the cut-off (404 TILL_DAY_NOT_FOUND)
+ *   → its sessions grouped by status → the branch's bags still AWAITING receipt
+ *   (notes 113: thisDay / earlierDays / oldestOn, no amount) → the closer's name → the
+ *   frozen totals and the safe block (tbd_safe_*, `belowZero`, notes 124 §3) with
+ *   `awaitingAsOf`: the Till cash awaiting receipt ledger at the end of the day before
+ *   and of the day.
+ */
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillBusinessDay } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -26,6 +53,7 @@ import type { TillDayPayload } from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
 
+/** What `ensureOpenDay` answers: the day's key and whether THIS call created the row. */
 export interface OpenDay {
   tbdId: string;
   tbdAccYear: string;

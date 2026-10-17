@@ -15,6 +15,7 @@ import { BillErrorDetail, BillErrorResponse } from './types/bill-api.types';
 @Catch()
 export class BillExceptionFilter extends SalesExceptionFilter<BillErrorDetail, BillErrorResponse> {
   constructor() {
-    super(/\b((?:sb|cd|td)[A-Za-z0-9]+|remarks|username)\b/);
+    // `reasonId` / `note` / `approvalId`: POST /bills/void (void bill REV 2).
+    super(/\b((?:sb|cd|td)[A-Za-z0-9]+|remarks|username|reasonId|note|approvalId)\b/);
   }
 }

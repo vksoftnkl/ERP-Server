@@ -1,3 +1,24 @@
+/**
+ * The payload interfaces every /till/* route answers inside TillSuccessResponse — the `data`
+ * the Swagger classes of dto/till-response.dto.ts stand for. Built by the services
+ * (TillSessionService, TillDayService, TillDayCloseService, TillMovementService,
+ * TillSafeService, TillApprovalGateService, TillReviewService …), handed through the
+ * controllers, read by the print providers (TillPrintService) and the clients; nothing here is
+ * validated. The one input shape, TillCountLineInput, is what the services take from
+ * TillCountLineDto.
+ *
+ * Sections, in route order: the error body (TillErrorDetail is the row throwTill builds) ·
+ * the business day (days/get · close-check · close · reopen) · the open check · the session
+ * (sessions/get and every verb that answers the session, with its tenders, movements and
+ * variances; force-close · reopen · x-report · decide-variance · approve-cash) · the movement in
+ * full (movements/get) · the cash receipt (awaiting-receipt · receive) · the count · the masters
+ * · the approval gate (request / decide / get and the inbox) · the slip check · the safe
+ * (balance · count · decide-variance · remit · remit-confirm) · head office reviews.
+ *
+ * Blind figures: a cashier under till.blind_close gets every expected / variance figure null
+ * (`expectedVisible` on a session, `figuresVisible` on the safe) and the shapes say so with
+ * `number | null`; a count is always shown (`noRefCount`, `cashLimit.gauge`).
+ */
 import type {
   ModuleErrorDetail,
   ModuleErrorResponse,
@@ -16,6 +37,7 @@ import type {
   TillReceiptStatus,
   TillRemitMode,
   TillRemitStatus,
+  TillReviewOutcome,
   TillSafeGapOutcome,
   TillSessionStatus,
   TillSessionVarianceStatus,
@@ -42,8 +64,10 @@ export interface TillErrorDetail extends ModuleErrorDetail {
   [key: string]: unknown;
 }
 
+/** The house error body (`success: false`, message, errors[]) with till rows. */
 export type TillErrorResponse = ModuleErrorResponse<TillErrorDetail>;
 
+/** The envelope every /till/* route answers: `{ success: true, message, data }`. */
 export interface TillSuccessResponse<T> {
   success: true;
   message: string;
@@ -52,6 +76,10 @@ export interface TillSuccessResponse<T> {
 
 // ─── Business day ────────────────────────────────────────────────────────────
 
+/**
+ * One business day — GET /till/days/get · POST days/open, and inside the close / reopen
+ * answers: the header, the frozen totals, the live session counts, the receipt and safe figures.
+ */
 export interface TillDayPayload {
   tbdId: string;
   tbdAccYear: string;
@@ -197,6 +225,7 @@ export interface TillOpenCheckSessionPayload {
   status: TillSessionStatus;
 }
 
+/** A counter an unlinked device may pick (open-check `freeCounters`), with its default float. */
 export interface TillOpenCheckCounterPayload {
   counterId: string;
   code: string;
@@ -206,6 +235,7 @@ export interface TillOpenCheckCounterPayload {
   carriedFrom: TillCarriedFromPayload | null;
 }
 
+/** The counter this device is linked to (open-check `linkedCounter`, counter claim rule 3). */
 export interface TillOpenCheckLinkedPayload extends TillOpenCheckCounterPayload {
   /** A session still holding this counter's drawer, whichever device it runs on. */
   liveSessionId: string | null;
@@ -221,6 +251,7 @@ export interface TillOpenCheckBusyPayload {
   session: TillOpenCheckSessionPayload;
 }
 
+/** GET /till/sessions/open-check — everything S1 needs in one read; advice only, nothing is written. */
 export interface TillOpenCheckPayload {
   /**
    * False: a back-office device (till.require_session = false), or one linked to a counter that
@@ -285,6 +316,12 @@ export interface TillSessionTenderPayload {
   variance: number | null;
 }
 
+/**
+ * The session as sessions/get answers it — and open · suspend · resume · end-billing · close ·
+ * current, and inside the force-close / reopen / decide-variance / approve-cash answers: the
+ * header, the frozen totals, the cash gauge, the tenders, the movements, the variances and the
+ * cash receipt. The figures are null when the caller may not see them (`expectedVisible`).
+ */
 export interface TillSessionPayload {
   tssId: string;
   tssAccYear: string;
@@ -384,6 +421,7 @@ export interface TillSessionPayload {
   receivedBySelf: boolean;
 }
 
+/** One movement as the session lists them (`movements[]`): kind, number, amount, status, receipt. */
 export interface TillMovementPayload {
   tcmId: string;
   tcmAccYear: string;
@@ -473,6 +511,10 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
   }[];
 }
 
+/**
+ * One till_variance row of the session (stage OPEN · CLOSE · RECEIVE), as the session and the
+ * count answer it: expected, counted, the treatment and the TVar that posted it.
+ */
 export interface TillVariancePayload {
   tvrId: string;
   tvrAccYear: string;
@@ -570,6 +612,10 @@ export interface TillCashApprovalMovementPayload {
  */
 export type SelfCashApproval = 'RULE' | 'SINGLE_OPERATOR';
 
+/**
+ * POST /till/sessions/approve-cash (notes 114) — the hand-over and drops received in one
+ * approval, the gap if any and how it was dealt with, and the session after it.
+ */
 export interface TillCashApprovalPayload {
   tssId: string;
   tssAccYear: string;
@@ -677,6 +723,7 @@ export interface TillCountResultPayload {
   variances: TillVariancePayload[] | null;
 }
 
+/** One count line as the services take it from TillCountLineDto (open, count, movements, receive, safe). */
 export interface TillCountLineInput {
   tenderTypeId: number;
   tenderId?: string | null;
@@ -686,6 +733,7 @@ export interface TillCountLineInput {
   batchRef?: string | null;
 }
 
+/** One till_count row: kind, attempt, final / blind, total. No route answers it on its own today. */
 export interface TillCountPayload {
   tctId: string;
   tctAccYear: string;
@@ -699,6 +747,7 @@ export interface TillCountPayload {
 
 // ─── Masters ─────────────────────────────────────────────────────────────────
 
+/** counters/create · get — a till_counter row with its device's and safe's names (notes 101 §3). */
 export interface TillCounterPayload {
   tcnId: string;
   tcnCompanyId: string;
@@ -725,6 +774,7 @@ export interface TillCounterPayload {
   tcnModifiedOn: string | null;
 }
 
+/** safes/create · get — a till_safe row with its ledger's name. */
 export interface TillSafePayload {
   tsfId: string;
   tsfCompanyId: string;
@@ -743,6 +793,7 @@ export interface TillSafePayload {
   tsfModifiedOn: string | null;
 }
 
+/** reasons/create · get — a till_reason row; `shipped` marks the read-only rows every company shares. */
 export interface TillReasonPayload {
   trsId: string;
   trsCompanyId: string | null;
@@ -761,6 +812,7 @@ export interface TillReasonPayload {
   shipped: boolean;
 }
 
+/** denominations/create · get · list — one note or coin. */
 export interface TillDenominationPayload {
   tdnId: string;
   tdnCompanyId: string | null;
@@ -775,6 +827,7 @@ export interface TillDenominationPayload {
   shipped: boolean;
 }
 
+/** approval-rules/create · get — a till_approval_rule row (the ck_tar_* values as text). */
 export interface TillApprovalRulePayload {
   tarId: string;
   tarCompanyId: string | null;
@@ -807,9 +860,12 @@ export interface TillApprovalNeed {
   /** ck_tar_event: CASH_PAYMENT, EXPENSE … */
   event: string;
   ruleId: string | null;
-  /** ALWAYS | OVER_AMOUNT */
+  /** ALWAYS | OVER_AMOUNT | OVER_COUNT */
   mode: string;
   threshold: number;
+  /** OVER_COUNT (void bill REV 2): the session count the rule asks past, and this document's ordinal. */
+  thresholdCount?: number;
+  count?: number | null;
   /** What was judged: the cash part of a payment, the total of an expense. */
   amount: number;
   /** SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE */
@@ -873,6 +929,7 @@ export type TillApprovalInboxKind =
   | 'RECEIVE_VARIANCE'
   | 'SAFE_VARIANCE';
 
+/** One decision waiting in the branch (approvals/pending), and whether the caller may make it. */
 export interface TillApprovalInboxItem {
   kind: TillApprovalInboxKind;
   /** The route that decides it: approvals/decide · sessions/decide-variance · safes/decide-variance. */
@@ -908,12 +965,14 @@ export interface TillApprovalInboxItem {
   cannotBecause: string | null;
 }
 
+/** GET /till/approvals/pending — the inbox (notes 124 §5). */
 export interface TillApprovalInboxPayload {
   items: TillApprovalInboxItem[];
   /** Requests swept to EXPIRED by this read. */
   expired: number;
 }
 
+/** approval-authorities/create · get — a till_approval_authority grant with the user's name. */
 export interface TillApprovalAuthorityPayload {
   taaId: string;
   taaUserId: string;
@@ -930,11 +989,13 @@ export interface TillApprovalAuthorityPayload {
   taaIsActive: boolean;
 }
 
+/** `<master>/delete` — the id soft-deleted. */
 export interface TillDeletePayload {
   id: string;
   deleted: true;
 }
 
+/** POST /till/events/batch — the rows the batch wrote, and the ones it had sent before. */
 export interface TillEventBatchPayload {
   accepted: number;
   /** Already in the journal under (device, clientSeq): a re-sent batch. */
@@ -969,6 +1030,7 @@ export interface TillSlipCheckPayload {
   }[];
 }
 
+/** POST /till/sessions/slip-check — the verdict as the SLIP_CHECK event recorded it. */
 export interface TillSlipCheckResultPayload {
   tssId: string;
   tenderId: string;
@@ -1078,6 +1140,7 @@ export interface TillSafeStatePayload {
   pendingGaps: { tvrId: string; tvrAccYear: string; stage: TillVarianceStage; variance: number }[];
 }
 
+/** GET /till/safes/balance — every safe asked for, and the branch's CIT remittances in transit. */
 export interface TillSafeBalancePayload {
   companyId: string;
   branchId: string;
@@ -1154,4 +1217,43 @@ export interface TillRemitConfirmPayload {
   varianceVoucherId: string | null;
   varianceVoucherNo: string | null;
   movement: TillMovementDetailPayload;
+}
+
+// ─── Head office reviews (notes 134) ───────────────────────────────────────
+
+/** One accounts.till_session_review row. */
+export interface TillReviewPayload {
+  tsrId: string;
+  tsrAccYear: string;
+  /** The day reviewed — for a session review, null (the session names its day). */
+  dayId: string | null;
+  sessionId: string | null;
+  /** till_session.tss_session_no of sessionId. */
+  sessionNo: string | null;
+  /** The business date of the day, or of the session's day (YYYY-MM-DD). */
+  businessDate: string | null;
+  outcome: TillReviewOutcome;
+  note: string | null;
+  reviewedBy: string;
+  /** user_master.usr_login_name of reviewedBy. */
+  reviewedByName: string | null;
+  reviewedOn: string;
+  refVoucherId: string | null;
+  refVoucherAccYear: string | null;
+  /** acc_voucher_header.avh_voucher_refno of the journal named. */
+  refVoucherNo: string | null;
+  /** True on the newest review of its day / session: a later one supersedes it. */
+  current: boolean;
+}
+
+/** POST /till/reviews/create. */
+export interface TillReviewCreatePayload {
+  review: TillReviewPayload;
+  /** The review of the same day / session this one supersedes, or null for the first. */
+  supersedes: string | null;
+}
+
+/** GET /till/reviews/list. */
+export interface TillReviewListPayload {
+  reviews: TillReviewPayload[];
 }

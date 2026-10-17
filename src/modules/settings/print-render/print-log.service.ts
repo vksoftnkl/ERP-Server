@@ -21,7 +21,8 @@ import { ACC_YEAR_PATTERN, PlgOutputMode, PlgStatus } from './print-render.const
  * and nothing here writes them — save the till's Z counters (notes 117 §7,
  * PRINT_COUNTERS below): a PRINT of a TILL_SESSION_Z / TILL_DAY_Z bumps
  * `tss_print_count` / `tbd_print_count` once per render, so the Z itself can
- * say "REPRINT n". Swallowed like the log: a counter never fails a print.
+ * say "REPRINT n" — and since notes 135 a TILL_MOVEMENT / TILL_REMIT bumps
+ * `tcm_print_count`. Swallowed like the log: a counter never fails a print.
  *
  * ── IMMUTABLE MEANS IMMUTABLE ──────────────────────────────────────────────
  *
@@ -81,6 +82,13 @@ const PRINT_COUNTERS: Readonly<Record<string, (docId: string, accYear: string) =
   TILL_DAY_Z: (docId, accYear) => Prisma.sql`
     UPDATE accounts.till_business_day SET tbd_print_count = tbd_print_count + 1
      WHERE tbd_id = ${docId}::uuid AND tbd_acc_year = ${accYear}::char(9)`,
+  // Notes 135: the movement slip and the remittance memo, so a second print says REPRINT.
+  TILL_MOVEMENT: (docId, accYear) => Prisma.sql`
+    UPDATE accounts.till_cash_movement SET tcm_print_count = tcm_print_count + 1
+     WHERE tcm_id = ${docId}::uuid AND tcm_acc_year = ${accYear}::char(9)`,
+  TILL_REMIT: (docId, accYear) => Prisma.sql`
+    UPDATE accounts.till_cash_movement SET tcm_print_count = tcm_print_count + 1
+     WHERE tcm_id = ${docId}::uuid AND tcm_acc_year = ${accYear}::char(9)`,
 };
 
 @Injectable()

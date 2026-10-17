@@ -3,6 +3,7 @@ export declare const TILL_MENU: {
     readonly OPEN_TILL: 272;
     readonly SESSIONS: 273;
     readonly REPORTS: 288;
+    readonly CASH_POSITION: 289;
     readonly BUSINESS_DAY: 274;
     readonly MASTERS_GROUP: 283;
     readonly COUNTERS: 275;
@@ -207,7 +208,10 @@ export declare enum TillEventCode {
     SESSION_FORCE_CLOSE = "SESSION_FORCE_CLOSE",
     SESSION_REOPEN = "SESSION_REOPEN",
     SAFE_COUNT = "SAFE_COUNT",
-    REMIT_CONFIRMED = "REMIT_CONFIRMED"
+    REMIT_CONFIRMED = "REMIT_CONFIRMED",
+    HO_REVIEW = "HO_REVIEW",
+    BILL_VOID = "BILL_VOID",
+    LINE_VOID = "LINE_VOID"
 }
 export declare const CLIENT_EVENT_CODES: readonly TillEventCode[];
 export declare const TILL_REASON_CATEGORIES: readonly ["VARIANCE", "FLOAT_MISMATCH", "EXPENSE", "PAID_IN", "PICKUP", "NO_SALE", "SUSPEND", "FORCE_CLOSE", "REOPEN", "SESSION_VOID", "MOVEMENT_VOID", "DAY_REOPEN", "REPRINT", "VOID_BILL", "VOID_LINE", "PRICE_OVERRIDE", "REFUND", "NONCASH", "DAY_CLOSE"];
@@ -222,6 +226,16 @@ export declare enum TillVarianceDecision {
     RECOUNT = "RECOUNT"
 }
 export declare const APPROVABLE_TREATMENTS: readonly [TillVarianceTreatment.EXPENSE, TillVarianceTreatment.RECOVER, TillVarianceTreatment.SUSPENSE];
+export declare enum TillReviewOutcome {
+    OK = "OK",
+    QUERY = "QUERY",
+    ESCALATED = "ESCALATED",
+    RECOVERY_ORDERED = "RECOVERY_ORDERED",
+    WRITTEN_OFF = "WRITTEN_OFF",
+    SUSPENSE_CLEARED = "SUSPENSE_CLEARED",
+    BANK_MATCHED = "BANK_MATCHED"
+}
+export declare const REVIEW_REF_OUTCOMES: readonly TillReviewOutcome[];
 export declare const SAFE_GAP_TREATMENTS: readonly [TillVarianceTreatment.EXPENSE, TillVarianceTreatment.SUSPENSE];
 export type TillSafeGapTreatment = (typeof SAFE_GAP_TREATMENTS)[number];
 export declare const VARIANCE_STATUS_OF_TREATMENT: Readonly<Record<(typeof APPROVABLE_TREATMENTS)[number], TillSessionVarianceStatus>>;
@@ -357,6 +371,16 @@ export declare enum TillErrorCode {
     NOT_THIS_LOGIN = "TILL_NOT_THIS_LOGIN",
     TREATMENT_REQUIRED = "TILL_TREATMENT_REQUIRED",
     RECOUNT_NOT_ALLOWED = "TILL_RECOUNT_NOT_ALLOWED",
-    COUNTER_REQUIRED = "TILL_COUNTER_REQUIRED"
+    COUNTER_REQUIRED = "TILL_COUNTER_REQUIRED",
+    REVIEW_TARGET = "TILL_REVIEW_TARGET",
+    REVIEW_REF_PAIR = "TILL_REVIEW_REF_PAIR",
+    REVIEW_REF_NOT_ALLOWED = "TILL_REVIEW_REF_NOT_ALLOWED",
+    REVIEW_REF_NOT_FOUND = "TILL_REVIEW_REF_NOT_FOUND",
+    REVIEW_REF_NOT_POSTED = "TILL_REVIEW_REF_NOT_POSTED",
+    PRINT_WRONG_PURPOSE = "TILL_PRINT_WRONG_PURPOSE",
+    VOID_SESSION_CLOSED = "TILL_VOID_SESSION_CLOSED",
+    VOID_NO_SESSION = "TILL_VOID_NO_SESSION",
+    VOID_NOT_POSTED = "TILL_VOID_NOT_POSTED",
+    VOID_NOT_ALLOWED = "TILL_VOID_NOT_ALLOWED"
 }
 export declare const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>>;

@@ -95,6 +95,7 @@ import type {
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
 import type { SaveBillDto } from './dto/save-bill.dto';
 import { TillSessionService, type LiveSessionRef } from '../../till/services/till-session.service';
+import { TillSessionStatus } from '../../till/types/till-enum';
 import {
   BILL_STATUS_CANCELLED,
   BILL_STATUS_DRAFT,
@@ -359,6 +360,19 @@ export class BillLifecycleService {
       if (!ctx.rights.cancel) {
         throwSalesRight('This user may not cancel on this menu', SALES_ERROR_CODES.RIGHT_CANCEL);
       }
+      // Void bill (REV 2 §3.4): a bill whose till session still takes money is
+      // voided, not cancelled — the void records what the cancel does not
+      // (printed before, minutes after post, the session's n-th) and the
+      // session's timeline, Z and reports all see it.
+      const live = await this.liveSessionOf(tx, bill.sbSessionId);
+      if (live) {
+        throwSalesLocked(
+          `This bill is in the open till session ${live.tssSessionNo}: void it instead (/bills/void)`,
+          SALES_ERROR_CODES.USE_VOID,
+          'sbId',
+          { sessionNo: live.tssSessionNo, sessionStatus: live.tssStatus } as never,
+        );
+      }
       // D7: cash taken in a till session whose drawer is already counted is
       // not cancelled — a sale return takes it out of today's drawer.
       await this.till.assertCancellable(tx, {
@@ -368,59 +382,7 @@ export class BillLifecycleService {
         accYear: bill.sbAccYear,
         field: 'sbId',
       });
-      await this.assertUnwindable(tx, bill, ctx, dto.reason, 'cancel');
-      const items = await tx.saleBillItem.findMany({
-        where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
-      });
-      const reversal = await this.unwind(tx, bill, items, ctx, dto.reason, now);
-      const cancelled = await tx.saleBill.update({
-        where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-        data: { sbStatus: BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
-      });
-      await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
-      await appendTxnStatusLog(tx, {
-        companyId: bill.sbCompanyId,
-        branchId: bill.sbBranchId,
-        tenantId: bill.sbTenantId,
-        accYear: bill.sbAccYear,
-        srcModule: BILL_STATUS_SRC_MODULE,
-        srcDocType: BILL_STATUS_SRC_DOC_TYPE,
-        srcDocId: bill.sbId,
-        srcDocRefno: bill.sbBillRefno,
-        event: TxnStatusEvent.CANCELLED,
-        fromStatus: BILL_STATUS_POSTED,
-        toStatus: BILL_STATUS_CANCELLED,
-        changedOn: now,
-        changedBy: ctx.actor,
-        remarks: dto.reason,
-        deviceId: bill.sbDeviceId,
-        sessionId: bill.sbSessionId,
-      });
-      await this.audit.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: 'sale_bill',
-          screenName: 'Sale Bill',
-          screenType: 'transaction',
-          pk: bill.sbId,
-          displayName: bill.sbBillRefno || bill.sbId,
-          originalRecord: { sbStatus: BILL_STATUS_POSTED },
-          modifiedRecord: { sbStatus: BILL_STATUS_CANCELLED },
-          userId: ctx.actor,
-          notes: `Bill cancelled: ${dto.reason}`,
-        },
-        tx,
-      );
-      // The trial check (notes 47), after every write. The reversal mirrors
-      // the original's legs, so the original names every ledger it moved.
-      await assertBooksReconcile(tx, {
-        companyId: bill.sbCompanyId,
-        accYear: bill.sbAccYear,
-        ledgerIds: [bill.sbCustId],
-        vouchers: bill.sbPostedVoucherId
-          ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
-          : [],
-      });
+      const reversal = await this.cancelIn(tx, bill, ctx, dto.reason, now);
       return {
         sbId: bill.sbId,
         sbCompanyId: bill.sbCompanyId,
@@ -431,6 +393,106 @@ export class BillLifecycleService {
         cancelledOn: now.toISOString(),
       };
     }, POST_TX_OPTIONS);
+  }
+
+  /**
+   * The bill's till session while it still takes money (OPEN / SUSPENDED), or
+   * null: no session id, an id that names no till session (today's random
+   * client uuid), or a session already counting / closed.
+   */
+  async liveSessionOf(
+    tx: Prisma.TransactionClient,
+    sessionId: string | null,
+  ): Promise<{ tssId: string; tssSessionNo: string; tssStatus: string } | null> {
+    if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+      return null;
+    }
+    const session = await tx.tillSession.findFirst({
+      where: { tssId: sessionId, tssIsDeleted: false },
+      select: { tssId: true, tssSessionNo: true, tssStatus: true },
+    });
+    if (
+      !session ||
+      ![TillSessionStatus.OPEN, TillSessionStatus.SUSPENDED].includes(
+        session.tssStatus as TillSessionStatus,
+      )
+    ) {
+      return null;
+    }
+    return session;
+  }
+
+  /**
+   * The cancel proper, on a POSTED bill already locked and judged (rights, the
+   * till's say): the GST-first gate, the unwind (reversal, stock, tenders,
+   * loyalty, promotion, register), status CANCELLED, the status log, the audit
+   * row and the trial check. `/bills/cancel` and `/bills/void` (BillVoidService)
+   * both end here — a void is a cancel that is recorded and shown, with no
+   * second reversal engine.
+   */
+  async cancelIn(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    ctx: SalesCallContext,
+    reason: string,
+    now: Date,
+    opts: { action?: 'cancel' | 'void' } = {},
+  ): Promise<{ reversalRefno: string | null; reversalVoucherId: string | null }> {
+    const action = opts.action ?? 'cancel';
+    await this.assertUnwindable(tx, bill, ctx, reason, 'cancel');
+    const items = await tx.saleBillItem.findMany({
+      where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
+    });
+    const reversal = await this.unwind(tx, bill, items, ctx, reason, now);
+    const cancelled = await tx.saleBill.update({
+      where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+      data: { sbStatus: BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
+    });
+    await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
+    await appendTxnStatusLog(tx, {
+      companyId: bill.sbCompanyId,
+      branchId: bill.sbBranchId,
+      tenantId: bill.sbTenantId,
+      accYear: bill.sbAccYear,
+      srcModule: BILL_STATUS_SRC_MODULE,
+      srcDocType: BILL_STATUS_SRC_DOC_TYPE,
+      srcDocId: bill.sbId,
+      srcDocRefno: bill.sbBillRefno,
+      event: TxnStatusEvent.CANCELLED,
+      fromStatus: BILL_STATUS_POSTED,
+      toStatus: BILL_STATUS_CANCELLED,
+      changedOn: now,
+      changedBy: ctx.actor,
+      remarks: reason,
+      deviceId: bill.sbDeviceId,
+      sessionId: bill.sbSessionId,
+    });
+    await this.audit.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: 'sale_bill',
+        screenName: 'Sale Bill',
+        screenType: 'transaction',
+        pk: bill.sbId,
+        displayName: bill.sbBillRefno || bill.sbId,
+        originalRecord: { sbStatus: BILL_STATUS_POSTED },
+        modifiedRecord: { sbStatus: BILL_STATUS_CANCELLED },
+        userId: ctx.actor,
+        notes: action === 'void' ? `Bill voided: ${reason}` : `Bill cancelled: ${reason}`,
+      },
+      tx,
+    );
+    // The trial check (notes 47), after every write. The reversal mirrors
+    // the original's legs, so the original names every ledger it moved.
+    await assertBooksReconcile(tx, {
+      companyId: bill.sbCompanyId,
+      accYear: bill.sbAccYear,
+      ledgerIds: [bill.sbCustId],
+      vouchers: bill.sbPostedVoucherId
+        ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
+        : [],
+    });
+    return reversal;
   }
 
   private async cancelResponse(
@@ -1867,9 +1929,14 @@ export class BillLifecycleService {
     reason: string,
     now: Date,
     mode: 'cancel' | 'amend' = 'cancel',
-  ): Promise<{ reversalRefno: string | null; restateVoucherId: string | null }> {
+  ): Promise<{
+    reversalRefno: string | null;
+    reversalVoucherId: string | null;
+    restateVoucherId: string | null;
+  }> {
     const actor = ctx.actor;
     let reversalRefno: string | null = null;
+    let reversalVoucherId: string | null = null;
     let restateVoucherId: string | null = null;
 
     // 1 · the mirror voucher — or, on an amend, the voucher back to DRAFT with
@@ -1891,6 +1958,7 @@ export class BillLifecycleService {
           SELECT avh_voucher_refno FROM accounts.acc_voucher_header
            WHERE avh_voucher_id = ${r.voucherId}::uuid AND avh_acc_year = ${bill.sbAccYear}::char(9)`;
         reversalRefno = row?.avh_voucher_refno ?? null;
+        reversalVoucherId = r.voucherId;
       }
     }
     // 2 · the goods come back.
@@ -2036,7 +2104,7 @@ export class BillLifecycleService {
       await cancelBillPdcRegister(tx, bill, reason, actor, now);
     }
     void items;
-    return { reversalRefno, restateVoucherId };
+    return { reversalRefno, reversalVoucherId, restateVoucherId };
   }
 
   /** Order and challan fulfilment, re-derived after any status change. */
