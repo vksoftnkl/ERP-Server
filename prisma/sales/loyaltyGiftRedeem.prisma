@@ -1,0 +1,158 @@
+/// A gift redemption slip — A DOCUMENT IN ITS OWN RIGHT.
+///
+/// A customer walks up with points and walks away with goods and a printed
+/// slip. No money crosses the counter, so this cannot be an AccTenderDetail
+/// row. And it is not a line on a sale bill either: it has its own number
+/// series, its own status, its own print count, and frequently no bill at all.
+///
+/// Shape follows SaleBill: a partitioned header with an offline-safe number
+/// pair (a per-device serial plus the printed refno that embeds it), and a
+/// partitioned detail carrying the stock movement.
+///
+/// The POINTS side is not stored here. LoyaltyLedger holds the GIFT rows — one
+/// per lot consumed, named by lldSrcDocId — and the wallet balance follows
+/// from them. lgrOpeningPoints / lgrRedeemPoints / lgrClosingPoints are
+/// SNAPSHOTS for the printed slip; the ledger remains the authority.
+model LoyaltyGiftRedeem {
+  lgrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lgr_id")
+  lgrCompId             String    @db.Uuid                                 @map("lgr_comp_id")
+  lgrBranchId           String    @db.Uuid                                 @map("lgr_branch_id")
+  lgrTenantId           String?   @db.Uuid                                 @map("lgr_tenant_id")
+  lgrAccYear            String    @db.Char(9)                              @map("lgr_acc_year")
+
+  // ── Document identity ────────────────────────────────────────────────
+  // Offline-safe, the SaleBill pattern: the DEVICE owns the series, so a till
+  // with no network can still number a slip.
+  lgrDeviceId           String?   @db.Uuid                                 @map("lgr_device_id")
+  /// Raw per-device serial — no server round trip needed to allocate one.
+  lgrRedeemSlno         BigInt                                             @map("lgr_redeem_slno")
+  /// The printed number, which embeds the counter series.
+  lgrRedeemRefno        String    @db.VarChar(100)                         @map("lgr_redeem_refno")
+  lgrRedeemDate         DateTime  @db.Date                                 @map("lgr_redeem_date")
+  lgrRedeemTime         DateTime? @db.Time(6)                              @map("lgr_redeem_time")
+
+  // ── Who ──────────────────────────────────────────────────────────────
+  lgrMemberId           String    @db.Uuid                                 @map("lgr_member_id")
+  lgrCustId             String    @db.Uuid                                 @map("lgr_cust_id")
+  /// Scheme it was claimed under.
+  lgrLscId              String?   @db.Uuid                                 @map("lgr_lsc_id")
+  /// The login that saved it.
+  lgrUserId             String?   @db.Uuid                                 @map("lgr_user_id")
+  /// The person who served, if different from the login.
+  lgrEmpId              String?   @db.Uuid                                 @map("lgr_emp_id")
+
+  // ── Points, as printed on the slip ───────────────────────────────────
+  lgrOpeningPoints      Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_opening_points")
+  lgrRedeemPoints       Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_redeem_points")
+  lgrClosingPoints      Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_closing_points")
+
+  // ── What it cost the shop ────────────────────────────────────────────
+  lgrTotalQty           Decimal   @default(0) @db.Decimal(18, 3)           @map("lgr_total_qty")
+  /// At MRP / issue rate.
+  lgrTotalValue         Decimal   @default(0) @db.Decimal(18, 2)           @map("lgr_total_value")
+  /// At cost, for the giveaway P&L.
+  lgrTotalCost          Decimal   @default(0) @db.Decimal(18, 2)           @map("lgr_total_cost")
+
+  // ── Authorisation ────────────────────────────────────────────────────
+  /// One-time code that authorised the redemption. Points are bearer value;
+  /// a counter able to spend them unchallenged is a fraud route.
+  lgrOtpNo              String?   @db.VarChar(10)                          @map("lgr_otp_no")
+  lgrApprovedBy         String?   @db.Uuid                                 @map("lgr_approved_by")
+  /// DRAFT | CONFIRMED | CANCELLED. A cancelled slip must name who authorised
+  /// the cancellation (ck_lgr_cancel), and may never carry a live voucher.
+  lgrStatus             String    @default("DRAFT") @db.VarChar(20)        @map("lgr_status")
+  lgrPrintCount         Int       @default(0)                              @map("lgr_print_count")
+
+  // ── Accounting / Tally ───────────────────────────────────────────────
+  /// The AccVoucherHeader this slip posted to, once the server has posted it.
+  ///
+  /// NO FOREIGN KEY, deliberately, and for the same reason
+  /// sale_bill.sb_posted_voucher_id has none: this is a counter document
+  /// created OFFLINE, so the row exists long before the voucher does. An FK
+  /// would make the counter's insert depend on a server-side write it cannot
+  /// see. The accounts-side documents (AccBillBalance, AccPdcRegister) DO
+  /// carry the FK, because they are only ever written server-side after
+  /// posting — a different lifecycle, a different rule.
+  ///
+  /// This is the ONLY route by which a gift redemption reaches Tally: export
+  /// happens at the voucher layer, never from a source document. The
+  /// accounting year travels with the id so the lookup hits one partition.
+  lgrPostedVoucherId    String?   @db.Uuid                                 @map("lgr_posted_voucher_id")
+  lgrVoucherAccYear     String?   @db.Char(9)                              @map("lgr_voucher_acc_year")
+
+  lgrReversalOfId       String?   @db.Uuid                                 @map("lgr_reversal_of_id")
+  lgrReversalOfAccYear  String?   @db.Char(9)                              @map("lgr_reversal_of_acc_year")
+  lgrReversalReason     String?   @db.VarChar(250)                         @map("lgr_reversal_reason")
+
+  lgrRemarks            String?   @db.VarChar(500)                         @map("lgr_remarks")
+  lgrIsDeleted          Boolean   @default(false)                          @map("lgr_is_deleted")
+  lgrSyncDate           DateTime? @db.Timestamptz(6)                       @map("lgr_sync_date")
+  lgrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)       @map("lgr_created_on")
+  lgrCreatedBy          String?   @db.VarChar(50)                          @map("lgr_created_by")
+  lgrModifiedOn         DateTime? @db.Timestamptz(6)                       @map("lgr_modified_on")
+  lgrModifiedBy         String?   @db.VarChar(50)                          @map("lgr_modified_by")
+
+  // Relations
+  company               Company        @relation("LoyaltyGiftRedeemCompany",  fields: [lgrCompId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_company")
+  branch                BranchMaster   @relation("LoyaltyGiftRedeemBranch",   fields: [lgrBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_branch")
+  device                DeviceMaster?  @relation("LoyaltyGiftRedeemDevice",   fields: [lgrDeviceId],  references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_device")
+  member                LoyaltyMember  @relation("LoyaltyGiftRedeemMember",   fields: [lgrMemberId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_member")
+  customer              Customer       @relation("LoyaltyGiftRedeemCustomer", fields: [lgrCustId],    references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_cust")
+  scheme                LoyaltyScheme? @relation("LoyaltyGiftRedeemScheme",   fields: [lgrLscId],     references: [lscId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_scheme")
+  user                  UserMaster?    @relation("LoyaltyGiftRedeemUser",     fields: [lgrUserId],    references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_user")
+  employee              EmployeeMaster? @relation("LoyaltyGiftRedeemEmployee", fields: [lgrEmpId],    references: [empId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_emp")
+  approver              UserMaster?    @relation("LoyaltyGiftRedeemApprover", fields: [lgrApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_approved_by")
+
+  reversalOf            LoyaltyGiftRedeem?  @relation("LoyaltyGiftRedeemReversal", fields: [lgrReversalOfId, lgrReversalOfAccYear], references: [lgrId, lgrAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_reversal")
+  reversedBy            LoyaltyGiftRedeem[] @relation("LoyaltyGiftRedeemReversal")
+
+  items                 LoyaltyGiftRedeemItem[] @relation("LoyaltyGiftRedeemItems")
+
+  // No relation field for lgrPostedVoucherId — the DDL declares no FK (see
+  // the column comment above), and lgrTenantId has no Tenant model.
+
+  @@id([lgrId, lgrAccYear], map: "pk_loyalty_gift_redeem")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // NULLS NOT DISTINCT:
+  //
+  //   -- the printed number is unique per branch and year …
+  //   CREATE UNIQUE INDEX ux_lgr_refno ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_acc_year, lgr_redeem_refno)
+  //       WHERE lgr_is_deleted = false;
+  //   -- … the raw serial is unique per DEVICE, which is what lets an offline
+  //   -- till number without asking. NULLS NOT DISTINCT so the "no device"
+  //   -- case is one series rather than an unconstrained free-for-all.
+  //   CREATE UNIQUE INDEX ux_lgr_slno ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_acc_year, lgr_device_id, lgr_redeem_slno)
+  //       NULLS NOT DISTINCT WHERE lgr_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lgr_list ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_redeem_date)
+  //       INCLUDE (lgr_redeem_refno, lgr_cust_id, lgr_redeem_points, lgr_status)
+  //       WHERE lgr_is_deleted = false;
+  //
+  //   -- THE POSTING QUEUE: confirmed slips the server has not yet turned into
+  //   -- a voucher. Partial, so it stays small however long the table grows.
+  //   CREATE INDEX ix_lgr_unposted ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_redeem_date)
+  //       WHERE lgr_posted_voucher_id IS NULL AND lgr_status = 'CONFIRMED'
+  //         AND lgr_is_deleted = false;
+  //
+  //   -- FK-covering and lookup: ix_lgr_member, ix_lgr_cust, ix_lgr_branch,
+  //   -- ix_lgr_scheme, ix_lgr_device, ix_lgr_user, ix_lgr_emp,
+  //   -- ix_lgr_approved_by, ix_lgr_voucher, ix_lgr_reversal
+  //
+  // CHECK constraints (DB-only): ck_lgr_acc_year, ck_lgr_status, ck_lgr_slno,
+  //   ck_lgr_refno, ck_lgr_points, ck_lgr_totals, ck_lgr_print_count,
+  //   ck_lgr_voucher_pair, ck_lgr_voucher_acc_year, ck_lgr_voucher_status,
+  //   ck_lgr_reversal_pair, ck_lgr_no_self_reversal, ck_lgr_cancel
+  //
+  // STILL NEEDED elsewhere: a row in accounts.acc_voucher_types for the gift
+  // redemption, with Tally export and inventory-affecting flags set. Its
+  // vchr_type_id is a small integer assigned by hand, so it is left to whoever
+  // owns that master rather than guessed here.
+
+  @@map("loyalty_gift_redeem")
+  @@schema("sales")
+}

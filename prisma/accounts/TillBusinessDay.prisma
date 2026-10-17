@@ -1,0 +1,71 @@
+/// TILL BUSINESS DAY — one per branch per trading date (share file 47 §2,
+/// migration 20261008100000).
+///
+/// The business date is NOT the calendar date: a store open till 01:00 books
+/// its 00:30 sales to yesterday (setting till.day_cutoff). Every session hangs
+/// off a day; DAY CLOSE is the store's Z and the moment SALES_DAY_CLOSED
+/// (already used by /bills/retender) starts refusing.
+///
+/// LIST-partitioned by tbdAccYear, which ck_tbd_year ties to the business
+/// date's April–March year. uq_tbd_id_date carries the date so a session's FK
+/// (fk_tss_day) can never sit on another day's date.
+model TillBusinessDay {
+  tbdId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tbd_id")
+  tbdCompanyId        String    @db.Uuid                             @map("tbd_company_id")
+  tbdBranchId         String    @db.Uuid                             @map("tbd_branch_id")
+  tbdTenantId         String?   @db.Uuid                             @map("tbd_tenant_id")
+  tbdAccYear          String    @db.Char(9)                          @map("tbd_acc_year")
+  tbdBusinessDate     DateTime  @db.Date                             @map("tbd_business_date")
+  /// OPEN | CLOSING | CLOSED
+  tbdStatus           String    @default("OPEN") @db.VarChar(10)     @map("tbd_status")
+  tbdOpenedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("tbd_opened_on")
+  tbdOpenedBy         String    @db.Uuid                             @map("tbd_opened_by")
+  tbdClosingOn        DateTime? @db.Timestamptz(6)                   @map("tbd_closing_on")
+  tbdClosedOn         DateTime? @db.Timestamptz(6)                   @map("tbd_closed_on")
+  tbdClosedBy         String?   @db.Uuid                             @map("tbd_closed_by")
+  /// Store Z, running per branch, never reset.
+  tbdZNo              Int?                                           @map("tbd_z_no")
+  tbdReopenCount      Int       @default(0)                          @map("tbd_reopen_count")
+
+  // ── Frozen at close by TillDayService; never recomputed ──────────────
+  tbdSessionCount     Int       @default(0)                          @map("tbd_session_count")
+  tbdBillCount        Int       @default(0)                          @map("tbd_bill_count")
+  tbdNetSales         Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_net_sales")
+  tbdCashExpected     Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_cash_expected")
+  tbdCashCounted      Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_cash_counted")
+  tbdNoncashVariance  Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_noncash_variance")
+  tbdSafeOpening      Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_safe_opening")
+  tbdSafeExpected     Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_safe_expected")
+  /// NULL = no safe count (setting till.day_close_safe_count allowed it).
+  tbdSafeCounted      Decimal?  @db.Decimal(15, 2)                   @map("tbd_safe_counted")
+  tbdRemitted         Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_remitted")
+  /// Approvals + force closes + no-sales in the day.
+  tbdExceptionCount   Int       @default(0)                          @map("tbd_exception_count")
+  /// DAY_CLOSE_EXCEPTION, when one fired.
+  tbdCloseApprovalId  String?   @db.Uuid                             @map("tbd_close_approval_id")
+  tbdPrintCount       Int       @default(0) @db.SmallInt             @map("tbd_print_count")
+  tbdNotes            String?   @db.VarChar(500)                     @map("tbd_notes")
+  tbdIsDeleted        Boolean   @default(false)                      @map("tbd_is_deleted")
+  tbdSyncDate         DateTime? @db.Timestamptz(6)                   @map("tbd_sync_date")
+  tbdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tbd_created_on")
+  tbdCreatedBy        String?   @db.VarChar(50)                      @map("tbd_created_by")
+  tbdModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tbd_modified_on")
+  tbdModifiedBy       String?   @db.VarChar(50)                      @map("tbd_modified_by")
+  /// GENERATED ALWAYS AS (tbd_cash_counted - tbd_cash_expected) STORED — never write it.
+  tbdCashVariance     Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tbd_cash_variance")
+
+  // Relations
+  sessions            TillSession[] @relation("TillSessionDay")
+
+  @@id([tbdId, tbdAccYear], map: "pk_till_business_day")
+  @@unique([tbdId, tbdAccYear, tbdBusinessDate], map: "uq_tbd_id_date")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tbd_date ON accounts.till_business_day
+  //       (tbd_company_id, tbd_branch_id, tbd_business_date, tbd_acc_year) WHERE tbd_is_deleted = false;
+  //   CREATE INDEX ix_tbd_open ON accounts.till_business_day (tbd_company_id, tbd_branch_id, tbd_status)
+  //       WHERE tbd_is_deleted = false AND tbd_status <> 'CLOSED';
+  // CHECKs: ck_tbd_year, ck_tbd_status, ck_tbd_closed, ck_tbd_counts.
+  @@map("till_business_day")
+  @@schema("accounts")
+}

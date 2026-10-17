@@ -1,0 +1,21 @@
+model EmployeeDepartment{
+  edptId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("edpt_id")
+  edptName        String    @db.VarChar(150)                                 @map("edpt_name")
+  edptCode        String?   @db.VarChar(50)                                  @map("edpt_code")
+  edptAlias       String?   @db.Text                                         @map("edpt_alias")
+  edptRemarks     String?   @db.VarChar(250)                                 @map("edpt_remarks")
+  edptIsActive    Boolean   @default(true)                                   @map("edpt_is_active")
+  edptIsDeleted   Boolean   @default(false)                                  @map("edpt_is_deleted")
+  edptSyncDate    DateTime? @db.Timestamptz                                  @map("edpt_sync_date")
+  edptCreatedOn   DateTime  @default(now()) @db.Timestamptz                  @map("edpt_created_on")
+  edptCreatedBy   String?   @db.VarChar(100)                                 @map("edpt_created_by")
+  edptModifiedOn  DateTime  @default(now()) @db.Timestamptz                  @map("edpt_modified_on")
+  edptModifiedBy  String?   @db.VarChar(100)                                 @map("edpt_modified_by")
+
+  // Relations
+  employees     EmployeeMaster[]
+
+  @@index([edptIsActive], name: "idx_edpt_active")
+  @@map("employee_departments")
+  @@schema("public")
+}

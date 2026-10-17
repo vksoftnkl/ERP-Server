@@ -1,21 +1,20 @@
-export interface CustomerErrorDetail {
-  field: string;
-  message: string;
-}
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
+import type { CustomerErrorCode } from './customer-error-codes';
 
-export interface CustomerErrorResponse {
-  success: false;
-  message: string;
-  errors: CustomerErrorDetail[];
+/** Notes 119: every refusal names its code — see customer-error-codes.ts. */
+export interface CustomerErrorDetail extends ModuleApiErrorDetail {
+  code: CustomerErrorCode;
 }
-
-export interface CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
+export type CustomerSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface CustomerPayload {
   cusId: string;
@@ -80,13 +79,18 @@ export interface CustomerPayload {
   cusCollectionDays: number[];
   cusDefaultSalesman: string | null;
   cusPriceLevelId: number;
+  cusPriceLevelName?: string | null;
   cusBilledDate: string | null;
   cusBilledCount: number;
   cusNotes: string | null;
   cusCompanyId: string | null;
+  cusCompanyName?: string | null;
   cusBranchId: string | null;
+  cusBranchName?: string | null;
   cusAreaId: string;
+  cusAreaName?: string | null;
   cusGroupId: string;
+  cusGroupName?: string | null;
   cusIsActive: boolean;
   cusIsDeleted: boolean;
   cusSyncDate: string | null;
@@ -94,13 +98,4 @@ export interface CustomerPayload {
   cusCreatedBy: string | null;
   cusModifiedOn: string;
   cusModifiedBy: string | null;
-}
-
-export type CustomerListItem = CustomerPayload | Record<string, unknown>;
-
-export interface CustomerListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

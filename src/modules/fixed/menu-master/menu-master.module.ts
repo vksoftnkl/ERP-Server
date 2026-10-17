@@ -7,4 +7,3 @@ import { MenuMasterService } from './menu-master.service';
   providers: [MenuMasterService],
 })
 export class MenuMasterModule {}
-

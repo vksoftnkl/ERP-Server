@@ -1,19 +1,12 @@
-export interface SupplierGroupErrorDetail {
-  field: string;
-  message: string;
+import type { PurchaseErrorDetail, PurchaseErrorResponse } from 'src/common/types/module-api.types';
+import type { SupplierGroupErrorCode } from './supplier-group-error-codes';
+
+/** Notes 119: every refusal names its code — see supplier-group-error-codes.ts. */
+export interface SupplierGroupErrorDetail extends PurchaseErrorDetail {
+  code: SupplierGroupErrorCode;
 }
-export interface SupplierGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: SupplierGroupErrorDetail[];
-}
-export interface SupplierGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type SupplierGroupErrorResponse = PurchaseErrorResponse<SupplierGroupErrorDetail>;
+export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/types/module-api.types';
 export interface SupplierGroupPayload {
   spgId: string;
   spgName: string;
@@ -27,11 +20,4 @@ export interface SupplierGroupPayload {
   spgCreatedBy: string | null;
   spgModifiedOn: string;
   spgModifiedBy: string | null;
-}
-export type SupplierGroupListItem = SupplierGroupPayload | Record<string, unknown>;
-export interface SupplierGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

@@ -1,0 +1,33 @@
+/// sales.promotion_scheme_branch — §2, which branches run the campaign.
+///
+/// Read only when prm_branch_scope = 'LIST'. prbIsExclude makes "every branch
+/// except two" two rows rather than thirty-eight; an EXCLUDE row always beats
+/// an INCLUDE row for the same branch.
+///
+/// CHECK ck_prb_slno (prb_slno > 0) is enforced in the service, not the DB.
+///
+/// DB-only objects to hand-author in the migration:
+///   ux_prb_row     UNIQUE (prb_prm_id, prb_branch_id) WHERE NOT deleted
+///   ix_prb_scheme  (prb_prm_id) INCLUDE (branch, is_exclude), partial
+///   ix_prb_branch  (prb_branch_id), partial
+model PromotionSchemeBranch {
+  prbId          String    @id(map: "pk_promotion_scheme_branch") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prb_id")
+  prbPrmId       String    @db.Uuid                                       @map("prb_prm_id")
+  prbSlno        Int       @default(1)                                    @map("prb_slno")
+  prbBranchId    String    @db.Uuid                                       @map("prb_branch_id")
+  prbIsExclude   Boolean   @default(false)                                @map("prb_is_exclude")
+  prbNotes       String?   @db.Text                                       @map("prb_notes")
+  prbIsActive    Boolean   @default(true)                                 @map("prb_is_active")
+  prbIsDeleted   Boolean   @default(false)                                @map("prb_is_deleted")
+  prbSyncDate    DateTime? @db.Timestamptz(6)                             @map("prb_sync_date")
+  prbCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)             @map("prb_created_on")
+  prbCreatedBy   String?   @db.VarChar(50)                                @map("prb_created_by")
+  prbModifiedOn  DateTime? @db.Timestamptz(6)                             @map("prb_modified_on")
+  prbModifiedBy  String?   @db.VarChar(50)                                @map("prb_modified_by")
+
+  scheme         PromotionScheme @relation("PromotionSchemeBranches",     fields: [prbPrmId],    references: [prmId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_prb_scheme")
+  branch         BranchMaster    @relation("PromotionSchemeBranchBranch", fields: [prbBranchId], references: [brId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prb_branch")
+
+  @@map("promotion_scheme_branch")
+  @@schema("sales")
+}

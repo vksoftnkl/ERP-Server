@@ -1,0 +1,30 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ItemErrorCode = void 0;
+var ItemErrorCode;
+(function (ItemErrorCode) {
+    ItemErrorCode["NOT_FOUND"] = "ITEM_NOT_FOUND";
+    ItemErrorCode["NAME_REQUIRED"] = "ITEM_NAME_REQUIRED";
+    ItemErrorCode["NAME_TAKEN"] = "ITEM_NAME_TAKEN";
+    ItemErrorCode["PHOTO_INVALID"] = "ITEM_PHOTO_INVALID";
+    ItemErrorCode["BRANCH_NEEDS_COMPANY"] = "ITEM_BRANCH_NEEDS_COMPANY";
+    ItemErrorCode["UNKNOWN_BRANCH"] = "ITEM_UNKNOWN_BRANCH";
+    ItemErrorCode["BRANCH_OTHER_COMPANY"] = "ITEM_BRANCH_OTHER_COMPANY";
+    ItemErrorCode["UNKNOWN_GROUP"] = "ITEM_UNKNOWN_GROUP";
+    ItemErrorCode["UNKNOWN_TAX_RATE"] = "ITEM_UNKNOWN_TAX_RATE";
+    ItemErrorCode["UNKNOWN_UNIT"] = "ITEM_UNKNOWN_UNIT";
+    ItemErrorCode["UNKNOWN_CATEGORY"] = "ITEM_UNKNOWN_CATEGORY";
+    ItemErrorCode["UNKNOWN_COMPANY"] = "ITEM_UNKNOWN_COMPANY";
+    ItemErrorCode["UNKNOWN_TRACK_PRESET"] = "ITEM_UNKNOWN_TRACK_PRESET";
+    ItemErrorCode["UNKNOWN_REFERENCE"] = "ITEM_UNKNOWN_REFERENCE";
+    ItemErrorCode["UNIT_NOT_CONVERTED"] = "ITEM_UNIT_NOT_CONVERTED";
+    ItemErrorCode["DUPLICATE_CHILD_ROWS"] = "ITEM_DUPLICATE_CHILD_ROWS";
+    ItemErrorCode["ALREADY_DELETED"] = "ITEM_ALREADY_DELETED";
+    ItemErrorCode["NOT_DELETED"] = "ITEM_NOT_DELETED";
+    ItemErrorCode["IN_USE"] = "ITEM_IN_USE";
+    ItemErrorCode["CHANGED_CONCURRENTLY"] = "ITEM_CHANGED_CONCURRENTLY";
+    ItemErrorCode["RESTORE_NAME_TAKEN"] = "ITEM_RESTORE_NAME_TAKEN";
+    ItemErrorCode["RESTORE_EAN_TAKEN"] = "ITEM_RESTORE_EAN_TAKEN";
+    ItemErrorCode["RESTORE_CLASH"] = "ITEM_RESTORE_CLASH";
+})(ItemErrorCode || (exports.ItemErrorCode = ItemErrorCode = {}));
+//# sourceMappingURL=item-error-codes.js.map

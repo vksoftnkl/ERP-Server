@@ -1,28 +1,19 @@
-export interface StateErrorDetail {
-  field: string;
-  message: string;
-}
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { StateErrorCode } from './state-error-codes';
 
-export interface StateErrorResponse {
-  success: false;
-  message: string;
-  errors: StateErrorDetail[];
+/** Notes 119: every refusal names its code — see state-error-codes.ts. */
+export interface StateErrorDetail extends SalesErrorDetail {
+  code: StateErrorCode;
 }
-
-export interface StateSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type StateErrorResponse = SalesErrorResponse<StateErrorDetail>;
+export type { SalesSuccessResponse as StateSuccessResponse } from 'src/common/types/module-api.types';
 export interface StatePayload {
   stmId: string;
   stmName: string;
   stmAlias: string | null;
   stmShort: string | null;
   stmOrder: number;
+  stmDescription: string | null;
   stmIsActive: boolean;
   stmIsDeleted: boolean;
   stmSyncDate: string | null;
@@ -32,11 +23,9 @@ export interface StatePayload {
   stmModifiedBy: string | null;
 }
 
-export type StateListItem = StatePayload | Record<string, unknown>;
-
-export interface StateListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+// Result of createStateMaster: the created state master plus the linked account group id
+// (equal to stmId, surfaced explicitly because the two rows are created together).
+export interface StateMasterCreateResult {
+  stateMaster: StatePayload;
+  accGroupId: string;
 }

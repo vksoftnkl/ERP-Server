@@ -10,6 +10,7 @@ model UitableColumns {
   uiTblClmColumnNecessity  Boolean   @default(false)                @map("ui_tbl_clm_column_necessity")
   uiTblClmNextColumn       Int?                                     @map("ui_tbl_clm_next_column")
   uiTblClmPreviousColumn   Int?                                     @map("ui_tbl_clm_previous_column")
+  uiTblClmPx               String?   @db.Text                       @map("ui_tbl_clm_px")
   uiTblClmIsActive         Boolean   @default(true)                 @map("ui_tbl_clm_is_active")
   uiTblClmIsDeleted        Boolean   @default(false)                @map("ui_tbl_clm_is_deleted")
   uiTblClmSyncDate         DateTime? @db.Timestamptz(6)             @map("ui_tbl_clm_sync_date")

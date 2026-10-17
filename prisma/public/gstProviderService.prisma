@@ -1,0 +1,91 @@
+/// Provider × service × environment — one row per (GSP, service, SANDBOX or
+/// PRODUCTION).
+///
+/// This model exists because a base url is NOT a property of a provider. NIC
+/// serves e-invoice from einvapi and e-way bill from ewaybillapi — two hosts,
+/// one provider — and every GSP publishes a sandbox host beside the
+/// production one. Three facts vary together, so they are one row.
+///
+/// Switching a company from sandbox to production is therefore a credential
+/// edit, not a config rewrite: the sandbox rows stay exactly where they are.
+///
+/// There is deliberately no gpsAuthPath. Authenticating is a call like any
+/// other, so it is described where every other call is described: the AUTH
+/// row in GstProviderEndpoint, which also carries the headers, the envelope
+/// descriptors and the redact-before-logging paths that an auth call needs
+/// more than most.
+model GstProviderService {
+  gpsId                   String    @id(map: "pk_gst_provider_service") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gps_id")
+  gpsGpvId                String    @db.Uuid                                 @map("gps_gpv_id")
+
+  /// EINVOICE | EWAYBILL | GSTIN_VERIFY | GSTR | ASP_ADMIN. The last is the
+  /// provider's own account surface (/aspapi/…) — not a statutory service,
+  /// but it has its own host and endpoints, so it is a service row like any
+  /// other.
+  gpsService              String    @db.VarChar(20)                          @map("gps_service")
+  /// SANDBOX | PRODUCTION
+  gpsEnvironment          String    @db.VarChar(10)                          @map("gps_environment")
+
+  /// Scheme + host, no trailing slash. Paths come from the endpoint rows,
+  /// version included — Chartered versions eivital (v1.04) and eicore (v1.03)
+  /// independently, so the version cannot live up here.
+  gpsBaseUrl              String                                             @map("gps_base_url")
+
+  /// Alternate hosts the GSP publishes for the SAME service — Chartered's
+  /// Mumbai and Delhi clusters, say. Trying them in order is cheaper than a
+  /// failover to a different PROVIDER, which is what gccPriority does; this
+  /// is the same provider, another door.
+  gpsFallbackUrls         String[]                                           @map("gps_fallback_urls")
+
+  /// NIC_SEK | OAUTH2 | API_KEY | BASIC | BEARER_STATIC | CUSTOM.
+  /// NIC_SEK is the government's own scheme (AppKey encrypted with the IRP
+  /// public key, reply carries AuthToken plus a Sek session key); the rest
+  /// are ordinary API styles a wrapper GSP puts in front of it.
+  gpsAuthScheme           String    @db.VarChar(20)                          @map("gps_auth_scheme")
+
+  /// How long a token lives when the reply does not say. NIC issues six
+  /// hours. The margin is how early to renew — renewing exactly at expiry
+  /// races every in-flight request against the clock.
+  gpsTokenTtlMinutes      Int       @default(360) @db.SmallInt               @map("gps_token_ttl_minutes")
+  gpsRefreshMarginMinutes Int       @default(15)  @db.SmallInt               @map("gps_refresh_margin_minutes")
+
+  /// NONE | AES_SEK | RSA — whether WE encrypt the payload or the GSP does it
+  /// for us. The single biggest behavioural difference between talking to NIC
+  /// directly and talking to a wrapper, and not derivable from anything else.
+  gpsPayloadEncryption    String    @default("NONE") @db.VarChar(10)         @map("gps_payload_encryption")
+
+  // NULL = inherit the provider's value.
+  gpsTimeoutMs            Int?                                               @map("gps_timeout_ms")
+  gpsMaxRetries           Int?      @db.SmallInt                             @map("gps_max_retries")
+
+  gpsRemarks              String?   @db.VarChar(500)                         @map("gps_remarks")
+  gpsIsActive             Boolean   @default(true)                           @map("gps_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpsIsDeleted            Boolean   @default(false)                          @map("gps_is_deleted")
+  gpsSyncDate             DateTime? @db.Timestamptz(6)                       @map("gps_sync_date")
+  gpsCreatedOn            DateTime  @default(now()) @db.Timestamptz(6)       @map("gps_created_on")
+  gpsCreatedBy            String    @db.VarChar(50)                          @map("gps_created_by")
+  gpsModifiedOn           DateTime? @db.Timestamptz(6)                       @map("gps_modified_on")
+  gpsModifiedBy           String?   @db.VarChar(50)                          @map("gps_modified_by")
+
+  // Relations
+  provider                GstProvider  @relation("GstProviderServices", fields: [gpsGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gps_provider")
+  endpoints               GstProviderEndpoint[] @relation("GstServiceEndpoints")
+
+  @@index([gpsGpvId], map: "ix_gps_provider")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   CREATE UNIQUE INDEX ux_gps_provider_service_env
+  //       ON public.gst_provider_service (gps_gpv_id, gps_service, gps_environment)
+  //       WHERE gps_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gps_service, ck_gps_environment,
+  //   ck_gps_auth_scheme, ck_gps_payload_encryption, ck_gps_base_url,
+  //   ck_gps_ttl, ck_gps_margin, ck_gps_timeout, ck_gps_retries
+
+  @@map("gst_provider_service")
+  @@schema("public")
+}

@@ -1,0 +1,233 @@
+/// §2.14 — the 27EQ / 26Q projection.
+///
+/// Two tables, one shape. `acc_tcs_register` is tax this company COLLECTED
+/// from a customer (TCS, filed on Form 27EQ); `acc_tds_register` is tax a
+/// party WITHHELD from this company, or that this company withheld from a
+/// supplier (TDS, filed on Form 26Q). They are kept apart rather than folded
+/// into one table with a direction flag because they file on different forms,
+/// on different due dates, with different section vocabularies — and every
+/// query against them is for one form or the other, never both.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  WRITTEN AT POST, NEVER EDITED, NEVER RE-SUMMED
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// A row is a statement about a moment: at the instant this document posted,
+/// this much tax was collected at this rate on this base, for this party's PAN.
+/// A quarterly return is `SELECT` over these rows, not a re-derivation from
+/// the invoices — because the rate that applied in July is not the rate that
+/// applies in November, and a return that re-computed would silently restate
+/// a quarter already filed with the department.
+///
+/// This is why there is no update path and no roll-up column. A document that
+/// is cancelled or amended gets a NEW row carrying the reversal, the way
+/// `acc_bill_adjustment` does; the original stays, because the return that
+/// quoted it was filed.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  WHICH DOCUMENT RAISES THE ROW DEPENDS ON accounts.tcs_basis
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// 206C(1H) liability arises on RECEIPT of the money, not on the invoice. So:
+///
+///   · `tcs_basis = 'RECEIPT'` — the receipt raises a TCS_PAYABLE leg and the
+///     register row, for the whole receipt.
+///   · `tcs_basis = 'SALES'`   — the invoice already carries the TCS inside
+///     its bill amount (`acc_bill_balance.abl_tcs_amount`), so the RECEIPT
+///     raises no TCS leg at all, and the register row is raised AT THE RECEIPT
+///     for the TCS slice of that allocation — pro-rata, which is what
+///     `accounts.v_bill_tcs` computes.
+///
+/// The two never both apply, and `atcRateSource` is what makes an audit able
+/// to tell afterwards which rule produced the figure.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  NOT PARTITIONED, unlike the money tables
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// `acc_bill_balance`, `acc_voucher_header`, `acc_vouchers`, `acc_pdc_register`
+/// and `acc_tender_detail` are all LIST-partitioned on their accounting year.
+/// These two deliberately are not:
+///
+///   · every read is `WHERE company AND fy AND quarter [AND section]` — a
+///     return for one quarter — which an index serves exactly; there is no
+///     scan-every-partition read like "this party's outstanding across all
+///     years" that made partitioning worth it for the bill;
+///   · nothing addresses a register row by `(id, year)`, so the composite key
+///     that partitioning forces would buy nothing and would have to be
+///     threaded through every reference;
+///   · nobody detaches a filed quarter — the department can ask for it years
+///     later.
+///
+/// The practical consequence is that these two tables do NOT need
+/// `public.ensure_acc_year_partitions` to have run for a year before they can
+/// be written, which is one less way for a receipt to fail at the moment an
+/// operator is taking money.
+model AccTcsRegister {
+  atcId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("atc_id")
+  atcCompanyId        String    @db.Uuid @map("atc_company_id")
+  atcBranchId         String    @db.Uuid @map("atc_branch_id")
+  atcTenantId         String?   @db.Uuid @map("atc_tenant_id")
+  // The FY the collection falls in — a plain column here, not a partition key.
+  atcAccYear          String    @db.Char(9) @map("atc_acc_year")
+  // ck_atc_quarter: Q1 | Q2 | Q3 | Q4, the RETURN quarter, which is the FY's
+  // quarter (Q1 = Apr-Jun) and not the calendar's.
+  atcQuarter          String    @db.Char(2) @map("atc_quarter")
+  // Collectee — the customer the tax was collected from. Shares its id with
+  // the ledger and the customer master.
+  atcPartyId          String    @db.Uuid @map("atc_party_id")
+  // Stamped, not joined. A PAN correction next year must not retrospectively
+  // change what a filed return said, and a party may be deleted.
+  atcPan              String?   @db.VarChar(10) @map("atc_pan")
+  atcPartyName        String    @db.VarChar(150) @map("atc_party_name")
+  // The section the collection is made under — '206C(1H)' for the sale of
+  // goods, which is the only one this system raises today. VarChar and not an
+  // enum: the sections change by Finance Act, and a CHECK would need a
+  // migration every budget.
+  atcSection          String    @db.VarChar(20) @map("atc_section")
+  // The rate actually applied, as a percentage: 0.100 is 206C(1H)'s 0.1%.
+  atcRate             Decimal   @db.Decimal(6, 3) @map("atc_rate")
+  // ck_atc_rate_source — WHY that rate. Four values, of which only three can
+  // occur until a lower-deduction certificate can be recorded against a party:
+  //   MASTER           the party's / section's configured rate
+  //   CERTIFICATE      a 197 / 206C(9) lower-collection certificate
+  //   NO_PAN           206CC's higher rate, because no PAN was furnished
+  //   BELOW_THRESHOLD  the 50 lakh threshold was not crossed, so the rate is 0
+  // CERTIFICATE is declared now rather than added later because a rate of
+  // 0.05% with no recorded reason is indistinguishable from a keying error
+  // when the department asks two years on.
+  atcRateSource       String    @db.VarChar(20) @map("atc_rate_source")
+  // What the rate was applied to, and what came out. Kept as two columns and
+  // never as a computed one: a rounded collection is what was actually taken
+  // from the customer, and base x rate does not always reproduce it.
+  atcBaseAmount       Decimal   @db.Decimal(18, 2) @map("atc_base_amount")
+  atcTaxAmount        Decimal   @db.Decimal(18, 2) @map("atc_tax_amount")
+  // The document that raised it — the receipt on the RECEIPT basis, the
+  // receipt again on the SALES basis (for the TCS slice of the allocation).
+  atcVoucherId        String?   @db.Uuid @map("atc_voucher_id")
+  atcVoucherAccYear   String?   @db.Char(9) @map("atc_voucher_acc_year")
+  atcDocRefno         String?   @db.VarChar(50) @map("atc_doc_refno")
+  atcDocDate          DateTime  @db.Date @map("atc_doc_date")
+  // The bill the slice belongs to, on the SALES basis. Null on the RECEIPT
+  // basis, where the collection is against the receipt as a whole and not
+  // against any one invoice. No FK: acc_bill_balance is partitioned and this
+  // pair is nullable.
+  atcBillId           String?   @db.Uuid @map("atc_bill_id")
+  atcBillAccYear      String?   @db.Char(9) @map("atc_bill_acc_year")
+  // Reversal of an earlier row, when the document behind it was cancelled or
+  // amended. ck_atc_reversal_sign forces a negative tax amount, exactly as
+  // ck_abj_reversal_sign does on the bill adjustment.
+  atcReversalOfId     String?   @db.Uuid @map("atc_reversal_of_id")
+  // Remittance — filled in when the challan is paid, which is the one thing
+  // about a register row that is not known when it is written.
+  atcChallanNo        String?   @db.VarChar(30) @map("atc_challan_no")
+  atcChallanDate      DateTime? @db.Date @map("atc_challan_date")
+  atcChallanBsr       String?   @db.VarChar(7) @map("atc_challan_bsr")
+  // Form 27D, issued to the collectee after the return is filed.
+  atcCertificateNo    String?   @db.VarChar(30) @map("atc_certificate_no")
+  atcCertificateDate  DateTime? @db.Date @map("atc_certificate_date")
+  atcRemarks          String?   @db.VarChar(250) @map("atc_remarks")
+  // Audit
+  atcIsActive         Boolean   @default(true) @map("atc_is_active")
+  atcIsDeleted        Boolean   @default(false) @map("atc_is_deleted")
+  atcCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("atc_created_on")
+  atcCreatedBy        String?   @db.VarChar(50) @map("atc_created_by")
+  atcModifiedOn       DateTime? @db.Timestamptz(6) @map("atc_modified_on")
+  atcModifiedBy       String?   @db.VarChar(50) @map("atc_modified_by")
+  // Relations
+  party               AccLedgerMaster @relation("TcsCollectee", fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
+  reversalOf          AccTcsRegister? @relation("TcsReversal", fields: [atcReversalOfId], references: [atcId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_reversal_of")
+  reversals           AccTcsRegister[] @relation("TcsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atcSyncDate DateTime? @db.Timestamptz(6) @map("atc_sync_date")
+  @@map("acc_tcs_register")
+  @@schema("accounts")
+  // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
+  //   - CHECK ck_atc_quarter, ck_atc_rate_source, ck_atc_acc_year,
+  //     ck_atc_rate (0-100), ck_atc_base (non-negative), ck_atc_voucher
+  //     (id and year null-or-set together), ck_atc_bill (likewise),
+  //     ck_atc_reversal_sign (a reversal's tax amount is negative, an
+  //     original's is not), ck_atc_challan (no/date/bsr together or none).
+  //   - Indexes ix_atc_return (company, acc_year, quarter, section) — the
+  //     return itself; ix_atc_party (party, acc_year); ix_atc_voucher
+  //     (voucher_id, voucher_acc_year); ix_atc_bill (bill_id, bill_acc_year);
+  //     ix_atc_unremitted, partial on challan_no IS NULL — what has been
+  //     collected but not yet paid over, which is the question that carries a
+  //     penalty.
+  //   - No FK on atc_company_id / atc_branch_id: consistent with every other
+  //     table in this schema, whose source DDL declares none.
+}
+
+/// The 26Q side. Same shape, same rules, different form — see the header
+/// comment on `AccTcsRegister` above, which covers both.
+///
+/// The one structural difference is `atdDeducteeType`: 26Q reports a company
+/// and a non-company deductee under different codes, and
+/// `acc_ledger_master.led_tds_deductee_type` is where that comes from. TCS has
+/// no equivalent, which is why it is here and not on both.
+model AccTdsRegister {
+  atdId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("atd_id")
+  atdCompanyId        String    @db.Uuid @map("atd_company_id")
+  atdBranchId         String    @db.Uuid @map("atd_branch_id")
+  atdTenantId         String?   @db.Uuid @map("atd_tenant_id")
+  atdAccYear          String    @db.Char(9) @map("atd_acc_year")
+  atdQuarter          String    @db.Char(2) @map("atd_quarter")
+  // ck_atd_direction — which way the withholding went:
+  //   DEDUCTED   this company withheld from a supplier (we file 26Q)
+  //   WITHHELD   a customer withheld from us (their 26Q; ours is a credit to
+  //              claim, and the receipt is where it is recorded)
+  // Both live in one table because both are TDS at the same section and rate,
+  // and a party is routinely on both sides across a year.
+  atdDirection        String    @db.VarChar(10) @map("atd_direction")
+  atdPartyId          String    @db.Uuid @map("atd_party_id")
+  atdPan              String?   @db.VarChar(10) @map("atd_pan")
+  atdPartyName        String    @db.VarChar(150) @map("atd_party_name")
+  // ck_atd_deductee_type: COMPANY | NON_COMPANY, from
+  // acc_ledger_master.led_tds_deductee_type.
+  atdDeducteeType     String?   @db.VarChar(20) @map("atd_deductee_type")
+  // '194Q', '194C', '194J' … VarChar for the same reason as TCS's.
+  atdSection          String    @db.VarChar(20) @map("atd_section")
+  atdRate             Decimal   @db.Decimal(6, 3) @map("atd_rate")
+  // MASTER | CERTIFICATE | NO_PAN | BELOW_THRESHOLD — NO_PAN here is 206AA's
+  // 20%, which is the one that hurts and the one an audit always asks about.
+  atdRateSource       String    @db.VarChar(20) @map("atd_rate_source")
+  atdBaseAmount       Decimal   @db.Decimal(18, 2) @map("atd_base_amount")
+  atdTaxAmount        Decimal   @db.Decimal(18, 2) @map("atd_tax_amount")
+  atdVoucherId        String?   @db.Uuid @map("atd_voucher_id")
+  atdVoucherAccYear   String?   @db.Char(9) @map("atd_voucher_acc_year")
+  atdDocRefno         String?   @db.VarChar(50) @map("atd_doc_refno")
+  atdDocDate          DateTime  @db.Date @map("atd_doc_date")
+  atdBillId           String?   @db.Uuid @map("atd_bill_id")
+  atdBillAccYear      String?   @db.Char(9) @map("atd_bill_acc_year")
+  atdReversalOfId     String?   @db.Uuid @map("atd_reversal_of_id")
+  atdChallanNo        String?   @db.VarChar(30) @map("atd_challan_no")
+  atdChallanDate      DateTime? @db.Date @map("atd_challan_date")
+  atdChallanBsr       String?   @db.VarChar(7) @map("atd_challan_bsr")
+  // Form 16A. On the WITHHELD side this is the certificate the CUSTOMER gives
+  // us, and it is what turns a deduction we absorbed into a credit we can
+  // claim — which is why the column is on both directions.
+  atdCertificateNo    String?   @db.VarChar(30) @map("atd_certificate_no")
+  atdCertificateDate  DateTime? @db.Date @map("atd_certificate_date")
+  atdRemarks          String?   @db.VarChar(250) @map("atd_remarks")
+  atdIsActive         Boolean   @default(true) @map("atd_is_active")
+  atdIsDeleted        Boolean   @default(false) @map("atd_is_deleted")
+  atdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("atd_created_on")
+  atdCreatedBy        String?   @db.VarChar(50) @map("atd_created_by")
+  atdModifiedOn       DateTime? @db.Timestamptz(6) @map("atd_modified_on")
+  atdModifiedBy       String?   @db.VarChar(50) @map("atd_modified_by")
+  party               AccLedgerMaster @relation("TdsParty", fields: [atdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_party")
+  reversalOf          AccTdsRegister? @relation("TdsReversal", fields: [atdReversalOfId], references: [atdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_reversal_of")
+  reversals           AccTdsRegister[] @relation("TdsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atdSyncDate DateTime? @db.Timestamptz(6) @map("atd_sync_date")
+  @@map("acc_tds_register")
+  @@schema("accounts")
+  // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
+  //   - CHECK ck_atd_quarter, ck_atd_direction, ck_atd_deductee_type,
+  //     ck_atd_rate_source, ck_atd_acc_year, ck_atd_rate, ck_atd_base,
+  //     ck_atd_voucher, ck_atd_bill, ck_atd_reversal_sign, ck_atd_challan.
+  //   - Indexes ix_atd_return (company, acc_year, quarter, direction,
+  //     section), ix_atd_party, ix_atd_voucher, ix_atd_bill, and
+  //     ix_atd_unremitted (partial on challan_no IS NULL, DEDUCTED only —
+  //     nothing is remitted on the WITHHELD side, the customer does that).
+}

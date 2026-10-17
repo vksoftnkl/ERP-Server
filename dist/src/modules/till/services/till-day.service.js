@@ -1,0 +1,221 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TillDayService = void 0;
+const common_1 = require("@nestjs/common");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const till_dates_1 = require("../till-dates");
+const till_errors_1 = require("../till-errors");
+const till_event_service_1 = require("./till-event.service");
+const till_ledger_service_1 = require("./till-ledger.service");
+const till_settings_1 = require("../till.settings");
+const till_enum_1 = require("../types/till-enum");
+const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.helper");
+let TillDayService = class TillDayService {
+    prisma;
+    events;
+    ledger;
+    constructor(prisma, events, ledger) {
+        this.prisma = prisma;
+        this.events = events;
+        this.ledger = ledger;
+    }
+    async ensureOpenDay(tx, scope, settings, caller, by) {
+        const autoOpen = by === 'MANAGER' || settings.dayAutoOpen;
+        const businessDate = await (0, till_dates_1.businessDateNow)(tx, settings.dayCutoff);
+        const accYear = (0, till_dates_1.accYearOf)(businessDate);
+        await (0, till_dates_1.assertTillPartitions)(tx, accYear, 'businessDate');
+        let created = false;
+        if (autoOpen) {
+            const inserted = await tx.$queryRaw `
+        INSERT INTO accounts.till_business_day
+               (tbd_company_id, tbd_branch_id, tbd_tenant_id, tbd_acc_year, tbd_business_date,
+                tbd_status, tbd_opened_by, tbd_created_by)
+        VALUES (${scope.companyId}::uuid, ${scope.branchId}::uuid, ${scope.tenantId}::uuid,
+                ${accYear}::char(9), ${businessDate}::date,
+                'OPEN', ${caller.userId}::uuid, ${caller.actorName})
+        ON CONFLICT (tbd_company_id, tbd_branch_id, tbd_business_date, tbd_acc_year)
+          WHERE tbd_is_deleted = false
+          DO NOTHING
+        RETURNING tbd_id`;
+            created = inserted.length === 1;
+        }
+        const day = await tx.tillBusinessDay.findFirst({
+            where: {
+                tbdCompanyId: scope.companyId,
+                tbdBranchId: scope.branchId,
+                tbdAccYear: accYear,
+                tbdBusinessDate: (0, till_dates_1.dateParam)(businessDate),
+                tbdIsDeleted: false,
+            },
+            select: { tbdId: true, tbdStatus: true },
+        });
+        if (!day) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.DAY_NOT_OPEN, `Business day ${businessDate} is not open. A manager opens it (Business Day, menu 274), or set till.day_auto_open.`, 'businessDate', { businessDate });
+        }
+        const status = day.tbdStatus;
+        if (status === till_enum_1.TillDayStatus.CLOSING) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.DAY_CLOSING, `Business day ${businessDate} is closing: no new session may open`, 'businessDate', { businessDate });
+        }
+        if (status === till_enum_1.TillDayStatus.CLOSED) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.DAY_NOT_OPEN, `Business day ${businessDate} is closed: a manager reopens it (days/reopen) before a session opens on it`, 'businessDate', { businessDate, status });
+        }
+        if (created) {
+            await this.events.log(tx, {
+                companyId: scope.companyId,
+                branchId: scope.branchId,
+                accYear,
+                code: till_enum_1.TillEventCode.DAY_OPEN,
+                dayId: day.tbdId,
+                deviceId: caller.deviceId,
+                userId: caller.userId,
+                payload: { businessDate, openedBy: by },
+            });
+        }
+        return { tbdId: day.tbdId, tbdAccYear: accYear, businessDate, created };
+    }
+    async open(scope, settings, caller) {
+        const opened = await this.prisma.$transaction((tx) => this.ensureOpenDay(tx, scope, settings, caller, 'MANAGER'));
+        return {
+            day: await this.get({ ...scope, accYear: opened.tbdAccYear, tbdId: opened.tbdId }),
+            created: opened.created,
+        };
+    }
+    async get(scope, settings) {
+        let where;
+        if (scope.tbdId) {
+            where = { tbdId: scope.tbdId, tbdAccYear: scope.accYear };
+        }
+        else {
+            const businessDate = await (0, till_dates_1.businessDateNow)(this.prisma, settings?.dayCutoff ?? '04:00');
+            where = { tbdAccYear: (0, till_dates_1.accYearOf)(businessDate), tbdBusinessDate: (0, till_dates_1.dateParam)(businessDate) };
+        }
+        const day = await this.prisma.tillBusinessDay.findFirst({
+            where: {
+                ...where,
+                tbdCompanyId: scope.companyId,
+                tbdBranchId: scope.branchId,
+                tbdIsDeleted: false,
+            },
+        });
+        if (!day) {
+            (0, till_errors_1.throwTillNotFound)(till_enum_1.TillErrorCode.DAY_NOT_FOUND, 'Business day', 'tbdId', scope.tbdId ?? 'for today');
+        }
+        const counts = await this.prisma.tillSession.groupBy({
+            by: ['tssStatus'],
+            where: { tssDayId: day.tbdId, tssAccYear: day.tbdAccYear, tssIsDeleted: false },
+            _count: { _all: true },
+        });
+        const awaiting = await this.prisma.tillCashMovement.findMany({
+            where: {
+                tcmCompanyId: day.tbdCompanyId,
+                tcmBranchId: day.tbdBranchId,
+                tcmIsDeleted: false,
+                tcmStatus: 'POSTED',
+                tcmReceiptStatus: till_enum_1.TillReceiptStatus.AWAITING,
+                tcmDocDate: { lte: day.tbdBusinessDate },
+            },
+            select: { tcmDayId: true, tcmCreatedOn: true },
+            orderBy: { tcmCreatedOn: 'asc' },
+        });
+        const thisDay = awaiting.filter((m) => m.tcmDayId === day.tbdId).length;
+        const closer = day.tbdClosedBy
+            ? await this.prisma.userMaster.findUnique({
+                where: { usrId: day.tbdClosedBy },
+                select: { usrLoginName: true, usrDisplayName: true },
+            })
+            : null;
+        const num = (v) => (v === null ? 0 : Number(v.toFixed(2)));
+        return {
+            tbdId: day.tbdId,
+            tbdAccYear: day.tbdAccYear,
+            tbdCompanyId: day.tbdCompanyId,
+            tbdBranchId: day.tbdBranchId,
+            tbdBusinessDate: (0, till_dates_1.isoDateOf)(day.tbdBusinessDate),
+            tbdStatus: day.tbdStatus,
+            tbdOpenedOn: day.tbdOpenedOn.toISOString(),
+            tbdOpenedBy: day.tbdOpenedBy,
+            tbdClosedOn: day.tbdClosedOn ? day.tbdClosedOn.toISOString() : null,
+            tbdClosedBy: day.tbdClosedBy,
+            tbdClosedByName: closer ? closer.usrDisplayName?.trim() || closer.usrLoginName : null,
+            tbdZNo: day.tbdZNo,
+            tbdReopenCount: day.tbdReopenCount,
+            totals: {
+                sessionCount: day.tbdSessionCount,
+                billCount: day.tbdBillCount,
+                netSales: num(day.tbdNetSales),
+                cashExpected: num(day.tbdCashExpected),
+                cashCounted: num(day.tbdCashCounted),
+                cashVariance: num(day.tbdCashVariance),
+                noncashVariance: num(day.tbdNoncashVariance),
+            },
+            tbdExceptionCount: day.tbdExceptionCount,
+            tbdCloseApprovalId: day.tbdCloseApprovalId,
+            tbdPrintCount: day.tbdPrintCount,
+            tbdNotes: day.tbdNotes,
+            sessions: counts.map((c) => ({
+                status: c.tssStatus,
+                count: c._count._all,
+            })),
+            handoverReceipt: (settings ?? till_settings_1.TILL_SETTING_DEFAULTS).handoverReceipt,
+            awaitingReceipt: {
+                thisDay,
+                earlierDays: awaiting.length - thisDay,
+                oldestOn: awaiting[0]?.tcmCreatedOn.toISOString() ?? null,
+            },
+            safe: {
+                opening: num(day.tbdSafeOpening),
+                expected: num(day.tbdSafeExpected),
+                counted: day.tbdSafeCounted === null ? null : num(day.tbdSafeCounted),
+                remitted: num(day.tbdRemitted),
+                belowZero: (day.tbdStatus === till_enum_1.TillDayStatus.CLOSED && num(day.tbdSafeOpening) < 0) ||
+                    num(day.tbdSafeExpected) < 0,
+                ...(await this.awaitingAsOf(day)),
+            },
+        };
+    }
+    async awaitingAsOf(day) {
+        const businessDate = (0, till_dates_1.isoDateOf)(day.tbdBusinessDate);
+        const dayBefore = (0, till_dates_1.isoDateOf)(new Date(day.tbdBusinessDate.getTime() - 86_400_000));
+        return this.prisma.$transaction(async (tx) => {
+            const [hit] = [
+                ...(await (0, ledger_map_helper_1.resolveRoleLedgers)(tx, [{ role: till_enum_1.TILL_CASH_AWAITING_ROLE }], {
+                    companyId: day.tbdCompanyId,
+                    branchId: day.tbdBranchId,
+                    where: 'till',
+                })).values(),
+            ];
+            if (!hit) {
+                return { awaitingOpening: 0, awaiting: 0 };
+            }
+            await tx.$executeRaw `SET LOCAL plan_cache_mode = force_custom_plan`;
+            const at = async (upTo) => {
+                const scope = {
+                    companyId: day.tbdCompanyId,
+                    branchId: day.tbdBranchId,
+                    accYear: day.tbdAccYear,
+                    upTo,
+                };
+                const bal = (await this.ledger.ledgerBalances(tx, scope, [hit.ledgerId])).get(hit.ledgerId);
+                return bal ? Number(bal.toFixed(2)) : 0;
+            };
+            return { awaitingOpening: await at(dayBefore), awaiting: await at(businessDate) };
+        });
+    }
+};
+exports.TillDayService = TillDayService;
+exports.TillDayService = TillDayService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        till_event_service_1.TillEventService,
+        till_ledger_service_1.TillLedgerService])
+], TillDayService);
+//# sourceMappingURL=till-day.service.js.map

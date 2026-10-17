@@ -1,12 +1,11 @@
-import { ArgumentMetadata, BadRequestException, Type, ValidationPipe } from '@nestjs/common';
-const dtoValidationPipe = new ValidationPipe({
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  transformOptions: {
-    enableImplicitConversion: true,
-  },
-});
+import { ArgumentMetadata, BadRequestException, Type } from '@nestjs/common';
+import {
+  createHouseValidationPipe,
+  type ValidationErrorDetail,
+} from '../validation/house-validation';
+import { buildErrorResponse } from './module-shared.utils';
+/** The global pipe's options and its house-shaped refusal (notes 119 §4). */
+const dtoValidationPipe = createHouseValidationPipe();
 type ValidateDtoOptions = {
   optional?: boolean;
   type?: ArgumentMetadata['type'];
@@ -53,9 +52,7 @@ export async function validateDto<T extends object>(
     if (options.optional) {
       return undefined;
     }
-    throw new BadRequestException({
-      message: ['Request payload is required'],
-    });
+    throw payloadRefusal('VALIDATION_PAYLOAD_REQUIRED', 'Request payload is required');
   }
   return (await dtoValidationPipe.transform(value, {
     type: options.type ?? 'body',
@@ -87,20 +84,19 @@ export async function validateSingleOrArrayDto<T extends object>(
     if (options.optional) {
       return undefined;
     }
-    throw new BadRequestException({
-      message: ['Request payload is required'],
-    });
+    throw payloadRefusal('VALIDATION_PAYLOAD_REQUIRED', 'Request payload is required');
   }
   if (!Array.isArray(value)) {
     return validateDto(value, metatype, options);
   }
   if (value.length === 0) {
-    throw new BadRequestException({
-      message: ['Request payload should not be an empty array'],
-    });
+    throw payloadRefusal(
+      'VALIDATION_PAYLOAD_EMPTY_ARRAY',
+      'Request payload should not be an empty array',
+    );
   }
   const validatedItems: T[] = [];
-  const validationMessages: string[] = [];
+  const details: ValidationErrorDetail[] = [];
   for (const [index, item] of value.entries()) {
     try {
       const validatedItem = await validateDto(item, metatype, options);
@@ -108,35 +104,46 @@ export async function validateSingleOrArrayDto<T extends object>(
         validatedItems.push(validatedItem);
       }
     } catch (error: unknown) {
-      const messages = extractValidationMessages(error);
-      validationMessages.push(...messages.map((message) => `items[${index}] ${message}`));
+      details.push(
+        ...extractValidationDetails(error).map((d) => ({
+          field: `items.${index}.${d.field}`,
+          code: d.code,
+          message: `items[${index}] ${d.message}`,
+        })),
+      );
     }
   }
-  if (validationMessages.length > 0) {
-    throw new BadRequestException({
-      message: validationMessages,
-    });
+  if (details.length > 0) {
+    throw new BadRequestException(
+      buildErrorResponse<ValidationErrorDetail>('Validation failed', details),
+    );
   }
   return validatedItems;
 }
-function extractValidationMessages(error: unknown): string[] {
+/** 400 in the house shape: one error, with its code. */
+function payloadRefusal(code: string, message: string): BadRequestException {
+  return new BadRequestException(
+    buildErrorResponse<ValidationErrorDetail>('Validation failed', [
+      { field: 'request', code, message },
+    ]),
+  );
+}
+/** One item's refusal as details: the house shape, or a bare message wrapped. */
+function extractValidationDetails(error: unknown): ValidationErrorDetail[] {
   if (error instanceof BadRequestException) {
     const response = error.getResponse();
-    if (typeof response === 'string') {
-      return [response];
+    if (typeof response === 'object' && response !== null && 'errors' in response) {
+      const errors = (response as { errors?: unknown }).errors;
+      if (Array.isArray(errors)) {
+        return errors as ValidationErrorDetail[];
+      }
     }
-    if (typeof response === 'object' && response !== null && 'message' in response) {
-      const message = (response as { message?: unknown }).message;
-      if (Array.isArray(message)) {
-        return message.filter((entry): entry is string => typeof entry === 'string');
-      }
-      if (typeof message === 'string') {
-        return [message];
-      }
+    if (typeof response === 'string') {
+      return [{ field: 'request', code: 'VALIDATION_FAILED', message: response }];
     }
   }
   if (error instanceof Error && error.message) {
-    return [error.message];
+    return [{ field: 'request', code: 'VALIDATION_FAILED', message: error.message }];
   }
-  return ['Request payload is invalid'];
+  return [{ field: 'request', code: 'VALIDATION_FAILED', message: 'Request payload is invalid' }];
 }

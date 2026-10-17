@@ -1,15 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 export class UserResponseDto {
   @ApiProperty({ format: 'uuid' })
-  user_id!: string;
-  @ApiProperty({ format: 'string' })
-  user_code!: string;
-  @ApiProperty({ format: 'string' })
-  user_phone!: string;
-  @ApiProperty({ format: 'string' })
-  user_name!: string;
+  usrId!: string;
   @ApiProperty()
-  created_at!: string;
+  usrLoginName!: string;
+  @ApiProperty({ nullable: true })
+  usrMobileNo!: string | null;
   @ApiProperty()
-  updated_at!: string;
+  usrIsActive!: boolean;
+  @ApiProperty()
+  usrCreatedOn!: string;
+  @ApiProperty({ nullable: true })
+  usrModifiedOn!: string | null;
 }

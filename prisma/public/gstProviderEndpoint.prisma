@@ -1,0 +1,99 @@
+/// One row per CALL. This is what the first draft's single `gsp_route` column
+/// was trying to be.
+///
+/// gpeAction is the vocabulary the application speaks — the sale bill asks
+/// for GENERATE_IRN and does not know, or care, what path that is on this
+/// provider. Adding a provider must never add an action; adding a CAPABILITY
+/// may.
+///
+/// The envelope columns are the other half of provider independence. Every
+/// GSP wraps the same NIC payload differently: {"Status":1,"Data":{…}} here,
+/// {"success":true,"result":{…}} there. Describing the envelope as four paths
+/// means the dispatcher can find the payload, decide success and read an
+/// error code without knowing whose reply it is holding.
+model GstProviderEndpoint {
+  gpeId               String    @id(map: "pk_gst_provider_endpoint") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpe_id")
+  gpeGpsId            String    @db.Uuid                                 @map("gpe_gps_id")
+
+  /// AUTH | GENERATE_IRN | CANCEL_IRN | GET_IRN | … — see ck_gpe_action for
+  /// the full, finite vocabulary (e-invoice, the whole e-way bill surface,
+  /// the lookups, the returns, and the two housekeeping calls).
+  gpeAction           String    @db.VarChar(30)                          @map("gpe_action")
+
+  gpeHttpMethod       String    @default("POST") @db.VarChar(6)          @map("gpe_http_method")
+
+  /// Appended to gpsBaseUrl. May carry {placeholders} filled from the request
+  /// context: {irn}, {gstin}, {ewbNo}, {period}.
+  gpePathTemplate     String                                             @map("gpe_path_template")
+  gpeQueryTemplate    String?                                            @map("gpe_query_template")
+
+  gpeContentType      String    @default("application/json") @db.VarChar(60) @map("gpe_content_type")
+
+  /// Static/templated headers, e.g.
+  ///   {"Gstin":"{gstin}","user_name":"{loginId}","AuthToken":"{authToken}"}
+  /// Json because the header SET differs per provider, not just the values.
+  gpeHeaders          Json?                                              @map("gpe_headers")
+
+  /// The key the body is nested under, if any: 'Data' for NIC-style
+  /// wrappers, NULL when the body is posted bare.
+  gpeRequestWrapper   String?   @db.VarChar(30)                          @map("gpe_request_wrapper")
+
+  /// JSONPaths blanked before the exchange is written to GstApiLog. The AUTH
+  /// request body literally contains the portal password, and the headers of
+  /// every other call carry a live AuthToken — logged verbatim they become
+  /// credentials with a longer life than the session that issued them.
+  /// Redaction is a config row and not a code branch precisely so that adding
+  /// a provider cannot forget it.
+  gpeRedactPaths      Json?                                              @map("gpe_redact_paths")
+
+  // ── Envelope descriptors ─────────────────────────────────────────────
+  // Where the useful object starts, how to tell success, and where the error
+  // code and message live when it is not.
+  gpeResponseRootPath String?                                            @map("gpe_response_root_path")
+  gpeSuccessPath      String?                                            @map("gpe_success_path")
+  gpeSuccessValue     String?   @db.VarChar(20)                          @map("gpe_success_value")
+  gpeErrorCodePath    String?                                            @map("gpe_error_code_path")
+  gpeErrorMessagePath String?                                            @map("gpe_error_message_path")
+
+  // NULL = inherit the service, which inherits the provider.
+  gpeTimeoutMs        Int?                                               @map("gpe_timeout_ms")
+  gpeMaxRetries       Int?      @db.SmallInt                             @map("gpe_max_retries")
+
+  /// Safe to send again after a timeout. FALSE for GENERATE_IRN: a reply that
+  /// never arrived may still have minted an IRN, and the correct recovery is
+  /// GET_IRN_BY_DOC, not a second generate.
+  gpeIsIdempotent     Boolean   @default(false)                          @map("gpe_is_idempotent")
+
+  gpeRemarks          String?   @db.VarChar(500)                         @map("gpe_remarks")
+  gpeIsActive         Boolean   @default(true)                           @map("gpe_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpeIsDeleted        Boolean   @default(false)                          @map("gpe_is_deleted")
+  gpeSyncDate         DateTime? @db.Timestamptz(6)                       @map("gpe_sync_date")
+  gpeCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("gpe_created_on")
+  gpeCreatedBy        String    @db.VarChar(50)                          @map("gpe_created_by")
+  gpeModifiedOn       DateTime? @db.Timestamptz(6)                       @map("gpe_modified_on")
+  gpeModifiedBy       String?   @db.VarChar(50)                          @map("gpe_modified_by")
+
+  // Relations
+  service             GstProviderService @relation("GstServiceEndpoints", fields: [gpeGpsId], references: [gpsId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gpe_service")
+  fieldMaps           GstProviderFieldMap[] @relation("GstEndpointFieldMaps")
+
+  @@index([gpeGpsId], map: "ix_gpe_service")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gpe_service_action
+  //       ON public.gst_provider_endpoint (gpe_gps_id, gpe_action)
+  //       WHERE gpe_is_deleted = false;
+  //
+  // One live route per action per service — a second GENERATE_IRN row would
+  // make dispatch a coin toss.
+  //
+  // CHECK constraints (DB-only): ck_gpe_action, ck_gpe_http_method,
+  //   ck_gpe_path, ck_gpe_headers, ck_gpe_redact, ck_gpe_timeout,
+  //   ck_gpe_retries, ck_gpe_success_pair
+
+  @@map("gst_provider_endpoint")
+  @@schema("public")
+}

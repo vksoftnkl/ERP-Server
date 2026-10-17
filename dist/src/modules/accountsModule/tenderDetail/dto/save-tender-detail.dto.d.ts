@@ -1,0 +1,66 @@
+import { TenderDrCr, TenderSettleStatus, TenderSrcDocType, TenderSrcModule } from '../types/tender-detail-api.types';
+export declare class TenderTempCreditDto {
+    name: string;
+    mobile: string;
+    place?: string | null;
+    addr?: string | null;
+    idRef?: string | null;
+    days?: number;
+    notes?: string | null;
+}
+export declare class TenderChequeDetailDto {
+    drawerName?: string | null;
+    bankBranch?: string | null;
+    ifsc?: string | null;
+    micr?: string | null;
+}
+export declare class SaveTenderDetailDto {
+    cheque?: TenderChequeDetailDto | null;
+    tempCredit?: TenderTempCreditDto | null;
+    tdId?: string;
+    tdSrcModule?: TenderSrcModule;
+    tdSrcDocType?: TenderSrcDocType;
+    tdSrcDocId?: string;
+    tdRowNo?: number;
+    tdCompanyId?: string;
+    tdBranchId?: string;
+    tdTenantId?: string | null;
+    tdAccYear?: string;
+    tdDocDate?: string;
+    tdPartyLedgerId?: string;
+    tdVoucherId?: string | null;
+    tdTenderId?: string;
+    tdTenderTypeId?: string | number;
+    tdTenderLedgerId?: string;
+    tdDrCr?: TenderDrCr;
+    tdAmount?: string | number;
+    tdSurchargePerc?: string | number;
+    tdSurchargeAmt?: string | number;
+    tdSurchargeLedgerId?: string | null;
+    tdTotalAmt?: string | number;
+    tdReceivedAmt?: string | number;
+    tdChangeAmt?: string | number;
+    tdUnitsUsed?: string | number;
+    tdConversionRate?: string | number;
+    tdRefNo?: string | null;
+    tdAuthCode?: string | null;
+    tdCardLast4?: string | null;
+    tdBankName?: string | null;
+    tdPayerVpa?: string | null;
+    tdInstrumentDate?: string | null;
+    tdIsPdc?: boolean;
+    tdSettleStatus?: TenderSettleStatus;
+    tdSettleLedgerId?: string | null;
+    tdExpectedSettleOn?: string | null;
+    tdSettledOn?: string | null;
+    tdSettleAmount?: string | number | null;
+    tdMdrAmt?: string | number;
+    tdSettleRefNo?: string | null;
+    tdSettleVoucherId?: string | null;
+    tdSessionId?: string | null;
+    tdDeviceId?: string | null;
+    tdUserId?: string;
+    tdNotes?: string | null;
+    tdCreatedBy?: string | null;
+    tdModifiedBy?: string | null;
+}

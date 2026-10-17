@@ -48,6 +48,16 @@ model AuditLog {
   // Notes
   logNotes          String?         @db.Text @map("log_notes")
 
+  /// Notes 89 — revision of a transaction document: 1 = the create, then one
+  /// per save, counted per (logScreenId, logPk). NULL on every other row.
+  /// DB-only partial unique index (Prisma cannot express the predicate):
+  ///   ux_audit_log_revision ON (log_screen_id, log_pk, log_rev_no)
+  ///   WHERE log_rev_no IS NOT NULL
+  /// plus CHECK ck_audit_log_rev_no (log_rev_no >= 1).
+  logRevNo          Int?            @db.SmallInt @map("log_rev_no")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  logSyncDate DateTime? @db.Timestamptz(6) @map("log_sync_date")
+
 
   @@index([logDate], map: "idx_audit_log_date")
   @@index([logScreenId, logDate], map: "idx_audit_log_screen_date")

@@ -1,0 +1,131 @@
+/// public.print_template_version — §3, the design itself, frozen once published.
+///
+/// THE BODY LIVES HERE, not on the template. That one decision is what makes
+/// the rest of the module honest:
+///   * print_log.plg_version_id is a real FK to the exact bytes that were
+///     rendered, so "what did this bill look like" is enforced, not hoped for.
+///   * Publishing and rolling back are a POINTER MOVE on ptl_published_rev_id
+///     — one row, atomic. Rollback writes FORWARD as a new version, so the
+///     history is append-only and a rolled-back design is still evidence.
+///   * A render in flight cannot see a half-saved template, because a
+///     published version is never UPDATEd.
+///
+/// ptvEngine declares what ptvBody IS. 3.0 had no such column — "the body is
+/// QtRPT XML" lived in C++, so moving off QtRPT would have been a flag day for
+/// every customer at once.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_ptv_status, ck_ptv_engine,
+/// ck_ptv_body_is_json (ptv_body IS JSON OBJECT when engine = JSON_BANDS),
+/// ck_ptv_body_size, ck_ptv_rev_no, ck_ptv_orientation, ck_ptv_geometry,
+/// ck_ptv_published (a PUBLISHED row must name an approver, the same shape
+/// ck_prm_approved uses), ck_ptv_lang_shape and ck_ptv_params_is_array live in
+/// the migration and in PrintTemplateVersionService.
+///
+/// Vocabularies, for the service layer:
+///   ptvStatus       DRAFT | PUBLISHED | RETIRED
+///   ptvEngine       JSON_BANDS | HTML_CSS | QTRPT_XML | ESCPOS_TEXT | RAW
+///   ptvOrientation  PORTRAIT | LANDSCAPE
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptv_template_rev    UNIQUE (ptv_template_id, ptv_rev_no) — NOT partial
+///                          on is_deleted, unlike every other unique index in
+///                          this module, because the history is append-only.
+///                          Note the tension with ptvIsDeleted existing at all;
+///                          resolve it one way or the other.
+///   ix_ptv_template_recent (ptv_template_id, ptv_rev_no DESC) INCLUDE
+///                          (status, engine, paper_code) WHERE NOT deleted
+///   ix_ptv_approved_by / ix_ptv_created_by / ix_ptv_modified_by  FK-covering
+model PrintTemplateVersion {
+  ptvId               String    @id(map: "pk_print_template_version") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptv_id")
+  ptvTemplateId       String    @db.Uuid                                     @map("ptv_template_id")
+  ptvRevNo            Int                                                    @map("ptv_rev_no")
+
+  ptvStatus           String    @default("DRAFT") @db.VarChar(15)            @map("ptv_status")
+
+  // ── What the body IS ────────────────────────────────────────────────────
+  ptvEngine           String    @default("JSON_BANDS") @db.VarChar(20)       @map("ptv_engine")
+  ptvBody             String    @db.Text                                     @map("ptv_body")
+  ptvSchemaVer        Int       @default(1)                                  @map("ptv_schema_ver")
+
+  // ── The page ────────────────────────────────────────────────────────────
+  // Authoritative here, unlike 3.0 where pstyl_size sat beside an XML that
+  // actually decided, and the two were free to disagree.
+  ptvPaperCode        String    @default("A4") @db.VarChar(20)               @map("ptv_paper_code")
+  ptvOrientation      String    @default("PORTRAIT") @db.VarChar(10)         @map("ptv_orientation")
+  ptvWidthMm          Decimal?  @db.Decimal(8, 2)                            @map("ptv_width_mm")
+  ptvHeightMm         Decimal?  @db.Decimal(8, 2)                            @map("ptv_height_mm")
+  ptvMarginTopMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_top_mm")
+  ptvMarginBottomMm   Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_bottom_mm")
+  ptvMarginLeftMm     Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_left_mm")
+  ptvMarginRightMm    Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_right_mm")
+  /// Characters per line for the text engines. Meaningless for a page one.
+  ptvColumns          Int?      @db.SmallInt                                 @map("ptv_columns")
+
+  // ── Language ────────────────────────────────────────────────────────────
+  // The DEFAULT, not a resolution key. A render may override it. Language must
+  // never fork a template the way pstyl_platform forked every one of 3.0's.
+  ptvLang             String    @default("en-IN") @db.VarChar(5)             @map("ptv_lang")
+  ptvFontFamily       String?   @db.VarChar(80)                              @map("ptv_font_family")
+
+  /// ── What the OPERATOR is asked, once, for the whole render ─────────────
+  /// A JSON array, one entry per prompt:
+  ///   [{"name":"from_date","type":"DATE","required":true,"label":"From date"},
+  ///    {"name":"godown_id","type":"UUID","required":false,"label":"Godown"}]
+  ///
+  /// ON THE VERSION, not on the dataset. The operator is asked ONCE — if
+  /// dataset 1 declared from_date as DATE required and dataset 3 declared it
+  /// as TEXT optional there is no answer to what the screen should ask — and
+  /// print_log.plg_params is one jsonb object per render, not one per dataset.
+  ///
+  /// CONTEXT PARAMETERS ARE NOT DECLARED ANYWHERE. :company_id, :branch_id,
+  /// :acc_year, :doc_id, :user_id and :device_id are a closed set the server
+  /// holds the types for, and it finds which of them a query uses by reading
+  /// the query — exactly as ck_ptd_sql_company_scoped already reads
+  /// ptd_sql_norm for :company_id. So there is no "source" field here:
+  /// everything in this array is asked, everything else is context.
+  ///
+  /// ck_ptv_params_is_array (jsonb_typeof = 'array') is enforced in the
+  /// migration and in PrintTemplateVersionService.
+  ptvParams           Json?     @db.JsonB                                    @map("ptv_params")
+
+  // There is deliberately NO sample-document pointer. Which bill a designer
+  // previews against is a property of the EDITING SESSION, not of the
+  // published design: it is one user's convenience, meaningless to every other
+  // user of the same template, and a version is frozen once published while
+  // the document it named can be cancelled, corrected or purged with the year.
+  // The designer holds the last previewed document in its own state.
+
+  ptvNote             String?   @db.VarChar(250)                             @map("ptv_note")
+
+  /// Publishing is a privileged act: a version whose datasets carry stored SQL
+  /// is, in every meaningful sense, code.
+  ptvApprovedOn       DateTime? @db.Timestamptz(6)                           @map("ptv_approved_on")
+  ptvApprovedBy       String?   @db.Uuid                                     @map("ptv_approved_by")
+
+  ptvIsDeleted        Boolean   @default(false)                              @map("ptv_is_deleted")
+  ptvSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptv_sync_date")
+  ptvCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptv_created_on")
+  ptvCreatedBy        String?   @db.Uuid                                     @map("ptv_created_by")
+  ptvModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptv_modified_on")
+  ptvModifiedBy       String?   @db.Uuid                                     @map("ptv_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  template            PrintTemplate @relation("PrintTemplateVersions",           fields: [ptvTemplateId], references: [ptlId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_ptv_template")
+  approvedByUser      UserMaster?   @relation("PrintTemplateVersionApprovedBy",  fields: [ptvApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_approved_by")
+  createdByUser       UserMaster?   @relation("PrintTemplateVersionCreatedBy",   fields: [ptvCreatedBy],  references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateVersionModifiedBy",  fields: [ptvModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_modified_by")
+
+  /// The other half of the circular pair — the templates that publish this
+  /// version. At most one in practice; the schema does not say so.
+  publishedFor        PrintTemplate[]        @relation("PrintTemplatePublishedRev")
+  datasets            PrintTemplateDataset[] @relation("PrintTemplateDatasetVersion")
+
+  printLogs           PrintLog[]             @relation("PrintLogVersion")
+
+  /// Version numbers are dense and unique per template. NOT partial on
+  /// is_deleted, unlike every other unique index in this module, because the
+  /// history is append-only.
+  @@unique([ptvTemplateId, ptvRevNo], map: "ux_ptv_template_rev")
+  @@map("print_template_version")
+  @@schema("public")
+}

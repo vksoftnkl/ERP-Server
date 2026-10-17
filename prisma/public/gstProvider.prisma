@@ -1,0 +1,59 @@
+/// One row per GST Suvidha Provider, and nothing that varies per company, per
+/// service or per environment. In particular NO base url and NO credentials:
+/// the first draft (fixed.gsp_provider_master) put both here, and both are
+/// wrong at this grain — a provider serves several services from several
+/// hosts, and its credentials belong to the GSTIN that logs in, not to the
+/// provider.
+///
+/// Adding a SECOND provider must be an INSERT, not a deployment. That is the
+/// constraint the whole gst_* family is shaped by: the route of every call
+/// (GstProviderEndpoint), the shape of every reply (GstProviderFieldMap) and
+/// the meaning of every error code (GstProviderErrorMap) are rows, not code.
+model GstProvider {
+  gpvId               String    @id(map: "pk_gst_provider") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpv_id")
+
+  /// Short stable handle used in seeds, logs and support calls: 'NIC',
+  /// 'CYGNET', 'CLEARTAX'. Never renamed — retire the row instead, which is
+  /// why this is a real UNIQUE constraint and not a partial index.
+  gpvCode             String    @unique(map: "ux_gst_provider_code") @db.VarChar(20) @map("gpv_code")
+  gpvName             String    @db.VarChar(150)                             @map("gpv_name")
+
+  // Where a human goes when the integration misbehaves. Not used by code.
+  gpvPortalUrl        String?                                                @map("gpv_portal_url")
+  gpvSupportEmail     String?   @db.VarChar(120)                             @map("gpv_support_email")
+  gpvSupportPhone     String?   @db.VarChar(20)                              @map("gpv_support_phone")
+
+  // Defaults inherited by every service and endpoint below unless they
+  // override. Per-call tuning is still possible further down.
+  gpvTimeoutMs        Int       @default(30000)                              @map("gpv_timeout_ms")
+  gpvMaxRetries       Int       @default(2) @db.SmallInt                     @map("gpv_max_retries")
+
+  /// Calls per minute the contract allows, NULL = unmetered. A shop with four
+  /// tills can trip a limit that no single till would notice.
+  gpvRateLimitPerMin  Int?      @db.SmallInt                                 @map("gpv_rate_limit_per_min")
+
+  gpvRemarks          String?   @db.VarChar(500)                             @map("gpv_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  gpvIsActive         Boolean   @default(true)                               @map("gpv_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpvIsDeleted        Boolean   @default(false)                              @map("gpv_is_deleted")
+  gpvSyncDate         DateTime? @db.Timestamptz(6)                           @map("gpv_sync_date")
+  gpvCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("gpv_created_on")
+  gpvCreatedBy        String    @db.VarChar(50)                              @map("gpv_created_by")
+  gpvModifiedOn       DateTime? @db.Timestamptz(6)                           @map("gpv_modified_on")
+  gpvModifiedBy       String?   @db.VarChar(50)                              @map("gpv_modified_by")
+
+  // Relations
+  services            GstProviderService[]    @relation("GstProviderServices")
+  accounts            GstProviderAccount[]    @relation("GstProviderAccounts")
+  errorMaps           GstProviderErrorMap[]   @relation("GstProviderErrorMaps")
+  credentials         GstCompanyCredential[]  @relation("GstCredentialProvider")
+
+  // CHECK constraints (DB-only): ck_gpv_code_shape, ck_gpv_timeout,
+  //   ck_gpv_retries, ck_gpv_rate_limit
+
+  @@map("gst_provider")
+  @@schema("public")
+}

@@ -1,0 +1,5 @@
+export declare enum SaleFreightChargeErrorCode {
+    NOT_FOUND = "FREIGHT_NOT_FOUND",
+    RANGE_EXISTS = "FREIGHT_RANGE_EXISTS",
+    REFERENCE_NOT_FOUND = "FREIGHT_REFERENCE_NOT_FOUND"
+}
