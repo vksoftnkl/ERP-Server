@@ -36,4 +36,14 @@ export enum ItemPriceErrorCode {
   BUCKET_COLLISION = 'ITEM_PRICE_BUCKET_COLLISION',
   /** A tracking change would put a price under an MRP it sells above. */
   REBUCKET_ABOVE_MRP = 'ITEM_PRICE_REBUCKET_ABOVE_MRP',
+  /** Delete refused: the price row is already deleted (DELETE no longer toggles, notes 137 D1). */
+  ALREADY_DELETED = 'ITEM_PRICE_ALREADY_DELETED',
+  /** ipm_item_id names no live item: the item is missing or deleted. */
+  ITEM_NOT_LIVE = 'ITEM_PRICE_ITEM_NOT_LIVE',
+  /** ipm_company_id is not the company the item belongs to (notes 137 C4). */
+  OTHER_COMPANY = 'ITEM_PRICE_OTHER_COMPANY',
+  /** ipm_branch_id names no branch, or a branch of another company than the row's / the item's. */
+  BRANCH_OTHER_COMPANY = 'ITEM_PRICE_BRANCH_OTHER_COMPANY',
+  /** ipm_godown_id names no godown, or a godown outside the row's branch / company. */
+  GODOWN_OUT_OF_SCOPE = 'ITEM_PRICE_GODOWN_OUT_OF_SCOPE',
 }

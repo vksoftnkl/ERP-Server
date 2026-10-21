@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GetItemPriceDetailByBarcodeQueryDto = exports.GetItemPriceDetailQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
+const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 class GetItemPriceDetailQueryDto {
     item_id;
 }
@@ -23,6 +24,7 @@ __decorate([
 ], GetItemPriceDetailQueryDto.prototype, "item_id", void 0);
 class GetItemPriceDetailByBarcodeQueryDto {
     barcode;
+    company_id;
 }
 exports.GetItemPriceDetailByBarcodeQueryDto = GetItemPriceDetailByBarcodeQueryDto;
 __decorate([
@@ -31,4 +33,12 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], GetItemPriceDetailByBarcodeQueryDto.prototype, "barcode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "Restricts the match to the company's own items and the shared ones (notes 137 B4). Omitted: any company's.",
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], GetItemPriceDetailByBarcodeQueryDto.prototype, "company_id", void 0);
 //# sourceMappingURL=get-item-price-detail-query.dto.js.map

@@ -1,5 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { OptionalUuid } from 'src/common/dto/dtoDecorators';
 export class GetItemPriceDetailQueryDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')
@@ -10,4 +11,12 @@ export class GetItemPriceDetailByBarcodeQueryDto {
   @IsString()
   @IsNotEmpty()
   barcode!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Restricts the match to the company's own items and the shared ones (notes 137 B4). Omitted: any company's.",
+  })
+  @OptionalUuid()
+  company_id?: string;
 }

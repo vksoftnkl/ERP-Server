@@ -71,8 +71,12 @@ export class ItemPriceDetailsController {
   }
   @Get('get-by-barcode')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get item price details by barcode' })
+  @ApiOperation({
+    summary:
+      "Get item price details by barcode: a live item's EAN code first, then its header barcode, letters in any case (notes 137 B4)",
+  })
   @ApiQuery({ name: 'barcode', schema: { type: 'string' } })
+  @ApiQuery({ name: 'company_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemPriceDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemPriceDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemPriceDetailErrorResponseDto })
@@ -82,7 +86,7 @@ export class ItemPriceDetailsController {
     const dto = await validateDto(query, GetItemPriceDetailByBarcodeQueryDto, {
       type: 'query',
     });
-    const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode);
+    const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode, dto.company_id);
     return {
       success: true,
       message: 'Item price details fetched successfully',

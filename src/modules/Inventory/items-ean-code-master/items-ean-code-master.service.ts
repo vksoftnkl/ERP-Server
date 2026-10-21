@@ -32,6 +32,11 @@ import {
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  assertChildDeletable,
+  assertItemsLive,
+  assertUnitOfItem,
+} from '../utils/item-child.helper';
 const ITEM_EAN_CODE_TABLE_NAME = 'item ean codes';
 const ITEM_EAN_CODE_AUDIT_SCREEN_NAME = 'Item EAN Code Master';
 
@@ -69,6 +74,11 @@ export class ItemsEanCodeMasterService {
   ): Promise<ItemEanCodePayload | ItemEanCodePayload[]> {
     const saveItems = Array.isArray(saveItemEanCodeDto) ? saveItemEanCodeDto : [saveItemEanCodeDto];
     const saveAll = async (client: Prisma.TransactionClient) => {
+      await assertItemsLive(
+        client,
+        saveItems.map((item) => item.ean_item_id),
+        { field: 'ean_item_id', code: ItemEanErrorCode.ITEM_NOT_LIVE },
+      );
       const savedItems: ItemEanCodePayload[] = [];
 
       for (const saveItem of saveItems) {
@@ -187,6 +197,49 @@ export class ItemsEanCodeMasterService {
     return Array.isArray(eanId) ? results : results[0];
   }
 
+  /**
+   * DELETE /item-ean-codes/delete. Deletes only — a deleted row is a 409, not
+   * a restore (notes 137 D1); toggleDelete stays the composite's tool, which
+   * flips the rows deleted with their item back on restore.
+   */
+  async delete(eanId: string): Promise<ItemEanCodeDeleteResult>;
+  async delete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
+  async delete(
+    eanId: string | string[],
+  ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
+  async delete(
+    eanId: string | string[],
+  ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]> {
+    const ids = Array.isArray(eanId) ? eanId : [eanId];
+    const results = await this.prisma.$transaction(async (client) => {
+      const deleted: ItemEanCodeDeleteResult[] = [];
+      for (const id of ids) {
+        const existing = await client.itemEanCode.findFirst({ where: { eanId: id } });
+        if (!existing) {
+          throwInventoryNotFound<ItemEanCodeErrorDetail>(
+            'Item EAN code not found',
+            'ean_id',
+            `No item EAN code found with id ${id}`,
+            ItemEanErrorCode.NOT_FOUND,
+          );
+        }
+        await assertChildDeletable(
+          client,
+          { isDeleted: existing.eanIsDeleted, itemId: existing.eanItemId },
+          {
+            label: 'EAN code',
+            idField: 'ean_id',
+            alreadyDeletedCode: ItemEanErrorCode.ALREADY_DELETED,
+            itemNotLiveCode: ItemEanErrorCode.ITEM_NOT_LIVE,
+          },
+        );
+        deleted.push(await this.toggleDeleteItemEanCode(client, id));
+      }
+      return deleted;
+    });
+    return Array.isArray(eanId) ? results : results[0];
+  }
+
   private async saveItemEanCode(
     tx: Prisma.TransactionClient,
     saveItemEanCodeDto: SaveItemEanCodeDto,
@@ -286,12 +339,15 @@ export class ItemsEanCodeMasterService {
       ]);
     }
 
+    await assertUnitOfItem(tx, saveItemEanCodeDto.ean_unit_id, saveItemEanCodeDto.ean_item_id, {
+      field: 'ean_unit_id',
+      code: ItemEanErrorCode.UNIT_NOT_OF_ITEM,
+    });
     const now = new Date();
-    const createdBy = resolveActor(
-      saveItemEanCodeDto.ean_created_by,
-      this.requestContextService.getUserId(),
-    );
-    const modifiedBy = resolveActor(saveItemEanCodeDto.ean_modified_by, createdBy);
+    // The token's user, never the payload's ean_created_by / ean_modified_by
+    // (notes 137 C2): a body could name anyone.
+    const createdBy = resolveActor(null, this.requestContextService.getUserId());
+    const modifiedBy = createdBy;
     const data: Prisma.ItemEanCodeUncheckedCreateInput = {
       eanItemId: saveItemEanCodeDto.ean_item_id,
       eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
@@ -332,9 +388,13 @@ export class ItemsEanCodeMasterService {
   ): Promise<ItemEanCodePayload> {
     const eanId = saveItemEanCodeDto.ean_id!;
 
+    // By id AND item: an EAN row of another item is not this item's to
+    // rewrite. Loading by id alone moved item A's barcode onto item B
+    // (notes 137 A1).
     const existing = await tx.itemEanCode.findFirst({
       where: {
         eanId,
+        eanItemId: saveItemEanCodeDto.ean_item_id,
         eanIsDeleted: false,
       },
     });
@@ -342,7 +402,7 @@ export class ItemsEanCodeMasterService {
       throwInventoryNotFound<ItemEanCodeErrorDetail>(
         'Item EAN code not found',
         'ean_id',
-        `No active item EAN code found with id ${eanId}`,
+        `No active EAN code ${eanId} on item ${saveItemEanCodeDto.ean_item_id}`,
         ItemEanErrorCode.NOT_FOUND,
       );
     }
@@ -358,15 +418,18 @@ export class ItemsEanCodeMasterService {
       ]);
     }
 
+    if (saveItemEanCodeDto.ean_unit_id !== existing.eanUcUnitId) {
+      await assertUnitOfItem(tx, saveItemEanCodeDto.ean_unit_id, existing.eanItemId, {
+        field: 'ean_unit_id',
+        code: ItemEanErrorCode.UNIT_NOT_OF_ITEM,
+      });
+    }
+    // ean_item_id is the row's owner, not a field it can change.
     const data: Prisma.ItemEanCodeUncheckedUpdateInput = {
-      eanItemId: saveItemEanCodeDto.ean_item_id,
       eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
       eanCode,
       eanModifiedOn: new Date(),
-      eanModifiedBy: resolveActor(
-        saveItemEanCodeDto.ean_modified_by,
-        this.requestContextService.getUserId(),
-      ),
+      eanModifiedBy: resolveActor(null, this.requestContextService.getUserId()),
     };
     this.applyOptionalFields(data, saveItemEanCodeDto);
 

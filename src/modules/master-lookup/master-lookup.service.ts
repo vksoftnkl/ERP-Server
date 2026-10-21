@@ -173,22 +173,6 @@ export class MasterLookupService {
     branchId?: string,
   ): Promise<BarcodeItemLookup> {
     const code = barcode.trim();
-    const ean = await this.prisma.itemEanCode.findFirst({
-      where: {
-        eanIsActive: true,
-        eanIsDeleted: false,
-        eanCode: { equals: code, mode: 'insensitive' },
-      },
-      select: { eanItemId: true, eanUcUnitId: true },
-    });
-    if (!ean) {
-      throwMasterNotFound<MasterErrorDetail>(
-        'Barcode not found',
-        'barcode',
-        `No active item found for barcode ${code}`,
-        MasterLookupErrorCode.BARCODE_NOT_FOUND,
-      );
-    }
     // Legacy INNER JOIN item_master ON item_id = ean.item_id
     //   AND item_comp_id IN (0, icompany_id)   — only when a company is given
     //   AND item_branch_id IN (0, ibranch_id)  — only when a branch is given.
@@ -200,37 +184,85 @@ export class MasterLookupService {
     if (branchId) {
       scope.push({ OR: [{ itemBranchId: branchId }, { itemBranchId: null }] });
     }
-    const item = await this.prisma.itemMaster.findFirst({
+    const itemSelect = {
+      itemId: true,
+      itemNameEn: true,
+      itemBatchConfig: true,
+      itemAllowSales: true,
+      itemIsActive: true,
+      itemWeighScale: true,
+    } satisfies Prisma.ItemMasterSelect;
+    const ean = await this.prisma.itemEanCode.findFirst({
       where: {
-        itemId: ean.eanItemId,
-        ...(scope.length ? { AND: scope } : {}),
+        eanIsActive: true,
+        eanIsDeleted: false,
+        eanCode: { equals: code, mode: 'insensitive' },
       },
-      select: {
-        itemNameEn: true,
-        itemBatchConfig: true,
-        itemAllowSales: true,
-        itemIsActive: true,
-        itemWeighScale: true,
-      },
+      select: { eanItemId: true, eanUcUnitId: true },
     });
-    if (!item) {
+    let item: Prisma.ItemMasterGetPayload<{ select: typeof itemSelect }> | null;
+    let unitId: string | null;
+    if (ean) {
+      item = await this.prisma.itemMaster.findFirst({
+        where: {
+          itemId: ean.eanItemId,
+          itemIsDeleted: false,
+          ...(scope.length ? { AND: scope } : {}),
+        },
+        select: itemSelect,
+      });
+      unitId = ean.eanUcUnitId;
+    } else {
+      // Notes 137 B3 — a barcode typed only in the item header
+      // (item_default_barcode, no EAN row) used to never scan. It is the
+      // fallback, sold in the item's default unit (else its base unit, else
+      // its first). Notes 137 B5 keeps a header barcode off every other live
+      // item, so at most one item answers; the order only makes old data
+      // deterministic.
+      item = await this.prisma.itemMaster.findFirst({
+        where: {
+          itemIsDeleted: false,
+          itemDefaultBarcode: { equals: code, mode: 'insensitive' },
+          ...(scope.length ? { AND: scope } : {}),
+        },
+        orderBy: [{ itemNameEn: 'asc' }, { itemId: 'asc' }],
+        select: itemSelect,
+      });
+      if (!item) {
+        throwMasterNotFound<MasterErrorDetail>(
+          'Barcode not found',
+          'barcode',
+          `No active item found for barcode ${code}`,
+          MasterLookupErrorCode.BARCODE_NOT_FOUND,
+        );
+      }
+      const unit = await this.prisma.itemUnitConversion.findFirst({
+        where: { iucItemId: item.itemId, iucIsDeleted: false, iucIsActive: true },
+        orderBy: [{ iucIsDefaultUnit: 'desc' }, { iucIsBaseUnit: 'desc' }, { iucUnitSlno: 'asc' }],
+        select: { iucId: true },
+      });
+      unitId = unit?.iucId ?? null;
+    }
+    if (!item || !unitId) {
       throwMasterNotFound<MasterErrorDetail>(
         'Barcode not found',
         'barcode',
-        scope.length
+        !item && scope.length
           ? `Barcode ${code} is not linked to an item of ${[
               companyId ? `company ${companyId}` : null,
               branchId ? `branch ${branchId}` : null,
             ]
               .filter(Boolean)
               .join(' and ')}`
-          : `Barcode ${code} is not linked to a valid item`,
+          : !item
+            ? `Barcode ${code} is not linked to a valid item`
+            : `Barcode ${code} names ${item.itemNameEn}, which has no live unit to sell in`,
         MasterLookupErrorCode.BARCODE_ITEM_NOT_FOUND,
       );
     }
     return {
-      itemId: ean.eanItemId,
-      unitId: ean.eanUcUnitId,
+      itemId: item.itemId,
+      unitId,
       itemName: item.itemNameEn,
       batchConfig: item.itemBatchConfig,
       allowSales: item.itemAllowSales,

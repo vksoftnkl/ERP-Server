@@ -59,7 +59,7 @@ let ItemUnitConversionController = class ItemUnitConversionController {
     }
     async remove(body, query) {
         const deletePayload = await this.resolveDeletePayload(body, query);
-        const data = await this.itemUnitConversionService.toggleDelete(Array.isArray(deletePayload)
+        const data = await this.itemUnitConversionService.delete(Array.isArray(deletePayload)
             ? deletePayload.map((item) => item.iuc_id)
             : deletePayload.iuc_id);
         return {
@@ -161,7 +161,9 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item unit conversion by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item unit conversion by id. Deletes only (409 UNIT_CONV_ALREADY_DELETED), and 409 UNIT_CONV_IN_USE while live prices, EAN codes or reorders use the unit (notes 137 A4 / D1)',
+    }),
     (0, swagger_1.ApiQuery)({
         name: 'iuc_id',
         required: false,

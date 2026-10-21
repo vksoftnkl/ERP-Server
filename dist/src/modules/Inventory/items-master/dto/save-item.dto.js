@@ -127,10 +127,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'Company UUID this item belongs to.',
+        description: 'Company UUID this item belongs to. null (or "") makes the item SHARED by every company; omitted keeps the stored company (notes 137 A2).',
     }),
-    (0, dtoDecorators_1.OptionalUuid)(),
-    __metadata("design:type", String)
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_company_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
@@ -225,137 +225,137 @@ __decorate([
 ], SaveItemDto.prototype, "item_base_unit_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_service", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_batch_based", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_expiry_item", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, dtoDecorators_1.OptionalInteger)(),
-    __metadata("design:type", Number)
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0 }),
+    (0, dtoDecorators_1.NullableInteger)(0),
+    __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_expiry_days", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, dtoDecorators_1.OptionalInteger)(),
-    __metadata("design:type", Number)
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0 }),
+    (0, dtoDecorators_1.NullableInteger)(0),
+    __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_intimate_before_days", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_sales", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_sales_return", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_purchase", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_po", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_so", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_neg_stock", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_negative_so", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_price_list", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_weigh_scale", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_retail_item", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_kit", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_auto_break", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_auto_make", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_loyalty", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_promo", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_has_offer", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_damagable_product", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_demand", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_loading", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_freight", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_random_stock", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_barcode_sticker", void 0);
 __decorate([
@@ -369,8 +369,9 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_default_tax_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true, pattern: '^[0-9]+$' }),
     (0, dtoDecorators_1.NullableString)(10),
+    (0, class_validator_1.Matches)(/^[0-9]+$/, { message: 'item_hsn_code must hold digits only (an HSN or SAC code)' }),
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_hsn_code", void 0);
 __decorate([
@@ -389,8 +390,8 @@ __decorate([
 ], SaveItemDto.prototype, "item_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, dtoDecorators_1.OptionalInteger)(),
-    __metadata("design:type", Number)
+    (0, dtoDecorators_1.NullableInteger)(),
+    __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_sort_order", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Base64-encoded image bytes' }),
@@ -427,21 +428,29 @@ __decorate([
 ], SaveItemDto.prototype, "item_packing_item_ids", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_incl_tax", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_is_active", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_created_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_modified_by", void 0);

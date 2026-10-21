@@ -15,6 +15,8 @@ type PrismaMock = {
       Promise<{ itemBaseUnitId: string | null } | null>,
       [Prisma.ItemMasterFindFirstArgs]
     >;
+    // The item-live check (notes 137 D1).
+    findMany: jest.Mock;
   };
   itemUnitConversion: {
     count: jest.Mock<Promise<number>, [Prisma.ItemUnitConversionCountArgs]>;
@@ -38,29 +40,28 @@ type ConfiguredGridSqlServiceMock = {
 
 const makeItemUnitConversionRecord = (
   overrides: Partial<ItemUnitConversion> = {},
-): ItemUnitConversion =>
-  ({
-    iucId: '019c6f6c-be87-7a11-8905-36092c46fd12',
-    iucItemId: ITEM_ID,
-    iucUnitId: UNIT_ID,
-    iucBaseUnitId: BASE_UNIT_ID,
-    iucToBaseFactor: new Prisma.Decimal(12),
-    iucUnitSlno: 2,
-    iucUnitFactor: new Prisma.Decimal(6),
-    iucIsDefaultUnit: true,
-    iucIsBaseUnit: false,
-    iucIsBigUnit: true,
-    iucUomWeight: new Prisma.Decimal(0),
-    iucUomRemarks: 'Carton',
-    iucIsActive: true,
-    iucIsDeleted: false,
-    iucSyncDate: null,
-    iucCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
-    iucCreatedBy: USER_ID,
-    iucUpdatedOn: null,
-    iucUpdatedBy: null,
-    ...overrides,
-  }) as ItemUnitConversion;
+): ItemUnitConversion => ({
+  iucId: '019c6f6c-be87-7a11-8905-36092c46fd12',
+  iucItemId: ITEM_ID,
+  iucUnitId: UNIT_ID,
+  iucBaseUnitId: BASE_UNIT_ID,
+  iucToBaseFactor: new Prisma.Decimal(12),
+  iucUnitSlno: 2,
+  iucUnitFactor: new Prisma.Decimal(6),
+  iucIsDefaultUnit: true,
+  iucIsBaseUnit: false,
+  iucIsBigUnit: true,
+  iucUomWeight: new Prisma.Decimal(0),
+  iucUomRemarks: 'Carton',
+  iucIsActive: true,
+  iucIsDeleted: false,
+  iucSyncDate: null,
+  iucCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
+  iucCreatedBy: USER_ID,
+  iucUpdatedOn: null,
+  iucUpdatedBy: null,
+  ...overrides,
+});
 
 describe('ItemUnitConversionService', () => {
   let service: ItemUnitConversionService;
@@ -76,6 +77,10 @@ describe('ItemUnitConversionService', () => {
           Promise<{ itemBaseUnitId: string | null } | null>,
           [Prisma.ItemMasterFindFirstArgs]
         >(),
+        // Every item named is live unless a test says otherwise.
+        findMany: jest.fn((args: { where: { itemId: { in: string[] } } }) =>
+          Promise.resolve(args.where.itemId.in.map((itemId) => ({ itemId }))),
+        ),
       },
       itemUnitConversion: {
         count: jest.fn<Promise<number>, [Prisma.ItemUnitConversionCountArgs]>(),

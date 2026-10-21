@@ -12,7 +12,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
   NullableUuid,
-  OptionalBoolean,
+  OptionalNotNullBoolean,
   OptionalInteger,
   OptionalNumber,
   OptionalUuid,
@@ -148,17 +148,29 @@ export class SaveItemPriceDto {
   @NullableString(250)
   ipm_cost_remarks?: string | null;
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   ipm_is_active?: boolean;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   ipm_sync_date?: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    example: null,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableUuid()
   ipm_created_by?: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    example: null,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableUuid()
   ipm_updated_by?: string | null;
 }

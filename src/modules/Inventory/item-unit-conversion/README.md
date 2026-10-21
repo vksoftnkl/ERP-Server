@@ -30,11 +30,15 @@ converted to the base unit.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a conversion (by `iuc_id` presence). Accepts a single object **or** an array. |
 | `GET` | `/get` | Fetch one conversion by `iuc_id`, or list with optional filters/pagination (`iuc_item_id`, `iuc_is_active`, `search`). |
-| `DELETE` | `/delete` | Soft-delete **or restore** (toggle) a conversion by id. Accepts `iuc_id` via query, or a single/array body. |
+| `DELETE` | `/delete` | Soft-delete a conversion by id. Deletes only, and refuses while live prices / EAN codes / reorders use the unit. Accepts `iuc_id` via query, or a single/array body. |
 
 ### Create / update semantics
 
-- **Omit `iuc_id` → create; include `iuc_id` → update** the existing row.
+- **Omit `iuc_id` → create; include `iuc_id` → update** the existing row **of `iuc_item_id`**;
+  another item's row is a 404 and `iuc_item_id` is never rewritten (notes 137 A1). The item must
+  be live (400 `UNIT_CONV_ITEM_NOT_LIVE`, notes 137 D1).
+- `iuc_created_by` / `iuc_updated_by` are the token's user; the payload's values are accepted and
+  ignored (notes 137 C2). `iuc_uom_weight` is `Min(0)` in the DTO (notes 137 D5).
 - The `/create` body is a union (single object or array); the controller validates explicitly with
   `validateSingleOrArrayDto` since Nest's global `ValidationPipe` can't infer the shape.
 - **Batch mode is all-or-nothing:** the whole array runs in one `$transaction`; if any entry fails,
@@ -44,11 +48,15 @@ converted to the base unit.
 
 ### Delete / restore semantics
 
-- `DELETE /delete` **toggles** `iucIsDeleted`: an active row is soft-deleted, an already-deleted row
-  is restored. The row is looked up regardless of current deleted state.
+- `DELETE /delete` **deletes only** (`delete()`, notes 137 D1): an already-deleted row is a 409
+  `UNIT_CONV_ALREADY_DELETED`, a row whose item is deleted a 409 `UNIT_CONV_ITEM_NOT_LIVE`, and a
+  unit that live prices, EAN codes or reorder rows still use is a 409 `UNIT_CONV_IN_USE` naming
+  them (notes 137 A4 — they stayed live behind the deleted unit, the barcode kept scanning, and the
+  next item save that echoed them was a 400). The item card's composite save removes a unit
+  together with those rows instead. It used to toggle, so a second DELETE restored the unit.
 - Accepts an `iuc_id` query param **or** a request body (single object or array of `{ iuc_id }`);
   the body takes precedence when present, otherwise `iuc_id` is read from the query.
-- The response message reflects whether items were deleted, restored, or a mix.
+- The response `deleted` flag is `true`.
 
 ## Base-unit & factor normalization
 
@@ -87,11 +95,11 @@ not allowed"*. Invalid FK references (item, unit, base unit) surface as a `400`.
 
 ## Business rules
 
-- **Soft delete only** — rows are never hard-deleted; `iucIsDeleted` is toggled and `iucUpdatedOn` is
-  stamped. List and single-get queries filter on `iucIsDeleted = false`.
+- **Soft delete only** — rows are never hard-deleted; a delete sets `iucIsDeleted` and stamps
+  `iucUpdatedOn`. List and single-get queries filter on `iucIsDeleted = false`.
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` / `cancel`),
-  capturing original vs. modified records under screen `Item Unit Conversion Master`. The actor is
-  resolved from the record's `created_by` / `updated_by`, falling back to `system`.
+  capturing original vs. modified records under screen `Item Unit Conversion Master`. The audit
+  actor is the record's `updated_by` / `created_by` (the token's user), falling back to `system`.
 - Lists go through the **configured-grid SQL** path (`ConfiguredGridSqlService`) with a Prisma
   `findMany` fallback ordered by `iucItemId`, `iucUnitSlno`, then `iucId`; results are paginated.
 
@@ -104,4 +112,5 @@ externally are:
 - `findByItemId(itemId)` — list an item's active conversions (ordered by slno).
 - `findIdsByItemId(itemId, isDeleted)` — fetch conversion ids for an item by deleted state.
 - `save(dto | dto[])` — create/update conversions.
-- `toggleDelete(id | id[])` — soft-delete/restore conversions.
+- `toggleDelete(id | id[])` — soft-delete/restore conversions with their item (the composite
+  delete / restore and the unit sync); the HTTP route uses `delete()`.

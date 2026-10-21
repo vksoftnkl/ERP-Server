@@ -34,6 +34,7 @@ export declare class UiTableMasterService {
     private updateUiTable;
     private saveColumnsInTx;
     private upsertColumnInTx;
+    private assertColumnNumbersUnique;
     private ensureNameIsUnique;
     private normalizeRequiredName;
     private toPayload;

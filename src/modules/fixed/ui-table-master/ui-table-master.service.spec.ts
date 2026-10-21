@@ -139,6 +139,8 @@ type FullPrismaMock = {
     create: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
+    // The column-number clash check (notes 137 E).
+    groupBy: jest.Mock;
   };
   $transaction: jest.Mock;
 };
@@ -168,6 +170,7 @@ describe('UiTableMasterService', () => {
         create: jest.fn(async () => columnRow({ uiTblClmId: nextColumnId++ })),
         update: jest.fn().mockResolvedValue(columnRow()),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn(async (callback: (tx: FullPrismaMock) => unknown) => callback(prisma)),
     };
@@ -370,6 +373,8 @@ describe('UiTableMasterService', () => {
           // The existence read names the id; the duplicate-name read does not.
           'uiTblName' in where ? null : tableRow(),
       );
+      // A column the update names by id is one of this table's live columns.
+      prisma.uitableColumns.findFirst.mockResolvedValue({ uiTblClmId: 70n });
     });
 
     it('refuses an id with no live table', async () => {

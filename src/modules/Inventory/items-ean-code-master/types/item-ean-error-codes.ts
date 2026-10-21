@@ -14,4 +14,10 @@ export enum ItemEanErrorCode {
   CODE_TAKEN = 'ITEM_EAN_CODE_TAKEN',
   /** ean_unit_id (or another id on the row) names a row that does not exist. */
   UNKNOWN_REFERENCE = 'ITEM_EAN_UNKNOWN_REFERENCE',
+  /** Delete refused: the EAN row is already deleted (DELETE no longer toggles, notes 137 D1). */
+  ALREADY_DELETED = 'ITEM_EAN_ALREADY_DELETED',
+  /** ean_item_id names no live item: the item is missing or deleted. */
+  ITEM_NOT_LIVE = 'ITEM_EAN_ITEM_NOT_LIVE',
+  /** ean_unit_id is not one of the item's own live unit conversion rows. */
+  UNIT_NOT_OF_ITEM = 'ITEM_EAN_UNIT_NOT_OF_ITEM',
 }

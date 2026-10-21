@@ -1,6 +1,6 @@
 export declare class SaveItemDto {
     item_id?: string;
-    item_company_id?: string;
+    item_company_id?: string | null;
     item_branch_id?: string | null;
     item_code?: string | null;
     item_sku?: string | null;
@@ -21,8 +21,8 @@ export declare class SaveItemDto {
     item_is_service?: boolean;
     item_is_batch_based?: boolean;
     item_is_expiry_item?: boolean;
-    item_expiry_days?: number;
-    item_intimate_before_days?: number;
+    item_expiry_days?: number | null;
+    item_intimate_before_days?: number | null;
     item_allow_sales?: boolean;
     item_allow_sales_return?: boolean;
     item_allow_purchase?: boolean;
@@ -50,7 +50,7 @@ export declare class SaveItemDto {
     item_hsn_code?: string | null;
     item_batch_config?: number;
     item_track_preset_id?: string | null;
-    item_sort_order?: number;
+    item_sort_order?: number | null;
     item_photo?: string | null;
     item_image_url?: string | null;
     item_notes?: string | null;

@@ -1,10 +1,11 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
   NullableUuid,
   OptionalInteger,
+  OptionalNotNullBoolean,
   OptionalNumber,
   OptionalTrimmedString,
   OptionalUuid,
@@ -44,36 +45,36 @@ export class SaveItemReorderDto {
   @OptionalInteger()
   ir_sl_no?: number;
 
-  @ApiPropertyOptional({ example: 0 })
-  @OptionalNumber()
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @OptionalNumber(0)
   ir_min_level?: number;
 
-  @ApiPropertyOptional({ example: 0 })
-  @OptionalNumber()
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @OptionalNumber(0)
   ir_max_level?: number;
 
-  @ApiPropertyOptional({ example: 0 })
-  @OptionalNumber()
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @OptionalNumber(0)
   ir_reorder_level?: number;
 
-  @ApiPropertyOptional({ example: 0 })
-  @OptionalNumber()
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @OptionalNumber(0)
   ir_reorder_qty?: number;
 
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalInteger()
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @OptionalInteger(0)
   ir_lead_time_days?: number;
 
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalInteger()
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @OptionalInteger(0)
   ir_review_cycle_days?: number;
 
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalInteger()
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @OptionalInteger(0)
   ir_reorder_days?: number;
 
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalInteger()
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @OptionalInteger(0)
   ir_expiry_buffer_days?: number;
 
   @ApiPropertyOptional({ maxLength: 20, default: 'MIN_MAX' })
@@ -81,15 +82,22 @@ export class SaveItemReorderDto {
   ir_reorder_type?: string;
 
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalNotNullBoolean()
   ir_is_active?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   ir_created_by?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   ir_modified_by?: string | null;
 

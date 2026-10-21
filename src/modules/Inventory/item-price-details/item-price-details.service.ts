@@ -22,14 +22,33 @@ export class ItemPriceDetailsService {
     private readonly prisma: PrismaService,
     private readonly itemUnitConversionService: ItemUnitConversionService,
   ) {}
-  async getByBarcode(barcode: string): Promise<ItemPriceDetailPayload> {
-    const itemRecord = await this.prisma.itemMaster.findFirst({
-      where: {
-        itemDefaultBarcode: barcode,
-        itemIsDeleted: false,
-      },
-      include: { trackPreset: { select: { sptName: true } } },
-    });
+  /**
+   * Notes 137 B4 — the item a barcode names, deterministically: a live item
+   * whose EAN code it is wins over one whose header barcode it is (the scanner
+   * reads EAN rows first too, see /master-lookups/item-by-barcode), letters
+   * compared in any case, then the item name and id break any tie old data
+   * still holds. It used to be findFirst on the exact header barcode with no
+   * order and no company, so two companies' items with one barcode answered
+   * whichever the planner met first.
+   */
+  async getByBarcode(barcode: string, companyId?: string): Promise<ItemPriceDetailPayload> {
+    const code = barcode.trim();
+    const [itemRecord] = await this.prisma.$queryRaw<Array<{ itemId: string }>>`
+      SELECT m.item_id AS "itemId"
+        FROM inventory.item_master m
+        LEFT JOIN LATERAL (
+          SELECT true AS hit FROM inventory.item_ean_codes e
+           WHERE e.ean_item_id = m.item_id AND e.ean_is_deleted = false
+             AND upper(e.ean_code) = upper(${code})
+           LIMIT 1
+        ) ean ON true
+       WHERE m.item_is_deleted = false
+         AND (${companyId ?? null}::uuid IS NULL OR m.item_company_id IS NULL
+              OR m.item_company_id = ${companyId ?? null}::uuid)
+         AND (ean.hit OR lower(m.item_default_barcode) = lower(${code}))
+       ORDER BY ean.hit IS NOT TRUE, m.item_name_en, m.item_id
+       LIMIT 1
+    `;
     if (!itemRecord) {
       throwInventoryNotFound<ItemPriceDetailErrorDetail>(
         'Item not found',

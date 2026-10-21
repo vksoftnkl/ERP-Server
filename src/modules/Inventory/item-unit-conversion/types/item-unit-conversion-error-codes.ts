@@ -26,6 +26,10 @@ export enum ItemUnitConversionErrorCode {
   DUPLICATE = 'UNIT_CONV_DUPLICATE',
   /** The item, unit or base unit named does not exist (foreign key on save). */
   REFERENCE_NOT_FOUND = 'UNIT_CONV_REFERENCE_NOT_FOUND',
-  /** Delete refused: other records (prices, stock, documents) still use the row. */
+  /** Delete refused: other records (prices, EAN codes, reorders, stock, documents) still use the row. */
   IN_USE = 'UNIT_CONV_IN_USE',
+  /** Delete refused: the conversion row is already deleted (DELETE no longer toggles, notes 137 D1). */
+  ALREADY_DELETED = 'UNIT_CONV_ALREADY_DELETED',
+  /** iuc_item_id names no live item: the item is missing or deleted. */
+  ITEM_NOT_LIVE = 'UNIT_CONV_ITEM_NOT_LIVE',
 }

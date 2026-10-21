@@ -75,12 +75,20 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveItemEanCodeDto.prototype, "ean_is_active", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemEanCodeDto.prototype, "ean_created_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemEanCodeDto.prototype, "ean_modified_by", void 0);

@@ -73,43 +73,43 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_sl_no", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_min_level", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_max_level", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_reorder_level", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_reorder_qty", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalInteger)(),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_lead_time_days", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalInteger)(),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_review_cycle_days", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalInteger)(),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_reorder_days", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalInteger)(),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
     __metadata("design:type", Number)
 ], SaveItemReorderDto.prototype, "ir_expiry_buffer_days", void 0);
 __decorate([
@@ -119,17 +119,24 @@ __decorate([
 ], SaveItemReorderDto.prototype, "ir_reorder_type", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemReorderDto.prototype, "ir_is_active", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemReorderDto.prototype, "ir_created_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveItemReorderDto.prototype, "ir_modified_by", void 0);

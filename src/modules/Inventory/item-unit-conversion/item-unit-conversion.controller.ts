@@ -1,14 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -150,7 +141,10 @@ export class ItemUnitConversionController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item unit conversion by id' })
+  @ApiOperation({
+    summary:
+      'Soft delete item unit conversion by id. Deletes only (409 UNIT_CONV_ALREADY_DELETED), and 409 UNIT_CONV_IN_USE while live prices, EAN codes or reorders use the unit (notes 137 A4 / D1)',
+  })
   @ApiQuery({
     name: 'iuc_id',
     required: false,
@@ -180,7 +174,7 @@ export class ItemUnitConversionController {
     >
   > {
     const deletePayload = await this.resolveDeletePayload(body, query);
-    const data = await this.itemUnitConversionService.toggleDelete(
+    const data = await this.itemUnitConversionService.delete(
       Array.isArray(deletePayload)
         ? deletePayload.map((item: DeleteItemUnitConversionDto) => item.iuc_id)
         : deletePayload.iuc_id,

@@ -11,7 +11,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
   NullableUuid,
-  OptionalBoolean,
+  OptionalNotNullBoolean,
   OptionalInteger,
   OptionalNumber,
   OptionalUuid,
@@ -52,32 +52,40 @@ export class SaveItemUnitConversionDto {
   @OptionalNumber()
   iul_unit_factor?: number;
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   iuc_is_default_unit?: boolean;
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   iuc_is_base_unit?: boolean;
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   iuc_is_big_unit?: boolean;
-  @ApiPropertyOptional({ example: 0 })
-  @OptionalNumber()
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @OptionalNumber(0)
   iuc_uom_weight?: number;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableString(250)
   iuc_uom_remarks?: string | null;
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   iuc_is_active?: boolean;
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   @IsOptional()
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   iuc_sync_date?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableUuid()
   iuc_created_by?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableUuid()
   iuc_updated_by?: string | null;
 }

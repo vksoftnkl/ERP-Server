@@ -29,7 +29,7 @@ describe('ItemsEanCodeMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    delete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -108,7 +108,7 @@ describe('ItemsEanCodeMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.delete.mockResolvedValue({
       ean_id: EAN_ID,
       deleted: true,
     });
@@ -123,24 +123,8 @@ describe('ItemsEanCodeMasterController', () => {
     });
   });
 
-  it('returns wrapped restore response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
-      ean_id: EAN_ID,
-      deleted: false,
-    });
-
-    await expect(controller.remove(undefined, EAN_ID)).resolves.toEqual({
-      success: true,
-      message: 'Item EAN code restored successfully',
-      data: {
-        ean_id: EAN_ID,
-        deleted: false,
-      },
-    });
-  });
-
   it('supports delete with body arrays', async () => {
-    serviceMock.toggleDelete.mockResolvedValue([
+    serviceMock.delete.mockResolvedValue([
       {
         ean_id: EAN_ID,
         deleted: true,
@@ -154,26 +138,6 @@ describe('ItemsEanCodeMasterController', () => {
         {
           ean_id: EAN_ID,
           deleted: true,
-        },
-      ],
-    });
-  });
-
-  it('reports a restored message when all array items were restored', async () => {
-    serviceMock.toggleDelete.mockResolvedValue([
-      {
-        ean_id: EAN_ID,
-        deleted: false,
-      },
-    ]);
-
-    await expect(controller.remove([{ ean_id: EAN_ID }])).resolves.toEqual({
-      success: true,
-      message: 'Item EAN codes restored successfully',
-      data: [
-        {
-          ean_id: EAN_ID,
-          deleted: false,
         },
       ],
     });

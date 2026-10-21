@@ -19,6 +19,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const price_bucket_service_1 = require("./price-bucket.service");
 const item_tax_rate_helper_1 = require("../utils/item-tax-rate.helper");
 const selling_price_math_helper_1 = require("../../stocks/selling-price-bulk/selling-price-math.helper");
+const item_child_helper_1 = require("../utils/item-child.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const DEFAULT_AUDIT_ACTOR = 'system';
@@ -72,6 +73,7 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
     async save(saveItemPriceDto, tx) {
         const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
         const saveAll = async (client) => {
+            await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.ipm_item_id), { field: 'ipm_item_id', code: item_price_error_codes_1.ItemPriceErrorCode.ITEM_NOT_LIVE });
             const savedItems = [];
             for (const saveItem of saveItems) {
                 savedItems.push(await this.saveItemPrice(client, saveItem));
@@ -161,6 +163,33 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             throw error;
         }
     }
+    async delete(ipmId) {
+        const ids = Array.isArray(ipmId) ? ipmId : [ipmId];
+        try {
+            const results = await this.prisma.$transaction(async (client) => {
+                const deleted = [];
+                for (const id of ids) {
+                    const existing = await client.itemPriceMaster.findFirst({ where: { ipmId: id } });
+                    if (!existing) {
+                        (0, module_service_utils_1.throwInventoryNotFound)('Item price not found', 'ipm_id', `No item price found with id ${id}`, item_price_error_codes_1.ItemPriceErrorCode.NOT_FOUND);
+                    }
+                    await (0, item_child_helper_1.assertChildDeletable)(client, { isDeleted: existing.ipmIsDeleted, itemId: existing.ipmItemId }, {
+                        label: 'price row',
+                        idField: 'ipm_id',
+                        alreadyDeletedCode: item_price_error_codes_1.ItemPriceErrorCode.ALREADY_DELETED,
+                        itemNotLiveCode: item_price_error_codes_1.ItemPriceErrorCode.ITEM_NOT_LIVE,
+                    });
+                    deleted.push(await this.toggleDeleteItemPrice(client, id));
+                }
+                return deleted;
+            });
+            return Array.isArray(ipmId) ? results : results[0];
+        }
+        catch (error) {
+            this.handleDeleteError(error);
+            throw error;
+        }
+    }
     async saveItemPrice(tx, saveItemPriceDto) {
         if (saveItemPriceDto.ipm_id) {
             return this.updateItemPrice(tx, saveItemPriceDto);
@@ -217,9 +246,10 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             ]);
         }
         const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
+        await this.assertRowScope(tx, saveItemPriceDto, null);
         const now = new Date();
-        const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by) ?? this.requestUser();
-        const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
+        const createdBy = this.requestUser();
+        const updatedBy = createdBy;
         const data = {
             ipmItemId: saveItemPriceDto.ipm_item_id,
             ipmUcUnitId: unitConversion.iucId,
@@ -267,21 +297,20 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         const existing = await tx.itemPriceMaster.findFirst({
             where: {
                 ipmId,
+                ipmItemId: saveItemPriceDto.ipm_item_id,
                 ipmIsDeleted: false,
             },
         });
         if (!existing) {
-            (0, module_service_utils_1.throwInventoryNotFound)('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`, item_price_error_codes_1.ItemPriceErrorCode.NOT_FOUND);
+            (0, module_service_utils_1.throwInventoryNotFound)('Item price not found', 'ipm_id', `No live price row ${ipmId} on item ${saveItemPriceDto.ipm_item_id}`, item_price_error_codes_1.ItemPriceErrorCode.NOT_FOUND);
         }
         const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
+        await this.assertRowScope(tx, saveItemPriceDto, existing);
         const data = {
-            ipmItemId: saveItemPriceDto.ipm_item_id,
             ipmUcUnitId: unitConversion.iucId,
             ipmProfitType: profitType,
             ipmUpdatedOn: new Date(),
-            ipmUpdatedBy: this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ??
-                this.requestUser() ??
-                existing.ipmUpdatedBy,
+            ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
         };
         if (saveItemPriceDto.ipm_godown_id !== undefined) {
             data.ipmGodownId = saveItemPriceDto.ipm_godown_id ?? null;
@@ -416,6 +445,62 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             ]);
         }
         return unitConversion;
+    }
+    async assertRowScope(tx, dto, existing) {
+        const pick = (sent, stored) => sent !== undefined ? sent : (stored ?? null);
+        const companyId = pick(dto.ipm_company_id, existing?.ipmCompanyId);
+        const branchId = pick(dto.ipm_branch_id, existing?.ipmBranchId);
+        const godownId = pick(dto.ipm_godown_id, existing?.ipmGodownId);
+        if (existing &&
+            companyId === existing.ipmCompanyId &&
+            branchId === existing.ipmBranchId &&
+            godownId === existing.ipmGodownId) {
+            return;
+        }
+        const refuse = (field, code, message) => (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
+            { field, code, message },
+        ]);
+        const item = await tx.itemMaster.findFirst({
+            where: { itemId: dto.ipm_item_id },
+            select: { itemCompanyId: true },
+        });
+        const itemCompanyId = item?.itemCompanyId ?? null;
+        if (companyId && itemCompanyId && companyId !== itemCompanyId) {
+            refuse('ipm_company_id', item_price_error_codes_1.ItemPriceErrorCode.OTHER_COMPANY, 'The item belongs to another company. Leave ipm_company_id blank or name the item’s company.');
+        }
+        const scopeCompanyId = companyId ?? itemCompanyId;
+        if (branchId) {
+            const branch = await tx.branchMaster.findFirst({
+                where: { brId: branchId },
+                select: { brCompId: true, brName: true },
+            });
+            if (!branch || (scopeCompanyId && branch.brCompId !== scopeCompanyId)) {
+                refuse('ipm_branch_id', item_price_error_codes_1.ItemPriceErrorCode.BRANCH_OTHER_COMPANY, branch
+                    ? `${branch.brName} belongs to another company than the price row's`
+                    : `No branch found with id ${branchId}`);
+            }
+        }
+        if (godownId) {
+            const godown = await tx.godownLocation.findFirst({
+                where: { gdlId: godownId },
+                select: { gdlBranchId: true },
+            });
+            const godownCompanyId = godown && !branchId && scopeCompanyId
+                ? ((await tx.branchMaster.findFirst({
+                    where: { brId: godown.gdlBranchId },
+                    select: { brCompId: true },
+                }))?.brCompId ?? null)
+                : null;
+            const outside = !godown ||
+                (branchId
+                    ? godown.gdlBranchId !== branchId
+                    : !!scopeCompanyId && godownCompanyId !== scopeCompanyId);
+            if (outside) {
+                refuse('ipm_godown_id', item_price_error_codes_1.ItemPriceErrorCode.GODOWN_OUT_OF_SCOPE, godown
+                    ? 'The godown belongs to another branch / company than the price row'
+                    : `No godown found with id ${godownId}`);
+            }
+        }
     }
     applyOptionalFields(data, saveItemPriceDto) {
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemPriceDto, 'ipm_company_id')) {
@@ -578,10 +663,6 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
         const godownSegment = record.ipmGodownId ?? 'ALL_GODOWNS';
         return `${record.ipmItemId}:${record.ipmUcUnitId}:${branchSegment}:${godownSegment}`;
-    }
-    resolveRecordActor(value) {
-        const trimmed = value?.trim();
-        return trimmed || null;
     }
     requestUser() {
         return this.requestContextService.getUserId()?.trim() || null;

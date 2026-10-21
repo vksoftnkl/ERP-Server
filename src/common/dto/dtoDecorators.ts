@@ -256,6 +256,15 @@ export const OptionalQueryBoolean = () =>
     ),
     IsBoolean(),
   );
+/**
+ * A body boolean for a NOT NULL column (notes 137 A3 / D8). It reads the value
+ * the same way OptionalQueryBoolean does, from the RAW source, so
+ * enableImplicitConversion cannot turn the string "false" into true. null
+ * reads as "not sent": an update keeps the stored value and a create takes the
+ * column's default. OptionalBoolean let null through to the write, and the NOT
+ * NULL column turned it into a 500.
+ */
+export const OptionalNotNullBoolean = () => OptionalQueryBoolean();
 export const OptionalQueryInt = (min?: number, max?: number) => OptionalInteger(min, max);
 export const TrimmedString = (maxLength?: number) =>
   applyDecorators(

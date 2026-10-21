@@ -21,6 +21,7 @@ import {
   hasOwnProperty,
   isForeignKeyConstraintError,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
   toNumber,
@@ -31,6 +32,7 @@ import {
   runConfiguredGridQuery,
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
+import { assertChildDeletable, assertItemsLive } from '../utils/item-child.helper';
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
 const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
@@ -77,6 +79,11 @@ export class ItemUnitConversionService {
       ? saveItemUnitConversionDto
       : [saveItemUnitConversionDto];
     const saveAll = async (client: Prisma.TransactionClient) => {
+      await assertItemsLive(
+        client,
+        saveItems.map((item) => item.iuc_item_id),
+        { field: 'iuc_item_id', code: ItemUnitConversionErrorCode.ITEM_NOT_LIVE },
+      );
       const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
         client,
         saveItems,
@@ -194,6 +201,87 @@ export class ItemUnitConversionService {
       throw error;
     }
   }
+  /**
+   * DELETE /item-unit-conversions/delete. Deletes only — a deleted row is a
+   * 409, not a restore (notes 137 D1) — and refuses (409 UNIT_CONV_IN_USE,
+   * naming them) while live prices, EAN codes or reorder rows still use the
+   * unit: they stayed live behind a deleted unit, the barcode kept scanning
+   * and the next item save that echoed them failed (notes 137 A4). The
+   * composite save removes a unit together with its rows instead.
+   */
+  async delete(iucId: string): Promise<ItemUnitConversionDeleteResult>;
+  async delete(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
+  async delete(
+    iucId: string | string[],
+  ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
+  async delete(
+    iucId: string | string[],
+  ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]> {
+    const ids = Array.isArray(iucId) ? iucId : [iucId];
+    try {
+      const results = await this.prisma.$transaction(async (client) => {
+        const deleted: ItemUnitConversionDeleteResult[] = [];
+        for (const id of ids) {
+          const existing = await client.itemUnitConversion.findFirst({ where: { iucId: id } });
+          if (!existing) {
+            throwInventoryNotFound<ItemUnitConversionErrorDetail>(
+              'Item unit conversion not found',
+              'iuc_id',
+              `No item unit conversion found with id ${id}`,
+              ItemUnitConversionErrorCode.NOT_FOUND,
+            );
+          }
+          await assertChildDeletable(
+            client,
+            { isDeleted: existing.iucIsDeleted, itemId: existing.iucItemId },
+            {
+              label: 'unit conversion',
+              idField: 'iuc_id',
+              alreadyDeletedCode: ItemUnitConversionErrorCode.ALREADY_DELETED,
+              itemNotLiveCode: ItemUnitConversionErrorCode.ITEM_NOT_LIVE,
+            },
+          );
+          await this.assertNoLiveDependants(client, id);
+          deleted.push(await this.toggleDeleteItemUnitConversion(client, id));
+        }
+        return deleted;
+      });
+      return Array.isArray(iucId) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleDeleteError(error);
+      throw error;
+    }
+  }
+  /** Notes 137 A4 — the live price, EAN and reorder rows that hold this iuc_id. */
+  private async assertNoLiveDependants(
+    client: Prisma.TransactionClient,
+    iucId: string,
+  ): Promise<void> {
+    const [prices, eanCodes, reorders] = await Promise.all([
+      client.itemPriceMaster.count({ where: { ipmUcUnitId: iucId, ipmIsDeleted: false } }),
+      client.itemEanCode.findMany({
+        where: { eanUcUnitId: iucId, eanIsDeleted: false },
+        select: { eanCode: true },
+      }),
+      client.itemReorder.count({ where: { irUcUnitId: iucId, irIsDeleted: false } }),
+    ]);
+    const used = [
+      prices ? `${prices} price row(s)` : null,
+      eanCodes.length
+        ? `${eanCodes.length} EAN code(s) (${eanCodes.map((row) => row.eanCode).join(', ')})`
+        : null,
+      reorders ? `${reorders} reorder row(s)` : null,
+    ].filter((part): part is string => part !== null);
+    if (used.length) {
+      throwInventoryConflict<ItemUnitConversionErrorDetail>('This unit is still in use', [
+        {
+          field: 'iuc_id',
+          code: ItemUnitConversionErrorCode.IN_USE,
+          message: `Used by ${used.join(', ')}. Delete those first, or remove the unit from the item card, which removes them with it.`,
+        },
+      ]);
+    }
+  }
   private async saveItemUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
@@ -209,12 +297,10 @@ export class ItemUnitConversionService {
   ): Promise<ItemUnitConversionPayload> {
     this.validateItemUnitConversion(saveItemUnitConversionDto);
     const now = new Date();
-    // The payload's actor when it names one, else the request's user — never
-    // left NULL just because the client sent none (notes 50 #2).
-    const createdBy =
-      this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by) ?? this.requestUser();
-    const updatedBy =
-      this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ?? createdBy;
+    // The request's user, never the payload's iuc_created_by / iuc_updated_by
+    // (notes 137 C2): a body could name anyone.
+    const createdBy = this.requestUser();
+    const updatedBy = createdBy;
     const baseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
     const data: Prisma.ItemUnitConversionUncheckedCreateInput = {
@@ -259,9 +345,12 @@ export class ItemUnitConversionService {
   ): Promise<ItemUnitConversionPayload> {
     this.validateItemUnitConversion(saveItemUnitConversionDto);
     const iucId = saveItemUnitConversionDto.iuc_id!;
+    // By id AND item: another item's conversion row is not this item's to
+    // rewrite (notes 137 A1).
     const existing = await tx.itemUnitConversion.findFirst({
       where: {
         iucId,
+        iucItemId: saveItemUnitConversionDto.iuc_item_id,
         iucIsDeleted: false,
       },
     });
@@ -269,22 +358,19 @@ export class ItemUnitConversionService {
       throwInventoryNotFound<ItemUnitConversionErrorDetail>(
         'Item unit conversion not found',
         'iuc_id',
-        `No item unit conversion found with id ${iucId}`,
+        `No live unit conversion ${iucId} on item ${saveItemUnitConversionDto.iuc_item_id}`,
         ItemUnitConversionErrorCode.NOT_FOUND,
       );
     }
     const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
+    // iuc_item_id is the row's owner, not a field it can change.
     const data: Prisma.ItemUnitConversionUncheckedUpdateInput = {
-      iucItemId: saveItemUnitConversionDto.iuc_item_id,
       iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
       iucBaseUnitId: baseUnitId,
       iucUpdatedOn: new Date(),
-      // hasOwnProperty is true for every declared DTO field, sent or not: the
-      // payload's actor, else the request's user, else the stored one.
-      iucUpdatedBy:
-        this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ??
-        this.requestUser() ??
-        existing.iucUpdatedBy,
+      // The request's user, else the stored one — never the payload's
+      // iuc_updated_by (notes 137 C2).
+      iucUpdatedBy: this.requestUser() ?? existing.iucUpdatedBy,
     };
     this.applyOptionalFields(data, saveItemUnitConversionDto);
     // Unprovided fields keep their existing persisted values, so validate the
@@ -809,10 +895,6 @@ export class ItemUnitConversionService {
   }
   private buildDisplayName(record: ItemUnitConversion): string {
     return `${record.iucItemId}:${record.iucUnitId}:${record.iucBaseUnitId}`;
-  }
-  private resolveRecordActor(value: string | null | undefined): string | null {
-    const trimmed = value?.trim();
-    return trimmed || null;
   }
   /** The authenticated user, or null — never the nil-uuid DEFAULT_ACTOR sentinel. */
   private requestUser(): string | null {

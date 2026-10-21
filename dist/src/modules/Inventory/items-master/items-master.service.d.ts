@@ -51,6 +51,11 @@ export declare class ItemsMasterService {
     private assertBranchOfCompany;
     private inheritClassDefaults;
     private updateItem;
+    private changedUniqueKeys;
+    private assertUniqueKeys;
+    private assertReferencesLive;
+    private assertCompanyMove;
+    private alignBaseUnit;
     private applyOptionalFields;
     private decodePhoto;
     private toPayload;

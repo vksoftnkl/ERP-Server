@@ -574,7 +574,7 @@ ORDER BY gdl_name$seed$)
 FROM public.branch_master
 WHERE br_is_active = true AND br_is_deleted = false
 ORDER BY br_name$seed$)
-    ,(71 , 'POPUP - ITEMS', 'Item picker for every voucher line grid. Scoped by the OPTIONAL iitem_company_id (strict) and iitem_branch_id (this branch or none, since an item with no branch belongs to the whole company). Callers MUST send both keys - the runner substitutes only what it is given, so a parameter absent from grid_param fails the query.', NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT
+    ,(71 , 'POPUP - ITEMS', 'Item picker for every voucher line grid. Scoped by the OPTIONAL iitem_company_id (that company''s items plus the shared ones - a blank item company means every company) and iitem_branch_id (this branch''s items plus the company-wide ones). Either key may be left out of grid_param: an unsent key filters nothing.', NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT
 	IM.item_id,
 	CM.iuc_id AS item_uom_id,
 	IM.item_name_en,

@@ -45,7 +45,7 @@ let ItemPriceDetailsController = class ItemPriceDetailsController {
         const dto = await (0, request_payload_validation_util_1.validateDto)(query, get_item_price_detail_query_dto_1.GetItemPriceDetailByBarcodeQueryDto, {
             type: 'query',
         });
-        const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode);
+        const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode, dto.company_id);
         return {
             success: true,
             message: 'Item price details fetched successfully',
@@ -73,8 +73,11 @@ __decorate([
 __decorate([
     (0, common_1.Get)('get-by-barcode'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Get item price details by barcode' }),
+    (0, swagger_1.ApiOperation)({
+        summary: "Get item price details by barcode: a live item's EAN code first, then its header barcode, letters in any case (notes 137 B4)",
+    }),
     (0, swagger_1.ApiQuery)({ name: 'barcode', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'company_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_price_detail_response_dto_1.ItemPriceDetailSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_price_detail_response_dto_1.ItemPriceDetailErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_price_detail_response_dto_1.ItemPriceDetailErrorResponseDto }),

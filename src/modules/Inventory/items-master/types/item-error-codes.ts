@@ -11,7 +11,7 @@ export enum ItemErrorCode {
   NOT_FOUND = 'ITEM_NOT_FOUND',
   /** item_name_en is missing or blank. */
   NAME_REQUIRED = 'ITEM_NAME_REQUIRED',
-  /** Another live item already has this item_name_en. */
+  /** Another live item of the same company (or a shared one) has this item_name_en, any case (notes 137 B6). */
   NAME_TAKEN = 'ITEM_NAME_TAKEN',
   /** item_photo is not valid base64. */
   PHOTO_INVALID = 'ITEM_PHOTO_INVALID',
@@ -43,7 +43,8 @@ export enum ItemErrorCode {
   ALREADY_DELETED = 'ITEM_ALREADY_DELETED',
   /** Restore refused: the item is not deleted. */
   NOT_DELETED = 'ITEM_NOT_DELETED',
-  /** Delete refused: stock of the item is still on hand or in transit. */
+  /** Delete refused: the item is still in use — stock on hand or in transit, an open order or
+   *  quotation, a live promotion or loyalty scheme, or another item's packing list (notes 137 D3). */
   IN_USE = 'ITEM_IN_USE',
   /** Delete/restore refused: someone else deleted or restored the item between the read and the write. */
   CHANGED_CONCURRENTLY = 'ITEM_CHANGED_CONCURRENTLY',
@@ -53,4 +54,34 @@ export enum ItemErrorCode {
   RESTORE_EAN_TAKEN = 'ITEM_RESTORE_EAN_TAKEN',
   /** Restore refused: some other row of the item now clashes with a live row elsewhere. */
   RESTORE_CLASH = 'ITEM_RESTORE_CLASH',
+  /** A composite child row names an id that is not one of THIS item's live rows (notes 137 A1). */
+  CHILD_NOT_OF_ITEM = 'ITEM_CHILD_NOT_OF_ITEM',
+  /** Another live item of the same company (or a shared one) has this item_code, any case (notes 137 B5). */
+  CODE_TAKEN = 'ITEM_CODE_TAKEN',
+  /** Another live item of the same company (or a shared one) has this item_sku, any case (notes 137 B5). */
+  SKU_TAKEN = 'ITEM_SKU_TAKEN',
+  /** item_default_barcode is another live item's EAN code or header barcode (notes 137 B5). */
+  BARCODE_TAKEN = 'ITEM_BARCODE_TAKEN',
+  /** Some other unique rule refused the write. */
+  DUPLICATE = 'ITEM_DUPLICATE',
+  /** item_base_unit_id is not the unit of the item's base unit conversion row (notes 137 B7). */
+  BASE_UNIT_MISMATCH = 'ITEM_BASE_UNIT_MISMATCH',
+  /** The item cannot move to this company while another company holds its stock or prices (notes 137 C3). */
+  COMPANY_MOVE_BLOCKED = 'ITEM_COMPANY_MOVE_BLOCKED',
+  /** item_brand_id names no item brand (the column has no foreign key, notes 137 B9). */
+  UNKNOWN_BRAND = 'ITEM_UNKNOWN_BRAND',
+  /** item_section_id names no item section. */
+  UNKNOWN_SECTION = 'ITEM_UNKNOWN_SECTION',
+  /** item_supplier_id names no supplier. */
+  UNKNOWN_SUPPLIER = 'ITEM_UNKNOWN_SUPPLIER',
+  /** item_cust_group names no customer group. */
+  UNKNOWN_CUST_GROUP = 'ITEM_UNKNOWN_CUST_GROUP',
+  /** A master newly chosen on the item (group, category, unit, tax, preset, brand …) is deleted or inactive. */
+  REFERENCE_RETIRED = 'ITEM_REFERENCE_RETIRED',
+  /** The save's stock track policy overlaps another live policy (ex_stp_overlap, notes 137 D4). */
+  TRACK_POLICY_CLASH = 'ITEM_TRACK_POLICY_CLASH',
+  /** Restore refused: another live item has taken this item's code since it was deleted. */
+  RESTORE_CODE_TAKEN = 'ITEM_RESTORE_CODE_TAKEN',
+  /** Restore refused: another live item has taken this item's SKU since it was deleted. */
+  RESTORE_SKU_TAKEN = 'ITEM_RESTORE_SKU_TAKEN',
 }

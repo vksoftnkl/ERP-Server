@@ -103,14 +103,38 @@ const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
 
 // The composite name-resolver batch-loads each reference master via findMany;
 // create reads the group / category defaults via findUnique (notes 70 D3) —
-// none by default, so nothing is inherited.
+// none by default, so nothing is inherited — and every save checks that a
+// master it chooses is live and active (notes 137 B9), also via findUnique.
+// One row answers for every master: live and active, carrying no defaults.
+const LIVE_MASTER_ROW: Record<string, unknown> = {
+  itgIsDeleted: false,
+  itgIsActive: true,
+  categoryIsDeleted: false,
+  categoryIsActive: true,
+  unit_is_deleted: false,
+  unit_is_active: true,
+  taxIsDeleted: false,
+  taxIsActive: true,
+  sptIsDeleted: false,
+  sptIsActive: true,
+  brand_is_deleted: false,
+  brand_is_active: true,
+  secIsDeleted: false,
+  secIsActive: true,
+  supIsDeleted: false,
+  supIsActive: true,
+  cgrIsDeleted: false,
+  cgrIsActive: true,
+};
 type LookupMock = {
   findMany: jest.Mock<Promise<Array<Record<string, unknown>>>, [unknown]>;
   findUnique: jest.Mock<Promise<Record<string, unknown> | null>, [unknown]>;
 };
 const makeLookup = (): LookupMock => ({
   findMany: jest.fn<Promise<Array<Record<string, unknown>>>, [unknown]>().mockResolvedValue([]),
-  findUnique: jest.fn<Promise<Record<string, unknown> | null>, [unknown]>().mockResolvedValue(null),
+  findUnique: jest
+    .fn<Promise<Record<string, unknown> | null>, [unknown]>()
+    .mockResolvedValue(LIVE_MASTER_ROW),
 });
 
 type PrismaMock = {
@@ -120,6 +144,8 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>;
     findFirstOrThrow: jest.Mock;
+    // Delete's packing-list check (notes 137 D3).
+    findMany: jest.Mock;
   };
   // The delete / restore paths read child ids on the transaction itself.
   itemUnitConversion: { findMany: jest.Mock };
@@ -137,7 +163,9 @@ type PrismaMock = {
   supplier: LookupMock;
   custGroup: LookupMock;
   taxRateMaster: LookupMock;
-  // The stock-on-hand delete guard (notes 70 C4) is raw SQL.
+  stockTrackPreset: LookupMock;
+  // The delete guard (notes 70 C4 / 137 D3), the unique-key check and the
+  // company-move check (notes 137 B6 / C3) are raw SQL.
   $queryRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
@@ -179,6 +207,7 @@ describe('ItemsMasterService composite endpoints', () => {
           .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
           .mockResolvedValue({ count: 1 }),
         findFirstOrThrow: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       itemUnitConversion: { findMany: jest.fn().mockResolvedValue([]) },
       itemPriceMaster: { findMany: jest.fn().mockResolvedValue([]) },
@@ -195,8 +224,10 @@ describe('ItemsMasterService composite endpoints', () => {
       supplier: makeLookup(),
       custGroup: makeLookup(),
       taxRateMaster: makeLookup(),
-      // No stock on hand anywhere: the delete guard passes.
-      $queryRaw: jest.fn().mockResolvedValue([{ ord: 0, n: 0n }]),
+      stockTrackPreset: makeLookup(),
+      // No rows: no stock on hand anywhere (the delete guard passes), no other
+      // item holds the name / code / SKU / barcode, nothing blocks a company move.
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -441,7 +472,7 @@ describe('ItemsMasterService composite endpoints', () => {
     await service.saveComposite({
       item_name_en: 'Widget',
       item_group_id: GROUP_ID,
-    } as SaveItemCompositeDto);
+    });
 
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBeNull();
   });
@@ -510,7 +541,7 @@ describe('ItemsMasterService composite endpoints', () => {
       item_name_en: 'Amoxicillin 500mg',
       item_group_id: GROUP_ID,
       item_track_preset_id: presetId,
-    } as SaveItemCompositeDto);
+    });
 
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemTrackPresetId).toBe(presetId);
     // The preset name rides along with the id so the screen can label the

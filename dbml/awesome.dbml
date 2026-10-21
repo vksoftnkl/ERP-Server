@@ -3300,7 +3300,7 @@ Table item_price_master {
   ipmDiscPerc Decimal [not null, default: 0]
   ipmDiscQty Decimal [not null, default: 0]
   ipmAddlCess Decimal [not null, default: 0]
-  ipmProfitType String [not null, default: 'MANUAL']
+  ipmProfitType String [not null, default: 'By User']
   ipmRoundOff Decimal [not null, default: 0]
   ipmLoadingCharge Decimal [not null, default: 0]
   ipmFreightCharge Decimal [not null, default: 0]

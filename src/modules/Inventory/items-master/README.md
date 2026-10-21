@@ -56,6 +56,26 @@ collections (**unit conversions**, **prices**, **EAN codes** and **reorders**) i
   child failure rolls the item back too.
 - A foreign-key failure names the field whose constraint failed (`ITEM_FOREIGN_KEYS`, from the
   Prisma error's `meta.constraint`) — `item_default_tax_id` is a FK to **`tax_rate_master`**.
+- **Clearing** (notes 137 A2): `item_company_id: null` (or `""`) makes the item SHARED by every
+  company; `item_expiry_days`, `item_intimate_before_days` and `item_sort_order` clear on `null`
+  too. They were Optional* decorators, which read null as "not sent", so an item could never be
+  made shared again. **Yes/no fields** read their raw value (`OptionalNotNullBoolean`): `null` is
+  "not sent" (it used to reach the NOT NULL column as a 500, A3) and the string `"false"` is false
+  (implicit conversion made it true, D8). `item_hsn_code` is digits only (D6); the day counts are
+  `Min(0)` (D5).
+- **References** (notes 137 B9): a master this save CHOOSES — group, category, base unit, tax,
+  preset, brand, section, supplier, customer group — must exist (`ITEM_UNKNOWN_*`) and be live and
+  active (`ITEM_REFERENCE_RETIRED`). Brand, section, supplier and customer group have no foreign
+  key at all. A value the save leaves as it was is not re-checked.
+- **Actor** (notes 137 C2): `item_created_by` / `item_modified_by` — and every child row's actor
+  columns — are the token's user. The payload's values are accepted and ignored.
+- **Base unit** (notes 137 B7): a header `item_base_unit_id` other than the unit of the base
+  conversion row is a 400 `ITEM_BASE_UNIT_MISMATCH`; a blank header (not sent or null) is filled
+  from the base row. Only checked when the save sends either.
+- **Company moves** (notes 137 C3): moving into a company (from shared or another company) is a
+  409 `ITEM_COMPANY_MOVE_BLOCKED` while another company still holds stock with quantity or a price
+  row of the item — checked against the rows the save leaves, so prices moved along in the same
+  payload pass. A move to shared is never refused.
 
 ### Composite child collections
 
@@ -70,11 +90,19 @@ item's existing non-deleted rows:
     own key; `ipm_godown_id` is an attribute of the row, not part of it. Until 2026-09-30 the key was
     unit + godown, so a NEW row for branch Y took branch X's `ipm_id` and overwrote X's price
     (notes 67 B1).
-  - EAN codes → `ean_code`
+  - EAN codes → `upper(ean_code)`
   - reorders → `ir_branch_id` + `ir_unit_id` + `ir_godown_id`
 - An omitted company / branch / godown on a price or reorder row reads as `null` — what a create
   would store — so a client that sends no row id must send the scope columns. Two payload rows with
-  one key are refused (400) before anything is written.
+  one key are refused (400 `ITEM_DUPLICATE_CHILD_ROWS`) before anything is written — in all four
+  collections since notes 137 B8 (two EAN rows with one code came back as 409
+  `ITEM_EAN_CODE_TAKEN`, which read as another item owning it).
+- A row that sends its own id (`iuc_id` / `ipm_id` / `ean_id` / `ir_id`) must name one of THIS
+  item's live rows, else 400 `ITEM_CHILD_NOT_OF_ITEM` (notes 137 A1): the child services updated by
+  id alone and rewrote the row's item, so item B's save could take item A's barcode.
+- **A unit removed from `unit_conversions[]` takes its prices, EAN codes and reorders with it**, in
+  the same transaction, after the three syncs — so it only touches collections the payload left
+  out (notes 137 A4). The standalone `/item-unit-conversions/delete` refuses instead (409).
 - Unmatched payload rows are **created**; matched rows are **updated only when a supplied field
   differs** (`rowChanged`, ignoring each table's PK, parent item id and actor columns); existing rows
   not claimed by any payload row are **soft-deleted** (stale rows are released *before* saving to
@@ -113,22 +141,38 @@ Two routes, each **one transaction** (`softDeleteComposite` / `restoreComposite`
 - `DELETE /delete` soft-deletes the item (a guarded `updateMany`), then every live unit conversion,
   price, EAN code and reorder, and retires the item's derived ITEM-scope stock track policy
   (`StockTrackPolicyService.retireForItem`). An item already deleted is a **409** — this used to be a
-  toggle, and a second DELETE restored it (notes 50 #5).
+  toggle, and a second DELETE restored it (notes 50 #5). An item still in use is a 409
+  `ITEM_IN_USE`: stock on hand or in transit (notes 70 C4), and since notes 137 D3 an open sale
+  order line (`PENDING` / `PARTIAL` on a `DRAFT` / `CONFIRMED` / `PARTIAL` order), an open
+  quotation line (`DRAFT` / `SENT` / `ACCEPTED`), a promotion item or free-item slab or a loyalty
+  slab or gift of a scheme that is not `CLOSED`, or another live item's `item_packing_item_ids`.
 - `POST /restore` restores the item and **only the children deleted with it**: those soft-deleted at
   or after the item's deletion instant (its `item_modified_on`, which nothing moves while the item is
   deleted; the children are stamped after it in the same transaction). Rows an earlier save removed —
-  an old base unit, a replaced EAN — stay deleted (notes 67 B4). The track policy is re-derived. A
-  name or EAN code another live item has taken since is a **409** naming the field, and nothing is
-  restored.
+  an old base unit, a replaced EAN — stay deleted (notes 67 B4). The track policy is re-derived
+  and the prices are re-keyed under it (notes 137 D2). A name, code, SKU, header barcode or EAN code
+  another live item has taken since — or a restored price that overlaps a live one (`ex_ipm_overlap`,
+  a 500 until notes 137 D2) — is a **409** naming the field, and nothing is restored.
 
 ## Business rules
 
-- **Item name uniqueness is global among live items** — `uq_item_name_en_global` is partial on
-  `item_is_deleted = false` (as are `uq_ean_code` and `uq_ir_item_unit_godown`, since
-  `20260930120000`), so a deleted item's name, a removed EAN or reorder rule can be used again. The
-  indexes are DB-only: Prisma cannot declare a partial index. A duplicate surfaces as a conflict on
-  `item_name_en` ([handleWriteError](items-master.service.ts)); a bad foreign key as a bad-request
+- **Name, code and SKU are unique per company, in any case** (notes 137 B5 / B6, the user's rule of
+  2026-10-21): no two LIVE items of one company share one, and a SHARED item (no company) clashes
+  with every company's items. `uq_item_name_en_company_ci` / `uq_item_code_company_ci` /
+  `uq_item_sku_company_ci` (on `lower(<key>)` + company) hold the same-company half; the
+  shared-vs-company half is `assertUniqueKeys`, under an advisory lock per value. The header
+  barcode may not be another live item's EAN code or header barcode (`ITEM_BARCODE_TAKEN`).
+  Checked on create, and on an update only for the keys (or the company) it changes, so stored data
+  never blocks an unrelated edit. `uq_ean_code_ci` and `uq_ir_item_branch_unit_godown` complete the
+  set; all are partial on "not deleted" and DB-only (Prisma cannot declare a partial index). A
+  duplicate surfaces as a 409 on the key it hit ([handleWriteError](items-master.service.ts), notes
+  137 D4 — it used to be `ITEM_NAME_TAKEN` whatever it was); a bad foreign key as a bad-request
   "Invalid relation reference" on the field whose constraint failed.
+- **Company scoping (notes 137 C1) is NOT done**: any logged-in user can read, change, delete or
+  restore any company's item by id, and `/bulk-load` with no company lists every company's. The
+  token's company is the user's HOME company (`usr_company_id`), not the one they work in, so
+  scoping by it would hide items from users who work in several. Left for a design decision
+  (2026-10-21).
 - **Stock track policy**: create / update / restore call `StockTrackPolicyService.syncFromItem`.
   **An item follows its group unless it names its own preset** (notes 68): an item with no
   `item_track_preset_id` gets **no** ITEM row, whatever its own batch / expiry / MRP /
@@ -140,9 +184,9 @@ Two routes, each **one transaction** (`softDeleteComposite` / `restoreComposite`
 - **Soft delete only** — rows are never hard-deleted; deleting flips `itemIsDeleted` (get/update
   operate on `itemIsDeleted = false` only).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` / `cancel`),
-  capturing original vs. modified records under screen "Item Master". The acting user comes from
-  `RequestContextService.getUserId()` (or the body's `item_created_by` / `item_modified_by`), falling
-  back to `DEFAULT_ACTOR`.
+  capturing original vs. modified records under screen "Item Master". The acting user is
+  `RequestContextService.getUserId()`, falling back to `DEFAULT_ACTOR`; the body's
+  `item_created_by` / `item_modified_by` are ignored (notes 137 C2).
 
 ## Cross-module reuse
 

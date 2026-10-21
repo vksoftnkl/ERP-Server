@@ -1,11 +1,20 @@
 import { Transform } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  NullableInteger,
   NullableString,
   NullableUuid,
-  OptionalBoolean,
   OptionalInteger,
+  OptionalNotNullBoolean,
   OptionalTrimmedString,
   OptionalUuid,
   toTrimmedString,
@@ -65,10 +74,11 @@ export class SaveItemDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'Company UUID this item belongs to.',
+    description:
+      'Company UUID this item belongs to. null (or "") makes the item SHARED by every company; omitted keeps the stored company (notes 137 A2).',
   })
-  @OptionalUuid()
-  item_company_id?: string;
+  @NullableUuid()
+  item_company_id?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -145,111 +155,111 @@ export class SaveItemDto {
   item_base_unit_id?: string | null;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_service?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_batch_based?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_expiry_item?: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
-  @OptionalInteger()
-  item_expiry_days?: number;
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
+  item_expiry_days?: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  @OptionalInteger()
-  item_intimate_before_days?: number;
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
+  item_intimate_before_days?: number | null;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_sales?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_sales_return?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_purchase?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_po?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_so?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_neg_stock?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_negative_so?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_price_list?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_weigh_scale?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_retail_item?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_kit?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_auto_break?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_auto_make?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_loyalty?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_promo?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_has_offer?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_damagable_product?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_demand?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_loading?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_allow_freight?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_random_stock?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_barcode_sticker?: boolean;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
@@ -260,8 +270,9 @@ export class SaveItemDto {
   @NullableUuid()
   item_default_tax_id?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @ApiPropertyOptional({ maxLength: 10, nullable: true, pattern: '^[0-9]+$' })
   @NullableString(10)
+  @Matches(/^[0-9]+$/, { message: 'item_hsn_code must hold digits only (an HSN or SAC code)' })
   item_hsn_code?: string | null;
 
   @ApiPropertyOptional({ default: 0 })
@@ -278,8 +289,8 @@ export class SaveItemDto {
   item_track_preset_id?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  @OptionalInteger()
-  item_sort_order?: number;
+  @NullableInteger()
+  item_sort_order?: number | null;
 
   @ApiPropertyOptional({ nullable: true, description: 'Base64-encoded image bytes' })
   @NullableString()
@@ -310,18 +321,26 @@ export class SaveItemDto {
   item_packing_item_ids?: string[];
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_incl_tax?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @OptionalBoolean()
+  @OptionalNotNullBoolean()
   item_is_active?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   item_created_by?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   item_modified_by?: string | null;
 }

@@ -595,7 +595,9 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
         ],
       }),
     );
-    expect(withUnits.item.item_base_unit_id).toBeNull();
+    // Not the group's unit (unitG): the header takes the base conversion row's
+    // own unit (notes 137 B7), so the two never disagree.
+    expect(withUnits.item.item_base_unit_id).toBe(unitC);
     expect(withUnits.item.item_default_tax_id).toBe(taxG);
 
     // An update never inherits: clearing the tax leaves it clear.

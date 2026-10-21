@@ -7,7 +7,7 @@ item for a given unit, with one code flagged as the default per `(item, unit)` s
 - **Swagger tag:** `Item EAN Codes`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `item_ean_codes` (`inventory` schema) — PK `eanId` (`ean_id`, uuidv7)
-- **Unique index:** `uq_ean_code` on `eanCode`
+- **Unique index:** `uq_ean_code_ci` on `upper(ean_code)`, live rows only (notes 137 B3)
 - **FK:** `eanUnitId → inventory.item_unit_conversion.iuc_id`
 - Responses are cached with `@CacheTTL(1)`.
 
@@ -31,11 +31,15 @@ item for a given unit, with one code flagged as the default per `(item, unit)` s
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update an EAN code. Accepts a single object **or** an array. |
 | `GET` | `/get` | Fetch one EAN code by `ean_id`, or list with optional filters and pagination. |
-| `DELETE` | `/delete` | Soft-delete **or** restore one EAN code (toggle). Accepts a single object, an array, or an `ean_id` query param. |
+| `DELETE` | `/delete` | Soft-delete one EAN code. Deletes only (409 `ITEM_EAN_ALREADY_DELETED`). Accepts a single object, an array, or an `ean_id` query param. |
 
 ### Create / update semantics
 
-- **Omit `ean_id` → create; include `ean_id` → update** the existing (non-deleted) row.
+- **Omit `ean_id` → create; include `ean_id` → update** the existing (non-deleted) row **of
+  `ean_item_id`** — an id of another item's row is a 404, and `ean_item_id` is never rewritten
+  (notes 137 A1: loading by id alone moved item A's barcode onto item B).
+- The item must be live (400 `ITEM_EAN_ITEM_NOT_LIVE`) and `ean_unit_id` one of its own live
+  conversion rows (400 `ITEM_EAN_UNIT_NOT_OF_ITEM`), notes 137 D1.
 - The `/create` body is a union (single object **or** array); the controller resolves and
   validates it with `validateSingleOrArrayDto` against `SaveItemEanCodeDto`.
 - **Batch mode is all-or-nothing:** every item is saved inside one `$transaction`; if any entry
@@ -44,23 +48,27 @@ item for a given unit, with one code flagged as the default per `(item, unit)` s
   `Validation failed` bad request is thrown).
 - Optional fields (`ean_is_default`, `ean_is_active`, `ean_remarks`) are only
   written when present on the payload (`applyOptionalFields` / `hasOwnProperty`).
-- The acting user for `ean_created_by` / `ean_modified_by` is resolved from the payload value,
-  falling back to `RequestContextService.getUserId()` (then `DEFAULT_ACTOR`).
+- `ean_created_by` / `ean_modified_by` are always the token's user (`DEFAULT_ACTOR` with none);
+  the payload's values are accepted and ignored (notes 137 C2).
 
 ### Delete / restore semantics
 
-- `DELETE /delete` **toggles** `eanIsDeleted`: deleting an active row soft-deletes it, calling
-  again restores it. A guarded `updateMany` only flips when the row's state is unchanged since
-  it was read.
+- `DELETE /delete` **deletes only** (`delete()`): a row that is already deleted is a 409
+  `ITEM_EAN_ALREADY_DELETED`, and a row whose item is deleted a 409 `ITEM_EAN_ITEM_NOT_LIVE` —
+  it went with the item and comes back with `POST /items/restore` (notes 137 D1; it used to be a
+  toggle, so a second DELETE restored). `toggleDelete` stays the item master's tool for deleting
+  and restoring the rows with their item. A guarded `updateMany` only flips when the row's state is
+  unchanged since it was read.
 - Accepts a request body (single object or array of `{ ean_id }`) or, when no body is present,
   an `ean_id` query param; a missing `ean_id` yields a bad request.
-- The response `deleted` flag is `true` when the row was soft-deleted, `false` when restored,
-  and the success message reflects deleted / restored / mixed (for arrays).
+- The response `deleted` flag is `true`.
 
 ## Business rules
 
-- **EAN code uniqueness** is enforced by the DB (`uq_ean_code`); a duplicate surfaces as an
-  `EAN code already exists` conflict (`handleWriteError` → `throwOnUniqueConstraintError`).
+- **EAN code uniqueness** is enforced by the DB in any case (`uq_ean_code_ci`, since notes 137
+  B3 — the scanner lookup matches in any case, so "ab12" and "AB12" on two items made a scan
+  ambiguous); a duplicate surfaces as an `EAN code already exists` conflict (`handleWriteError` →
+  `throwOnUniqueConstraintError`).
 - **At most one default per scope** — when a saved row has `eanIsDefault = true`,
   `enforceSingleDefaultInScope` clears the default flag on every other non-deleted row sharing
   the same `(eanItemId, eanUnitId)`. This is enforced in the service, not by a DB constraint.

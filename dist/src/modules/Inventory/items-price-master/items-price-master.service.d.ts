@@ -24,6 +24,9 @@ export declare class ItemsPriceMasterService {
     toggleDelete(ipmId: string, tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult>;
     toggleDelete(ipmId: string[], tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult[]>;
     toggleDelete(ipmId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+    delete(ipmId: string): Promise<ItemPriceDeleteResult>;
+    delete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
+    delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
     private saveItemPrice;
     private toggleDeleteItemPrice;
     private createItemPrice;
@@ -31,11 +34,11 @@ export declare class ItemsPriceMasterService {
     private applyBucket;
     private fillLevelFigures;
     private requireUnitConversion;
+    private assertRowScope;
     private applyOptionalFields;
     private parseOptionalDate;
     private toPayload;
     private buildDisplayName;
-    private resolveRecordActor;
     private requestUser;
     private resolveAuditActor;
     private handleWriteError;

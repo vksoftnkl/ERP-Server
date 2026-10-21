@@ -65,7 +65,7 @@ let ItemsEanCodeMasterController = class ItemsEanCodeMasterController {
     async remove(body, eanId) {
         const deleteItemEanCodeDto = await this.resolveDeletePayload(body, eanId);
         const isArray = Array.isArray(deleteItemEanCodeDto);
-        const data = await this.itemsEanCodeMasterService.toggleDelete(isArray ? deleteItemEanCodeDto.map((item) => item.ean_id) : deleteItemEanCodeDto.ean_id);
+        const data = await this.itemsEanCodeMasterService.delete(isArray ? deleteItemEanCodeDto.map((item) => item.ean_id) : deleteItemEanCodeDto.ean_id);
         return {
             success: true,
             message: this.buildToggleDeleteMessage(data),
@@ -151,7 +151,9 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item EAN code by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item EAN code by id. Deletes only: an already-deleted row is a 409 ITEM_EAN_ALREADY_DELETED (notes 137 D1)',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'ean_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
         required: false,

@@ -20,6 +20,7 @@ import { RequestContextService } from 'src/common/request-context/request-contex
 import { PriceBucketService } from './price-bucket.service';
 import { resolveItemTaxRates } from '../utils/item-tax-rate.helper';
 import { recomputeLevel } from 'src/modules/stocks/selling-price-bulk/selling-price-math.helper';
+import { assertChildDeletable, assertItemsLive } from '../utils/item-child.helper';
 import {
   hasOwnProperty,
   isExclusionConstraintError,
@@ -118,6 +119,11 @@ export class ItemsPriceMasterService {
   ): Promise<ItemPricePayload | ItemPricePayload[]> {
     const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
     const saveAll = async (client: Prisma.TransactionClient) => {
+      await assertItemsLive(
+        client,
+        saveItems.map((item) => item.ipm_item_id),
+        { field: 'ipm_item_id', code: ItemPriceErrorCode.ITEM_NOT_LIVE },
+      );
       const savedItems: ItemPricePayload[] = [];
       for (const saveItem of saveItems) {
         savedItems.push(await this.saveItemPrice(client, saveItem));
@@ -235,6 +241,48 @@ export class ItemsPriceMasterService {
       throw error;
     }
   }
+  /**
+   * DELETE /item-prices/delete. Deletes only — a deleted row is a 409, not a
+   * restore (notes 137 D1); toggleDelete stays the composite's tool.
+   */
+  async delete(ipmId: string): Promise<ItemPriceDeleteResult>;
+  async delete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
+  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
+    const ids = Array.isArray(ipmId) ? ipmId : [ipmId];
+    try {
+      const results = await this.prisma.$transaction(async (client) => {
+        const deleted: ItemPriceDeleteResult[] = [];
+        for (const id of ids) {
+          const existing = await client.itemPriceMaster.findFirst({ where: { ipmId: id } });
+          if (!existing) {
+            throwInventoryNotFound<ItemPriceErrorDetail>(
+              'Item price not found',
+              'ipm_id',
+              `No item price found with id ${id}`,
+              ItemPriceErrorCode.NOT_FOUND,
+            );
+          }
+          await assertChildDeletable(
+            client,
+            { isDeleted: existing.ipmIsDeleted, itemId: existing.ipmItemId },
+            {
+              label: 'price row',
+              idField: 'ipm_id',
+              alreadyDeletedCode: ItemPriceErrorCode.ALREADY_DELETED,
+              itemNotLiveCode: ItemPriceErrorCode.ITEM_NOT_LIVE,
+            },
+          );
+          deleted.push(await this.toggleDeleteItemPrice(client, id));
+        }
+        return deleted;
+      });
+      return Array.isArray(ipmId) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleDeleteError(error);
+      throw error;
+    }
+  }
   private async saveItemPrice(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -309,12 +357,12 @@ export class ItemsPriceMasterService {
       ]);
     }
     const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
+    await this.assertRowScope(tx, saveItemPriceDto, null);
     const now = new Date();
-    // The row's actor is the payload's when it names one, else the request's
-    // user — never left NULL just because the client sent none (notes 50 #2).
-    const createdBy =
-      this.resolveRecordActor(saveItemPriceDto.ipm_created_by) ?? this.requestUser();
-    const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
+    // The request's user, never the payload's ipm_created_by / ipm_updated_by
+    // (notes 137 C2): a body could name anyone.
+    const createdBy = this.requestUser();
+    const updatedBy = createdBy;
     const data: Prisma.ItemPriceMasterUncheckedCreateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUcUnitId: unitConversion.iucId,
@@ -366,9 +414,12 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
+    // By id AND item: another item's price row is not this item's to rewrite.
+    // Loading by id alone moved item A's price onto item B (notes 137 A1).
     const existing = await tx.itemPriceMaster.findFirst({
       where: {
         ipmId,
+        ipmItemId: saveItemPriceDto.ipm_item_id,
         ipmIsDeleted: false,
       },
     });
@@ -376,23 +427,20 @@ export class ItemsPriceMasterService {
       throwInventoryNotFound<ItemPriceErrorDetail>(
         'Item price not found',
         'ipm_id',
-        `No item price found with id ${ipmId}`,
+        `No live price row ${ipmId} on item ${saveItemPriceDto.ipm_item_id}`,
         ItemPriceErrorCode.NOT_FOUND,
       );
     }
     const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
+    await this.assertRowScope(tx, saveItemPriceDto, existing);
+    // ipm_item_id is the row's owner, not a field it can change.
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
-      ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUcUnitId: unitConversion.iucId,
       ipmProfitType: profitType,
       ipmUpdatedOn: new Date(),
-      // hasOwnProperty is true for every declared DTO field, sent or not, so
-      // it cannot tell "omitted" from "sent": the payload's actor, else the
-      // request's user, else the stored one.
-      ipmUpdatedBy:
-        this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ??
-        this.requestUser() ??
-        existing.ipmUpdatedBy,
+      // The request's user, else the stored one — never the payload's
+      // ipm_updated_by (notes 137 C2).
+      ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
     };
     // Omitted keeps the stored godown; only an explicit null makes the row
     // global again.
@@ -568,6 +616,96 @@ export class ItemsPriceMasterService {
     }
     return unitConversion;
   }
+  /**
+   * Notes 137 C4 — a price row's scope must fit the item and itself:
+   *   - ipm_company_id is the item's company, or blank (every company) — a
+   *     company-owned item has no price for another company to read;
+   *   - ipm_branch_id is a branch of the row's company, else of the item's;
+   *   - ipm_godown_id is a godown of the row's branch, else one of the row's /
+   *     the item's company.
+   * Checked for a new row and for a save that changes any of the three, so a
+   * stored row nobody touches never blocks an unrelated edit of the item.
+   */
+  private async assertRowScope(
+    tx: Prisma.TransactionClient,
+    dto: SaveItemPriceDto,
+    existing: ItemPriceMaster | null,
+  ): Promise<void> {
+    const pick = (sent: string | null | undefined, stored: string | null | undefined) =>
+      sent !== undefined ? sent : (stored ?? null);
+    const companyId = pick(dto.ipm_company_id, existing?.ipmCompanyId);
+    const branchId = pick(dto.ipm_branch_id, existing?.ipmBranchId);
+    const godownId = pick(dto.ipm_godown_id, existing?.ipmGodownId);
+    if (
+      existing &&
+      companyId === existing.ipmCompanyId &&
+      branchId === existing.ipmBranchId &&
+      godownId === existing.ipmGodownId
+    ) {
+      return;
+    }
+    const refuse = (field: string, code: ItemPriceErrorCode, message: string): never =>
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
+        { field, code, message },
+      ]);
+    const item = await tx.itemMaster.findFirst({
+      where: { itemId: dto.ipm_item_id },
+      select: { itemCompanyId: true },
+    });
+    const itemCompanyId = item?.itemCompanyId ?? null;
+    if (companyId && itemCompanyId && companyId !== itemCompanyId) {
+      refuse(
+        'ipm_company_id',
+        ItemPriceErrorCode.OTHER_COMPANY,
+        'The item belongs to another company. Leave ipm_company_id blank or name the item’s company.',
+      );
+    }
+    const scopeCompanyId = companyId ?? itemCompanyId;
+    if (branchId) {
+      const branch = await tx.branchMaster.findFirst({
+        where: { brId: branchId },
+        select: { brCompId: true, brName: true },
+      });
+      if (!branch || (scopeCompanyId && branch.brCompId !== scopeCompanyId)) {
+        refuse(
+          'ipm_branch_id',
+          ItemPriceErrorCode.BRANCH_OTHER_COMPANY,
+          branch
+            ? `${branch.brName} belongs to another company than the price row's`
+            : `No branch found with id ${branchId}`,
+        );
+      }
+    }
+    if (godownId) {
+      const godown = await tx.godownLocation.findFirst({
+        where: { gdlId: godownId },
+        select: { gdlBranchId: true },
+      });
+      const godownCompanyId =
+        godown && !branchId && scopeCompanyId
+          ? ((
+              await tx.branchMaster.findFirst({
+                where: { brId: godown.gdlBranchId },
+                select: { brCompId: true },
+              })
+            )?.brCompId ?? null)
+          : null;
+      const outside =
+        !godown ||
+        (branchId
+          ? godown.gdlBranchId !== branchId
+          : !!scopeCompanyId && godownCompanyId !== scopeCompanyId);
+      if (outside) {
+        refuse(
+          'ipm_godown_id',
+          ItemPriceErrorCode.GODOWN_OUT_OF_SCOPE,
+          godown
+            ? 'The godown belongs to another branch / company than the price row'
+            : `No godown found with id ${godownId}`,
+        );
+      }
+    }
+  }
   private applyOptionalFields(
     data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
     saveItemPriceDto: SaveItemPriceDto,
@@ -735,10 +873,6 @@ export class ItemsPriceMasterService {
     const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
     const godownSegment = record.ipmGodownId ?? 'ALL_GODOWNS';
     return `${record.ipmItemId}:${record.ipmUcUnitId}:${branchSegment}:${godownSegment}`;
-  }
-  private resolveRecordActor(value: string | null | undefined): string | null {
-    const trimmed = value?.trim();
-    return trimmed || null;
   }
   /** The authenticated user, or null — never the nil-uuid DEFAULT_ACTOR sentinel. */
   private requestUser(): string | null {

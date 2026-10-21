@@ -22,6 +22,10 @@ export declare class ItemUnitConversionService {
     toggleDelete(iucId: string, tx?: Prisma.TransactionClient): Promise<ItemUnitConversionDeleteResult>;
     toggleDelete(iucId: string[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionDeleteResult[]>;
     toggleDelete(iucId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
+    delete(iucId: string): Promise<ItemUnitConversionDeleteResult>;
+    delete(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
+    delete(iucId: string | string[]): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
+    private assertNoLiveDependants;
     private saveItemUnitConversion;
     private createItemUnitConversion;
     private updateItemUnitConversion;
@@ -38,7 +42,6 @@ export declare class ItemUnitConversionService {
     private parseOptionalDate;
     private toPayload;
     private buildDisplayName;
-    private resolveRecordActor;
     private requestUser;
     private resolveAuditActor;
     private handleWriteError;

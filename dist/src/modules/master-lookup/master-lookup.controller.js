@@ -216,7 +216,7 @@ __decorate([
     (0, common_1.Get)('item-by-barcode'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags. Optional company_id and branch_id each restrict the match to items of that company / branch or of none; both are independent and both are optional.',
+        summary: "Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively, then — when no EAN row has it — item_master.item_default_barcode, sold in the item's default unit (notes 137 B3); deleted items never answer. Returns allow_sales, item_status, batch_config and weigh_scale flags. Optional company_id and branch_id each restrict the match to items of that company / branch or of none; both are independent and both are optional.",
     }),
     (0, swagger_1.ApiQuery)({ name: 'barcode', required: true, schema: { type: 'string', maxLength: 64 } }),
     (0, swagger_1.ApiQuery)({ name: 'company_id', required: false, schema: { type: 'string', format: 'uuid' } }),

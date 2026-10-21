@@ -43,9 +43,12 @@ model ItemReorder {
   @@map("item_reorders")
    @@schema("inventory")
 
-  // uq_ir_item_unit_godown UNIQUE (ir_item_id, ir_uc_unit_id, ir_godown_id)
-  // WHERE ir_is_deleted = false — DB-only, partial since 20260930120000 (a
-  // partial index cannot be declared here).
+  // uq_ir_item_branch_unit_godown UNIQUE (ir_item_id, COALESCE(ir_branch_id),
+  // COALESCE(ir_uc_unit_id), COALESCE(ir_godown_id)) WHERE ir_is_deleted =
+  // false — DB-only (a partial / expression index cannot be declared here).
+  // The service's key since notes 67, branch included, with NULLs equal
+  // (notes 137 B1, 20261021100000). ck_ir_nonnegative keeps levels and days
+  // at or above zero.
 
   @@index([irItemId], map: "idx_ir_item")
   @@index([irUcUnitId], map: "idx_ir_unit")

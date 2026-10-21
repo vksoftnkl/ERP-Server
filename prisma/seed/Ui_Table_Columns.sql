@@ -13,9 +13,10 @@
 -- column to a table that is already laid out -- that is what a targeted seed like
 -- Quotation_Item_Grid_ItemSize_Column.sql is for.
 --
--- ui_tbl_clm_no / _position are kept exactly as exported (duplicate numbers on a few
--- tables included -- the table has no unique constraint on them, and the client sorts
--- by number, so reshuffling them here would silently re-order live screens).
+-- ui_tbl_clm_no / _position are kept exactly as exported, except that no two LIVE rows
+-- of one table share a number: ex_ui_tbl_clm_no refuses that since 20261021110000
+-- (notes 137 E). Grid Master (7) number 15 was FontRole (143) and Notes (144); 144 is
+-- seeded deleted, as the migration left it -- the client shows the first row only.
 -- Regenerate with: npm run seed:export:ui-config
 -- Run: psql "$DATABASE_URL" -f prisma/seed/Ui_Table_Columns.sql
 --      or: npm run seed:run -- --only=Ui_Table_Columns.sql
@@ -42,7 +43,7 @@ SELECT v.* FROM (VALUES
     ,(141 , 7   , 13 , 'Position'              , 9.960000000000001, true , true , 0  , false, 0   , 0   , true , false, 'system')
     ,(142 , 7   , 14 , 'CheckStatus'           , 9.960000000000001, true , true , 0  , false, 0   , 0   , true , false, 'system')
     ,(143 , 7   , 15 , 'FontRole'              , 10               , true , true , 0  , false, 0   , 0   , true , false, 'system')
-    ,(144 , 7   , 15 , 'Notes'                 , 9.960000000000001, true , true , 0  , false, NULL, NULL, true , false, 'system')
+    ,(144 , 7   , 15 , 'Notes'                 , 9.960000000000001, true , true , 0  , false, NULL, NULL, false, true , 'system')
     -- ============ Nex Table Entry (id 10) ============
     ,(199 , 10  , 0  , '#'                     , 6.01             , true , false, 0  , false, NULL, NULL, true , false, 'system')
     ,(200 , 10  , 1  , 'Column No'             , 9.449999999999999, true , false, 1  , false, NULL, NULL, true , false, 'system')

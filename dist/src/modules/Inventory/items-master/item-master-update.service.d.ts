@@ -15,6 +15,7 @@ export declare class ItemMasterUpdateService {
     private readonly priceBucketService;
     constructor(itemUnitConversionService: ItemUnitConversionService, itemsPriceMasterService: ItemsPriceMasterService, itemsEanCodeMasterService: ItemsEanCodeMasterService, itemsReorderMasterService: ItemsReorderMasterService, priceBucketService: PriceBucketService);
     syncChildren(itemId: string, dto: SaveItemCompositeDto, tx: Prisma.TransactionClient): Promise<ItemChildrenSyncResult>;
+    private retireRowsOfRemovedUnits;
     private indexUnitConversions;
     private resolveUnitConversionId;
     private syncUnitConversions;
@@ -24,5 +25,6 @@ export declare class ItemMasterUpdateService {
     private syncReorders;
     private rowChanged;
     private naturalKey;
+    private refuseForeignIds;
     private refuseDuplicateKeys;
 }

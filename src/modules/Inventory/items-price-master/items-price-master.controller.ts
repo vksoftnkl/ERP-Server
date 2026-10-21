@@ -1,14 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -148,7 +139,10 @@ export class ItemsPriceMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item price by id' })
+  @ApiOperation({
+    summary:
+      'Soft delete item price by id. Deletes only: an already-deleted row is a 409 ITEM_PRICE_ALREADY_DELETED (notes 137 D1)',
+  })
   @ApiQuery({
     name: 'ipm_id',
     required: false,
@@ -174,7 +168,7 @@ export class ItemsPriceMasterController {
     @Query() query: Record<string, unknown>,
   ): Promise<ItemPriceSuccessResponse<ItemPriceDeleteResult | ItemPriceDeleteResult[]>> {
     const deletePayload = await this.resolveDeletePayload(body, query);
-    const data = await this.itemsPriceMasterService.toggleDelete(
+    const data = await this.itemsPriceMasterService.delete(
       Array.isArray(deletePayload)
         ? deletePayload.map((item: DeleteItemPriceDto) => item.ipm_id)
         : deletePayload.ipm_id,

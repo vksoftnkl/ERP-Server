@@ -3,4 +3,5 @@ export declare class GetItemPriceDetailQueryDto {
 }
 export declare class GetItemPriceDetailByBarcodeQueryDto {
     barcode: string;
+    company_id?: string;
 }

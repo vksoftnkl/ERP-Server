@@ -1,14 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -150,7 +141,10 @@ export class ItemsReorderMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item reorder by id' })
+  @ApiOperation({
+    summary:
+      'Soft delete item reorder by id. Deletes only: an already-deleted row is a 409 ITEM_REORDER_ALREADY_DELETED (notes 137 D1)',
+  })
   @ApiQuery({ name: 'ir_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
     required: false,
@@ -173,7 +167,7 @@ export class ItemsReorderMasterController {
   ): Promise<ItemReorderSuccessResponse<ItemReorderDeleteResult | ItemReorderDeleteResult[]>> {
     const deleteItemReorderDto = await this.resolveDeletePayload(body, irId);
     const isArray = Array.isArray(deleteItemReorderDto);
-    const data = await this.itemsReorderMasterService.toggleDelete(
+    const data = await this.itemsReorderMasterService.delete(
       isArray ? deleteItemReorderDto.map((item) => item.ir_id) : deleteItemReorderDto.ir_id,
     );
 

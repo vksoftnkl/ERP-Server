@@ -19,6 +19,9 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemEanCode>, [Prisma.ItemEanCodeUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemEanCodeUpdateManyArgs]>;
   };
+  // The item-live and unit-of-item checks (notes 137 D1).
+  itemMaster: { findMany: jest.Mock; findFirst: jest.Mock };
+  itemUnitConversion: { findFirst: jest.Mock };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -56,6 +59,12 @@ describe('ItemsEanCodeMasterService', () => {
         update: jest.fn<Promise<ItemEanCode>, [Prisma.ItemEanCodeUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.ItemEanCodeUpdateManyArgs]>(),
       },
+      // The item is live and the unit is its own unless a test says otherwise.
+      itemMaster: {
+        findMany: jest.fn().mockResolvedValue([{ itemId: ITEM_ID }]),
+        findFirst: jest.fn().mockResolvedValue({ itemId: ITEM_ID }),
+      },
+      itemUnitConversion: { findFirst: jest.fn().mockResolvedValue({ iucId: UNIT_ID }) },
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]

@@ -65,7 +65,7 @@ let ItemsReorderMasterController = class ItemsReorderMasterController {
     async remove(body, irId) {
         const deleteItemReorderDto = await this.resolveDeletePayload(body, irId);
         const isArray = Array.isArray(deleteItemReorderDto);
-        const data = await this.itemsReorderMasterService.toggleDelete(isArray ? deleteItemReorderDto.map((item) => item.ir_id) : deleteItemReorderDto.ir_id);
+        const data = await this.itemsReorderMasterService.delete(isArray ? deleteItemReorderDto.map((item) => item.ir_id) : deleteItemReorderDto.ir_id);
         return {
             success: true,
             message: this.buildToggleDeleteMessage(data),
@@ -151,7 +151,9 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item reorder by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item reorder by id. Deletes only: an already-deleted row is a 409 ITEM_REORDER_ALREADY_DELETED (notes 137 D1)',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'ir_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
         required: false,

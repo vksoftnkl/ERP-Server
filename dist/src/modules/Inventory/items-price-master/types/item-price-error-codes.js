@@ -19,5 +19,10 @@ var ItemPriceErrorCode;
     ItemPriceErrorCode["IN_USE"] = "ITEM_PRICE_IN_USE";
     ItemPriceErrorCode["BUCKET_COLLISION"] = "ITEM_PRICE_BUCKET_COLLISION";
     ItemPriceErrorCode["REBUCKET_ABOVE_MRP"] = "ITEM_PRICE_REBUCKET_ABOVE_MRP";
+    ItemPriceErrorCode["ALREADY_DELETED"] = "ITEM_PRICE_ALREADY_DELETED";
+    ItemPriceErrorCode["ITEM_NOT_LIVE"] = "ITEM_PRICE_ITEM_NOT_LIVE";
+    ItemPriceErrorCode["OTHER_COMPANY"] = "ITEM_PRICE_OTHER_COMPANY";
+    ItemPriceErrorCode["BRANCH_OTHER_COMPANY"] = "ITEM_PRICE_BRANCH_OTHER_COMPANY";
+    ItemPriceErrorCode["GODOWN_OUT_OF_SCOPE"] = "ITEM_PRICE_GODOWN_OUT_OF_SCOPE";
 })(ItemPriceErrorCode || (exports.ItemPriceErrorCode = ItemPriceErrorCode = {}));
 //# sourceMappingURL=item-price-error-codes.js.map

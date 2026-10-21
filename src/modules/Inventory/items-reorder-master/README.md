@@ -31,20 +31,29 @@ scoped optionally by branch, unit and godown.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a reorder rule. Accepts a single object **or** an array of them. |
 | `GET` | `/get` | Fetch one rule by `ir_id`, or list active rules with optional filters + pagination. |
-| `DELETE` | `/delete` | Soft-delete **or restore** (toggle) one or many rules by `ir_id`. |
+| `DELETE` | `/delete` | Soft-delete one or many rules by `ir_id`. Deletes only (409 `ITEM_REORDER_ALREADY_DELETED`). |
 
 ### Create / update semantics
 
-- **Omit `ir_id` → create; include `ir_id` → update** the existing row (`saveItemReorder`).
+- **Omit `ir_id` → create; include `ir_id` → update** the existing row **of `ir_item_id`**
+  (`saveItemReorder`); another item's row is a 404 and `ir_item_id` is never rewritten (notes 137
+  A1). The item must be live (400 `ITEM_REORDER_ITEM_NOT_LIVE`); a unit must be one of its own live
+  conversion rows (`ITEM_REORDER_UNIT_NOT_OF_ITEM`), `ir_branch_id` a live branch
+  (`ITEM_REORDER_UNKNOWN_BRANCH`) and `ir_godown_id` a live godown of that branch
+  (`ITEM_REORDER_GODOWN_OUT_OF_SCOPE`) — the two columns have no foreign key (notes 137 B9 / D1).
+  Checked for a new row and for each value an update changes.
 - The `/create` body is a union (single object or array). It is validated explicitly with
   `validateSingleOrArrayDto` against `SaveItemReorderDto`; the response message reflects create
   vs. update (single) or a batch save.
 - **Batch mode is all-or-nothing:** every item runs inside one `$transaction`; if any entry fails,
   nothing is saved.
-- On create, `ir_item_id` is required; `ir_unit_id` defaults to `null` when omitted; other optional
-  columns are only written when the key is present on the payload (`applyOptionalFields`).
-- `ir_created_by` / `ir_modified_by` are resolved via `resolveActor` from the payload, falling back
-  to `RequestContextService.getUserId()`, then `DEFAULT_ACTOR`.
+- On create, `ir_item_id` is required; `ir_unit_id` defaults to `null` when omitted. On update an
+  omitted `ir_unit_id` keeps the stored unit and only `null` clears it (notes 137 B2 — it was
+  written `?? null`). Other optional columns are only written when sent (`applyOptionalFields`).
+- Levels (`ir_min_level` … `ir_reorder_qty`) and days are `Min(0)` in the DTO and held by
+  `ck_ir_nonnegative` in the DB (notes 137 D5).
+- `ir_created_by` / `ir_modified_by` are always the token's user (`DEFAULT_ACTOR` with none); the
+  payload's values are accepted and ignored (notes 137 C2).
 
 ### Get / list
 
@@ -63,10 +72,10 @@ scoped optionally by branch, unit and godown.
 - `DELETE /delete` accepts the `ir_id` either as a query param **or** in the body (single object or
   array). If a body payload is present it wins; otherwise the query `ir_id` is used, and a missing
   `ir_id` yields a `400` (`resolveDeletePayload`).
-- **Toggle, not one-way:** `toggleDelete` flips `irIsDeleted` — deleting an active rule sets it
-  `true` (audit action `cancel`), and re-issuing on a deleted rule restores it (`false`, action
-  `update`). The response `deleted` flag reports the resulting state, and the success message adapts
-  (deleted / restored / mixed for batches).
+- **Deletes only** (`delete()`, notes 137 D1): an already-deleted rule is a 409
+  `ITEM_REORDER_ALREADY_DELETED`, a rule whose item is deleted a 409 `ITEM_REORDER_ITEM_NOT_LIVE`.
+  It used to toggle, so a second DELETE restored the rule. `toggleDelete` stays the item master's
+  tool for deleting and restoring rules with their item.
 - The flip uses a **guarded `updateMany`** (`where: { irId, irIsDeleted: wasDeleted }`); if the state
   changed since the read (`count === 0`) it raises not-found.
 
@@ -74,14 +83,14 @@ scoped optionally by branch, unit and godown.
 
 - **Reorder range validation** — when both are supplied, `ir_min_level` must be `<=` `ir_max_level`,
   else a `400` on `ir_max_level` (`validateReorderRange`).
-- **Uniqueness** — one rule per `(ir_item_id, ir_unit_id, ir_godown_id)` combination
-  (DB unique index `uq_ir_item_unit_godown`); violations surface as a conflict
-  ("Duplicate item + unit + godown combination is not allowed"). A `NULL` `ir_godown_id` denotes a
-  global reorder rule.
+- **Uniqueness** — one live rule per `(ir_item_id, ir_branch_id, ir_unit_id, ir_godown_id)`, NULLs
+  equal (DB unique index `uq_ir_item_branch_unit_godown`, notes 137 B1 — the old index left the
+  branch out and never protected a NULL unit or godown); violations surface as a 409
+  `ITEM_REORDER_DUPLICATE`. A `NULL` `ir_godown_id` denotes a global reorder rule.
 - **Relational integrity** — a foreign-key violation (bad `ir_item_id` / `ir_unit_id`) is mapped to a
   `400` "Invalid relation reference" (`handleWriteError`).
-- **Soft delete only** — rows are never hard-deleted; delete/restore just toggles `irIsDeleted` and
-  stamps `irModifiedOn` / `irModifiedBy`.
+- **Soft delete only** — rows are never hard-deleted; a delete sets `irIsDeleted` and stamps
+  `irModifiedOn` / `irModifiedBy`.
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (actions `New` / `update` /
   `cancel`) under screen `Item Reorder Master` (`master`), capturing original vs. modified records
   and a display name of `item:unit:godown` (`buildDisplayName`).

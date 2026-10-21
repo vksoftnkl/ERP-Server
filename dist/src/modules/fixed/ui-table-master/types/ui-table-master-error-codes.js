@@ -9,5 +9,6 @@ var UiTableMasterErrorCode;
     UiTableMasterErrorCode["NAME_DUPLICATE"] = "UI_TABLE_NAME_DUPLICATE";
     UiTableMasterErrorCode["COLUMN_NAME_REQUIRED"] = "UI_TABLE_COLUMN_NAME_REQUIRED";
     UiTableMasterErrorCode["ID_INVALID"] = "UI_TABLE_ID_INVALID";
+    UiTableMasterErrorCode["COLUMN_NO_DUPLICATE"] = "UI_TABLE_COLUMN_NO_DUPLICATE";
 })(UiTableMasterErrorCode || (exports.UiTableMasterErrorCode = UiTableMasterErrorCode = {}));
 //# sourceMappingURL=ui-table-master-error-codes.js.map

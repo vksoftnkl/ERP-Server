@@ -19,13 +19,13 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
+  isExclusionConstraintError,
   isForeignKeyConstraintError,
   isUniqueConstraintError,
   resolveActor,
   throwInventoryBadRequest,
   throwInventoryConflict,
   throwInventoryNotFound,
-  throwOnUniqueConstraintError,
   violatedConstraintOf,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -83,15 +83,99 @@ const ITEM_FOREIGN_KEYS: Readonly<
     code: ItemErrorCode.UNKNOWN_TRACK_PRESET,
   },
 };
-/** What keeps an item from being deleted (notes 70 C4): stock that still exists. */
-const ITEM_STOCK_REFERENCES: readonly LiveReference[] = [
+/**
+ * What keeps an item from being deleted: stock that still exists (notes 70
+ * C4), and — notes 137 D3 — documents and schemes that are still going to use
+ * it: an open sale order or quotation, a promotion or loyalty scheme that is
+ * not closed. Past, finished documents do not block; a soft delete keeps them
+ * readable. Another item's packing list is checked beside these (an array
+ * column, see softDeleteComposite).
+ */
+const ITEM_DELETE_REFERENCES: readonly LiveReference[] = [
   {
     table: 'stock.stock_balance',
     column: 'sbl_item_id',
     live: 'sbl_is_deleted = false AND (sbl_on_hand_qty <> 0 OR sbl_transit_in_qty <> 0)',
     label: 'stock holdings with quantity on hand or in transit',
   },
+  {
+    table: 'sales.sale_order_item',
+    column: 'soi_item_id',
+    live:
+      "soi_is_deleted = false AND soi_line_status IN ('PENDING', 'PARTIAL') AND EXISTS (" +
+      'SELECT 1 FROM sales.sale_order o WHERE o.so_id = soi_order_id AND o.so_is_deleted = false ' +
+      "AND o.so_status IN ('DRAFT', 'CONFIRMED', 'PARTIAL'))",
+    label: 'open sale order lines',
+  },
+  {
+    table: 'sales.sale_quotation_item',
+    column: 'sqi_item_id',
+    live:
+      'sqi_is_deleted = false AND EXISTS (' +
+      'SELECT 1 FROM sales.sale_quotation q WHERE q.sq_id = sqi_quote_id AND q.sq_is_deleted = false ' +
+      "AND q.sq_status IN ('DRAFT', 'SENT', 'ACCEPTED'))",
+    label: 'open quotation lines',
+  },
+  {
+    table: 'sales.promotion_scheme_item',
+    column: 'pri_item_id',
+    live:
+      'pri_is_deleted = false AND EXISTS (' +
+      'SELECT 1 FROM sales.promotion_scheme p WHERE p.prm_id = pri_prm_id AND p.prm_is_deleted = false ' +
+      "AND p.prm_status <> 'CLOSED')",
+    label: 'promotion scheme items',
+  },
+  {
+    table: 'sales.promotion_scheme_slab',
+    column: 'prs_free_item_id',
+    live:
+      'prs_is_deleted = false AND EXISTS (' +
+      'SELECT 1 FROM sales.promotion_scheme p WHERE p.prm_id = prs_prm_id AND p.prm_is_deleted = false ' +
+      "AND p.prm_status <> 'CLOSED')",
+    label: 'promotion free-item slabs',
+  },
+  {
+    table: 'sales.loyalty_scheme_slab',
+    column: 'lss_item_id',
+    live:
+      'lss_is_deleted = false AND EXISTS (' +
+      'SELECT 1 FROM sales.loyalty_scheme l WHERE l.lsc_id = lss_lsc_id AND l.lsc_is_deleted = false ' +
+      "AND l.lsc_status <> 'CLOSED')",
+    label: 'loyalty scheme slabs',
+  },
+  {
+    table: 'sales.loyalty_scheme_gift',
+    column: 'lsg_item_id',
+    live:
+      'lsg_is_deleted = false AND EXISTS (' +
+      'SELECT 1 FROM sales.loyalty_scheme l WHERE l.lsc_id = lsg_lsc_id AND l.lsc_is_deleted = false ' +
+      "AND l.lsc_status <> 'CLOSED')",
+    label: 'loyalty gifts',
+  },
 ];
+/** The item's unique keys (notes 137 B5 / B6), and the codes a clash answers with. */
+type ItemUniqueField = 'item_name_en' | 'item_code' | 'item_sku' | 'item_default_barcode';
+type ItemUniqueKeys = {
+  companyId: string | null;
+  name: string | null;
+  code: string | null;
+  sku: string | null;
+  barcode: string | null;
+};
+const SAVE_CLASH_CODES: Readonly<Record<ItemUniqueField, ItemErrorCode>> = {
+  item_name_en: ItemErrorCode.NAME_TAKEN,
+  item_code: ItemErrorCode.CODE_TAKEN,
+  item_sku: ItemErrorCode.SKU_TAKEN,
+  item_default_barcode: ItemErrorCode.BARCODE_TAKEN,
+};
+const RESTORE_CLASH_CODES: Readonly<Record<ItemUniqueField, ItemErrorCode>> = {
+  item_name_en: ItemErrorCode.RESTORE_NAME_TAKEN,
+  item_code: ItemErrorCode.RESTORE_CODE_TAKEN,
+  item_sku: ItemErrorCode.RESTORE_SKU_TAKEN,
+  item_default_barcode: ItemErrorCode.BARCODE_TAKEN,
+};
+/** Namespace of the advisory locks the unique-key check takes (see assertUniqueKeys). */
+const UNIQUE_LOCK_NAMESPACE = 'inventory.item_master.unique';
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -112,7 +196,7 @@ export class ItemsMasterService {
    */
   async save(saveItemDto: SaveItemDto, tx?: Prisma.TransactionClient): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
-      return this.updateItem(saveItemDto, tx);
+      return (await this.updateItem(saveItemDto, tx)).payload;
     }
     return this.createItem(saveItemDto, tx);
   }
@@ -132,17 +216,24 @@ export class ItemsMasterService {
    */
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
     return this.prisma.$transaction(async (tx) => {
-      const item = dto.item_id
-        ? await this.updateItem(dto, tx, { rekeyPrices: false })
-        : await this.createItem(dto, tx);
-      const children = await this.itemMasterUpdateService.syncChildren(item.item_id, dto, tx);
+      const saved = dto.item_id
+        ? await this.updateItem(dto, tx, { childrenFollow: true })
+        : { payload: await this.createItem(dto, tx), before: null };
+      const itemId = saved.payload.item_id;
+      const children = await this.itemMasterUpdateService.syncChildren(itemId, dto, tx);
       // AFTER the price sync, not before: this save may both change the
       // tracking (preset, group) and remove the row that would otherwise
       // collide under it, and the payload is the final word on which rows
       // exist. Re-keying first would refuse a save whose end state is valid.
-      if (await this.priceBucketService.rekeyItem(tx, item.item_id)) {
-        children.prices = await this.itemsPriceMasterService.findByItemId(item.item_id, tx);
+      if (await this.priceBucketService.rekeyItem(tx, itemId)) {
+        children.prices = await this.itemsPriceMasterService.findByItemId(itemId, tx);
       }
+      // Notes 137 C3, against the rows this save leaves: the payload may have
+      // moved the price rows along with the item.
+      if (saved.before) {
+        await this.assertCompanyMove(tx, saved.before, saved.payload.item_company_id);
+      }
+      const item = await this.alignBaseUnit(tx, saved.payload, dto, children.unit_conversions);
       return { item, ...children };
     }, COMPOSITE_TRANSACTION_OPTIONS);
   }
@@ -534,12 +625,29 @@ export class ItemsMasterService {
       // Notes 70 C4 — an item with stock on hand (or on its way to a branch)
       // is not deleted: it would vanish from every picker while the holding
       // stays valued and unsellable. Past transactions do not block — a soft
-      // delete keeps them readable — only stock that still exists does.
-      await assertNoLiveReferences(tx, ITEM_STOCK_REFERENCES, itemId, {
+      // delete keeps them readable — only stock that still exists, and (notes
+      // 137 D3) open documents, live schemes and other items' packing lists.
+      await assertNoLiveReferences(tx, ITEM_DELETE_REFERENCES, itemId, {
         label: 'item',
         idField: 'item_id',
         inUseCode: ItemErrorCode.IN_USE,
       });
+      const packers = await tx.itemMaster.findMany({
+        where: { itemIsDeleted: false, itemPackingItemIds: { has: itemId } },
+        select: { itemNameEn: true },
+        take: 5,
+      });
+      if (packers.length) {
+        throwInventoryConflict<ItemErrorDetail>('This item is still in use', [
+          {
+            field: 'item_id',
+            code: ItemErrorCode.IN_USE,
+            message:
+              `Packed into ${packers.map((row) => row.itemNameEn).join(', ')}. ` +
+              'Take it out of their packing lists first.',
+          },
+        ]);
+      }
       const item = await this.setItemDeleted(tx, existing, true);
       const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
         tx.itemUnitConversion
@@ -587,6 +695,20 @@ export class ItemsMasterService {
             },
           ]);
         }
+        // Notes 137 B6 — the shared-vs-company half of the unique keys is not
+        // in any index, so a restore checks it the way a save does.
+        await this.assertUniqueKeys(
+          tx,
+          existing.itemId,
+          {
+            companyId: existing.itemCompanyId,
+            name: existing.itemNameEn,
+            code: existing.itemCode,
+            sku: existing.itemSku,
+            barcode: existing.itemDefaultBarcode,
+          },
+          RESTORE_CLASH_CODES,
+        );
         const deletedOn = existing.itemModifiedOn;
         const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
           tx.itemUnitConversion
@@ -623,30 +745,59 @@ export class ItemsMasterService {
         });
         const restored = await tx.itemMaster.findFirstOrThrow({ where: { itemId } });
         await this.stockTrackPolicyService.syncFromItem(restored, tx);
+        // The group's policy may have changed while the item was deleted, so
+        // the restored prices are re-keyed under the policy in force now, as a
+        // save would (notes 137 D2).
+        await this.priceBucketService.rekeyItem(tx, itemId);
         return { item, ...children };
       }, COMPOSITE_TRANSACTION_OPTIONS);
     } catch (error: unknown) {
       if (isUniqueConstraintError(error)) {
         const constraint = violatedConstraintOf(error) ?? '';
         throwInventoryConflict<ItemErrorDetail>('Item cannot be restored', [
-          /item_name_en/.test(constraint)
+          /item_name/.test(constraint)
             ? {
                 field: 'item_name_en',
                 code: ItemErrorCode.RESTORE_NAME_TAKEN,
                 message: 'Another live item now has this name. Rename one of them, then restore.',
               }
-            : /ean_code/.test(constraint)
+            : /item_code/.test(constraint)
               ? {
-                  field: 'ean_codes',
-                  code: ItemErrorCode.RESTORE_EAN_TAKEN,
-                  message:
-                    'An EAN code of this item now belongs to another live item. Remove it there, then restore.',
+                  field: 'item_code',
+                  code: ItemErrorCode.RESTORE_CODE_TAKEN,
+                  message: 'Another live item now has this code. Change one of them, then restore.',
                 }
-              : {
-                  field: 'item_id',
-                  code: ItemErrorCode.RESTORE_CLASH,
-                  message: 'A row of this item now clashes with a live row elsewhere.',
-                },
+              : /item_sku/.test(constraint)
+                ? {
+                    field: 'item_sku',
+                    code: ItemErrorCode.RESTORE_SKU_TAKEN,
+                    message:
+                      'Another live item now has this SKU. Change one of them, then restore.',
+                  }
+                : /ean_code/.test(constraint)
+                  ? {
+                      field: 'ean_codes',
+                      code: ItemErrorCode.RESTORE_EAN_TAKEN,
+                      message:
+                        'An EAN code of this item now belongs to another live item. Remove it there, then restore.',
+                    }
+                  : {
+                      field: 'item_id',
+                      code: ItemErrorCode.RESTORE_CLASH,
+                      message: 'A row of this item now clashes with a live row elsewhere.',
+                    },
+        ]);
+      }
+      // ex_ipm_overlap: a restored price row overlaps one written since — a
+      // 409, not the 500 it used to be (notes 137 D2).
+      if (isExclusionConstraintError(error)) {
+        throwInventoryConflict<ItemErrorDetail>('Item cannot be restored', [
+          {
+            field: 'prices',
+            code: ItemErrorCode.RESTORE_CLASH,
+            message:
+              'A price row of this item overlaps a live price row of the same company, branch, unit and MRP. Delete one of them, then restore.',
+          },
         ]);
       }
       throw error;
@@ -752,10 +903,9 @@ export class ItemsMasterService {
     }
     const companyId = saveItemDto.item_company_id ?? null;
     const now = new Date();
-    const createdBy = resolveActor(
-      saveItemDto.item_created_by,
-      this.requestContextService.getUserId(),
-    );
+    // The token's user, never the payload's item_created_by (notes 137 C2):
+    // a body could name anyone.
+    const createdBy = resolveActor(null, this.requestContextService.getUserId());
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       itemCompanyId: companyId,
       itemNameEn,
@@ -769,6 +919,19 @@ export class ItemsMasterService {
     const create = async (client: Prisma.TransactionClient) => {
       await this.assertBranchOfCompany(client, companyId, saveItemDto.item_branch_id ?? null);
       await this.inheritClassDefaults(client, data, saveItemDto);
+      await this.assertReferencesLive(client, saveItemDto, null);
+      await this.assertUniqueKeys(
+        client,
+        null,
+        {
+          companyId,
+          name: itemNameEn,
+          code: saveItemDto.item_code ?? null,
+          sku: saveItemDto.item_sku ?? null,
+          barcode: saveItemDto.item_default_barcode ?? null,
+        },
+        SAVE_CLASH_CODES,
+      );
       const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
       // Same transaction as the item: an item never exists without the policy
       // that says how its stock is keyed, and neither is written if the other
@@ -912,15 +1075,18 @@ export class ItemsMasterService {
     }
   }
   /**
-   * @param options.rekeyPrices re-derive the item's price buckets under the
-   *   policy this save leaves in force (plan-nestjs-one-price-table.md §4.3).
-   *   saveComposite turns it off and re-keys after its own price sync instead.
+   * @param options.childrenFollow true when saveComposite syncs the child rows
+   *   after this update: it then re-derives the price buckets under the policy
+   *   this save leaves in force (plan-nestjs-one-price-table.md §4.3) and runs
+   *   the company-move check (notes 137 C3) itself, against the rows the sync
+   *   leaves. A plain update does both here.
+   * @returns the saved item, and the row as it stood before the save.
    */
   private async updateItem(
     saveItemDto: SaveItemDto,
     tx?: Prisma.TransactionClient,
-    options: { rekeyPrices: boolean } = { rekeyPrices: true },
-  ): Promise<ItemPayload> {
+    options: { childrenFollow: boolean } = { childrenFollow: false },
+  ): Promise<{ payload: ItemPayload; before: ItemMaster }> {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
@@ -956,11 +1122,13 @@ export class ItemsMasterService {
         itemNameEn,
         itemGroupId: saveItemDto.item_group_id,
         itemModifiedOn: new Date(),
-        itemModifiedBy: resolveActor(
-          saveItemDto.item_modified_by,
-          this.requestContextService.getUserId(),
-        ),
+        // The token's user, never the payload's item_modified_by (notes 137 C2).
+        itemModifiedBy: resolveActor(null, this.requestContextService.getUserId()),
       };
+      // null clears the company — the item is then SHARED by every company —
+      // and omitted keeps it. item_company_id was an OptionalUuid, which reads
+      // null as "not sent", so an item could never be made shared again
+      // (notes 137 A2).
       if (saveItemDto.item_company_id !== undefined) {
         data.itemCompanyId = saveItemDto.item_company_id ?? null;
       }
@@ -981,6 +1149,20 @@ export class ItemsMasterService {
         data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
       }
       this.applyOptionalFields(data, saveItemDto);
+      await this.assertReferencesLive(client, saveItemDto, existing);
+      const after = <T>(sent: T | undefined, stored: T): T => (sent !== undefined ? sent : stored);
+      await this.assertUniqueKeys(
+        client,
+        itemId,
+        this.changedUniqueKeys(existing, {
+          companyId: after(saveItemDto.item_company_id, existing.itemCompanyId),
+          name: itemNameEn,
+          code: after(saveItemDto.item_code, existing.itemCode),
+          sku: after(saveItemDto.item_sku, existing.itemSku),
+          barcode: after(saveItemDto.item_default_barcode, existing.itemDefaultBarcode),
+        }),
+        SAVE_CLASH_CODES,
+      );
       const updated = await client.itemMaster.update({
         where: {
           itemId,
@@ -995,8 +1177,9 @@ export class ItemsMasterService {
       // A new preset or group can change which price dimensions are buckets.
       // Every live price row of the item is re-keyed in this transaction, and
       // two that would become one are refused with both named.
-      if (options.rekeyPrices) {
+      if (!options.childrenFollow) {
         await this.priceBucketService.rekeyItem(client, itemId);
+        await this.assertCompanyMove(client, existing, updated.itemCompanyId);
       }
       const payload = this.toPayload(updated);
       await this.auditLogService.logEntityChange(
@@ -1015,7 +1198,7 @@ export class ItemsMasterService {
         },
         client,
       );
-      return payload;
+      return { payload, before: existing };
     };
     try {
       return tx ? await update(tx) : await this.prisma.$transaction(update);
@@ -1023,6 +1206,370 @@ export class ItemsMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /**
+   * The keys an update must re-check: those whose value — or whose company —
+   * this save changes. A key nobody touches is left alone, so data stored
+   * before notes 137 never blocks an unrelated edit; null skips a key.
+   */
+  private changedUniqueKeys(existing: ItemMaster, next: ItemUniqueKeys): ItemUniqueKeys {
+    const same = (a: string | null, b: string | null) =>
+      (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+    const companyMoved = next.companyId !== existing.itemCompanyId;
+    const keep = (value: string | null, stored: string | null) =>
+      companyMoved || !same(value, stored) ? value : null;
+    return {
+      companyId: next.companyId,
+      name: keep(next.name, existing.itemNameEn),
+      code: keep(next.code, existing.itemCode),
+      sku: keep(next.sku, existing.itemSku),
+      barcode: same(next.barcode, existing.itemDefaultBarcode) ? null : next.barcode,
+    };
+  }
+  /**
+   * Notes 137 B5 / B6 — the user's rule (2026-10-21): name, code and SKU are
+   * unique among the LIVE items of one company, in any case, and a shared item
+   * (no company) clashes with every company's items. The same-company half is
+   * also held by uq_item_name_en_company_ci / uq_item_code_company_ci /
+   * uq_item_sku_company_ci; the shared-vs-company half is in no index, so it
+   * is checked here, after an advisory lock per value that serialises two
+   * saves of the same name (lowered, company-free, so a shared and a company
+   * item contend too). The header barcode must not be another live item's EAN
+   * code or header barcode. A null key is not checked.
+   */
+  private async assertUniqueKeys(
+    client: Prisma.TransactionClient,
+    selfId: string | null,
+    keys: ItemUniqueKeys,
+    codes: Readonly<Record<ItemUniqueField, ItemErrorCode>>,
+  ): Promise<void> {
+    const norm = (value: string | null) => value?.trim().toLowerCase() || null;
+    const name = norm(keys.name);
+    const code = norm(keys.code);
+    const sku = norm(keys.sku);
+    const barcode = norm(keys.barcode);
+    const lockKeys = [
+      name && `name:${name}`,
+      code && `code:${code}`,
+      sku && `sku:${sku}`,
+      barcode && `barcode:${barcode}`,
+    ]
+      .filter((key): key is string => !!key)
+      .sort();
+    if (!lockKeys.length) {
+      return;
+    }
+    await client.$queryRaw<Array<{ locked: number }>>`
+      SELECT count(pg_advisory_xact_lock(hashtext(${UNIQUE_LOCK_NAMESPACE}), hashtext(k)))::int AS locked
+        FROM unnest(${lockKeys}::text[]) AS k
+    `;
+    const clashes = await client.$queryRaw<Array<{ field: ItemUniqueField; holder: string }>>`
+      WITH peer AS (
+        SELECT item_id, item_name_en, item_code, item_sku, item_default_barcode
+          FROM inventory.item_master
+         WHERE item_is_deleted = false
+           AND item_id IS DISTINCT FROM ${selfId}::uuid
+           AND (${keys.companyId}::uuid IS NULL OR item_company_id IS NULL
+                OR item_company_id = ${keys.companyId}::uuid)
+      )
+      SELECT 'item_name_en' AS field, item_name_en AS holder FROM peer
+       WHERE ${name}::text IS NOT NULL AND lower(item_name_en) = ${name}::text
+      UNION ALL
+      SELECT 'item_code', item_name_en FROM peer
+       WHERE ${code}::text IS NOT NULL AND lower(item_code) = ${code}::text
+      UNION ALL
+      SELECT 'item_sku', item_name_en FROM peer
+       WHERE ${sku}::text IS NOT NULL AND lower(item_sku) = ${sku}::text
+      UNION ALL
+      SELECT 'item_default_barcode', m.item_name_en
+        FROM inventory.item_master m
+       WHERE ${barcode}::text IS NOT NULL AND m.item_is_deleted = false
+         AND m.item_id IS DISTINCT FROM ${selfId}::uuid
+         AND (lower(m.item_default_barcode) = ${barcode}::text
+              OR EXISTS (SELECT 1 FROM inventory.item_ean_codes e
+                          WHERE e.ean_item_id = m.item_id AND e.ean_is_deleted = false
+                            AND upper(e.ean_code) = upper(${barcode}::text)))
+    `;
+    if (!clashes.length) {
+      return;
+    }
+    const what: Record<ItemUniqueField, string> = {
+      item_name_en: 'name',
+      item_code: 'code',
+      item_sku: 'SKU',
+      item_default_barcode: 'barcode',
+    };
+    throwInventoryConflict<ItemErrorDetail>(
+      'Item already exists',
+      clashes.map((clash) => ({
+        field: clash.field,
+        code: codes[clash.field],
+        message:
+          clash.field === 'item_default_barcode'
+            ? `${clash.holder} already scans with this barcode.`
+            : `${clash.holder} already has this ${what[clash.field]} (letters compared in any ` +
+              'case). Names, codes and SKUs are unique within a company, and a shared item ' +
+              "shares them with every company's items.",
+      })),
+    );
+  }
+  /**
+   * Notes 137 B9 — every master the item names must be live and active when
+   * this save CHOOSES it: brand, section, supplier and customer group have no
+   * foreign key at all, and the ones that do (group, category, unit, tax,
+   * preset) let a deleted or inactive row through. A value the save leaves as
+   * it was is not re-checked, so a master retired since never blocks an edit.
+   * item_mfgr_id, item_company_category_id and item_barcode_sticker_id have no
+   * master table and are not checked.
+   */
+  private async assertReferencesLive(
+    client: Prisma.TransactionClient,
+    dto: SaveItemDto,
+    existing: ItemMaster | null,
+  ): Promise<void> {
+    type State = { deleted: boolean; active: boolean } | null;
+    const checks: Array<{
+      field: string;
+      value: string | null | undefined;
+      stored: string | null | undefined;
+      unknown: ItemErrorCode;
+      what: string;
+      load: (id: string) => Promise<State>;
+    }> = [
+      {
+        field: 'item_group_id',
+        value: dto.item_group_id,
+        stored: existing?.itemGroupId,
+        unknown: ItemErrorCode.UNKNOWN_GROUP,
+        what: 'item group',
+        load: async (id) => {
+          const row = await client.itemGroupMaster.findUnique({
+            where: { itgId: id },
+            select: { itgIsDeleted: true, itgIsActive: true },
+          });
+          return row && { deleted: row.itgIsDeleted, active: row.itgIsActive };
+        },
+      },
+      {
+        field: 'item_category_id',
+        value: dto.item_category_id,
+        stored: existing?.itemCategoryId,
+        unknown: ItemErrorCode.UNKNOWN_CATEGORY,
+        what: 'item category',
+        load: async (id) => {
+          const row = await client.categoryMaster.findUnique({
+            where: { categoryId: id },
+            select: { categoryIsDeleted: true, categoryIsActive: true },
+          });
+          return row && { deleted: row.categoryIsDeleted, active: row.categoryIsActive };
+        },
+      },
+      {
+        field: 'item_base_unit_id',
+        value: dto.item_base_unit_id,
+        stored: existing?.itemBaseUnitId,
+        unknown: ItemErrorCode.UNKNOWN_UNIT,
+        what: 'unit',
+        load: async (id) => {
+          const row = await client.unit.findUnique({
+            where: { unit_id: id },
+            select: { unit_is_deleted: true, unit_is_active: true },
+          });
+          return row && { deleted: row.unit_is_deleted, active: row.unit_is_active };
+        },
+      },
+      {
+        field: 'item_default_tax_id',
+        value: dto.item_default_tax_id,
+        stored: existing?.itemDefaultTaxId,
+        unknown: ItemErrorCode.UNKNOWN_TAX_RATE,
+        what: 'tax rate',
+        load: async (id) => {
+          const row = await client.taxRateMaster.findUnique({
+            where: { taxId: id },
+            select: { taxIsDeleted: true, taxIsActive: true },
+          });
+          return row && { deleted: row.taxIsDeleted, active: row.taxIsActive };
+        },
+      },
+      {
+        field: 'item_track_preset_id',
+        value: dto.item_track_preset_id,
+        stored: existing?.itemTrackPresetId,
+        unknown: ItemErrorCode.UNKNOWN_TRACK_PRESET,
+        what: 'stock track preset',
+        load: async (id) => {
+          const row = await client.stockTrackPreset.findUnique({
+            where: { sptId: id },
+            select: { sptIsDeleted: true, sptIsActive: true },
+          });
+          return row && { deleted: row.sptIsDeleted, active: row.sptIsActive };
+        },
+      },
+      {
+        field: 'item_brand_id',
+        value: dto.item_brand_id,
+        stored: existing?.itemBrandId,
+        unknown: ItemErrorCode.UNKNOWN_BRAND,
+        what: 'item brand',
+        load: async (id) => {
+          const row = await client.itemBrandMaster.findUnique({
+            where: { brand_id: id },
+            select: { brand_is_deleted: true, brand_is_active: true },
+          });
+          return row && { deleted: row.brand_is_deleted, active: row.brand_is_active };
+        },
+      },
+      {
+        field: 'item_section_id',
+        value: dto.item_section_id,
+        stored: existing?.itemSectionId,
+        unknown: ItemErrorCode.UNKNOWN_SECTION,
+        what: 'item section',
+        load: async (id) => {
+          const row = await client.itemSectionMaster.findUnique({
+            where: { secId: id },
+            select: { secIsDeleted: true, secIsActive: true },
+          });
+          return row && { deleted: row.secIsDeleted, active: row.secIsActive };
+        },
+      },
+      {
+        field: 'item_supplier_id',
+        value: dto.item_supplier_id,
+        stored: existing?.itemSupplierId,
+        unknown: ItemErrorCode.UNKNOWN_SUPPLIER,
+        what: 'supplier',
+        load: async (id) => {
+          const row = await client.supplier.findUnique({
+            where: { supId: id },
+            select: { supIsDeleted: true, supIsActive: true },
+          });
+          return row && { deleted: row.supIsDeleted, active: row.supIsActive };
+        },
+      },
+      {
+        field: 'item_cust_group',
+        value: dto.item_cust_group,
+        stored: existing?.itemCustGroup,
+        unknown: ItemErrorCode.UNKNOWN_CUST_GROUP,
+        what: 'customer group',
+        load: async (id) => {
+          const row = await client.custGroup.findUnique({
+            where: { cgrId: id },
+            select: { cgrIsDeleted: true, cgrIsActive: true },
+          });
+          return row && { deleted: row.cgrIsDeleted, active: row.cgrIsActive };
+        },
+      },
+    ];
+    for (const check of checks) {
+      const id = check.value;
+      if (!id || id === check.stored) {
+        continue;
+      }
+      const state = await check.load(id);
+      if (!state) {
+        throwInventoryBadRequest<ItemErrorDetail>('Invalid relation reference', [
+          {
+            field: check.field,
+            code: check.unknown,
+            message: `${check.field} does not name an existing ${check.what}`,
+          },
+        ]);
+      }
+      if (state.deleted || !state.active) {
+        throwInventoryBadRequest<ItemErrorDetail>('Invalid relation reference', [
+          {
+            field: check.field,
+            code: ItemErrorCode.REFERENCE_RETIRED,
+            message: `The ${check.what} ${id} is ${state.deleted ? 'deleted' : 'inactive'}. Choose a live one.`,
+          },
+        ]);
+      }
+    }
+  }
+  /**
+   * Notes 137 C3 — an item that moves INTO a company (from shared, or from
+   * another company) must not leave stock or prices behind in a company that
+   * can no longer see it. A move to shared only widens who sees the item and
+   * is never refused; neither is a save that keeps the company.
+   */
+  private async assertCompanyMove(
+    client: Prisma.TransactionClient,
+    before: ItemMaster,
+    companyId: string | null,
+  ): Promise<void> {
+    if (!companyId || companyId === before.itemCompanyId) {
+      return;
+    }
+    const [row] = await client.$queryRaw<Array<{ stock_rows: number; price_rows: number }>>`
+      SELECT
+        (SELECT count(*)::int FROM stock.stock_balance b
+          WHERE b.sbl_item_id = ${before.itemId}::uuid AND b.sbl_is_deleted = false
+            AND (b.sbl_on_hand_qty <> 0 OR b.sbl_transit_in_qty <> 0)
+            AND b.sbl_company_id <> ${companyId}::uuid) AS stock_rows,
+        (SELECT count(*)::int FROM inventory.item_price_master p
+           LEFT JOIN public.branch_master br ON br.br_id = p.ipm_branch_id
+          WHERE p.ipm_item_id = ${before.itemId}::uuid AND p.ipm_is_deleted = false
+            AND (p.ipm_company_id <> ${companyId}::uuid
+                 OR br.br_comp_id <> ${companyId}::uuid)) AS price_rows
+    `;
+    const parts = [
+      row?.stock_rows ? `${row.stock_rows} stock holding(s) with quantity` : null,
+      row?.price_rows ? `${row.price_rows} price row(s)` : null,
+    ].filter((part): part is string => part !== null);
+    if (parts.length) {
+      throwInventoryConflict<ItemErrorDetail>('The item cannot move to this company', [
+        {
+          field: 'item_company_id',
+          code: ItemErrorCode.COMPANY_MOVE_BLOCKED,
+          message:
+            `Another company still holds ${parts.join(' and ')} of this item. ` +
+            'Clear them there first, or keep the item shared.',
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 137 B7 — the header's base unit and the conversion row marked
+   * iuc_is_base_unit are one fact stated twice. A save that names a header
+   * unit other than the base row's is refused; a blank header (not sent, or
+   * null — 322 items on the dev box carried one beside a base row) is filled
+   * from the base row. Only checked when this save sends either.
+   */
+  private async alignBaseUnit(
+    tx: Prisma.TransactionClient,
+    item: ItemPayload,
+    dto: SaveItemCompositeDto,
+    syncedConversions: Array<{ iuc_unit_id: string; iuc_is_base_unit: boolean }>,
+  ): Promise<ItemPayload> {
+    if (dto.item_base_unit_id === undefined && dto.unit_conversions === undefined) {
+      return item;
+    }
+    const conversions =
+      dto.unit_conversions !== undefined
+        ? syncedConversions
+        : await this.itemUnitConversionService.findByItemId(item.item_id, tx);
+    const base = conversions.find((row) => row.iuc_is_base_unit);
+    if (!base || base.iuc_unit_id === item.item_base_unit_id) {
+      return item;
+    }
+    if (dto.item_base_unit_id) {
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
+        {
+          field: 'item_base_unit_id',
+          code: ItemErrorCode.BASE_UNIT_MISMATCH,
+          message: `item_base_unit_id must be ${base.iuc_unit_id}, the unit of the item's base unit conversion row.`,
+        },
+      ]);
+    }
+    const updated = await tx.itemMaster.update({
+      where: { itemId: item.item_id },
+      data: { itemBaseUnitId: base.iuc_unit_id },
+      include: TRACK_PRESET_INCLUDE,
+    });
+    return this.toPayload(updated);
   }
   /**
    * `hasOwnProperty` is true for EVERY field declared on a DTO instance, sent or
@@ -1296,14 +1843,43 @@ export class ItemsMasterService {
       item_modified_by: record.itemModifiedBy,
     };
   }
+  /**
+   * Notes 137 D4 — a unique violation is reported against the key it hit (it
+   * used to be ITEM_NAME_TAKEN whatever it was), and an exclusion violation
+   * (the stock track policy's ex_stp_overlap, written in the same transaction)
+   * is a 409, not a 500.
+   */
   private handleWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemErrorDetail>(error, 'Item already exists', [
-      {
-        field: 'item_name_en',
-        code: ItemErrorCode.NAME_TAKEN,
-        message: 'Duplicate item_name_en is not allowed',
-      },
-    ]);
+    if (isUniqueConstraintError(error)) {
+      const constraint = violatedConstraintOf(error) ?? '';
+      const [field, code] = /item_name/.test(constraint)
+        ? ['item_name_en', ItemErrorCode.NAME_TAKEN]
+        : /item_code/.test(constraint)
+          ? ['item_code', ItemErrorCode.CODE_TAKEN]
+          : /item_sku/.test(constraint)
+            ? ['item_sku', ItemErrorCode.SKU_TAKEN]
+            : ['request', ItemErrorCode.DUPLICATE];
+      throwInventoryConflict<ItemErrorDetail>('Item already exists', [
+        {
+          field,
+          code,
+          message:
+            code === ItemErrorCode.DUPLICATE
+              ? 'Another live item already holds one of these values'
+              : `Another live item of this company (or a shared one) already has this ${field}`,
+        },
+      ]);
+    }
+    if (isExclusionConstraintError(error)) {
+      throwInventoryConflict<ItemErrorDetail>('Stock track policy clash', [
+        {
+          field: 'item_track_preset_id',
+          code: ItemErrorCode.TRACK_POLICY_CLASH,
+          message:
+            "The item's stock track policy overlaps another live policy for the same item and scope. Reload the item and save again.",
+        },
+      ]);
+    }
     if (isForeignKeyConstraintError(error)) {
       const known = ITEM_FOREIGN_KEYS[violatedConstraintOf(error) ?? ''];
       throwInventoryBadRequest<ItemErrorDetail>('Invalid relation reference', [

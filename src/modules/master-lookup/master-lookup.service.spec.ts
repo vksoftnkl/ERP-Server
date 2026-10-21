@@ -732,7 +732,7 @@ describe('MasterLookupService', () => {
       const result = await service.getItemPriceLookup({
         item_id: ITEM_ID,
         price_level: 1,
-      } as never);
+      });
       expect(result.item_uc_id).toBe('IUC-1');
       expect(result.sales_price).toBe(115);
     });
@@ -747,7 +747,7 @@ describe('MasterLookupService', () => {
         item_id: ITEM_ID,
         branch_id: 'BRANCH-1',
         price_level: 1,
-      } as never);
+      });
       // Both rows price the same conversion, so the price is what tells them apart.
       expect(result.sales_price).toBe(115);
     });
@@ -761,7 +761,7 @@ describe('MasterLookupService', () => {
         branch_id: 'BRANCH-1',
         unit_id: 'UNIT-2',
         price_level: 1,
-      } as never);
+      });
       expect(result.item_uc_id).toBe('IUC-2');
       expect(result.sales_price).toBe(250);
     });
@@ -773,7 +773,7 @@ describe('MasterLookupService', () => {
       const result = await service.getItemPriceLookup({
         item_id: ITEM_ID,
         price_level: 1,
-      } as never);
+      });
       expect(result.item_uc_id).toBe('IUC-2');
     });
     it('returns the to-base factor of the selected unit conversion row', async () => {
@@ -782,7 +782,7 @@ describe('MasterLookupService', () => {
         item_id: ITEM_ID,
         unit_id: 'UNIT-2',
         price_level: 1,
-      } as never);
+      });
       expect(result.item_uc_id).toBe('IUC-2');
       expect(result.base_unit_id).toBe('UNIT-BASE');
       expect(result.base_factor).toBe(2);
@@ -795,7 +795,7 @@ describe('MasterLookupService', () => {
         item_id: ITEM_ID,
         company_id: 'COMP-1',
         price_level: 1,
-      } as never);
+      });
       expect(result.gst_rate).toBe(0);
       expect(result.item_incl_tax).toBe(true);
     });
@@ -838,7 +838,7 @@ describe('MasterLookupService', () => {
       };
       const slabWhere = () => (slabQuery().mock.calls[0] as [{ where: SlabWhere }])[0].where;
       const lookup = (query: Record<string, unknown>) =>
-        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
+        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query });
 
       it('resolves nothing and reads no slab for manual', async () => {
         mockItemPricePrisma(itemRow(), [
@@ -1006,7 +1006,7 @@ describe('MasterLookupService', () => {
         ipmFreightCharge,
       });
       const lookup = (query: Record<string, unknown>) =>
-        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
+        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query });
 
       it('resolves nothing for manual, even with a charge on the price row', async () => {
         mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
@@ -1245,6 +1245,7 @@ describe('MasterLookupService', () => {
     const ITEM_ID = '22222222-2222-4222-8222-222222222222';
     const UNIT_ID = '33333333-3333-4333-8333-333333333333';
     const itemRow = {
+      itemId: ITEM_ID,
       itemNameEn: 'Sugar 1kg',
       itemBatchConfig: 0,
       itemAllowSales: true,
@@ -1254,7 +1255,7 @@ describe('MasterLookupService', () => {
     type ScopeClause = {
       OR: Array<{ itemCompanyId?: string | null; itemBranchId?: string | null }>;
     };
-    type ItemWhere = { itemId: string; AND?: ScopeClause[] };
+    type ItemWhere = { itemId: string; itemIsDeleted: false; AND?: ScopeClause[] };
     let itemEanCode: { findFirst: jest.Mock };
     let itemMaster: { findFirst: jest.Mock };
     const itemWhere = (): ItemWhere =>
@@ -1285,12 +1286,13 @@ describe('MasterLookupService', () => {
         eanIsDeleted: false,
         eanCode: { equals: '8901234567890', mode: 'insensitive' },
       });
-      expect(itemWhere()).toEqual({ itemId: ITEM_ID });
+      expect(itemWhere()).toEqual({ itemId: ITEM_ID, itemIsDeleted: false });
     });
     it('scopes the item to the company or to no company when company_id is given', async () => {
       await service.getItemByBarcode('8901234567890', COMPANY_ID);
       expect(itemWhere()).toEqual({
         itemId: ITEM_ID,
+        itemIsDeleted: false,
         AND: [{ OR: [{ itemCompanyId: COMPANY_ID }, { itemCompanyId: null }] }],
       });
     });
@@ -1298,6 +1300,7 @@ describe('MasterLookupService', () => {
       await service.getItemByBarcode('8901234567890', undefined, BRANCH_ID);
       expect(itemWhere()).toEqual({
         itemId: ITEM_ID,
+        itemIsDeleted: false,
         AND: [{ OR: [{ itemBranchId: BRANCH_ID }, { itemBranchId: null }] }],
       });
     });
@@ -1305,6 +1308,7 @@ describe('MasterLookupService', () => {
       await service.getItemByBarcode('8901234567890', COMPANY_ID, BRANCH_ID);
       expect(itemWhere()).toEqual({
         itemId: ITEM_ID,
+        itemIsDeleted: false,
         AND: [
           { OR: [{ itemCompanyId: COMPANY_ID }, { itemCompanyId: null }] },
           { OR: [{ itemBranchId: BRANCH_ID }, { itemBranchId: null }] },
@@ -1328,10 +1332,39 @@ describe('MasterLookupService', () => {
         NotFoundException,
       );
     });
-    it('404s when the barcode is unknown', async () => {
+    it('404s when neither an EAN row nor an item header holds the barcode', async () => {
       itemEanCode.findFirst.mockResolvedValue(null);
+      itemMaster.findFirst.mockResolvedValue(null);
       await expect(service.getItemByBarcode('NOPE')).rejects.toBeInstanceOf(NotFoundException);
-      expect(itemMaster.findFirst).not.toHaveBeenCalled();
+      expect(
+        (itemMaster.findFirst.mock.calls[0] as [{ where: Record<string, unknown> }])[0].where,
+      ).toEqual({
+        itemIsDeleted: false,
+        itemDefaultBarcode: { equals: 'NOPE', mode: 'insensitive' },
+      });
+    });
+    it("falls back to the item header barcode, sold in the item's default unit (notes 137 B3)", async () => {
+      const HEADER_IUC_ID = '55555555-5555-4555-8555-555555555555';
+      itemEanCode.findFirst.mockResolvedValue(null);
+      const itemUnitConversion = {
+        findFirst: jest.fn().mockResolvedValue({ iucId: HEADER_IUC_ID }),
+      };
+      (prisma as unknown as { itemUnitConversion: unknown }).itemUnitConversion =
+        itemUnitConversion;
+      await expect(service.getItemByBarcode('hdr-1', COMPANY_ID)).resolves.toMatchObject({
+        itemId: ITEM_ID,
+        unitId: HEADER_IUC_ID,
+      });
+      expect(
+        (itemMaster.findFirst.mock.calls[0] as [{ where: Record<string, unknown> }])[0].where,
+      ).toEqual({
+        itemIsDeleted: false,
+        itemDefaultBarcode: { equals: 'hdr-1', mode: 'insensitive' },
+        AND: [{ OR: [{ itemCompanyId: COMPANY_ID }, { itemCompanyId: null }] }],
+      });
+      expect(
+        (itemUnitConversion.findFirst.mock.calls[0] as [{ orderBy: unknown }])[0].orderBy,
+      ).toEqual([{ iucIsDefaultUnit: 'desc' }, { iucIsBaseUnit: 'desc' }, { iucUnitSlno: 'asc' }]);
     });
   });
 });

@@ -1,14 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -150,7 +141,10 @@ export class ItemsEanCodeMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item EAN code by id' })
+  @ApiOperation({
+    summary:
+      'Soft delete item EAN code by id. Deletes only: an already-deleted row is a 409 ITEM_EAN_ALREADY_DELETED (notes 137 D1)',
+  })
   @ApiQuery({ name: 'ean_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
     required: false,
@@ -173,7 +167,7 @@ export class ItemsEanCodeMasterController {
   ): Promise<ItemEanCodeSuccessResponse<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>> {
     const deleteItemEanCodeDto = await this.resolveDeletePayload(body, eanId);
     const isArray = Array.isArray(deleteItemEanCodeDto);
-    const data = await this.itemsEanCodeMasterService.toggleDelete(
+    const data = await this.itemsEanCodeMasterService.delete(
       isArray ? deleteItemEanCodeDto.map((item) => item.ean_id) : deleteItemEanCodeDto.ean_id,
     );
 

@@ -52,11 +52,19 @@ export class SaveItemEanCodeDto {
   @OptionalQueryBoolean()
   ean_is_active?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   ean_created_by?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
   @NullableString(100)
   ean_modified_by?: string | null;
 

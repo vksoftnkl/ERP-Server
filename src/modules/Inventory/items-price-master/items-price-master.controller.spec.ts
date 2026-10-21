@@ -57,7 +57,7 @@ describe('ItemsPriceMasterController', () => {
     save: jest.fn(),
     listPrices: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    delete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -122,7 +122,7 @@ describe('ItemsPriceMasterController', () => {
   });
 
   it('supports delete with body arrays', async () => {
-    serviceMock.toggleDelete.mockResolvedValue([
+    serviceMock.delete.mockResolvedValue([
       {
         ipm_id: ITEM_PRICE_ID,
         deleted: true,
@@ -136,26 +136,6 @@ describe('ItemsPriceMasterController', () => {
         {
           ipm_id: ITEM_PRICE_ID,
           deleted: true,
-        },
-      ],
-    });
-  });
-
-  it('reports a restored message when prices were restored', async () => {
-    serviceMock.toggleDelete.mockResolvedValue([
-      {
-        ipm_id: ITEM_PRICE_ID,
-        deleted: false,
-      },
-    ]);
-
-    await expect(controller.remove([{ ipm_id: ITEM_PRICE_ID }], {})).resolves.toEqual({
-      success: true,
-      message: 'Item prices restored successfully',
-      data: [
-        {
-          ipm_id: ITEM_PRICE_ID,
-          deleted: false,
         },
       ],
     });

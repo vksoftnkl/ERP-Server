@@ -26,6 +26,10 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<ItemUnitConversion[]>, [Prisma.ItemUnitConversionFindManyArgs]>;
     update: jest.Mock<Promise<ItemUnitConversion>, [Prisma.ItemUnitConversionUpdateArgs]>;
   };
+  // The item-live check and the row-scope check (notes 137 C4 / D1).
+  itemMaster: { findMany: jest.Mock; findFirst: jest.Mock };
+  branchMaster: { findFirst: jest.Mock };
+  godownLocation: { findFirst: jest.Mock };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 type ConfiguredGridSqlServiceMock = {
@@ -90,29 +94,28 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
   }) as ItemPriceMaster;
 const makeItemUnitConversionRecord = (
   overrides: Partial<ItemUnitConversion> = {},
-): ItemUnitConversion =>
-  ({
-    iucId: IUC_ID,
-    iucItemId: ITEM_ID,
-    iucUnitId: UNIT_ID,
-    iucBaseUnitId: BASE_UNIT_ID,
-    iucToBaseFactor: new Prisma.Decimal(12),
-    iucUnitSlno: 2,
-    iucUnitFactor: new Prisma.Decimal(6),
-    iucIsDefaultUnit: true,
-    iucIsBaseUnit: false,
-    iucIsBigUnit: true,
-    iucUomWeight: new Prisma.Decimal(0),
-    iucUomRemarks: 'Carton',
-    iucIsActive: true,
-    iucIsDeleted: false,
-    iucSyncDate: null,
-    iucCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
-    iucCreatedBy: USER_ID,
-    iucUpdatedOn: null,
-    iucUpdatedBy: null,
-    ...overrides,
-  }) as ItemUnitConversion;
+): ItemUnitConversion => ({
+  iucId: IUC_ID,
+  iucItemId: ITEM_ID,
+  iucUnitId: UNIT_ID,
+  iucBaseUnitId: BASE_UNIT_ID,
+  iucToBaseFactor: new Prisma.Decimal(12),
+  iucUnitSlno: 2,
+  iucUnitFactor: new Prisma.Decimal(6),
+  iucIsDefaultUnit: true,
+  iucIsBaseUnit: false,
+  iucIsBigUnit: true,
+  iucUomWeight: new Prisma.Decimal(0),
+  iucUomRemarks: 'Carton',
+  iucIsActive: true,
+  iucIsDeleted: false,
+  iucSyncDate: null,
+  iucCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
+  iucCreatedBy: USER_ID,
+  iucUpdatedOn: null,
+  iucUpdatedBy: null,
+  ...overrides,
+});
 describe('ItemsPriceMasterService', () => {
   let service: ItemsPriceMasterService;
   let prisma: PrismaMock;
@@ -138,6 +141,15 @@ describe('ItemsPriceMasterService', () => {
         findMany: jest.fn<Promise<ItemUnitConversion[]>, [Prisma.ItemUnitConversionFindManyArgs]>(),
         update: jest.fn<Promise<ItemUnitConversion>, [Prisma.ItemUnitConversionUpdateArgs]>(),
       },
+      // A live item of COMPANY_ID whose godown sits in a branch of that company.
+      itemMaster: {
+        findMany: jest.fn().mockResolvedValue([{ itemId: ITEM_ID }]),
+        findFirst: jest.fn().mockResolvedValue({ itemCompanyId: COMPANY_ID }),
+      },
+      branchMaster: {
+        findFirst: jest.fn().mockResolvedValue({ brCompId: COMPANY_ID, brName: 'Main' }),
+      },
+      godownLocation: { findFirst: jest.fn().mockResolvedValue({ gdlBranchId: 'branch-1' }) },
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]

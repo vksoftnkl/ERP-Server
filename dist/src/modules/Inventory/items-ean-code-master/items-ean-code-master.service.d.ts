@@ -22,6 +22,9 @@ export declare class ItemsEanCodeMasterService {
     toggleDelete(eanId: string, tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult>;
     toggleDelete(eanId: string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult[]>;
     toggleDelete(eanId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
+    delete(eanId: string): Promise<ItemEanCodeDeleteResult>;
+    delete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
+    delete(eanId: string | string[]): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
     private saveItemEanCode;
     private toggleDeleteItemEanCode;
     private createItemEanCode;

@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OptionalLowerMaxString = exports.OptionalUpperMaxString = exports.OptionalUpperString = exports.UpperMaxString = exports.UpperString = exports.OptionalTrimmedString = exports.TrimmedString = exports.OptionalQueryInt = exports.OptionalQueryBoolean = exports.OptionalBoolean = exports.OptionalIntegerArray = exports.NullableNumberString = exports.OptionalNumberString = exports.OptionalInteger = exports.RequiredInteger = exports.RequiredNumber = exports.OptionalNumber = exports.NullableNumber = exports.NullableIntegerNaN = exports.NullableInteger = exports.OptionalTimeString = exports.NullableDate = exports.OptionalDate = exports.OptionalDateString = exports.RequiredUuid = exports.OptionalUuid = exports.NullableUuid = exports.NullableDateString = exports.NullableEmail = exports.NullableLowerMaxString = exports.NullableUpperMaxString = exports.NullableUpperString = exports.NullableStringStrict = exports.NullableString = exports.SkipOnNullish = void 0;
+exports.OptionalLowerMaxString = exports.OptionalUpperMaxString = exports.OptionalUpperString = exports.UpperMaxString = exports.UpperString = exports.OptionalTrimmedString = exports.TrimmedString = exports.OptionalQueryInt = exports.OptionalNotNullBoolean = exports.OptionalQueryBoolean = exports.OptionalBoolean = exports.OptionalIntegerArray = exports.NullableNumberString = exports.OptionalNumberString = exports.OptionalInteger = exports.RequiredInteger = exports.RequiredNumber = exports.OptionalNumber = exports.NullableNumber = exports.NullableIntegerNaN = exports.NullableInteger = exports.OptionalTimeString = exports.NullableDate = exports.OptionalDate = exports.OptionalDateString = exports.RequiredUuid = exports.OptionalUuid = exports.NullableUuid = exports.NullableDateString = exports.NullableEmail = exports.NullableLowerMaxString = exports.NullableUpperMaxString = exports.NullableUpperString = exports.NullableStringStrict = exports.NullableString = exports.SkipOnNullish = void 0;
 const common_1 = require("@nestjs/common");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -80,6 +80,8 @@ const OptionalBoolean = () => (0, common_1.applyDecorators)((0, class_validator_
 exports.OptionalBoolean = OptionalBoolean;
 const OptionalQueryBoolean = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ obj, key }) => (0, DtoTransforms_1.toOptionalBoolean)(obj?.[key])), (0, class_validator_1.IsBoolean)());
 exports.OptionalQueryBoolean = OptionalQueryBoolean;
+const OptionalNotNullBoolean = () => (0, exports.OptionalQueryBoolean)();
+exports.OptionalNotNullBoolean = OptionalNotNullBoolean;
 const OptionalQueryInt = (min, max) => (0, exports.OptionalInteger)(min, max);
 exports.OptionalQueryInt = OptionalQueryInt;
 const TrimmedString = (maxLength) => (0, common_1.applyDecorators)((0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toTrimmedString)(value)), (0, class_validator_1.IsString)(), ...(maxLength !== undefined ? [(0, class_validator_1.MaxLength)(maxLength)] : []));

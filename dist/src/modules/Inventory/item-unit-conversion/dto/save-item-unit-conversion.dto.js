@@ -84,22 +84,22 @@ __decorate([
 ], SaveItemUnitConversionDto.prototype, "iul_unit_factor", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemUnitConversionDto.prototype, "iuc_is_default_unit", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemUnitConversionDto.prototype, "iuc_is_base_unit", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemUnitConversionDto.prototype, "iuc_is_big_unit", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, minimum: 0 }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], SaveItemUnitConversionDto.prototype, "iuc_uom_weight", void 0);
 __decorate([
@@ -109,7 +109,7 @@ __decorate([
 ], SaveItemUnitConversionDto.prototype, "iuc_uom_remarks", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemUnitConversionDto.prototype, "iuc_is_active", void 0);
 __decorate([
@@ -120,12 +120,20 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveItemUnitConversionDto.prototype, "iuc_sync_date", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemUnitConversionDto.prototype, "iuc_created_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemUnitConversionDto.prototype, "iuc_updated_by", void 0);

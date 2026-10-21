@@ -5,7 +5,7 @@ export declare class ItemPriceDetailsService {
     private readonly prisma;
     private readonly itemUnitConversionService;
     constructor(prisma: PrismaService, itemUnitConversionService: ItemUnitConversionService);
-    getByBarcode(barcode: string): Promise<ItemPriceDetailPayload>;
+    getByBarcode(barcode: string, companyId?: string): Promise<ItemPriceDetailPayload>;
     getByItemId(itemId: string): Promise<ItemPriceDetailPayload>;
     private toItemPayload;
     private toItemPricePayload;

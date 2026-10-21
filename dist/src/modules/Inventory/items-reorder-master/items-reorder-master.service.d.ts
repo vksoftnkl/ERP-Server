@@ -22,11 +22,15 @@ export declare class ItemsReorderMasterService {
     toggleDelete(irId: string, tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult>;
     toggleDelete(irId: string[], tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult[]>;
     toggleDelete(irId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
+    delete(irId: string): Promise<ItemReorderDeleteResult>;
+    delete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
+    delete(irId: string | string[]): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
     private saveItemReorder;
     private toggleDeleteItemReorder;
     private createItemReorder;
     private updateItemReorder;
     private applyOptionalFields;
+    private assertRowScope;
     private validateReorderRange;
     private toPayload;
     private buildDisplayName;

@@ -121,7 +121,7 @@ export class UiTableMasterService {
         UiTableMasterErrorCode.NOT_FOUND,
       );
     }
-    return this.toPayload(record as UitableWithColumns);
+    return this.toPayload(record);
   }
 
   async updateColumnWidths(dto: SaveUiTableColumnWidthDto): Promise<{ updated: number }> {
@@ -335,6 +335,7 @@ export class UiTableMasterService {
             createdBy,
             tx,
           );
+          await this.assertColumnNumbersUnique(tx, created.uiTblId);
         }
         const full = await tx.uitable.findFirstOrThrow({
           where: { uiTblId: created.uiTblId },
@@ -345,7 +346,7 @@ export class UiTableMasterService {
             },
           },
         });
-        const payload = this.toPayload(full as UitableWithColumns);
+        const payload = this.toPayload(full);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -432,6 +433,7 @@ export class UiTableMasterService {
               },
             });
           }
+          await this.assertColumnNumbersUnique(tx, parsedUiTableId);
         }
         const full = await tx.uitable.findFirstOrThrow({
           where: { uiTblId: parsedUiTableId },
@@ -442,7 +444,7 @@ export class UiTableMasterService {
             },
           },
         });
-        const payload = this.toPayload(full as UitableWithColumns);
+        const payload = this.toPayload(full);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -509,6 +511,21 @@ export class UiTableMasterService {
     const now = new Date();
     if (colDto.uiTblClmId) {
       const parsedId = BigInt(colDto.uiTblClmId);
+      // A column of ANOTHER table is not this table's to rewrite: updating by
+      // id alone moved it here (uiTblClmTableId below), the same trap as the
+      // item child rows (notes 137 A1).
+      const own = await tx.uitableColumns.findFirst({
+        where: { uiTblClmId: parsedId, uiTblClmTableId: tableId, uiTblClmIsDeleted: false },
+        select: { uiTblClmId: true },
+      });
+      if (!own) {
+        throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+          'UI table column not found',
+          'uiTblClmId',
+          `No live column ${colDto.uiTblClmId} on UI table ${tableId.toString()}`,
+          UiTableMasterErrorCode.COLUMN_NOT_FOUND,
+        );
+      }
       const colData: Prisma.UitableColumnsUncheckedUpdateInput = {
         uiTblClmName: normalizedName,
         uiTblClmTableId: tableId,
@@ -534,6 +551,38 @@ export class UiTableMasterService {
       applyPresentFields(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
       const created = await tx.uitableColumns.create({ data: colData });
       return created.uiTblClmId;
+    }
+  }
+  /**
+   * Notes 137 E — a save may not leave two live columns of one table on the
+   * same uiTblClmNo. A create without replaceColumns APPENDS, and on
+   * 2026-10-12 one did that to ui_table 17 (ITEM MASTER - PRICE): 22 rows
+   * reused numbers 4-33 and the Qt grid hid Unit, Godown, Cost, Price A
+   * margin, MRP and Disc %. Checked after the columns are written (and after
+   * the replace step), so a renumbering inside one save is fine; the deferred
+   * exclusion constraint ex_ui_tbl_clm_no holds the same rule at commit.
+   */
+  private async assertColumnNumbersUnique(tx: FixedWriteClient, tableId: bigint): Promise<void> {
+    const taken = await tx.uitableColumns.groupBy({
+      by: ['uiTblClmNo'],
+      where: { uiTblClmTableId: tableId, uiTblClmIsDeleted: false, uiTblClmNo: { not: null } },
+      _count: { _all: true },
+      having: { uiTblClmNo: { _count: { gt: 1 } } },
+    });
+    if (taken.length) {
+      throwFixedConflict<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'Column numbers clash',
+        [
+          {
+            field: 'uiTblColumns',
+            code: UiTableMasterErrorCode.COLUMN_NO_DUPLICATE,
+            message:
+              `Column number(s) ${taken.map((row) => String(row.uiTblClmNo)).join(', ')} would be ` +
+              'held by two live columns of this table. Send uiTblClmId for the columns being ' +
+              'changed, or replaceColumns: true to replace the whole layout.',
+          },
+        ],
+      );
     }
   }
   private async ensureNameIsUnique(
@@ -629,7 +678,13 @@ export class UiTableMasterService {
     if (!/^\d+$/.test(normalized)) {
       throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
         'Validation failed',
-        [{ field, message: `${field} must be a numeric id`, code: UiTableMasterErrorCode.ID_INVALID }],
+        [
+          {
+            field,
+            message: `${field} must be a numeric id`,
+            code: UiTableMasterErrorCode.ID_INVALID,
+          },
+        ],
       );
     }
     return BigInt(normalized);

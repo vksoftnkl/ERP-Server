@@ -51,13 +51,22 @@ visibility, focus, position, necessity, and next/previous links).
 A table's columns are managed through the `uiTblColumns[]` array on the create/update payload
 (`saveColumnsInTx` / `upsertColumnInTx`):
 
-- Item **with** `uiTblClmId` → updates that row; item **without** → inserts a new row.
+- Item **with** `uiTblClmId` → updates that row, which must be a live column of THIS table (else 404
+  `UI_TABLE_COLUMN_NOT_FOUND`; updating by id alone moved another table's column here); item
+  **without** → inserts a new row.
 - `uiTblClmName` is required per column (empty is rejected as a bad request).
 - The server always sets each column's `uiTblClmTableId` to the parent table's id.
 - On **update**, omitting `uiTblColumns` leaves existing columns untouched.
 - **`replaceColumns: true`** performs a full replace: after the provided columns are upserted,
   any other non-deleted column of that table is soft-deleted. Freshly created columns are kept
-  (their ids are collected into `keptIds` so the replace step does not wipe them).
+  (their ids are collected into `keptIds` so the replace step does not wipe them). **Without it, a
+  save APPENDS** — the trap that, on 2026-10-12, gave ui_table 17 (ITEM MASTER - PRICE) 22 extra
+  rows on numbers 4-33 and hid Unit, Godown, Cost, Price A margin, MRP and Disc % in the Qt grid.
+- **One live column per number** (notes 137 E): a save that would leave two live columns of the
+  table on one `uiTblClmNo` is a 409 `UI_TABLE_COLUMN_NO_DUPLICATE`, checked after the columns and
+  the replace step are written, so renumbering (a swap) inside one save passes. The deferred
+  exclusion constraint `ex_ui_tbl_clm_no` holds the same rule at commit (migration
+  20261021110000, which kept the first row of each clashing number — what the client shows).
 - `applyPresentFields` copies only present optional column fields (`uiTblClmColumnWidth`,
   `uiTblClmColumnVisibility`, `uiTblClmColumnFocus`, `uiTblClmColumnPosition`,
   `uiTblClmColumnNecessity`, `uiTblClmNextColumn`, `uiTblClmPreviousColumn`, `uiTblClmIsActive`).

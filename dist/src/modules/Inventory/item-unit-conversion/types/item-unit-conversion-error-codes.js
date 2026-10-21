@@ -15,5 +15,7 @@ var ItemUnitConversionErrorCode;
     ItemUnitConversionErrorCode["DUPLICATE"] = "UNIT_CONV_DUPLICATE";
     ItemUnitConversionErrorCode["REFERENCE_NOT_FOUND"] = "UNIT_CONV_REFERENCE_NOT_FOUND";
     ItemUnitConversionErrorCode["IN_USE"] = "UNIT_CONV_IN_USE";
+    ItemUnitConversionErrorCode["ALREADY_DELETED"] = "UNIT_CONV_ALREADY_DELETED";
+    ItemUnitConversionErrorCode["ITEM_NOT_LIVE"] = "UNIT_CONV_ITEM_NOT_LIVE";
 })(ItemUnitConversionErrorCode || (exports.ItemUnitConversionErrorCode = ItemUnitConversionErrorCode = {}));
 //# sourceMappingURL=item-unit-conversion-error-codes.js.map

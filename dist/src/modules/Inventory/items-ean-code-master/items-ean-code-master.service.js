@@ -18,6 +18,7 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const item_child_helper_1 = require("../utils/item-child.helper");
 const ITEM_EAN_CODE_TABLE_NAME = 'item ean codes';
 const ITEM_EAN_CODE_AUDIT_SCREEN_NAME = 'Item EAN Code Master';
 let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
@@ -34,6 +35,7 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
     async save(saveItemEanCodeDto, tx) {
         const saveItems = Array.isArray(saveItemEanCodeDto) ? saveItemEanCodeDto : [saveItemEanCodeDto];
         const saveAll = async (client) => {
+            await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.ean_item_id), { field: 'ean_item_id', code: item_ean_error_codes_1.ItemEanErrorCode.ITEM_NOT_LIVE });
             const savedItems = [];
             for (const saveItem of saveItems) {
                 savedItems.push(await this.saveItemEanCode(client, saveItem));
@@ -108,6 +110,27 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
         const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
         return Array.isArray(eanId) ? results : results[0];
     }
+    async delete(eanId) {
+        const ids = Array.isArray(eanId) ? eanId : [eanId];
+        const results = await this.prisma.$transaction(async (client) => {
+            const deleted = [];
+            for (const id of ids) {
+                const existing = await client.itemEanCode.findFirst({ where: { eanId: id } });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item EAN code not found', 'ean_id', `No item EAN code found with id ${id}`, item_ean_error_codes_1.ItemEanErrorCode.NOT_FOUND);
+                }
+                await (0, item_child_helper_1.assertChildDeletable)(client, { isDeleted: existing.eanIsDeleted, itemId: existing.eanItemId }, {
+                    label: 'EAN code',
+                    idField: 'ean_id',
+                    alreadyDeletedCode: item_ean_error_codes_1.ItemEanErrorCode.ALREADY_DELETED,
+                    itemNotLiveCode: item_ean_error_codes_1.ItemEanErrorCode.ITEM_NOT_LIVE,
+                });
+                deleted.push(await this.toggleDeleteItemEanCode(client, id));
+            }
+            return deleted;
+        });
+        return Array.isArray(eanId) ? results : results[0];
+    }
     async saveItemEanCode(tx, saveItemEanCodeDto) {
         if (saveItemEanCodeDto.ean_id) {
             return this.updateItemEanCode(tx, saveItemEanCodeDto);
@@ -176,9 +199,13 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
                 },
             ]);
         }
+        await (0, item_child_helper_1.assertUnitOfItem)(tx, saveItemEanCodeDto.ean_unit_id, saveItemEanCodeDto.ean_item_id, {
+            field: 'ean_unit_id',
+            code: item_ean_error_codes_1.ItemEanErrorCode.UNIT_NOT_OF_ITEM,
+        });
         const now = new Date();
-        const createdBy = (0, module_service_utils_1.resolveActor)(saveItemEanCodeDto.ean_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveItemEanCodeDto.ean_modified_by, createdBy);
+        const createdBy = (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId());
+        const modifiedBy = createdBy;
         const data = {
             eanItemId: saveItemEanCodeDto.ean_item_id,
             eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
@@ -211,11 +238,12 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
         const existing = await tx.itemEanCode.findFirst({
             where: {
                 eanId,
+                eanItemId: saveItemEanCodeDto.ean_item_id,
                 eanIsDeleted: false,
             },
         });
         if (!existing) {
-            (0, module_service_utils_1.throwInventoryNotFound)('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`, item_ean_error_codes_1.ItemEanErrorCode.NOT_FOUND);
+            (0, module_service_utils_1.throwInventoryNotFound)('Item EAN code not found', 'ean_id', `No active EAN code ${eanId} on item ${saveItemEanCodeDto.ean_item_id}`, item_ean_error_codes_1.ItemEanErrorCode.NOT_FOUND);
         }
         const eanCode = saveItemEanCodeDto.ean_code?.trim();
         if (!eanCode) {
@@ -227,12 +255,17 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
                 },
             ]);
         }
+        if (saveItemEanCodeDto.ean_unit_id !== existing.eanUcUnitId) {
+            await (0, item_child_helper_1.assertUnitOfItem)(tx, saveItemEanCodeDto.ean_unit_id, existing.eanItemId, {
+                field: 'ean_unit_id',
+                code: item_ean_error_codes_1.ItemEanErrorCode.UNIT_NOT_OF_ITEM,
+            });
+        }
         const data = {
-            eanItemId: saveItemEanCodeDto.ean_item_id,
             eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
             eanCode,
             eanModifiedOn: new Date(),
-            eanModifiedBy: (0, module_service_utils_1.resolveActor)(saveItemEanCodeDto.ean_modified_by, this.requestContextService.getUserId()),
+            eanModifiedBy: (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemEanCodeDto);
         const updated = await tx.itemEanCode.update({

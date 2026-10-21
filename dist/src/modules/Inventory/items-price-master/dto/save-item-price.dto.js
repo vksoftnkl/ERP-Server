@@ -238,7 +238,7 @@ __decorate([
 ], SaveItemPriceDto.prototype, "ipm_cost_remarks", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
+    (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemPriceDto.prototype, "ipm_is_active", void 0);
 __decorate([
@@ -249,12 +249,24 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveItemPriceDto.prototype, "ipm_sync_date", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true, example: null }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        example: null,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemPriceDto.prototype, "ipm_created_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true, example: null }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        example: null,
+        description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemPriceDto.prototype, "ipm_updated_by", void 0);

@@ -18,6 +18,7 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const item_child_helper_1 = require("../utils/item-child.helper");
 const ITEM_REORDER_TABLE_NAME = 'item reorders';
 const ITEM_REORDER_AUDIT_SCREEN_NAME = 'Item Reorder Master';
 let ItemsReorderMasterService = class ItemsReorderMasterService {
@@ -34,6 +35,7 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
     async save(saveItemReorderDto, tx) {
         const saveItems = Array.isArray(saveItemReorderDto) ? saveItemReorderDto : [saveItemReorderDto];
         const saveAll = async (client) => {
+            await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.ir_item_id), { field: 'ir_item_id', code: item_reorder_error_codes_1.ItemReorderErrorCode.ITEM_NOT_LIVE });
             const savedItems = [];
             for (const saveItem of saveItems) {
                 savedItems.push(await this.saveItemReorder(client, saveItem));
@@ -106,6 +108,27 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
         const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
         return Array.isArray(irId) ? results : results[0];
     }
+    async delete(irId) {
+        const ids = Array.isArray(irId) ? irId : [irId];
+        const results = await this.prisma.$transaction(async (client) => {
+            const deleted = [];
+            for (const id of ids) {
+                const existing = await client.itemReorder.findFirst({ where: { irId: id } });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item reorder not found', 'ir_id', `No item reorder found with id ${id}`, item_reorder_error_codes_1.ItemReorderErrorCode.NOT_FOUND);
+                }
+                await (0, item_child_helper_1.assertChildDeletable)(client, { isDeleted: existing.irIsDeleted, itemId: existing.irItemId }, {
+                    label: 'reorder row',
+                    idField: 'ir_id',
+                    alreadyDeletedCode: item_reorder_error_codes_1.ItemReorderErrorCode.ALREADY_DELETED,
+                    itemNotLiveCode: item_reorder_error_codes_1.ItemReorderErrorCode.ITEM_NOT_LIVE,
+                });
+                deleted.push(await this.toggleDeleteItemReorder(client, id));
+            }
+            return deleted;
+        });
+        return Array.isArray(irId) ? results : results[0];
+    }
     async saveItemReorder(tx, saveItemReorderDto) {
         if (saveItemReorderDto.ir_id) {
             return this.updateItemReorder(tx, saveItemReorderDto);
@@ -153,9 +176,10 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
     }
     async createItemReorder(tx, saveItemReorderDto) {
         this.validateReorderRange(saveItemReorderDto);
+        await this.assertRowScope(tx, saveItemReorderDto, null);
         const now = new Date();
-        const createdBy = (0, module_service_utils_1.resolveActor)(saveItemReorderDto.ir_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveItemReorderDto.ir_modified_by, createdBy);
+        const createdBy = (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId());
+        const modifiedBy = createdBy;
         const data = {
             irItemId: saveItemReorderDto.ir_item_id,
             irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
@@ -185,17 +209,19 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
         const irId = saveItemReorderDto.ir_id;
         this.validateReorderRange(saveItemReorderDto);
         const existing = await tx.itemReorder.findFirst({
-            where: { irId, irIsDeleted: false },
+            where: { irId, irItemId: saveItemReorderDto.ir_item_id, irIsDeleted: false },
         });
         if (!existing) {
-            (0, module_service_utils_1.throwInventoryNotFound)('Item reorder not found', 'ir_id', `No active item reorder found with id ${irId}`, item_reorder_error_codes_1.ItemReorderErrorCode.NOT_FOUND);
+            (0, module_service_utils_1.throwInventoryNotFound)('Item reorder not found', 'ir_id', `No active reorder row ${irId} on item ${saveItemReorderDto.ir_item_id}`, item_reorder_error_codes_1.ItemReorderErrorCode.NOT_FOUND);
         }
+        await this.assertRowScope(tx, saveItemReorderDto, existing);
         const data = {
-            irItemId: saveItemReorderDto.ir_item_id,
-            irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
             irModifiedOn: new Date(),
-            irModifiedBy: (0, module_service_utils_1.resolveActor)(saveItemReorderDto.ir_modified_by, this.requestContextService.getUserId()),
+            irModifiedBy: (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId()),
         };
+        if (saveItemReorderDto.ir_unit_id !== undefined) {
+            data.irUcUnitId = saveItemReorderDto.ir_unit_id ?? null;
+        }
         this.applyOptionalFields(data, saveItemReorderDto);
         const updated = await tx.itemReorder.update({ where: { irId }, data });
         const payload = this.toPayload(updated);
@@ -242,6 +268,51 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
             data.irIsActive = saveItemReorderDto.ir_is_active;
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemReorderDto, 'ir_remarks'))
             data.irRemarks = saveItemReorderDto.ir_remarks;
+    }
+    async assertRowScope(tx, dto, existing) {
+        const unitId = dto.ir_unit_id !== undefined ? dto.ir_unit_id : (existing?.irUcUnitId ?? null);
+        const branchId = dto.ir_branch_id !== undefined ? dto.ir_branch_id : (existing?.irBranchId ?? null);
+        const godownId = dto.ir_godown_id !== undefined ? dto.ir_godown_id : (existing?.irGodownId ?? null);
+        if (unitId && unitId !== existing?.irUcUnitId) {
+            await (0, item_child_helper_1.assertUnitOfItem)(tx, unitId, dto.ir_item_id, {
+                field: 'ir_unit_id',
+                code: item_reorder_error_codes_1.ItemReorderErrorCode.UNIT_NOT_OF_ITEM,
+            });
+        }
+        const branchChanged = branchId !== (existing?.irBranchId ?? null);
+        const godownChanged = godownId !== (existing?.irGodownId ?? null);
+        if (branchId && branchChanged) {
+            const branch = await tx.branchMaster.findFirst({
+                where: { brId: branchId, brIsDeleted: false },
+                select: { brId: true },
+            });
+            if (!branch) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
+                    {
+                        field: 'ir_branch_id',
+                        code: item_reorder_error_codes_1.ItemReorderErrorCode.UNKNOWN_BRANCH,
+                        message: `No live branch with id ${branchId}`,
+                    },
+                ]);
+            }
+        }
+        if (godownId && (godownChanged || branchChanged)) {
+            const godown = await tx.godownLocation.findFirst({
+                where: { gdlId: godownId, gdlIsDeleted: false },
+                select: { gdlBranchId: true },
+            });
+            if (!godown || (branchId && godown.gdlBranchId !== branchId)) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
+                    {
+                        field: 'ir_godown_id',
+                        code: item_reorder_error_codes_1.ItemReorderErrorCode.GODOWN_OUT_OF_SCOPE,
+                        message: godown
+                            ? `Godown ${godownId} belongs to another branch than ir_branch_id`
+                            : `No live godown with id ${godownId}`,
+                    },
+                ]);
+            }
+        }
     }
     validateReorderRange(saveItemReorderDto) {
         const minLevel = saveItemReorderDto.ir_min_level;
@@ -292,7 +363,7 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
             {
                 field: 'ir_item_id',
                 code: item_reorder_error_codes_1.ItemReorderErrorCode.DUPLICATE,
-                message: 'Duplicate item + unit + godown combination is not allowed',
+                message: 'Duplicate item + branch + unit + godown combination is not allowed',
             },
         ]);
         if ((0, module_service_utils_1.isForeignKeyConstraintError)(error)) {

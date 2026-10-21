@@ -59,7 +59,7 @@ let ItemsPriceMasterController = class ItemsPriceMasterController {
     }
     async remove(body, query) {
         const deletePayload = await this.resolveDeletePayload(body, query);
-        const data = await this.itemsPriceMasterService.toggleDelete(Array.isArray(deletePayload)
+        const data = await this.itemsPriceMasterService.delete(Array.isArray(deletePayload)
             ? deletePayload.map((item) => item.ipm_id)
             : deletePayload.ipm_id);
         return {
@@ -153,7 +153,9 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item price by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item price by id. Deletes only: an already-deleted row is a 409 ITEM_PRICE_ALREADY_DELETED (notes 137 D1)',
+    }),
     (0, swagger_1.ApiQuery)({
         name: 'ipm_id',
         required: false,

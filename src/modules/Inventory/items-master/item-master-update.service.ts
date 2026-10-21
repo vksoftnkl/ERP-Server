@@ -51,7 +51,7 @@ type UnitConversionIndex = {
 
 /*
  * Natural keys used to match payload rows against the item's existing rows:
- *   ean_codes        → ean_code                      (unique per item)
+ *   ean_codes        → upper(ean_code)               (unique house-wide, any case)
  *   unit_conversions → iuc_unit_id                   (one conversion row per unit)
  *   prices           → ipm_company_id + ipm_branch_id + ipm_uc_unit_id +
  *                      ipm_bucket_mrp + ipm_bucket_sp — ex_ipm_overlap's own
@@ -70,7 +70,13 @@ type UnitConversionIndex = {
  *                      reason, since two branches' godown-less rules for one
  *                      unit are two rows.
  * An omitted company / branch / godown on a payload row reads as null — what a
- * create would store — and two payload rows with one key are refused.
+ * create would store — and two payload rows with one key are refused, in all
+ * four collections (EAN codes compared in upper case, as uq_ean_code_ci does;
+ * notes 137 B8).
+ *
+ * A row that names its own id must name one of THIS item's live rows: the
+ * child services load by id and used to rewrite the row's item, so an EAN id
+ * of item A sent with item B moved A's barcode onto B (notes 137 A1).
  *
  * Fields never compared when deciding whether a matched row changed: the row's
  * own PK, the parent item id, and actor columns (created/modified/updated by) —
@@ -136,7 +142,53 @@ export class ItemMasterUpdateService {
     const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
     const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
     const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
+    if (dto.unit_conversions !== undefined) {
+      await this.retireRowsOfRemovedUnits(itemId, tx);
+    }
     return { unit_conversions, prices, ean_codes, reorders };
+  }
+
+  /**
+   * Notes 137 A4 — a unit removed from the item takes its prices, EAN codes
+   * and reorder rows with it, in this transaction. They used to stay live
+   * behind the deleted conversion row: the barcode kept scanning, GET showed
+   * them with no unit name, and the next save that echoed them was a 400.
+   *
+   * Runs AFTER the three syncs: a collection the payload sent is already its
+   * own final word (a row moved to another unit was saved with it, an
+   * unclaimed one deleted), so what is left are the rows of collections the
+   * payload omitted — and any such orphans an older save left behind.
+   */
+  private async retireRowsOfRemovedUnits(
+    itemId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const removedUnit = { iucIsDeleted: true };
+    const [priceIds, eanIds, reorderIds] = await Promise.all([
+      tx.itemPriceMaster
+        .findMany({
+          where: { ipmItemId: itemId, ipmIsDeleted: false, itemUnitConversion: removedUnit },
+          select: { ipmId: true },
+        })
+        .then((rows) => rows.map((row) => row.ipmId)),
+      tx.itemEanCode
+        .findMany({
+          where: { eanItemId: itemId, eanIsDeleted: false, itemUnitConversion: removedUnit },
+          select: { eanId: true },
+        })
+        .then((rows) => rows.map((row) => row.eanId)),
+      tx.itemReorder
+        .findMany({
+          where: { irItemId: itemId, irIsDeleted: false, itemUnitConversion: removedUnit },
+          select: { irId: true },
+        })
+        .then((rows) => rows.map((row) => row.irId)),
+    ]);
+    // Every id is live, so the toggle deletes; each service writes its own
+    // audit row. Sequential: one transaction is one connection.
+    if (priceIds.length) await this.itemsPriceMasterService.toggleDelete(priceIds, tx);
+    if (eanIds.length) await this.itemsEanCodeMasterService.toggleDelete(eanIds, tx);
+    if (reorderIds.length) await this.itemsReorderMasterService.toggleDelete(reorderIds, tx);
   }
 
   /**
@@ -205,6 +257,12 @@ export class ItemMasterUpdateService {
     }
     const existing = await this.itemUnitConversionService.findByItemId(itemId, tx);
     const existingByKey = new Map(existing.map((row) => [row.iuc_unit_id, row]));
+    this.refuseForeignIds(children, 'iuc_id', 'unit_conversions', existing);
+    this.refuseDuplicateKeys(
+      children.map((child) => child.iuc_unit_id),
+      'unit_conversions',
+      'two conversion rows for the same unit',
+    );
 
     const toSave: SaveItemUnitConversionDto[] = [];
     const claimedIds = new Set<string>();
@@ -262,6 +320,7 @@ export class ItemMasterUpdateService {
     }
     const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
     const existingById = new Map(existing.map((row) => [row.ipm_id, row]));
+    this.refuseForeignIds(children, 'ipm_id', 'prices', existing);
 
     const resolvedRows = children.map((child) => ({
       ...child,
@@ -389,7 +448,16 @@ export class ItemMasterUpdateService {
       return [];
     }
     const existing = await this.itemsEanCodeMasterService.findByItemId(itemId, tx);
-    const existingByKey = new Map(existing.map((row) => [row.ean_code, row]));
+    const eanKey = (code: string) => code.trim().toUpperCase();
+    const existingByKey = new Map(existing.map((row) => [eanKey(row.ean_code), row]));
+    this.refuseForeignIds(children, 'ean_id', 'ean_codes', existing);
+    // Two rows with one code would both be creates, and the second came back
+    // as 409 ITEM_EAN_CODE_TAKEN — which reads as another item owning it.
+    this.refuseDuplicateKeys(
+      children.map((child) => eanKey(child.ean_code)),
+      'ean_codes',
+      'the same EAN code (letters compared in any case)',
+    );
 
     const toSave: SaveItemEanCodeDto[] = [];
     const claimedIds = new Set<string>();
@@ -400,7 +468,7 @@ export class ItemMasterUpdateService {
       };
       const match = resolved.ean_id
         ? existing.find((row) => row.ean_id === resolved.ean_id)
-        : existingByKey.get(resolved.ean_code);
+        : existingByKey.get(eanKey(resolved.ean_code));
       if (match) {
         claimedIds.add(match.ean_id);
         if (!this.rowChanged(resolved, match, EAN_IGNORED_FIELDS)) {
@@ -437,6 +505,7 @@ export class ItemMasterUpdateService {
       return [];
     }
     const existing = await this.itemsReorderMasterService.findByItemId(itemId, tx);
+    this.refuseForeignIds(children, 'ir_id', 'reorders', existing);
     const reorderKey = (row: {
       ir_branch_id?: string | null;
       ir_unit_id?: string | null;
@@ -517,6 +586,34 @@ export class ItemMasterUpdateService {
    */
   private naturalKey(...parts: (string | null | undefined)[]): string {
     return parts.map((part) => part ?? '').join('::');
+  }
+
+  /**
+   * Notes 137 A1 — a payload row's own id must be one of this item's live rows
+   * of that table. The child services update by id, so an id from another item
+   * (or a deleted row) is refused here, before anything is written.
+   */
+  private refuseForeignIds<K extends string>(
+    children: ReadonlyArray<Partial<Record<K, string | undefined>>>,
+    idField: K,
+    collection: string,
+    existing: ReadonlyArray<Record<K, string>>,
+  ): void {
+    const ownIds = new Set(existing.map((row) => row[idField]));
+    children.forEach((child, index) => {
+      const id = child[idField];
+      if (id && !ownIds.has(id)) {
+        throwInventoryBadRequest<InventoryErrorDetail>('Row is not part of this item', [
+          {
+            field: `${collection}.${index}.${idField}`,
+            code: ItemErrorCode.CHILD_NOT_OF_ITEM,
+            message:
+              `${idField} ${id} is not a live row of this item. Leave ${idField} out to add a ` +
+              'new row; a row of another item is changed on that item.',
+          },
+        ]);
+      }
+    });
   }
 
   /**

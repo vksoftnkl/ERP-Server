@@ -16,4 +16,9 @@ export enum UiTableMasterErrorCode {
   COLUMN_NAME_REQUIRED = 'UI_TABLE_COLUMN_NAME_REQUIRED',
   /** A table or column id is not a whole number. */
   ID_INVALID = 'UI_TABLE_ID_INVALID',
+  /**
+   * The save would leave two live columns of one table on the same
+   * uiTblClmNo — a create without replaceColumns APPENDS (notes 137 E).
+   */
+  COLUMN_NO_DUPLICATE = 'UI_TABLE_COLUMN_NO_DUPLICATE',
 }

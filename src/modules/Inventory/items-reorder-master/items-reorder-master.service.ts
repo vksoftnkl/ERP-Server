@@ -33,6 +33,11 @@ import {
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  assertChildDeletable,
+  assertItemsLive,
+  assertUnitOfItem,
+} from '../utils/item-child.helper';
 
 const ITEM_REORDER_TABLE_NAME = 'item reorders';
 const ITEM_REORDER_AUDIT_SCREEN_NAME = 'Item Reorder Master';
@@ -72,6 +77,11 @@ export class ItemsReorderMasterService {
   ): Promise<ItemReorderPayload | ItemReorderPayload[]> {
     const saveItems = Array.isArray(saveItemReorderDto) ? saveItemReorderDto : [saveItemReorderDto];
     const saveAll = async (client: Prisma.TransactionClient) => {
+      await assertItemsLive(
+        client,
+        saveItems.map((item) => item.ir_item_id),
+        { field: 'ir_item_id', code: ItemReorderErrorCode.ITEM_NOT_LIVE },
+      );
       const savedItems: ItemReorderPayload[] = [];
       for (const saveItem of saveItems) {
         savedItems.push(await this.saveItemReorder(client, saveItem));
@@ -177,6 +187,48 @@ export class ItemsReorderMasterService {
     return Array.isArray(irId) ? results : results[0];
   }
 
+  /**
+   * DELETE /item-reorders/delete. Deletes only — a deleted row is a 409, not a
+   * restore (notes 137 D1); toggleDelete stays the composite's tool.
+   */
+  async delete(irId: string): Promise<ItemReorderDeleteResult>;
+  async delete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
+  async delete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
+  async delete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
+    const ids = Array.isArray(irId) ? irId : [irId];
+    const results = await this.prisma.$transaction(async (client) => {
+      const deleted: ItemReorderDeleteResult[] = [];
+      for (const id of ids) {
+        const existing = await client.itemReorder.findFirst({ where: { irId: id } });
+        if (!existing) {
+          throwInventoryNotFound<ItemReorderErrorDetail>(
+            'Item reorder not found',
+            'ir_id',
+            `No item reorder found with id ${id}`,
+            ItemReorderErrorCode.NOT_FOUND,
+          );
+        }
+        await assertChildDeletable(
+          client,
+          { isDeleted: existing.irIsDeleted, itemId: existing.irItemId },
+          {
+            label: 'reorder row',
+            idField: 'ir_id',
+            alreadyDeletedCode: ItemReorderErrorCode.ALREADY_DELETED,
+            itemNotLiveCode: ItemReorderErrorCode.ITEM_NOT_LIVE,
+          },
+        );
+        deleted.push(await this.toggleDeleteItemReorder(client, id));
+      }
+      return deleted;
+    });
+    return Array.isArray(irId) ? results : results[0];
+  }
+
   private async saveItemReorder(
     tx: Prisma.TransactionClient,
     saveItemReorderDto: SaveItemReorderDto,
@@ -253,13 +305,13 @@ export class ItemsReorderMasterService {
     saveItemReorderDto: SaveItemReorderDto,
   ): Promise<ItemReorderPayload> {
     this.validateReorderRange(saveItemReorderDto);
+    await this.assertRowScope(tx, saveItemReorderDto, null);
 
     const now = new Date();
-    const createdBy = resolveActor(
-      saveItemReorderDto.ir_created_by,
-      this.requestContextService.getUserId(),
-    );
-    const modifiedBy = resolveActor(saveItemReorderDto.ir_modified_by, createdBy);
+    // The token's user, never the payload's ir_created_by / ir_modified_by
+    // (notes 137 C2).
+    const createdBy = resolveActor(null, this.requestContextService.getUserId());
+    const modifiedBy = createdBy;
     const data: Prisma.ItemReorderUncheckedCreateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
       irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
@@ -299,27 +351,32 @@ export class ItemsReorderMasterService {
     const irId = saveItemReorderDto.ir_id!;
     this.validateReorderRange(saveItemReorderDto);
 
+    // By id AND item: another item's reorder row is not this item's to
+    // rewrite (notes 137 A1).
     const existing = await tx.itemReorder.findFirst({
-      where: { irId, irIsDeleted: false },
+      where: { irId, irItemId: saveItemReorderDto.ir_item_id, irIsDeleted: false },
     });
     if (!existing) {
       throwInventoryNotFound<ItemReorderErrorDetail>(
         'Item reorder not found',
         'ir_id',
-        `No active item reorder found with id ${irId}`,
+        `No active reorder row ${irId} on item ${saveItemReorderDto.ir_item_id}`,
         ItemReorderErrorCode.NOT_FOUND,
       );
     }
+    await this.assertRowScope(tx, saveItemReorderDto, existing);
 
+    // ir_item_id is the row's owner, not a field it can change.
     const data: Prisma.ItemReorderUncheckedUpdateInput = {
-      irItemId: saveItemReorderDto.ir_item_id,
-      irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irModifiedOn: new Date(),
-      irModifiedBy: resolveActor(
-        saveItemReorderDto.ir_modified_by,
-        this.requestContextService.getUserId(),
-      ),
+      irModifiedBy: resolveActor(null, this.requestContextService.getUserId()),
     };
+    // Omitted keeps the stored unit; only an explicit null makes the row
+    // unit-less again. It was written `?? null`, so any update that left the
+    // unit out wiped it (notes 137 B2).
+    if (saveItemReorderDto.ir_unit_id !== undefined) {
+      data.irUcUnitId = saveItemReorderDto.ir_unit_id ?? null;
+    }
     this.applyOptionalFields(data, saveItemReorderDto);
 
     const updated = await tx.itemReorder.update({ where: { irId }, data });
@@ -376,6 +433,65 @@ export class ItemsReorderMasterService {
       data.irRemarks = saveItemReorderDto.ir_remarks;
   }
 
+  /**
+   * The unit must be one of the item's own conversion rows, and ir_branch_id /
+   * ir_godown_id — columns with no foreign key — must name a live branch and a
+   * live godown of that branch (notes 137 B9 / D1). Checked for a new row and
+   * for each of the three a save changes; a stored value nobody touches is
+   * left alone.
+   */
+  private async assertRowScope(
+    tx: Prisma.TransactionClient,
+    dto: SaveItemReorderDto,
+    existing: ItemReorder | null,
+  ): Promise<void> {
+    const unitId = dto.ir_unit_id !== undefined ? dto.ir_unit_id : (existing?.irUcUnitId ?? null);
+    const branchId =
+      dto.ir_branch_id !== undefined ? dto.ir_branch_id : (existing?.irBranchId ?? null);
+    const godownId =
+      dto.ir_godown_id !== undefined ? dto.ir_godown_id : (existing?.irGodownId ?? null);
+    if (unitId && unitId !== existing?.irUcUnitId) {
+      await assertUnitOfItem(tx, unitId, dto.ir_item_id, {
+        field: 'ir_unit_id',
+        code: ItemReorderErrorCode.UNIT_NOT_OF_ITEM,
+      });
+    }
+    const branchChanged = branchId !== (existing?.irBranchId ?? null);
+    const godownChanged = godownId !== (existing?.irGodownId ?? null);
+    if (branchId && branchChanged) {
+      const branch = await tx.branchMaster.findFirst({
+        where: { brId: branchId, brIsDeleted: false },
+        select: { brId: true },
+      });
+      if (!branch) {
+        throwInventoryBadRequest<ItemReorderErrorDetail>('Validation failed', [
+          {
+            field: 'ir_branch_id',
+            code: ItemReorderErrorCode.UNKNOWN_BRANCH,
+            message: `No live branch with id ${branchId}`,
+          },
+        ]);
+      }
+    }
+    if (godownId && (godownChanged || branchChanged)) {
+      const godown = await tx.godownLocation.findFirst({
+        where: { gdlId: godownId, gdlIsDeleted: false },
+        select: { gdlBranchId: true },
+      });
+      if (!godown || (branchId && godown.gdlBranchId !== branchId)) {
+        throwInventoryBadRequest<ItemReorderErrorDetail>('Validation failed', [
+          {
+            field: 'ir_godown_id',
+            code: ItemReorderErrorCode.GODOWN_OUT_OF_SCOPE,
+            message: godown
+              ? `Godown ${godownId} belongs to another branch than ir_branch_id`
+              : `No live godown with id ${godownId}`,
+          },
+        ]);
+      }
+    }
+  }
+
   private validateReorderRange(saveItemReorderDto: SaveItemReorderDto): void {
     const minLevel = saveItemReorderDto.ir_min_level;
     const maxLevel = saveItemReorderDto.ir_max_level;
@@ -428,7 +544,7 @@ export class ItemsReorderMasterService {
       {
         field: 'ir_item_id',
         code: ItemReorderErrorCode.DUPLICATE,
-        message: 'Duplicate item + unit + godown combination is not allowed',
+        message: 'Duplicate item + branch + unit + godown combination is not allowed',
       },
     ]);
     if (isForeignKeyConstraintError(error)) {

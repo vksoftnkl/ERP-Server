@@ -53,11 +53,19 @@ headline row the item always had; one set is "stock of this item at THIS MRP sel
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update an item price (by `ipm_id` presence). Accepts a single object **or** an array. |
 | `GET` | `/get` | Fetch one price by `ipm_id`, or list active prices with optional filters and pagination. |
-| `DELETE` | `/delete` | Soft-delete **or restore** an item price (toggle) by `ipm_id`. Accepts a single object, an array, or `?ipm_id=`. |
+| `DELETE` | `/delete` | Soft-delete an item price by `ipm_id`. Deletes only (409 `ITEM_PRICE_ALREADY_DELETED`). Accepts a single object, an array, or `?ipm_id=`. |
 
 ### Create / update semantics
 
-- **Omit `ipm_id` → create; include `ipm_id` → update** the existing (non-deleted) row.
+- **Omit `ipm_id` → create; include `ipm_id` → update** the existing (non-deleted) row **of
+  `ipm_item_id`**; another item's row is a 404 and `ipm_item_id` is never rewritten (notes 137 A1).
+  The item must be live (400 `ITEM_PRICE_ITEM_NOT_LIVE`, notes 137 D1).
+- **Row scope** (notes 137 C4), for a new row and for an update that changes company, branch or
+  godown: `ipm_company_id` is the item's company or blank (400 `ITEM_PRICE_OTHER_COMPANY`);
+  `ipm_branch_id` is a branch of the row's company, else the item's
+  (`ITEM_PRICE_BRANCH_OTHER_COMPANY`); `ipm_godown_id` is a godown of the row's branch, else of
+  the row's / item's company (`ITEM_PRICE_GODOWN_OUT_OF_SCOPE`). Stored rows nobody touches are
+  not re-checked.
 - The `/create` body is a union (single object or an array); the controller resolves and validates
   it explicitly via `validateSingleOrArrayDto` against `SaveItemPriceDto`.
 - **Batch mode is all-or-nothing:** the whole array runs in one `$transaction`; if any entry
@@ -79,9 +87,10 @@ headline row the item always had; one set is "stock of this item at THIS MRP sel
 
 ### Delete / restore (`DELETE /delete`)
 
-- **Soft toggle only** — the row is looked up regardless of state and `ipmIsDeleted` is flipped.
-  The response `deleted` flag is `true` when the row was soft-deleted, `false` when restored; the
-  success message reflects delete vs. restore (and "updated" for mixed batches).
+- **Deletes only** (`delete()`, notes 137 D1): an already-deleted row is a 409
+  `ITEM_PRICE_ALREADY_DELETED`, a row whose item is deleted a 409 `ITEM_PRICE_ITEM_NOT_LIVE`. It
+  used to toggle, so a second DELETE restored the price. `toggleDelete` stays the item master's
+  tool for deleting and restoring prices with their item.
 - Keys may come from the body (single or array) or, when the body is empty, from the `?ipm_id=`
   query param; a missing id yields a 400 (`ipm_id is required`).
 
@@ -116,9 +125,11 @@ exactly like the `ean_unit_id` / `ir_unit_id` collections.
 - **Soft delete only** — rows are never hard-deleted; deleting flips `ipmIsDeleted = true`.
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /
   `cancel`) under screen `Item Price Master` (table `item price master`, `master` screen type),
-  capturing original vs. modified payloads. The actor is resolved from the record's
-  `ipm_updated_by` / `ipm_created_by`, falling back to `system`.
-- **Profit type** is `By %`, `By Rs` or `By User`, enforced by the DTO alone (see above).
+  capturing original vs. modified payloads. `ipm_created_by` / `ipm_updated_by` are the token's
+  user — the payload's values are accepted and ignored (notes 137 C2); the audit falls back to
+  `system` when there is none.
+- **Profit type** is `By %`, `By Rs` or `By User`, enforced by the DTO alone (see above). The
+  column's DB default is `By User` since notes 137 D7 (it was `MANUAL`, which the DTO refuses).
 - A DB check constraint (not expressible in Prisma) also enforces non-negative price/charge
   columns (`chk_ipm_nonnegative`).
 

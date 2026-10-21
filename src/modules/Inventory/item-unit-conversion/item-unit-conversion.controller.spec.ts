@@ -36,7 +36,7 @@ describe('ItemUnitConversionController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    delete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -97,7 +97,7 @@ describe('ItemUnitConversionController', () => {
   });
 
   it('supports delete with body arrays', async () => {
-    serviceMock.toggleDelete.mockResolvedValue([
+    serviceMock.delete.mockResolvedValue([
       {
         iuc_id: UNIT_CONVERSION_ID,
         deleted: true,

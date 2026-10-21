@@ -257,6 +257,7 @@ let UiTableMasterService = class UiTableMasterService {
                 const created = await tx.uitable.create({ data });
                 if (saveUiTableMasterDto.uiTblColumns?.length) {
                     await this.saveColumnsInTx(saveUiTableMasterDto.uiTblColumns, created.uiTblId, createdBy, tx);
+                    await this.assertColumnNumbersUnique(tx, created.uiTblId);
                 }
                 const full = await tx.uitable.findFirstOrThrow({
                     where: { uiTblId: created.uiTblId },
@@ -334,6 +335,7 @@ let UiTableMasterService = class UiTableMasterService {
                             },
                         });
                     }
+                    await this.assertColumnNumbersUnique(tx, parsedUiTableId);
                 }
                 const full = await tx.uitable.findFirstOrThrow({
                     where: { uiTblId: parsedUiTableId },
@@ -392,6 +394,13 @@ let UiTableMasterService = class UiTableMasterService {
         const now = new Date();
         if (colDto.uiTblClmId) {
             const parsedId = BigInt(colDto.uiTblClmId);
+            const own = await tx.uitableColumns.findFirst({
+                where: { uiTblClmId: parsedId, uiTblClmTableId: tableId, uiTblClmIsDeleted: false },
+                select: { uiTblClmId: true },
+            });
+            if (!own) {
+                (0, module_service_utils_1.throwFixedNotFound)('UI table column not found', 'uiTblClmId', `No live column ${colDto.uiTblClmId} on UI table ${tableId.toString()}`, ui_table_master_error_codes_1.UiTableMasterErrorCode.COLUMN_NOT_FOUND);
+            }
             const colData = {
                 uiTblClmName: normalizedName,
                 uiTblClmTableId: tableId,
@@ -418,6 +427,25 @@ let UiTableMasterService = class UiTableMasterService {
             (0, module_service_utils_1.applyPresentFields)(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
             const created = await tx.uitableColumns.create({ data: colData });
             return created.uiTblClmId;
+        }
+    }
+    async assertColumnNumbersUnique(tx, tableId) {
+        const taken = await tx.uitableColumns.groupBy({
+            by: ['uiTblClmNo'],
+            where: { uiTblClmTableId: tableId, uiTblClmIsDeleted: false, uiTblClmNo: { not: null } },
+            _count: { _all: true },
+            having: { uiTblClmNo: { _count: { gt: 1 } } },
+        });
+        if (taken.length) {
+            (0, module_service_utils_1.throwFixedConflict)('Column numbers clash', [
+                {
+                    field: 'uiTblColumns',
+                    code: ui_table_master_error_codes_1.UiTableMasterErrorCode.COLUMN_NO_DUPLICATE,
+                    message: `Column number(s) ${taken.map((row) => String(row.uiTblClmNo)).join(', ')} would be ` +
+                        'held by two live columns of this table. Send uiTblClmId for the columns being ' +
+                        'changed, or replaceColumns: true to replace the whole layout.',
+                },
+            ]);
         }
     }
     async ensureNameIsUnique(tx, uiTblName, excludeId) {
@@ -499,7 +527,13 @@ let UiTableMasterService = class UiTableMasterService {
     parseBigIntId(field, value) {
         const normalized = value.trim();
         if (!/^\d+$/.test(normalized)) {
-            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [{ field, message: `${field} must be a numeric id`, code: ui_table_master_error_codes_1.UiTableMasterErrorCode.ID_INVALID }]);
+            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [
+                {
+                    field,
+                    message: `${field} must be a numeric id`,
+                    code: ui_table_master_error_codes_1.UiTableMasterErrorCode.ID_INVALID,
+                },
+            ]);
         }
         return BigInt(normalized);
     }

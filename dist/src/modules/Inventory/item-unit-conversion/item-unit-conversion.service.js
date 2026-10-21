@@ -18,6 +18,7 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
+const item_child_helper_1 = require("../utils/item-child.helper");
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
 const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
@@ -37,6 +38,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             ? saveItemUnitConversionDto
             : [saveItemUnitConversionDto];
         const saveAll = async (client) => {
+            await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.iuc_item_id), { field: 'iuc_item_id', code: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ITEM_NOT_LIVE });
             const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(client, saveItems);
             for (const saveItem of baseUnitNormalizedSaveItems) {
                 this.validateItemUnitConversion(saveItem);
@@ -120,6 +122,60 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             throw error;
         }
     }
+    async delete(iucId) {
+        const ids = Array.isArray(iucId) ? iucId : [iucId];
+        try {
+            const results = await this.prisma.$transaction(async (client) => {
+                const deleted = [];
+                for (const id of ids) {
+                    const existing = await client.itemUnitConversion.findFirst({ where: { iucId: id } });
+                    if (!existing) {
+                        (0, module_service_utils_1.throwInventoryNotFound)('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${id}`, item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.NOT_FOUND);
+                    }
+                    await (0, item_child_helper_1.assertChildDeletable)(client, { isDeleted: existing.iucIsDeleted, itemId: existing.iucItemId }, {
+                        label: 'unit conversion',
+                        idField: 'iuc_id',
+                        alreadyDeletedCode: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ALREADY_DELETED,
+                        itemNotLiveCode: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ITEM_NOT_LIVE,
+                    });
+                    await this.assertNoLiveDependants(client, id);
+                    deleted.push(await this.toggleDeleteItemUnitConversion(client, id));
+                }
+                return deleted;
+            });
+            return Array.isArray(iucId) ? results : results[0];
+        }
+        catch (error) {
+            this.handleDeleteError(error);
+            throw error;
+        }
+    }
+    async assertNoLiveDependants(client, iucId) {
+        const [prices, eanCodes, reorders] = await Promise.all([
+            client.itemPriceMaster.count({ where: { ipmUcUnitId: iucId, ipmIsDeleted: false } }),
+            client.itemEanCode.findMany({
+                where: { eanUcUnitId: iucId, eanIsDeleted: false },
+                select: { eanCode: true },
+            }),
+            client.itemReorder.count({ where: { irUcUnitId: iucId, irIsDeleted: false } }),
+        ]);
+        const used = [
+            prices ? `${prices} price row(s)` : null,
+            eanCodes.length
+                ? `${eanCodes.length} EAN code(s) (${eanCodes.map((row) => row.eanCode).join(', ')})`
+                : null,
+            reorders ? `${reorders} reorder row(s)` : null,
+        ].filter((part) => part !== null);
+        if (used.length) {
+            (0, module_service_utils_1.throwInventoryConflict)('This unit is still in use', [
+                {
+                    field: 'iuc_id',
+                    code: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.IN_USE,
+                    message: `Used by ${used.join(', ')}. Delete those first, or remove the unit from the item card, which removes them with it.`,
+                },
+            ]);
+        }
+    }
     async saveItemUnitConversion(tx, saveItemUnitConversionDto) {
         if (saveItemUnitConversionDto.iuc_id) {
             return this.updateItemUnitConversion(tx, saveItemUnitConversionDto);
@@ -129,8 +185,8 @@ let ItemUnitConversionService = class ItemUnitConversionService {
     async createItemUnitConversion(tx, saveItemUnitConversionDto) {
         this.validateItemUnitConversion(saveItemUnitConversionDto);
         const now = new Date();
-        const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by) ?? this.requestUser();
-        const updatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ?? createdBy;
+        const createdBy = this.requestUser();
+        const updatedBy = createdBy;
         const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
         const data = {
             iucItemId: saveItemUnitConversionDto.iuc_item_id,
@@ -171,21 +227,19 @@ let ItemUnitConversionService = class ItemUnitConversionService {
         const existing = await tx.itemUnitConversion.findFirst({
             where: {
                 iucId,
+                iucItemId: saveItemUnitConversionDto.iuc_item_id,
                 iucIsDeleted: false,
             },
         });
         if (!existing) {
-            (0, module_service_utils_1.throwInventoryNotFound)('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`, item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.NOT_FOUND);
+            (0, module_service_utils_1.throwInventoryNotFound)('Item unit conversion not found', 'iuc_id', `No live unit conversion ${iucId} on item ${saveItemUnitConversionDto.iuc_item_id}`, item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.NOT_FOUND);
         }
         const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
         const data = {
-            iucItemId: saveItemUnitConversionDto.iuc_item_id,
             iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
             iucBaseUnitId: baseUnitId,
             iucUpdatedOn: new Date(),
-            iucUpdatedBy: this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ??
-                this.requestUser() ??
-                existing.iucUpdatedBy,
+            iucUpdatedBy: this.requestUser() ?? existing.iucUpdatedBy,
         };
         this.applyOptionalFields(data, saveItemUnitConversionDto);
         this.assertItemUnitConversionConstraints({
@@ -619,10 +673,6 @@ let ItemUnitConversionService = class ItemUnitConversionService {
     }
     buildDisplayName(record) {
         return `${record.iucItemId}:${record.iucUnitId}:${record.iucBaseUnitId}`;
-    }
-    resolveRecordActor(value) {
-        const trimmed = value?.trim();
-        return trimmed || null;
     }
     requestUser() {
         return this.requestContextService.getUserId()?.trim() || null;

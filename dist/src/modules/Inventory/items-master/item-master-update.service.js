@@ -47,7 +47,39 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
         const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
         const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
+        if (dto.unit_conversions !== undefined) {
+            await this.retireRowsOfRemovedUnits(itemId, tx);
+        }
         return { unit_conversions, prices, ean_codes, reorders };
+    }
+    async retireRowsOfRemovedUnits(itemId, tx) {
+        const removedUnit = { iucIsDeleted: true };
+        const [priceIds, eanIds, reorderIds] = await Promise.all([
+            tx.itemPriceMaster
+                .findMany({
+                where: { ipmItemId: itemId, ipmIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { ipmId: true },
+            })
+                .then((rows) => rows.map((row) => row.ipmId)),
+            tx.itemEanCode
+                .findMany({
+                where: { eanItemId: itemId, eanIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { eanId: true },
+            })
+                .then((rows) => rows.map((row) => row.eanId)),
+            tx.itemReorder
+                .findMany({
+                where: { irItemId: itemId, irIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { irId: true },
+            })
+                .then((rows) => rows.map((row) => row.irId)),
+        ]);
+        if (priceIds.length)
+            await this.itemsPriceMasterService.toggleDelete(priceIds, tx);
+        if (eanIds.length)
+            await this.itemsEanCodeMasterService.toggleDelete(eanIds, tx);
+        if (reorderIds.length)
+            await this.itemsReorderMasterService.toggleDelete(reorderIds, tx);
     }
     async indexUnitConversions(itemId, dto, syncedUnitConversions, tx) {
         const needed = dto.prices !== undefined || dto.ean_codes !== undefined || dto.reorders !== undefined;
@@ -83,6 +115,8 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         }
         const existing = await this.itemUnitConversionService.findByItemId(itemId, tx);
         const existingByKey = new Map(existing.map((row) => [row.iuc_unit_id, row]));
+        this.refuseForeignIds(children, 'iuc_id', 'unit_conversions', existing);
+        this.refuseDuplicateKeys(children.map((child) => child.iuc_unit_id), 'unit_conversions', 'two conversion rows for the same unit');
         const toSave = [];
         const claimedIds = new Set();
         for (const child of children) {
@@ -112,6 +146,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         }
         const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
         const existingById = new Map(existing.map((row) => [row.ipm_id, row]));
+        this.refuseForeignIds(children, 'ipm_id', 'prices', existing);
         const resolvedRows = children.map((child) => ({
             ...child,
             ipm_uc_unit_id: this.resolveUnitConversionId(child.ipm_uc_unit_id, 'ipm_uc_unit_id', conversions),
@@ -183,7 +218,10 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             return [];
         }
         const existing = await this.itemsEanCodeMasterService.findByItemId(itemId, tx);
-        const existingByKey = new Map(existing.map((row) => [row.ean_code, row]));
+        const eanKey = (code) => code.trim().toUpperCase();
+        const existingByKey = new Map(existing.map((row) => [eanKey(row.ean_code), row]));
+        this.refuseForeignIds(children, 'ean_id', 'ean_codes', existing);
+        this.refuseDuplicateKeys(children.map((child) => eanKey(child.ean_code)), 'ean_codes', 'the same EAN code (letters compared in any case)');
         const toSave = [];
         const claimedIds = new Set();
         for (const child of children) {
@@ -193,7 +231,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             };
             const match = resolved.ean_id
                 ? existing.find((row) => row.ean_id === resolved.ean_id)
-                : existingByKey.get(resolved.ean_code);
+                : existingByKey.get(eanKey(resolved.ean_code));
             if (match) {
                 claimedIds.add(match.ean_id);
                 if (!this.rowChanged(resolved, match, EAN_IGNORED_FIELDS)) {
@@ -216,6 +254,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             return [];
         }
         const existing = await this.itemsReorderMasterService.findByItemId(itemId, tx);
+        this.refuseForeignIds(children, 'ir_id', 'reorders', existing);
         const reorderKey = (row) => this.naturalKey(row.ir_branch_id, row.ir_unit_id, row.ir_godown_id);
         const existingByKey = new Map(existing.map((row) => [reorderKey(row), row]));
         const resolvedRows = children.map((child) => ({
@@ -268,6 +307,22 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
     }
     naturalKey(...parts) {
         return parts.map((part) => part ?? '').join('::');
+    }
+    refuseForeignIds(children, idField, collection, existing) {
+        const ownIds = new Set(existing.map((row) => row[idField]));
+        children.forEach((child, index) => {
+            const id = child[idField];
+            if (id && !ownIds.has(id)) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Row is not part of this item', [
+                    {
+                        field: `${collection}.${index}.${idField}`,
+                        code: item_error_codes_1.ItemErrorCode.CHILD_NOT_OF_ITEM,
+                        message: `${idField} ${id} is not a live row of this item. Leave ${idField} out to add a ` +
+                            'new row; a row of another item is changed on that item.',
+                    },
+                ]);
+            }
+        });
     }
     refuseDuplicateKeys(keys, field, what) {
         const firstAt = new Map();
