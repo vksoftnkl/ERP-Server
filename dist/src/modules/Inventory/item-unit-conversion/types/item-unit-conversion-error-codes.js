@@ -17,5 +17,6 @@ var ItemUnitConversionErrorCode;
     ItemUnitConversionErrorCode["IN_USE"] = "UNIT_CONV_IN_USE";
     ItemUnitConversionErrorCode["ALREADY_DELETED"] = "UNIT_CONV_ALREADY_DELETED";
     ItemUnitConversionErrorCode["ITEM_NOT_LIVE"] = "UNIT_CONV_ITEM_NOT_LIVE";
+    ItemUnitConversionErrorCode["BASE_UNIT_LOCKED"] = "ITEM_BASE_UNIT_LOCKED";
 })(ItemUnitConversionErrorCode || (exports.ItemUnitConversionErrorCode = ItemUnitConversionErrorCode = {}));
 //# sourceMappingURL=item-unit-conversion-error-codes.js.map

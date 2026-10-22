@@ -33,6 +33,7 @@ import {
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
 import { assertChildDeletable, assertItemsLive } from '../utils/item-child.helper';
+import { baseUnitChange, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
 const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
@@ -84,6 +85,7 @@ export class ItemUnitConversionService {
         saveItems.map((item) => item.iuc_item_id),
         { field: 'iuc_item_id', code: ItemUnitConversionErrorCode.ITEM_NOT_LIVE },
       );
+      await this.assertBaseUnitsKept(client, saveItems, Array.isArray(saveItemUnitConversionDto));
       const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
         client,
         saveItems,
@@ -108,6 +110,37 @@ export class ItemUnitConversionService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /**
+   * Notes 138 A1 — a row of an item that already has a base row may not change
+   * its base unit (see item-base-unit.helper). Read from the stored base rows
+   * BEFORE normalisation, which would otherwise re-derive the base from what
+   * was sent. One query per batch.
+   */
+  private async assertBaseUnitsKept(
+    client: Prisma.TransactionClient,
+    saveItems: SaveItemUnitConversionDto[],
+    indexed: boolean,
+  ): Promise<void> {
+    const itemIds = Array.from(new Set(saveItems.map((saveItem) => saveItem.iuc_item_id)));
+    const baseRows = await client.itemUnitConversion.findMany({
+      where: { iucItemId: { in: itemIds }, iucIsBaseUnit: true, iucIsDeleted: false },
+      select: { iucId: true, iucItemId: true, iucUnitId: true },
+    });
+    const baseByItemId = new Map(
+      baseRows.map((row) => [row.iucItemId, { iuc_id: row.iucId, iuc_unit_id: row.iucUnitId }]),
+    );
+    saveItems.forEach((saveItem, index) => {
+      const base = baseByItemId.get(saveItem.iuc_item_id);
+      const change = base && baseUnitChange(base, saveItem);
+      if (change) {
+        refuseBaseUnitChange(
+          ItemUnitConversionErrorCode.BASE_UNIT_LOCKED,
+          indexed ? `${index}.${change.column}` : change.column,
+          change.message,
+        );
+      }
+    });
   }
   async list(
     queryDto: GetItemUnitConversionQueryDto,
@@ -241,6 +274,15 @@ export class ItemUnitConversionService {
               itemNotLiveCode: ItemUnitConversionErrorCode.ITEM_NOT_LIVE,
             },
           );
+          // Notes 138 A1 — removing the base row would leave the item's
+          // stock counted in no unit at all.
+          if (existing.iucIsBaseUnit) {
+            refuseBaseUnitChange(
+              ItemUnitConversionErrorCode.BASE_UNIT_LOCKED,
+              'iuc_id',
+              `Unit conversion ${id} is the item's base row and cannot be deleted.`,
+            );
+          }
           await this.assertNoLiveDependants(client, id);
           deleted.push(await this.toggleDeleteItemUnitConversion(client, id));
         }

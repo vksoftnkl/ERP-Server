@@ -11,6 +11,8 @@ import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
 import { buildStockVoucherRefno } from './stock-voucher-numbering.helper';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import { StockErrorCode } from '../types/stock-error-codes';
+import * as importHelper from './stock-voucher-import.helper';
 
 // The accounts counter is a real table walk (voucher type, sequence row,
 // company, branch) that a unit test has no business standing up. What is under
@@ -845,6 +847,34 @@ describe('StockVoucherService', () => {
       expect(client.stockVoucherItem.update).not.toHaveBeenCalled();
       expect(client.stockVoucherItem.deleteMany).not.toHaveBeenCalled();
       expect(client.stockVoucherItem.createMany).not.toHaveBeenCalled();
+    });
+
+    it('compares stored dates by instant, so an unchanged batch date is not an edit', async () => {
+      draft();
+      client.stockVoucherItem.findMany.mockResolvedValue([
+        storedRow(LINE_A, 1, {
+          sviBatchNo: 'B-1',
+          sviMfgDate: new Date('2026-03-01T00:00:00.000Z'),
+          sviExpiryDate: new Date('2027-03-01T00:00:00.000Z'),
+        }),
+      ]);
+      const batchLine = (expiryDate: string) =>
+        line({ sviId: LINE_A, batchNo: 'B-1', mfgDate: '2026-03-01', expiryDate });
+
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { svhId: SVH_ID } as never, lines: [batchLine('2027-03-01')] as never }),
+      );
+      expect(client.stockVoucherItem.update).not.toHaveBeenCalled();
+
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { svhId: SVH_ID } as never, lines: [batchLine('2027-06-01')] as never }),
+      );
+      expect(client.stockVoucherItem.update).toHaveBeenCalledTimes(1);
+      expect(client.stockVoucherItem.update.mock.calls[0][0].data.sviExpiryDate).toEqual(
+        new Date('2027-06-01T00:00:00.000Z'),
+      );
     });
 
     it('parks renumbered lines first, so swapping two never collides on ux_svi_line', async () => {
@@ -2338,6 +2368,1391 @@ describe('StockVoucherService', () => {
           godownId: GODOWN_ID,
         }),
       ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Below: the paths the first cut of this spec never reached.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** Status, message and coded errors of the HttpException a call was refused with. */
+  const refusalOf = async (promise: Promise<unknown>) => {
+    const error = await promise.then(
+      () => {
+        throw new Error('expected the call to be refused');
+      },
+      (caught: unknown) => caught,
+    );
+    if (!(error instanceof HttpException)) throw error;
+    const body = error.getResponse() as {
+      message: string;
+      errors: Array<{ field: string; code: string; message: string }>;
+    };
+    return { status: error.getStatus(), message: body.message, errors: body.errors };
+  };
+  const codesOf = async (promise: Promise<unknown>) =>
+    (await refusalOf(promise)).errors.map((error) => error.code);
+
+  const withRules = (over: Partial<StockVoucherTypeRules>): StockVoucherTypeRules => ({
+    ...OPENING_RULES,
+    ...over,
+  });
+  const openingLine = (over: Record<string, unknown> = {}) => ({ ...payload().lines[0], ...over });
+
+  /** The header loadHeaderOrThrow reads — a DRAFT OPENING of this company and branch. */
+  const storedHeader = (over: Record<string, unknown> = {}) => ({
+    svhId: SVH_ID,
+    svhRefno: 'OPN/2026-2027/TILL-01/1',
+    svhStatus: 'DRAFT',
+    svhIsDeleted: false,
+    svhVoucherType: 'OPENING',
+    svhCompanyId: COMPANY_ID,
+    svhBranchId: BRANCH_ID,
+    svhTenantId: null,
+    svhDeviceId: DEVICE_ID,
+    svhSessionId: null,
+    ...over,
+  });
+
+  describe('save — the payload rules the first cut did not pin', () => {
+    it('refuses a voucher type its own rules record lists as refused', async () => {
+      const refusal = await refusalOf(
+        service.save(withRules({ refuseTypes: ['OPENING'] }), payload()),
+      );
+
+      expect(refusal.status).toBe(422);
+      expect(refusal.errors).toEqual([
+        {
+          field: 'voucherType',
+          code: StockErrorCode.VOUCHER_TYPE_NOT_ALLOWED,
+          message: 'OPENING cannot be saved through this route.',
+        },
+      ]);
+      expect(client.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a document that must leave a godown and names none', async () => {
+      await expect(
+        codesOf(service.save(withRules({ requiresFromGodown: true }), payload())),
+      ).resolves.toEqual([StockErrorCode.FROM_GODOWN_REQUIRED]);
+    });
+
+    it('refuses a per-line direction on a document that moves every line the same way', async () => {
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ lines: [openingLine({ direction: -1 })] as never })),
+      );
+
+      expect(refusal.errors).toEqual([
+        expect.objectContaining({
+          field: 'lines.0',
+          code: StockErrorCode.LINE_DIRECTION_NOT_ALLOWED,
+        }),
+      ]);
+    });
+
+    it('writes the per-line direction on a REASON-direction document', async () => {
+      await service.save(
+        withRules({ lineDirection: 'REASON' }),
+        payload({ lines: [openingLine({ direction: -1 })] as never }),
+      );
+
+      expect(createdLine().sviDirection).toBe(-1);
+    });
+
+    it('never writes a direction a document-direction type was not sent', async () => {
+      await service.save(OPENING_RULES, payload());
+
+      expect(createdLine().sviDirection).toBeNull();
+    });
+
+    it('refuses a move line with no destination, or one moving into its own bucket', async () => {
+      const refusal = await refusalOf(
+        service.save(
+          withRules({ postShape: 'BUCKET_MOVE' }),
+          payload({
+            lines: [
+              openingLine(),
+              openingLine({ lineNo: 2, toBucket: 'SALEABLE' }),
+              openingLine({ lineNo: 3, bucket: 'DAMAGED', toBucket: 'DAMAGED' }),
+            ] as never,
+          }),
+        ),
+      );
+
+      expect(refusal.errors).toEqual([
+        expect.objectContaining({
+          field: 'lines.0.toBucket',
+          code: StockErrorCode.MOVE_TO_BUCKET_REQUIRED,
+        }),
+        expect.objectContaining({
+          field: 'lines.1.toBucket',
+          code: StockErrorCode.MOVE_SAME_BUCKET,
+          message: 'Line 2: moves stock from SALEABLE into SALEABLE. Pick a different bucket.',
+        }),
+        expect.objectContaining({
+          field: 'lines.2.toBucket',
+          code: StockErrorCode.MOVE_SAME_BUCKET,
+        }),
+      ]);
+    });
+
+    it('refuses a destination bucket on anything but a move', async () => {
+      const refusal = await refusalOf(
+        service.save(
+          OPENING_RULES,
+          payload({
+            lines: [openingLine(), openingLine({ lineNo: 2, toBucket: 'DAMAGED' })] as never,
+          }),
+        ),
+      );
+
+      expect(refusal.errors).toEqual([
+        expect.objectContaining({
+          field: 'lines.1.toBucket',
+          code: StockErrorCode.TO_BUCKET_NOT_ALLOWED,
+        }),
+      ]);
+    });
+
+    it('refuses a unit and a cost rate on a count line, both in the same 422', async () => {
+      client.$queryRaw.mockResolvedValue([]);
+
+      await expect(
+        codesOf(
+          service.save(PHYSICAL_RULES, {
+            header: payload().header,
+            lines: [
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                godownId: GODOWN_ID,
+                lotId: LOT_ID,
+                countedQty: 5,
+                uomId: UOM_ID,
+                costRate: 7,
+              },
+            ],
+          } as unknown as SaveStockVoucherDto),
+        ),
+      ).resolves.toEqual([
+        StockErrorCode.COUNT_UNIT_NOT_ALLOWED,
+        StockErrorCode.COUNT_COST_NOT_ALLOWED,
+      ]);
+    });
+
+    it('reports every header and line problem in one 422, header first', async () => {
+      const refusal = await refusalOf(
+        service.save(
+          OPENING_RULES,
+          payload({
+            header: { toGodownId: null, toBranchId: OTHER_GODOWN_ID } as never,
+            lines: [
+              openingLine({ weightQty: -1 }),
+              openingLine({ splitNo: 1 }),
+              openingLine({ lineNo: 2, uomId: undefined }),
+            ] as never,
+          }),
+        ),
+      );
+
+      expect(refusal.message).toBe('This opening stock cannot be saved');
+      expect(refusal.errors.map((error) => [error.field, error.code])).toEqual([
+        ['toGodownId', StockErrorCode.TO_GODOWN_REQUIRED],
+        ['toBranchId', StockErrorCode.TO_BRANCH_NOT_ALLOWED],
+        ['lines.0', StockErrorCode.LINE_WEIGHT_NEGATIVE],
+        ['lines.1', StockErrorCode.LINE_DUPLICATE],
+        ['lines.2', StockErrorCode.LINE_UNIT_REQUIRED],
+      ]);
+    });
+
+    it('lets a supplied cost through on a derivable rate source without demanding one', async () => {
+      await expect(
+        service.save(
+          OPENING_RULES,
+          payload({
+            header: { rateSource: 'LAST_PURCHASE' } as never,
+            lines: [openingLine({ costRate: 0 })] as never,
+          }),
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('save — reasons the master does not hold', () => {
+    const REASON_ID = '01000000-0000-7000-8000-000000000091';
+    const OTHER_REASON_ID = '01000000-0000-7000-8000-000000000092';
+
+    it('refuses a reason this company cannot see, on the field that cited it', async () => {
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ header: { reasonId: REASON_ID } as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        message: 'This document cites a stock reason it may not use',
+        errors: [
+          {
+            field: 'reasonId',
+            code: StockErrorCode.REASON_NOT_FOUND,
+            message: `No stock reason ${REASON_ID} visible to this company. A reason is either the company's own or one shared with every company.`,
+          },
+        ],
+      });
+      expect(client.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("reads every cited reason once, from the company's own rows and the shared ones", async () => {
+      await refusalOf(
+        service.save(
+          OPENING_RULES,
+          payload({
+            header: { reasonId: REASON_ID } as never,
+            lines: [
+              openingLine({ reasonId: REASON_ID }),
+              openingLine({ lineNo: 2, reasonId: OTHER_REASON_ID }),
+            ] as never,
+          }),
+        ),
+      );
+
+      expect(client.stockReasonMaster.findMany).toHaveBeenCalledTimes(1);
+      expect(client.stockReasonMaster.findMany.mock.calls[0][0].where).toEqual({
+        srmId: { in: [REASON_ID, OTHER_REASON_ID] },
+        srmIsDeleted: false,
+        OR: [{ srmCompanyId: COMPANY_ID }, { srmCompanyId: null }],
+      });
+    });
+  });
+
+  describe('save — header totals into numeric columns', () => {
+    const totalsWrite = () =>
+      client.stockVoucher.update.mock.calls.find(([args]) => 'svhLineCount' in args.data)![0].data;
+
+    it('keeps a total past float64 exactly, and writes 0 for a null or unreadable one', async () => {
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: {
+            // 18 significant digits — numeric(18,6) holds them; float64 cannot.
+            totalQty: '123456789012.123456',
+            totalValue: null,
+            totalValueWot: 'not a number',
+          } as never,
+        }),
+      );
+
+      const data = totalsWrite();
+      expect(data.svhTotalQty).toEqual(new Prisma.Decimal('123456789012.123456'));
+      expect(data.svhTotalQty.toFixed(6)).toBe('123456789012.123456');
+      expect(data.svhTotalValue).toEqual(new Prisma.Decimal(0));
+      expect(data.svhTotalValueWot).toEqual(new Prisma.Decimal(0));
+    });
+
+    it('takes a stated line count over the number of rows written', async () => {
+      await service.save(OPENING_RULES, payload({ header: { lineCount: 7 } as never }));
+
+      expect(totalsWrite().svhLineCount).toBe(7);
+    });
+  });
+
+  describe('updates that cannot proceed', () => {
+    it('refuses an update of a voucher saved under another type', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(
+        storedHeader({ svhVoucherType: 'PHYSICAL' }),
+      );
+
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        errors: [{ field: 'svhId', code: StockErrorCode.VOUCHER_NOT_FOUND }],
+      });
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an update of a deleted draft as 409 STOCK_VOUCHER_DELETED', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhIsDeleted: true }));
+
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        message: 'Opening stock is deleted',
+        errors: [
+          {
+            code: StockErrorCode.VOUCHER_DELETED,
+            message: 'OPN/2026-2027/TILL-01/1 has been deleted.',
+          },
+        ],
+      });
+    });
+  });
+
+  // ── post / cancel branches ────────────────────────────────────────────────
+  describe('post — what the engine reports back', () => {
+    const OUT_ID = '01000000-0000-7000-8000-0000000000f9';
+    let enginePost: jest.SpyInstance;
+
+    beforeEach(() => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader());
+      jest.spyOn(service, 'validate').mockResolvedValue([]);
+      enginePost = jest.spyOn(
+        (service as unknown as { stockPosting: StockPostingService }).stockPosting,
+        'post',
+      );
+    });
+
+    const trailRows = () =>
+      client.txnStatusLog.create.mock.calls.map(([args]) => args.data as Record<string, unknown>);
+
+    it('closes the despatch a receipt took the last of, with a RECEIVED step on the OUT', async () => {
+      enginePost.mockResolvedValue({
+        status: 'POSTED',
+        rowsPosted: 3,
+        transitRows: 0,
+        closedOut: { svhId: OUT_ID, accYear: '2025-2026', refno: 'TRO/2025-2026/TILL-01/4' },
+      });
+
+      await service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+
+      const [own, closed] = trailRows();
+      expect(own).toMatchObject({ tslSrcDocId: SVH_ID, tslToStatus: 'POSTED' });
+      expect(closed).toMatchObject({
+        tslSrcDocId: OUT_ID,
+        tslAccYear: '2025-2026',
+        tslSrcDocRefno: 'TRO/2025-2026/TILL-01/4',
+        tslFromStatus: 'IN_TRANSIT',
+        tslToStatus: 'RECEIVED',
+        tslEvent: 'STATUS_CHANGED',
+        tslRemarks: 'Closed by receipt OPN/2026-2027/TILL-01/1',
+      });
+    });
+
+    it('words a despatch that went IN_TRANSIT as one, and files it as a status change', async () => {
+      enginePost.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        rowsPosted: 4,
+        transitRows: 2,
+        closedOut: null,
+      });
+
+      await service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+
+      expect(trailRows()).toEqual([
+        expect.objectContaining({
+          tslFromStatus: 'DRAFT',
+          tslToStatus: 'IN_TRANSIT',
+          tslEvent: 'STATUS_CHANGED',
+          tslRemarks: 'Opening stock despatched — 4 ledger rows, 2 lines in transit',
+        }),
+      ]);
+    });
+
+    it('refuses a voucher of another branch before the engine is called', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(
+        storedHeader({ svhBranchId: OTHER_GODOWN_ID }),
+      );
+
+      const refusal = await refusalOf(
+        service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        errors: [
+          {
+            code: StockErrorCode.VOUCHER_NOT_FOUND,
+            message: `No OPENING voucher ${SVH_ID} in ${ACC_YEAR} for this company and branch.`,
+          },
+        ],
+      });
+      expect(enginePost).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancel — a document already cancelled', () => {
+    it('says WHEN it was cancelled, read back from the trail', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhStatus: 'CANCELLED' }));
+      client.txnStatusLog.findFirst.mockResolvedValue({
+        tslChangedOn: new Date('2026-05-02T10:15:00.000Z'),
+        tslChangedBy: USER_ID,
+        tslRemarks: 'typed twice',
+      });
+
+      const refusal = await refusalOf(
+        service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'again', COMPANY_ID, BRANCH_ID),
+      );
+
+      expect(refusal).toEqual({
+        status: 409,
+        message: 'Opening stock already cancelled',
+        errors: [
+          {
+            field: 'svhId',
+            code: StockErrorCode.VOUCHER_ALREADY_CANCELLED,
+            message: 'OPN/2026-2027/TILL-01/1 was cancelled on 2026-05-02T10:15:00.000Z.',
+          },
+        ],
+      });
+      expect(client.txnStatusLog.findFirst).toHaveBeenCalledWith({
+        where: {
+          tslSrcDocType: OPENING_RULES.statusDocType,
+          tslSrcDocId: SVH_ID,
+          tslAccYear: ACC_YEAR,
+          tslToStatus: 'CANCELLED',
+          tslIsDeleted: false,
+        },
+        orderBy: { tslSeqNo: 'desc' },
+        select: { tslChangedOn: true, tslChangedBy: true, tslRemarks: true },
+      });
+      expect(client.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('still refuses, with "an earlier date", when the trail has no CANCELLED step', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhStatus: 'CANCELLED' }));
+
+      const refusal = await refusalOf(
+        service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'again', COMPANY_ID, BRANCH_ID),
+      );
+
+      expect(refusal.errors[0].message).toBe(
+        'OPN/2026-2027/TILL-01/1 was cancelled on an earlier date.',
+      );
+    });
+  });
+
+  // ── the reads ─────────────────────────────────────────────────────────────
+  describe('reads', () => {
+    beforeEach(() => {
+      // The outer beforeEach stubs getById for the save paths; here it is the
+      // subject.
+      (service.getById as jest.Mock).mockRestore();
+    });
+
+    /** Bound values of the n-th $queryRaw call (tagged template: strings, ...values). */
+    const valuesOf = (call = 0) => client.$queryRaw.mock.calls[call].slice(1) as unknown[];
+    const sqlOf = (call = 0) => (client.$queryRaw.mock.calls[call][0] as string[]).join('?');
+
+    describe('list', () => {
+      const listRow = (over: Record<string, unknown> = {}) => ({
+        svh_id: SVH_ID,
+        svh_acc_year: '2026-2027 ',
+        svh_refno: 'OPN/2026-2027/TILL-01/1',
+        svh_usr_refno: 'MY-1',
+        svh_doc_date: new Date('2026-04-01T00:00:00.000Z'),
+        svh_to_godown_id: GODOWN_ID,
+        to_godown_name: 'MAIN',
+        svh_status: 'POSTED',
+        svh_line_count: 2,
+        svh_total_qty: new Prisma.Decimal('130.5'),
+        svh_total_value: new Prisma.Decimal('2610.25'),
+        svh_total_value_wot: new Prisma.Decimal('2485.95'),
+        posted_on: new Date('2026-04-01T09:30:00.000Z'),
+        svh_rate_source: 'MANUAL',
+        svh_remarks: null,
+        ...over,
+      });
+      const query = { companyId: COMPANY_ID, branchId: BRANCH_ID, accYear: ACC_YEAR };
+
+      it('maps each header row, trimming the bpchar year and turning Decimals into numbers', async () => {
+        client.$queryRaw.mockResolvedValue([listRow(), listRow({ posted_on: null })]);
+
+        const result = await service.list(OPENING_RULES, query);
+
+        expect(result.items[0]).toEqual({
+          svhId: SVH_ID,
+          accYear: '2026-2027',
+          refno: 'OPN/2026-2027/TILL-01/1',
+          usrRefno: 'MY-1',
+          docDate: '2026-04-01',
+          godownId: GODOWN_ID,
+          godownName: 'MAIN',
+          status: 'POSTED',
+          lineCount: 2,
+          totalQty: 130.5,
+          totalValue: 2610.25,
+          totalValueWot: 2485.95,
+          postedOn: '2026-04-01T09:30:00.000Z',
+          rateSource: 'MANUAL',
+          remarks: null,
+        });
+        expect(result.items[1].postedOn).toBeNull();
+        expect(result.meta).toEqual({ limit: 50, offset: 0, count: 2 });
+      });
+
+      it('scopes to company, branch, year and the type, live rows only, newest first', async () => {
+        client.$queryRaw.mockResolvedValue([]);
+
+        await service.list(OPENING_RULES, query);
+
+        const sql = sqlOf();
+        expect(sql).toContain('svh.svh_is_deleted   = false');
+        expect(sql).toContain('ORDER BY svh.svh_doc_date DESC, svh.svh_slno DESC');
+        expect(valuesOf().slice(0, 5)).toEqual([
+          OPENING_RULES.statusDocType,
+          COMPANY_ID,
+          BRANCH_ID,
+          ACC_YEAR,
+          'OPENING',
+        ]);
+        // No status / date filter sent: each binds as NULL, which the SQL reads as "any".
+        expect(valuesOf().slice(5, 11)).toEqual([null, null, null, null, null, null]);
+      });
+
+      it('binds the filters it was sent', async () => {
+        client.$queryRaw.mockResolvedValue([]);
+
+        await service.list(OPENING_RULES, {
+          ...query,
+          status: 'DRAFT',
+          fromDate: '2026-04-01',
+          toDate: '2026-04-30',
+        });
+
+        expect(valuesOf().slice(5, 11)).toEqual([
+          'DRAFT',
+          'DRAFT',
+          '2026-04-01',
+          '2026-04-01',
+          '2026-04-30',
+          '2026-04-30',
+        ]);
+      });
+
+      it.each([
+        ['no limit', undefined, 50],
+        ['a zero limit', 0, 50],
+        ['a negative limit', -5, 50],
+        ['a NaN limit', Number.NaN, 50],
+        ['a fractional limit', 12.9, 12],
+        ['a limit past the cap', 9999, 500],
+      ])('clamps %s to %i', async (_label, limit, expected) => {
+        client.$queryRaw.mockResolvedValue([]);
+
+        const result = await service.list(OPENING_RULES, { ...query, limit, offset: -3 });
+
+        expect(valuesOf().slice(-2)).toEqual([expected, 0]);
+        expect(result.meta).toEqual({ limit: expected, offset: 0, count: 0 });
+      });
+    });
+
+    describe('getById', () => {
+      const headerRow = (over: Record<string, unknown> = {}) => ({
+        svh_id: SVH_ID,
+        svh_acc_year: '2026-2027',
+        svh_company_id: COMPANY_ID,
+        svh_branch_id: BRANCH_ID,
+        svh_tenant_id: null,
+        svh_device_id: DEVICE_ID,
+        svh_session_id: null,
+        svh_voucher_type: 'OPENING',
+        svh_slno: BigInt(41),
+        svh_refno: 'OPN/2026-2027/TILL-01/41',
+        svh_usr_refno: null,
+        svh_doc_date: new Date('2026-04-01T00:00:00.000Z'),
+        svh_doc_datetime: new Date('2026-04-01T04:30:00.000Z'),
+        svh_from_godown_id: null,
+        from_godown_name: null,
+        svh_to_godown_id: GODOWN_ID,
+        to_godown_name: 'MAIN',
+        svh_supplier_id: null,
+        supplier_name: null,
+        svh_to_branch_id: null,
+        svh_party_ref: null,
+        svh_reason_id: null,
+        reason_name: null,
+        svh_link_src_module: null,
+        svh_link_src_doc_type: null,
+        svh_link_src_doc_id: null,
+        svh_link_src_acc_year: null,
+        svh_freeze_stock: false,
+        svh_freeze_from: null,
+        svh_freeze_to: null,
+        svh_sync_date: null,
+        svh_status: 'POSTED',
+        svh_line_count: 1,
+        svh_total_qty: new Prisma.Decimal(120),
+        svh_total_value: new Prisma.Decimal('2400.00'),
+        svh_total_value_wot: new Prisma.Decimal('2285.71'),
+        posted_on: new Date('2026-04-01T05:00:00.000Z'),
+        posted_by: USER_ID,
+        posted_by_name: 'Store Keeper',
+        cancelled_on: null,
+        cancel_reason: null,
+        svh_rate_source: 'MANUAL',
+        svh_remarks: 'go-live',
+        svh_is_deleted: false,
+        ...over,
+      });
+      const lineRow = (over: Record<string, unknown> = {}) => ({
+        svi_id: '01000000-0000-7000-8000-0000000000aa',
+        svi_line_no: 1,
+        svi_split_no: 1,
+        svi_item_id: ITEM_ID,
+        item_code: 'SALT',
+        item_name: 'Salt 1kg',
+        unit_name: 'BOX',
+        svi_uom_id: UOM_ID,
+        svi_base_uom_id: BASE_UOM_ID,
+        svi_to_base_factor: new Prisma.Decimal(12),
+        svi_godown_id: GODOWN_ID,
+        godown_name: 'MAIN',
+        svi_bucket: 'SALEABLE',
+        svi_to_bucket: null,
+        svi_barcode: null,
+        svi_batch_no: 'B-1',
+        svi_mfg_date: new Date('2026-03-01T00:00:00.000Z'),
+        svi_expiry_date: null,
+        svi_mrp: new Prisma.Decimal('25.50'),
+        svi_sale_price: null,
+        svi_serial_no: null,
+        svi_supplier_id: null,
+        line_supplier_name: null,
+        svi_qty: new Prisma.Decimal(10),
+        svi_base_qty: new Prisma.Decimal(120),
+        svi_free_qty: new Prisma.Decimal(0),
+        svi_free_base_qty: new Prisma.Decimal(0),
+        svi_weight_qty: new Prisma.Decimal(0),
+        svi_book_qty: null,
+        svi_counted_qty: null,
+        svi_diff_qty: null,
+        svi_cost_rate: new Prisma.Decimal(20),
+        svi_cost_rate_wot: new Prisma.Decimal('19.05'),
+        svi_landed_rate: new Prisma.Decimal(0),
+        svi_tax_perc: new Prisma.Decimal(5),
+        svi_reason_id: null,
+        line_reason_name: null,
+        svi_direction: null,
+        svi_sync_date: null,
+        svi_value: new Prisma.Decimal(2400),
+        svi_value_wot: null,
+        svi_lot_id: LOT_ID,
+        svi_remarks: null,
+        track_signature: 'B',
+        ...over,
+      });
+
+      const stubDocument = (header: unknown[], lines: unknown[] = []) =>
+        client.$queryRaw.mockResolvedValueOnce(header).mockResolvedValueOnce(lines);
+
+      it('answers 404 for a voucher not in this company, branch, year and type — and reads no lines', async () => {
+        stubDocument([]);
+
+        const refusal = await refusalOf(
+          service.getById(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+        );
+
+        expect(refusal).toEqual({
+          status: 404,
+          message: 'Opening stock not found',
+          errors: [
+            {
+              field: 'svhId',
+              code: StockErrorCode.VOUCHER_NOT_FOUND,
+              message: `No OPENING voucher ${SVH_ID} in ${ACC_YEAR} for this company and branch.`,
+            },
+          ],
+        });
+        expect(client.$queryRaw).toHaveBeenCalledTimes(1);
+        expect(valuesOf().slice(-5)).toEqual([SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, 'OPENING']);
+      });
+
+      it('maps the header: the serial as text, instants as ISO, the trail fields beside it', async () => {
+        stubDocument([
+          headerRow({
+            svh_link_src_module: 'SALES',
+            svh_link_src_doc_type: 'SALE_BILL',
+            svh_link_src_doc_id: OTHER_ITEM_ID,
+            svh_link_src_acc_year: '2026-2027 ',
+            svh_freeze_stock: true,
+            svh_freeze_from: new Date('2026-06-30T12:00:00.000Z'),
+            svh_freeze_to: new Date('2026-06-30T18:00:00.000Z'),
+            svh_sync_date: new Date('2026-04-02T00:00:00.000Z'),
+            cancelled_on: new Date('2026-04-03T00:00:00.000Z'),
+            cancel_reason: 'wrong godown',
+          }),
+        ]);
+
+        const { header } = await service.getById(
+          OPENING_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+        );
+
+        expect(header).toEqual({
+          svhId: SVH_ID,
+          accYear: '2026-2027',
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          tenantId: null,
+          deviceId: DEVICE_ID,
+          sessionId: null,
+          voucherType: 'OPENING',
+          slno: '41',
+          refno: 'OPN/2026-2027/TILL-01/41',
+          usrRefno: null,
+          docDate: '2026-04-01',
+          docDatetime: '2026-04-01T04:30:00.000Z',
+          fromGodownId: null,
+          fromGodownName: null,
+          godownId: GODOWN_ID,
+          godownName: 'MAIN',
+          supplierId: null,
+          supplierName: null,
+          toBranchId: null,
+          partyRef: null,
+          reasonId: null,
+          reasonName: null,
+          linkSrcModule: 'SALES',
+          linkSrcDocType: 'SALE_BILL',
+          linkSrcDocId: OTHER_ITEM_ID,
+          linkSrcAccYear: '2026-2027',
+          freezeStock: true,
+          freezeFrom: '2026-06-30T12:00:00.000Z',
+          freezeTo: '2026-06-30T18:00:00.000Z',
+          syncDate: '2026-04-02T00:00:00.000Z',
+          status: 'POSTED',
+          lineCount: 1,
+          totalQty: 120,
+          totalValue: 2400,
+          totalValueWot: 2285.71,
+          postedOn: '2026-04-01T05:00:00.000Z',
+          postedBy: USER_ID,
+          postedByName: 'Store Keeper',
+          cancelledOn: '2026-04-03T00:00:00.000Z',
+          cancelReason: 'wrong godown',
+          rateSource: 'MANUAL',
+          remarks: 'go-live',
+          isDeleted: false,
+        });
+      });
+
+      it('answers null for every trail field a draft has none of', async () => {
+        stubDocument([headerRow({ posted_on: null, posted_by: null, posted_by_name: null })]);
+
+        const { header } = await service.getById(
+          OPENING_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+        );
+
+        expect(header).toMatchObject({
+          postedOn: null,
+          cancelledOn: null,
+          freezeFrom: null,
+          freezeTo: null,
+          syncDate: null,
+          linkSrcAccYear: null,
+        });
+      });
+
+      it('maps each line, a missing value as 0 and a stored direction as a number', async () => {
+        stubDocument(
+          [headerRow()],
+          [
+            lineRow(),
+            lineRow({
+              svi_line_no: 2,
+              svi_direction: -1,
+              svi_value: null,
+              svi_to_bucket: 'DAMAGED',
+              svi_sync_date: new Date('2026-04-02T00:00:00.000Z'),
+            }),
+          ],
+        );
+
+        const { lines } = await service.getById(
+          OPENING_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+        );
+
+        expect(lines[0]).toEqual({
+          sviId: '01000000-0000-7000-8000-0000000000aa',
+          lineNo: 1,
+          splitNo: 1,
+          itemId: ITEM_ID,
+          itemCode: 'SALT',
+          itemName: 'Salt 1kg',
+          unitName: 'BOX',
+          uomId: UOM_ID,
+          baseUomId: BASE_UOM_ID,
+          toBaseFactor: 12,
+          godownId: GODOWN_ID,
+          godownName: 'MAIN',
+          bucket: 'SALEABLE',
+          barcode: null,
+          batchNo: 'B-1',
+          mfgDate: '2026-03-01',
+          expiryDate: null,
+          mrp: 25.5,
+          salePrice: null,
+          serialNo: null,
+          supplierId: null,
+          supplierName: null,
+          toBucket: null,
+          qty: 10,
+          baseQty: 120,
+          freeQty: 0,
+          freeBaseQty: 0,
+          weightQty: 0,
+          bookQty: null,
+          countedQty: null,
+          diffQty: null,
+          costRate: 20,
+          costRateWot: 19.05,
+          landedRate: 0,
+          taxPerc: 5,
+          reasonId: null,
+          reasonName: null,
+          direction: null,
+          syncDate: null,
+          value: 2400,
+          valueWot: 0,
+          lotId: LOT_ID,
+          remarks: null,
+          trackSignature: 'B',
+        });
+        expect(lines[1]).toMatchObject({
+          direction: -1,
+          value: 0,
+          toBucket: 'DAMAGED',
+          syncDate: '2026-04-02T00:00:00.000Z',
+        });
+        // The lines are read live-only, for this voucher and year.
+        expect(sqlOf(1)).toContain('svi.svi_is_deleted = false');
+        expect(valuesOf(1).slice(-2)).toEqual([SVH_ID, ACC_YEAR]);
+      });
+
+      it("reads through the caller's transaction when it is handed one", async () => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValueOnce([headerRow()]).mockResolvedValueOnce([]),
+        };
+
+        await service.getById(
+          OPENING_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+          tx as unknown as Prisma.TransactionClient,
+        );
+
+        expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+        expect(client.$queryRaw).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('the go-live reports', () => {
+      it('lists the items with no opening yet, scoped and paged', async () => {
+        const item = {
+          itemId: ITEM_ID,
+          itemCode: 'SALT',
+          itemName: 'Salt 1kg',
+          baseUomId: BASE_UOM_ID,
+          unitName: 'PIECE',
+          trackSignature: null,
+        };
+        client.$queryRaw.mockResolvedValue([item]);
+
+        await expect(
+          service.pendingItems(OPENING_RULES, COMPANY_ID, BRANCH_ID, ACC_YEAR, 25, 50),
+        ).resolves.toEqual({ items: [item], meta: { limit: 25, offset: 50, count: 1 } });
+
+        expect(sqlOf()).toContain('NOT EXISTS');
+        expect(valuesOf()).toEqual(
+          expect.arrayContaining([COMPANY_ID, BRANCH_ID, ACC_YEAR, ['OPENING'], 25, 50]),
+        );
+      });
+
+      it('defaults the report page to 200 and caps it at 1000', async () => {
+        client.$queryRaw.mockResolvedValue([]);
+
+        const defaulted = await service.pendingItems(
+          OPENING_RULES,
+          COMPANY_ID,
+          BRANCH_ID,
+          ACC_YEAR,
+        );
+        const capped = await service.reconcile(
+          OPENING_RULES,
+          COMPANY_ID,
+          BRANCH_ID,
+          ACC_YEAR,
+          50_000,
+          -1,
+        );
+
+        expect(defaulted.meta).toEqual({ limit: 200, offset: 0, count: 0 });
+        expect(capped.meta).toEqual({ limit: 1000, offset: 0, count: 0 });
+      });
+
+      it('reconciles what the branch opened with against what it holds, as numbers', async () => {
+        client.$queryRaw.mockResolvedValue([
+          {
+            itemId: ITEM_ID,
+            itemCode: 'SALT',
+            itemName: 'Salt 1kg',
+            unitName: 'PIECE',
+            openingQty: new Prisma.Decimal(120),
+            openingValue: new Prisma.Decimal('2400.00'),
+            currentQty: new Prisma.Decimal('95.5'),
+            currentValue: new Prisma.Decimal('1910.00'),
+            diffQty: new Prisma.Decimal('-24.5'),
+            diffValue: new Prisma.Decimal('-490.00'),
+          },
+        ]);
+
+        const result = await service.reconcile(OPENING_RULES, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+        expect(result.items).toEqual([
+          {
+            itemId: ITEM_ID,
+            itemCode: 'SALT',
+            itemName: 'Salt 1kg',
+            unitName: 'PIECE',
+            openingQty: 120,
+            openingValue: 2400,
+            currentQty: 95.5,
+            currentValue: 1910,
+            diffQty: -24.5,
+            diffValue: -490,
+          },
+        ]);
+        // The opening side reads the LEDGER — a cancelled opening nets to zero there.
+        expect(sqlOf()).toContain('FROM stock.stock_ledger sml');
+        expect(valuesOf()).toEqual(expect.arrayContaining([['OPENING']]));
+      });
+    });
+
+    describe('countSheet', () => {
+      const sheetRow = (over: Record<string, unknown> = {}) => ({
+        sbl_item_id: ITEM_ID,
+        item_code: 'MILK',
+        item_name: 'Milk 500ml',
+        sbl_lot_id: LOT_ID,
+        sbl_godown_id: GODOWN_ID,
+        godown_name: 'MAIN',
+        sbl_bucket: 'SALEABLE',
+        sbl_base_uom_id: BASE_UOM_ID,
+        unit_name: 'PIECE',
+        sbl_batch_no: 'B-2604',
+        slt_mfg_date: new Date('2026-04-01T00:00:00.000Z'),
+        sbl_expiry_date: new Date('2026-04-10T00:00:00.000Z'),
+        sbl_mrp: new Prisma.Decimal(25),
+        sbl_sale_price: null,
+        slt_serial_no: null,
+        sbl_supplier_id: null,
+        sbl_on_hand_qty: new Prisma.Decimal(55),
+        sbl_avg_cost_rate: new Prisma.Decimal('21.40'),
+        sbl_stock_value: new Prisma.Decimal('1177.00'),
+        ...over,
+      });
+      const sheetQuery = {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: ACC_YEAR,
+        godownId: GODOWN_ID,
+      };
+
+      it('refuses with STOCK_COUNT_SHEET_WRONG_TYPE on a document that states its own lines', async () => {
+        const refusal = await refusalOf(service.countSheet(OPENING_RULES, sheetQuery));
+
+        expect(refusal.errors).toEqual([
+          {
+            field: 'voucherType',
+            code: StockErrorCode.COUNT_SHEET_WRONG_TYPE,
+            message:
+              'A opening stock states its own lines; only a count generates them from the book.',
+          },
+        ]);
+        expect(client.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it('generates one line per holding, counted blank, numbered on from the page it starts', async () => {
+        client.$queryRaw.mockResolvedValue([sheetRow(), sheetRow({ sbl_on_hand_qty: null })]);
+
+        const result = await service.countSheet(PHYSICAL_RULES, { ...sheetQuery, offset: 200 });
+
+        expect(result.items[0]).toEqual({
+          lineNo: 201,
+          splitNo: 1,
+          itemId: ITEM_ID,
+          itemCode: 'MILK',
+          itemName: 'Milk 500ml',
+          lotId: LOT_ID,
+          godownId: GODOWN_ID,
+          godownName: 'MAIN',
+          bucket: 'SALEABLE',
+          baseUomId: BASE_UOM_ID,
+          unitName: 'PIECE',
+          batchNo: 'B-2604',
+          mfgDate: '2026-04-01',
+          expiryDate: '2026-04-10',
+          mrp: 25,
+          salePrice: null,
+          serialNo: null,
+          supplierId: null,
+          bookQty: 55,
+          avgCostRate: 21.4,
+          stockValue: 1177,
+          countedQty: null,
+        });
+        // A balance row with no on-hand figure is an empty holding, not a missing one.
+        expect(result.items[1]).toMatchObject({ lineNo: 202, bookQty: 0 });
+        expect(result.meta).toEqual({ limit: 200, offset: 200, count: 2 });
+      });
+
+      it('includes empty holdings unless told not to, and binds the optional filters as NULL', async () => {
+        client.$queryRaw.mockResolvedValue([]);
+
+        await service.countSheet(PHYSICAL_RULES, sheetQuery);
+        await service.countSheet(PHYSICAL_RULES, {
+          ...sheetQuery,
+          includeZero: false,
+          bucket: 'DAMAGED',
+          itemGroupId: OTHER_ITEM_ID,
+        });
+
+        expect(valuesOf(0).slice(3, 8)).toEqual([null, null, null, null, true]);
+        expect(valuesOf(1).slice(3, 8)).toEqual([
+          'DAMAGED',
+          'DAMAGED',
+          OTHER_ITEM_ID,
+          OTHER_ITEM_ID,
+          false,
+        ]);
+      });
+    });
+
+    describe('variance', () => {
+      it('refuses a document of another company before it reads the ledger', async () => {
+        client.stockVoucher.findUnique.mockResolvedValue(
+          storedHeader({ svhCompanyId: OTHER_ITEM_ID }),
+        );
+
+        const refusal = await refusalOf(
+          service.variance(PHYSICAL_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+        );
+
+        expect(refusal.status).toBe(404);
+        expect(client.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it('reads the ledger rows the count wrote, a magnitude with its sign beside it', async () => {
+        client.stockVoucher.findUnique.mockResolvedValue(
+          storedHeader({ svhVoucherType: 'PHYSICAL' }),
+        );
+        client.$queryRaw.mockResolvedValue([
+          {
+            sml_line_no: 2,
+            sml_split_no: 1,
+            sml_item_id: ITEM_ID,
+            item_code: 'SALT',
+            item_name: 'Salt 1kg',
+            sml_batch_no: null,
+            sml_txn_type: 'PHYSICAL_MINUS',
+            sml_direction: -1,
+            sml_qty: new Prisma.Decimal(2),
+            sml_signed_base_qty: new Prisma.Decimal(-2),
+            sml_cost_rate: new Prisma.Decimal(20),
+            sml_cost_value: new Prisma.Decimal(40),
+            sml_reason_id: null,
+            reason_name: null,
+          },
+          {
+            sml_line_no: 3,
+            sml_split_no: 1,
+            sml_item_id: OTHER_ITEM_ID,
+            item_code: null,
+            item_name: 'Sugar',
+            sml_batch_no: null,
+            sml_txn_type: 'PHYSICAL_PLUS',
+            sml_direction: 1,
+            sml_qty: new Prisma.Decimal(5),
+            sml_signed_base_qty: null,
+            sml_cost_rate: new Prisma.Decimal(40),
+            sml_cost_value: new Prisma.Decimal(200),
+            sml_reason_id: null,
+            reason_name: null,
+          },
+        ]);
+
+        const result = await service.variance(
+          PHYSICAL_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+          10,
+          0,
+        );
+
+        expect(result.items[0]).toEqual({
+          lineNo: 2,
+          splitNo: 1,
+          itemId: ITEM_ID,
+          itemCode: 'SALT',
+          itemName: 'Salt 1kg',
+          batchNo: null,
+          txnType: 'PHYSICAL_MINUS',
+          direction: -1,
+          qty: 2,
+          signedBaseQty: -2,
+          costRate: 20,
+          costValue: 40,
+          reasonId: null,
+          reasonName: null,
+        });
+        expect(result.items[1]).toMatchObject({ signedBaseQty: 0, direction: 1 });
+        expect(result.meta).toEqual({ limit: 10, offset: 0, count: 2 });
+        expect(valuesOf()).toEqual([SVH_ID, ACC_YEAR, 10, 0]);
+      });
+    });
+  });
+
+  // ── the preflight read ────────────────────────────────────────────────────
+  describe('validate', () => {
+    const PROBLEM_ROW = { lineNo: 1, splitNo: 1, itemName: 'Salt 1kg', problem: null };
+    /** The gating flags the query binds, in statement order. */
+    const flagsOf = (mock: jest.Mock) =>
+      (mock.mock.calls[0].slice(1) as unknown[]).filter((value) => typeof value === 'boolean');
+
+    it('refuses a voucher it cannot find before running the preflight', async () => {
+      const refusal = await refusalOf(
+        service.validate(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+      );
+
+      expect(refusal.errors).toEqual([
+        expect.objectContaining({ code: StockErrorCode.VOUCHER_NOT_FOUND }),
+      ]);
+      expect(client.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('answers every line, problem or not, for the document and year it names', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader());
+      client.$queryRaw.mockResolvedValue([PROBLEM_ROW]);
+
+      await expect(
+        service.validate(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+      ).resolves.toEqual([PROBLEM_ROW]);
+      expect(client.$queryRaw.mock.calls[0].slice(1, 3)).toEqual([SVH_ID, ACC_YEAR]);
+    });
+
+    it('reads the header and the lines through the transaction it is handed', async () => {
+      const tx = {
+        stockVoucher: { findUnique: jest.fn().mockResolvedValue(storedHeader()) },
+        $queryRaw: jest.fn().mockResolvedValue([]),
+      };
+
+      await service.validate(
+        OPENING_RULES,
+        SVH_ID,
+        ACC_YEAR,
+        COMPANY_ID,
+        BRANCH_ID,
+        tx as unknown as Prisma.TransactionClient,
+      );
+
+      expect(tx.stockVoucher.findUnique).toHaveBeenCalled();
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(client.stockVoucher.findUnique).not.toHaveBeenCalled();
+      expect(client.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('lets only a SIMPLE quantity document pick a lot, and switches the count checks by type', async () => {
+      client.stockVoucher.findUnique.mockResolvedValueOnce(storedHeader());
+      client.$queryRaw.mockResolvedValue([]);
+      await service.validate(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+      const opening = flagsOf(client.$queryRaw);
+
+      client.$queryRaw.mockClear();
+      client.stockVoucher.findUnique.mockResolvedValueOnce(
+        storedHeader({ svhVoucherType: 'PHYSICAL' }),
+      );
+      await service.validate(PHYSICAL_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+      const count = flagsOf(client.$queryRaw);
+
+      // [canPick, refuse a repeat holding, QTY, count ×4, not a receipt, not a count]
+      expect(opening).toEqual([true, true, true, false, false, false, false, true, true]);
+      expect(count).toEqual([false, false, false, true, true, true, true, true, false]);
+    });
+  });
+
+  it('refuses a count line that names no holding — it can only come from the sheet', async () => {
+    const refusal = await refusalOf(
+      service.save(PHYSICAL_RULES, {
+        header: payload().header,
+        lines: [{ lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, countedQty: 4 }],
+      } as unknown as SaveStockVoucherDto),
+    );
+
+    expect(refusal.errors).toEqual([
+      expect.objectContaining({
+        field: 'lines.0',
+        code: StockErrorCode.COUNT_HOLDING_REQUIRED,
+      }),
+    ]);
+  });
+
+  // ── import from file ──────────────────────────────────────────────────────
+  describe('importLines', () => {
+    const CSV = 'item_code,unit_name,qty,cost_rate\nSALT,BOX,10,20';
+    const importedLine = openingLine();
+    let resolveSpy: jest.SpyInstance;
+    let saveSpy: jest.SpyInstance;
+    let validateSpy: jest.SpyInstance;
+
+    /** What importLines reads back to rebuild the header it passes to save(). */
+    const storedDocument = (over: Record<string, unknown> = {}) => ({
+      svhDeviceId: DEVICE_ID,
+      svhSessionId: null,
+      svhTenantId: null,
+      svhDocDate: new Date('2026-04-01T00:00:00.000Z'),
+      svhFromGodownId: null,
+      svhToGodownId: GODOWN_ID,
+      svhSupplierId: null,
+      svhUsrRefno: 'MY-1',
+      svhRateSource: 'MANUAL',
+      svhRemarks: 'go-live',
+      svhSlno: BigInt(41),
+      svhRefno: 'OPN/2026-2027/TILL-01/41',
+      ...over,
+    });
+
+    const run = (rules = OPENING_RULES) =>
+      service.importLines(rules, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, CSV, USER_ID);
+
+    beforeEach(() => {
+      client.stockVoucher.findUnique
+        .mockResolvedValueOnce(storedHeader())
+        .mockResolvedValueOnce(storedDocument());
+      resolveSpy = jest
+        .spyOn(importHelper, 'resolveImportedLines')
+        .mockResolvedValue({ lines: [importedLine] as never, errors: [], rowsRead: 1 });
+      saveSpy = jest.spyOn(service, 'save').mockResolvedValue({} as never);
+      validateSpy = jest.spyOn(service, 'validate').mockResolvedValue([]);
+    });
+    afterEach(() => resolveSpy.mockRestore());
+
+    it('replaces the draft’s lines through save(), keeping its number, then reports the preflight', async () => {
+      (service.getById as jest.Mock).mockResolvedValue({ header: { svhId: SVH_ID }, lines: [] });
+      validateSpy.mockResolvedValue([{ lineNo: 1, problem: 'opened already' }] as never);
+
+      const result = await run();
+
+      expect(resolveSpy).toHaveBeenCalledWith(client, CSV, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        defaultGodownId: GODOWN_ID,
+      });
+      expect(saveSpy).toHaveBeenCalledWith(OPENING_RULES, {
+        header: {
+          svhId: SVH_ID,
+          accYear: ACC_YEAR,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          tenantId: null,
+          deviceId: DEVICE_ID,
+          sessionId: null,
+          // Passed straight back so the update does not renumber a printed document.
+          slno: '41',
+          refno: 'OPN/2026-2027/TILL-01/41',
+          usrRefno: 'MY-1',
+          docDate: '2026-04-01',
+          fromGodownId: null,
+          toGodownId: GODOWN_ID,
+          supplierId: null,
+          rateSource: 'MANUAL',
+          remarks: 'go-live',
+          userId: USER_ID,
+        },
+        lines: [importedLine],
+      });
+      expect(result).toEqual({
+        header: { svhId: SVH_ID },
+        lines: [],
+        rowsRead: 1,
+        linesImported: 1,
+        problems: [{ lineNo: 1, problem: 'opened already' }],
+      });
+    });
+
+    it('defaults an outward document’s rows to its FROM godown', async () => {
+      client.stockVoucher.findUnique.mockReset();
+      client.stockVoucher.findUnique
+        .mockResolvedValueOnce(storedHeader())
+        .mockResolvedValueOnce(storedDocument({ svhFromGodownId: OTHER_GODOWN_ID }));
+
+      await run(withRules({ requiresToGodown: false }));
+
+      expect(resolveSpy.mock.calls[0][2]).toMatchObject({ defaultGodownId: OTHER_GODOWN_ID });
+    });
+
+    it('refuses a document with no godown to import into, before reading the file', async () => {
+      client.stockVoucher.findUnique.mockReset();
+      client.stockVoucher.findUnique
+        .mockResolvedValueOnce(storedHeader())
+        .mockResolvedValueOnce(storedDocument({ svhToGodownId: null }));
+
+      const refusal = await refusalOf(run(withRules({ requiresToGodown: false })));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        errors: [
+          {
+            field: 'svhId',
+            code: StockErrorCode.IMPORT_NO_GODOWN,
+            message:
+              'OPN/2026-2027/TILL-01/41 names no godown, so a row without one has nowhere to go. Save the header with a godown first.',
+          },
+        ],
+      });
+      expect(resolveSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses the whole file with every unreadable row, and saves nothing', async () => {
+      const rowErrors = [
+        { field: 'file.row.2', code: StockErrorCode.IMPORT_ITEM_NOT_FOUND, message: 'Row 2: x' },
+        { field: 'file.row.4', code: StockErrorCode.IMPORT_QTY_INVALID, message: 'Row 4: y' },
+      ];
+      resolveSpy.mockResolvedValue({ lines: [], errors: rowErrors, rowsRead: 5 });
+
+      const refusal = await refusalOf(run());
+
+      expect(refusal).toEqual({
+        status: 422,
+        message: '2 of 5 rows could not be read',
+        errors: rowErrors,
+      });
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a posted document — an import only ever replaces a draft', async () => {
+      client.stockVoucher.findUnique.mockReset();
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhStatus: 'POSTED' }));
+
+      await expect(codesOf(run())).resolves.toEqual([StockErrorCode.VOUCHER_NOT_DRAFT]);
+      expect(resolveSpy).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the draft vanished between the two reads', async () => {
+      client.stockVoucher.findUnique.mockReset();
+      client.stockVoucher.findUnique
+        .mockResolvedValueOnce(storedHeader())
+        .mockResolvedValueOnce(null);
+
+      await expect(codesOf(run())).resolves.toEqual([StockErrorCode.VOUCHER_NOT_FOUND]);
     });
   });
 });

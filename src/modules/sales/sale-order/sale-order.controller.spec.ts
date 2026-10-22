@@ -9,7 +9,12 @@ const ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46a101';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46a102';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46a103';
 const ACC_YEAR = '2026-2027';
-const KEYS = { soId: ORDER_ID, soCompanyId: COMPANY_ID, soBranchId: BRANCH_ID, soAccYear: ACC_YEAR };
+const KEYS = {
+  soId: ORDER_ID,
+  soCompanyId: COMPANY_ID,
+  soBranchId: BRANCH_ID,
+  soAccYear: ACC_YEAR,
+};
 
 const PAYLOAD = { soId: ORDER_ID, soOrderRefno: 'sor00101' } as unknown as SaleOrderPayload;
 const SHORT = { code: 'SALES_RESERVE_SHORT', line: 2, short: 1.5, message: 'short' };
@@ -97,9 +102,11 @@ describe('SaleOrderController', () => {
     it('counts the reservation shortfalls into the message', async () => {
       lifecycle.saveAndPost.mockResolvedValue({ ...PAYLOAD, warnings: [SHORT, SHORT] });
 
-      await expect(controller.save(saveDto({ soId: ORDER_ID, post: true }))).resolves.toMatchObject({
-        message: 'Order updated and confirmed — 2 line(s) short on reservation',
-      });
+      await expect(controller.save(saveDto({ soId: ORDER_ID, post: true }))).resolves.toMatchObject(
+        {
+          message: 'Order updated and confirmed — 2 line(s) short on reservation',
+        },
+      );
     });
   });
 

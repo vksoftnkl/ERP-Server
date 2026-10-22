@@ -19,6 +19,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const item_child_helper_1 = require("../utils/item-child.helper");
+const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
 const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
@@ -39,6 +40,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             : [saveItemUnitConversionDto];
         const saveAll = async (client) => {
             await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.iuc_item_id), { field: 'iuc_item_id', code: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ITEM_NOT_LIVE });
+            await this.assertBaseUnitsKept(client, saveItems, Array.isArray(saveItemUnitConversionDto));
             const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(client, saveItems);
             for (const saveItem of baseUnitNormalizedSaveItems) {
                 this.validateItemUnitConversion(saveItem);
@@ -58,6 +60,21 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    async assertBaseUnitsKept(client, saveItems, indexed) {
+        const itemIds = Array.from(new Set(saveItems.map((saveItem) => saveItem.iuc_item_id)));
+        const baseRows = await client.itemUnitConversion.findMany({
+            where: { iucItemId: { in: itemIds }, iucIsBaseUnit: true, iucIsDeleted: false },
+            select: { iucId: true, iucItemId: true, iucUnitId: true },
+        });
+        const baseByItemId = new Map(baseRows.map((row) => [row.iucItemId, { iuc_id: row.iucId, iuc_unit_id: row.iucUnitId }]));
+        saveItems.forEach((saveItem, index) => {
+            const base = baseByItemId.get(saveItem.iuc_item_id);
+            const change = base && (0, item_base_unit_helper_1.baseUnitChange)(base, saveItem);
+            if (change) {
+                (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.BASE_UNIT_LOCKED, indexed ? `${index}.${change.column}` : change.column, change.message);
+            }
+        });
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
@@ -138,6 +155,9 @@ let ItemUnitConversionService = class ItemUnitConversionService {
                         alreadyDeletedCode: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ALREADY_DELETED,
                         itemNotLiveCode: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ITEM_NOT_LIVE,
                     });
+                    if (existing.iucIsBaseUnit) {
+                        (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.BASE_UNIT_LOCKED, 'iuc_id', `Unit conversion ${id} is the item's base row and cannot be deleted.`);
+                    }
                     await this.assertNoLiveDependants(client, id);
                     deleted.push(await this.toggleDeleteItemUnitConversion(client, id));
                 }

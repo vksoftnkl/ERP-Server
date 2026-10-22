@@ -37,6 +37,26 @@ describe('gst-json-path', () => {
   it('blanks the whole value when a redact path is unreadable — never logs a secret by accident', () => {
     expect(redactPaths(reply, ['$..AuthToken'])).toBe(REDACTED);
   });
+
+  it('reads double-quoted names and stops at a value it cannot step into', () => {
+    expect(parsePath('$.Data["odd key"][2]')).toEqual(['Data', 'odd key', 2]);
+    expect(getPath(reply, '$.Data["odd key"]')).toBe('x');
+    expect(getPath(reply, '$.Status.Deeper')).toBeUndefined();
+  });
+
+  it('blanks the whole value for a redact path of $ alone', () => {
+    expect(redactPaths(reply, ['$'])).toBe(REDACTED);
+  });
+
+  it('skips a redact path that runs through a value with no fields', () => {
+    expect(redactPaths(reply, ['$.Status.Deeper', '$.Missing.Deeper'])).toEqual(reply);
+    expect(redactPaths({ Data: null }, ['$.Data.Sek.Key'])).toEqual({ Data: null });
+  });
+
+  it('hands back a body that is not an object as it is', () => {
+    expect(redactPaths('plain text reply', ['$.Data'])).toBe('plain text reply');
+    expect(redactPaths(null, ['$.Data'])).toBeNull();
+  });
 });
 
 describe('parseProviderDateTime', () => {

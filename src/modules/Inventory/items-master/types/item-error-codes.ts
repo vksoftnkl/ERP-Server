@@ -66,6 +66,10 @@ export enum ItemErrorCode {
   DUPLICATE = 'ITEM_DUPLICATE',
   /** item_base_unit_id is not the unit of the item's base unit conversion row (notes 137 B7). */
   BASE_UNIT_MISMATCH = 'ITEM_BASE_UNIT_MISMATCH',
+  /** 409: the save would change the base unit of an item that already has a base unit row —
+   *  item_base_unit_id, another row marked base, the base row's unit, or the base row left out
+   *  of unit_conversions (notes 138 A1). */
+  BASE_UNIT_LOCKED = 'ITEM_BASE_UNIT_LOCKED',
   /** The item cannot move to this company while another company holds its stock or prices (notes 137 C3). */
   COMPANY_MOVE_BLOCKED = 'ITEM_COMPANY_MOVE_BLOCKED',
   /** item_brand_id names no item brand (the column has no foreign key, notes 137 B9). */

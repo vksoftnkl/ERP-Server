@@ -7,7 +7,12 @@ const hostFor = () => {
   const host = {
     switchToHttp: () => ({
       getResponse: () => ({ status }),
-      getRequest: () => ({ method: 'POST', url: '/v1/company-masters/create', headers: {}, query: {} }),
+      getRequest: () => ({
+        method: 'POST',
+        url: '/v1/company-masters/create',
+        headers: {},
+        query: {},
+      }),
     }),
   } as unknown as ArgumentsHost;
   return { host, status, json };

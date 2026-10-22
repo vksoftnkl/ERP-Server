@@ -219,7 +219,14 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_cust_group", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Taken from the item's base unit conversion row whenever it has one (notes 138 A2): a " +
+            'different unit is refused — 409 ITEM_BASE_UNIT_LOCKED on an item that already had a ' +
+            "base row, 400 ITEM_BASE_UNIT_MISMATCH against this save's own base row — and null is " +
+            'ignored. Only an item with no unit rows keeps the value sent here.',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemDto.prototype, "item_base_unit_id", void 0);

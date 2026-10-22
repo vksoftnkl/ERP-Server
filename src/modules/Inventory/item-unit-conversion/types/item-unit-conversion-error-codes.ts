@@ -32,4 +32,8 @@ export enum ItemUnitConversionErrorCode {
   ALREADY_DELETED = 'UNIT_CONV_ALREADY_DELETED',
   /** iuc_item_id names no live item: the item is missing or deleted. */
   ITEM_NOT_LIVE = 'UNIT_CONV_ITEM_NOT_LIVE',
+  /** 409: the save or delete would change the base unit of an item that already has a base
+   *  unit row (notes 138 A1). The item master's own code on purpose: one rule, one code, on
+   *  /items and /item-unit-conversions alike. */
+  BASE_UNIT_LOCKED = 'ITEM_BASE_UNIT_LOCKED',
 }

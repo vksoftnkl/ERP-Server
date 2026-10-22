@@ -35,7 +35,12 @@ const ITEM_B = '019c6f6c-be87-7a11-8905-36092c46a322';
 const UNIT = '019c6f6c-be87-7a11-8905-36092c46a323';
 const ACC_YEAR = '2026-2027';
 const LOGIN_NAME = 'tester1';
-const KEYS = { soId: ORDER_ID, soCompanyId: COMPANY_ID, soBranchId: BRANCH_ID, soAccYear: ACC_YEAR };
+const KEYS = {
+  soId: ORDER_ID,
+  soCompanyId: COMPANY_ID,
+  soBranchId: BRANCH_ID,
+  soAccYear: ACC_YEAR,
+};
 
 const orderRow = (overrides: Partial<SaleOrder> = {}): SaleOrder =>
   ({
@@ -135,7 +140,11 @@ describe('SaleOrderLifecycleService', () => {
       softDelete: jest.fn().mockResolvedValue({ soId: ORDER_ID, deleted: true }),
       cancelOrderOpenLines: jest.fn().mockResolvedValue({ cancelledLines: 1 }),
     };
-    ctx = { actor: USER_ID, actorName: LOGIN_NAME, rights: { post: true, cancel: true, amend: true } };
+    ctx = {
+      actor: USER_ID,
+      actorName: LOGIN_NAME,
+      rights: { post: true, cancel: true, amend: true },
+    };
     salesContext = { resolve: jest.fn(() => Promise.resolve(ctx)) };
     reservations = {
       reserve: jest.fn().mockResolvedValue({ reserved: new Map([[LINE_1, 10]]), warnings: [] }),
@@ -236,7 +245,10 @@ describe('SaleOrderLifecycleService', () => {
 
     it('warns, never refuses, on a line the shelf cannot cover', async () => {
       const short = { code: 'SALES_RESERVE_SHORT', line: 1, short: 6, message: 'short by 6' };
-      reservations.reserve.mockResolvedValue({ reserved: new Map([[LINE_1, 4]]), warnings: [short] });
+      reservations.reserve.mockResolvedValue({
+        reserved: new Map([[LINE_1, 4]]),
+        warnings: [short],
+      });
 
       await expect(service.post(KEYS)).resolves.toEqual({
         soStatus: 'CONFIRMED',
@@ -326,12 +338,9 @@ describe('SaleOrderLifecycleService', () => {
 
       prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soSalesmanId: [USER_ID] }));
       await service.post(KEYS);
-      expect(jest.mocked(assertSalesmen)).toHaveBeenLastCalledWith(
-        prisma,
-        COMPANY_ID,
-        [USER_ID],
-        { field: 'soSalesmanId' },
-      );
+      expect(jest.mocked(assertSalesmen)).toHaveBeenLastCalledWith(prisma, COMPANY_ID, [USER_ID], {
+        field: 'soSalesmanId',
+      });
     });
   });
 
@@ -350,14 +359,19 @@ describe('SaleOrderLifecycleService', () => {
       const result = await service.saveAndPost(dto());
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      const [tx, saved] = orders.createOrderInTx.mock.calls[0] as [unknown, Record<string, unknown>];
+      const [tx, saved] = orders.createOrderInTx.mock.calls[0] as [
+        unknown,
+        Record<string, unknown>,
+      ];
       expect(tx).toBe(prisma);
       // CONFIRMED is the instruction, not a column value: the save writes a draft.
       expect(saved).not.toHaveProperty('soStatus');
       expect(saved).not.toHaveProperty('post');
       expect(orders.prepareSave).toHaveBeenCalledWith(saved);
       expect(prisma.saleOrder.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ soStatus: 'CONFIRMED' }) as object }),
+        expect.objectContaining({
+          data: expect.objectContaining({ soStatus: 'CONFIRMED' }) as object,
+        }),
       );
       expect(orders.getById).toHaveBeenCalledWith(ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
       expect(result).toEqual({ soId: ORDER_ID, soStatus: 'CONFIRMED', warnings: [] });
@@ -375,7 +389,10 @@ describe('SaleOrderLifecycleService', () => {
 
       const refusal = await refusalOf(service.saveAndPost(dto()));
 
-      expect(refusal).toMatchObject({ status: 403, body: { errors: [{ code: 'SALES_RIGHT_POST' }] } });
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'SALES_RIGHT_POST' }] },
+      });
       // The refusal still passes the duplicate check on its way out.
       expect(orders.throwIfDuplicate).toHaveBeenCalledTimes(1);
       expect(orders.getById).not.toHaveBeenCalled();
@@ -408,7 +425,10 @@ describe('SaleOrderLifecycleService', () => {
 
       const refusal = await refusalOf(service.cancel(CANCEL));
 
-      expect(refusal).toMatchObject({ status: 403, body: { errors: [{ code: 'SALES_RIGHT_CANCEL' }] } });
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'SALES_RIGHT_CANCEL' }] },
+      });
     });
 
     it('refuses an order with anything delivered, before releasing a thing', async () => {
@@ -493,7 +513,10 @@ describe('SaleOrderLifecycleService', () => {
 
       const refusal = await refusalOf(service.amend(amend()));
 
-      expect(refusal).toMatchObject({ status: 409, body: { errors: [{ code: 'SALES_DOC_CANCELLED' }] } });
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ code: 'SALES_DOC_CANCELLED' }] },
+      });
     });
 
     it('refuses a user without the Amend right', async () => {
@@ -501,7 +524,10 @@ describe('SaleOrderLifecycleService', () => {
 
       const refusal = await refusalOf(service.amend(amend()));
 
-      expect(refusal).toMatchObject({ status: 403, body: { errors: [{ code: 'SALES_RIGHT_AMEND' }] } });
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'SALES_RIGHT_AMEND' }] },
+      });
     });
 
     it('refuses an edit made against an older revision', async () => {
@@ -541,6 +567,25 @@ describe('SaleOrderLifecycleService', () => {
       expect(orders.save).toHaveBeenCalledTimes(1);
     });
 
+    it('lets an undelivered line be dropped or re-itemed beside a delivered one', async () => {
+      const open = lineRow({ soiId: LINE_2, soiLineNo: 2, soiItemId: ITEM_B });
+      prisma.saleOrderItem.findMany.mockResolvedValue([delivered, open]);
+
+      // Line 2 is left out entirely; only the delivered line has to survive.
+      await service.amend(amend({ items: [{ soiId: LINE_1, soiOrderQty: 10 }] } as never));
+      // ... or re-pointed at another item.
+      await service.amend(
+        amend({
+          items: [
+            { soiId: LINE_1, soiOrderQty: 10 },
+            { soiId: LINE_2, soiItemId: ITEM_A },
+          ],
+        } as never),
+      );
+
+      expect(orders.save).toHaveBeenCalledTimes(2);
+    });
+
     it('does not judge the lines when the amend leaves them out', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([delivered]);
 
@@ -552,7 +597,7 @@ describe('SaleOrderLifecycleService', () => {
     it('saves through the one order save, bumps the revision and logs the remark', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'DRAFT' }));
 
-      const result = await service.amend(amend({ soRemarks: 'Deliver after 5' } as never));
+      const result = await service.amend(amend({ soRemarks: 'Deliver after 5' }));
 
       const saved = orders.save.mock.calls[0][0] as Record<string, unknown>;
       expect(saved).toMatchObject({ soId: ORDER_ID, soRemarks: 'Deliver after 5' });
@@ -610,7 +655,10 @@ describe('SaleOrderLifecycleService', () => {
         where: { ...KEYS, soIsDeleted: false },
         select: { soStatus: true },
       });
-      expect(refusal).toMatchObject({ status: 404, body: { errors: [{ code: 'SALES_NOT_FOUND' }] } });
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: { errors: [{ code: 'SALES_NOT_FOUND' }] },
+      });
     });
 
     it('refuses a confirmed order, which must be cancelled instead', async () => {

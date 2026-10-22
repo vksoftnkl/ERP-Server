@@ -4,7 +4,14 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { syncBillAdjustments } from '../../../common/posting/bill-adjustment.helper';
 import { TxnStatusEvent } from '../../../common/txn-status-log/txn-status-log.helper';
 import { buildReturnLegs } from '../posting/sales-leg.sources';
-import { assertAmendable, loadDayClosed, loadDeclaredLocks } from '../posting/sales.guards';
+import {
+  assertAccYearWritable,
+  assertAmendable,
+  assertSalesmen,
+  assertVoucherPartitionExists,
+  loadDayClosed,
+  loadDeclaredLocks,
+} from '../posting/sales.guards';
 import { SALES_SETTING_DEFAULTS, type SalesSettings } from '../posting/sales.settings';
 import { SALES_ERROR_CODES, type RightsBlock } from '../posting/types/posting.types';
 import { SaleReturnService } from './sale-return.service';
@@ -210,8 +217,10 @@ describe('SaleReturnService', () => {
   let tenders: ReturnType<typeof tender>[];
 
   beforeEach(() => {
+    // The module-level mocks would otherwise carry their calls from test to test.
+    jest.clearAllMocks();
     jest.mocked(loadDayClosed).mockResolvedValue(false);
-    jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: false } as never);
+    jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: false });
     jest.mocked(assertAmendable).mockResolvedValue(undefined);
     jest.mocked(syncBillAdjustments).mockReset();
     jest.mocked(buildReturnLegs).mockClear();
@@ -257,7 +266,8 @@ describe('SaleReturnService', () => {
         if (sql.includes('comp_einvoice_applicable')) {
           return [{ comp_state_code: '33', comp_einvoice_applicable: false }];
         }
-        if (sql.includes('accounts.acc_voucher_header')) return [{ avh_voucher_refno: 'srt-r-0002' }];
+        if (sql.includes('accounts.acc_voucher_header'))
+          return [{ avh_voucher_refno: 'srt-r-0002' }];
         return [];
       }),
       $executeRaw: jest.fn().mockResolvedValue(1),
@@ -315,7 +325,9 @@ describe('SaleReturnService', () => {
     };
     statutory = {
       creditNoteCutoff: jest.fn().mockResolvedValue({ limit: null, cutoff: null, passed: false }),
-      withinCancelWindow: jest.fn().mockResolvedValue({ limit: null, within: true, hoursElapsed: 1 }),
+      withinCancelWindow: jest
+        .fn()
+        .mockResolvedValue({ limit: null, within: true, hoursElapsed: 1 }),
     };
     legs = {
       postLegs: jest
@@ -339,8 +351,12 @@ describe('SaleReturnService', () => {
       cancel: jest.fn().mockResolvedValue(undefined),
     };
     blocks = {
-      build: jest.fn().mockResolvedValue({ posting: { status: 'POSTED' }, locks: { editable: {} } }),
-      gstRows: jest.fn().mockResolvedValue({ irnGeneratedOn: new Date(), ewbGeneratedOn: new Date() }),
+      build: jest
+        .fn()
+        .mockResolvedValue({ posting: { status: 'POSTED' }, locks: { editable: {} } }),
+      gstRows: jest
+        .fn()
+        .mockResolvedValue({ irnGeneratedOn: new Date(), ewbGeneratedOn: new Date() }),
     };
     transportBand = { write: jest.fn().mockResolvedValue({ direction: 'INWARD' }) };
     loyalty = {
@@ -381,6 +397,12 @@ describe('SaleReturnService', () => {
 
   const lastSetStatus = () =>
     store.setStatus.mock.calls.at(-1) as [unknown, unknown, string, Record<string, unknown>];
+  /** The raw queries whose SQL contains a fragment. */
+  const queriesWith = (fragment: string) =>
+    tx.$queryRaw.mock.calls.filter(([strings]) =>
+      (strings as string[]).join('?').includes(fragment),
+    );
+  const billReads = () => queriesWith('FROM sales.sale_bill WHERE').length;
   const refusalsOf = async (overrides: Record<string, unknown> = {}, lines = items) => {
     const result = await service.validate({
       ...srRow(),
@@ -425,8 +447,46 @@ describe('SaleReturnService', () => {
     it('does not read the bill for a return marked as not against one', async () => {
       await service.save(saveBody({ srIsAgainstBill: false }));
 
-      expect(tx.$queryRaw).not.toHaveBeenCalled();
+      // The read-back /get still runs its own queries; the bill is not among them.
+      expect(billReads()).toBe(0);
       expect(savedBody()).not.toHaveProperty('srBillRefno');
+      expect(savedBody()).toMatchObject({ srIsAgainstBill: false });
+    });
+
+    it('needs both the bill id and its year before it reads the bill', async () => {
+      await service.save(saveBody({ srBillAccYear: undefined }));
+
+      expect(billReads()).toBe(0);
+      expect(savedBody()).not.toHaveProperty('srBillRefno');
+    });
+
+    it('saves the body as sent when the bill it names is not found', async () => {
+      db.bill = null;
+
+      await service.save(saveBody());
+
+      expect(billReads()).toBe(1);
+      expect(savedBody()).not.toHaveProperty('srIsAgainstBill');
+      expect(savedBody()).not.toHaveProperty('srBillRefno');
+    });
+
+    it('saves under the request user and answers with the read-back', async () => {
+      const result = await service.save(saveBody());
+
+      expect(store.saveDraft).toHaveBeenCalledWith(
+        tx,
+        expect.any(Object),
+        USER_ID,
+        expect.any(Date),
+        expect.any(Object),
+      );
+      expect(store.findOrThrow).toHaveBeenCalledWith(tx, {
+        id: SR_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: ACC_YEAR,
+      });
+      expect(result).toMatchObject({ srId: SR_ID, rights: ALL_RIGHTS });
     });
 
     it('stamps the return time only when the client sent none', async () => {
@@ -484,7 +544,9 @@ describe('SaleReturnService', () => {
   });
 
   it('turns the decimals of the bill lines into numbers', async () => {
-    db.billLines = [{ billItemId: BILL_LINE, billQty: D('4.000'), returnedQty: D(1), itemName: 'Cup' }];
+    db.billLines = [
+      { billItemId: BILL_LINE, billQty: D('4.000'), returnedQty: D(1), itemName: 'Cup' },
+    ];
 
     await expect(service.billLines(BILL_ID, ACC_YEAR)).resolves.toEqual([
       { billItemId: BILL_LINE, billQty: 4, returnedQty: 1, itemName: 'Cup' },
@@ -548,7 +610,9 @@ describe('SaleReturnService', () => {
     });
 
     it('refuses an item that does not accept sales returns, naming the line', async () => {
-      db.masters = [{ item_id: ITEM_ID, item_allow_sales_return: false, item_name_en: 'Gift card' }];
+      db.masters = [
+        { item_id: ITEM_ID, item_allow_sales_return: false, item_name_en: 'Gift card' },
+      ];
 
       expect((await refusalsOf()).refusals).toEqual([
         expect.objectContaining({
@@ -689,6 +753,119 @@ describe('SaleReturnService', () => {
       tenders = [tender(CASH, 400), tender(CREDIT, 190)];
       expect((await refusalsOf({ srSettleMode: 'CASH' })).refusals).toEqual([]);
     });
+
+    it('checks the year is writable and its voucher partition exists, naming srAccYear', async () => {
+      await refusalsOf();
+
+      expect(assertAccYearWritable).toHaveBeenCalledWith(tx, COMPANY_ID, ACC_YEAR, 'srAccYear');
+      expect(assertVoucherPartitionExists).toHaveBeenCalledWith(tx, ACC_YEAR, 'srAccYear');
+    });
+
+    it('refuses a backdated return outright under sales.backdate_mode REFUSE', async () => {
+      ctx.settings.backdateMode = 'REFUSE';
+
+      expect((await refusalsOf({ srReturnDate: PAST })).refusals).toEqual([
+        expect.objectContaining({
+          code: SALES_ERROR_CODES.BACKDATE,
+          message: `This return is dated ${PAST}, before today`,
+        }),
+      ]);
+    });
+
+    it('checks the salesmen only when the return names some', async () => {
+      await refusalsOf({ srSalesmanId: [] });
+      expect(assertSalesmen).toHaveBeenLastCalledWith(tx, COMPANY_ID, null, {
+        field: 'srSalesmanId',
+      });
+
+      await refusalsOf({ srSalesmanId: [USER_ID] });
+      expect(assertSalesmen).toHaveBeenLastCalledWith(tx, COMPANY_ID, [USER_ID], {
+        field: 'srSalesmanId',
+      });
+    });
+
+    it('numbers the lines a validate body leaves unnumbered by their position', async () => {
+      db.masters = [
+        { item_id: ITEM_ID, item_allow_sales_return: false, item_name_en: 'Gift card' },
+      ];
+
+      const { refusals } = await refusalsOf({}, [
+        srItem({ sriLineNo: undefined }),
+        srItem({ sriId: LINE_B, sriLineNo: undefined }),
+      ]);
+
+      expect(refusals.map((r) => r.line)).toEqual([1, 2]);
+    });
+
+    it('stays quiet about the return window when it is switched off (0 days)', async () => {
+      ctx.settings.returnWindowDays = 0;
+      db.bill!.sb_bill_date = new Date('2020-01-01T00:00:00.000Z');
+
+      expect((await refusalsOf()).warnings).toEqual([]);
+    });
+
+    it('does not check quantities or the bill on a return that is not against one', async () => {
+      db.bill = null;
+
+      const result = await refusalsOf({ srIsAgainstBill: false, srBillId: null });
+
+      expect(result).toMatchObject({ ok: true, refusals: [] });
+      expect(billReads()).toBe(0);
+      expect(statutory.creditNoteCutoff).not.toHaveBeenCalled();
+    });
+
+    it('skips a line that names no bill line when it sums what is taken back', async () => {
+      db.soldLines = [{ sbi_id: BILL_LINE, sold: D(1), returned: null }];
+
+      const { refusals } = await refusalsOf({}, [
+        srItem(),
+        srItem({ sriId: LINE_B, sriLineNo: 2, sriBillItemId: null, sriReturnQty: D(5) }),
+      ]);
+
+      expect(refusals).toEqual([]);
+    });
+
+    it('treats a missing settlement mode as ADJUST, which needs a bill', async () => {
+      const { refusals } = await refusalsOf({ srSettleMode: null, srIsAgainstBill: false });
+
+      expect(refusals).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.AMOUNT_MISMATCH, field: 'srSettleMode' }),
+      ]);
+    });
+  });
+
+  describe('post — warnings and overrides', () => {
+    beforeEach(() => {
+      ctx.settings.returnWindowDays = 7;
+      db.bill!.sb_bill_date = new Date('2026-04-01T00:00:00.000Z');
+      row = srRow({ srReturnDate: new Date('2026-04-20T00:00:00.000Z') });
+    });
+
+    it('refuses an un-overridden warning on /post with a 422', async () => {
+      const refusal = await refusalOf(service.post(KEYS));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: SALES_ERROR_CODES.RETURN_WINDOW, field: 'srBillId' }] },
+      });
+      expect(stock.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses an override sent by a user who may not override', async () => {
+      const refusal = await refusalOf(
+        service.post({ ...KEYS, overrides: [SALES_ERROR_CODES.RETURN_WINDOW] }),
+      );
+
+      expect(refusal.status).toBe(422);
+    });
+
+    it('posts once a user who may override overrides the warning', async () => {
+      ctx.rights.override = true;
+
+      await service.post({ ...KEYS, overrides: [SALES_ERROR_CODES.RETURN_WINDOW] });
+
+      expect(lastSetStatus()[2]).toBe('POSTED');
+    });
   });
 
   describe('post — the gates', () => {
@@ -758,7 +935,10 @@ describe('SaleReturnService', () => {
 
       await service.post(KEYS);
 
-      const [, scope] = till.resolveForMoney.mock.calls[0] as [unknown, { cashOut: Prisma.Decimal }];
+      const [, scope] = till.resolveForMoney.mock.calls[0] as [
+        unknown,
+        { cashOut: Prisma.Decimal },
+      ];
       expect(scope.cashOut.equals(0)).toBe(true);
       expect(store.loadTenders.mock.invocationCallOrder[0]).toBeGreaterThan(
         till.resolveForMoney.mock.invocationCallOrder[0],
@@ -984,7 +1164,7 @@ describe('SaleReturnService', () => {
         userId: USER_ID,
       });
       // The tenders alone: the allocation less the set-offs it already carries.
-      expect((billCtx.paidAmount as Prisma.Decimal).equals(D(1000))).toBe(true);
+      expect(billCtx.paidAmount.equals(D(1000))).toBe(true);
       expect(adjustments).toEqual([
         { againstBillId: OTHER_CN_ABL_ID, againstBillAccYear: ACC_YEAR, amount: 360 },
         { againstBillId: CN_ABL_ID, againstBillAccYear: ACC_YEAR, amount: 590 },
@@ -1006,15 +1186,19 @@ describe('SaleReturnService', () => {
         abl_alloc_amount: D(100),
       };
       db.liveAdjustments = [
-        { abj_against_bill_id: OTHER_CN_ABL_ID, abj_against_bill_acc_year: ACC_YEAR, abj_amount: D(300) },
+        {
+          abj_against_bill_id: OTHER_CN_ABL_ID,
+          abj_against_bill_acc_year: ACC_YEAR,
+          abj_amount: D(300),
+        },
       ];
 
       await service.post(KEYS);
 
       const [, billCtx, adjustments] = jest.mocked(syncBillAdjustments).mock.calls[0];
       // Never below nothing paid.
-      expect((billCtx.paidAmount as Prisma.Decimal).equals(0)).toBe(true);
-      expect(adjustments.at(-1)).toMatchObject({ againstBillId: CN_ABL_ID, amount: 200 });
+      expect(billCtx.paidAmount.equals(0)).toBe(true);
+      expect(adjustments?.at(-1)).toMatchObject({ againstBillId: CN_ABL_ID, amount: 200 });
       expect(settlement()).toMatchObject({
         srAdjustedAmt: D('200.00'),
         srCreditAmt: D('390.00'),
@@ -1168,10 +1352,14 @@ describe('SaleReturnService', () => {
       });
     });
 
-    it("refuses a credit-note IRN past its cancellation window", async () => {
+    it('refuses a credit-note IRN past its cancellation window', async () => {
       register.registerIdOf.mockResolvedValue(GDR_ID);
-      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: false } as never);
-      statutory.withinCancelWindow.mockResolvedValue({ limit: null, within: false, hoursElapsed: 30 });
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: false });
+      statutory.withinCancelWindow.mockResolvedValue({
+        limit: null,
+        within: false,
+        hoursElapsed: 30,
+      });
 
       const refusal = await refusalOf(service.cancel(cancelDto));
 
@@ -1182,7 +1370,8 @@ describe('SaleReturnService', () => {
             {
               field: 'posting.irn',
               code: SALES_ERROR_CODES.IRN_WINDOW_PASSED,
-              message: "The credit note IRN's cancellation window has passed — it cannot be cancelled now",
+              message:
+                "The credit note IRN's cancellation window has passed — it cannot be cancelled now",
             },
           ],
         },
@@ -1192,11 +1381,16 @@ describe('SaleReturnService', () => {
 
     it('cancels a live IRN and e-way bill inside their windows first', async () => {
       register.registerIdOf.mockResolvedValue(GDR_ID);
-      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: true } as never);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: true });
 
       await service.cancel(cancelDto);
 
-      const expected = { gdrId: GDR_ID, accYear: ACC_YEAR, companyId: COMPANY_ID, reason: 'Posted twice' };
+      const expected = {
+        gdrId: GDR_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        reason: 'Posted twice',
+      };
       expect(gst.cancelIrn).toHaveBeenCalledWith(expected);
       expect(gst.cancelEwb).toHaveBeenCalledWith(expected);
     });
@@ -1212,13 +1406,23 @@ describe('SaleReturnService', () => {
       db.bill = { ...db.bill, sb_returned_amt: D(590) };
       db.liveAdjustments = [
         { abj_against_bill_id: CN_ABL_ID, abj_against_bill_acc_year: ACC_YEAR, abj_amount: D(590) },
-        { abj_against_bill_id: OTHER_CN_ABL_ID, abj_against_bill_acc_year: ACC_YEAR, abj_amount: D(100) },
+        {
+          abj_against_bill_id: OTHER_CN_ABL_ID,
+          abj_against_bill_acc_year: ACC_YEAR,
+          abj_amount: D(100),
+        },
       ];
       db.billAbl = { abl_id: BILL_ABL_ID, abl_bill_amount: D(2360), abl_alloc_amount: D(1690) };
 
       const result = await service.cancel(cancelDto);
 
-      expect(legs.reverseLegs).toHaveBeenCalledWith(tx, VOUCHER_ID, ACC_YEAR, 'Posted twice', USER_ID);
+      expect(legs.reverseLegs).toHaveBeenCalledWith(
+        tx,
+        VOUCHER_ID,
+        ACC_YEAR,
+        'Posted twice',
+        USER_ID,
+      );
       expect(stock.cancel).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({ docId: SR_ID, direction: 'IN', txnType: 'SALE_RETURN' }),
@@ -1229,7 +1433,7 @@ describe('SaleReturnService', () => {
       expect(register.cancel).toHaveBeenCalledWith(tx, GDR_ID, ACC_YEAR, 'Posted twice', USER_ID);
       // The bill keeps every set-off but this note's; paid is the allocation less all of them.
       const [, billCtx, kept] = jest.mocked(syncBillAdjustments).mock.calls[0];
-      expect((billCtx.paidAmount as Prisma.Decimal).equals(D(1000))).toBe(true);
+      expect(billCtx.paidAmount.equals(D(1000))).toBe(true);
       expect(kept).toEqual([
         { againstBillId: OTHER_CN_ABL_ID, againstBillAccYear: ACC_YEAR, amount: 100 },
       ]);
@@ -1259,6 +1463,108 @@ describe('SaleReturnService', () => {
       );
       expect(lastSetStatus()[2]).toBe('CANCELLED');
       expect(result).toMatchObject({ srStatus: 'CANCELLED', reversalVoucherRefno: 'srt-r-0002' });
+    });
+
+    it('refuses a live e-way bill past its cancellation window', async () => {
+      register.registerIdOf.mockResolvedValue(GDR_ID);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true });
+      statutory.withinCancelWindow.mockResolvedValue({
+        limit: null,
+        within: false,
+        hoursElapsed: 30,
+      });
+
+      const refusal = await refusalOf(service.cancel(cancelDto));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'posting.ewb', code: SALES_ERROR_CODES.EWB_WINDOW_PASSED }] },
+      });
+      expect(gst.cancelEwb).not.toHaveBeenCalled();
+      expect(stock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('treats a live IRN with no generation time as past its window', async () => {
+      register.registerIdOf.mockResolvedValue(GDR_ID);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: false });
+      blocks.gstRows.mockResolvedValue({ irnGeneratedOn: null, ewbGeneratedOn: null });
+
+      const refusal = await refusalOf(service.cancel(cancelDto));
+
+      expect(refusal.body.errors).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.IRN_WINDOW_PASSED }),
+      ]);
+      expect(statutory.withinCancelWindow).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to reverse on the books or the register when the post left neither', async () => {
+      row = srRow({ srStatus: 'POSTED', srPostedVoucherId: null });
+
+      const result = await service.cancel(cancelDto);
+
+      expect(legs.reverseLegs).not.toHaveBeenCalled();
+      expect(register.cancel).not.toHaveBeenCalled();
+      expect(stock.cancel).toHaveBeenCalled();
+      expect(result).toMatchObject({ srStatus: 'CANCELLED', reversalVoucherRefno: null });
+    });
+
+    it('leaves the bill alone when the return was not against one, but still retires the credit', async () => {
+      row = srRow({ srStatus: 'POSTED', srBillId: null, srIsAgainstBill: false });
+
+      await service.cancel(cancelDto);
+
+      expect(billReads()).toBe(0);
+      expect(syncBillAdjustments).not.toHaveBeenCalled();
+      expect(tx.accBillBalance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ablId_ablAccYear: { ablId: CN_ABL_ID, ablAccYear: ACC_YEAR } },
+        }),
+      );
+    });
+
+    it("never takes the bill's returned amount below nothing", async () => {
+      db.bill = { ...db.bill, sb_returned_amt: D(100) };
+
+      await service.cancel(cancelDto);
+
+      const billUpdate = tx.$executeRaw.mock.calls.find(([strings]) =>
+        (strings as string[]).join('?').includes('UPDATE sales.sale_bill'),
+      )!;
+      expect(billUpdate[1]).toBe(0);
+    });
+
+    it('retires no credit row when the post left none', async () => {
+      tx.accBillBalance.findFirst.mockResolvedValue(null);
+
+      await service.cancel(cancelDto);
+
+      expect(syncBillAdjustments).not.toHaveBeenCalled();
+      expect(tx.accBillBalance.update).not.toHaveBeenCalled();
+      expect(loyalty.reverseForCancel).toHaveBeenCalled();
+    });
+
+    it('marks it CANCELLED and files the reason on the trail and the audit', async () => {
+      await service.cancel(cancelDto);
+
+      expect(store.trail).toHaveBeenCalledWith(
+        tx,
+        row,
+        TxnStatusEvent.CANCELLED,
+        'POSTED',
+        'CANCELLED',
+        USER_ID,
+        expect.any(Date),
+        'Posted twice',
+      );
+      expect(store.auditChange).toHaveBeenCalledWith(
+        tx,
+        row,
+        'cancel',
+        { srStatus: 'POSTED' },
+        { srStatus: 'CANCELLED' },
+        USER_ID,
+        'Sale return cancelled: Posted twice',
+      );
     });
   });
 
@@ -1372,10 +1678,76 @@ describe('SaleReturnService', () => {
       expect(refusal.body.message).toBe('Sale return cannot be amended');
       expect(gst.enqueueAfterPost).not.toHaveBeenCalled();
     });
+
+    it('words a passed IRN window for an amend', async () => {
+      register.registerIdOf.mockResolvedValue(GDR_ID);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: true, ewbLive: false });
+      statutory.withinCancelWindow.mockResolvedValue({
+        limit: null,
+        within: false,
+        hoursElapsed: 30,
+      });
+
+      const refusal = await refusalOf(service.amend(amendDto()));
+
+      expect(refusal.body.errors).toEqual([
+        expect.objectContaining({
+          code: SALES_ERROR_CODES.IRN_WINDOW_PASSED,
+          message:
+            "The credit note IRN's cancellation window has passed — it cannot be amended now",
+        }),
+      ]);
+    });
+
+    it('refuses once somebody has spent the credit note, before unwinding anything', async () => {
+      db.creditApplied = 1n;
+
+      const refusal = await refusalOf(service.amend(amendDto()));
+
+      expect(refusal.body.errors).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.CN_APPLIED }),
+      ]);
+      expect(legs.reverseLegs).not.toHaveBeenCalled();
+      expect(store.saveDraft).not.toHaveBeenCalled();
+    });
+
+    it('unwinds under an "Amended:" reason and audits the before and after', async () => {
+      await service.amend(amendDto());
+
+      expect(legs.reverseLegs).toHaveBeenCalledWith(
+        tx,
+        VOUCHER_ID,
+        ACC_YEAR,
+        'Amended: Wrong quantity',
+        USER_ID,
+      );
+      expect(store.trail).toHaveBeenCalledWith(
+        tx,
+        expect.anything(),
+        TxnStatusEvent.POSTED,
+        'DRAFT',
+        'POSTED',
+        USER_ID,
+        expect.any(Date),
+        'Re-posted as revision 2',
+      );
+      expect(store.auditChange).toHaveBeenLastCalledWith(
+        tx,
+        expect.objectContaining({ srId: SR_ID }),
+        'update',
+        expect.objectContaining({ srStatus: 'POSTED' }),
+        expect.objectContaining({ srId: SR_ID }),
+        USER_ID,
+        'Sale return amended to revision 2: Wrong quantity',
+      );
+    });
   });
 
   describe('transport', () => {
-    const transportDto = { ...KEYS, transport: { transporterName: 'VRL', direction: 'OUTWARD' } } as never;
+    const transportDto = {
+      ...KEYS,
+      transport: { transporterName: 'VRL', direction: 'OUTWARD' },
+    } as never;
 
     it('refuses a CANCELLED return', async () => {
       row = srRow({ srStatus: 'CANCELLED' });

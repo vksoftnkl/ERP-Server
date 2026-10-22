@@ -353,5 +353,22 @@ describe('BankListService', () => {
         modifiedRecord: expect.objectContaining({ bnkIsDeleted: true, bnkIsActive: false }),
       });
     });
+
+    it('stamps the default actor on the row and the audit when nobody is logged in', async () => {
+      context.getUserId.mockReturnValue(null);
+      prisma.bankMaster.findFirst.mockResolvedValue(bankRow());
+
+      await service.softDelete(BANK_ID);
+
+      expect(prisma.bankMaster.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ bnkModifiedBy: DEFAULT_ACTOR }) as object,
+        }),
+      );
+      expect(auditEntry()).toMatchObject({
+        userId: DEFAULT_ACTOR,
+        modifiedRecord: expect.objectContaining({ bnkModifiedBy: DEFAULT_ACTOR }),
+      });
+    });
   });
 });

@@ -37,7 +37,7 @@ const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fe14';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fe15';
 // The quotation voucher type, and the counter it stands at before a save: the
 // next quotation therefore takes number 42 → 'quo00042'.
-const QUOTATION_VCHR_TYPE_ID = 21;
+const QUOTATION_VCHR_TYPE_ID = 2;
 const SEQ_LAST_NO = 41n;
 
 const makeSequence = (overrides: Partial<AccVoucherSeq> = {}): AccVoucherSeq =>
@@ -1034,7 +1034,7 @@ describe('QuotationService — quotation numbering', () => {
     );
   });
 
-  it('numbers a new quotation from the voucher type 21 sequence', async () => {
+  it('numbers a new quotation from the voucher type 2 sequence', async () => {
     await service.save(baseDto({ sqQuoteSlno: undefined, sqQuoteRefno: undefined }));
 
     expect(prisma.accVoucherSeq.findFirst).toHaveBeenCalledWith(
@@ -1072,7 +1072,7 @@ describe('QuotationService — quotation numbering', () => {
     );
   });
 
-  it('ignores a client-supplied slno and refno — voucher type 21 forbids manual numbers', async () => {
+  it('ignores a client-supplied slno and refno — voucher type 2 forbids manual numbers', async () => {
     await service.save(baseDto({ sqQuoteSlno: 7, sqQuoteRefno: 'HAND-WRITTEN' }));
 
     expect(prisma.saleQuotation.create.mock.calls[0][0].data).toMatchObject({

@@ -150,7 +150,15 @@ export class SaveItemDto {
   @NullableUuid()
   item_cust_group?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "Taken from the item's base unit conversion row whenever it has one (notes 138 A2): a " +
+      'different unit is refused — 409 ITEM_BASE_UNIT_LOCKED on an item that already had a ' +
+      "base row, 400 ITEM_BASE_UNIT_MISMATCH against this save's own base row — and null is " +
+      'ignored. Only an item with no unit rows keeps the value sent here.',
+  })
   @NullableUuid()
   item_base_unit_id?: string | null;
 

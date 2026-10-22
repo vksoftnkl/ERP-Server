@@ -114,6 +114,42 @@ describe('gst-route-guard (notes 88)', () => {
     ).toBe('CHARTERED has no SANDBOX provider account');
   });
 
+  it('words a deleted service, and an endpoint whose action is not named', () => {
+    expect(gstRouteRefusal(on({ service: { ...on().service!, gpsIsDeleted: true } }))).toBe(
+      'EINVOICE · SANDBOX service is deleted',
+    );
+    expect(gstRouteRefusal(on({ action: undefined, endpoint: null }))).toBe(
+      'EINVOICE · SANDBOX has no endpoint',
+    );
+    expect(
+      gstRouteRefusal(
+        on({ action: undefined, endpoint: { ...on().endpoint!, gpeIsDeleted: true } }),
+      ),
+    ).toBe('EINVOICE · SANDBOX has no endpoint');
+    expect(
+      gstRouteRefusal(
+        on({ action: undefined, endpoint: { ...on().endpoint!, gpeIsActive: false } }),
+      ),
+    ).toBe('The endpoint of EINVOICE · SANDBOX is inactive');
+  });
+
+  it('needs no account for a route checked at service level, with no endpoint given', () => {
+    expect(gstRouteRefusal(on({ endpoint: undefined, account: null }))).toBeNull();
+  });
+
+  it('finds no placeholders in header values that are not text, nor in a header list', () => {
+    expect(
+      gstRouteRefusal(
+        on({ endpoint: { ...on().endpoint!, gpeHeaders: { aspid: 42 } }, account: null }),
+      ),
+    ).toBeNull();
+    expect(
+      gstRouteRefusal(
+        on({ endpoint: { ...on().endpoint!, gpeHeaders: ['{aspId}'] }, account: null }),
+      ),
+    ).toBeNull();
+  });
+
   it('checks the provider alone when no service is given', () => {
     expect(gstRouteRefusal({ provider: on().provider })).toBeNull();
     expect(
@@ -140,6 +176,22 @@ describe('gst-route-guard (notes 88)', () => {
       ],
     });
     expect(() => assertGstRouteActive(on(), { field: 'gccId' })).not.toThrow();
+  });
+
+  it('refuses under a title the caller gives', () => {
+    const off = on({ credential: { ...on().credential!, gccIsActive: false } });
+
+    let thrown: unknown;
+    try {
+      assertGstRouteActive(off, { field: 'gstin', title: 'GSTIN search is switched off' });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect((thrown as HttpException).getResponse()).toMatchObject({
+      message: 'GSTIN search is switched off',
+      errors: [{ field: 'gstin', message: 'The GST credential is inactive' }],
+    });
   });
 
   it('the network door refuses a switched-off route before any I/O', async () => {

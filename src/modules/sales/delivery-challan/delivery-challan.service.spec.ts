@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TxnStatusEvent } from '../../../common/txn-status-log/txn-status-log.helper';
 import {
+  assertAccYearWritable,
   assertBandWritable,
+  assertSalesmen,
+  assertVoucherPartitionExists,
   loadDayClosed,
   loadDeclaredLocks,
 } from '../posting/sales.guards';
@@ -176,17 +179,23 @@ describe('DeliveryChallanService', () => {
   let items: Record<string, unknown>[];
 
   beforeEach(() => {
+    // The module-level mocks would otherwise carry their calls from test to test.
+    jest.clearAllMocks();
     jest.mocked(loadDayClosed).mockResolvedValue(false);
-    jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: false } as never);
+    jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: false });
     jest.mocked(assertBandWritable).mockResolvedValue(undefined);
 
-    db = { company: { comp_dc_purposes: ['SUPPLY', 'JOB_WORK'], comp_state_code: '33' }, orderLines: [] };
+    db = {
+      company: { comp_dc_purposes: ['SUPPLY', 'JOB_WORK'], comp_state_code: '33' },
+      orderLines: [],
+    };
     tx = {
       $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
         const sql = strings.join('?');
         if (sql.includes('FROM public.companys')) return db.company ? [db.company] : [];
         if (sql.includes('sales.sale_order_item')) return db.orderLines;
-        if (sql.includes('accounts.acc_voucher_header')) return [{ avh_voucher_refno: 'dch-r-0003' }];
+        if (sql.includes('accounts.acc_voucher_header'))
+          return [{ avh_voucher_refno: 'dch-r-0003' }];
         return [];
       }),
       $transaction: jest.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
@@ -237,7 +246,9 @@ describe('DeliveryChallanService', () => {
     };
     statutory = {
       ewayApplicable: jest.fn().mockResolvedValue({ limit: null, applicable: false }),
-      withinCancelWindow: jest.fn().mockResolvedValue({ limit: null, within: true, hoursElapsed: 1 }),
+      withinCancelWindow: jest
+        .fn()
+        .mockResolvedValue({ limit: null, within: true, hoursElapsed: 1 }),
     };
     legs = {
       postLegs: jest.fn().mockResolvedValue({ voucherId: VOUCHER_ID, voucherLastNo: 44n }),
@@ -307,7 +318,10 @@ describe('DeliveryChallanService', () => {
       expect(saved).not.toHaveProperty('post');
       expect(saved).not.toHaveProperty('overrides');
       expect(actor).toBe(USER_ID);
-      expect(result).toMatchObject({ sdcId: DC_ID, items: [expect.objectContaining({ sdiId: LINE_A })] });
+      expect(result).toMatchObject({
+        sdcId: DC_ID,
+        items: [expect.objectContaining({ sdiId: LINE_A })],
+      });
       expect(stock.post).not.toHaveBeenCalled();
     });
 
@@ -560,6 +574,36 @@ describe('DeliveryChallanService', () => {
         }),
       ]);
     });
+
+    it('checks the year is writable and its voucher partition exists, naming sdcAccYear', async () => {
+      await service.post(KEYS);
+
+      expect(assertAccYearWritable).toHaveBeenCalledWith(tx, COMPANY_ID, ACC_YEAR, 'sdcAccYear');
+      expect(assertVoucherPartitionExists).toHaveBeenCalledWith(tx, ACC_YEAR, 'sdcAccYear');
+    });
+
+    it('checks the salesmen only when the challan names some', async () => {
+      row = dcRow({ sdcSalesmanId: [] });
+      await service.post(KEYS);
+      expect(assertSalesmen).toHaveBeenLastCalledWith(tx, COMPANY_ID, null, {
+        field: 'sdcSalesmanId',
+      });
+
+      row = dcRow({ sdcSalesmanId: [USER_ID] });
+      await service.post(KEYS);
+      expect(assertSalesmen).toHaveBeenLastCalledWith(tx, COMPANY_ID, [USER_ID], {
+        field: 'sdcSalesmanId',
+      });
+    });
+
+    it('lets order lines within what is pending through', async () => {
+      db.orderLines = [{ soi_id: ORDER_LINE, soi_pending_qty: D(2) }];
+      items = [dcItem({ sdiSrcDocType: 'SALES_ORDER', sdiSrcItemId: ORDER_LINE })];
+
+      await service.post(KEYS);
+
+      expect(lastSetStatus()[2]).toBe('POSTED');
+    });
   });
 
   describe('validate', () => {
@@ -582,9 +626,7 @@ describe('DeliveryChallanService', () => {
     it('reports an overridable warning as a warning, without refusing', async () => {
       ctx.settings.backdateMode = 'WARN';
 
-      const result = await service.validate(
-        validateBody({ sdcDcDate: PAST }),
-      );
+      const result = await service.validate(validateBody({ sdcDcDate: PAST }));
 
       expect(result).toMatchObject({
         ok: true,
@@ -628,10 +670,23 @@ describe('DeliveryChallanService', () => {
 
     it('stays quiet about the e-way bill once a transporter is on the band', async () => {
       statutory.ewayApplicable.mockResolvedValue({ limit: null, applicable: true });
-      store.loadTransport.mockResolvedValue({ transporterId: null, transporterName: 'VRL', lrNo: null });
+      store.loadTransport.mockResolvedValue({
+        transporterId: null,
+        transporterName: 'VRL',
+        lrNo: null,
+      });
 
       const result = await service.validate(validateBody());
 
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('does not look for a band on a challan that has not been saved yet', async () => {
+      statutory.ewayApplicable.mockResolvedValue({ limit: null, applicable: true });
+
+      const result = await service.validate(validateBody({ sdcId: undefined }));
+
+      expect(store.loadTransport).not.toHaveBeenCalled();
       expect(result.warnings).toEqual([]);
     });
   });
@@ -650,7 +705,12 @@ describe('DeliveryChallanService', () => {
 
       const [, doc, actor] = stock.post.mock.calls[0] as [
         unknown,
-        { direction: string; txnType: string; refno: string; lines: { lineId: string; qty: number }[] },
+        {
+          direction: string;
+          txnType: string;
+          refno: string;
+          lines: { lineId: string; qty: number }[];
+        },
         string,
       ];
       expect(doc).toMatchObject({ direction: 'OUT', txnType: 'DC_ISSUE', refno: 'dch00012' });
@@ -662,10 +722,14 @@ describe('DeliveryChallanService', () => {
       await service.post(KEYS);
 
       expect(store.updateItem).toHaveBeenCalledTimes(1);
-      expect(store.updateItem).toHaveBeenCalledWith(tx, expect.objectContaining({ sdiId: LINE_A }), {
-        sdiCostPrice: D('412.35'),
-        sdiLotId: LOT_ID,
-      });
+      expect(store.updateItem).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ sdiId: LINE_A }),
+        {
+          sdiCostPrice: D('412.35'),
+          sdiLotId: LOT_ID,
+        },
+      );
     });
 
     it('posts the COGS pair on a DCh voucher under PERPETUAL', async () => {
@@ -844,10 +908,14 @@ describe('DeliveryChallanService', () => {
       });
     });
 
-    it("refuses a live e-way bill past its cancellation window", async () => {
+    it('refuses a live e-way bill past its cancellation window', async () => {
       register.registerIdOf.mockResolvedValue(GDR_ID);
-      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true } as never);
-      statutory.withinCancelWindow.mockResolvedValue({ limit: null, within: false, hoursElapsed: 30 });
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true });
+      statutory.withinCancelWindow.mockResolvedValue({
+        limit: null,
+        within: false,
+        hoursElapsed: 30,
+      });
 
       const refusal = await refusalOf(service.cancel(cancelDto));
 
@@ -860,7 +928,7 @@ describe('DeliveryChallanService', () => {
 
     it('cancels a live e-way bill inside its window before unwinding', async () => {
       register.registerIdOf.mockResolvedValue(GDR_ID);
-      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true } as never);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true });
 
       await service.cancel(cancelDto);
 
@@ -988,7 +1056,7 @@ describe('DeliveryChallanService', () => {
     });
 
     it('refuses a challan with a live e-way bill', async () => {
-      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true } as never);
+      jest.mocked(loadDeclaredLocks).mockResolvedValue({ irnLive: false, ewbLive: true });
 
       const refusal = await refusalOf(service.amend(amendDto()));
 
@@ -1036,6 +1104,30 @@ describe('DeliveryChallanService', () => {
       expect(gst.enqueueAfterPost).toHaveBeenCalledTimes(1);
     });
 
+    it('re-posts with the revision on the trail and audits the before and after', async () => {
+      await service.amend(amendDto({ sdcId: DC_ID }));
+
+      expect(store.trail).toHaveBeenCalledWith(
+        tx,
+        expect.anything(),
+        TxnStatusEvent.POSTED,
+        'DRAFT',
+        'POSTED',
+        USER_ID,
+        expect.any(Date),
+        'Re-posted as revision 3',
+      );
+      expect(store.auditChange).toHaveBeenLastCalledWith(
+        tx,
+        expect.objectContaining({ sdcId: DC_ID }),
+        'update',
+        expect.objectContaining({ sdcStatus: 'POSTED' }),
+        expect.objectContaining({ sdcId: DC_ID }),
+        USER_ID,
+        'Challan amended to revision 3: Qty corrected',
+      );
+    });
+
     it('refuses the amend when the new body fails the guards, and queues nothing', async () => {
       store.loadItems.mockImplementation(async (_tx: unknown, r: Record<string, unknown>) =>
         r.sdcStatus === 'POSTED' ? items : [],
@@ -1069,9 +1161,7 @@ describe('DeliveryChallanService', () => {
     });
 
     it('lets the e-way bill lock refuse it', async () => {
-      jest
-        .mocked(assertBandWritable)
-        .mockRejectedValue(new HttpException('declared', 409));
+      jest.mocked(assertBandWritable).mockRejectedValue(new HttpException('declared', 409));
 
       await expect(service.convertPurpose(convertDto)).rejects.toThrow('declared');
       expect(assertBandWritable).toHaveBeenCalledWith(tx, GDR_ID);
@@ -1137,7 +1227,11 @@ describe('DeliveryChallanService', () => {
       await expect(service.transport(transportDto)).resolves.toEqual({ transporterName: 'VRL' });
       expect(transportBand.write).toHaveBeenCalledWith(
         tx,
-        expect.objectContaining({ docType: 'DELIVERY_CHALLAN', docId: DC_ID, docRefno: 'dch00012' }),
+        expect.objectContaining({
+          docType: 'DELIVERY_CHALLAN',
+          docId: DC_ID,
+          docRefno: 'dch00012',
+        }),
         { transporterName: 'VRL' },
         USER_ID,
         { gdrId: GDR_ID, now: expect.any(Date) },

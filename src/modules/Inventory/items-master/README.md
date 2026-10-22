@@ -72,6 +72,18 @@ collections (**unit conversions**, **prices**, **EAN codes** and **reorders**) i
 - **Base unit** (notes 137 B7): a header `item_base_unit_id` other than the unit of the base
   conversion row is a 400 `ITEM_BASE_UNIT_MISMATCH`; a blank header (not sent or null) is filled
   from the base row. Only checked when the save sends either.
+- **A saved base unit is locked** (notes 138, `utils/item-base-unit.helper.ts`): once the item has
+  a base conversion row, no save may change its base unit, stock or no stock — "has stock" is not
+  knowable while tills run offline. 409 `ITEM_BASE_UNIT_LOCKED` naming the field for another
+  row marked base, the base row's unit re-picked or un-marked, any `iuc_base_unit_id` other than
+  the base unit, the base row left out of `unit_conversions` (`field: unit_conversions`), or a
+  header `item_base_unit_id` other than the base row's. Still open: both factors on any row,
+  weight, remarks, the default / big flags, adding and removing non-base rows. An item with no
+  unit rows is not locked; its first unit rows set the base. A wrong base unit = make the item
+  inactive and create a new one.
+- **The header base unit is derived** (notes 138 A2): every update of an item with a base row
+  writes `item_base_unit_id` from that row (a null or omitted value included); migration
+  `20261022100000` filled the 322 headers that were NULL beside a base row.
 - **Company moves** (notes 137 C3): moving into a company (from shared or another company) is a
   409 `ITEM_COMPANY_MOVE_BLOCKED` while another company still holds stock with quantity or a price
   row of the item — checked against the rows the save leaves, so prices moved along in the same

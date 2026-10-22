@@ -112,6 +112,65 @@ describe('StockTrackPresetsService', () => {
     const { meta } = await service.get({});
     expect(meta.company_id).toBe(COMPANY_ID);
   });
+  it('narrows to one code, among the company the query names', async () => {
+    prisma.stockTrackPreset.findMany.mockResolvedValue([
+      preset({ sptId: 'theirs', sptCompanyId: OTHER_COMPANY_ID }),
+    ]);
+    const { items, meta } = await service.get({ company_id: OTHER_COMPANY_ID, spt_code: 'PHARMA' });
+    const where = prisma.stockTrackPreset.findMany.mock.calls[0][0].where;
+    expect(where?.sptCode).toBe('PHARMA');
+    expect(where?.OR).toEqual([{ sptCompanyId: OTHER_COMPANY_ID }, { sptCompanyId: null }]);
+    expect(prisma.stockTrackPreset.findMany.mock.calls[0][0].orderBy).toEqual([
+      { sptSortOrder: 'asc' },
+      { sptCode: 'asc' },
+    ]);
+    expect(meta).toEqual({ company_id: OTHER_COMPANY_ID, spt_code: 'PHARMA', count: 1 });
+    expect(items[0].spt_id).toBe('theirs');
+  });
+  it('marks a shared preset fetched by id as no company override, and counts it', async () => {
+    prisma.stockTrackPreset.findUnique.mockResolvedValue(preset({ sptId: 'shared' }));
+    const { items, meta } = await service.get({ spt_id: 'shared' });
+    expect(prisma.stockTrackPreset.findUnique).toHaveBeenCalledWith({ where: { sptId: 'shared' } });
+    expect(items[0].spt_is_company_override).toBe(false);
+    expect(meta).toEqual({ company_id: COMPANY_ID, spt_id: 'shared', count: 1 });
+  });
+  it('maps every column of the preset onto the payload', async () => {
+    prisma.stockTrackPreset.findMany.mockResolvedValue([
+      preset({ sptDescription: 'For pharmacies' }),
+    ]);
+    const { items } = await service.get({});
+    expect(items[0]).toEqual({
+      spt_id: '01000000-0000-7000-8000-0000000000e1',
+      spt_company_id: null,
+      spt_code: 'PHARMA',
+      spt_name: 'Pharma',
+      spt_description: 'For pharmacies',
+      spt_track_batch: true,
+      spt_track_mrp: true,
+      spt_track_sale_price: false,
+      spt_track_expiry: true,
+      spt_track_serial: false,
+      spt_track_supplier: true,
+      spt_track_signature: 'BMEP',
+      spt_valuation_method: 'WAVG',
+      spt_issue_strategy: 'FEFO',
+      spt_allow_negative: 'ALLOW',
+      spt_shelf_life_days: null,
+      spt_near_expiry_days: 90,
+      spt_block_expired_sale: true,
+      spt_ageing_basis: 'INWARD_DATE',
+      spt_sort_order: 70,
+      spt_remarks: null,
+      spt_is_company_override: false,
+    });
+  });
+  it('404s with the preset code and the spt_id field', async () => {
+    const error = await service.get({ spt_id: 'missing' }).catch((caught: unknown) => caught);
+    expect((error as { getStatus: () => number }).getStatus()).toBe(404);
+    expect((error as { getResponse: () => unknown }).getResponse()).toMatchObject({
+      errors: [{ field: 'spt_id', code: 'STOCK_PRESET_NOT_FOUND' }],
+    });
+  });
   it('publishes the signature, so a screen can match a saved policy back to a preset', async () => {
     prisma.stockTrackPreset.findMany.mockResolvedValue([preset()]);
     const { items } = await service.get({});

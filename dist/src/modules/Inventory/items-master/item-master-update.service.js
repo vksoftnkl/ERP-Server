@@ -18,6 +18,7 @@ const items_ean_code_master_service_1 = require("../items-ean-code-master/items-
 const items_reorder_master_service_1 = require("../items-reorder-master/items-reorder-master.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const item_error_codes_1 = require("./types/item-error-codes");
+const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
 const EAN_IGNORED_FIELDS = new Set(['ean_id', 'ean_item_id', 'ean_created_by', 'ean_modified_by']);
 const IUC_IGNORED_FIELDS = new Set([
     'iuc_id',
@@ -117,19 +118,28 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         const existingByKey = new Map(existing.map((row) => [row.iuc_unit_id, row]));
         this.refuseForeignIds(children, 'iuc_id', 'unit_conversions', existing);
         this.refuseDuplicateKeys(children.map((child) => child.iuc_unit_id), 'unit_conversions', 'two conversion rows for the same unit');
+        const base = existing.find((row) => row.iuc_is_base_unit);
         const toSave = [];
         const claimedIds = new Set();
-        for (const child of children) {
+        children.forEach((child, index) => {
             const match = child.iuc_id
                 ? existing.find((row) => row.iuc_id === child.iuc_id)
                 : existingByKey.get(child.iuc_unit_id);
+            const change = base && (0, item_base_unit_helper_1.baseUnitChange)(base, { ...child, iuc_id: match?.iuc_id });
+            if (change) {
+                (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, `unit_conversions.${index}.${change.column}`, change.message);
+            }
             if (match) {
                 claimedIds.add(match.iuc_id);
                 if (!this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
-                    continue;
+                    return;
                 }
             }
             toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
+        });
+        if (base && !claimedIds.has(base.iuc_id)) {
+            (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, 'unit_conversions', `The item's base row (${base.iuc_id}, unit ${base.iuc_unit_id}) is missing from ` +
+                'unit_conversions, which would delete it. Send it back with the other rows.');
         }
         const staleIds = existing.filter((row) => !claimedIds.has(row.iuc_id)).map((row) => row.iuc_id);
         if (staleIds.length > 0) {

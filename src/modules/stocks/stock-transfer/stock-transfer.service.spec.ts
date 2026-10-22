@@ -1,7 +1,29 @@
+import { HttpException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  appendTxnStatusLog,
+  TxnStatusDocType,
+  TxnStatusEvent,
+  TxnStatusSrcModule,
+} from 'src/common/txn-status-log/txn-status-log.helper';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { settleTransitShort } from '../stock-voucher/stock-voucher-posting.helper';
+import { StockErrorCode } from '../types/stock-error-codes';
 import { StockTransferService } from './stock-transfer.service';
+
+// Short-settle's two collaborators that write: the engine's settle step and the
+// status trail. Everything else in both modules stays real.
+jest.mock('../stock-voucher/stock-voucher-posting.helper', () => ({
+  ...jest.requireActual<object>('../stock-voucher/stock-voucher-posting.helper'),
+  settleTransitShort: jest.fn(),
+}));
+jest.mock('src/common/txn-status-log/txn-status-log.helper', () => ({
+  ...jest.requireActual<object>('src/common/txn-status-log/txn-status-log.helper'),
+  appendTxnStatusLog: jest.fn(),
+}));
+const settleMock = settleTransitShort as jest.MockedFunction<typeof settleTransitShort>;
+const statusLogMock = appendTxnStatusLog as jest.MockedFunction<typeof appendTxnStatusLog>;
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
 import type { SaveStockTransferReceiveDto } from './dto/save-stock-transfer-receive.dto';
@@ -543,6 +565,36 @@ describe('StockTransferService', () => {
       expect(prisma.stockTransit.updateMany).not.toHaveBeenCalled();
     });
 
+    it('writes only the lorry fields it was sent, and clears the expected date on a null', async () => {
+      const tx = { stockTransit: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+      voucherService.post.mockImplementation(
+        async (_r, _id, _y, _c, _b, _u, afterPost?: (t: unknown, n: number) => Promise<void>) => {
+          await afterPost?.(tx, 1);
+          return postResult();
+        },
+      );
+      prisma.$queryRaw.mockResolvedValue([transitDbRow()]);
+
+      await service.despatch(TRANSFER_OUT_RULES, {
+        svhId: OUT_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_A,
+        vehicleNo: 'KL-07-1234',
+        expectedOn: null,
+      });
+
+      const { data } = (tx.stockTransit.updateMany.mock.calls[0] as unknown[])[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).toEqual({
+        sttVehicleNo: 'KL-07-1234',
+        sttExpectedOn: null,
+        sttModifiedOn: expect.any(Date),
+        sttModifiedBy: USER_ID,
+      });
+    });
+
     it('passes no hook when the despatch carries no lorry', async () => {
       voucherService.post.mockImplementation((...args: unknown[]) => {
         // args[6] is the afterPost hook. Absent means nothing will be written
@@ -943,6 +995,427 @@ describe('StockTransferService', () => {
         service.receive(TRANSFER_IN_RULES, IN_ID, ACC_YEAR, COMPANY_ID, BRANCH_B),
       ).rejects.toMatchObject({ status: 409 });
       expect(voucherService.post).not.toHaveBeenCalled();
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // save — the lot and stock reads, at their edges
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('save — lots and stock, at the edges', () => {
+    const lotlessLine = { lineNo: 2, itemId: SALT, uomId: UOM_ID, godownId: GD_MAIN, qty: 4 };
+
+    /** The codes of the 422 a save was refused with. */
+    const codesOf = async (run: Promise<unknown>): Promise<string[]> => {
+      const error = await run.then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      if (!(error instanceof HttpException)) throw new Error('expected an HttpException');
+      expect(error.getStatus()).toBe(422);
+      return (error.getResponse() as { errors: Array<{ code: string }> }).errors.map((e) => e.code);
+    };
+
+    it('reads nothing when no line names a lot — the shared service refuses those lines itself', async () => {
+      await service.save(
+        TRANSFER_OUT_RULES,
+        outPayload({ lines: [{ ...lotlessLine, lineNo: 1 }] }),
+      );
+
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(voucherService.save).toHaveBeenCalled();
+    });
+
+    it('checks only the lines that name a lot in a mixed document', async () => {
+      stockReads();
+
+      await service.save(
+        TRANSFER_OUT_RULES,
+        outPayload({
+          lines: [
+            { lineNo: 1, itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, qty: 20 },
+            lotlessLine,
+          ],
+        }),
+      );
+
+      expect(voucherService.save).toHaveBeenCalled();
+    });
+
+    it('refuses a lot that does not exist, alongside the stock it cannot cover', async () => {
+      stockReads([], []);
+
+      await expect(codesOf(service.save(TRANSFER_OUT_RULES, outPayload()))).resolves.toEqual([
+        StockErrorCode.LOT_NOT_FOUND,
+        StockErrorCode.INSUFFICIENT_STOCK,
+      ]);
+      expect(voucherService.save).not.toHaveBeenCalled();
+    });
+
+    it('reports an over-sent holding once, on the first line drawing on it', async () => {
+      stockReads(undefined, [
+        {
+          sbl_godown_id: GD_MAIN,
+          sbl_item_id: MILK,
+          sbl_lot_id: LOT_MILK,
+          sbl_bucket: 'SALEABLE',
+          sbl_on_hand_qty: new Prisma.Decimal(5),
+        },
+      ]);
+      const line = { itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, qty: 3 };
+
+      await expect(
+        codesOf(
+          service.save(
+            TRANSFER_OUT_RULES,
+            outPayload({ lines: [{ ...line, lineNo: 1 }, { ...line, lineNo: 2 }, lotlessLine] }),
+          ),
+        ),
+      ).resolves.toEqual([StockErrorCode.INSUFFICIENT_STOCK]);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // §5 — getOne and the inbound worklist
+  // ────────────────────────────────────────────────────────────────────────
+
+  /** The bound values of the Nth raw query — the tagged template's arguments after the strings. */
+  const boundValues = (call: number): unknown[] =>
+    (prisma.$queryRaw.mock.calls[call] as unknown[]).slice(1);
+
+  describe('getOne', () => {
+    it('loads the document through the shared service and adds every transit row, settled ones too', async () => {
+      voucherService.getById.mockResolvedValue({ header: { svhId: OUT_ID }, lines: [] });
+      prisma.$queryRaw.mockResolvedValueOnce([
+        transitDbRow({ stt_status: 'RECEIVED', remaining_qty: new Prisma.Decimal(0) }),
+      ]);
+
+      const result = await service.getOne(
+        TRANSFER_OUT_RULES,
+        OUT_ID,
+        ACC_YEAR,
+        COMPANY_ID,
+        BRANCH_A,
+      );
+
+      expect(voucherService.getById).toHaveBeenCalledWith(
+        TRANSFER_OUT_RULES,
+        OUT_ID,
+        ACC_YEAR,
+        COMPANY_ID,
+        BRANCH_A,
+      );
+      expect(boundValues(0)).toEqual([OUT_ID, ACC_YEAR, false]);
+      expect(result.header).toEqual({ svhId: OUT_ID });
+      expect(result.transit).toEqual([
+        expect.objectContaining({ status: 'RECEIVED', remainingQty: 0 }),
+      ]);
+    });
+  });
+
+  describe('inbound', () => {
+    const inboundRow = (overrides: Record<string, unknown> = {}) => ({
+      ...transitDbRow(),
+      stt_cost_rate_wot: new Prisma.Decimal(25),
+      stt_out_refno: 'TRF/2026-2027/TILL-01/2',
+      stt_from_branch_id: BRANCH_A,
+      days_in_flight: 9,
+      total_count: BigInt(3),
+      ...overrides,
+    });
+
+    it('maps each open transit row, with where it came from and how long it has been out', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([
+        inboundRow({
+          stt_lr_no: 'LR-77',
+          stt_vehicle_no: 'KL-07-1234',
+          stt_expected_on: new Date('2026-04-05T00:00:00Z'),
+          stt_received_on: new Date('2026-04-06T08:00:00Z'),
+          stt_received_qty: new Prisma.Decimal(10),
+          remaining_qty: new Prisma.Decimal(20),
+          stt_status: 'PARTIAL',
+        }),
+      ]);
+
+      const result = await service.inbound(COMPANY_ID, BRANCH_B, 25, 50);
+
+      expect(boundValues(0)).toEqual([COMPANY_ID, BRANCH_B, 25, 50]);
+      expect(result).toEqual({
+        items: [
+          {
+            sttId: '01000000-0000-7000-8000-000000000031',
+            status: 'PARTIAL',
+            itemId: MILK,
+            itemCode: 'MILK',
+            itemName: 'Milk 500ml',
+            lotId: LOT_MILK,
+            batchNo: 'B-2604',
+            expiryDate: '2026-06-30',
+            toGodownId: GD_STORE,
+            toGodownName: 'STORE',
+            bucket: 'SALEABLE',
+            baseUomId: UOM_ID,
+            unitName: 'PCS',
+            sentQty: 30,
+            receivedQty: 10,
+            damageQty: 0,
+            remainingQty: 20,
+            costRate: 28,
+            costRateWot: 25,
+            transitValue: 840,
+            lrNo: 'LR-77',
+            vehicleNo: 'KL-07-1234',
+            expectedOn: '2026-04-05',
+            sentOn: '2026-04-02T06:00:00.000Z',
+            receivedOn: '2026-04-06T08:00:00.000Z',
+            outRefno: 'TRF/2026-2027/TILL-01/2',
+            fromBranchId: BRANCH_A,
+            daysInFlight: 9,
+          },
+        ],
+        meta: { limit: 25, offset: 50, count: 3 },
+      });
+    });
+
+    it('pages 100 from the start by default, and reads a missing day count and dates as empty', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([
+        inboundRow({ days_in_flight: null, expiry_date: null, stt_sent_on: null }),
+      ]);
+
+      const result = await service.inbound(COMPANY_ID, BRANCH_B);
+
+      expect(boundValues(0)).toEqual([COMPANY_ID, BRANCH_B, 100, 0]);
+      expect(result.items[0]).toMatchObject({ daysInFlight: 0, expiryDate: null, sentOn: null });
+    });
+
+    it('counts nothing when nothing is on its way', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+
+      await expect(service.inbound(COMPANY_ID, BRANCH_B)).resolves.toEqual({
+        items: [],
+        meta: { limit: 100, offset: 0, count: 0 },
+      });
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // §1.1 — short-settle
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('settleShort', () => {
+    const REASON_ID = '01000000-0000-7000-8000-0000000000e9';
+    const OTHER_USER = '01000000-0000-7000-8000-0000000000a2';
+    let accounts: { postShortSettlement: jest.Mock };
+    let tx: { $queryRaw: jest.Mock };
+    let settling: StockTransferService;
+
+    const args = (overrides: Record<string, unknown> = {}) => ({
+      outVoucherId: OUT_ID,
+      accYear: ACC_YEAR,
+      companyId: COMPANY_ID,
+      branchId: BRANCH_A,
+      reasonId: REASON_ID,
+      ...overrides,
+    });
+    const reasonRow = (overrides: Record<string, unknown> = {}) => ({
+      srm_id: REASON_ID,
+      srm_direction: 'OUT',
+      srm_is_active: true,
+      ...overrides,
+    });
+    const settledRow = (shortQty: number, shortValue: number) => ({
+      sttId: '01000000-0000-7000-8000-000000000031',
+      itemId: MILK,
+      lotId: LOT_MILK,
+      toGodownId: GD_STORE,
+      bucket: 'SALEABLE',
+      shortQty: new Prisma.Decimal(shortQty),
+      costRate: new Prisma.Decimal(28),
+      shortValue: new Prisma.Decimal(shortValue),
+    });
+
+    beforeEach(() => {
+      settleMock.mockReset();
+      statusLogMock.mockReset();
+      settleMock.mockResolvedValue({
+        refno: 'TRF/2026-2027/TILL-01/2',
+        rows: [settledRow(2, 56), settledRow(1, 28)],
+      });
+      statusLogMock.mockResolvedValue({} as never);
+      accounts = {
+        postShortSettlement: jest.fn().mockResolvedValue({
+          voucherId: 'avh-1',
+          voucherRefno: 'Jrl/7',
+          amount: 84,
+          legCount: 2,
+        }),
+      };
+      tx = {
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValue([
+            { svh_tenant_id: 'tenant-1', svh_device_id: DEVICE_ID, svh_session_id: 'session-1' },
+          ]),
+      };
+      Object.assign(prisma, {
+        $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      });
+      settling = new StockTransferService(
+        prisma as unknown as PrismaService,
+        voucherService as unknown as StockVoucherService,
+        { getUserId: () => USER_ID } as unknown as RequestContextService,
+        accounts as never,
+      );
+    });
+
+    /** The reason read, then (after the transaction) the transit reload. */
+    const reads = (reason: unknown[] = [reasonRow()], transit = [transitDbRow()]) => {
+      prisma.$queryRaw.mockResolvedValueOnce(reason).mockResolvedValueOnce(transit);
+    };
+
+    it.each([
+      ['a reason that does not exist', [], StockErrorCode.REASON_NOT_FOUND],
+      ['an inactive reason', [reasonRow({ srm_is_active: false })], StockErrorCode.REASON_INACTIVE],
+      [
+        'a reason for stock found, not lost',
+        [reasonRow({ srm_direction: 'IN' })],
+        StockErrorCode.REASON_WRONG_DIRECTION,
+      ],
+    ])('refuses %s before opening a transaction', async (_label, reason, code) => {
+      reads(reason);
+
+      const error = await settling.settleShort(args()).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(422);
+      expect((error as HttpException).getResponse()).toMatchObject({
+        errors: [{ field: 'reasonId', code }],
+      });
+      expect(settleMock).not.toHaveBeenCalled();
+      expect(accounts.postShortSettlement).not.toHaveBeenCalled();
+    });
+
+    it('accepts a reason that points both ways', async () => {
+      reads([reasonRow({ srm_direction: 'BOTH' })]);
+
+      await expect(settling.settleShort(args())).resolves.toMatchObject({ rowsSettled: 2 });
+    });
+
+    it('settles, posts the loss and files the CLOSED step in one transaction, then reloads the rows', async () => {
+      reads();
+
+      const result = await settling.settleShort(args({ remarks: '  lost on the ghat road  ' }));
+
+      expect(boundValues(0)).toEqual([REASON_ID, COMPANY_ID]);
+      expect(settleMock).toHaveBeenCalledWith(tx, {
+        outId: OUT_ID,
+        outAccYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_A,
+        reasonId: REASON_ID,
+        remarks: 'lost on the ghat road',
+        actor: USER_ID,
+        settledOn: expect.any(Date),
+      });
+      expect(accounts.postShortSettlement).toHaveBeenCalledWith(tx, {
+        outId: OUT_ID,
+        outAccYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_A,
+        refno: 'TRF/2026-2027/TILL-01/2',
+        reasonId: REASON_ID,
+        remarks: 'lost on the ghat road',
+        rows: [settledRow(2, 56), settledRow(1, 28)],
+        actor: USER_ID,
+        settledOn: expect.any(Date),
+      });
+      expect(statusLogMock).toHaveBeenCalledWith(tx, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_A,
+        tenantId: 'tenant-1',
+        accYear: ACC_YEAR,
+        srcModule: TxnStatusSrcModule.INVENTORY,
+        srcDocType: TxnStatusDocType.STOCK_TRANSFER,
+        srcDocId: OUT_ID,
+        srcDocRefno: 'TRF/2026-2027/TILL-01/2',
+        event: TxnStatusEvent.CLOSED,
+        fromStatus: 'IN_TRANSIT',
+        toStatus: 'RECEIVED',
+        changedOn: expect.any(Date),
+        changedBy: USER_ID,
+        remarks: 'lost on the ghat road',
+        deviceId: DEVICE_ID,
+        sessionId: 'session-1',
+      });
+      expect(result).toEqual({
+        outVoucher: {
+          svhId: OUT_ID,
+          accYear: ACC_YEAR,
+          refno: 'TRF/2026-2027/TILL-01/2',
+          status: 'RECEIVED',
+        },
+        rowsSettled: 2,
+        shortQty: 3,
+        shortValue: 84,
+        accountsVoucherId: 'avh-1',
+        accountsVoucherRefno: 'Jrl/7',
+        transit: [expect.objectContaining({ sttId: '01000000-0000-7000-8000-000000000031' })],
+      });
+    });
+
+    it('stamps the same moment on the settlement, the accounts leg and the trail', async () => {
+      reads();
+
+      await settling.settleShort(args());
+
+      const settledOn = settleMock.mock.calls[0][1].settledOn;
+      expect(
+        (accounts.postShortSettlement.mock.calls[0] as [unknown, { settledOn: Date }])[1].settledOn,
+      ).toBe(settledOn);
+      expect(statusLogMock.mock.calls[0][1].changedOn).toBe(settledOn);
+    });
+
+    it('writes a blank remark as none, and the trail says what never arrived', async () => {
+      reads();
+
+      await settling.settleShort(args({ remarks: '   ' }));
+
+      expect(settleMock.mock.calls[0][1].remarks).toBeNull();
+      expect(statusLogMock.mock.calls[0][1].remarks).toBe('Short-settled: 3 never arrived');
+    });
+
+    it('answers no accounts voucher under PERIODIC, and an empty device when the header is gone', async () => {
+      reads();
+      accounts.postShortSettlement.mockResolvedValue(null);
+      tx.$queryRaw.mockResolvedValue([]);
+
+      const result = await settling.settleShort(args());
+
+      expect(result).toMatchObject({ accountsVoucherId: null, accountsVoucherRefno: null });
+      expect(statusLogMock.mock.calls[0][1]).toMatchObject({
+        tenantId: null,
+        deviceId: null,
+        sessionId: null,
+      });
+    });
+
+    it('acts as the user the body names over the request user', async () => {
+      reads();
+
+      await settling.settleShort(args({ userId: OTHER_USER }));
+
+      expect(settleMock.mock.calls[0][1].actor).toBe(OTHER_USER);
+      expect(statusLogMock.mock.calls[0][1].changedBy).toBe(OTHER_USER);
+    });
+
+    it("lets the engine's refusal through and posts nothing after it", async () => {
+      reads();
+      const refusal = new HttpException('Transfer is RECEIVED', 409);
+      settleMock.mockRejectedValue(refusal);
+
+      await expect(settling.settleShort(args())).rejects.toBe(refusal);
+      expect(accounts.postShortSettlement).not.toHaveBeenCalled();
+      expect(statusLogMock).not.toHaveBeenCalled();
     });
   });
 });

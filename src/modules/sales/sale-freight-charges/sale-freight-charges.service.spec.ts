@@ -1,7 +1,9 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma, SaleFreightCharge } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
+import { SaveSaleFreightChargeDto } from './dto/save-sale-freight-charges.dto';
 import { SaleFreightChargeService } from './sale-freight-charges.service';
 import { SaleFreightChargeErrorCode } from './types/sale-freight-charges-error-codes';
 
@@ -286,6 +288,62 @@ describe('SaleFreightChargeService', () => {
         modifiedRecord: payload,
         userId: 'rate-sync',
       });
+    });
+
+    it('leaves every column a validated body omits undefined, so the update keeps it', async () => {
+      prisma.saleFreightCharge.findFirst.mockResolvedValue(freightRow());
+      // What the ValidationPipe hands over: every declared field is an own key.
+      const dto = plainToInstance(SaveSaleFreightChargeDto, {
+        frId: FR_ID,
+        frToKm: 60,
+        frFromWeight: null,
+      });
+
+      await service.save(dto);
+
+      const { data } = prisma.saleFreightCharge.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).toMatchObject({ frToKm: 60, frFromWeight: null });
+      for (const omitted of [
+        'frCompanyId',
+        'frBranchId',
+        'frFromKm',
+        'frToWeight',
+        'frFreightChrg',
+        'frIsActive',
+      ]) {
+        expect(data[omitted]).toBeUndefined();
+      }
+    });
+
+    it('stamps the default actor on an update when nobody is named or logged in', async () => {
+      context.getUserId.mockReturnValue(null);
+      prisma.saleFreightCharge.findFirst.mockResolvedValue(freightRow());
+
+      await service.save({ frId: FR_ID, frToKm: 60 });
+
+      expect(prisma.saleFreightCharge.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ frModifiedBy: DEFAULT_ACTOR }) as object,
+        }),
+      );
+      expect(auditEntry().userId).toBe(DEFAULT_ACTOR);
+    });
+
+    it('answers a missing company or branch on update with a 400', async () => {
+      prisma.saleFreightCharge.findFirst.mockResolvedValue(freightRow());
+      prisma.saleFreightCharge.update.mockRejectedValue(prismaError('P2003'));
+
+      const refusal = await refusalOf(service.save({ frId: FR_ID, frBranchId: BRANCH_ID }));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'request', code: SaleFreightChargeErrorCode.REFERENCE_NOT_FOUND }],
+        },
+      });
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
     });
 
     it('answers a unique-index clash on update with the same 409', async () => {

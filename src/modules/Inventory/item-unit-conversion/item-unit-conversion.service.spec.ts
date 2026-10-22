@@ -124,6 +124,19 @@ describe('ItemUnitConversionService', () => {
     );
   });
 
+  // The item's stored rows, answering the where they are read with: the
+  // base-row lock (notes 138) reads only iuc_is_base_unit = true.
+  const mockPersistedRows = (rows: ItemUnitConversion[]) =>
+    prisma.itemUnitConversion.findMany.mockImplementation((args) =>
+      Promise.resolve(
+        rows.filter(
+          (row) =>
+            args.where?.iucIsBaseUnit === undefined ||
+            row.iucIsBaseUnit === args.where.iucIsBaseUnit,
+        ),
+      ),
+    );
+
   it('creates item unit conversions', async () => {
     prisma.itemUnitConversion.create.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemMaster.findFirst.mockResolvedValue({
@@ -351,7 +364,7 @@ describe('ItemUnitConversionService', () => {
 
   it('derives a new row cumulative factor from persisted item unit conversion rows', async () => {
     const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd18';
-    prisma.itemUnitConversion.findMany.mockResolvedValue([
+    mockPersistedRows([
       makeItemUnitConversionRecord({
         iucId: '019c6f6c-be87-7a11-8905-36092c46fd19',
         iucUnitId: BASE_UNIT_ID,
@@ -470,6 +483,130 @@ describe('ItemUnitConversionService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.itemUnitConversion.create).not.toHaveBeenCalled();
+  });
+
+  describe('a saved base unit is locked (notes 138 A1)', () => {
+    const BASE_IUC_ID = '019c6f6c-be87-7a11-8905-36092c46fd30';
+    const OTHER_IUC_ID = '019c6f6c-be87-7a11-8905-36092c46fd31';
+    const baseRow = makeItemUnitConversionRecord({
+      iucId: BASE_IUC_ID,
+      iucUnitId: BASE_UNIT_ID,
+      iucBaseUnitId: BASE_UNIT_ID,
+      iucUnitSlno: 1,
+      iucIsBaseUnit: true,
+      iucIsDefaultUnit: false,
+      iucIsBigUnit: false,
+      iucToBaseFactor: new Prisma.Decimal(1),
+      iucUnitFactor: new Prisma.Decimal(1),
+    });
+    const otherRow = makeItemUnitConversionRecord({
+      iucId: OTHER_IUC_ID,
+      iucUnitSlno: 2,
+      iucToBaseFactor: new Prisma.Decimal(12),
+      iucUnitFactor: new Prisma.Decimal(12),
+    });
+
+    beforeEach(() => mockPersistedRows([otherRow, baseRow]));
+
+    it.each([
+      [
+        'the base row re-pointed at another unit',
+        { iuc_id: BASE_IUC_ID, iuc_unit_id: UNIT_ID },
+        'iuc_unit_id',
+      ],
+      [
+        'the base row un-marked',
+        { iuc_id: BASE_IUC_ID, iuc_unit_id: BASE_UNIT_ID, iuc_is_base_unit: false },
+        'iuc_is_base_unit',
+      ],
+      [
+        'another row marked base',
+        { iuc_id: OTHER_IUC_ID, iuc_unit_id: UNIT_ID, iuc_is_base_unit: true },
+        'iuc_is_base_unit',
+      ],
+      [
+        'a new row marked base',
+        { iuc_unit_id: '019c6f6c-be87-7a11-8905-36092c46fd32', iuc_is_base_unit: true },
+        'iuc_is_base_unit',
+      ],
+      [
+        'a row naming another base unit',
+        { iuc_id: OTHER_IUC_ID, iuc_unit_id: UNIT_ID, iuc_base_unit_id: UNIT_ID },
+        'iuc_base_unit_id',
+      ],
+    ])('refuses %s with 409 and writes nothing', async (_case, row, field) => {
+      await expect(service.save({ iuc_item_id: ITEM_ID, ...row })).rejects.toMatchObject({
+        status: 409,
+        response: { errors: [{ field, code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+      expect(prisma.itemUnitConversion.update).not.toHaveBeenCalled();
+      expect(prisma.itemUnitConversion.create).not.toHaveBeenCalled();
+    });
+
+    it('names the row of an array save by its index', async () => {
+      await expect(
+        service.save([
+          { iuc_item_id: ITEM_ID, iuc_id: OTHER_IUC_ID, iuc_unit_id: UNIT_ID },
+          { iuc_item_id: ITEM_ID, iuc_id: BASE_IUC_ID, iuc_unit_id: UNIT_ID },
+        ]),
+      ).rejects.toMatchObject({
+        response: { errors: [{ field: '1.iuc_unit_id', code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+    });
+
+    it("still takes a new factor on another row, and the base row's weight", async () => {
+      prisma.itemUnitConversion.findFirst.mockImplementation((args) =>
+        Promise.resolve(args.where?.iucId === BASE_IUC_ID ? baseRow : otherRow),
+      );
+      prisma.itemUnitConversion.update.mockImplementation((args) =>
+        Promise.resolve(args.where.iucId === BASE_IUC_ID ? baseRow : otherRow),
+      );
+
+      await service.save([
+        {
+          iuc_item_id: ITEM_ID,
+          iuc_id: OTHER_IUC_ID,
+          iuc_unit_id: UNIT_ID,
+          iuc_unit_slno: 2,
+          iuc_unit_factor: 24,
+        },
+        {
+          iuc_item_id: ITEM_ID,
+          iuc_id: BASE_IUC_ID,
+          iuc_unit_id: BASE_UNIT_ID,
+          iuc_unit_slno: 1,
+          iuc_unit_factor: 1,
+          iuc_uom_weight: 2,
+        },
+      ]);
+
+      expect(prisma.itemUnitConversion.update).toHaveBeenCalledTimes(2);
+      const [otherUpdate, baseUpdate] = prisma.itemUnitConversion.update.mock.calls.map(
+        ([args]) => args.data,
+      );
+      expect(otherUpdate).toMatchObject({
+        iucUnitId: UNIT_ID,
+        iucBaseUnitId: BASE_UNIT_ID,
+        iucUnitFactor: 24,
+        iucToBaseFactor: 24,
+      });
+      expect(baseUpdate).toMatchObject({
+        iucUnitId: BASE_UNIT_ID,
+        iucIsBaseUnit: true,
+        iucUomWeight: 2,
+      });
+    });
+
+    it('refuses to delete the base row', async () => {
+      prisma.itemUnitConversion.findFirst.mockResolvedValue(baseRow);
+      prisma.itemMaster.findFirst.mockResolvedValue({ itemBaseUnitId: BASE_UNIT_ID });
+
+      await expect(service.delete(BASE_IUC_ID)).rejects.toMatchObject({
+        status: 409,
+        response: { errors: [{ field: 'iuc_id', code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+      expect(prisma.itemUnitConversion.update).not.toHaveBeenCalled();
+    });
   });
 
   it('soft deletes item unit conversions', async () => {

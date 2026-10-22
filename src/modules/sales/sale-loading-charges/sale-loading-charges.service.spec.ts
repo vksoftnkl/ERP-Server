@@ -1,7 +1,9 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma, SaleLoadingCharge } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
+import { SaveSaleLoadingChargeDto } from './dto/save-sale-loading-charges.dto';
 import { SaleLoadingChargeService } from './sale-loading-charges.service';
 import { SaleLoadingChargeErrorCode } from './types/sale-loading-charges-error-codes';
 
@@ -299,6 +301,75 @@ describe('SaleLoadingChargeService', () => {
         modifiedRecord: payload,
         userId: 'rate-sync',
       });
+    });
+
+    it('leaves every column a validated body omits undefined, so the update keeps it', async () => {
+      prisma.saleLoadingCharge.findFirst.mockResolvedValue(loadingRow());
+      // What the ValidationPipe hands over: every declared field is an own key.
+      const dto = plainToInstance(SaveSaleLoadingChargeDto, {
+        ilcId: ILC_ID,
+        ilcLoadChrg: 40,
+        ilcBranchId: null,
+      });
+
+      await service.save(dto);
+
+      const { data } = prisma.saleLoadingCharge.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).toMatchObject({ ilcLoadChrg: 40, ilcBranchId: null });
+      for (const omitted of [
+        'ilcCompId',
+        'ilcFromWeight',
+        'ilcToWeight',
+        'ilcUnloadChrg',
+        'ilcIsActive',
+      ]) {
+        expect(data[omitted]).toBeUndefined();
+      }
+    });
+
+    it('stamps the default actor on an update when nobody is named or logged in', async () => {
+      context.getUserId.mockReturnValue(null);
+      prisma.saleLoadingCharge.findFirst.mockResolvedValue(loadingRow());
+
+      await service.save({ ilcId: ILC_ID, ilcLoadChrg: 40 });
+
+      expect(prisma.saleLoadingCharge.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ ilcModifiedBy: DEFAULT_ACTOR }) as object,
+        }),
+      );
+      expect(auditEntry().userId).toBe(DEFAULT_ACTOR);
+    });
+
+    it('answers a unique-index clash on update with the same 409', async () => {
+      prisma.saleLoadingCharge.findFirst.mockResolvedValue(loadingRow());
+      prisma.saleLoadingCharge.update.mockRejectedValue(prismaError('P2002'));
+
+      const refusal = await refusalOf(service.save({ ilcId: ILC_ID, ilcFromWeight: 0 }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: {
+          errors: [{ field: 'ilcFromWeight', code: SaleLoadingChargeErrorCode.RANGE_EXISTS }],
+        },
+      });
+    });
+
+    it('answers a missing company or branch on update with a 400', async () => {
+      prisma.saleLoadingCharge.findFirst.mockResolvedValue(loadingRow());
+      prisma.saleLoadingCharge.update.mockRejectedValue(prismaError('P2003'));
+
+      const refusal = await refusalOf(service.save({ ilcId: ILC_ID, ilcCompId: COMPANY_ID }));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'request', code: SaleLoadingChargeErrorCode.REFERENCE_NOT_FOUND }],
+        },
+      });
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
     });
 
     it('answers an overlap on update with the same 409', async () => {

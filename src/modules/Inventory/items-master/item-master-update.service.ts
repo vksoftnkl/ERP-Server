@@ -29,6 +29,7 @@ import { ItemReorderPayload } from '../items-reorder-master/types/item-reorder-a
 import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils';
 import { ItemErrorCode } from './types/item-error-codes';
+import { baseUnitChange, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
 
 export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
 
@@ -246,7 +247,12 @@ export class ItemMasterUpdateService {
     );
   }
 
-  /** Sync item_unit_conversion rows; natural key: iuc_unit_id. */
+  /**
+   * Sync item_unit_conversion rows; natural key: iuc_unit_id. Once the item has
+   * a base row, no payload row may change its base unit and the base row may
+   * not be left out (notes 138 A1, item-base-unit.helper) — refused before
+   * anything is written, naming the payload row.
+   */
   private async syncUnitConversions(
     itemId: string,
     children: CompositeItemUnitConversionDto[] | undefined,
@@ -264,23 +270,42 @@ export class ItemMasterUpdateService {
       'two conversion rows for the same unit',
     );
 
+    const base = existing.find((row) => row.iuc_is_base_unit);
     const toSave: SaveItemUnitConversionDto[] = [];
     const claimedIds = new Set<string>();
-    for (const child of children) {
+    children.forEach((child, index) => {
       const match = child.iuc_id
         ? existing.find((row) => row.iuc_id === child.iuc_id)
         : existingByKey.get(child.iuc_unit_id);
+      const change = base && baseUnitChange(base, { ...child, iuc_id: match?.iuc_id });
+      if (change) {
+        refuseBaseUnitChange(
+          ItemErrorCode.BASE_UNIT_LOCKED,
+          `unit_conversions.${index}.${change.column}`,
+          change.message,
+        );
+      }
       if (match) {
         claimedIds.add(match.iuc_id);
         if (!this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
-          continue;
+          return;
         }
       }
       toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
+    });
+    // Notes 138 A1 — an unclaimed row is soft-deleted below, and the base
+    // row's going would change the base unit just as surely.
+    if (base && !claimedIds.has(base.iuc_id)) {
+      refuseBaseUnitChange(
+        ItemErrorCode.BASE_UNIT_LOCKED,
+        'unit_conversions',
+        `The item's base row (${base.iuc_id}, unit ${base.iuc_unit_id}) is missing from ` +
+          'unit_conversions, which would delete it. Send it back with the other rows.',
+      );
     }
 
-    // Soft-delete first: releasing removed rows (e.g. an old base unit) before
-    // saving avoids clashes on the table's partial unique indexes.
+    // Soft-delete first: releasing removed rows before saving avoids clashes
+    // on the table's partial unique indexes.
     const staleIds = existing.filter((row) => !claimedIds.has(row.iuc_id)).map((row) => row.iuc_id);
     if (staleIds.length > 0) {
       await this.itemUnitConversionService.toggleDelete(staleIds, tx);

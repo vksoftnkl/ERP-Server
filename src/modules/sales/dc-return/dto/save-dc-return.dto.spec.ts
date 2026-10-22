@@ -1,6 +1,10 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CancelDcReturnDto, DcReturnKeysDto } from './dc-return-lifecycle.dto';
+import {
+  CancelDcReturnDto,
+  DcReturnKeysDto,
+  DcReturnTransportDto,
+} from './dc-return-lifecycle.dto';
 import { SaveDcReturnDto } from './save-dc-return.dto';
 import { SaveDcReturnItemDto } from './save-dc-return-item.dto';
 
@@ -76,6 +80,12 @@ describe('SaveDcReturnDto', () => {
     ).toEqual([LOADMAN_A]);
   });
 
+  it('refuses a loadman list that is neither text nor an array', () => {
+    expect(erroredFields(SaveDcReturnDto, { ...HEADER, sdrLoadmanId: 42 })).toEqual([
+      'sdrLoadmanId',
+    ]);
+  });
+
   it('refuses a loadman id that is not a uuid', () => {
     expect(erroredFields(SaveDcReturnDto, { ...HEADER, sdrLoadmanId: 'driver-1' })).toEqual([
       'sdrLoadmanId',
@@ -136,5 +146,21 @@ describe('DC return lifecycle DTOs', () => {
   it('wants a reason to cancel', () => {
     expect(erroredFields(CancelDcReturnDto, { ...keys, reason: '  ' })).toEqual(['reason']);
     expect(erroredFields(CancelDcReturnDto, { ...keys, reason: 'Wrong challan' })).toEqual([]);
+  });
+
+  it('validates the transport band it carries', () => {
+    const [error] = validateSync(
+      plainToInstance(DcReturnTransportDto, { ...keys, transport: { direction: 'SIDEWAYS' } }),
+    );
+
+    expect(error.property).toBe('transport');
+    expect(error.children?.[0].property).toBe('direction');
+    // Either direction passes the DTO; the service writes the band INWARD regardless.
+    expect(
+      erroredFields(DcReturnTransportDto, {
+        ...keys,
+        transport: { direction: 'OUTWARD', vehicleNo: 'TN01AB1234' },
+      }),
+    ).toEqual([]);
   });
 });

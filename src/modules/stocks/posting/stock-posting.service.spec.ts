@@ -94,7 +94,9 @@ describe('StockPostingService', () => {
     // §1.9 — the accounts leg is the accounts service's; here only WHEN it is
     // asked matters.
     accounts = {
-      postForVoucher: jest.fn().mockResolvedValue({ voucherId: 'v1', voucherRefno: 'OPN0001', amount: 1, legCount: 2 }),
+      postForVoucher: jest
+        .fn()
+        .mockResolvedValue({ voucherId: 'v1', voucherRefno: 'OPN0001', amount: 1, legCount: 2 }),
       reverseForVoucher: jest.fn().mockResolvedValue(null),
     };
     service = new StockPostingService(
@@ -107,9 +109,11 @@ describe('StockPostingService', () => {
     it("runs the seven phases through the helper, inside the caller's transaction", async () => {
       const tx = txWith({ docDatetime: new Date('2026-09-21T14:00:00Z'), godowns: [GODOWN_ID] });
 
-      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).resolves.toMatchObject(
-        { rowsPosted: 3, status: 'POSTED', accountsVoucherId: 'v1' },
-      );
+      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).resolves.toMatchObject({
+        rowsPosted: 3,
+        status: 'POSTED',
+        accountsVoucherId: 'v1',
+      });
 
       expect(postStockVoucher).toHaveBeenCalledTimes(1);
       expect(postStockVoucher).toHaveBeenCalledWith(tx, {
@@ -118,6 +122,41 @@ describe('StockPostingService', () => {
         accYear: ACC_YEAR,
         actor: ACTOR,
         postedOn,
+      });
+    });
+
+    it('asks for the accounts voucher with the document’s own identity once it POSTED', async () => {
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+      const rules = { ...RULES, displayName: 'Opening stock' } as unknown as StockVoucherTypeRules;
+      const named = new StockVoucherSource({
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        rules,
+      });
+
+      await service.post(tx, named, { actor: ACTOR, postedOn });
+
+      expect(accounts.postForVoucher).toHaveBeenCalledWith(tx, {
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        voucherType: 'OPENING',
+        displayName: 'Opening stock',
+        actor: ACTOR,
+        postedOn,
+      });
+    });
+
+    it('reports no accounts voucher when the accounts side wrote none (PERIODIC, or zero value)', async () => {
+      accounts.postForVoucher.mockResolvedValue(null);
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+
+      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).resolves.toMatchObject({
+        status: 'POSTED',
+        accountsVoucherId: null,
       });
     });
 
@@ -151,6 +190,36 @@ describe('StockPostingService', () => {
       await expect(failure).rejects.toThrow(/frozen for physical count PHY0007/);
       await expect(failure).rejects.toThrow(/Post or cancel the count first/);
       expect(postStockVoucher).not.toHaveBeenCalled();
+    });
+
+    it('names the count by its id when it has no refno yet', async () => {
+      const tx = txWith({
+        docDatetime: new Date('2026-09-21T10:30:00Z'),
+        godowns: [GODOWN_ID],
+        frozenBy: window,
+      });
+      tx.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        if (sql.includes('SELECT svh_doc_datetime')) {
+          return Promise.resolve([{ svh_doc_datetime: new Date('2026-09-21T10:30:00Z') }]);
+        }
+        if (sql.includes('SELECT DISTINCT g.godown_id')) {
+          return Promise.resolve([{ godown_id: GODOWN_ID }]);
+        }
+        return Promise.resolve([
+          {
+            svh_id: COUNT_ID,
+            svh_refno: null,
+            godown_id: GODOWN_ID,
+            svh_freeze_from: window.from,
+            svh_freeze_to: window.to,
+          },
+        ]);
+      });
+
+      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).rejects.toThrow(
+        `frozen for physical count ${COUNT_ID} from 2026-09-21T09:00:00.000Z to 2026-09-21T12:00:00.000Z`,
+      );
     });
 
     it("asks the database about the MOVEMENT's timestamp, never about now()", async () => {
@@ -208,6 +277,54 @@ describe('StockPostingService', () => {
         reason: 'keyed twice',
         cancelledOn,
       });
+    });
+
+    it('mirrors the accounts voucher of a type that posts one, in the same transaction', async () => {
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+
+      await service.cancel(tx, source(), {
+        actor: ACTOR,
+        reason: 'keyed twice',
+        cancelledOn: postedOn,
+      });
+
+      expect(accounts.reverseForVoucher).toHaveBeenCalledWith(tx, {
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        voucherType: 'OPENING',
+        reason: 'keyed twice',
+        actor: ACTOR,
+      });
+    });
+
+    it('leaves accounts alone for a sales shadow or a type that never posts a voucher', async () => {
+      const shadow = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+      await service.cancel(shadow, source(), {
+        actor: ACTOR,
+        reason: 'bill cancelled',
+        cancelledOn: postedOn,
+        ledgerSource: { srcModule: 'SALES', srcDocType: 'SALE_BILL', srcRefno: 'bil00042' },
+      });
+
+      const transfer = new StockVoucherSource({
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        rules: {
+          voucherType: 'TRANSFER_OUT',
+          postShape: 'TRANSFER_OUT',
+        } as unknown as StockVoucherTypeRules,
+      });
+      await service.cancel(txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] }), transfer, {
+        actor: ACTOR,
+        reason: 'wrong branch',
+        cancelledOn: postedOn,
+      });
+
+      expect(cancelStockVoucher).toHaveBeenCalledTimes(2);
+      expect(accounts.reverseForVoucher).not.toHaveBeenCalled();
     });
 
     it('is held by the same freeze as a post — a reversal moves stock too', async () => {

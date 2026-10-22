@@ -514,6 +514,116 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(data.itemPackingItemIds).toEqual([]);
   });
 
+  describe('a saved base unit is locked (notes 138)', () => {
+    const OTHER_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46ac01';
+    const OTHER_IUC_ID = '019c6f6c-be87-7a11-8905-36092c46ac02';
+    const storedRows = () => [
+      { iuc_id: IUC_ID, iuc_unit_id: UNIT_ID, iuc_base_unit_id: UNIT_ID, iuc_is_base_unit: true },
+    ];
+    const update = (rest: Partial<SaveItemCompositeDto>): SaveItemCompositeDto => ({
+      item_id: ITEM_ID,
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
+      ...rest,
+    });
+
+    beforeEach(() => {
+      unitConversionService.findByItemId.mockResolvedValue(storedRows());
+      prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemBaseUnitId: null }));
+      prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
+    });
+
+    it('refuses item_base_unit_id other than the base row unit, before writing the item', async () => {
+      await expect(
+        service.saveComposite(update({ item_base_unit_id: OTHER_UNIT_ID })),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { errors: [{ field: 'item_base_unit_id', code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+      expect(prisma.itemMaster.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['omitted', undefined],
+      ['null', null],
+    ])('takes the header from the base row when item_base_unit_id is %s', async (_case, sent) => {
+      await service.saveComposite(update({ item_base_unit_id: sent }));
+
+      expect(prisma.itemMaster.update.mock.calls[0][0].data.itemBaseUnitId).toBe(UNIT_ID);
+    });
+
+    it('refuses a save that leaves the base row out of unit_conversions', async () => {
+      await expect(
+        service.saveComposite(update({ unit_conversions: [{ iuc_unit_id: OTHER_UNIT_ID }] })),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { errors: [{ field: 'unit_conversions', code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+      expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
+      expect(unitConversionService.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses another row marked base, naming that payload row', async () => {
+      await expect(
+        service.saveComposite(
+          update({
+            unit_conversions: [
+              { iuc_unit_id: OTHER_UNIT_ID, iuc_is_base_unit: true },
+              { iuc_unit_id: UNIT_ID, iuc_is_base_unit: false },
+            ],
+          }),
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          errors: [{ field: 'unit_conversions.0.iuc_is_base_unit', code: 'ITEM_BASE_UNIT_LOCKED' }],
+        },
+      });
+      expect(unitConversionService.save).not.toHaveBeenCalled();
+    });
+
+    it("refuses the base row's unit re-picked by its id", async () => {
+      await expect(
+        service.saveComposite(
+          update({ unit_conversions: [{ iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID }] }),
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          errors: [{ field: 'unit_conversions.0.iuc_unit_id', code: 'ITEM_BASE_UNIT_LOCKED' }],
+        },
+      });
+    });
+
+    it('adds a new unit above the base row and changes a factor', async () => {
+      unitConversionService.findByItemId.mockResolvedValue([
+        ...storedRows(),
+        {
+          iuc_id: OTHER_IUC_ID,
+          iuc_unit_id: OTHER_UNIT_ID,
+          iuc_base_unit_id: UNIT_ID,
+          iuc_is_base_unit: false,
+          iuc_unit_factor: 12,
+        },
+      ]);
+      const NEW_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46ac03';
+
+      await service.saveComposite(
+        update({
+          unit_conversions: [
+            { iuc_unit_id: NEW_UNIT_ID, iuc_unit_factor: 1 },
+            { iuc_id: OTHER_IUC_ID, iuc_unit_id: OTHER_UNIT_ID, iuc_unit_factor: 24 },
+            { iuc_id: IUC_ID, iuc_unit_id: UNIT_ID, iuc_is_base_unit: true },
+          ],
+        }),
+      );
+
+      expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
+      expect(savedRows(unitConversionService.save)).toEqual([
+        expect.objectContaining({ iuc_unit_id: NEW_UNIT_ID, iuc_id: undefined }),
+        expect.objectContaining({ iuc_id: OTHER_IUC_ID, iuc_unit_factor: 24 }),
+      ]);
+    });
+  });
+
   // Notes 50 #4: every FK error used to be filed under item_group_id.
   it('reports a foreign-key failure against the field whose constraint failed', async () => {
     prisma.itemMaster.create.mockRejectedValue(

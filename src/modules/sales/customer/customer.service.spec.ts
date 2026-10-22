@@ -401,6 +401,64 @@ describe('CustomerService', () => {
         body: { errors: [{ field: 'cusName', code: CustomerErrorCode.DUPLICATE }] },
       });
     });
+
+    it('rethrows any other database failure untouched', async () => {
+      const failure = new Error('connection reset');
+      prisma.customer.create.mockRejectedValue(failure);
+
+      await expect(service.save(createDto())).rejects.toBe(failure);
+    });
+
+    it('never hands the collection-days list a null: it becomes an empty list', async () => {
+      // A Prisma String[]/Int[] column has no nullable form (memory: prisma-scalar-list-null).
+      await service.save(createDto({ cusCollectionDays: null as unknown as number[] }));
+
+      expect(createdData().cusCollectionDays).toEqual([]);
+    });
+
+    it('keeps the collection days it was sent', async () => {
+      await service.save(createDto({ cusCollectionDays: [2, 5] }));
+
+      expect(createdData().cusCollectionDays).toEqual([2, 5]);
+    });
+
+    it('takes the creator named in the body over the request user', async () => {
+      await service.save(createDto({ cusCreatedBy: '  importer  ' }));
+
+      expect(createdData().cusCreatedBy).toBe('importer');
+      expect(auditEntry().userId).toBe('importer');
+    });
+
+    it('falls back to the default actor when nobody is named and no user is logged in', async () => {
+      context.getUserId.mockReturnValue(null);
+
+      await service.save(createDto());
+
+      expect(createdData().cusCreatedBy).toBe(DEFAULT_ACTOR);
+    });
+
+    it('does not look the company up when it is sent as null', async () => {
+      await service.save(createDto({ cusCompanyId: null }));
+
+      expect(prisma.company.findFirst).not.toHaveBeenCalled();
+      expect(createdData().cusCompanyId).toBeNull();
+    });
+
+    it('refuses a bad date before any ledger is made', async () => {
+      const refusal = await refusalOf(service.save(createDto({ cusBirthDate: 'not-a-date' })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'cusBirthDate', code: CustomerErrorCode.INVALID_DATE }] },
+      });
+      expect(ledgers.createLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it('stores a date sent as null as no date', async () => {
+      await service.save(createDto({ cusMarriageDate: null }));
+
+      expect(createdData().cusMarriageDate).toBeNull();
+    });
   });
 
   describe('save — create on an existing ledger (cusLinkLedId, notes 81)', () => {
@@ -454,6 +512,57 @@ describe('CustomerService', () => {
       prisma.supplier.findFirst.mockResolvedValue({ supIsActive: true });
 
       await expect(service.save(linkDto())).resolves.toMatchObject({ cusId: LEDGER_ID });
+    });
+
+    it('refuses an untyped ledger no live supplier holds', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(ledgerRow({ ledLedgerType: null }));
+
+      const refusal = await refusalOf(service.save(linkDto()));
+
+      expect(prisma.supplier.findFirst).toHaveBeenCalledWith({
+        where: { supId: LEDGER_ID, supIsDeleted: false },
+        select: { supIsActive: true },
+      });
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [
+            {
+              field: 'cusLinkLedId',
+              code: CustomerErrorCode.LINK_LEDGER_NOT_PARTY,
+              message:
+                'Ledger "Ravi Traders" is a untyped ledger; only a PARTY ledger can be a customer',
+            },
+          ],
+        },
+      });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('still refuses an area that does not exist', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(ledgerRow());
+      prisma.areaMaster.findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(linkDto()));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'cusAreaId', code: CustomerErrorCode.AREA_NOT_FOUND }] },
+      });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses when neither the payload nor the ledger carries a state name', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(ledgerRow({ ledStateName: null }));
+
+      const refusal = await refusalOf(service.save(linkDto()));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'cusStateName', code: CustomerErrorCode.STATE_NAME_REQUIRED }],
+        },
+      });
     });
 
     it('fills the blank fields from the ledger and writes no ledger at all', async () => {
@@ -541,6 +650,17 @@ describe('CustomerService', () => {
         originalRecord: expect.objectContaining({ cusIsDeleted: true }),
         notes: 'Customer restored on its existing ledger',
       });
+    });
+
+    it('revives a deleted row inactive when the payload says so', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(ledgerRow());
+      prisma.customer.findUnique.mockResolvedValue(
+        customerRow({ cusId: LEDGER_ID, cusIsDeleted: true, cusIsActive: false }),
+      );
+
+      await service.save(linkDto({ cusIsActive: false }));
+
+      expect(updatedData()).toMatchObject({ cusIsDeleted: false, cusIsActive: false });
     });
   });
 
@@ -691,6 +811,111 @@ describe('CustomerService', () => {
         status: 409,
         body: { errors: [{ code: CustomerErrorCode.DUPLICATE }] },
       });
+    });
+
+    it.each([
+      [
+        'a blank state name',
+        { cusStateName: '  ' },
+        'cusStateName',
+        CustomerErrorCode.STATE_NAME_REQUIRED,
+      ],
+      [
+        'a one-letter state code',
+        { cusStateCode: 'T' },
+        'cusStateCode',
+        CustomerErrorCode.STATE_CODE_INVALID,
+      ],
+      [
+        'a birth date that is not a date',
+        { cusBirthDate: '2020-13-45' },
+        'cusBirthDate',
+        CustomerErrorCode.INVALID_DATE,
+      ],
+    ])('refuses %s with a 400 and writes nothing', async (_label, fields, field, code) => {
+      const refusal = await refusalOf(service.save(updateDto(fields)));
+
+      expect(refusal).toMatchObject({ status: 400, body: { errors: [{ field, code }] } });
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(ledgers.updateLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['company', 'company', 'cusCompanyId', CustomerErrorCode.COMPANY_NOT_FOUND],
+      ['area', 'areaMaster', 'cusAreaId', CustomerErrorCode.AREA_NOT_FOUND],
+      ['customer group', 'custGroup', 'cusGroupId', CustomerErrorCode.GROUP_NOT_FOUND],
+      ['state', 'stateCode', 'cusStateCode', CustomerErrorCode.STATE_NOT_FOUND],
+    ] as const)('refuses an unknown %s and writes nothing', async (_l, model, field, code) => {
+      prisma[model].findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(updateDto({ cusCompanyId: COMPANY_ID })));
+
+      expect(refusal).toMatchObject({ status: 400, body: { errors: [{ field, code }] } });
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(ledgers.updateLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it('clears the company when the update sends null, without looking one up', async () => {
+      prisma.customer.findFirst.mockResolvedValue(customerRow({ cusCompanyId: COMPANY_ID }));
+
+      await service.save(updateDto({ cusCompanyId: null }));
+
+      expect(prisma.company.findFirst).not.toHaveBeenCalled();
+      expect(updatedData().cusCompanyId).toBeNull();
+    });
+
+    it('never hands the collection-days list a null on an update either', async () => {
+      await service.save(updateDto({ cusCollectionDays: null as unknown as number[] }));
+
+      expect(updatedData().cusCollectionDays).toEqual([]);
+    });
+
+    it('moves the price level to the one sent', async () => {
+      await service.save(updateDto({ cusPriceLevelId: 3 }));
+
+      expect(updatedData().cusPriceLevelId).toBe(3);
+    });
+
+    it('mirrors a deactivation onto a ledger the customer alone owns', async () => {
+      prisma.customer.update.mockResolvedValue(customerRow({ cusIsActive: false }));
+
+      await service.save(updateDto({ cusIsActive: false }));
+
+      expect(ledgerUpdateDto()).toMatchObject({ ledGroupId: AREA_ID, ledIsActive: false });
+    });
+
+    it('carries the GST type and the collection flags it was sent to the ledger', async () => {
+      await service.save(
+        updateDto({ cusGstType: 'Composition', cusTcsApplicable: true, cusItcollExempted: true }),
+      );
+
+      expect(ledgerUpdateDto()).toMatchObject({
+        ledGstPartyRegType: 'COMPOSITION',
+        ledIsTcsApplicable: false,
+        ledIsTdsApplicable: false,
+      });
+    });
+
+    it('audits the stored row against the saved one, under the modifier', async () => {
+      prisma.customer.findFirst.mockResolvedValue(customerRow({ cusPhone1: '9000000000' }));
+      prisma.customer.update.mockImplementation(async ({ data }: { data: Partial<Customer> }) =>
+        customerRow({ cusPhone1: data.cusPhone1, cusModifiedBy: 'counter-3' }),
+      );
+
+      const payload = await service.save(
+        updateDto({ cusPhone1: '9840000002', cusModifiedBy: 'counter-3' }),
+      );
+
+      expect(auditEntry()).toMatchObject({
+        action: 'update',
+        tableName: 'customers',
+        pk: CUS_ID,
+        displayName: 'Ravi Stores',
+        originalRecord: expect.objectContaining({ cusPhone1: '9000000000' }),
+        modifiedRecord: payload,
+        userId: 'counter-3',
+      });
+      expect(payload.cusPhone1).toBe('9840000002');
     });
   });
 

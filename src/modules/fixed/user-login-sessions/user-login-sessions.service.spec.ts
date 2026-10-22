@@ -156,6 +156,13 @@ describe('UserLoginSessionsService', () => {
         body: { errors: [{ field: 'ulsSessionId', code: UserLoginSessionsErrorCode.DUPLICATE }] },
       });
     });
+
+    it('rethrows any other database failure untouched', async () => {
+      const failure = new Error('connection reset');
+      prisma.userLoginSession.create.mockRejectedValue(failure);
+
+      await expect(service.save({ ulsUserId: USER_ID })).rejects.toBe(failure);
+    });
   });
 
   describe('save — update (ulsId present)', () => {
@@ -250,6 +257,16 @@ describe('UserLoginSessionsService', () => {
   });
 
   describe('softDelete', () => {
+    it('refuses an id with no live session', async () => {
+      const refusal = await refusalOf(service.softDelete(ULS_ID));
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: { errors: [{ field: 'ulsId', code: UserLoginSessionsErrorCode.NOT_FOUND }] },
+      });
+      expect(prisma.userLoginSession.updateMany).not.toHaveBeenCalled();
+    });
+
     it('closes an open session, stamping the logout time with the delete time', async () => {
       prisma.userLoginSession.findFirst.mockResolvedValue(sessionRow());
 

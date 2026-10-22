@@ -39,12 +39,167 @@ describe('PhysicalStockVoucherController', () => {
     cancel: jest.Mock;
     countSheet: jest.Mock;
     variance: jest.Mock;
+    save: jest.Mock;
+    getById: jest.Mock;
+    list: jest.Mock;
+    validate: jest.Mock;
   };
   let controller: PhysicalStockVoucherController;
 
   beforeEach(() => {
-    service = { post: jest.fn(), cancel: jest.fn(), countSheet: jest.fn(), variance: jest.fn() };
+    service = {
+      post: jest.fn(),
+      cancel: jest.fn(),
+      countSheet: jest.fn(),
+      variance: jest.fn(),
+      save: jest.fn(),
+      getById: jest.fn(),
+      list: jest.fn(),
+      validate: jest.fn(),
+    };
     controller = new PhysicalStockVoucherController(service as unknown as StockVoucherService);
+  });
+
+  const REF = { svhId: SVH_ID, accYear: ACC_YEAR, companyId: COMPANY_ID, branchId: BRANCH_ID };
+
+  // ── count sheet ───────────────────────────────────────────────────────────
+  it('says how many holdings the sheet asks to be counted', async () => {
+    const sheet = { items: [{ lotId: 'a' }, { lotId: 'b' }], meta: { limit: 200, offset: 0 } };
+    service.countSheet.mockResolvedValue(sheet);
+    const query = { companyId: COMPANY_ID, branchId: BRANCH_ID, godownId: SVH_ID };
+
+    await expect(controller.countSheet(query as never)).resolves.toEqual({
+      success: true,
+      message: '2 holdings to count',
+      data: sheet,
+    });
+    const [rules, sent] = service.countSheet.mock.calls[0] as [StockVoucherTypeRules, unknown];
+    expect(rules.voucherType).toBe('PHYSICAL');
+    expect(sent).toBe(query);
+  });
+
+  // ── create ────────────────────────────────────────────────────────────────
+  describe('save', () => {
+    it.each([
+      ['a new draft', undefined, null, 'Physical stock count created successfully'],
+      ['an edited draft', SVH_ID, null, 'Physical stock count updated successfully'],
+      [
+        'a new count saved and posted',
+        undefined,
+        2,
+        'Physical stock count created and posted — 2 line(s) varied',
+      ],
+      [
+        'an edited count saved and posted',
+        SVH_ID,
+        0,
+        'Physical stock count updated and posted — 0 line(s) varied',
+      ],
+    ])('words %s', async (_label, svhId, rowsPosted, message) => {
+      const result = { header: { svhId: SVH_ID }, lines: [], rowsPosted };
+      service.save.mockResolvedValue(result);
+      const dto = { header: { svhId }, lines: [] };
+
+      await expect(controller.save(dto as never)).resolves.toEqual({
+        success: true,
+        message,
+        data: result,
+      });
+      // The narrower count line goes through as it is: the service reads the
+      // unit, factor and base quantity off the holding on the COUNT branch.
+      const [rules, sent] = service.save.mock.calls[0] as [StockVoucherTypeRules, unknown];
+      expect(rules.voucherType).toBe('PHYSICAL');
+      expect(sent).toBe(dto);
+    });
+  });
+
+  // ── get ───────────────────────────────────────────────────────────────────
+  describe('listOrLoad', () => {
+    it('loads one count when svhId is sent', async () => {
+      const doc = { header: { svhId: SVH_ID }, lines: [] };
+      service.getById.mockResolvedValue(doc);
+
+      await expect(controller.listOrLoad(REF as never)).resolves.toEqual({
+        success: true,
+        message: 'Physical stock count fetched successfully',
+        data: doc,
+      });
+      expect(service.getById).toHaveBeenCalledWith(
+        expect.objectContaining({ voucherType: 'PHYSICAL' }),
+        SVH_ID,
+        ACC_YEAR,
+        COMPANY_ID,
+        BRANCH_ID,
+      );
+      expect(service.list).not.toHaveBeenCalled();
+    });
+
+    it('lists the counts otherwise, passing the whole query on', async () => {
+      const list = { items: [], meta: { page: 1, limit: 20, total: 0 } };
+      service.list.mockResolvedValue(list);
+      const query = { accYear: ACC_YEAR, companyId: COMPANY_ID, branchId: BRANCH_ID };
+
+      await expect(controller.listOrLoad(query as never)).resolves.toEqual({
+        success: true,
+        message: 'Physical stock count list fetched successfully',
+        data: list,
+      });
+      expect(service.list).toHaveBeenCalledWith(
+        expect.objectContaining({ voucherType: 'PHYSICAL' }),
+        query,
+      );
+      expect(service.getById).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── validate ──────────────────────────────────────────────────────────────
+  describe('validate', () => {
+    it('counts the lines with problems, agreeing lines included in the total', async () => {
+      service.validate.mockResolvedValue([
+        { lineNo: 1, problem: null },
+        { lineNo: 2, problem: 'the book quantity has changed since this sheet was generated' },
+      ]);
+
+      await expect(controller.validate(REF)).resolves.toMatchObject({
+        success: true,
+        message: '1 of 2 lines have problems',
+      });
+      expect(service.validate).toHaveBeenCalledWith(
+        expect.objectContaining({ voucherType: 'PHYSICAL' }),
+        SVH_ID,
+        ACC_YEAR,
+        COMPANY_ID,
+        BRANCH_ID,
+      );
+    });
+
+    it('says every line is clean when none has a problem', async () => {
+      service.validate.mockResolvedValue([{ lineNo: 1, problem: null }]);
+
+      await expect(controller.validate(REF)).resolves.toMatchObject({
+        message: 'All 1 lines are clean',
+      });
+    });
+  });
+
+  it('counts the variance rows when some lines varied, and passes the paging on', async () => {
+    const report = { items: [{ lineNo: 2 }, { lineNo: 3 }], meta: { limit: 50, offset: 0 } };
+    service.variance.mockResolvedValue(report);
+
+    await expect(controller.variance({ ...REF, limit: 50, offset: 0 })).resolves.toEqual({
+      success: true,
+      message: '2 variance rows',
+      data: report,
+    });
+    expect(service.variance).toHaveBeenCalledWith(
+      expect.objectContaining({ voucherType: 'PHYSICAL' }),
+      SVH_ID,
+      ACC_YEAR,
+      COMPANY_ID,
+      BRANCH_ID,
+      50,
+      0,
+    );
   });
 
   const post = () =>
@@ -80,6 +235,14 @@ describe('PhysicalStockVoucherController', () => {
     expect(response.success).toBe(true);
     expect(response.message).toBe('Physical stock count posted — all 2 lines agreed with the book');
     expect(response.data.status).toBe('POSTED');
+  });
+
+  it('counts a line with no diffQty as one that agreed', async () => {
+    service.post.mockResolvedValue(postResult([line(1, null), line(2, 4)], 1));
+
+    const response = await post();
+
+    expect(response.message).toBe('Physical stock count posted — 1 of 2 lines had a variance');
   });
 
   it('pins PHYSICAL, and hands the service a record no payload can reach', async () => {

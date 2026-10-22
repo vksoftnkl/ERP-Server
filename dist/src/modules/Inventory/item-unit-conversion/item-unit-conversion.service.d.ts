@@ -16,6 +16,7 @@ export declare class ItemUnitConversionService {
     save(saveItemUnitConversionDto: SaveItemUnitConversionDto, tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload>;
     save(saveItemUnitConversionDto: SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload[]>;
     save(saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
+    private assertBaseUnitsKept;
     list(queryDto: GetItemUnitConversionQueryDto): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>>;
     getById(iucId: string): Promise<ItemUnitConversionPayload>;
     findByItemId(itemId: string, client?: InventoryWriteClient): Promise<ItemUnitConversionPayload[]>;

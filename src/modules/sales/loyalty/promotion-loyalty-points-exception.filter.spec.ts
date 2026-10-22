@@ -87,10 +87,11 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     filter.catch(exception, createHost(response));
 
     expect(response.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+    // A plain 4xx is coded by its status (notes 127), never left with empty errors.
     expect(response.json).toHaveBeenCalledWith({
       success: false,
       message: 'Not found',
-      errors: [],
+      errors: [{ field: 'request', code: 'HTTP_404', message: 'Not found' }],
     });
   });
 });

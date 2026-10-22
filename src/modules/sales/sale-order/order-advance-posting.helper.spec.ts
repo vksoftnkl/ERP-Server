@@ -199,9 +199,11 @@ describe('order-advance-posting.helper', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       accTenderMaster: {
-        findMany: jest.fn().mockResolvedValue([
-          { tndId: CARD_TENDER, tndName: 'Card', tndSurchargeLedgerId: MASTER_SURCHARGE_LEDGER },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { tndId: CARD_TENDER, tndName: 'Card', tndSurchargeLedgerId: MASTER_SURCHARGE_LEDGER },
+          ]),
       },
       accTenderDetail: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       accBillBalance: {
@@ -234,6 +236,8 @@ describe('order-advance-posting.helper', () => {
         accYear: ACC_YEAR,
         documentDate: ORDER_DATE,
       });
+      // The serial runs across every voucher type in the company and year.
+      expect(jest.mocked(allocateVoucherSlno)).toHaveBeenCalledWith(TX(), COMPANY_ID, ACC_YEAR);
       const { data } = tx.accVoucherHeader.create.mock.calls[0][0] as {
         data: Record<string, unknown>;
       };
@@ -320,7 +324,7 @@ describe('order-advance-posting.helper', () => {
       });
     });
 
-    it("reads the surcharge ledger off the tender master when the line snapshotted none", async () => {
+    it('reads the surcharge ledger off the tender master when the line snapshotted none', async () => {
       await postOrderAdvanceToAccounts(
         TX(),
         order(),
@@ -345,7 +349,13 @@ describe('order-advance-posting.helper', () => {
     });
 
     it("credits the customer's own ledger when the order names no advance ledger", async () => {
-      await postOrderAdvanceToAccounts(TX(), order({ soAdvanceLedgerId: null }), [tender()], 'c', NOW);
+      await postOrderAdvanceToAccounts(
+        TX(),
+        order({ soAdvanceLedgerId: null }),
+        [tender()],
+        'c',
+        NOW,
+      );
 
       expect(lineData(1)).toMatchObject({ avDrCr: 'CR', avLedgerId: CUST_ID });
     });
@@ -586,6 +596,57 @@ describe('order-advance-posting.helper', () => {
             }) as object,
           }),
         );
+      });
+
+      it('gives the outstanding up when an edit leaves only surcharge on the receipt', async () => {
+        const pureSurcharge = cardTender({
+          tdAmount: D('0.00'),
+          tdSurchargeAmt: D('20.00'),
+          tdTotalAmt: D('20.00'),
+        });
+
+        const result = await syncOrderAdvancePosting(
+          TX(),
+          order(),
+          [pureSurcharge],
+          'cashier',
+          NOW,
+        );
+
+        // The receipt stays (it still moved money); only the customer's credit goes.
+        expect(result).toMatchObject({ action: 'updated', voucherId: VOUCHER_ID, billId: null });
+        expect(tx.accBillAdjustment.count).toHaveBeenCalledWith({
+          where: { abjBillId: BILL_ID, abjIsDeleted: false },
+        });
+        expect(tx.accBillBalance.update).toHaveBeenCalledWith({
+          where: { ablId_ablAccYear: { ablId: BILL_ID, ablAccYear: ACC_YEAR } },
+          data: {
+            ablIsActive: false,
+            ablIsDeleted: true,
+            ablModifiedOn: NOW,
+            ablModifiedBy: 'cashier',
+          },
+        });
+        expect(tx.accBillBalance.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses to drop an outstanding that an invoice has already drawn on', async () => {
+        tx.accBillAdjustment.count.mockResolvedValue(1);
+        const pureSurcharge = cardTender({
+          tdAmount: D('0.00'),
+          tdSurchargeAmt: D('20.00'),
+          tdTotalAmt: D('20.00'),
+        });
+
+        const refusal = await refusalOf(
+          syncOrderAdvancePosting(TX(), order(), [pureSurcharge], 'cashier', NOW),
+        );
+
+        expect(refusal).toMatchObject({
+          status: 400,
+          body: { errors: [{ field: 'tenders', code: SaleOrderErrorCode.ADVANCE_SETTLED }] },
+        });
+        expect(tx.accBillBalance.update).not.toHaveBeenCalled();
       });
 
       it('leaves the allocation to the adjustments once one exists', async () => {

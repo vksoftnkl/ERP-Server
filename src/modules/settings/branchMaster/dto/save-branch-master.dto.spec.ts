@@ -18,9 +18,11 @@ describe('SaveBranchMasterDto', () => {
   });
 
   it('requires a company, a name and a two-character state code', () => {
-    expect(validateSync(plainToInstance(SaveBranchMasterDto, {})).map((e) => e.property)).toEqual(
-      ['brCompId', 'brName', 'brStateCode'],
-    );
+    expect(validateSync(plainToInstance(SaveBranchMasterDto, {})).map((e) => e.property)).toEqual([
+      'brCompId',
+      'brName',
+      'brStateCode',
+    ]);
     expect(erroredFields({ brCompId: 'company-1' })).toEqual(['brCompId']);
     expect(erroredFields({ brStateCode: 'T' })).toEqual(['brStateCode']);
   });

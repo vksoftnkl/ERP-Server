@@ -12,6 +12,7 @@ import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder
 import { ItemMasterUpdateService } from './item-master-update.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
+import { refuseBaseUnitChange } from '../utils/item-base-unit.helper';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { toNumber } from 'src/common/utils/module-service.utils';
@@ -1145,7 +1146,24 @@ export class ItemsMasterService {
             : existing.itemBranchId,
         );
       }
-      if (saveItemDto.item_base_unit_id !== undefined) {
+      // Notes 138 — once the item has a base row, the header's base unit is that
+      // row's, whatever was sent: a different unit is refused, and a blank or
+      // stale header is put right. Without one, the payload's value stands
+      // until the first unit rows are saved (alignBaseUnit).
+      const base = (await this.itemUnitConversionService.findByItemId(itemId, client)).find(
+        (row) => row.iuc_is_base_unit,
+      );
+      if (base) {
+        const sent = saveItemDto.item_base_unit_id;
+        if (sent && sent !== base.iuc_unit_id) {
+          refuseBaseUnitChange(
+            ItemErrorCode.BASE_UNIT_LOCKED,
+            'item_base_unit_id',
+            `item_base_unit_id stays ${base.iuc_unit_id}, the unit of the item's base row.`,
+          );
+        }
+        data.itemBaseUnitId = base.iuc_unit_id;
+      } else if (saveItemDto.item_base_unit_id !== undefined) {
         data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
       }
       this.applyOptionalFields(data, saveItemDto);
@@ -1537,6 +1555,11 @@ export class ItemsMasterService {
    * unit other than the base row's is refused; a blank header (not sent, or
    * null — 322 items on the dev box carried one beside a base row) is filled
    * from the base row. Only checked when this save sends either.
+   *
+   * Notes 138 A2: an item that already had a base row took its header from
+   * that row in updateItem, so what is decided here is the FIRST save of the
+   * base row — a create, or the first unit rows of an item that had none —
+   * whose base row then sets the header.
    */
   private async alignBaseUnit(
     tx: Prisma.TransactionClient,

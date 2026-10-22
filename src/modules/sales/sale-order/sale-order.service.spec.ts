@@ -506,6 +506,9 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<{ gdlId: string; gdlName: string }[]>, unknown[]>;
   };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
+  // retireMoneyLineRows: a re-synced receipt retires the money-line tender rows
+  // it wrote for its old legs before covering the rebuilt ones.
+  $executeRaw: jest.Mock<Promise<number>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
 
@@ -695,6 +698,7 @@ const makePrismaMock = (): PrismaMock => {
       findMany: jest.fn(() => Promise.resolve([{ gdlId: GODOWN_ID, gdlName: 'Main Godown' }])),
     },
     $queryRaw: jest.fn(() => Promise.resolve([{ locked: 1 }])),
+    $executeRaw: jest.fn(() => Promise.resolve(0)),
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
   };
   return prisma;
@@ -924,7 +928,10 @@ describe('SaleOrderService', () => {
       prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
       await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
       expect(prisma.accVoucherHeader.create).toHaveBeenCalledTimes(1);
-      expect(prisma.accVoucherHeader.create.mock.calls[0][0]).toMatchObject({
+      const created = prisma.accVoucherHeader.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(created).toMatchObject({
         data: containing({
           avhVoucherTypeId: ORDER_ADVANCE_VCHR_TYPE_ID,
           avhVoucherRefno: ADVANCE_REFNO,
@@ -936,14 +943,30 @@ describe('SaleOrderService', () => {
           avhDocRefno: SALE_ORDER_REFNO,
           avhPartyId: CUST_ID,
           avhOppositeLedgerId: ADVANCE_LEDGER_ID,
-          avhVoucherStatus: 'POSTED',
+          // Born DRAFT: each line is its own INSERT, and ck_avh_balanced would
+          // refuse a POSTED header after the DR line and before the CR one.
+          avhVoucherStatus: 'DRAFT',
           // The doc_* block is the ORDER's value ...
           avhDocAmount: new Prisma.Decimal('10000.00'),
           avhRoundOff: new Prisma.Decimal('0.00'),
-          // ... while the totals are what the receipt actually moves
-          // (ck_avh_balanced).
-          avhTotalDebit: new Prisma.Decimal('500.00'),
-          avhTotalCredit: new Prisma.Decimal('500.00'),
+        }),
+      });
+      // ... while the totals are never written: tr_av_refresh_totals derives
+      // them from the lines.
+      expect(created.data).not.toHaveProperty('avhTotalDebit');
+      expect(created.data).not.toHaveProperty('avhTotalCredit');
+      // markPosted flips it once every line is in, and ck_avh_status_on wants
+      // the when and the who.
+      expect(prisma.accVoucherHeader.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+        prisma.accVoucher.create.mock.invocationCallOrder[1],
+      );
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        where: { avhVoucherId_avhAccYear: { avhVoucherId: VOUCHER_ID, avhAccYear: ACC_YEAR } },
+        data: containing({
+          avhVoucherStatus: 'POSTED',
+          avhStatusOn: expect.any(Date) as unknown,
+          avhStatusBy: USER_ID,
+          avhPostedOn: expect.any(Date) as unknown,
         }),
       });
     });
@@ -1058,14 +1081,30 @@ describe('SaleOrderService', () => {
       ]);
       await service.save(baseDto({ soId: SALE_ORDER_ID }));
       expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
-      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+      const restated = prisma.accVoucherHeader.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(restated).toMatchObject({
         data: containing({
-          // The order is unchanged, so its face is; the tendered money moved.
+          // The order is unchanged, so its face is; the tendered money moves
+          // only the lines, and the totals follow them by trigger.
           avhDocAmount: new Prisma.Decimal('10000.00'),
-          avhTotalDebit: new Prisma.Decimal('750.00'),
-          avhTotalCredit: new Prisma.Decimal('750.00'),
+          // DRAFT while the lines are rebuilt, for the same ck_avh_balanced
+          // reason as a first post ...
+          avhVoucherStatus: 'DRAFT',
         }),
       });
+      expect(restated.data).not.toHaveProperty('avhTotalDebit');
+      expect(restated.data).not.toHaveProperty('avhTotalCredit');
+      // ... and POSTED again once they are in, keeping the original posted-on.
+      const reposted = prisma.accVoucherHeader.update.mock.calls.at(-1)![0] as {
+        data: Record<string, unknown>;
+      };
+      expect(reposted.data).toMatchObject({ avhVoucherStatus: 'POSTED', avhStatusBy: USER_ID });
+      expect(reposted.data).not.toHaveProperty('avhPostedOn');
+      // The money-line rows written for the old legs go before the new legs are
+      // covered.
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
       // The old lines are retired, by voucher, before the rebuilt ones are
       // inserted — ux_av_voucher_row ignores deleted rows, so row 1 is free
       // again. invocationCallOrder proves the soft delete really does come
@@ -1113,14 +1152,12 @@ describe('SaleOrderService', () => {
       ]);
       await service.save(baseDto({ soId: SALE_ORDER_ID, soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
       expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
-      // ck_avh_balanced: the surcharge rides in the totals on both sides.
-      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
-        data: containing({
-          avhTotalDebit: new Prisma.Decimal('510.00'),
-          avhTotalCredit: new Prisma.Decimal('510.00'),
-        }),
-      });
       expect(prisma.accVoucher.create).toHaveBeenCalledTimes(3);
+      // ck_avh_balanced: the surcharge rides on both sides — the tender ledger
+      // takes the whole 510, the advance and surcharge ledgers split it.
+      expect(prisma.accVoucher.create.mock.calls[0][0]).toMatchObject({
+        data: containing({ avRowNo: 1, avDrCr: 'DR', avAmount: new Prisma.Decimal('510.00') }),
+      });
       expect(prisma.accVoucher.create.mock.calls[1][0]).toMatchObject({
         data: containing({
           avRowNo: 2,
@@ -1375,7 +1412,11 @@ describe('SaleOrderService', () => {
 
     it('registers a cheque tender against the receipt that took it', async () => {
       prisma.accTenderDetail.findMany.mockResolvedValue([makeChequeTender()]);
-      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      // Pinned to the fixtures' day: an order left to default to today would
+      // make the September cheque backdated once today passes it.
+      await service.save(
+        baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID, soOrderDate: '2026-08-08' }),
+      );
       expect(prisma.accPdcRegister.create).toHaveBeenCalledTimes(1);
       expect(prisma.accPdcRegister.create.mock.calls[0][0]).toMatchObject({
         data: containing({

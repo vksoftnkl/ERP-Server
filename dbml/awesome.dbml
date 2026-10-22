@@ -2473,6 +2473,53 @@ expected = open + sales - refund + receipt - payment - expense
 + moved_in - moved_out.'
 }
 
+Table till_void {
+  tvdId String [not null]
+  tvdCompanyId String [not null]
+  tvdBranchId String [not null]
+  tvdTenantId String
+  tvdAccYear String [not null]
+  tvdSrcDocType String [not null, default: 'SALE_BILL', note: 'ck_tvd_doc_type: SALE_BILL only.']
+  tvdSrcDocId String [not null]
+  tvdSrcDocRefno String
+  tvdSessionId String [not null, note: 'The bill\'s live session (OPEN / SUSPENDED at the void).']
+  tvdDeviceId String [note: 'The device the void was keyed on (the login token\'s), null for a web client.']
+  tvdCashierId String [not null, note: 'The session\'s operator.']
+  tvdVoidedBy String [not null]
+  tvdVoidedOn DateTime [default: `now()`, not null]
+  tvdAmount Decimal [not null, default: 0, note: 'sb_bill_amt.']
+  tvdCashAmount Decimal [not null, default: 0, note: 'The cash part of its tenders — what left the drawer\'s expected.']
+  tvdReasonId String [not null]
+  tvdNote String
+  tvdPostedOn DateTime [note: 'The bill\'s POSTED step in txn_status_log, else sb_bill_datetime.']
+  tvdMinutesAfterPost Int [not null, default: 0]
+  tvdWasPrinted Boolean [not null, default: false, note: 'THE control (stored, never recomputed).']
+  tvdPrintCount Int [not null, default: 0]
+  tvdLastPrintedOn DateTime
+  tvdPrintFailed Boolean [not null, default: false, note: 'A FAILED print row existed: the "printer didn\'t work" claim was true.']
+  tvdSessionVoidNo Int [not null, default: 1, note: 'The n-th void of the session (1, 2, 3 …).']
+  tvdApprovalId String
+  tvdReversalVoucherId String
+  tvdReversalAccYear String
+  tvdSyncDate DateTime
+  tvdCreatedOn DateTime [default: `now()`, not null]
+  tvdCreatedBy String
+
+  indexes {
+    (tvdId, tvdAccYear) [pk]
+    (tvdSrcDocType, tvdSrcDocId, tvdAccYear) [unique]
+  }
+
+  Note: 'TILL VOID — one row per voided SALE_BILL (void bill design REV 2, migration
+20261017150000). A void is a cancel that is recorded and shown: the same
+unwind runs and the status is CANCELLED; what makes it a void is this row,
+stamped ONCE by /bills/void inside the cancel\'s transaction and never
+recomputed. tvdWasPrinted is the control — a print_log PRINT / REPRINT
+SUCCESS row of a customer-facing purpose existed for the bill at the moment
+of the void. tvdApprovalId is set only where a company switched the
+VOID_BILL rule on (shipped NEVER).'
+}
+
 Table audit_log {
   logId String [pk]
   logDate DateTime [default: `now()`, not null]
@@ -4796,7 +4843,7 @@ Table printer_profile {
 │ Inferred, most likely to differ from §6: everything from prfConnKind    │
 │ down to prfCutSequence — the connection and capability block. The       │
 │ vocabularies below are guesses at the CHECK lists.                      │
-└─────────────────────────────────────────────────────────────────────────┘
+└��────────────────────────────────────────────────────────────────────────┘
 
 Declared here WITHOUT any CHECK constraint, as every other model in this
 module is: the vocabularies live in the migration and in

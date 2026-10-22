@@ -341,7 +341,9 @@ describe('CompanyMasterService', () => {
     it('compares name, code and GSTIN case-insensitively', async () => {
       await create({ compCode: 'zt', compGstinNo: GSTIN });
 
-      const wheres = prisma.company.findFirst.mock.calls.map(([args]) => (args as { where: Where }).where);
+      const wheres = prisma.company.findFirst.mock.calls.map(
+        ([args]) => (args as { where: Where }).where,
+      );
       expect(wheres).toEqual([
         { compName: { equals: 'Zeta Traders', mode: 'insensitive' } },
         { compCode: { equals: 'zt', mode: 'insensitive' } },
@@ -532,7 +534,10 @@ describe('CompanyMasterService', () => {
       const refusal = await refusalOf(create({ compGstinNo: '33-ABCDE' }));
 
       expect(errorsOf(refusal)).toEqual([
-        expect.objectContaining({ field: 'compGstinNo', code: CompanyMasterErrorCode.GSTIN_INVALID }),
+        expect.objectContaining({
+          field: 'compGstinNo',
+          code: CompanyMasterErrorCode.GSTIN_INVALID,
+        }),
       ]);
     });
 

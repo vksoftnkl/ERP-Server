@@ -19,6 +19,7 @@ const items_reorder_master_service_1 = require("../items-reorder-master/items-re
 const item_master_update_service_1 = require("./item-master-update.service");
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
+const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
 const price_bucket_service_1 = require("../items-price-master/price-bucket.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -839,7 +840,15 @@ let ItemsMasterService = class ItemsMasterService {
                     ? (saveItemDto.item_branch_id ?? null)
                     : existing.itemBranchId);
             }
-            if (saveItemDto.item_base_unit_id !== undefined) {
+            const base = (await this.itemUnitConversionService.findByItemId(itemId, client)).find((row) => row.iuc_is_base_unit);
+            if (base) {
+                const sent = saveItemDto.item_base_unit_id;
+                if (sent && sent !== base.iuc_unit_id) {
+                    (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, 'item_base_unit_id', `item_base_unit_id stays ${base.iuc_unit_id}, the unit of the item's base row.`);
+                }
+                data.itemBaseUnitId = base.iuc_unit_id;
+            }
+            else if (saveItemDto.item_base_unit_id !== undefined) {
                 data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
             }
             this.applyOptionalFields(data, saveItemDto);

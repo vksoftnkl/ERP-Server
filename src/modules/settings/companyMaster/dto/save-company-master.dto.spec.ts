@@ -17,9 +17,10 @@ describe('SaveCompanyMasterDto', () => {
   });
 
   it('requires a name and a two-character state code', () => {
-    expect(validateSync(plainToInstance(SaveCompanyMasterDto, {})).map((e) => e.property)).toEqual(
-      ['compName', 'compStateCode'],
-    );
+    expect(validateSync(plainToInstance(SaveCompanyMasterDto, {})).map((e) => e.property)).toEqual([
+      'compName',
+      'compStateCode',
+    ]);
     expect(erroredFields({ compStateCode: '330' })).toEqual(['compStateCode']);
   });
 
@@ -45,9 +46,7 @@ describe('SaveCompanyMasterDto', () => {
     expect(dto.compDcPurposes).toEqual(['SUPPLY', 'JOB_WORK']);
     expect(erroredFields({ compDcPurposes: [] })).toEqual(['compDcPurposes']);
     expect(erroredFields({ compDcPurposes: ['SUPPLY', 'supply'] })).toEqual(['compDcPurposes']);
-    expect(erroredFields({ compDcPurposes: ['SUPPLY', 'SMUGGLING'] })).toEqual([
-      'compDcPurposes',
-    ]);
+    expect(erroredFields({ compDcPurposes: ['SUPPLY', 'SMUGGLING'] })).toEqual(['compDcPurposes']);
     expect(erroredFields({ compDcPurposes: null })).toEqual(['compDcPurposes']);
   });
 

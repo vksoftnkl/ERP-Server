@@ -437,6 +437,18 @@ describe('UiTableMasterService', () => {
       expect(prisma.uitableColumns.updateMany).not.toHaveBeenCalled();
     });
 
+    it('moves an existing column to the number the update sends', async () => {
+      await service.save({
+        uiTblId: '7',
+        uiTblColumns: [{ uiTblClmId: '70', uiTblClmName: 'Item', uiTblClmNo: '3' }],
+      } as never);
+
+      expect(prisma.uitableColumns.update).toHaveBeenCalledWith({
+        where: { uiTblClmId: 70n },
+        data: expect.objectContaining({ uiTblClmNo: 3n }) as object,
+      });
+    });
+
     it('on replaceColumns soft-deletes every column it did not just keep or create', async () => {
       await service.save({
         uiTblId: '7',

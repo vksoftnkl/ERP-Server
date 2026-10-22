@@ -138,9 +138,7 @@ describe('SaleOrderService — bill-driven paths', () => {
       saleOrder: {
         // resolveOrderRefs: which of the ids are live orders.
         findMany: jest.fn(({ where }: { where: { soId: { in: string[] } } }) =>
-          Promise.resolve(
-            where.soId.in.filter((id) => id === ORDER_ID).map((soId) => ({ soId })),
-          ),
+          Promise.resolve(where.soId.in.filter((id) => id === ORDER_ID).map((soId) => ({ soId }))),
         ),
         findFirst: jest.fn(() => Promise.resolve(orderRow())),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -177,7 +175,8 @@ describe('SaleOrderService — bill-driven paths', () => {
   });
 
   const TX = () => tx as unknown as Prisma.TransactionClient;
-  const sync = (refs: SaleOrderLineRef[]) => service.syncOrderFulfilment(TX(), { refs }, ACTOR, NOW);
+  const sync = (refs: SaleOrderLineRef[]) =>
+    service.syncOrderFulfilment(TX(), { refs }, ACTOR, NOW);
   const headerWrite = () =>
     (tx.saleOrder.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
 
@@ -349,7 +348,10 @@ describe('SaleOrderService — bill-driven paths', () => {
 
       expect(tx.saleOrderItem.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ soiDeliveredQty: D('0'), soiBilledAmt: D('0') }) as object,
+          data: expect.objectContaining({
+            soiDeliveredQty: D('0'),
+            soiBilledAmt: D('0'),
+          }) as object,
         }),
       );
       expect(headerWrite()).toMatchObject({
@@ -439,15 +441,18 @@ describe('SaleOrderService — bill-driven paths', () => {
 
       const refusal = await refusalOf(sync([lineRef(LINE_1)]));
 
-      expect(refusal).toMatchObject({ status: 404, body: { errors: [{ code: 'SALES_NOT_FOUND' }] } });
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: { errors: [{ code: 'SALES_NOT_FOUND' }] },
+      });
     });
   });
 
   describe('cancelOpenLinesForRefs', () => {
     it('answers an empty list without reading anything', async () => {
-      await expect(service.cancelOpenLinesForRefs(TX(), [], 'Bill deleted', ACTOR, NOW)).resolves.toEqual(
-        [],
-      );
+      await expect(
+        service.cancelOpenLinesForRefs(TX(), [], 'Bill deleted', ACTOR, NOW),
+      ).resolves.toEqual([]);
       expect(tx.saleOrder.findMany).not.toHaveBeenCalled();
     });
 
@@ -503,7 +508,9 @@ describe('SaleOrderService — bill-driven paths', () => {
 
   describe('prepareSave', () => {
     it('answers a required field sent as null with the shared FIELD_REQUIRED code', () => {
-      expect(() => service.prepareSave({ soPriority: null } as unknown as SaveSaleOrderDto)).toThrow(
+      expect(() =>
+        service.prepareSave({ soPriority: null } as unknown as SaveSaleOrderDto),
+      ).toThrow(
         expect.objectContaining({
           response: expect.objectContaining({
             errors: [

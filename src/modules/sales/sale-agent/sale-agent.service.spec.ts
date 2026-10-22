@@ -305,6 +305,72 @@ describe('SaleAgentService', () => {
 
       await expect(service.save(saveDto())).rejects.toBe(failure);
     });
+
+    it('copies every shared field it was sent onto the ledger under its ledger name', async () => {
+      await service.save(
+        saveDto({
+          saBranchId: BRANCH_ID,
+          saAlias: 'A1',
+          saMobile1: '9840000003',
+          saMobile2: '9840000004',
+          saAddr1: '1 Main Rd',
+          saAddr2: 'Anna Nagar',
+          saCity: 'Chennai',
+          saDistrict: 'Chennai',
+          saState: 'Tamil Nadu',
+          saPincode: '600040',
+          saPanNo: 'ABCDE1234F',
+          saGstin: '33ABCDE1234F1Z5',
+          saRemarks: 'North beat',
+          saIsActive: false,
+        }),
+      );
+
+      expect(ledgers.createLedgerWithinTx).toHaveBeenCalledWith(
+        {
+          ledGroupId: ACC_GROUP_ID,
+          ledName: 'Agent One',
+          ledCompanyId: COMPANY_ID,
+          ledBranchId: BRANCH_ID,
+          ledAlias: 'A1',
+          ledPhone1: '9840000003',
+          ledPhone2: '9840000004',
+          ledAddr1: '1 Main Rd',
+          ledAddr2: 'Anna Nagar',
+          ledCity: 'Chennai',
+          ledDistrict: 'Chennai',
+          ledStateName: 'Tamil Nadu',
+          ledPin: '600040',
+          ledPanNo: 'ABCDE1234F',
+          ledGstinNo: '33ABCDE1234F1Z5',
+          ledRemarks: 'North beat',
+          ledIsActive: false,
+        },
+        prisma,
+      );
+      expect(createdData()).toMatchObject({ saBranchId: BRANCH_ID, saIsActive: false });
+    });
+
+    it('falls back to the default actor when nobody is named and no user is logged in', async () => {
+      context.getUserId.mockReturnValue(null);
+
+      await service.save(saveDto());
+
+      expect(createdData()).toMatchObject({
+        saCreatedBy: DEFAULT_ACTOR,
+        saModifiedBy: DEFAULT_ACTOR,
+      });
+      expect(auditEntry().userId).toBe(DEFAULT_ACTOR);
+    });
+
+    it('refuses a code clash before any ledger is made', async () => {
+      codeClash = { saId: 'other' };
+
+      await refusalOf(service.save(saveDto({ saCode: 'SA01' })));
+
+      expect(ledgers.createLedgerWithinTx).not.toHaveBeenCalled();
+      expect(prisma.saleAgent.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('save — update', () => {
@@ -417,6 +483,88 @@ describe('SaleAgentService', () => {
       await expect(
         service.save(saveDto({ saId: SA_ID, saBranchId: BRANCH_ID, saCode: null })),
       ).rejects.toBe(failure);
+    });
+
+    /** An update that names every identity field, so nothing falls back to the stored row. */
+    const updateDto = (overrides: Partial<SaveSaleAgentDto> = {}) =>
+      saveDto({ saId: SA_ID, saBranchId: BRANCH_ID, saCode: 'SA01', ...overrides });
+
+    it('refuses a blank name and writes nothing', async () => {
+      const refusal = await refusalOf(service.save(updateDto({ saName: '   ' })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'saName', code: SaleAgentErrorCode.NAME_REQUIRED }] },
+      });
+      expect(prisma.saleAgent.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['company', 'company', 'saCompanyId', SaleAgentErrorCode.COMPANY_NOT_FOUND],
+      ['branch', 'branchMaster', 'saBranchId', SaleAgentErrorCode.BRANCH_NOT_FOUND],
+      ['agent group', 'saleAgentGroup', 'saGroupId', SaleAgentErrorCode.GROUP_NOT_FOUND],
+    ] as const)('refuses an unknown %s and writes nothing', async (_l, model, field, code) => {
+      prisma[model].findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(updateDto()));
+
+      expect(refusal).toMatchObject({ status: 400, body: { errors: [{ field, code }] } });
+      expect(prisma.saleAgent.update).not.toHaveBeenCalled();
+      expect(ledgers.updateLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['name', 'saName', SaleAgentErrorCode.NAME_EXISTS],
+      ['code', 'saCode', SaleAgentErrorCode.CODE_EXISTS],
+    ] as const)('refuses a %s another agent of the company holds', async (clash, field, code) => {
+      if (clash === 'name') nameClash = { saId: 'other' };
+      else codeClash = { saId: 'other' };
+
+      const refusal = await refusalOf(service.save(updateDto()));
+
+      expect(refusal).toMatchObject({ status: 409, body: { errors: [{ field, code }] } });
+      expect(prisma.saleAgent.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['P2002', 409, 'saName', SaleAgentErrorCode.DUPLICATE],
+      ['P2003', 400, 'request', SaleAgentErrorCode.REFERENCE_NOT_FOUND],
+    ])('answers a %s from the update with a coded %i', async (prismaCode, status, field, code) => {
+      prisma.saleAgent.update.mockRejectedValue(
+        Object.assign(new Error('constraint failed'), { code: prismaCode }),
+      );
+
+      const refusal = await refusalOf(service.save(updateDto()));
+
+      expect(refusal).toMatchObject({ status, body: { errors: [{ field, code }] } });
+    });
+
+    it('carries the edited shared fields onto the agent row and its ledger', async () => {
+      await service.save(updateDto({ saMobile1: '9840000009', saRemarks: null }));
+
+      expect(updatedData()).toMatchObject({ saMobile1: '9840000009', saRemarks: null });
+      expect(ledgers.updateLedgerWithinTx).toHaveBeenCalledWith(
+        expect.objectContaining({ ledId: SA_ID, ledPhone1: '9840000009', ledRemarks: null }),
+        prisma,
+      );
+    });
+
+    it('audits the stored row against the saved one, under the modifier', async () => {
+      storedAgent = agentRow({ saBranchId: BRANCH_ID, saName: 'Old Name' });
+      context.getUserId.mockReturnValue(null);
+
+      const payload = await service.save(updateDto());
+
+      expect(updatedData().saModifiedBy).toBe(DEFAULT_ACTOR);
+      expect(auditEntry()).toMatchObject({
+        action: 'update',
+        tableName: 'sale agents',
+        pk: SA_ID,
+        displayName: payload.saName,
+        originalRecord: expect.objectContaining({ saName: 'Old Name' }),
+        modifiedRecord: payload,
+        userId: DEFAULT_ACTOR,
+      });
     });
   });
 

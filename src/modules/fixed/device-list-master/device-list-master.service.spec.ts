@@ -173,10 +173,76 @@ describe('DeviceListMasterService', () => {
       expect(prisma.deviceMaster.create).not.toHaveBeenCalled();
     });
 
+    it('refuses a device type that is not a string', async () => {
+      const refusal = await refusalOf(
+        service.save({ devDeviceType: 5 as unknown as DeviceType, devDeviceUid: 'D-1' }),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [
+            {
+              field: 'devDeviceType',
+              message: 'devDeviceType must be a string',
+              code: DeviceListMasterErrorCode.TYPE_INVALID,
+            },
+          ],
+        },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank device type as Desktop, so the uid is still required', async () => {
+      const refusal = await refusalOf(service.save({ devDeviceType: '  ' as DeviceType }));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ code: DeviceListMasterErrorCode.UID_REQUIRED }] },
+      });
+    });
+
+    it('stores a known platform trimmed', async () => {
+      await service.save({ devDeviceUid: 'DESK-1', devPlatform: ' Linux ' as DevicePlatform });
+
+      expect(createdData().devPlatform).toBe(DevicePlatform.LINUX);
+    });
+
     it('stores a blank platform as null', async () => {
       await service.save({ devDeviceUid: 'DESK-1', devPlatform: '  ' as DevicePlatform });
 
       expect(createdData().devPlatform).toBeNull();
+    });
+
+    it('passes a null platform through and leaves an undefined one unset', async () => {
+      await service.save({ devDeviceUid: 'DESK-1', devPlatform: null });
+      await service.save({ devDeviceUid: 'DESK-2', devPlatform: undefined });
+
+      const [nullData, undefinedData] = prisma.deviceMaster.create.mock.calls.map(
+        ([args]: [{ data: Record<string, unknown> }]) => args.data,
+      );
+      expect(nullData.devPlatform).toBeNull();
+      expect(undefinedData.devPlatform).toBeUndefined();
+    });
+
+    it('refuses a platform that is not a string', async () => {
+      const refusal = await refusalOf(
+        service.save({ devDeviceUid: 'DESK-1', devPlatform: 7 as unknown as DevicePlatform }),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [
+            {
+              field: 'devPlatform',
+              message: 'devPlatform must be a string',
+              code: DeviceListMasterErrorCode.PLATFORM_INVALID,
+            },
+          ],
+        },
+      });
+      expect(prisma.deviceMaster.create).not.toHaveBeenCalled();
     });
 
     it('stamps devEntryBy as the creator and leaves the modified pair empty', async () => {
@@ -387,6 +453,17 @@ describe('DeviceListMasterService', () => {
   });
 
   describe('softDelete', () => {
+    it('refuses an id with no live device', async () => {
+      const refusal = await refusalOf(service.softDelete(DEVICE_ID));
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: { errors: [{ field: 'devId', code: DeviceListMasterErrorCode.NOT_FOUND }] },
+      });
+      expect(prisma.userLoginSession.count).not.toHaveBeenCalled();
+      expect(prisma.deviceMaster.updateMany).not.toHaveBeenCalled();
+    });
+
     it('refuses while login sessions still name the device', async () => {
       prisma.deviceMaster.findFirst.mockResolvedValue(deviceRow());
       prisma.userLoginSession.count.mockResolvedValue(4);

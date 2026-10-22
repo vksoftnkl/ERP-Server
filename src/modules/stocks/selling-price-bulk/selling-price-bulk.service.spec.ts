@@ -724,6 +724,268 @@ describe('SellingPriceBulkService', () => {
       expect(result.noStock).toHaveLength(1);
       expect(service.buildSaveMessage(result)).toContain('no stock on hand');
     });
+
+    it('speaks of one price and one row in the singular', () => {
+      expect(
+        service.buildSaveMessage({ ...base, saved: 1, noStock: [{ bucketId: IPM_ID }] as never }),
+      ).toBe('1 price saved · 1 has no stock on hand — the price applies when stock arrives.');
+    });
+
+    it('says "Nothing to save" when nothing was written', () => {
+      expect(service.buildSaveMessage({ ...base, saved: 0 })).toBe('Nothing to save.');
+    });
+  });
+
+  // ── §3 / §4 the grid and the bucket list ─────────────────────────────────
+  describe('the grid rows — §3, §4', () => {
+    /** A Q25 row as the gateway answers it: MRP 120 stock, priced 118 at level A. */
+    const record = (overrides: Record<string, unknown> = {}) => ({
+      itemId: BUCKET_ITEM,
+      itemCode: 'SALT',
+      barcode: '8901234567890',
+      itemName: 'Salt 1 Kg',
+      uomId: UOM_ID,
+      unitName: 'PCS',
+      stockQty: 12,
+      mrp: 120,
+      salePrice: null,
+      maxPrice: 120,
+      priceSource: 'BUCKET',
+      priceScope: 'BRANCH',
+      bucketId: IPM_ID,
+      costRate: COST,
+      costWot: 80.508475,
+      costBasis: 'MRP',
+      minPrice: 100,
+      roundOff: 0,
+      prices: [PRICE, 0, 0, 0],
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      // The grid resolves tax outside any transaction, on the service's own client.
+      Object.assign(prisma, tx);
+      gateway.listPrices.mockResolvedValue({
+        items: [record(), record({ itemId: '01000000-0000-7000-8000-0000000000ff' })],
+        meta: { limit: 200, offset: 0, count: 2 },
+      });
+      gateway.listBuckets.mockResolvedValue([record()]);
+    });
+
+    it('pages at 200 by default, from the top, active items only', async () => {
+      await service.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID });
+
+      expect(gateway.listPrices).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        itemGroupId: undefined,
+        itemBrandId: undefined,
+        itemSectionId: undefined,
+        supplierId: undefined,
+        itemId: undefined,
+        search: undefined,
+        itemCategoryId: undefined,
+        trackPresetId: undefined,
+        taxId: undefined,
+        activeOnly: true,
+        limit: 200,
+        offset: 0,
+      });
+    });
+
+    it('caps the page at 1000, never reads before the first row, and passes every filter on', async () => {
+      await service.listPrices({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        itemGroupId: TAX_ID,
+        search: 'salt',
+        activeOnly: false,
+        limit: 5000,
+        offset: -10,
+      });
+
+      expect(gateway.listPrices).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemGroupId: TAX_ID,
+          search: 'salt',
+          activeOnly: false,
+          limit: 1000,
+          offset: 0,
+        }),
+      );
+    });
+
+    it('numbers the rows from the page offset and adds the tax and the four-number levels', async () => {
+      gateway.listPrices.mockResolvedValue({
+        items: [record()],
+        meta: { limit: 50, offset: 100, count: 1 },
+      });
+
+      const page = await service.listPrices({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        limit: 50,
+        offset: 100,
+      });
+
+      expect(page.meta).toEqual({ limit: 50, offset: 100, count: 1 });
+      expect(page.items[0]).toEqual({
+        lineNo: 101,
+        itemId: BUCKET_ITEM,
+        itemCode: 'SALT',
+        barcode: '8901234567890',
+        itemName: 'Salt 1 Kg',
+        uomId: UOM_ID,
+        unitName: 'PCS',
+        stockQty: 12,
+        mrp: 120,
+        salePrice: null,
+        maxPrice: 120,
+        priceSource: 'BUCKET',
+        priceScope: 'BRANCH',
+        bucketId: IPM_ID,
+        costRate: COST,
+        costWot: 80.508475,
+        costBasis: 'MRP',
+        minPrice: 100,
+        roundOff: 0,
+        taxPerc: TAX_PERC,
+        inclTax: true,
+        hasCess: false,
+        levels: [
+          recomputeLevel(1, PRICE, TAX_PERC, COST),
+          recomputeLevel(2, 0, TAX_PERC, COST),
+          recomputeLevel(3, 0, TAX_PERC, COST),
+          recomputeLevel(4, 0, TAX_PERC, COST),
+        ],
+      });
+      expect(page.items[0].levels[0]).toMatchObject({ price: 118, priceWot: 100 });
+    });
+
+    it('answers 0% tax, exclusive and no cess for an item the tax resolver does not know', async () => {
+      const page = await service.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID });
+
+      expect(page.items[1]).toMatchObject({
+        lineNo: 2,
+        taxPerc: 0,
+        inclTax: false,
+        hasCess: false,
+      });
+      expect(page.items[1].levels[0]).toMatchObject({ price: PRICE, priceWot: PRICE });
+    });
+
+    it("lists one item's buckets at the company and branch asked for, numbered from 1", async () => {
+      const rows = await service.listBuckets(BUCKET_ITEM, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+      });
+
+      expect(gateway.listBuckets).toHaveBeenCalledWith(BUCKET_ITEM, COMPANY_ID, BRANCH_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ lineNo: 1, taxPerc: TAX_PERC, bucketId: IPM_ID });
+    });
+  });
+
+  // ── the audit row's wording, and the refusals' line numbers ─────────────
+  describe('what the audit row and the refusals say', () => {
+    const auditEntry = () =>
+      auditLogService.logEntityChange.mock.calls[0][0] as {
+        displayName: string;
+        notes: string;
+        modifiedRecord: unknown;
+      };
+
+    it('names a bucket by its MRP and sale price, and the scope it was saved at', async () => {
+      gateway.snapshotRows.mockResolvedValue(
+        new Map([[IPM_ID, { ipm_id: IPM_ID, ipm_bucket_mrp: 120, ipm_bucket_sp: 110 }]]),
+      );
+
+      await service.saveBulk(payload({ scope: 'CHAIN' }));
+
+      expect(auditEntry().displayName).toBe('Salt 1 Kg · MRP 120, sale price 110');
+      expect(auditEntry().notes).toBe('Change Selling Price (menu 30), all branches');
+    });
+
+    it('names a row with no bucket the headline, at this branch', async () => {
+      gateway.snapshotRows.mockResolvedValue(
+        new Map([[IPM_ID, { ipm_id: IPM_ID, ipm_bucket_mrp: null, ipm_bucket_sp: null }]]),
+      );
+
+      await service.saveBulk(payload({ rows: [headlineRow()] }));
+
+      expect(auditEntry().displayName).toBe('Rice 25 Kg · headline');
+      expect(auditEntry().notes).toBe('Change Selling Price (menu 30), this branch');
+    });
+
+    it('audits a row it could not read back with no after-image', async () => {
+      gateway.snapshotRows.mockResolvedValue(new Map());
+
+      await service.saveBulk(payload());
+
+      expect(auditEntry()).toMatchObject({
+        modifiedRecord: null,
+        displayName: 'Salt 1 Kg · headline',
+      });
+    });
+
+    it('numbers a foreign unit by its position when the row sent no line number', async () => {
+      gateway.loadRowCosts.mockResolvedValueOnce([
+        {
+          itemCode: 'SALT',
+          itemName: 'Salt 1 Kg',
+          uomBelongs: false,
+          trackMrp: true,
+          trackSalePrice: false,
+          costRate: COST,
+          costWot: 80.508475,
+          minPrice: 0,
+        },
+      ]);
+
+      const error = await service
+        .saveBulk(payload({ rows: [bucketRow({ lineNo: undefined })] }))
+        .catch((caught: unknown) => caught as HttpException);
+
+      expect((error as HttpException).getStatus()).toBe(422);
+      expect((error as HttpException).getResponse()).toMatchObject({
+        errors: [
+          {
+            field: 'rows.1',
+            code: 'STOCK_PRICE_UNIT_NOT_OF_ITEM',
+            message: `Line 1: unit ${UOM_ID} is not one of item ${BUCKET_ITEM}'s units.`,
+          },
+        ],
+      });
+    });
+
+    it('names a duplicate bucket by its item id when the item has no name', async () => {
+      const nameless: RowCost = {
+        itemCode: null,
+        itemName: '',
+        uomBelongs: true,
+        trackMrp: true,
+        trackSalePrice: false,
+        costRate: COST,
+        costWot: 80.508475,
+        minPrice: 0,
+      };
+      gateway.loadRowCosts.mockResolvedValueOnce([nameless, nameless]);
+
+      const error = await service
+        .saveBulk(payload({ rows: [bucketRow({ lineNo: 4 }), bucketRow({ lineNo: 9 })] }))
+        .catch((caught: unknown) => caught as HttpException);
+
+      expect((error as HttpException).getResponse()).toMatchObject({
+        errors: [
+          {
+            field: 'rows.9',
+            code: 'STOCK_PRICE_DUPLICATE_BUCKET',
+            message: `Lines 4 and 9 price the same bucket of ${BUCKET_ITEM} at the same scope. Keep one of them.`,
+          },
+        ],
+      });
+      expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
+    });
   });
 });
 

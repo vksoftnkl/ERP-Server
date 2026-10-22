@@ -45,6 +45,11 @@ converted to the base unit.
   nothing is saved.
 - On update, unprovided fields keep their persisted values; the constraint check runs against the
   **effective post-update state** (incoming values merged over the stored row).
+- **A saved base unit is locked** (notes 138 A1): once the item has a live base row, a row that
+  re-points the base row at another unit, un-marks it, marks any other row base, or names another
+  `iuc_base_unit_id` is a 409 `ITEM_BASE_UNIT_LOCKED` (the item master's code on purpose; `field`
+  is `<index>.<column>` in an array body). Read from the stored base row before normalisation.
+  Factors, weight, remarks and the default / big flags stay editable.
 
 ### Delete / restore semantics
 
@@ -54,6 +59,7 @@ converted to the base unit.
   them (notes 137 A4 — they stayed live behind the deleted unit, the barcode kept scanning, and the
   next item save that echoed them was a 400). The item card's composite save removes a unit
   together with those rows instead. It used to toggle, so a second DELETE restored the unit.
+  The item's base row is never deleted here: 409 `ITEM_BASE_UNIT_LOCKED` (notes 138).
 - Accepts an `iuc_id` query param **or** a request body (single object or array of `{ iuc_id }`);
   the body takes precedence when present, otherwise `iuc_id` is read from the query.
 - The response `deleted` flag is `true`.

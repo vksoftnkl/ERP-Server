@@ -395,6 +395,108 @@ describe('StockTrackPolicyService', () => {
       expect(results.map((r) => r.outcome)).toEqual(['cleared', 'cleared']);
       expect(client.stockTrackPolicy.update).toHaveBeenCalledTimes(2);
     });
+
+    it('reads through the service client when no transaction is passed', async () => {
+      await expect(service.retireForItem(ITEM_ID)).resolves.toEqual([]);
+
+      expect(client.stockTrackPolicy.findMany).toHaveBeenCalledTimes(1);
+      expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── retireForGroup ─────────────────────────────────────────────────────────
+  // Notes 71 B3: a deleted group's policy stayed live and active.
+  describe('retireForGroup', () => {
+    it('retires every derived GROUP row of a deleted group, oldest first, and audits each', async () => {
+      client.stockTrackPolicy.findMany.mockResolvedValueOnce([
+        policyRow({
+          stpId: 'g1',
+          stpScope: 'GROUP',
+          stpScopeId: GROUP_ID,
+          stpGroupId: GROUP_ID,
+          stpItemId: null,
+          stpCompanyId: null,
+          stpBranchId: null,
+          stpRemarks: `${DERIVED_FROM_GROUP_REMARK} [preset PHARMA]`,
+        }),
+      ]);
+
+      const results = await service.retireForGroup(GROUP_ID, tx());
+
+      expect(client.stockTrackPolicy.findMany).toHaveBeenCalledWith({
+        where: {
+          stpScope: 'GROUP',
+          stpGroupId: GROUP_ID,
+          stpRemarks: { startsWith: DERIVED_FROM_GROUP_REMARK },
+          stpIsDeleted: false,
+        },
+        orderBy: { stpCreatedOn: 'asc' },
+      });
+      expect(client.stockTrackPolicy.update).toHaveBeenCalledWith({
+        where: { stpId: 'g1' },
+        data: {
+          stpIsActive: false,
+          stpIsDeleted: true,
+          stpModifiedOn: expect.any(Date),
+          stpModifiedBy: USER_ID,
+        },
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].outcome).toBe('cleared');
+      expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires nothing for a group with no derived row', async () => {
+      await expect(service.retireForGroup(GROUP_ID, tx())).resolves.toEqual([]);
+
+      expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
+      expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('reads through the service client when no transaction is passed', async () => {
+      await service.retireForGroup(GROUP_ID);
+
+      expect(client.stockTrackPolicy.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── the finders ────────────────────────────────────────────────────────────
+  describe('findByItemId / findByGroupId', () => {
+    it("finds the item's oldest live ITEM-scope row", async () => {
+      const row = policyRow();
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(row);
+
+      await expect(service.findByItemId(ITEM_ID, tx())).resolves.toBe(row);
+
+      expect(client.stockTrackPolicy.findFirst).toHaveBeenCalledWith({
+        where: { stpScope: 'ITEM', stpItemId: ITEM_ID, stpIsDeleted: false },
+        orderBy: { stpCreatedOn: 'asc' },
+      });
+    });
+
+    it('answers null for an item with no row of its own, without a transaction too', async () => {
+      await expect(service.findByItemId(ITEM_ID)).resolves.toBeNull();
+    });
+
+    // The row syncFromItemGroup derives is the SHARED one (notes 69): null company.
+    it.each([
+      ['the shared row', null],
+      ["a company's own row", COMPANY_ID],
+    ])('finds %s of a group by the company it is asked for', async (_label, companyId) => {
+      await service.findByGroupId(GROUP_ID, companyId, tx());
+      await service.findByGroupId(GROUP_ID, companyId);
+
+      expect(client.stockTrackPolicy.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          stpScope: 'GROUP',
+          stpGroupId: GROUP_ID,
+          stpCompanyId: companyId,
+          stpIsDeleted: false,
+        },
+        orderBy: { stpCreatedOn: 'asc' },
+      });
+      expect(client.stockTrackPolicy.findFirst).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('syncFromItemGroup', () => {

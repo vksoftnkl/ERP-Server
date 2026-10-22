@@ -227,6 +227,46 @@ describe('StateCodeMasterService', () => {
         }),
       );
     });
+
+    it('refuses when the code vanished between the routing read and the update', async () => {
+      prisma.stateCode.findUnique
+        .mockResolvedValueOnce({ stateCode: 'TN' })
+        .mockResolvedValueOnce(null);
+
+      const refusal = await refusalOf(service.save({ stateCode: 'TN', stateName: 'Tamil Nadu' }));
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: { errors: [{ field: 'stateCode', code: StateCodeMasterErrorCode.NOT_FOUND }] },
+      });
+      expect(prisma.stateCode.update).not.toHaveBeenCalled();
+      expect(prisma.stateCode.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a unique-index race on the update (P2002) with a 409 on stateCode', async () => {
+      prisma.stateCode.findUnique.mockResolvedValue(stateRow());
+      prisma.stateCode.update.mockRejectedValue(
+        Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+      );
+
+      const refusal = await refusalOf(service.save({ stateCode: 'TN', stateName: 'Tamil Nadu' }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'stateCode', code: StateCodeMasterErrorCode.DUPLICATE }] },
+      });
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('rethrows any other database failure on the update untouched', async () => {
+      const failure = new Error('connection reset');
+      prisma.stateCode.findUnique.mockResolvedValue(stateRow());
+      prisma.stateCode.update.mockRejectedValue(failure);
+
+      await expect(service.save({ stateCode: 'TN', stateName: 'Tamil Nadu' })).rejects.toBe(
+        failure,
+      );
+    });
   });
 
   describe('list', () => {
