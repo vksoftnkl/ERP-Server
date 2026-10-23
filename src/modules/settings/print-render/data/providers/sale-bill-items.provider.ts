@@ -60,6 +60,9 @@ export class SaleBillItemsProvider implements PrintDataProvider {
               sbi.sbi_batch_date    AS batch_date,
               sbi.sbi_expiry_date   AS expiry_date,
               sbi.sbi_serial_no     AS serial_no,
+              isz.isz_name          AS size_name,
+              icl.icl_name          AS colour_name,
+              sbd.sbd_model         AS model,
               sbi.sbi_is_free       AS is_free,
               sbi.sbi_is_promo      AS is_promo,
               sbi.sbi_is_service    AS is_service,
@@ -99,6 +102,18 @@ export class SaleBillItemsProvider implements PrintDataProvider {
            ON iuc.iuc_id = sbi.sbi_item_unit_id
          LEFT JOIN inventory.item_unit_master unt
            ON unt.unit_id = iuc.iuc_unit_id
+         -- Textile addendum 2 E3.4: the batch's size / colour / model, so the
+         -- invoice can print "Shirt · XL · Maroon · Slim fit". Keyed by the
+         -- batch as stock_batch_detail stores it (folded) and the item.
+         LEFT JOIN stock.stock_batch_detail sbd
+           ON sbd.sbd_company_id = sbi.sbi_company_id
+          AND sbd.sbd_batch_no   = upper(btrim(sbi.sbi_batch_no))
+          AND sbd.sbd_item_id    = sbi.sbi_item_id
+          AND sbd.sbd_is_deleted = false
+         LEFT JOIN inventory.item_size_master isz
+           ON isz.isz_id = sbd.sbd_size_id
+         LEFT JOIN inventory.item_colour_master icl
+           ON icl.icl_id = sbd.sbd_colour_id
         WHERE sbi.sbi_bill_id = $1
           AND sbi.sbi_acc_year = $2
           AND sbi.sbi_company_id = $3

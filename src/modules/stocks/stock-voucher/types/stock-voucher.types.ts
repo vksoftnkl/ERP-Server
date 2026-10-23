@@ -329,6 +329,14 @@ export interface StockVoucherTypeRules {
    */
   zeroesLineCost?: boolean;
 
+  /**
+   * Textile plan D3 (2026-10-23) — the save gives a batch number to every line
+   * left without one whose item's policy tracks batch, when the company setting
+   * `stock.auto_batch_no` is on. An INWARD document's rule only: the number
+   * names a new lot. See stock-voucher-batch-numbering.helper.ts.
+   */
+  autoBatchNo?: boolean;
+
   /** The audit.audit_screen name rows from this controller are filed under. */
   auditScreenName: string;
 
@@ -520,6 +528,15 @@ export interface StockVoucherLinePayload {
    * identity cells open.
    */
   trackSignature: string;
+  /**
+   * Textile addendum 2 E2 — what the line's auto batch carries
+   * (stock.stock_batch_detail); null when the batch was typed or has none.
+   */
+  sizeId: string | null;
+  sizeName: string | null;
+  colourId: string | null;
+  colourName: string | null;
+  model: string | null;
 }
 
 export interface StockVoucherPayload {

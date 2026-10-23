@@ -147,6 +147,12 @@ let SellingPriceBulkService = class SellingPriceBulkService {
                     : price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE));
             }
             const ipmIds = applied.map((row) => row.ipmId);
+            const shown = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
+                itemId: row.itemId,
+                uomId: row.uomId,
+                mrp: row.mrp ?? null,
+                salePrice: row.salePrice ?? null,
+            })), dto.companyId, dto.branchId, scheduledFrom);
             const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
             const after = await this.auditWrites(tx, dto, applied, {
                 actor,
@@ -156,7 +162,7 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             return {
                 saved: ipmIds.length,
                 effectiveFrom: from,
-                rows: applied.map((row) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom)),
+                rows: applied.map((row, index) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index])),
                 masterRowsSaved: 0,
                 noStock,
                 needsConfirm: false,
@@ -385,7 +391,7 @@ let SellingPriceBulkService = class SellingPriceBulkService {
         }
         return { from, scheduledFrom: from > today ? from : undefined };
     }
-    toSavedRow(row, stored, scheduledFrom) {
+    toSavedRow(row, stored, scheduledFrom, shown) {
         const day = (value) => (typeof value === 'string' ? value.slice(0, 10) : '');
         return {
             lineNo: row.lineNo,
@@ -393,6 +399,9 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             scheduled: scheduledFrom !== undefined,
             effectiveFrom: day(stored?.ipm_effective_from),
             effectiveTo: day(stored?.ipm_effective_to),
+            costRate: shown?.costRate ?? 0,
+            costWot: shown?.costWot ?? 0,
+            costBasis: shown?.costBasis ?? null,
         };
     }
     assertScopeAllowed(scope) {
@@ -474,6 +483,9 @@ let SellingPriceBulkService = class SellingPriceBulkService {
     toCandidate(row, index, companyId, actor, taxRates, cost) {
         const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
         const key = (0, stock_voucher_posting_helper_1.bucketKeyFor)(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
+        const keyedCost = row.costPrice ?? null;
+        const costRate = keyedCost ?? cost.costRate;
+        const costWot = keyedCost !== null ? (0, selling_price_math_helper_1.exclusiveOfTax)(keyedCost, taxPerc) : cost.costWot;
         return {
             lineNo: row.lineNo ?? index + 1,
             companyId,
@@ -486,11 +498,11 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             salePrice: key.salePrice,
             minPrice: row.minPrice ?? null,
             roundOff: row.roundOff ?? null,
-            costRate: cost.costRate,
-            costWot: cost.costWot,
+            costRate,
+            costWot,
             actor,
             levels: row.levels.map((level) => {
-                const value = (0, selling_price_math_helper_1.recomputeLevel)(level.level, level.price, taxPerc, cost.costRate);
+                const value = (0, selling_price_math_helper_1.recomputeLevel)(level.level, level.price, taxPerc, costRate);
                 return {
                     level: value.level,
                     price: value.price,

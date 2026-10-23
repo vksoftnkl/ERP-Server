@@ -114,6 +114,7 @@ model ItemMaster {
   stockVoucherItems    StockVoucherItem[]    @relation("StockVoucherItemItem")
   stockReservations    StockReservation[]    @relation("StockReservationItem")
   stockTransits        StockTransit[]        @relation("StockTransitItem")
+  stockBatchDetails    StockBatchDetail[]    @relation("StockBatchDetailItem")
   stockValuationSnaps  StockValuationSnap[]  @relation("StockValuationSnapItem")
   stockDemandDaily     StockDemandDaily[]    @relation("StockDemandDailyItem")
   stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")

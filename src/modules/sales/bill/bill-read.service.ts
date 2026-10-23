@@ -8,6 +8,7 @@ import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { loadDayClosed } from '../posting/sales.guards';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
+import { batchDetailKey, batchDetailsFor } from '../../stocks/batch-detail/batch-detail.helper';
 import { STATUTORY_CODES } from '../../../common/posting/statutory.types';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { SaleBillErrorCode } from './types/sale-bill-error-codes';
@@ -57,17 +58,24 @@ export class BillReadService {
     client?: Prisma.TransactionClient,
   ): Promise<BillPayload> {
     const c = client ?? this.prisma;
-    const [counts, rights, sources, tempCredits, adjustments, transport] = await Promise.all([
-      this.lockCounts(c, bill),
-      this.salesContext.rights(SALES_MENU_ID.SALE_BILL, c),
-      this.sources(c, bill),
-      this.tempCredits(c, bill),
-      this.adjustments(c, bill),
-      this.transportBand.read(
-        { docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear },
-        c,
-      ),
-    ]);
+    const [counts, rights, sources, tempCredits, adjustments, transport, batches] =
+      await Promise.all([
+        this.lockCounts(c, bill),
+        this.salesContext.rights(SALES_MENU_ID.SALE_BILL, c),
+        this.sources(c, bill),
+        this.tempCredits(c, bill),
+        this.adjustments(c, bill),
+        this.transportBand.read(
+          { docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear },
+          c,
+        ),
+        // Textile addendum 2 E3.3 — the lines' batch size / colour / model.
+        batchDetailsFor(
+          c,
+          bill.sbCompanyId,
+          (payload.items ?? []).map((i) => ({ itemId: i.sbiItemId, batchNo: i.sbiBatchNo })),
+        ),
+      ]);
     const { posting, locks } = await this.docBlocks.build(
       {
         status: bill.sbStatus,
@@ -87,6 +95,16 @@ export class BillReadService {
     );
     return {
       ...payload,
+      items: payload.items?.map((item) => {
+        const batch =
+          item.sbiBatchNo && batches.get(batchDetailKey(item.sbiItemId, item.sbiBatchNo));
+        return {
+          ...item,
+          sbiSizeName: batch ? batch.sizeName : null,
+          sbiColourName: batch ? batch.colourName : null,
+          sbiModel: batch ? batch.model : null,
+        };
+      }),
       posting,
       locks,
       rights,

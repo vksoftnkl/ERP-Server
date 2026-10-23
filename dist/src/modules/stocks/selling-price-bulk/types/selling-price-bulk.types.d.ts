@@ -81,6 +81,9 @@ export interface SellingPriceSavedRow {
     scheduled: boolean;
     effectiveFrom: string;
     effectiveTo: string;
+    costRate: number;
+    costWot: number;
+    costBasis: CostBasis | null;
 }
 export interface SellingPriceSaveResult {
     saved: number;

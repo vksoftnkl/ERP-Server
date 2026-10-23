@@ -734,15 +734,21 @@ export class ItemUnitConversionService {
         const currentCumulative = this.roundFactor(previousCumulative * resolvedUnitFactor);
         cumulativeByUnitId.set(row.unitId, currentCumulative);
       }
-      // iuc_to_base_factor reads as "qty in this unit x factor = qty in the base
-      // unit", so it is the row's cumulative expressed relative to the base
-      // row's. When the base unit has no row in the chain there is nothing to
-      // anchor against, and each row keeps the to-base factor it came in with.
+      // THE ITEM CARD'S RULE (notes 147 A, 2026-10-23): the list runs from the
+      // biggest unit down, and a row's iuc_unit_factor is how many of IT make one
+      // of the row above — Bottle (1) / PCS (10) is 1 Bottle = 10 PCS. So a
+      // row's cumulative counts its units in one of row 1, and
+      // iuc_to_base_factor ("qty in this unit x factor = qty in the base unit")
+      // is the base's cumulative over the row's: a row above the base is bigger
+      // (Bottle = 10), one below it smaller (a factor under 1). 99d0a468
+      // (2026-07-27) had inverted this to row / base, which stored Bottle = 0.1.
+      // When the base unit has no row in the chain there is nothing to anchor
+      // against, and each row keeps the to-base factor it came in with.
       const baseCumulative = cumulativeByUnitId.get(resolvedBaseUnitId);
       for (const row of effectiveRows) {
         const rowCumulative = cumulativeByUnitId.get(row.unitId)!;
         row.toBaseFactor = baseCumulative
-          ? this.roundFactor(rowCumulative / baseCumulative)
+          ? this.roundFactor(baseCumulative / rowCumulative)
           : (row.toBaseFactor ?? rowCumulative);
       }
       for (const row of effectiveRows) {
@@ -773,10 +779,11 @@ export class ItemUnitConversionService {
     }
     const previousToBaseFactor = this.toPositiveFactor(previousRow.toBaseFactor);
     const currentToBaseFactor = this.toPositiveFactor(currentRow.toBaseFactor);
-    // Both to-base factors count base units per row unit, so the step from the
-    // previous row to this one is how much bigger this unit is.
+    // Both to-base factors count base units per row unit, so the step — how
+    // many of this row make one of the row above (the item card's rule) — is
+    // the previous row's over this one's.
     if (previousToBaseFactor !== undefined && currentToBaseFactor !== undefined) {
-      return this.roundFactor(currentToBaseFactor / previousToBaseFactor);
+      return this.roundFactor(previousToBaseFactor / currentToBaseFactor);
     }
     throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
       {

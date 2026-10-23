@@ -75,9 +75,15 @@ Before persistence, each save item for an item is reconciled into a coherent con
 - **Factor chain** (`normalizeItemUnitConversionFactors`): the item's persisted rows plus the incoming
   rows are merged and sorted by `iucUnitSlno` then `iucUnitId`. The first row's `iuc_unit_factor` is
   forced to `1`; each subsequent row's factor is taken from the payload or derived from adjacent
-  `iuc_to_base_factor` values. Cumulative factors are then used to recompute every row's
-  `iuc_to_base_factor` relative to the resolved base unit (rounded to 9 decimals). `iuc_is_base_unit`
-  is set to `true` only for the row whose unit equals the resolved base unit.
+  `iuc_to_base_factor` values (previous ÷ this). Cumulative factors are then used to recompute every
+  row's `iuc_to_base_factor` relative to the resolved base unit (rounded to 9 decimals).
+  `iuc_is_base_unit` is set to `true` only for the row whose unit equals the resolved base unit.
+- **Direction: the item card's rule** (notes 147 A, 2026-10-23). The list runs from the biggest unit
+  down. A row's `iuc_unit_factor` is how many of **it** make one of the row above, so
+  **Bottle (1) / PCS (10, base)** means 1 Bottle = 10 PCS, and to-base =
+  base cumulative ÷ row cumulative. A row above the base is bigger (Bottle = 10); one below it is
+  smaller (a factor under 1). Commit 99d0a468 (2026-07-27) had inverted this to row ÷ base, which
+  stored Bottle = 0.1.
 - `iul_unit_factor` is accepted as an alias for `iuc_unit_factor` on input and is echoed alongside it.
 
 ## Validation rules

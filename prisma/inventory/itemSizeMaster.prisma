@@ -1,0 +1,29 @@
+/// inventory.item_size_master — textile sizes picked on an inward line
+/// (textile auto batch, addendum 2 E1). Company NULL = shared by every company.
+///
+/// DB-only, not declared here (partial and expression indexes):
+///   ux_isz_name  unique (COALESCE(company, nil uuid), upper(name)) among live rows
+///   ix_isz_list  (company, sort) among live rows
+model ItemSizeMaster {
+  iszId         String    @id(map: "pk_item_size_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("isz_id")
+  iszCompanyId  String?   @db.Uuid                @map("isz_company_id")
+  iszCode       String?   @db.VarChar(20)         @map("isz_code")
+  iszName       String    @db.VarChar(50)         @map("isz_name")
+  /// ALPHA / WAIST / KIDS / free text: groups sizes for a size grid later.
+  iszSizeSet    String?   @db.VarChar(20)         @map("isz_size_set")
+  /// S < M < L < XL; 28 < 30 < 32. Lists and reports sort by this, not by name.
+  iszSort       Int       @default(0)             @map("isz_sort")
+  iszIsActive   Boolean   @default(true)          @map("isz_is_active")
+  iszIsDeleted  Boolean   @default(false)         @map("isz_is_deleted")
+  iszSyncDate   DateTime? @db.Timestamptz(6)      @map("isz_sync_date")
+  iszCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("isz_created_on")
+  iszCreatedBy  String?   @db.VarChar(100)        @map("isz_created_by")
+  iszModifiedOn DateTime? @db.Timestamptz(6)      @map("isz_modified_on")
+  iszModifiedBy String?   @db.VarChar(100)        @map("isz_modified_by")
+
+  company       Company?           @relation("ItemSizeCompany", fields: [iszCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_isz_company")
+  batchDetails  StockBatchDetail[] @relation("StockBatchDetailSize")
+
+  @@map("item_size_master")
+  @@schema("inventory")
+}

@@ -13,6 +13,9 @@ export declare class SaveStockVoucherItemDto {
     toBucket?: StockBucket | null;
     barcode?: string | null;
     batchNo?: string | null;
+    sizeId?: string | null;
+    colourId?: string | null;
+    model?: string | null;
     mfgDate?: string | null;
     expiryDate?: string | null;
     mrp?: string | number | null;

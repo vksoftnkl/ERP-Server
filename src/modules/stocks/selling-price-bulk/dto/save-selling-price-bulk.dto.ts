@@ -133,6 +133,21 @@ export class SaveSellingPriceRowDto {
   @Type(() => SaveSellingPriceLevelDto)
   levels!: SaveSellingPriceLevelDto[];
 
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1385,
+    description:
+      "Notes 147 B — the PRICE ROW's own cost for one of this unit, tax inclusive, as keyed in " +
+      'the quick rate popup or the item card. Written to ipm_cost_price, with ipm_cost_wot = ' +
+      'costPrice ÷ (1 + tax %), in the same save and writer (the Price Change Log records it); ' +
+      "the row's markups and the below-cost check use it. It is not the stock's moving average, " +
+      'which keeps coming from inward and is what costRate shows while the item has stock ' +
+      '(costBasis says which). Absent or null: unchanged — the cost the grid showed, as before.',
+  })
+  @NullableNumber(0)
+  costPrice?: number | null;
+
   @ApiPropertyOptional({ type: Number, nullable: true })
   @NullableNumber(0)
   minPrice?: number | null;

@@ -13,6 +13,8 @@ import { buildStockVoucherRefno } from './stock-voucher-numbering.helper';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import { StockErrorCode } from '../types/stock-error-codes';
 import * as importHelper from './stock-voucher-import.helper';
+import * as batchNumbering from './stock-voucher-batch-numbering.helper';
+import * as batchDetail from '../batch-detail/batch-detail.helper';
 
 // The accounts counter is a real table walk (voucher type, sequence row,
 // company, branch) that a unit test has no business standing up. What is under
@@ -710,6 +712,62 @@ describe('StockVoucherService', () => {
       });
       expect(client.stockVoucherItem.deleteMany).not.toHaveBeenCalled();
       expect(client.stockVoucherItem.createMany.mock.calls[0][0].data).toHaveLength(1);
+    });
+  });
+
+  /** Textile plan D3 — the save hands its lines to the batch numbering first. */
+  describe('textile plan D3 — batch numbers given at save', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it('writes the lines the numbering returns, then their size / colour / model rows', async () => {
+      const assign = jest
+        .spyOn(batchNumbering, 'assignAutoBatchNumbers')
+        .mockImplementation((_tx, _scope, lines) =>
+          Promise.resolve({
+            lines: lines.map((l) => ({ ...l, batchNo: 'CBE26-00001' })),
+            numbered: new Set([0]),
+          }),
+        );
+      const sync = jest.spyOn(batchDetail, 'syncBatchDetails').mockResolvedValue(undefined);
+
+      await service.save({ ...OPENING_RULES, autoBatchNo: true }, payload());
+
+      expect(assign).toHaveBeenCalledWith(
+        client,
+        {
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          accYear: ACC_YEAR,
+          docDate: '2026-04-01',
+          svhId: undefined,
+        },
+        payload().lines,
+      );
+      expect(createdLine().sviBatchNo).toBe('CBE26-00001');
+      // Addendum 2 E2 — after the lines are written, with the numbered indexes.
+      expect(sync).toHaveBeenCalledWith(
+        client,
+        {
+          companyId: COMPANY_ID,
+          accYear: ACC_YEAR,
+          srcDocType: 'OPENING',
+          srcDocId: SVH_ID,
+          actor: USER_ID,
+        },
+        [expect.objectContaining({ batchNo: 'CBE26-00001' })],
+        new Set([0]),
+      );
+    });
+
+    it('numbers nothing on a type whose rules do not ask', async () => {
+      const assign = jest.spyOn(batchNumbering, 'assignAutoBatchNumbers');
+      const sync = jest.spyOn(batchDetail, 'syncBatchDetails');
+
+      await service.save(OPENING_RULES, payload());
+
+      expect(assign).not.toHaveBeenCalled();
+      expect(sync).not.toHaveBeenCalled();
+      expect(createdLine().sviBatchNo).toBeNull();
     });
   });
 

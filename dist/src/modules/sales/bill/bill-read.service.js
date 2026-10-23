@@ -19,6 +19,7 @@ const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service"
 const sales_guards_1 = require("../posting/sales.guards");
 const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
+const batch_detail_helper_1 = require("../../stocks/batch-detail/batch-detail.helper");
 const statutory_types_1 = require("../../../common/posting/statutory.types");
 const posting_types_1 = require("../posting/types/posting.types");
 const sale_bill_error_codes_1 = require("./types/sale-bill-error-codes");
@@ -40,13 +41,14 @@ let BillReadService = class BillReadService {
     }
     async decorate(bill, payload, client) {
         const c = client ?? this.prisma;
-        const [counts, rights, sources, tempCredits, adjustments, transport] = await Promise.all([
+        const [counts, rights, sources, tempCredits, adjustments, transport, batches] = await Promise.all([
             this.lockCounts(c, bill),
             this.salesContext.rights(sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, c),
             this.sources(c, bill),
             this.tempCredits(c, bill),
             this.adjustments(c, bill),
             this.transportBand.read({ docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear }, c),
+            (0, batch_detail_helper_1.batchDetailsFor)(c, bill.sbCompanyId, (payload.items ?? []).map((i) => ({ itemId: i.sbiItemId, batchNo: i.sbiBatchNo }))),
         ]);
         const { posting, locks } = await this.docBlocks.build({
             status: bill.sbStatus,
@@ -64,6 +66,15 @@ let BillReadService = class BillReadService {
         }, c);
         return {
             ...payload,
+            items: payload.items?.map((item) => {
+                const batch = item.sbiBatchNo && batches.get((0, batch_detail_helper_1.batchDetailKey)(item.sbiItemId, item.sbiBatchNo));
+                return {
+                    ...item,
+                    sbiSizeName: batch ? batch.sizeName : null,
+                    sbiColourName: batch ? batch.colourName : null,
+                    sbiModel: batch ? batch.model : null,
+                };
+            }),
             posting,
             locks,
             rights,

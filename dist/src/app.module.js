@@ -110,6 +110,8 @@ const txn_status_module_1 = require("./modules/txn-status/txn-status.module");
 const txn_adjacent_module_1 = require("./modules/txn-adjacent/txn-adjacent.module");
 const item_price_log_module_1 = require("./modules/Inventory/item-price-log/item-price-log.module");
 const item_inward_history_module_1 = require("./modules/stocks/item-inward-history/item-inward-history.module");
+const lot_by_batch_module_1 = require("./modules/stocks/lot-by-batch/lot-by-batch.module");
+const batch_detail_module_1 = require("./modules/stocks/batch-detail/batch-detail.module");
 const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/stock-adjustment.module");
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
@@ -130,6 +132,7 @@ const items_brand_master_module_1 = require("./modules/Inventory/items-brand-mas
 const items_section_master_module_1 = require("./modules/Inventory/items-section-master/items-section-master.module");
 const items_category_master_module_1 = require("./modules/Inventory/items-category-master/items-category-master.module");
 const units_master_module_1 = require("./modules/Inventory/units-master/units-master.module");
+const item_size_colour_master_module_1 = require("./modules/Inventory/item-size-colour-master/item-size-colour-master.module");
 const tax_rate_master_module_1 = require("./modules/Inventory/tax-rate-master/tax-rate-master.module");
 const items_ean_code_master_module_1 = require("./modules/Inventory/items-ean-code-master/items-ean-code-master.module");
 const items_gst_units_master_module_1 = require("./modules/Inventory/items-gst-units-master/items-gst-units-master.module");
@@ -191,6 +194,7 @@ exports.AppModule = AppModule = __decorate([
             items_section_master_module_1.ItemsSectionMasterModule,
             items_category_master_module_1.ItemsCategoryMasterModule,
             units_master_module_1.UnitsMasterModule,
+            item_size_colour_master_module_1.ItemSizeColourMasterModule,
             tax_rate_master_module_1.TaxRateMasterModule,
             items_ean_code_master_module_1.ItemsEanCodeMasterModule,
             items_gst_units_master_module_1.ItemsGstUnitsMasterModule,
@@ -276,6 +280,8 @@ exports.AppModule = AppModule = __decorate([
             txn_adjacent_module_1.TxnAdjacentModule,
             item_price_log_module_1.ItemPriceLogModule,
             item_inward_history_module_1.ItemInwardHistoryModule,
+            lot_by_batch_module_1.LotByBatchModule,
+            batch_detail_module_1.BatchDetailModule,
             stock_adjustment_module_1.StockAdjustmentModule,
             selling_price_bulk_module_1.SellingPriceBulkModule,
             master_lookup_module_1.MasterLookupModule,

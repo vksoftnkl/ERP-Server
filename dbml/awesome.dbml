@@ -2850,6 +2850,7 @@ RETENDER                             · Sales Entry (12) alone']
   userMenus user_menus [not null]
   sections form_section [not null]
   voucherTypes acc_voucher_types [not null, note: 'Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)']
+  dbTables db_table_master [not null, note: 'Tables this screen maintains (public.db_table_master.dtm_menu_id)']
 }
 
 Table price_levels {
@@ -3115,6 +3116,30 @@ brand_is_deleted (notes 139 A2/B6). Partial + expression, so DB-only, never decl
   loyaltySchemeItems loyalty_scheme_item [not null]
 }
 
+Table item_colour_master {
+  iclId String [pk]
+  iclCompanyId String
+  iclCode String
+  iclName String [not null]
+  iclSort Int [not null, default: 0]
+  iclIsActive Boolean [not null, default: true]
+  iclIsDeleted Boolean [not null, default: false]
+  iclSyncDate DateTime
+  iclCreatedOn DateTime [default: `now()`, not null]
+  iclCreatedBy String
+  iclModifiedOn DateTime
+  iclModifiedBy String
+  company companys
+  batchDetails stock_batch_detail [not null]
+
+  Note: 'inventory.item_colour_master — textile colours picked on an inward line
+(textile auto batch, addendum 2 E1). Company NULL = shared by every company.
+
+DB-only, not declared here (partial and expression indexes):
+ux_icl_name  unique (COALESCE(company, nil uuid), upper(name)) among live rows
+ix_icl_list  (company, sort) among live rows'
+}
+
 Table item_ean_codes {
   eanId String [pk]
   eanItemId String [not null]
@@ -3281,6 +3306,7 @@ changes nothing until this item is explicitly re-saved.']
   stockVoucherItems stock_voucher_item [not null]
   stockReservations stock_reservation [not null]
   stockTransits stock_transit [not null]
+  stockBatchDetails stock_batch_detail [not null]
   stockValuationSnaps stock_valuation_snap [not null]
   stockDemandDaily stock_demand_daily [not null]
   stockReorderPolicies stock_reorder_policy [not null]
@@ -3518,6 +3544,31 @@ Table item_section_master {
   secCreatedBy String
   secModifiedOn DateTime [default: `now()`, not null]
   secModifiedBy String
+}
+
+Table item_size_master {
+  iszId String [pk]
+  iszCompanyId String
+  iszCode String
+  iszName String [not null]
+  iszSizeSet String [note: 'ALPHA / WAIST / KIDS / free text: groups sizes for a size grid later.']
+  iszSort Int [not null, default: 0, note: 'S < M < L < XL; 28 < 30 < 32. Lists and reports sort by this, not by name.']
+  iszIsActive Boolean [not null, default: true]
+  iszIsDeleted Boolean [not null, default: false]
+  iszSyncDate DateTime
+  iszCreatedOn DateTime [default: `now()`, not null]
+  iszCreatedBy String
+  iszModifiedOn DateTime
+  iszModifiedBy String
+  company companys
+  batchDetails stock_batch_detail [not null]
+
+  Note: 'inventory.item_size_master — textile sizes picked on an inward line
+(textile auto batch, addendum 2 E1). Company NULL = shared by every company.
+
+DB-only, not declared here (partial and expression indexes):
+ux_isz_name  unique (COALESCE(company, nil uuid), upper(name)) among live rows
+ix_isz_list  (company, sort) among live rows'
 }
 
 Table item_stock_balance {
@@ -4204,6 +4255,9 @@ the e-invoice applicability rows in StatutoryLimit.']
   stockVouchers stock_voucher [not null]
   stockReservations stock_reservation [not null]
   stockTransits stock_transit [not null]
+  itemSizes item_size_master [not null]
+  itemColours item_colour_master [not null]
+  stockBatchDetails stock_batch_detail [not null]
   stockValuationSnaps stock_valuation_snap [not null]
   stockDemandDaily stock_demand_daily [not null]
   stockReorderPolicies stock_reorder_policy [not null]
@@ -4268,6 +4322,53 @@ Table company_group_master {
   cogCreatedBy String
   cogModifiedOn DateTime [default: `now()`, not null]
   cogModifiedBy String
+}
+
+Table db_table_master {
+  dtmId Int [pk, increment]
+  dtmSchema String [not null]
+  dtmTable String [not null, note: 'The partitioned PARENT, never a partition.']
+  dtmParentId Int [note: 'An item / line table points at its header, a child master at its master.
+NULL for a table shared by several headers (txn_charge_detail,
+acc_tender_detail, txn_transport_detail, txn_status_log).']
+  parent db_table_master
+  children db_table_master [not null]
+  dtmName String [not null]
+  dtmKind String [not null, note: 'MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING | METADATA | SYSTEM']
+  dtmModule String [note: 'CORE HR UI AUDIT SYSTEM ACCOUNTS TILL SALES LOYALTY PURCHASE INVENTORY STOCK GST PRINT TRANSPORT']
+  dtmColPrefix String [note: 'Column prefix (\'sbi_\'). Not unique: stl_, atc_, sdr_ and tax_ are each used twice.']
+  dtmMenuId Int [note: 'The screen that maintains it.']
+  menu menu_master
+  dtmWriteMode String [not null, default: 'EDITABLE', note: 'EDITABLE | APPEND_ONLY | DERIVED']
+  dtmRetentionDays Int [note: 'NULL = kept forever.']
+  dtmDescription String
+  dtmIsActive Boolean [not null, default: true, note: 'false = retired, table kept.']
+  dtmCreatedOn DateTime [default: `now()`, not null]
+  dtmModifiedOn DateTime
+  dtmSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+
+  indexes {
+    (dtmSchema, dtmTable) [unique]
+  }
+
+  Note: 'public.db_table_master — the table registry: what every table in the
+database IS (migration 20261023140000_db_table_master). Modelled on
+fixed.menu_master: int id, self-parent, name, active flag, dates.
+
+One row per ordinary table and per partitioned PARENT, never a partition.
+Rows come from prisma/seed/Db_Table_Master.sql, ids written out.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+dtmKind       MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING |
+METADATA | SYSTEM
+dtmWriteMode  EDITABLE | APPEND_ONLY | DERIVED
+plus ck_dtm_retention (> 0) and ck_dtm_parent (not itself).
+
+DB-only, invisible to Prisma: the views public.v_db_table_master (the
+registry plus partitioning, row estimate and size from pg_catalog) and
+public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION), and
+the partial sync index ix_sync_pending_db_table_master (where the sync
+functions exist).'
 }
 
 Table fiscal_years {
@@ -9596,6 +9697,51 @@ ix_sbl_mrp         MRP-wise and selling-price-wise summaries
 ix_sbl_negative    the negative-stock exception report'
 }
 
+Table stock_batch_detail {
+  sbdId String [pk]
+  sbdCompanyId String [not null]
+  sbdBatchNo String [not null]
+  sbdItemId String [not null]
+  sbdSizeId String
+  sbdColourId String
+  sbdModel String
+  sbdSrcDocType String [note: 'OPENING (the stock voucher type) now; PURCHASE later.']
+  sbdSrcDocId String
+  sbdSrcLineId String
+  sbdIsActive Boolean [not null, default: true]
+  sbdIsDeleted Boolean [not null, default: false]
+  sbdSyncDate DateTime
+  sbdCreatedOn DateTime [default: `now()`, not null]
+  sbdCreatedBy String
+  sbdModifiedOn DateTime
+  sbdModifiedBy String
+  company companys [not null]
+  item item_master [not null]
+  size item_size_master
+  colour item_colour_master
+
+  Note: 'stock.stock_batch_detail — a batch\'s size, colour and model (textile auto
+batch, addendum 2 E2), keyed by (company, batch no): an auto batch no is
+unique in the company by construction, a Re-lot keeps it, and a draft has
+it before any lot exists. stock_lot, stock_voucher_item and sale_bill_item
+carry nothing of it; readers join on the folded batch.
+
+sbdId is uuid v5 over (company, batch no), computed by the server
+(batch-detail.helper.ts), so two installs writing one batch write one row.
+Written by the inward save (opening stock now, purchase later) in the
+transaction that numbers the batch; after the document posts, only by
+POST /stock/batch-detail/update.
+
+DB-only, not declared here (all partial, one on an expression):
+ux_sbd_batch    unique (company, batch_no) among live rows
+ix_sbd_model    (company, item, upper(model)) — model suggestions
+ix_sbd_size     (company, size_id)  — reports, master "in use"
+ix_sbd_colour   (company, colour_id)
+ix_sbd_src_doc  (src_doc_id)
+CHECKs: ck_sbd_batch_shape (stored upper(btrim())), ck_sbd_model,
+ck_sbd_src (the source triple is all-or-nothing).'
+}
+
 Table stock_demand_daily {
   sddId String [pk]
   sddCompanyId String [not null]
@@ -10215,6 +10361,8 @@ ix_slt_expiry    FEFO and near-expiry
 ix_slt_inward    FIFO / LIFO, and the chain-wide ageing report
 ix_slt_supplier  supplier-wise stock and supplier recall
 ix_slt_batch_no  "who has any of batch AX-4471?"
+ix_slt_key_batch the batch scan (GET /stock/lots/by-batch): the same
+question folded as the lot key folds it, upper(btrim())
 ix_slt_mrp       "how much at 120, how much at the old 110"'
 }
 
@@ -11700,6 +11848,8 @@ Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 
+Ref: item_colour_master.iclCompanyId > companys.compId [delete: Restrict]
+
 Ref: item_ean_codes.eanUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
@@ -11746,6 +11896,8 @@ Ref: item_reorders.irUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
 
+Ref: item_size_master.iszCompanyId > companys.compId [delete: Restrict]
+
 Ref: item_tax_history.ithItemId > item_master.itemId [delete: Restrict]
 
 Ref: item_tax_history.ithTaxId > tax_rate_master.taxId [delete: Restrict]
@@ -11787,6 +11939,10 @@ Ref: charge_master.chgTaxId > tax_rate_master.taxId [delete: Restrict]
 Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: company_aato.caaCompanyId > companys.compId [delete: Restrict]
+
+Ref: db_table_master.dtmParentId - db_table_master.dtmId [delete: Set Null]
+
+Ref: db_table_master.dtmMenuId > menu_master.menuId [delete: Set Null]
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
@@ -12329,6 +12485,14 @@ Ref: stock_balance.sblLotId > stock_lot.sltId [delete: Restrict]
 Ref: stock_balance.sblBaseUomId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: stock_balance.sblSupplierId > suppliers.supId [delete: Restrict]
+
+Ref: stock_batch_detail.sbdCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_batch_detail.sbdItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_batch_detail.sbdSizeId > item_size_master.iszId [delete: Restrict]
+
+Ref: stock_batch_detail.sbdColourId > item_colour_master.iclId [delete: Restrict]
 
 Ref: stock_demand_daily.sddCompanyId > companys.compId [delete: Restrict]
 

@@ -127,6 +127,8 @@ export interface RowCost {
   /** Tax-inclusive cost of ONE of this unit: branch average (stock_item_cost), else the resolved row's. */
   costRate: number;
   costWot: number;
+  /** Which figure costRate is (notes 75) — read back after a save (notes 147 B). */
+  costBasis: CostBasis | null;
   /** The resolved row's min price, 0 when none. */
   minPrice: number;
 }
@@ -673,6 +675,7 @@ export class PriceBucketGateway {
         trackSalePrice: boolean;
         costRate: Prisma.Decimal | null;
         costWot: Prisma.Decimal | null;
+        costBasis: CostBasis | null;
         minPrice: Prisma.Decimal | null;
       }>
     >`
@@ -717,6 +720,7 @@ export class PriceBucketGateway {
              k.track_sp     AS "trackSalePrice",
              ${saveCost.rate} AS "costRate",
              ${saveCost.wot}  AS "costWot",
+             ${saveCost.basis} AS "costBasis",
              COALESCE(p.ipm_min_price, 0) AS "minPrice"
         FROM keyed k
         -- Notes 75: an MRP bucket is costed by its own MRP's stock, as the grid
@@ -750,6 +754,7 @@ export class PriceBucketGateway {
         trackSalePrice: row?.trackSalePrice ?? false,
         costRate: row?.costRate ? toNumber(row.costRate) : 0,
         costWot: row?.costWot ? toNumber(row.costWot) : 0,
+        costBasis: row?.costBasis ?? null,
         minPrice: row?.minPrice ? toNumber(row.minPrice) : 0,
       };
     });

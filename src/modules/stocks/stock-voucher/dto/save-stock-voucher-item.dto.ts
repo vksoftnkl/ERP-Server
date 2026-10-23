@@ -165,6 +165,35 @@ export class SaveStockVoucherItemDto {
   @NullableStringStrict(100)
   batchNo?: string | null;
 
+  // ── Textile addendum 2 E2 — kept in stock.stock_batch_detail, not on the ──
+  // ── line, and only for a batch the server numbered (opening stock). ──────
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Opening stock with stock.auto_batch_no on: an item_size_master id. Kept against the ' +
+      'batch number the server gives the line; on a typed batch it is refused (422 ' +
+      'STOCK_BATCH_DETAIL_NEEDS_AUTO_BATCH).',
+  })
+  @NullableUuid()
+  sizeId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'As sizeId, an item_colour_master id.',
+  })
+  @NullableUuid()
+  colourId?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'As sizeId; free text (GET /stock/batch-detail/models suggests). Blank = none.',
+  })
+  @NullableStringStrict(100)
+  model?: string | null;
+
   @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
   @NullableDateString()
   mfgDate?: string | null;

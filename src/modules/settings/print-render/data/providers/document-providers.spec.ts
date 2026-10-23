@@ -154,6 +154,17 @@ describe('print data providers that read a document or a profile', () => {
       expect(boundParams()).toEqual([BILL_ID, '2026-2027', COMPANY_ID, false, 40]);
     });
 
+    it("prints the batch's size, colour and model, joined by item and folded batch (textile E3.4)", async () => {
+      await new SaleBillItemsProvider(pg).resolve(requestFor());
+
+      const sql = (queryReadOnly.mock.calls[0][0] as string).replace(/\s+/g, ' ');
+      expect(sql).toContain('isz.isz_name AS size_name');
+      expect(sql).toContain('icl.icl_name AS colour_name');
+      expect(sql).toContain('sbd.sbd_model AS model');
+      expect(sql).toContain('sbd.sbd_batch_no = upper(btrim(sbi.sbi_batch_no))');
+      expect(sql).toContain('sbd.sbd_item_id = sbi.sbi_item_id');
+    });
+
     it.each(['ta', 'ta-IN', 'TA'])('asks for the Tamil item name when the revision is %s', async (lang) => {
       await new SaleBillItemsProvider(pg).resolve(requestFor({}, { lang }));
 

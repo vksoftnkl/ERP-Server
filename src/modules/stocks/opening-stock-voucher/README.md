@@ -278,6 +278,34 @@ Three rules make it safe to trust:
 The response carries the reloaded document plus the §6 preflight, so a file that
 resolved cleanly but produced lines the engine will refuse says so immediately.
 
+## Batch numbers given at save (textile plan, 2026-10-23)
+
+With the company setting `stock.auto_batch_no` on, a save (draft or save-and-post)
+gives every line whose batch is blank, on an item whose policy tracks batch, the
+next number of its branch and year: `<bill prefix, else branch code><YY>-<NNNNN>`,
+e.g. `CBE26-00001`. The counter is `acc_voucher_seq` under the counter-only voucher
+type `BATCH` (per branch, per accounting year, device `MAIN`), drawn under its
+advisory lock — `stock-voucher-batch-numbering.helper.ts`, switched on by the
+`autoBatchNo` rule this controller pins.
+
+* A typed batch is kept as typed. An edit keeps a line's number even when the
+  screen sends the batch back blank; a new line gets the next one.
+* Two lines of one item, MRP and price get two numbers: each line is a label run.
+* A branch with neither a bill prefix nor a code refuses the save with 422
+  `STOCK_BATCH_PREFIX_MISSING`.
+* Off (the default): nothing changes — a blank batch on a batch-tracked line is
+  refused at post, as before.
+* A split line (`splitNo` > 1) still needs a typed batch: it is refused before
+  the save reaches the numbering.
+
+Addendum 2: a line may also send `sizeId`, `colourId` and `model`. They are kept
+against the line's auto batch in `stock.stock_batch_detail` (`../batch-detail`), come
+back on `/get`, and are refused on a typed batch.
+
+The textile items take the shared preset `TEXTILE_BATCH` (batch + MRP + selling
+price, LOT_ACTUAL, FIFO, negative ALLOW) on their item group. The sale finds the
+lot again with `GET /stock/lots/by-batch` (`../lot-by-batch`).
+
 ## Not built here
 
 * **The Qt grid definition.** `fixed.menu_master` 44 (Opening Stock) already

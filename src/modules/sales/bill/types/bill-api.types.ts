@@ -165,6 +165,12 @@ export type BillItemPayload = Omit<
   // blocked only when the line's godown, the company AND the item all disallow
   // it. The same rule /item-price answers with when the line is first added.
   sbiAllowNegativeStock?: boolean | null;
+  // Textile addendum 2 E3.3 — the size / colour / model of the line's batch
+  // (stock.stock_batch_detail, by item + sbiBatchNo). Not sbiSize, the typed
+  // dimension; nothing is stored on the line. GET only.
+  sbiSizeName?: string | null;
+  sbiColourName?: string | null;
+  sbiModel?: string | null;
 };
 // An applied charge line is exactly what the charge-detail module answers with,
 // whether it was read through this module or its own: decimals as numbers,

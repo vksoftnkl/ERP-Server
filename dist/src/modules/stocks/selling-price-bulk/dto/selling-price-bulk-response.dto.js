@@ -402,6 +402,9 @@ class SellingPriceSavedRowDto {
     scheduled;
     effectiveFrom;
     effectiveTo;
+    costRate;
+    costWot;
+    costBasis;
 }
 exports.SellingPriceSavedRowDto = SellingPriceSavedRowDto;
 __decorate([
@@ -430,6 +433,23 @@ __decorate([
     (0, swagger_1.ApiProperty)({ format: 'date', example: '9999-12-31' }),
     __metadata("design:type", String)
 ], SellingPriceSavedRowDto.prototype, "effectiveTo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 1385,
+        description: "Notes 147 B — the cost to show now, by the grid rule: this MRP's stock, else the " +
+            "item's average, else the price row's own (a keyed costPrice shows here only while the " +
+            'item has no stock). One of this unit, tax inclusive.',
+    }),
+    __metadata("design:type", Number)
+], SellingPriceSavedRowDto.prototype, "costRate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1173.728814 }),
+    __metadata("design:type", Number)
+], SellingPriceSavedRowDto.prototype, "costWot", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: selling_price_bulk_types_1.COST_BASES, nullable: true, example: 'PRICE_ROW' }),
+    __metadata("design:type", Object)
+], SellingPriceSavedRowDto.prototype, "costBasis", void 0);
 class SellingPriceSaveDataDto {
     saved;
     effectiveFrom;

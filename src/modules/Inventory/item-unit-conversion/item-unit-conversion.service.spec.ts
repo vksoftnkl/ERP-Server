@@ -182,54 +182,68 @@ describe('ItemUnitConversionService', () => {
     expect(data.iucUpdatedBy).toBe(USER_ID);
   });
 
-  it('derives cumulative to-base factors from step unit factors across a batch', async () => {
-    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd15';
-    prisma.itemUnitConversion.create
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucUnitId: BASE_UNIT_ID,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 1,
-          iucIsBaseUnit: true,
-          iucToBaseFactor: new Prisma.Decimal(1),
-          iucUnitFactor: new Prisma.Decimal(1),
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucId: '019c6f6c-be87-7a11-8905-36092c46fd16',
-          iucUnitId: UNIT_ID,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 2,
-          iucIsBaseUnit: false,
-          iucToBaseFactor: new Prisma.Decimal(10),
-          iucUnitFactor: new Prisma.Decimal(10),
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucId: '019c6f6c-be87-7a11-8905-36092c46fd17',
-          iucUnitId: tertiaryUnitId,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 3,
-          iucIsBaseUnit: false,
-          iucToBaseFactor: new Prisma.Decimal(60),
-          iucUnitFactor: new Prisma.Decimal(6),
-        }),
-      );
+  /**
+   * Notes 147 A — the item card's rule: the list runs from the biggest unit
+   * down, a row's unit factor is how many of it make one of the row above, and
+   * to-base = base cumulative / row cumulative. 99d0a468 had inverted it.
+   */
+  const created = (n: number) =>
+    (prisma.itemUnitConversion.create.mock.calls[n - 1][0] as { data: Record<string, unknown> })
+      .data;
+  const echoCreate = () =>
+    prisma.itemUnitConversion.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve(makeItemUnitConversionRecord(data as never)),
+    );
+
+  it('Bottle (1) / PCS (10, base) stores 1 Bottle = 10 PCS — the item card keyed it so', async () => {
+    echoCreate();
 
     await service.save([
       {
         iuc_item_id: ITEM_ID,
-        iuc_unit_id: BASE_UNIT_ID,
+        iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
         iuc_unit_slno: 1,
-        iuc_is_base_unit: true,
+        iuc_unit_factor: 1,
         iuc_created_by: USER_ID,
       },
       {
         iuc_item_id: ITEM_ID,
+        iuc_unit_id: BASE_UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 2,
+        iuc_unit_factor: 10,
+        iuc_is_base_unit: true,
+        iuc_created_by: USER_ID,
+      },
+    ]);
+
+    expect(created(1)).toMatchObject({ iucUnitId: UNIT_ID, iucToBaseFactor: 10, iucUnitFactor: 1 });
+    expect(created(2)).toMatchObject({
+      iucUnitId: BASE_UNIT_ID,
+      iucToBaseFactor: 1,
+      iucUnitFactor: 10,
+      iucIsBaseUnit: true,
+    });
+  });
+
+  it('derives cumulative to-base factors from step unit factors across a batch', async () => {
+    // Box (1) / Strip (10) / Tablet (6, base): 1 Box = 10 Strips = 60 Tablets.
+    const stripUnitId = '019c6f6c-be87-7a11-8905-36092c46fd15';
+    echoCreate();
+
+    await service.save([
+      {
+        iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 1,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: stripUnitId,
         iuc_base_unit_id: BASE_UNIT_ID,
         iuc_unit_slno: 2,
         iuc_unit_factor: 10,
@@ -237,183 +251,105 @@ describe('ItemUnitConversionService', () => {
       },
       {
         iuc_item_id: ITEM_ID,
-        iuc_unit_id: tertiaryUnitId,
+        iuc_unit_id: BASE_UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
         iuc_unit_slno: 3,
         iuc_unit_factor: 6,
+        iuc_is_base_unit: true,
         iuc_created_by: USER_ID,
       },
     ]);
 
-    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: BASE_UNIT_ID,
-          iucToBaseFactor: 1,
-          iucUnitFactor: 1,
-        }),
-      }),
-    );
-    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: UNIT_ID,
-          iucToBaseFactor: 10,
-          iucUnitFactor: 10,
-        }),
-      }),
-    );
-    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: tertiaryUnitId,
-          iucToBaseFactor: 60,
-          iucUnitFactor: 6,
-        }),
-      }),
-    );
+    expect(created(1)).toMatchObject({ iucUnitId: UNIT_ID, iucToBaseFactor: 60, iucUnitFactor: 1 });
+    expect(created(2)).toMatchObject({
+      iucUnitId: stripUnitId,
+      iucToBaseFactor: 6,
+      iucUnitFactor: 10,
+    });
+    expect(created(3)).toMatchObject({
+      iucUnitId: BASE_UNIT_ID,
+      iucToBaseFactor: 1,
+      iucUnitFactor: 6,
+    });
   });
 
   it('derives step unit factors from cumulative to-base factors across a batch', async () => {
-    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd22';
-    prisma.itemUnitConversion.create
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucUnitId: BASE_UNIT_ID,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 1,
-          iucIsBaseUnit: true,
-          iucToBaseFactor: new Prisma.Decimal(1),
-          iucUnitFactor: new Prisma.Decimal(1),
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucId: '019c6f6c-be87-7a11-8905-36092c46fd23',
-          iucUnitId: UNIT_ID,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 2,
-          iucIsBaseUnit: false,
-          iucToBaseFactor: new Prisma.Decimal(10),
-          iucUnitFactor: new Prisma.Decimal(10),
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeItemUnitConversionRecord({
-          iucId: '019c6f6c-be87-7a11-8905-36092c46fd24',
-          iucUnitId: tertiaryUnitId,
-          iucBaseUnitId: BASE_UNIT_ID,
-          iucUnitSlno: 3,
-          iucIsBaseUnit: false,
-          iucToBaseFactor: new Prisma.Decimal(60),
-          iucUnitFactor: new Prisma.Decimal(6),
-        }),
-      );
+    const stripUnitId = '019c6f6c-be87-7a11-8905-36092c46fd22';
+    echoCreate();
 
     await service.save([
       {
         iuc_item_id: ITEM_ID,
-        iuc_unit_id: BASE_UNIT_ID,
-        iuc_base_unit_id: BASE_UNIT_ID,
-        iuc_unit_slno: 1,
-        iuc_is_base_unit: true,
-        iuc_created_by: USER_ID,
-      },
-      {
-        iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
-        iuc_unit_slno: 2,
-        iuc_to_base_factor: 10,
+        iuc_unit_slno: 1,
+        iuc_to_base_factor: 60,
         iuc_created_by: USER_ID,
       },
       {
         iuc_item_id: ITEM_ID,
-        iuc_unit_id: tertiaryUnitId,
+        iuc_unit_id: stripUnitId,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 2,
+        iuc_to_base_factor: 6,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: BASE_UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
         iuc_unit_slno: 3,
-        iuc_to_base_factor: 60,
+        iuc_to_base_factor: 1,
+        iuc_is_base_unit: true,
         iuc_created_by: USER_ID,
       },
     ]);
 
-    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: UNIT_ID,
-          iucToBaseFactor: 10,
-          iucUnitFactor: 10,
-        }),
-      }),
-    );
-    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: tertiaryUnitId,
-          iucToBaseFactor: 60,
-          iucUnitFactor: 6,
-        }),
-      }),
-    );
+    expect(created(1)).toMatchObject({ iucToBaseFactor: 60, iucUnitFactor: 1 });
+    expect(created(2)).toMatchObject({ iucToBaseFactor: 6, iucUnitFactor: 10 });
+    expect(created(3)).toMatchObject({ iucToBaseFactor: 1, iucUnitFactor: 6 });
   });
 
-  it('derives a new row cumulative factor from persisted item unit conversion rows', async () => {
-    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd18';
+  it('a row below the base is a smaller unit: its to-base factor is a fraction', async () => {
+    // Persisted Box (1) / PCS (10, base); a Half-piece row under PCS with
+    // factor 2 is 2 halves to a PCS: 0.5.
+    const halfUnitId = '019c6f6c-be87-7a11-8905-36092c46fd18';
     mockPersistedRows([
       makeItemUnitConversionRecord({
         iucId: '019c6f6c-be87-7a11-8905-36092c46fd19',
-        iucUnitId: BASE_UNIT_ID,
+        iucUnitId: UNIT_ID,
         iucBaseUnitId: BASE_UNIT_ID,
         iucUnitSlno: 1,
-        iucIsBaseUnit: true,
-        iucToBaseFactor: new Prisma.Decimal(1),
+        iucIsBaseUnit: false,
+        iucToBaseFactor: new Prisma.Decimal(10),
         iucUnitFactor: new Prisma.Decimal(1),
       }),
       makeItemUnitConversionRecord({
         iucId: '019c6f6c-be87-7a11-8905-36092c46fd20',
-        iucUnitId: UNIT_ID,
+        iucUnitId: BASE_UNIT_ID,
         iucBaseUnitId: BASE_UNIT_ID,
         iucUnitSlno: 2,
-        iucIsBaseUnit: false,
-        iucToBaseFactor: new Prisma.Decimal(10),
+        iucIsBaseUnit: true,
+        iucToBaseFactor: new Prisma.Decimal(1),
         iucUnitFactor: new Prisma.Decimal(10),
       }),
     ]);
-    prisma.itemUnitConversion.create.mockResolvedValue(
-      makeItemUnitConversionRecord({
-        iucId: '019c6f6c-be87-7a11-8905-36092c46fd21',
-        iucUnitId: tertiaryUnitId,
-        iucBaseUnitId: BASE_UNIT_ID,
-        iucUnitSlno: 3,
-        iucIsBaseUnit: false,
-        iucToBaseFactor: new Prisma.Decimal(60),
-        iucUnitFactor: new Prisma.Decimal(6),
-      }),
-    );
+    echoCreate();
 
     await service.save({
       iuc_item_id: ITEM_ID,
-      iuc_unit_id: tertiaryUnitId,
+      iuc_unit_id: halfUnitId,
       iuc_base_unit_id: BASE_UNIT_ID,
       iuc_unit_slno: 3,
-      iuc_unit_factor: 6,
+      iuc_unit_factor: 2,
       iuc_created_by: USER_ID,
     });
 
-    expect(prisma.itemUnitConversion.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          iucUnitId: tertiaryUnitId,
-          iucToBaseFactor: 60,
-          iucUnitFactor: 6,
-        }),
-      }),
-    );
+    expect(created(1)).toMatchObject({
+      iucUnitId: halfUnitId,
+      iucToBaseFactor: 0.5,
+      iucUnitFactor: 2,
+    });
   });
 
   it('derives missing base-unit ids from a base-unit row elsewhere in the same batch', async () => {
@@ -584,11 +520,13 @@ describe('ItemUnitConversionService', () => {
       const [otherUpdate, baseUpdate] = prisma.itemUnitConversion.update.mock.calls.map(
         ([args]) => args.data,
       );
+      // The row sits BELOW the base (slno 2 under slno 1), so under the item
+      // card's rule (notes 147 A) its 24 is 24 of it to one base unit.
       expect(otherUpdate).toMatchObject({
         iucUnitId: UNIT_ID,
         iucBaseUnitId: BASE_UNIT_ID,
         iucUnitFactor: 24,
-        iucToBaseFactor: 24,
+        iucToBaseFactor: 0.041666667,
       });
       expect(baseUpdate).toMatchObject({
         iucUnitId: BASE_UNIT_ID,

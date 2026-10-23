@@ -41,6 +41,7 @@ const OPENING_RULES = {
     quantityMode: 'QTY',
     allowsCount: false,
     allowsToBranch: false,
+    autoBatchNo: true,
     auditScreenName: 'Opening Stock',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.OPENING_STOCK,
     postShape: 'SIMPLE',

@@ -107,6 +107,8 @@ const OPENING_RULES: StockVoucherTypeRules = {
   // leave the branch.
   allowsCount: false,
   allowsToBranch: false,
+  // Textile plan D3 — the go-live path for existing textile stock.
+  autoBatchNo: true,
   auditScreenName: 'Opening Stock',
   // Its own value since notes 80 C (20261002160000) — it filed as
   // STOCK_ADJUSTMENT before. See StockVoucherTypeRules.statusDocType.

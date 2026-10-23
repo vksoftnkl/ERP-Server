@@ -43,6 +43,7 @@ export interface StockVoucherTypeRules {
     blockNegative?: boolean;
     requiresLot?: boolean;
     zeroesLineCost?: boolean;
+    autoBatchNo?: boolean;
     auditScreenName: string;
     statusDocType: TxnStatusDocType;
     refuseTypes?: readonly StockVoucherType[];
@@ -151,6 +152,11 @@ export interface StockVoucherLinePayload {
     direction: number | null;
     remarks: string | null;
     trackSignature: string;
+    sizeId: string | null;
+    sizeName: string | null;
+    colourId: string | null;
+    colourName: string | null;
+    model: string | null;
 }
 export interface StockVoucherPayload {
     header: StockVoucherHeaderPayload;

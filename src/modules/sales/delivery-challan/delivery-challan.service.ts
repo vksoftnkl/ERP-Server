@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { withBatchDetails } from '../../stocks/batch-detail/batch-detail.helper';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { TxnStatusDocType, TxnStatusEvent } from 'src/common/txn-status-log/txn-status-log.helper';
@@ -264,7 +265,13 @@ export class DeliveryChallanService {
       row.sdcStatus === 'POSTED' && !locks.irnLive && !locks.ewbLive && !touched;
     return {
       ...this.store.plain(row),
-      items: items.map((i) => this.store.plain(i)),
+      // Textile addendum 2 E3.3 — each line's batch size / colour / model.
+      items: await withBatchDetails(
+        c,
+        row.sdcCompanyId as string,
+        'sdi',
+        items.map((i) => this.store.plain(i)),
+      ),
       charges,
       transport,
       posting,

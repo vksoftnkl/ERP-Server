@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeliveryChallanService = exports.DC_SPEC = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const batch_detail_helper_1 = require("../../stocks/batch-detail/batch-detail.helper");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
@@ -178,7 +179,7 @@ let DeliveryChallanService = class DeliveryChallanService {
             row.sdcStatus === 'POSTED' && !locks.irnLive && !locks.ewbLive && !touched;
         return {
             ...this.store.plain(row),
-            items: items.map((i) => this.store.plain(i)),
+            items: await (0, batch_detail_helper_1.withBatchDetails)(c, row.sdcCompanyId, 'sdi', items.map((i) => this.store.plain(i))),
             charges,
             transport,
             posting,

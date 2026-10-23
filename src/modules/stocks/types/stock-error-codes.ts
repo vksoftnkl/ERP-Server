@@ -42,6 +42,20 @@ export enum StockErrorCode {
   DOC_DATE_OUTSIDE_YEAR = 'STOCK_DOC_DATE_OUTSIDE_YEAR',
   /** Notes 143 #10 — the next 1000 numbers of the refno series are all taken; move the series on. */
   REFNO_SERIES_EXHAUSTED = 'STOCK_REFNO_SERIES_EXHAUSTED',
+  /** Textile plan D1 — a batch number is due and the branch has neither a bill prefix nor a code. */
+  BATCH_PREFIX_MISSING = 'STOCK_BATCH_PREFIX_MISSING',
+  /** Textile plan D5 — the batch scan found no lot with stock ("No stock with batch …"). */
+  BATCH_NOT_FOUND = 'STOCK_BATCH_NOT_FOUND',
+  /** Addendum 2 E2 — size / colour / model sent on a line whose batch the server did not number. */
+  BATCH_DETAIL_NEEDS_AUTO_BATCH = 'STOCK_BATCH_DETAIL_NEEDS_AUTO_BATCH',
+  /** Addendum 2 — a sizeId that is not a live size of the company or a shared one. */
+  BATCH_SIZE_NOT_FOUND = 'STOCK_BATCH_SIZE_NOT_FOUND',
+  /** Addendum 2 — a colourId that is not a live colour of the company or a shared one. */
+  BATCH_COLOUR_NOT_FOUND = 'STOCK_BATCH_COLOUR_NOT_FOUND',
+  /** Addendum 2 — /stock/batch-detail/update names a batch with no detail row. */
+  BATCH_DETAIL_NOT_FOUND = 'STOCK_BATCH_DETAIL_NOT_FOUND',
+  /** Addendum 2 — /stock/batch-detail/update on a draft's batch: change the draft instead. */
+  BATCH_DETAIL_ON_DRAFT = 'STOCK_BATCH_DETAIL_ON_DRAFT',
   /** A freeze on a document that is not a physical count. */
   FREEZE_NOT_ALLOWED = 'STOCK_FREEZE_NOT_ALLOWED',
   /** A stock freeze without both freezeFrom and freezeTo. */

@@ -20,6 +20,8 @@ import {
   type StockVoucherNumberScope,
 } from './stock-voucher-numbering.helper';
 import { resolveImportedLines } from './stock-voucher-import.helper';
+import { assignAutoBatchNumbers } from './stock-voucher-batch-numbering.helper';
+import { softDeleteBatchDetailsOf, syncBatchDetails } from '../batch-detail/batch-detail.helper';
 import {
   cancelDraftVoucher,
   effectivePolicyCte,
@@ -272,6 +274,11 @@ interface LineRow {
   svi_lot_id: string | null;
   svi_remarks: string | null;
   track_signature: string;
+  sbd_size_id: string | null;
+  size_name: string | null;
+  sbd_colour_id: string | null;
+  colour_name: string | null;
+  sbd_model: string | null;
 }
 /**
  * The type-agnostic half of every stock document screen.
@@ -382,9 +389,42 @@ export class StockVoucherService {
             tx,
           )
         : null;
+      // Textile plan D3 — a blank batch on a batch-tracked line gets its
+      // number here, under the lock and in this transaction, so the lines are
+      // written with it and /get shows it straight after the save.
+      const batches = rules.autoBatchNo
+        ? await assignAutoBatchNumbers(
+            tx,
+            {
+              companyId: header.companyId,
+              branchId: header.branchId,
+              accYear: header.accYear,
+              docDate: header.docDate,
+              svhId: header.svhId,
+            },
+            dto.lines,
+          )
+        : null;
+      const saved: SaveStockVoucherDto = batches ? { ...dto, lines: batches.lines } : dto;
       const id = header.svhId
-        ? await this.updateDraft(tx, rules, dto, actor, postedOn)
-        : await this.createDraft(tx, rules, dto, actor, postedOn);
+        ? await this.updateDraft(tx, rules, saved, actor, postedOn)
+        : await this.createDraft(tx, rules, saved, actor, postedOn);
+      // Addendum 2 E2 — each auto-numbered line's size / colour / model, once
+      // its line has an id.
+      if (batches) {
+        await syncBatchDetails(
+          tx,
+          {
+            companyId: header.companyId,
+            accYear: header.accYear,
+            srcDocType: rules.voucherType,
+            srcDocId: id,
+            actor: this.auditActor(actor),
+          },
+          saved.lines,
+          batches.numbered,
+        );
+      }
       if (!postAfterSave) {
         await this.logRevision(tx, rules, id, header, before, actor, false);
         return { svhId: id, rowsPosted: null as number | null };
@@ -1932,7 +1972,14 @@ export class StockVoucherService {
              -- answers it: the effective policy on the DOCUMENT's date, the one
              -- the preflight and the post key the lot by. Saves the screen a
              -- lookup per distinct item after every load (notes 66).
-             COALESCE(stp.stp_track_signature, 'N') AS track_signature
+             COALESCE(stp.stp_track_signature, 'N') AS track_signature,
+             -- Addendum 2 E2: the size / colour / model this line's auto
+             -- batch carries, by the row the line wrote.
+             sbd.sbd_size_id,
+             isz.isz_name AS size_name,
+             sbd.sbd_colour_id,
+             icl.icl_name AS colour_name,
+             sbd.sbd_model
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm            ON itm.item_id = svi.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = svi.svi_uom_id
@@ -1940,6 +1987,10 @@ export class StockVoucherService {
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
         LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
+        LEFT JOIN stock.stock_batch_detail sbd
+               ON sbd.sbd_src_line_id = svi.svi_id AND sbd.sbd_is_deleted = false
+        LEFT JOIN inventory.item_size_master isz   ON isz.isz_id = sbd.sbd_size_id
+        LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         ${effectivePolicyLateral({
           companyId: Prisma.sql`${companyId}::uuid`,
           branchId: Prisma.sql`${branchId}::uuid`,
@@ -2702,6 +2753,8 @@ export class StockVoucherService {
           sviModifiedBy: this.auditActor(actor),
         },
       });
+      // Addendum 2 E2 — the draft's batch details go with it.
+      await softDeleteBatchDetailsOf(tx, svhId, this.auditActor(actor));
       await this.auditLogService.logEntityChange(
         {
           // audit.audit_log_action has no 'delete' member — every module here
@@ -3584,6 +3637,11 @@ export class StockVoucherService {
       lotId: row.svi_lot_id,
       remarks: row.svi_remarks,
       trackSignature: row.track_signature,
+      sizeId: row.sbd_size_id,
+      sizeName: row.size_name,
+      colourId: row.sbd_colour_id,
+      colourName: row.colour_name,
+      model: row.sbd_model,
     };
   }
   /**

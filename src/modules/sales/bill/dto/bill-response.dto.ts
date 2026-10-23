@@ -134,6 +134,26 @@ export class BillItemPayloadDto {
       ' all disallow it; only populated on GET',
   })
   sbiAllowNegativeStock?: boolean | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'XL',
+    description:
+      "Textile: the size of the line's batch (stock.stock_batch_detail by item + sbiBatchNo) — " +
+      'not sbiSize; only populated on GET',
+  })
+  sbiSizeName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Maroon',
+    description: "Textile: the colour of the line's batch; only populated on GET",
+  })
+  sbiColourName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Slim fit',
+    description: "Textile: the model of the line's batch; only populated on GET",
+  })
+  sbiModel?: string | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory batch/stock row allocated' })
   sbiStockId!: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

@@ -23,7 +23,7 @@ import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
 import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-selling-price-bulk.dto';
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
-import { recomputeLevel } from './selling-price-math.helper';
+import { exclusiveOfTax, recomputeLevel } from './selling-price-math.helper';
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
 import {
   PriceBucketGateway,
@@ -272,6 +272,20 @@ export class SellingPriceBulkService {
         );
       }
       const ipmIds = applied.map((row) => row.ipmId);
+      // Notes 147 B — what each row's cost reads as now, by the grid's rule,
+      // so the popup shows it without a reload.
+      const shown = await this.gateway.loadRowCosts(
+        tx,
+        dto.rows.map((row) => ({
+          itemId: row.itemId,
+          uomId: row.uomId,
+          mrp: row.mrp ?? null,
+          salePrice: row.salePrice ?? null,
+        })),
+        dto.companyId,
+        dto.branchId,
+        scheduledFrom,
+      );
 
       const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
 
@@ -284,7 +298,9 @@ export class SellingPriceBulkService {
       return {
         saved: ipmIds.length,
         effectiveFrom: from,
-        rows: applied.map((row) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom)),
+        rows: applied.map((row, index) =>
+          this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index]),
+        ),
         masterRowsSaved: 0,
         noStock,
         needsConfirm: false,
@@ -675,6 +691,7 @@ export class SellingPriceBulkService {
     row: AppliedBucketPrice,
     stored: Prisma.JsonObject | undefined,
     scheduledFrom: string | undefined,
+    shown: RowCost | undefined,
   ): SellingPriceSavedRow {
     // to_jsonb renders a date as 'YYYY-MM-DD'.
     const day = (value: unknown) => (typeof value === 'string' ? value.slice(0, 10) : '');
@@ -684,6 +701,9 @@ export class SellingPriceBulkService {
       scheduled: scheduledFrom !== undefined,
       effectiveFrom: day(stored?.ipm_effective_from),
       effectiveTo: day(stored?.ipm_effective_to),
+      costRate: shown?.costRate ?? 0,
+      costWot: shown?.costWot ?? 0,
+      costBasis: shown?.costBasis ?? null,
     };
   }
 
@@ -835,6 +855,12 @@ export class SellingPriceBulkService {
   ): BucketPriceCandidate {
     const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
     const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
+    // Notes 147 B — a keyed costPrice is the price row's own cost for this save:
+    // stored with its w/o-tax half, and the markups and the below-cost check
+    // are against it. Absent, the cost the grid showed, as before.
+    const keyedCost = row.costPrice ?? null;
+    const costRate = keyedCost ?? cost.costRate;
+    const costWot = keyedCost !== null ? exclusiveOfTax(keyedCost, taxPerc) : cost.costWot;
     return {
       lineNo: row.lineNo ?? index + 1,
       companyId,
@@ -847,16 +873,11 @@ export class SellingPriceBulkService {
       salePrice: key.salePrice,
       minPrice: row.minPrice ?? null,
       roundOff: row.roundOff ?? null,
-      costRate: cost.costRate,
-      costWot: cost.costWot,
+      costRate,
+      costWot,
       actor,
       levels: row.levels.map((level) => {
-        const value = recomputeLevel(
-          level.level as PriceLevel,
-          level.price,
-          taxPerc,
-          cost.costRate,
-        );
+        const value = recomputeLevel(level.level as PriceLevel, level.price, taxPerc, costRate);
         return {
           level: value.level,
           price: value.price,

@@ -78,6 +78,9 @@ class BillItemPayloadDto {
     sbiGodownId;
     sbiGodownName;
     sbiAllowNegativeStock;
+    sbiSizeName;
+    sbiColourName;
+    sbiModel;
     sbiStockId;
     sbiBatchNo;
     sbiBatchDate;
@@ -344,6 +347,31 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], BillItemPayloadDto.prototype, "sbiAllowNegativeStock", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'XL',
+        description: "Textile: the size of the line's batch (stock.stock_batch_detail by item + sbiBatchNo) — " +
+            'not sbiSize; only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], BillItemPayloadDto.prototype, "sbiSizeName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Maroon',
+        description: "Textile: the colour of the line's batch; only populated on GET",
+    }),
+    __metadata("design:type", Object)
+], BillItemPayloadDto.prototype, "sbiColourName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Slim fit',
+        description: "Textile: the model of the line's batch; only populated on GET",
+    }),
+    __metadata("design:type", Object)
+], BillItemPayloadDto.prototype, "sbiModel", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The inventory batch/stock row allocated' }),
     __metadata("design:type", String)

@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (248 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (250 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -157,7 +157,7 @@ VALUES
     ,( 213,  208, 'Rate Chart'                           , NULL                  , true ,   2.10, NULL, NULL, NULL, true , true)
     ,( 214,  208, 'Proc Payment'                         , NULL                  , true ,   4.00, NULL, NULL, NULL, true , true)
     ,( 215,  208, 'Proc Bank Payment'                    , NULL                  , true ,   5.00, NULL, NULL, NULL, true , true)
-    -- ============ &3 Inventory (menu 3, 23 rows) ============
+    -- ============ &3 Inventory (menu 3, 25 rows) ============
     ,(   3, NULL, '&3 Inventory'                         , NULL                  , true ,   3.00, '0', NULL, NULL, true , false)
     ,(  29,    3, 'Item Master'                          , 'CTRL+I'              , true ,   1.00, NULL, NULL, NULL, true , true)
     ,(  30,    3, 'Change Selling'                       , 'CTRL+G'              , false,   2.00, NULL, NULL, NULL, true , false)
@@ -169,6 +169,10 @@ VALUES
     ,(  36,   34, 'Item Brand Master'                    , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
     ,(  37,   34, 'Item Section Master'                  , NULL                  , true ,   3.00, NULL, NULL, NULL, true , true)
     ,(  38,   34, 'Unit Master'                          , NULL                  , true ,   4.00, NULL, NULL, NULL, true , false)
+    -- 291 / 292 (notes 147, 20261023170000_textile_size_colour_screens): the textile
+    -- size and colour masters (/item-sizes, /item-colours), grids 181 / 182.
+    ,( 291,   34, 'Item Size Master'                     , NULL                  , true ,   4.10, NULL, NULL, NULL, true , false)
+    ,( 292,   34, 'Item Colour Master'                   , NULL                  , true ,   4.20, NULL, NULL, NULL, true , false)
     ,(  39,   34, 'Godown Master'                        , NULL                  , true ,   5.00, NULL, NULL, NULL, true , false)
     ,(  40,   34, 'Tax Master'                           , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
     ,(  46,  164, 'Reorder - Quick'                      , NULL                  , true ,   2.00, NULL, NULL, NULL, true , true)

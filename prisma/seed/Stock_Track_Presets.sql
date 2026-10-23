@@ -1,4 +1,4 @@
--- Seed: stock.stock_track_preset -- the shared tracking presets (8 rows).
+-- Seed: stock.stock_track_preset -- the shared tracking presets (9 rows).
 --
 -- Offered by the tracking-policy screen as a combo of TRADES instead of six
 -- checkboxes. One row per trade the stock module has been designed against; a
@@ -91,7 +91,14 @@ SELECT v.company, v.code, v.name, v.descr,
     (NULL, 'SERIAL', 'Serial number',
      'One holding per serial: appliances, phones, clocks. Negative stock BLOCKED — a serialised unit that is not there cannot be sold.',
      false, false, false, false, true, false,
-     'LOT_ACTUAL', 'FIFO', 'BLOCK', 30, false, 80)
+     'LOT_ACTUAL', 'FIFO', 'BLOCK', 30, false, 80),
+
+    -- Textile plan D4 (2026-10-23): one lot per purchase line, its batch the
+    -- label (numbered by the server when stock.auto_batch_no is on).
+    (NULL, 'TEXTILE_BATCH', 'Batch + MRP + selling price (textile)',
+     'Garments: each inward line is its own batch carrying its MRP and selling price, and the label''s batch scans that lot at the sale. No printed MRP: enter MRP = selling price.',
+     true, true, true, false, false, false,
+     'LOT_ACTUAL', 'FIFO', 'ALLOW', 30, false, 90)
   ) AS v(company, code, name, descr, b, m, s, e, r, p,
          valuation, issue, negative, near, block, sort)
  WHERE NOT EXISTS (

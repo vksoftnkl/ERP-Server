@@ -60,6 +60,8 @@
 ///   ix_slt_inward    FIFO / LIFO, and the chain-wide ageing report
 ///   ix_slt_supplier  supplier-wise stock and supplier recall
 ///   ix_slt_batch_no  "who has any of batch AX-4471?"
+///   ix_slt_key_batch the batch scan (GET /stock/lots/by-batch): the same
+///                    question folded as the lot key folds it, upper(btrim())
 ///   ix_slt_mrp       "how much at 120, how much at the old 110"
 model StockLot {
   sltId                 String    @id(map: "pk_stock_lot") @default(dbgenerated("uuidv7()")) @db.Uuid @map("slt_id")

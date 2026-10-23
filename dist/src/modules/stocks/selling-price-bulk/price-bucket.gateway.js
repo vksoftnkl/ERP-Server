@@ -359,6 +359,7 @@ let PriceBucketGateway = class PriceBucketGateway {
              k.track_sp     AS "trackSalePrice",
              ${saveCost.rate} AS "costRate",
              ${saveCost.wot}  AS "costWot",
+             ${saveCost.basis} AS "costBasis",
              COALESCE(p.ipm_min_price, 0) AS "minPrice"
         FROM keyed k
         -- Notes 75: an MRP bucket is costed by its own MRP's stock, as the grid
@@ -392,6 +393,7 @@ let PriceBucketGateway = class PriceBucketGateway {
                 trackSalePrice: row?.trackSalePrice ?? false,
                 costRate: row?.costRate ? (0, module_service_utils_1.toNumber)(row.costRate) : 0,
                 costWot: row?.costWot ? (0, module_service_utils_1.toNumber)(row.costWot) : 0,
+                costBasis: row?.costBasis ?? null,
                 minPrice: row?.minPrice ? (0, module_service_utils_1.toNumber)(row.minPrice) : 0,
             };
         });

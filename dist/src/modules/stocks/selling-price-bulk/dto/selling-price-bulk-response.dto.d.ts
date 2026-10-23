@@ -1,3 +1,4 @@
+import { type CostBasis } from '../types/selling-price-bulk.types';
 export declare class SellingPriceErrorFieldDto {
     field: string;
     message: string;
@@ -85,6 +86,9 @@ export declare class SellingPriceSavedRowDto {
     scheduled: boolean;
     effectiveFrom: string;
     effectiveTo: string;
+    costRate: number;
+    costWot: number;
+    costBasis: CostBasis | null;
 }
 export declare class SellingPriceSaveDataDto {
     saved: number;

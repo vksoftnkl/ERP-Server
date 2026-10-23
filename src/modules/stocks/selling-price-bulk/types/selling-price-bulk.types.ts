@@ -256,6 +256,14 @@ export interface SellingPriceSavedRow {
   /** `YYYY-MM-DD`. */
   effectiveFrom: string;
   effectiveTo: string;
+  /**
+   * Notes 147 B — the cost the grid shows for this row once saved, read back
+   * by the grid's own rule: this MRP's stock, else the item's average, else the
+   * price row's (a keyed costPrice shows here only while there is no stock).
+   */
+  costRate: number;
+  costWot: number;
+  costBasis: CostBasis | null;
 }
 
 /** §5.4 — what a save answers with. */

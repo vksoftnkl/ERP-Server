@@ -28,6 +28,9 @@ class SaveStockVoucherItemDto {
     toBucket;
     barcode;
     batchNo;
+    sizeId;
+    colourId;
+    model;
     mfgDate;
     expiryDate;
     mrp;
@@ -167,6 +170,35 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveStockVoucherItemDto.prototype, "batchNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Opening stock with stock.auto_batch_no on: an item_size_master id. Kept against the ' +
+            'batch number the server gives the line; on a typed batch it is refused (422 ' +
+            'STOCK_BATCH_DETAIL_NEEDS_AUTO_BATCH).',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "sizeId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'As sizeId, an item_colour_master id.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "colourId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'As sizeId; free text (GET /stock/batch-detail/models suggests). Blank = none.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "model", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date', nullable: true }),
     (0, dtoDecorators_1.NullableDateString)(),

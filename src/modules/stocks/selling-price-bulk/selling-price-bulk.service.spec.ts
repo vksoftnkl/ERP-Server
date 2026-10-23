@@ -1,4 +1,5 @@
 import { ArgumentsHost, HttpException, Logger } from '@nestjs/common';
+import { exclusiveOfTax } from './selling-price-math.helper';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -172,6 +173,7 @@ describe('SellingPriceBulkService', () => {
               trackSalePrice: false,
               costRate: COST,
               costWot: COST / 1.18,
+              costBasis: 'ITEM',
               minPrice: 0,
             })),
           ),
@@ -309,6 +311,71 @@ describe('SellingPriceBulkService', () => {
       );
       // S2 / S3 store the cost the row was priced against.
       expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
+    });
+
+    it('notes 147 B — a keyed costPrice is the row cost: stored, w/o tax by its tax, and the markup base', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: 100 })] }));
+
+      const candidate = writer.insertBucketPrice.mock.calls[0][1] as BucketPriceCandidate;
+      expect(candidate).toMatchObject({ costRate: 100, costWot: exclusiveOfTax(100, TAX_PERC) });
+      // 118 on a cost of 100 is 18 % — not against the grid's COST.
+      expect(candidate.levels[0]).toMatchObject({ price: PRICE, markupPerc: 18 });
+    });
+
+    it('notes 147 B — a null costPrice is no costPrice: the cost the grid showed, as before', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: null })] }));
+
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
+    });
+
+    it('notes 147 B — judges below cost against the keyed cost', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: PRICE + 10 })] }));
+
+      // Q26's verdicts read candidate.costRate (price-bucket.gateway validateRows).
+      const [candidates] = gateway.validateRows.mock.calls[0] as [BucketPriceCandidate[]];
+      expect(candidates[0].costRate).toBe(PRICE + 10);
+    });
+
+    it('notes 147 B — each saved row says what its cost reads as now, re-read after the write', async () => {
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: Array<{ itemId: string }>) =>
+        Promise.resolve(
+          rows.map(() => ({
+            itemCode: 'RICE',
+            itemName: 'Rice 25 Kg',
+            uomBelongs: true,
+            trackMrp: false,
+            trackSalePrice: false,
+            costRate: COST,
+            costWot: COST / 1.18,
+            costBasis: 'ITEM',
+            minPrice: 0,
+          })),
+        ),
+      );
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: Array<{ itemId: string }>) =>
+        Promise.resolve(
+          rows.map(() => ({
+            itemCode: 'RICE',
+            itemName: 'Rice 25 Kg',
+            uomBelongs: true,
+            trackMrp: false,
+            trackSalePrice: false,
+            costRate: 100,
+            costWot: 84.745763,
+            costBasis: 'PRICE_ROW',
+            minPrice: 0,
+          })),
+        ),
+      );
+
+      const result = await service.saveBulk(payload({ rows: [headlineRow({ costPrice: 100 })] }));
+
+      expect(gateway.loadRowCosts).toHaveBeenCalledTimes(2);
+      expect(result.rows[0]).toMatchObject({
+        costRate: 100,
+        costWot: 84.745763,
+        costBasis: 'PRICE_ROW',
+      });
     });
 
     it('refuses two rows that price one bucket at one scope, naming both lines', async () => {
@@ -777,6 +844,9 @@ describe('SellingPriceBulkService', () => {
             scheduled: true,
             effectiveFrom: '2026-07-01',
             effectiveTo: '9999-12-31',
+            costRate: COST,
+            costWot: COST / 1.18,
+            costBasis: 'ITEM',
           },
         ],
       });
@@ -1064,6 +1134,7 @@ describe('SellingPriceBulkService', () => {
         trackSalePrice: false,
         costRate: COST,
         costWot: 80.508475,
+        costBasis: 'ITEM',
         minPrice: 0,
       };
       gateway.loadRowCosts.mockResolvedValueOnce([nameless, nameless]);

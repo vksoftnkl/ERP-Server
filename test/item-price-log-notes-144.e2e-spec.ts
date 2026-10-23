@@ -15,6 +15,7 @@ import { PriceBucketGateway } from '../src/modules/stocks/selling-price-bulk/pri
 import { SellingPriceBulkService } from '../src/modules/stocks/selling-price-bulk/selling-price-bulk.service';
 import type { SaveSellingPriceBulkDto } from '../src/modules/stocks/selling-price-bulk/dto/save-selling-price-bulk.dto';
 import { ItemPriceLogService } from '../src/modules/Inventory/item-price-log/item-price-log.service';
+import { exclusiveOfTax } from '../src/modules/stocks/selling-price-bulk/selling-price-math.helper';
 import { grantPriceEdit, priceWriterFor } from './helpers/price-writer';
 
 /**
@@ -387,5 +388,42 @@ describe('Price change log, notes 144 (e2e — one rolled-back transaction)', ()
     expect(priceA.items.every((row) => row.changed.includes('ipm_sales_price_a'))).toBe(true);
     // One transaction here, so one change set — a real save is one per request.
     expect(all[0].sets).toBe(1);
+  });
+
+  it('7. notes 147 B — a keyed cost on Change Selling Price: stored, logged, read back', async () => {
+    const price = Math.round((fixture.priceA - 1) * 100) / 100;
+    const costPrice = Math.round(price * 0.8 * 100) / 100;
+    const saved = await menu30.saveBulk({
+      companyId: fixture.companyId,
+      branchId: fixture.branchId,
+      scope: 'BRANCH',
+      rows: [
+        { itemId: fixture.itemId, uomId: fixture.unitId, costPrice, levels: [{ level: 1, price }] },
+      ],
+    } as unknown as SaveSellingPriceBulkDto);
+
+    const [stored] = await tx.$queryRaw<{ cost: string; wot: string; markup: string }[]>`
+      SELECT ipm_cost_price::text AS cost, ipm_cost_wot::text AS wot, ipm_price_a_markup_perc::text AS markup
+        FROM inventory.item_price_master WHERE ipm_id = ${saved.rows[0].bucketId}::uuid`;
+    const taxPerc =
+      (await menu30.resolveItemTaxRates(tx, [fixture.itemId])).get(fixture.itemId)?.taxPerc ?? 0;
+    expect(Number(stored.cost)).toBe(costPrice);
+    expect(Number(stored.wot)).toBe(exclusiveOfTax(costPrice, taxPerc));
+    expect(Number(stored.markup)).toBeCloseTo(((price - costPrice) / costPrice) * 100, 4);
+
+    const last = (await log()).at(-1)!;
+    expect(last).toMatchObject({ action: 'UPDATE', source: 'CHANGE_SELLING_PRICE', table: 'IPM' });
+    expect(last.changed).toEqual(expect.arrayContaining(['ipm_cost_price', 'ipm_cost_wot']));
+
+    // What the popup shows now: the stock's cost while the branch holds any, else the keyed one.
+    const [stock] = await tx.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM stock.stock_item_cost
+       WHERE sic_company_id = ${fixture.companyId}::uuid AND sic_branch_id = ${fixture.branchId}::uuid
+         AND sic_item_id = ${fixture.itemId}::uuid AND sic_is_deleted = false AND sic_avg_cost_rate > 0`;
+    if (stock.n === 0) {
+      expect(saved.rows[0]).toMatchObject({ costRate: costPrice, costBasis: 'PRICE_ROW' });
+    } else {
+      expect(['ITEM', 'MRP']).toContain(saved.rows[0].costBasis);
+    }
   });
 });

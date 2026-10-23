@@ -72,6 +72,7 @@ export interface RowCost {
     trackSalePrice: boolean;
     costRate: number;
     costWot: number;
+    costBasis: CostBasis | null;
     minPrice: number;
 }
 export interface BucketLevelWrite {

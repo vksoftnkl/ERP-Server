@@ -102,6 +102,8 @@ import { TxnStatusModule } from './modules/txn-status/txn-status.module';
 import { TxnAdjacentModule } from './modules/txn-adjacent/txn-adjacent.module';
 import { ItemPriceLogModule } from './modules/Inventory/item-price-log/item-price-log.module';
 import { ItemInwardHistoryModule } from './modules/stocks/item-inward-history/item-inward-history.module';
+import { LotByBatchModule } from './modules/stocks/lot-by-batch/lot-by-batch.module';
+import { BatchDetailModule } from './modules/stocks/batch-detail/batch-detail.module';
 import { StockAdjustmentModule } from './modules/stocks/stock-adjustment/stock-adjustment.module';
 import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
@@ -122,6 +124,7 @@ import { ItemsBrandMasterModule } from './modules/Inventory/items-brand-master/i
 import { ItemsSectionMasterModule } from './modules/Inventory/items-section-master/items-section-master.module';
 import { ItemsCategoryMasterModule } from './modules/Inventory/items-category-master/items-category-master.module';
 import { UnitsMasterModule } from './modules/Inventory/units-master/units-master.module';
+import { ItemSizeColourMasterModule } from './modules/Inventory/item-size-colour-master/item-size-colour-master.module';
 import { TaxRateMasterModule } from './modules/Inventory/tax-rate-master/tax-rate-master.module';
 import { ItemsEanCodeMasterModule } from './modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { ItemsGstUnitsMasterModule } from './modules/Inventory/items-gst-units-master/items-gst-units-master.module';
@@ -177,6 +180,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsSectionMasterModule,
     ItemsCategoryMasterModule,
     UnitsMasterModule,
+    ItemSizeColourMasterModule,
     TaxRateMasterModule,
     ItemsEanCodeMasterModule,
     ItemsGstUnitsMasterModule,
@@ -270,6 +274,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     TxnAdjacentModule,
     ItemPriceLogModule,
     ItemInwardHistoryModule,
+    LotByBatchModule,
+    BatchDetailModule,
     StockAdjustmentModule,
     SellingPriceBulkModule,
     MasterLookupModule,

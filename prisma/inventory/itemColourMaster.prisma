@@ -1,0 +1,26 @@
+/// inventory.item_colour_master — textile colours picked on an inward line
+/// (textile auto batch, addendum 2 E1). Company NULL = shared by every company.
+///
+/// DB-only, not declared here (partial and expression indexes):
+///   ux_icl_name  unique (COALESCE(company, nil uuid), upper(name)) among live rows
+///   ix_icl_list  (company, sort) among live rows
+model ItemColourMaster {
+  iclId         String    @id(map: "pk_item_colour_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("icl_id")
+  iclCompanyId  String?   @db.Uuid                @map("icl_company_id")
+  iclCode       String?   @db.VarChar(20)         @map("icl_code")
+  iclName       String    @db.VarChar(50)         @map("icl_name")
+  iclSort       Int       @default(0)             @map("icl_sort")
+  iclIsActive   Boolean   @default(true)          @map("icl_is_active")
+  iclIsDeleted  Boolean   @default(false)         @map("icl_is_deleted")
+  iclSyncDate   DateTime? @db.Timestamptz(6)      @map("icl_sync_date")
+  iclCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("icl_created_on")
+  iclCreatedBy  String?   @db.VarChar(100)        @map("icl_created_by")
+  iclModifiedOn DateTime? @db.Timestamptz(6)      @map("icl_modified_on")
+  iclModifiedBy String?   @db.VarChar(100)        @map("icl_modified_by")
+
+  company       Company?           @relation("ItemColourCompany", fields: [iclCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_icl_company")
+  batchDetails  StockBatchDetail[] @relation("StockBatchDetailColour")
+
+  @@map("item_colour_master")
+  @@schema("inventory")
+}

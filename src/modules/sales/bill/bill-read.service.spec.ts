@@ -684,6 +684,46 @@ describe('BillReadService', () => {
       });
     });
 
+    it('adds each line its batch size / colour / model, by item and folded batch (textile E3.3)', async () => {
+      const routed = prisma.$queryRaw as jest.Mock;
+      prisma.$queryRaw = jest.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+        strings.join('?').includes('stock.stock_batch_detail')
+          ? Promise.resolve([
+              {
+                itemId: 'item-1',
+                batchNo: 'CBE26-00001',
+                sizeId: 'size-xl',
+                sizeName: 'XL',
+                colourId: 'colour-m',
+                colourName: 'Maroon',
+                model: 'Slim fit',
+              },
+            ])
+          : routed(strings, ...values),
+      );
+      const withLines = {
+        sbId: BILL_ID,
+        items: [
+          { sbiItemId: 'item-1', sbiBatchNo: ' cbe26-00001' },
+          { sbiItemId: 'item-2', sbiBatchNo: 'CBE26-00001' },
+          { sbiItemId: 'item-3', sbiBatchNo: null },
+        ],
+      } as unknown as BillPayload;
+
+      const decorated = await service.decorate(bill, withLines);
+
+      expect(decorated.items).toEqual([
+        expect.objectContaining({
+          sbiSizeName: 'XL',
+          sbiColourName: 'Maroon',
+          sbiModel: 'Slim fit',
+        }),
+        // Another item's line with the same batch text shows nothing.
+        expect.objectContaining({ sbiSizeName: null, sbiColourName: null, sbiModel: null }),
+        expect.objectContaining({ sbiSizeName: null, sbiColourName: null, sbiModel: null }),
+      ]);
+    });
+
     it('lifts the transport band into the flat ship-to and transporter fields', async () => {
       transportBand.read.mockResolvedValue({
         mode: 'ROAD',

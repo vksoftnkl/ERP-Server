@@ -19,6 +19,8 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_voucher_numbering_helper_1 = require("./stock-voucher-numbering.helper");
 const stock_voucher_import_helper_1 = require("./stock-voucher-import.helper");
+const stock_voucher_batch_numbering_helper_1 = require("./stock-voucher-batch-numbering.helper");
+const batch_detail_helper_1 = require("../batch-detail/batch-detail.helper");
 const stock_voucher_posting_helper_1 = require("./stock-voucher-posting.helper");
 const stock_posting_service_1 = require("../posting/stock-posting.service");
 const stock_voucher_source_1 = require("../posting/stock-voucher.source");
@@ -57,9 +59,28 @@ let StockVoucherService = class StockVoucherService {
             const before = header.svhId
                 ? await this.getById(rules, header.svhId, header.accYear, header.companyId, header.branchId, tx)
                 : null;
+            const batches = rules.autoBatchNo
+                ? await (0, stock_voucher_batch_numbering_helper_1.assignAutoBatchNumbers)(tx, {
+                    companyId: header.companyId,
+                    branchId: header.branchId,
+                    accYear: header.accYear,
+                    docDate: header.docDate,
+                    svhId: header.svhId,
+                }, dto.lines)
+                : null;
+            const saved = batches ? { ...dto, lines: batches.lines } : dto;
             const id = header.svhId
-                ? await this.updateDraft(tx, rules, dto, actor, postedOn)
-                : await this.createDraft(tx, rules, dto, actor, postedOn);
+                ? await this.updateDraft(tx, rules, saved, actor, postedOn)
+                : await this.createDraft(tx, rules, saved, actor, postedOn);
+            if (batches) {
+                await (0, batch_detail_helper_1.syncBatchDetails)(tx, {
+                    companyId: header.companyId,
+                    accYear: header.accYear,
+                    srcDocType: rules.voucherType,
+                    srcDocId: id,
+                    actor: this.auditActor(actor),
+                }, saved.lines, batches.numbered);
+            }
             if (!postAfterSave) {
                 await this.logRevision(tx, rules, id, header, before, actor, false);
                 return { svhId: id, rowsPosted: null };
@@ -1090,7 +1111,14 @@ let StockVoucherService = class StockVoucherService {
              -- answers it: the effective policy on the DOCUMENT's date, the one
              -- the preflight and the post key the lot by. Saves the screen a
              -- lookup per distinct item after every load (notes 66).
-             COALESCE(stp.stp_track_signature, 'N') AS track_signature
+             COALESCE(stp.stp_track_signature, 'N') AS track_signature,
+             -- Addendum 2 E2: the size / colour / model this line's auto
+             -- batch carries, by the row the line wrote.
+             sbd.sbd_size_id,
+             isz.isz_name AS size_name,
+             sbd.sbd_colour_id,
+             icl.icl_name AS colour_name,
+             sbd.sbd_model
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm            ON itm.item_id = svi.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = svi.svi_uom_id
@@ -1098,6 +1126,10 @@ let StockVoucherService = class StockVoucherService {
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
         LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
+        LEFT JOIN stock.stock_batch_detail sbd
+               ON sbd.sbd_src_line_id = svi.svi_id AND sbd.sbd_is_deleted = false
+        LEFT JOIN inventory.item_size_master isz   ON isz.isz_id = sbd.sbd_size_id
+        LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         ${(0, stock_voucher_posting_helper_1.effectivePolicyLateral)({
             companyId: client_1.Prisma.sql `${companyId}::uuid`,
             branchId: client_1.Prisma.sql `${branchId}::uuid`,
@@ -1649,6 +1681,7 @@ let StockVoucherService = class StockVoucherService {
                     sviModifiedBy: this.auditActor(actor),
                 },
             });
+            await (0, batch_detail_helper_1.softDeleteBatchDetailsOf)(tx, svhId, this.auditActor(actor));
             await this.auditLogService.logEntityChange({
                 action: 'cancel',
                 tableName: STOCK_VOUCHER_TABLE_NAME,
@@ -2218,6 +2251,11 @@ let StockVoucherService = class StockVoucherService {
             lotId: row.svi_lot_id,
             remarks: row.svi_remarks,
             trackSignature: row.track_signature,
+            sizeId: row.sbd_size_id,
+            sizeName: row.size_name,
+            colourId: row.sbd_colour_id,
+            colourName: row.colour_name,
+            model: row.sbd_model,
         };
     }
     auditActor(actor) {

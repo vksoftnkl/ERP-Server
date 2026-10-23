@@ -15,6 +15,7 @@ export declare class SaveSellingPriceRowDto {
     mrp?: number | null;
     salePrice?: number | null;
     levels: SaveSellingPriceLevelDto[];
+    costPrice?: number | null;
     minPrice?: number | null;
     roundOff?: number | null;
 }

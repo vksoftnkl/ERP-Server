@@ -83,6 +83,22 @@ record made every valid save a 400).
 | the unit is the item's | the save, as 422 |
 | everything else | the database, translated by `SellingPriceBulkExceptionFilter` |
 
+### The row's cost (notes 147 B)
+
+A save writes the price row's `ipm_cost_price` / `ipm_cost_wot`. By default that is the cost
+the grid showed, as it always has been: this MRP's stock, else the item's average, else the
+row's own.
+
+A row may instead send `costPrice`. That is the row's own cost for one of its unit, tax
+inclusive, as keyed in the quick rate popup. It is stored with
+`ipm_cost_wot = costPrice ÷ (1 + tax %)`, through the same writer, so the Price Change Log
+records it under CHANGE_SELLING_PRICE. The row's markups and the below-cost check use it too.
+It never touches the stock's moving average.
+
+Each `rows[]` entry in the response carries `costRate` / `costWot` / `costBasis`. They are read
+back after the write by the grid's own rule, so a keyed cost shows there only while the
+item has no stock.
+
 ## Five traps worth reading before editing
 
 **1. A raw-query failure is `P2010`.** Same trap as the voucher

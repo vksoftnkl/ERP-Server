@@ -352,6 +352,7 @@ describe('PriceBucketGateway', () => {
           trackSalePrice: false,
           costRate: dec('25.5'),
           costWot: dec('21.610169'),
+          costBasis: 'MRP',
           minPrice: dec(26),
         },
       ]);
@@ -368,6 +369,7 @@ describe('PriceBucketGateway', () => {
           trackSalePrice: false,
           costRate: 25.5,
           costWot: 21.610169,
+          costBasis: 'MRP',
           minPrice: 26,
         },
         {
@@ -378,6 +380,7 @@ describe('PriceBucketGateway', () => {
           trackSalePrice: false,
           costRate: 0,
           costWot: 0,
+          costBasis: null,
           minPrice: 0,
         },
         {
@@ -388,6 +391,7 @@ describe('PriceBucketGateway', () => {
           trackSalePrice: true,
           costRate: 0,
           costWot: 0,
+          costBasis: null,
           minPrice: 0,
         },
       ]);

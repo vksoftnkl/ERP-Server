@@ -520,7 +520,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             for (const row of effectiveRows) {
                 const rowCumulative = cumulativeByUnitId.get(row.unitId);
                 row.toBaseFactor = baseCumulative
-                    ? this.roundFactor(rowCumulative / baseCumulative)
+                    ? this.roundFactor(baseCumulative / rowCumulative)
                     : (row.toBaseFactor ?? rowCumulative);
             }
             for (const row of effectiveRows) {
@@ -549,7 +549,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
         const previousToBaseFactor = this.toPositiveFactor(previousRow.toBaseFactor);
         const currentToBaseFactor = this.toPositiveFactor(currentRow.toBaseFactor);
         if (previousToBaseFactor !== undefined && currentToBaseFactor !== undefined) {
-            return this.roundFactor(currentToBaseFactor / previousToBaseFactor);
+            return this.roundFactor(previousToBaseFactor / currentToBaseFactor);
         }
         (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
             {

@@ -66,6 +66,7 @@ class SaveSellingPriceRowDto {
     mrp;
     salePrice;
     levels;
+    costPrice;
     minPrice;
     roundOff;
 }
@@ -145,6 +146,21 @@ __decorate([
     (0, class_transformer_1.Type)(() => SaveSellingPriceLevelDto),
     __metadata("design:type", Array)
 ], SaveSellingPriceRowDto.prototype, "levels", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Number,
+        nullable: true,
+        example: 1385,
+        description: "Notes 147 B — the PRICE ROW's own cost for one of this unit, tax inclusive, as keyed in " +
+            'the quick rate popup or the item card. Written to ipm_cost_price, with ipm_cost_wot = ' +
+            'costPrice ÷ (1 + tax %), in the same save and writer (the Price Change Log records it); ' +
+            "the row's markups and the below-cost check use it. It is not the stock's moving average, " +
+            'which keeps coming from inward and is what costRate shows while the item has stock ' +
+            '(costBasis says which). Absent or null: unchanged — the cost the grid showed, as before.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], SaveSellingPriceRowDto.prototype, "costPrice", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     (0, dtoDecorators_1.NullableNumber)(0),

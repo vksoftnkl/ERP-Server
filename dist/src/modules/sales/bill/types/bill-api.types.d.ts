@@ -90,6 +90,9 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
     sbiCategoryId?: string | null;
     sbiGodownName?: string | null;
     sbiAllowNegativeStock?: boolean | null;
+    sbiSizeName?: string | null;
+    sbiColourName?: string | null;
+    sbiModel?: string | null;
 };
 export type BillChargePayload = ChargeDetailPayload;
 export type BillTenderPayload = TenderDetailPayload & {

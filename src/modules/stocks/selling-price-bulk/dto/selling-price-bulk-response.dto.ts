@@ -1,10 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   BELOW_COST_POLICIES,
+  COST_BASES,
   PRICE_LEVELS,
   PRICE_SCOPES,
   PRICE_SOURCES,
   PRICE_VERDICTS,
+  type CostBasis,
 } from '../types/selling-price-bulk.types';
 
 export class SellingPriceErrorFieldDto {
@@ -288,6 +290,21 @@ export class SellingPriceSavedRowDto {
 
   @ApiProperty({ format: 'date', example: '9999-12-31' })
   effectiveTo!: string;
+
+  @ApiProperty({
+    example: 1385,
+    description:
+      "Notes 147 B — the cost to show now, by the grid rule: this MRP's stock, else the " +
+      "item's average, else the price row's own (a keyed costPrice shows here only while the " +
+      'item has no stock). One of this unit, tax inclusive.',
+  })
+  costRate!: number;
+
+  @ApiProperty({ example: 1173.728814 })
+  costWot!: number;
+
+  @ApiProperty({ enum: COST_BASES, nullable: true, example: 'PRICE_ROW' })
+  costBasis!: CostBasis | null;
 }
 
 export class SellingPriceSaveDataDto {
