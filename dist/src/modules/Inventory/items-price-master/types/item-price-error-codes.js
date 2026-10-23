@@ -24,5 +24,6 @@ var ItemPriceErrorCode;
     ItemPriceErrorCode["OTHER_COMPANY"] = "ITEM_PRICE_OTHER_COMPANY";
     ItemPriceErrorCode["BRANCH_OTHER_COMPANY"] = "ITEM_PRICE_BRANCH_OTHER_COMPANY";
     ItemPriceErrorCode["GODOWN_OUT_OF_SCOPE"] = "ITEM_PRICE_GODOWN_OUT_OF_SCOPE";
+    ItemPriceErrorCode["BUCKET_CHANGED"] = "ITEM_PRICE_BUCKET_CHANGED";
 })(ItemPriceErrorCode || (exports.ItemPriceErrorCode = ItemPriceErrorCode = {}));
 //# sourceMappingURL=item-price-error-codes.js.map

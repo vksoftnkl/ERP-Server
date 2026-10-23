@@ -6,12 +6,14 @@ import { ItemQtyPriceDeleteResult, ItemQtyPriceListItem, ItemQtyPriceListMeta, I
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
 export declare class ItemsQtyPriceMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly configuredGridSqlService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
+    private readonly priceWriter;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService, priceWriter: PriceMasterWriter);
     save(saveItemQtyPriceDto: SaveItemQtyPriceDto, tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload>;
     save(saveItemQtyPriceDto: SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload[]>;
     save(saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]>;
@@ -29,6 +31,9 @@ export declare class ItemsQtyPriceMasterService {
     private createItemQtyPrice;
     private updateItemQtyPrice;
     private applyOptionalFields;
+    private validatePriceValue;
+    private assertUnitOfItem;
+    private assertNoOverlaps;
     private validateDateRange;
     private validateQtyRange;
     private parseRequiredDate;

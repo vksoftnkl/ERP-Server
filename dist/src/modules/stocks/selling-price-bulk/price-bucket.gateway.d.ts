@@ -50,6 +50,20 @@ export interface PriceGridRecord {
     roundOff: number;
     prices: [number, number, number, number];
 }
+export interface PriceScheduleRecord extends PriceGridRecord {
+    effectiveFrom: string;
+    effectiveTo: string;
+    previous: {
+        bucketId: string;
+        priceScope: PriceScope;
+        prices: [number, number, number, number];
+    } | null;
+}
+export interface LockedPriceRow {
+    ipmId: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+}
 export interface RowCost {
     itemCode: string | null;
     itemName: string;
@@ -83,6 +97,7 @@ export interface BucketPriceCandidate {
     costWot: number;
     actor: string;
 }
+export declare function daySql(day: string | null | undefined): Prisma.Sql;
 export declare class PriceBucketGateway {
     private readonly prisma;
     constructor(prisma: PrismaService);
@@ -95,17 +110,27 @@ export declare class PriceBucketGateway {
         uomId: string;
         mrp: number | null;
         salePrice: number | null;
-    }>, companyId: string, branchId: string): Promise<RowCost[]>;
+    }>, companyId: string, branchId: string, onDate?: string): Promise<RowCost[]>;
     validateRows(candidates: readonly BucketPriceCandidate[], storedMinPrices: readonly number[]): SellingPriceProblem[];
-    findBucketRowForUpdate(tx: Prisma.TransactionClient, candidate: BucketPriceCandidate, scope: ScopeResolution): Promise<{
+    findBucketRowForUpdate(tx: Prisma.TransactionClient, candidate: BucketPriceCandidate, scope: ScopeResolution, onDate?: string): Promise<LockedPriceRow | null>;
+    calendar(client: Pick<Prisma.TransactionClient, '$queryRaw'>): Promise<{
+        today: string;
+        latest: string;
+    }>;
+    lockScheduledRow(tx: Prisma.TransactionClient, ipmId: string): Promise<{
+        ipmId: string;
+        branchId: string | null;
+        isDeleted: boolean;
+        started: boolean;
+        effectiveFrom: string;
+        effectiveTo: string;
+    } | null>;
+    findRowBeforeForUpdate(tx: Prisma.TransactionClient, ipmId: string): Promise<{
         ipmId: string;
     } | null>;
-    updateBucketPrice(tx: Prisma.TransactionClient, ipmId: string, candidate: BucketPriceCandidate): Promise<string>;
-    insertBucketPrice(tx: Prisma.TransactionClient, candidate: BucketPriceCandidate, scope: ScopeResolution): Promise<string>;
+    listScheduled(companyId: string, branchId: string, itemId?: string): Promise<PriceScheduleRecord[]>;
     snapshotRows(tx: Prisma.TransactionClient, ipmIds: readonly string[]): Promise<Map<string, Prisma.JsonObject>>;
     listNoStock(tx: Prisma.TransactionClient, ipmIds: readonly string[], companyId: string, branchId: string): Promise<SellingPriceNoStockRow[]>;
     private gridStatement;
     private toGridRecord;
-    private levelColumns;
-    private actorColumn;
 }

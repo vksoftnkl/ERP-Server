@@ -1,6 +1,6 @@
 import { ItemDeleteResultDto, ItemPayloadDto } from './item-response.dto';
 import { ItemUnitConversionDeleteResultDto, ItemUnitConversionPayloadDto } from '../../item-unit-conversion/dto/item-unit-conversion-response.dto';
-import { ItemPriceDeleteResultDto, ItemPricePayloadDto } from '../../items-price-master/dto/item-price-response.dto';
+import { ItemPriceDeleteResultDto, ItemPricePayloadDto, ScheduledItemPricePayloadDto } from '../../items-price-master/dto/item-price-response.dto';
 import { ItemEanCodeDeleteResultDto, ItemEanCodePayloadDto } from '../../items-ean-code-master/dto/item-ean-code-response.dto';
 import { ItemReorderDeleteResultDto, ItemReorderPayloadDto } from '../../items-reorder-master/dto/item-reorder-response.dto';
 import { ItemCompositeDeleteResult, ItemCompositePayload, ItemCompositeSuccessResponse } from '../types/item-composite-api.types';
@@ -8,6 +8,7 @@ export declare class ItemCompositePayloadDto {
     item: ItemPayloadDto;
     unit_conversions: ItemUnitConversionPayloadDto[];
     prices: ItemPricePayloadDto[];
+    scheduled_prices: ScheduledItemPricePayloadDto[];
     ean_codes: ItemEanCodePayloadDto[];
     reorders: ItemReorderPayloadDto[];
 }

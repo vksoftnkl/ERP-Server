@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_error_codes_1 = require("../types/stock-error-codes");
+const price_period_helper_1 = require("../../Inventory/items-price-master/price-period.helper");
 const DEFAULT_BATCH_OPTION_LIMIT = 50;
 const MAX_BATCH_OPTION_LIMIT = 100;
 let ItemStockBalanceService = class ItemStockBalanceService {
@@ -113,6 +114,7 @@ let ItemStockBalanceService = class ItemStockBalanceService {
             ...new Set(rows.map((s) => s.base_unit_id).filter((u) => !!u)),
         ];
         const allGodownIds = [...new Set(rows.map((s) => s.sbl_godown_id))];
+        const today = await (0, price_period_helper_1.databaseToday)(this.prisma);
         const [items, units, godowns, priceMasters] = await Promise.all([
             this.prisma.itemMaster.findMany({
                 where: { itemId: { in: allItemIds }, itemIsDeleted: false },
@@ -140,6 +142,7 @@ let ItemStockBalanceService = class ItemStockBalanceService {
                     ipmIsDeleted: false,
                     ipmBucketMrp: null,
                     ipmBucketSp: null,
+                    ...(0, price_period_helper_1.priceRowsInForce)(today),
                 },
                 select: {
                     ipmItemId: true,

@@ -266,6 +266,30 @@ export class SellingPriceNoStockRowDto {
   salePrice!: number | null;
 }
 
+/** Notes 140 A — one row a save wrote. */
+export class SellingPriceSavedRowDto {
+  @ApiProperty({ example: 3 })
+  lineNo!: number;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The item_price_master row written — for a split, the NEW row.',
+  })
+  bucketId!: string;
+
+  @ApiProperty({
+    example: true,
+    description: 'True when the row starts after today: scheduled, not yet on the shelf.',
+  })
+  scheduled!: boolean;
+
+  @ApiProperty({ format: 'date', example: '2026-10-23' })
+  effectiveFrom!: string;
+
+  @ApiProperty({ format: 'date', example: '9999-12-31' })
+  effectiveTo!: string;
+}
+
 export class SellingPriceSaveDataDto {
   @ApiProperty({
     example: 12,
@@ -273,6 +297,20 @@ export class SellingPriceSaveDataDto {
       'item_price_master rows written — S2 and S3 together, buckets and headlines alike.',
   })
   saved!: number;
+
+  @ApiProperty({
+    format: 'date',
+    example: '2026-10-23',
+    description: "Notes 140 A — the day the prices start: the body's effectiveFrom, else today.",
+  })
+  effectiveFrom!: string;
+
+  @ApiProperty({
+    type: SellingPriceSavedRowDto,
+    isArray: true,
+    description: 'Notes 140 A — per row written, in the order sent. Empty on needsConfirm.',
+  })
+  rows!: SellingPriceSavedRowDto[];
 
   @ApiProperty({
     example: 0,
@@ -313,4 +351,77 @@ export class SellingPriceSaveSuccessDto {
 
   @ApiProperty({ type: SellingPriceSaveDataDto })
   data!: SellingPriceSaveDataDto;
+}
+
+/** Notes 140 B — the prices a scheduled row replaces. */
+export class SellingPriceSchedulePreviousDto {
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The row of the same key ending the day before, else the row that priced the bucket ' +
+      'at this branch that day.',
+  })
+  bucketId!: string | null;
+
+  @ApiPropertyOptional({ enum: PRICE_SCOPES, nullable: true })
+  priceScope!: string | null;
+
+  @ApiProperty({ type: SellingPriceLevelDto, isArray: true })
+  levels!: SellingPriceLevelDto[];
+}
+
+/** Notes 140 B — one scheduled price: a grid row plus its period and what it replaces. */
+export class SellingPriceScheduleRowDto extends SellingPriceRowDto {
+  @ApiProperty({ format: 'date', example: '2026-10-23' })
+  effectiveFrom!: string;
+
+  @ApiProperty({ format: 'date', example: '9999-12-31' })
+  effectiveTo!: string;
+
+  @ApiPropertyOptional({
+    type: SellingPriceSchedulePreviousDto,
+    nullable: true,
+    description: 'Null when nothing priced the bucket the day before.',
+  })
+  previous!: SellingPriceSchedulePreviousDto | null;
+}
+
+export class SellingPriceScheduleSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: '2 scheduled prices found' })
+  message!: string;
+
+  @ApiProperty({ type: SellingPriceScheduleRowDto, isArray: true })
+  data!: SellingPriceScheduleRowDto[];
+}
+
+export class SellingPriceScheduleCancelDataDto {
+  @ApiProperty({ format: 'uuid', description: 'The scheduled row, now deleted.' })
+  bucketId!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: "The row before it, now running to the cancelled row's end.",
+  })
+  restoredId!: string | null;
+
+  @ApiPropertyOptional({ type: String, format: 'date', nullable: true, example: '9999-12-31' })
+  restoredTo!: string | null;
+}
+
+export class SellingPriceScheduleCancelSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Scheduled price cancelled' })
+  message!: string;
+
+  @ApiProperty({ type: SellingPriceScheduleCancelDataDto })
+  data!: SellingPriceScheduleCancelDataDto;
 }

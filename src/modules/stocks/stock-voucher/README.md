@@ -83,13 +83,22 @@ its transaction — after the post, on a save-and-post — and writes ONE
 |---|---|
 | shape, types, lengths, enum membership | the DTOs, as 400 |
 | document-level rules the engine would raise on | `assertPayloadRules`, as 422 with a per-line list |
-| unit belongs to the item, factor is real | `assertUnitsBelongToItems`, as 422 |
+| base quantities are `qty × factor`; the date is in `accYear` | `assertPayloadRules`, as 422 (notes 143 #3 / #6) |
+| unit and base unit are the item's; item and godown are the document's | `validate()` at post, as 422 (notes 143 #3 / #5) |
 | the holding is not already opened; the item's policy is satisfied | `validate()` (§6 preflight), as advisory rows and then 422 at post |
 | everything else | the engine, translated by `StockVoucherExceptionFilter` |
 
-The preflight is deliberately advisory: another till can post the same holding
-between the check and the post, so `post()` still has to survive the engine
-raising.
+At post the preflight runs **inside the post's transaction, under the header's
+row lock and the per-item advisory locks** the engine takes (notes 143 #2):
+two tills posting openings of one holding serialise, and the second reads the
+first's ledger rows and is refused; a draft save cannot slip lines in between
+the check and the post. A save takes the same row lock before it checks DRAFT
+(notes 143 #1), so it cannot rewrite a document that posted while it waited.
+The preflight also refuses a line whose item belongs to another company /
+branch or is a service, whose godown is not the branch's (#5), a batch or
+serial that is blank once trimmed and an MRP of 0 on an MRP-tracked item (#7);
+the save refuses a `docDate` outside `accYear` (#6). `validate()` on its own
+is still advisory: it answers what a post would refuse right now.
 
 ## Three traps worth reading before editing
 
@@ -137,7 +146,10 @@ because `ux_svh_refno` has no device in it.
 `svh_slno` is per **device** (`ux_svh_slno`) because a warehouse tablet must
 number its own document offline. A client-supplied `slno`/`refno` is therefore
 honoured verbatim; a collision is a 409 naming the refno, never a silent
-renumber — the device's copy is already printed.
+renumber — the device's copy is already printed. A number a device took that
+way is **skipped by the server's counter** (notes 143 #10): the accounts series
+steps past any refno already on a live document, so it can no longer stick on
+one and fail every later save.
 
 ## Prerequisites
 

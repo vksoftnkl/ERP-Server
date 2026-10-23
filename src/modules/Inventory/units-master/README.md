@@ -55,8 +55,16 @@ optional base-unit conversion.
 
 ## Business rules
 
-- **Unit name uniqueness** — `unit_name` is `@unique` at the DB level; a duplicate is caught in
-  `handleWriteError` and surfaced as a **409 Conflict** (`Unit name already exists`).
+- **Unit name uniqueness** — the name is trimmed, then unique among **live** units ignoring case:
+  `assertNameFree` (advisory lock on the folded name) answers a new name, a rename or a restore that
+  clashes with a 409 `UNIT_NAME_TAKEN`. The index `uq_unit_name` (partial, `WHERE NOT
+  unit_is_deleted`) only covers the exact spelling while the box holds both "Box" and "BOX"; an
+  update that keeps a unit's own spelling (any case) is not re-checked (notes 139 A2/B6).
+- **References** — an unknown `unit_code` is a 400 `UNIT_CODE_NOT_FOUND` and an unknown or deleted
+  `unit_base_unit_id` a 400 `UNIT_BASE_NOT_FOUND`, not a foreign-key 500 (notes 139 A3).
+- **Screen limits** — `unit_decimal_count` 0–3 and `unit_weight` ≥ 0 (DTO 400s); a pack unit needs
+  a base unit, 400 `UNIT_PACK_BASE_REQUIRED` (notes 139 B5). An update is judged on the stored pack
+  flag when it does not send one.
 - **Soft delete / restore** — `DELETE /delete` deletes only (409 when already deleted) and
   `POST /restore` restores (409 when not deleted, or when a pack unit's base unit is deleted). DELETE
   is refused with 409 while a live pack unit is built on the unit, an item unit conversion uses it

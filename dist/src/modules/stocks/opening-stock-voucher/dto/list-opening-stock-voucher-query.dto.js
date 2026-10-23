@@ -13,6 +13,7 @@ exports.OpeningStockItemLookupQueryDto = exports.OpeningStockReportQueryDto = ex
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 class OpeningStockVoucherScopeQueryDto {
     companyId;
@@ -78,6 +79,8 @@ class OpeningStockItemLookupQueryDto {
     itemId;
     uomId;
     onDate;
+    godownId;
+    bucket;
 }
 exports.OpeningStockItemLookupQueryDto = OpeningStockItemLookupQueryDto;
 __decorate([
@@ -122,4 +125,21 @@ __decorate([
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'onDate must be yyyy-MM-dd' }),
     __metadata("design:type", String)
 ], OpeningStockItemLookupQueryDto.prototype, "onDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "The line's godown. Narrows `alreadyOpened` to openings in this godown; omit for any godown.",
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], OpeningStockItemLookupQueryDto.prototype, "godownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.STOCK_BUCKETS,
+        description: "The line's bucket. Narrows `alreadyOpened` to that bucket; omit for any bucket.",
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS, { message: `bucket must be one of ${stock_voucher_types_1.STOCK_BUCKETS.join(', ')}` }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupQueryDto.prototype, "bucket", void 0);
 //# sourceMappingURL=list-opening-stock-voucher-query.dto.js.map

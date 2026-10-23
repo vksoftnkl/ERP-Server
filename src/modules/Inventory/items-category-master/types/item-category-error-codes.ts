@@ -24,6 +24,6 @@ export enum ItemCategoryErrorCode {
   PARENT_DELETED = 'ITEM_CATEGORY_PARENT_DELETED',
   /** category_photo is empty or not valid base64. */
   PHOTO_INVALID = 'ITEM_CATEGORY_PHOTO_INVALID',
-  /** Another item category already has this name. */
+  /** Another live item category already has this name, ignoring case. */
   NAME_TAKEN = 'ITEM_CATEGORY_NAME_TAKEN',
 }

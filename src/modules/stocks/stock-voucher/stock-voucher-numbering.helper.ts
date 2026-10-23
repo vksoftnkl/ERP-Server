@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
-import { throwStockNotFound } from 'src/common/utils/module-service.utils';
+import { throwStockConflict, throwStockNotFound } from 'src/common/utils/module-service.utils';
 import { StockErrorCode } from '../types/stock-error-codes';
 import type {
   StockErrorDetail,
@@ -224,6 +224,14 @@ export async function allocateStockVoucherNumber(
  * The device is still validated first, because svh_device_id is NOT NULL and
  * a bad id would otherwise surface as an FK violation after the accounts
  * counter had already been consumed inside the same transaction.
+ *
+ * A NUMBER ALREADY ON A DOCUMENT IS SKIPPED (notes 143 #10). A device that
+ * numbered offline sends its own refno, and one that reached OPN0042 while the
+ * counter stood at 40 left the series pointing at a taken number: the next
+ * server-numbered save drew 42, hit ux_svh_refno, and rolled the counter back
+ * with it — so every save after it drew 42 again. The counter is consumed past
+ * each taken number instead, under the counter's own lock, and those
+ * consumptions commit with the save.
  */
 async function nextAccountsRefno(
   tx: Prisma.TransactionClient,
@@ -231,11 +239,35 @@ async function nextAccountsRefno(
   vchrTypeId: number,
 ): Promise<string> {
   await resolveDeviceCode(tx, scope.deviceId);
-  const allocated = await allocateVoucherNumber(tx, {
-    vchrTypeId,
-    companyId: scope.companyId,
-    branchId: scope.branchId,
-    accYear: scope.accYear,
-  });
-  return allocated.refno;
+  for (let attempt = 0; attempt < MAX_TAKEN_REFNO_SKIPS; attempt += 1) {
+    const { refno } = await allocateVoucherNumber(tx, {
+      vchrTypeId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      accYear: scope.accYear,
+    });
+    // ux_svh_refno's own scope: live documents of this company, branch and year.
+    const [taken] = await tx.$queryRaw<Array<{ taken: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM stock.stock_voucher
+         WHERE svh_acc_year   = ${scope.accYear}::bpchar
+           AND svh_company_id = ${scope.companyId}::uuid
+           AND svh_branch_id  = ${scope.branchId}::uuid
+           AND svh_refno      = ${refno}
+           AND svh_is_deleted = false
+      ) AS taken`;
+    if (!taken?.taken) {
+      return refno;
+    }
+  }
+  throwStockConflict<StockErrorDetail, StockErrorResponse>('No free voucher number', [
+    {
+      field: 'refno',
+      code: StockErrorCode.REFNO_SERIES_EXHAUSTED,
+      message: `The next ${MAX_TAKEN_REFNO_SKIPS} numbers of this series are all on documents already. Move the series past them (Voucher Sequence) and save again.`,
+    },
+  ]);
 }
+/** How many taken numbers one allocation steps over before it gives up. */
+const MAX_TAKEN_REFNO_SKIPS = 1000;

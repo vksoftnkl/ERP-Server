@@ -4,6 +4,13 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import { ItemsPriceMasterService } from './items-price-master.service';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
+
+/** Notes 144 — the change log the writer calls: nothing snapshotted, every record accepted. */
+const changeLogStub = () => ({
+  snapshot: jest.fn().mockResolvedValue(new Map()),
+  record: jest.fn().mockResolvedValue(true),
+});
 const ITEM_PRICE_ID = '019c6f6c-be87-7a11-8905-36092c46fd05';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
@@ -30,6 +37,8 @@ type PrismaMock = {
   itemMaster: { findMany: jest.Mock; findFirst: jest.Mock };
   branchMaster: { findFirst: jest.Mock };
   godownLocation: { findFirst: jest.Mock };
+  // A new row's open period around today (notes 140 C, applyOpenPeriod).
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 type ConfiguredGridSqlServiceMock = {
@@ -150,6 +159,8 @@ describe('ItemsPriceMasterService', () => {
         findFirst: jest.fn().mockResolvedValue({ brCompId: COMPANY_ID, brName: 'Main' }),
       },
       godownLocation: { findFirst: jest.fn().mockResolvedValue({ gdlBranchId: 'branch-1' }) },
+      // The key has no closed and no scheduled row: the column defaults stand.
+      $queryRaw: jest.fn().mockResolvedValue([{ from: null, to: null }]),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -170,9 +181,14 @@ describe('ItemsPriceMasterService', () => {
       runPagedQuery: jest.fn(),
     };
     requestContextService = { getUserId: jest.fn().mockReturnValue(null) };
-    // An untracked item: every row derives the headline key (NULL, NULL).
+    // An untracked item: every row derives the headline key (NULL, NULL). An
+    // update derives two — what the row will hold and what it holds (notes 140 D).
     priceBucketService = {
-      deriveBuckets: jest.fn().mockResolvedValue([{ mrp: null, salePrice: null }]),
+      deriveBuckets: jest
+        .fn()
+        .mockImplementation((_tx: unknown, _itemId: string, rows: unknown[]) =>
+          Promise.resolve(rows.map(() => ({ mrp: null, salePrice: null }))),
+        ),
     };
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
@@ -180,6 +196,10 @@ describe('ItemsPriceMasterService', () => {
       configuredGridSqlService as never,
       requestContextService as never,
       priceBucketService as never,
+      // Notes 144 — the REAL writer, over this spec's prisma mock, so the
+      // itemPriceMaster.create / update assertions below still see the write;
+      // only the change log (its snapshot and record) is stubbed.
+      new PriceMasterWriter(changeLogStub() as never),
     );
   });
   it('writes only the conversion id, never a copy of the unit shape', async () => {

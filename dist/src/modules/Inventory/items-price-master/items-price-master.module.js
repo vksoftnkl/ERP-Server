@@ -14,12 +14,13 @@ const items_price_master_service_1 = require("./items-price-master.service");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
 const app_settings_module_1 = require("../../settings/appSettings/app-settings.module");
 const price_bucket_service_1 = require("./price-bucket.service");
+const item_price_log_module_1 = require("../item-price-log/item-price-log.module");
 let ItemsPriceMasterModule = class ItemsPriceMasterModule {
 };
 exports.ItemsPriceMasterModule = ItemsPriceMasterModule;
 exports.ItemsPriceMasterModule = ItemsPriceMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule],
+        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, item_price_log_module_1.ItemPriceLogModule],
         controllers: [items_price_master_controller_1.ItemsPriceMasterController],
         providers: [items_price_master_service_1.ItemsPriceMasterService, price_bucket_service_1.PriceBucketService, item_price_exception_filter_1.ItemPriceExceptionFilter],
         exports: [items_price_master_service_1.ItemsPriceMasterService, price_bucket_service_1.PriceBucketService],

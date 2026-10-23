@@ -20,6 +20,12 @@ export enum UnitErrorCode {
   NOT_DELETED = 'UNIT_NOT_DELETED',
   /** Restore refused: the unit's base unit is deleted. */
   BASE_DELETED = 'UNIT_BASE_DELETED',
-  /** Another unit already has this name. */
+  /** Another live unit already has this name, ignoring case. */
   NAME_TAKEN = 'UNIT_NAME_TAKEN',
+  /** unit_code names no GST unit (item_gst_units). */
+  CODE_NOT_FOUND = 'UNIT_CODE_NOT_FOUND',
+  /** unit_base_unit_id names no live unit. */
+  BASE_NOT_FOUND = 'UNIT_BASE_NOT_FOUND',
+  /** unit_is_pack_unit is true but the unit has no unit_base_unit_id. */
+  PACK_BASE_REQUIRED = 'UNIT_PACK_BASE_REQUIRED',
 }

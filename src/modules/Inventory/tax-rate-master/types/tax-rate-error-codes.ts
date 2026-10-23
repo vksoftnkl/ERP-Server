@@ -7,7 +7,7 @@
 export enum TaxRateErrorCode {
   /** No live tax rate has the tax_id given. */
   NOT_FOUND = 'TAX_RATE_NOT_FOUND',
-  /** tax_supersedes_id names no tax rate. */
+  /** tax_supersedes_id names no live tax rate. */
   SUPERSEDED_NOT_FOUND = 'TAX_RATE_SUPERSEDED_NOT_FOUND',
   /** A grid line's trl_id is not a live ledger line of this rate. */
   LINE_NOT_FOUND = 'TAX_RATE_LINE_NOT_FOUND',

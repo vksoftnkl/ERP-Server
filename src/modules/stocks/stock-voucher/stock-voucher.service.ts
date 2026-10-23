@@ -26,6 +26,7 @@ import {
   effectivePolicyLateral,
   lineDirectionColumn,
   lineReasonJoin,
+  lockVoucherItems,
   lotIdentityKeyColumns,
   issueNarrowing,
   lotlessOutwardLine,
@@ -218,6 +219,10 @@ interface HeaderRow {
   posted_by_name: string | null;
   cancelled_on: Date | null;
   cancel_reason: string | null;
+  svh_created_on: Date;
+  svh_created_by: string | null;
+  created_by_name: string | null;
+  svh_modified_on: Date | null;
   svh_rate_source: string | null;
   svh_remarks: string | null;
   svh_is_deleted: boolean;
@@ -325,16 +330,15 @@ export class StockVoucherService {
     dto: SaveStockVoucherDto,
   ): Promise<StockVoucherSaveResult> {
     const { header } = dto;
-    const actor = resolveActor(header.userId, this.requestContextService.getUserId());
+    const actor = this.actorOf(header.userId);
     this.assertPayloadRules(rules, dto);
     await this.assertReasons(rules, dto);
     // NOTHING HERE READS inventory.item_unit_conversion ANY MORE. uomId,
     // baseUomId and toBaseFactor arrive on the line and are written verbatim,
-    // so there is no factor to look up and no base unit to resolve. What went
-    // with the lookup is the cross-check that the unit belonged to the item:
-    // fk_svi_uom and fk_svi_base_uom still refuse an iuc_id that does not
-    // exist, and ck_svi_to_base_factor still refuses a factor <= 0, but a unit
-    // belonging to a DIFFERENT item is now the client's to get right.
+    // so there is no factor to look up and no base unit to resolve. The base
+    // quantities must still equal qty × that factor (assertPayloadRules,
+    // notes 143 #3), and the post's preflight refuses a unit or base unit that
+    // is not the item's own.
     //
     // A COUNT still names no unit at all: svi_uom_id, svi_base_uom_id and the
     // factor are read from the balance row's sbl_base_uom_id with factor 1,
@@ -351,6 +355,21 @@ export class StockVoucherService {
     // called every posted opening a draft. Both rows take this one.
     const postedOn = new Date();
     const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+      // Notes 143 #1 — THE ROW LOCK FIRST, and the DRAFT check under it. Read
+      // without a lock, a save could pass its check, wait on a /post that held
+      // the row, and then rewrite the lines and totals of a document that had
+      // just POSTED. Under FOR UPDATE it waits, then reads POSTED and is refused.
+      if (header.svhId) {
+        const existing = await this.loadForWrite(
+          tx,
+          rules,
+          header.svhId,
+          header.accYear,
+          header.companyId,
+          header.branchId,
+        );
+        this.assertDraft(rules, existing);
+      }
       // Notes 89 — the document BEFORE this save, read before anything is
       // touched and in the shape /get returns; null on a create.
       const before = header.svhId
@@ -378,6 +397,10 @@ export class StockVoucherService {
       //
       // Both reads below are handed the transaction because the draft they are
       // about to check has not committed yet.
+      //
+      // Notes 143 #2 — and under the item locks, as post() does: see
+      // lockForPreflight.
+      await this.lockForPreflight(tx, rules, id, header.accYear);
       await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
       const posted = await this.stockPosting.post(
         tx,
@@ -629,6 +652,18 @@ export class StockVoucherService {
       // importer that resolved nothing.
       errors.push({ field: 'lines', code: StockErrorCode.LINES_REQUIRED, message: 'A document must have at least one line.' });
     }
+    // Notes 143 #6 — the date must fall in the year the document is filed under.
+    // "Already opened" keys on the YEAR, so an opening filed under 2027-2028 but
+    // dated 2026-04-01 passed beside an opening of the same holding in
+    // 2026-2027, and the holding was opened twice for one date.
+    const dateYear = accYearOfDate(header.docDate);
+    if (dateYear !== header.accYear.trim()) {
+      errors.push({
+        field: 'docDate',
+        code: StockErrorCode.DOC_DATE_OUTSIDE_YEAR,
+        message: `${header.docDate} falls in ${dateYear}, not in ${header.accYear.trim()}, the year this document is filed under.`,
+      });
+    }
     // ck_svh_freeze refuses a freeze with no window, and it refuses it from
     // Postgres with a constraint name. Caught here it is a 422 that says which
     // two fields are missing, BEFORE the check fires.
@@ -694,6 +729,33 @@ export class StockVoucherService {
           code: StockErrorCode.LINE_QTY_REQUIRED,
           message: `Line ${line.lineNo} has no quantity.`,
         });
+      }
+      if (!isCount) {
+        // Notes 143 #3 — THE BASE QUANTITY IS WHAT MOVES, so it must be the one
+        // the line states. The ledger moves svi_base_qty (and skips a row at 0),
+        // and nothing else re-derived it: {qty 5, baseQty 0} posted nothing,
+        // {qty 1, factor 12, baseQty 1000} opened 1000, and a freeQty without
+        // freeBaseQty posted no free goods. The line's OWN factor is the
+        // reference — a document keeps the conversion it was keyed with (notes
+        // 138) — and the product is compared at the columns' numeric(18,6).
+        // Refused, never overwritten: the grid that computed it is told which line.
+        const factor = this.toDecimalColumn(line.toBaseFactor);
+        const baseQty = this.toDecimalColumn(line.qty).mul(factor).toDecimalPlaces(6);
+        if (!this.toDecimalColumn(line.baseQty).toDecimalPlaces(6).equals(baseQty)) {
+          errors.push({
+            field: `${field}.baseQty`,
+            code: StockErrorCode.LINE_BASE_QTY_MISMATCH,
+            message: `Line ${line.lineNo}: baseQty ${line.baseQty} is not qty ${line.qty} × toBaseFactor ${line.toBaseFactor} = ${baseQty.toString()}.`,
+          });
+        }
+        const freeBaseQty = this.toDecimalColumn(line.freeQty ?? 0).mul(factor).toDecimalPlaces(6);
+        if (!this.toDecimalColumn(line.freeBaseQty ?? 0).toDecimalPlaces(6).equals(freeBaseQty)) {
+          errors.push({
+            field: `${field}.freeBaseQty`,
+            code: StockErrorCode.LINE_FREE_BASE_QTY_MISMATCH,
+            message: `Line ${line.lineNo}: freeBaseQty ${line.freeBaseQty ?? '(not sent)'} is not freeQty ${line.freeQty ?? 0} × toBaseFactor ${line.toBaseFactor} = ${freeBaseQty.toString()}.`,
+          });
+        }
       }
       if (!isCount && !line.uomId) {
         // uomId is optional on the SHARED DTO so that a count can omit it —
@@ -1166,12 +1228,11 @@ export class StockVoucherService {
   ): Promise<string> {
     const { header } = dto;
     const svhId = header.svhId as string;
-    const existing = await this.loadForWrite(tx, rules, svhId, header.accYear);
     // Lines are written only while the header is DRAFT (the service discipline
     // that replaced tr_svh_post_lock / tr_svi_post_lock): IN_TRANSIT and
-    // RECEIVED are as frozen as POSTED. Checking here is what turns a bare
-    // refusal into a 409 that says which status the document is actually in.
-    this.assertDraft(rules, existing);
+    // RECEIVED are as frozen as POSTED. save() has already locked the row and
+    // checked that, so the update below cannot land on a document another
+    // request posted in the meantime (notes 143 #1).
     await tx.stockVoucher.update({
       where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
       data: {
@@ -1321,10 +1382,11 @@ export class StockVoucherService {
         sviSerialNo: isCount ? (holding as CountHolding).serialNo : (line.serialNo ?? null),
         sviSupplierId: isCount ? (holding as CountHolding).supplierId : (line.supplierId ?? null),
         sviQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.qty),
-        // NOT qty x factor. The base quantities come from the payload as the
-        // grid computed them — svi_value is GENERATED from these two, so they
-        // are what the document is valued on. A count carries neither: its
-        // quantity is the variance, and svi_diff_qty is GENERATED.
+        // The base quantities come from the payload as the grid computed them,
+        // after assertPayloadRules has held them to qty × factor (notes 143
+        // #3) — svi_value is GENERATED from these two, so they are what the
+        // document is valued on. A count carries neither: its quantity is the
+        // variance, and svi_diff_qty is GENERATED.
         sviBaseQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.baseQty),
         sviFreeQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.freeQty ?? 0),
         // On a QTY document this is OMITTED rather than defaulted when the
@@ -1766,6 +1828,10 @@ export class StockVoucherService {
              usr.usr_display_name  AS posted_by_name,
              cancelled.tsl_changed_on AS cancelled_on,
              cancelled.tsl_remarks    AS cancel_reason,
+             svh.svh_created_on,
+             svh.svh_created_by,
+             cusr.usr_display_name AS created_by_name,
+             svh.svh_modified_on,
              svh.svh_rate_source,
              svh.svh_remarks,
              svh.svh_is_deleted
@@ -1800,6 +1866,9 @@ export class StockVoucherService {
            LIMIT 1
         ) cancelled ON true
         LEFT JOIN public.user_master usr         ON usr.usr_id = posted.tsl_changed_by
+        -- svh_created_by is free TEXT (a user id, a till, an import job), so the
+        -- match is on text: a value that is not a uuid finds no user, not a 500.
+        LEFT JOIN public.user_master cusr        ON cusr.usr_id::text = svh.svh_created_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
@@ -2120,6 +2189,35 @@ export class StockVoucherService {
              itm.item_code                            AS "itemCode",
              itm.item_name_en                         AS "itemName",
              CASE
+               -- ── Notes 143 #5: the line's item and godown are the document's ──
+               -- Stored as sent, and until now checked only by the item lookup
+               -- and the CSV import: a line could open stock in another
+               -- branch's godown, or of another company's item, or of a service.
+               -- A blank company / branch on an item means shared (notes 73).
+               -- Inactive is refused only on stock a SIMPLE document brings IN
+               -- (an opening, an adjustment in): an outward line may still clear
+               -- what a retired item or godown holds, and a transfer receipt or
+               -- a bucket move only relocates stock that already exists.
+               WHEN itm.item_company_id IS NOT NULL AND itm.item_company_id <> keyed.svh_company_id
+                 THEN 'this item belongs to another company'
+               -- Another branch's own item is refused where the item lookup
+               -- refuses it, on a SIMPLE document; a transfer receipt lands a
+               -- branch-specific item the despatching branch was free to send.
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean
+                    AND itm.item_branch_id IS NOT NULL AND itm.item_branch_id <> keyed.svh_branch_id
+                 THEN 'this item belongs to another branch'
+               WHEN COALESCE(itm.item_is_service, false)
+                 THEN 'this is a service item; a service has no stock'
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
+                    AND (itm.item_is_deleted OR NOT itm.item_is_active)
+                 THEN 'this item is inactive or deleted'
+               WHEN gdl.gdl_id IS NULL OR COALESCE(gdl.gdl_is_deleted, false)
+                    OR gdl.gdl_branch_id IS DISTINCT FROM keyed.svh_branch_id
+                 THEN 'this godown is not one of this branch''s godowns'
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
+                    AND NOT COALESCE(gdl.gdl_is_active, true)
+                 THEN 'this godown is inactive'
+
                -- OPENING-ONLY, AND IT INVERTS UNDER COUNT. A count sends
                -- svi_qty 0 on every line, always; ungated this branch reports a
                -- problem on every line of every count sheet ever taken.
@@ -2151,6 +2249,18 @@ export class StockVoucherService {
 
                WHEN iuc.iuc_id IS NULL OR iuc.iuc_item_id <> keyed.svi_item_id
                  THEN 'the unit does not belong to this item'
+               -- Notes 143 #3. The base unit is the conversion row the keyed
+               -- unit converts INTO (its iuc_base_unit_id) — the same pointer
+               -- the item lookup follows — and of this item.
+               WHEN bu.iuc_id IS NULL OR bu.iuc_item_id <> keyed.svi_item_id
+                    OR bu.iuc_unit_id IS DISTINCT FROM iuc.iuc_base_unit_id
+                 THEN 'the base unit is not this item''s base unit'
+               -- What the ledger moves is svi_base_qty; a draft saved before the
+               -- save-time rule could still hold one that is not qty × factor.
+               WHEN ${rules.quantityMode === 'QTY'}::boolean
+                    AND (keyed.svi_base_qty <> round(keyed.svi_qty * keyed.svi_to_base_factor, 6)
+                         OR keyed.svi_free_base_qty <> round(keyed.svi_free_qty * keyed.svi_to_base_factor, 6))
+                 THEN 'the base quantity is not quantity × factor'
                WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
                  THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
                WHEN pick.pickable AND NOT pick.has_stock
@@ -2158,15 +2268,19 @@ export class StockVoucherService {
                -- A line that NAMES its lot (a transfer, a count) carries the
                -- holding's identity by reference; the six dimensions are the
                -- engine's to resolve only when it does not.
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
+               -- Notes 143 #7: batch and serial blank AFTER TRIMMING, as the lot
+               -- key folds them — "  " used to pass here and open the no-batch
+               -- lot. And an MRP of 0 is no MRP: the item lookup seeds 0 when
+               -- there is no price row, which opened an "MRP 0" lot.
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(btrim(keyed.svi_batch_no), '') = ''
                  THEN 'this item is batch-tracked and the line has no batch number'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
                  THEN 'this item is expiry-tracked and the line has no expiry date'
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND keyed.svi_mrp IS NULL
-                 THEN 'this item is MRP-tracked and the line has no MRP'
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND COALESCE(keyed.svi_mrp, 0) <= 0
+                 THEN 'this item is MRP-tracked and the line has no MRP (0 is not an MRP)'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_sale_price AND keyed.svi_sale_price IS NULL
                  THEN 'this item is sale-price-tracked and the line has no sale price'
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(btrim(keyed.svi_serial_no), '') = ''
                  THEN 'this item is serial-tracked and the line has no serial number'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
                  THEN 'this item is supplier-tracked and the line has no supplier'
@@ -2197,6 +2311,8 @@ export class StockVoucherService {
         JOIN frozen ON frozen.svi_id = keyed.svi_id
         JOIN inventory.item_master itm ON itm.item_id = keyed.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = keyed.svi_uom_id
+        LEFT JOIN inventory.item_unit_conversion bu  ON bu.iuc_id  = keyed.svi_base_uom_id
+        LEFT JOIN inventory.godown_locations gdl     ON gdl.gdl_id = keyed.svi_godown_id
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = keyed.svh_company_id
               AND sic.sic_branch_id  = keyed.svh_branch_id
@@ -2265,19 +2381,28 @@ export class StockVoucherService {
      */
     afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>,
   ): Promise<StockVoucherPostResult> {
-    const actor = resolveActor(userId, this.requestContextService.getUserId());
+    const actor = this.actorOf(userId);
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     this.assertDraft(rules, existing);
-    // Q3 first, and refuse without calling the function when any row has a
-    // problem. Post is the button a user presses forty lines in; letting the
-    // engine raise on the first bad one and roll back the rest hands them one
-    // error at a time.
-    await this.assertPostable(rules, svhId, accYear, companyId, branchId);
     // One instant for the ledger rows, the balance rows, the header stamp and
     // the status-trail row alike, so a trail sorts unambiguously against the
     // movements that produced it.
     const postedOn = new Date();
     const rowsPosted = await this.prisma.$transaction(async (tx) => {
+      // Notes 143 #2 — WHAT IS CHECKED IS WHAT POSTS. The preflight used to run
+      // before this transaction: a draft save committing between the two
+      // posted lines nobody had checked, and two posts of one holding both
+      // read "not opened". Now the row is locked and re-read as DRAFT, the
+      // items are locked, and only then is Q3 run, against the locked rows.
+      const locked = await this.loadForWrite(tx, rules, svhId, accYear, companyId, branchId);
+      this.assertDraft(rules, locked);
+      this.assertDocDateInYear(rules, locked.docDate, accYear);
+      await this.lockForPreflight(tx, rules, svhId, accYear);
+      // Q3 first, and refuse without calling the engine when any row has a
+      // problem. Post is the button a user presses forty lines in; letting the
+      // engine raise on the first bad one and roll back the rest hands them one
+      // error at a time.
+      await this.assertPostable(rules, svhId, accYear, companyId, branchId, tx);
       // EVERY shape posts here — SIMPLE, COUNT and both halves of a transfer.
       // The engine decides the shape from the rule record and reports the
       // status it landed on: POSTED, or IN_TRANSIT for an inter-branch
@@ -2374,8 +2499,10 @@ export class StockVoucherService {
    *         sml_posted_on is the audit trail of when the cancellation happened.
    *       - It can LEGITIMATELY fail. Cancelling an opening after stock has
    *         been sold from it drives the holding negative, and the engine
-   *         refuses that under stp_allow_negative = 'BLOCK'. That is correct
-   *         behaviour, not a bug to route around — it surfaces as a 409 naming
+   *         refuses that WHATEVER the item's stp_allow_negative says (notes
+   *         143 #4 — until then an ALLOW item went to −8 and accounts reversed
+   *         the whole opening). That is correct behaviour, not a bug to route
+   *         around — it surfaces as a 409 STOCK_CANCEL_WOULD_GO_NEGATIVE naming
    *         the item, and the fix is an ADJUSTMENT with a reason.
    *
    * An already-CANCELLED document is refused before any of that, with the date
@@ -2400,7 +2527,7 @@ export class StockVoucherService {
     branchId: string,
     userId?: string,
   ): Promise<StockVoucherCancelResult> {
-    const actor = resolveActor(userId, this.requestContextService.getUserId());
+    const actor = this.actorOf(userId);
     const trimmedReason = reason?.trim();
     if (!trimmedReason) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Cancellation needs a reason', [
@@ -2463,7 +2590,9 @@ export class StockVoucherService {
         reversed = await this.stockPosting.cancel(
           tx,
           new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
-          { actor, reason: trimmedReason, cancelledOn },
+          // Notes 143 #4 — a stock voucher's cancel never leaves a holding
+          // negative, whatever the item's policy.
+          { actor, reason: trimmedReason, cancelledOn, refuseNegative: true },
         );
       }
       // Inside the cancellation's own transaction: a cancellation whose header
@@ -2532,7 +2661,7 @@ export class StockVoucherService {
     branchId: string,
     userId?: string,
   ): Promise<StockVoucherDeleteResult> {
-    const actor = resolveActor(userId, this.requestContextService.getUserId());
+    const actor = this.actorOf(userId);
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     if (existing.svhStatus !== 'DRAFT') {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(
@@ -3069,31 +3198,113 @@ export class StockVoucherService {
   // ──────────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
+  /**
+   * The header a write is about to change, read UNDER ITS ROW LOCK (notes 143
+   * #1). Every later write in the transaction — the draft update, the lines,
+   * the totals, the post — then acts on the state read here; a plain read let
+   * a save check DRAFT, wait on a post, and rewrite a POSTED document.
+   *
+   * All four keys are checked, the type with them: a document of another
+   * company or branch is a 404, as loadHeaderOrThrow answers it. Before this
+   * a save named the svhId alone and could edit another company's draft,
+   * re-filing its lines under the caller's scope.
+   */
   private async loadForWrite(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
     svhId: string,
     accYear: string,
+    companyId: string,
+    branchId: string,
   ) {
-    const existing = await tx.stockVoucher.findUnique({
-      where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
-      select: {
-        svhId: true,
-        svhRefno: true,
-        svhStatus: true,
-        svhIsDeleted: true,
-        svhVoucherType: true,
-      },
-    });
-    if (!existing || existing.svhVoucherType !== rules.voucherType) {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        svh_refno: string;
+        svh_status: string;
+        svh_is_deleted: boolean;
+        svh_voucher_type: string;
+        svh_company_id: string;
+        svh_branch_id: string;
+        doc_date: string;
+      }>
+    >`
+      SELECT svh_refno, svh_status, svh_is_deleted, svh_voucher_type,
+             svh_company_id, svh_branch_id,
+             to_char(svh_doc_date, 'YYYY-MM-DD') AS doc_date
+        FROM stock.stock_voucher
+       WHERE svh_id       = ${svhId}::uuid
+         AND svh_acc_year = ${accYear}::bpchar
+         FOR UPDATE`;
+    if (
+      !row ||
+      row.svh_voucher_type !== rules.voucherType ||
+      row.svh_company_id !== companyId ||
+      row.svh_branch_id !== branchId
+    ) {
       throwStockNotFound<StockErrorDetail, StockErrorResponse>(
         `${rules.displayName} not found`,
         'svhId',
-        `No ${rules.voucherType} voucher ${svhId} in ${accYear}.`,
+        `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`,
         StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
-    return existing;
+    return {
+      svhRefno: row.svh_refno,
+      svhStatus: row.svh_status,
+      svhIsDeleted: row.svh_is_deleted,
+      docDate: row.doc_date,
+    };
+  }
+  /**
+   * Notes 143 #2 — the per-item locks the engine takes, taken BEFORE the
+   * preflight so the two read one state of every item on the document: a
+   * second opening of the same holding waits here and then sees the first's
+   * ledger rows. Not on a transfer, whose preflight reads no other document's
+   * rows per item and whose engine takes the destination's locks first.
+   */
+  private async lockForPreflight(
+    tx: Prisma.TransactionClient,
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    accYear: string,
+  ): Promise<void> {
+    if (rules.postShape === 'TRANSFER_OUT' || rules.postShape === 'TRANSFER_IN') {
+      return;
+    }
+    await lockVoucherItems(tx, svhId, accYear);
+  }
+  /**
+   * Notes 143 #6 at post: a draft saved before the date rule existed may still
+   * be filed under the wrong year, and posting it would open the stock there.
+   */
+  private assertDocDateInYear(
+    rules: StockVoucherTypeRules,
+    docDate: string,
+    accYear: string,
+  ): void {
+    const dateYear = accYearOfDate(docDate);
+    if (dateYear !== accYear.trim()) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+        `This ${rules.displayName.toLowerCase()} cannot be posted`,
+        [
+          {
+            field: 'docDate',
+            code: StockErrorCode.DOC_DATE_OUTSIDE_YEAR,
+            message: `${docDate} falls in ${dateYear}, not in ${accYear.trim()}, the year this document is filed under. Correct the date and save it first.`,
+          },
+        ],
+      );
+    }
+  }
+  /**
+   * Notes 143 #9 — WHO DID IT IS THE LOGIN. The body's userId used to win, so
+   * any caller could post or cancel in another user's name, and that name
+   * became postedBy and the accounts voucher's avh_user_id. The body's id is
+   * only a fallback for a call with no request context (nothing to read a
+   * login from); who AUTHORED a line is header/line createdBy, unchanged.
+   */
+  private actorOf(supplied: string | null | undefined): string {
+    return resolveActor(this.requestContextService.getUserId(), supplied);
   }
   /**
    * One row on public.txn_status_log per status STEP — the voucher's trail is
@@ -3317,6 +3528,10 @@ export class StockVoucherService {
       postedByName: row.posted_by_name,
       cancelledOn: row.cancelled_on?.toISOString() ?? null,
       cancelReason: row.cancel_reason,
+      createdOn: row.svh_created_on.toISOString(),
+      createdBy: row.svh_created_by,
+      createdByName: row.created_by_name,
+      modifiedOn: row.svh_modified_on?.toISOString() ?? null,
       rateSource: row.svh_rate_source as StockRateSource | null,
       remarks: row.svh_remarks,
       isDeleted: row.svh_is_deleted,
@@ -3543,4 +3758,13 @@ export class StockVoucherService {
     }
     return Math.min(Math.trunc(value), max);
   }
+}
+/**
+ * `YYYY-YYYY` for a `yyyy-MM-dd` date, on the April–March year every stock
+ * table is partitioned by (notes 143 #6).
+ */
+function accYearOfDate(date: string): string {
+  const [year, month] = date.split('-').map(Number);
+  const start = month >= 4 ? year : year - 1;
+  return `${start}-${start + 1}`;
 }

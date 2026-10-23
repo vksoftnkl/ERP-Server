@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Matches } from 'class-validator';
+import { IsIn, IsOptional, Matches } from 'class-validator';
 import {
   NullableUuid,
   OptionalQueryInt,
@@ -7,6 +7,7 @@ import {
   RequiredUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
+import { STOCK_BUCKETS, type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
 
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 
@@ -99,9 +100,13 @@ export class OpeningStockReportQueryDto extends OpeningStockVoucherScopeQueryDto
  * required rather than defaulted to today for exactly that reason — a default
  * would be a silent "as at today" on every back-dated document.
  *
- * No `accYear`: nothing here is read from a partitioned document table. The
- * `alreadyOpened` warning looks across every year on purpose, because an item
- * opened last year is still an item that has been opened.
+ * No `accYear`: nothing here is read from a partitioned document table.
+ * `alreadyOpened` is answered for the YEAR `onDate` falls in (notes 143 #8),
+ * and for `godownId` / `bucket` when the screen sends them — the post refuses a
+ * second opening of a holding (godown × lot × bucket) in one year, and a badge
+ * that also lit for another year, godown or bucket warned about openings the
+ * post would allow. The lot is not known yet when the item is picked, so the
+ * badge still says "this item", not "this lot".
  */
 export class OpeningStockItemLookupQueryDto {
   @ApiPropertyOptional({
@@ -143,4 +148,20 @@ export class OpeningStockItemLookupQueryDto {
   @TrimmedString(10)
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'onDate must be yyyy-MM-dd' })
   onDate!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The line's godown. Narrows `alreadyOpened` to openings in this godown; omit for any godown.",
+  })
+  @OptionalUuid()
+  godownId?: string;
+
+  @ApiPropertyOptional({
+    enum: STOCK_BUCKETS,
+    description: "The line's bucket. Narrows `alreadyOpened` to that bucket; omit for any bucket.",
+  })
+  @IsOptional()
+  @IsIn(STOCK_BUCKETS, { message: `bucket must be one of ${STOCK_BUCKETS.join(', ')}` })
+  bucket?: StockBucket;
 }

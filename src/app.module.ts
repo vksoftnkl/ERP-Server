@@ -99,6 +99,9 @@ import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-vouche
 import { PhysicalStockVoucherModule } from './modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
 import { StockTransferModule } from './modules/stocks/stock-transfer/stock-transfer.module';
 import { TxnStatusModule } from './modules/txn-status/txn-status.module';
+import { TxnAdjacentModule } from './modules/txn-adjacent/txn-adjacent.module';
+import { ItemPriceLogModule } from './modules/Inventory/item-price-log/item-price-log.module';
+import { ItemInwardHistoryModule } from './modules/stocks/item-inward-history/item-inward-history.module';
 import { StockAdjustmentModule } from './modules/stocks/stock-adjustment/stock-adjustment.module';
 import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
@@ -264,6 +267,9 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PhysicalStockVoucherModule,
     StockTransferModule,
     TxnStatusModule,
+    TxnAdjacentModule,
+    ItemPriceLogModule,
+    ItemInwardHistoryModule,
     StockAdjustmentModule,
     SellingPriceBulkModule,
     MasterLookupModule,

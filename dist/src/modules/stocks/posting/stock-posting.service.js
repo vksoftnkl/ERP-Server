@@ -56,6 +56,7 @@ let StockPostingService = class StockPostingService {
             actor: opts.actor,
             reason: opts.reason,
             cancelledOn: opts.cancelledOn,
+            refuseNegative: opts.refuseNegative,
         });
         if (!opts.ledgerSource && stock_accounts_posting_service_1.StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
             await this.accounts.reverseForVoucher(tx, {

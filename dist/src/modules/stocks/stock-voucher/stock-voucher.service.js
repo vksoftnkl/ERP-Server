@@ -44,12 +44,16 @@ let StockVoucherService = class StockVoucherService {
     }
     async save(rules, dto) {
         const { header } = dto;
-        const actor = (0, module_service_utils_1.resolveActor)(header.userId, this.requestContextService.getUserId());
+        const actor = this.actorOf(header.userId);
         this.assertPayloadRules(rules, dto);
         await this.assertReasons(rules, dto);
         const postAfterSave = header.status === 'POSTED' || header.post === true;
         const postedOn = new Date();
         const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+            if (header.svhId) {
+                const existing = await this.loadForWrite(tx, rules, header.svhId, header.accYear, header.companyId, header.branchId);
+                this.assertDraft(rules, existing);
+            }
             const before = header.svhId
                 ? await this.getById(rules, header.svhId, header.accYear, header.companyId, header.branchId, tx)
                 : null;
@@ -60,6 +64,7 @@ let StockVoucherService = class StockVoucherService {
                 await this.logRevision(tx, rules, id, header, before, actor, false);
                 return { svhId: id, rowsPosted: null };
             }
+            await this.lockForPreflight(tx, rules, id, header.accYear);
             await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
             const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({
                 svhId: id,
@@ -228,6 +233,14 @@ let StockVoucherService = class StockVoucherService {
         if (!lines.length) {
             errors.push({ field: 'lines', code: stock_error_codes_1.StockErrorCode.LINES_REQUIRED, message: 'A document must have at least one line.' });
         }
+        const dateYear = accYearOfDate(header.docDate);
+        if (dateYear !== header.accYear.trim()) {
+            errors.push({
+                field: 'docDate',
+                code: stock_error_codes_1.StockErrorCode.DOC_DATE_OUTSIDE_YEAR,
+                message: `${header.docDate} falls in ${dateYear}, not in ${header.accYear.trim()}, the year this document is filed under.`,
+            });
+        }
         if (header.freezeStock && (!header.freezeFrom || !header.freezeTo)) {
             errors.push({
                 field: 'freezeFrom',
@@ -276,6 +289,25 @@ let StockVoucherService = class StockVoucherService {
                     code: stock_error_codes_1.StockErrorCode.LINE_QTY_REQUIRED,
                     message: `Line ${line.lineNo} has no quantity.`,
                 });
+            }
+            if (!isCount) {
+                const factor = this.toDecimalColumn(line.toBaseFactor);
+                const baseQty = this.toDecimalColumn(line.qty).mul(factor).toDecimalPlaces(6);
+                if (!this.toDecimalColumn(line.baseQty).toDecimalPlaces(6).equals(baseQty)) {
+                    errors.push({
+                        field: `${field}.baseQty`,
+                        code: stock_error_codes_1.StockErrorCode.LINE_BASE_QTY_MISMATCH,
+                        message: `Line ${line.lineNo}: baseQty ${line.baseQty} is not qty ${line.qty} × toBaseFactor ${line.toBaseFactor} = ${baseQty.toString()}.`,
+                    });
+                }
+                const freeBaseQty = this.toDecimalColumn(line.freeQty ?? 0).mul(factor).toDecimalPlaces(6);
+                if (!this.toDecimalColumn(line.freeBaseQty ?? 0).toDecimalPlaces(6).equals(freeBaseQty)) {
+                    errors.push({
+                        field: `${field}.freeBaseQty`,
+                        code: stock_error_codes_1.StockErrorCode.LINE_FREE_BASE_QTY_MISMATCH,
+                        message: `Line ${line.lineNo}: freeBaseQty ${line.freeBaseQty ?? '(not sent)'} is not freeQty ${line.freeQty ?? 0} × toBaseFactor ${line.toBaseFactor} = ${freeBaseQty.toString()}.`,
+                    });
+                }
             }
             if (!isCount && !line.uomId) {
                 errors.push({
@@ -571,8 +603,6 @@ let StockVoucherService = class StockVoucherService {
     async updateDraft(tx, rules, dto, actor, now) {
         const { header } = dto;
         const svhId = header.svhId;
-        const existing = await this.loadForWrite(tx, rules, svhId, header.accYear);
-        this.assertDraft(rules, existing);
         await tx.stockVoucher.update({
             where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
             data: {
@@ -961,6 +991,10 @@ let StockVoucherService = class StockVoucherService {
              usr.usr_display_name  AS posted_by_name,
              cancelled.tsl_changed_on AS cancelled_on,
              cancelled.tsl_remarks    AS cancel_reason,
+             svh.svh_created_on,
+             svh.svh_created_by,
+             cusr.usr_display_name AS created_by_name,
+             svh.svh_modified_on,
              svh.svh_rate_source,
              svh.svh_remarks,
              svh.svh_is_deleted
@@ -995,6 +1029,9 @@ let StockVoucherService = class StockVoucherService {
            LIMIT 1
         ) cancelled ON true
         LEFT JOIN public.user_master usr         ON usr.usr_id = posted.tsl_changed_by
+        -- svh_created_by is free TEXT (a user id, a till, an import job), so the
+        -- match is on text: a value that is not a uuid finds no user, not a 500.
+        LEFT JOIN public.user_master cusr        ON cusr.usr_id::text = svh.svh_created_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
@@ -1278,6 +1315,35 @@ let StockVoucherService = class StockVoucherService {
              itm.item_code                            AS "itemCode",
              itm.item_name_en                         AS "itemName",
              CASE
+               -- ── Notes 143 #5: the line's item and godown are the document's ──
+               -- Stored as sent, and until now checked only by the item lookup
+               -- and the CSV import: a line could open stock in another
+               -- branch's godown, or of another company's item, or of a service.
+               -- A blank company / branch on an item means shared (notes 73).
+               -- Inactive is refused only on stock a SIMPLE document brings IN
+               -- (an opening, an adjustment in): an outward line may still clear
+               -- what a retired item or godown holds, and a transfer receipt or
+               -- a bucket move only relocates stock that already exists.
+               WHEN itm.item_company_id IS NOT NULL AND itm.item_company_id <> keyed.svh_company_id
+                 THEN 'this item belongs to another company'
+               -- Another branch's own item is refused where the item lookup
+               -- refuses it, on a SIMPLE document; a transfer receipt lands a
+               -- branch-specific item the despatching branch was free to send.
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean
+                    AND itm.item_branch_id IS NOT NULL AND itm.item_branch_id <> keyed.svh_branch_id
+                 THEN 'this item belongs to another branch'
+               WHEN COALESCE(itm.item_is_service, false)
+                 THEN 'this is a service item; a service has no stock'
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
+                    AND (itm.item_is_deleted OR NOT itm.item_is_active)
+                 THEN 'this item is inactive or deleted'
+               WHEN gdl.gdl_id IS NULL OR COALESCE(gdl.gdl_is_deleted, false)
+                    OR gdl.gdl_branch_id IS DISTINCT FROM keyed.svh_branch_id
+                 THEN 'this godown is not one of this branch''s godowns'
+               WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
+                    AND NOT COALESCE(gdl.gdl_is_active, true)
+                 THEN 'this godown is inactive'
+
                -- OPENING-ONLY, AND IT INVERTS UNDER COUNT. A count sends
                -- svi_qty 0 on every line, always; ungated this branch reports a
                -- problem on every line of every count sheet ever taken.
@@ -1309,6 +1375,18 @@ let StockVoucherService = class StockVoucherService {
 
                WHEN iuc.iuc_id IS NULL OR iuc.iuc_item_id <> keyed.svi_item_id
                  THEN 'the unit does not belong to this item'
+               -- Notes 143 #3. The base unit is the conversion row the keyed
+               -- unit converts INTO (its iuc_base_unit_id) — the same pointer
+               -- the item lookup follows — and of this item.
+               WHEN bu.iuc_id IS NULL OR bu.iuc_item_id <> keyed.svi_item_id
+                    OR bu.iuc_unit_id IS DISTINCT FROM iuc.iuc_base_unit_id
+                 THEN 'the base unit is not this item''s base unit'
+               -- What the ledger moves is svi_base_qty; a draft saved before the
+               -- save-time rule could still hold one that is not qty × factor.
+               WHEN ${rules.quantityMode === 'QTY'}::boolean
+                    AND (keyed.svi_base_qty <> round(keyed.svi_qty * keyed.svi_to_base_factor, 6)
+                         OR keyed.svi_free_base_qty <> round(keyed.svi_free_qty * keyed.svi_to_base_factor, 6))
+                 THEN 'the base quantity is not quantity × factor'
                WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
                  THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
                WHEN pick.pickable AND NOT pick.has_stock
@@ -1316,15 +1394,19 @@ let StockVoucherService = class StockVoucherService {
                -- A line that NAMES its lot (a transfer, a count) carries the
                -- holding's identity by reference; the six dimensions are the
                -- engine's to resolve only when it does not.
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
+               -- Notes 143 #7: batch and serial blank AFTER TRIMMING, as the lot
+               -- key folds them — "  " used to pass here and open the no-batch
+               -- lot. And an MRP of 0 is no MRP: the item lookup seeds 0 when
+               -- there is no price row, which opened an "MRP 0" lot.
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(btrim(keyed.svi_batch_no), '') = ''
                  THEN 'this item is batch-tracked and the line has no batch number'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
                  THEN 'this item is expiry-tracked and the line has no expiry date'
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND keyed.svi_mrp IS NULL
-                 THEN 'this item is MRP-tracked and the line has no MRP'
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND COALESCE(keyed.svi_mrp, 0) <= 0
+                 THEN 'this item is MRP-tracked and the line has no MRP (0 is not an MRP)'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_sale_price AND keyed.svi_sale_price IS NULL
                  THEN 'this item is sale-price-tracked and the line has no sale price'
-               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(btrim(keyed.svi_serial_no), '') = ''
                  THEN 'this item is serial-tracked and the line has no serial number'
                WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
                  THEN 'this item is supplier-tracked and the line has no supplier'
@@ -1355,6 +1437,8 @@ let StockVoucherService = class StockVoucherService {
         JOIN frozen ON frozen.svi_id = keyed.svi_id
         JOIN inventory.item_master itm ON itm.item_id = keyed.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = keyed.svi_uom_id
+        LEFT JOIN inventory.item_unit_conversion bu  ON bu.iuc_id  = keyed.svi_base_uom_id
+        LEFT JOIN inventory.godown_locations gdl     ON gdl.gdl_id = keyed.svi_godown_id
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = keyed.svh_company_id
               AND sic.sic_branch_id  = keyed.svh_branch_id
@@ -1374,12 +1458,16 @@ let StockVoucherService = class StockVoucherService {
         }
     }
     async post(rules, svhId, accYear, companyId, branchId, userId, afterPost) {
-        const actor = (0, module_service_utils_1.resolveActor)(userId, this.requestContextService.getUserId());
+        const actor = this.actorOf(userId);
         const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
         this.assertDraft(rules, existing);
-        await this.assertPostable(rules, svhId, accYear, companyId, branchId);
         const postedOn = new Date();
         const rowsPosted = await this.prisma.$transaction(async (tx) => {
+            const locked = await this.loadForWrite(tx, rules, svhId, accYear, companyId, branchId);
+            this.assertDraft(rules, locked);
+            this.assertDocDateInYear(rules, locked.docDate, accYear);
+            await this.lockForPreflight(tx, rules, svhId, accYear);
+            await this.assertPostable(rules, svhId, accYear, companyId, branchId, tx);
             const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, postedOn });
             await afterPost?.(tx, posted.rowsPosted);
             await this.logStatusChange(tx, {
@@ -1439,7 +1527,7 @@ let StockVoucherService = class StockVoucherService {
         };
     }
     async cancel(rules, svhId, accYear, reason, companyId, branchId, userId) {
-        const actor = (0, module_service_utils_1.resolveActor)(userId, this.requestContextService.getUserId());
+        const actor = this.actorOf(userId);
         const trimmedReason = reason?.trim();
         if (!trimmedReason) {
             (0, module_service_utils_1.throwStockUnprocessable)('Cancellation needs a reason', [
@@ -1486,7 +1574,7 @@ let StockVoucherService = class StockVoucherService {
                 });
             }
             else {
-                reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn });
+                reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn, refuseNegative: true });
             }
             await this.logStatusChange(tx, {
                 rules,
@@ -1529,7 +1617,7 @@ let StockVoucherService = class StockVoucherService {
         };
     }
     async softDelete(rules, svhId, accYear, companyId, branchId, userId) {
-        const actor = (0, module_service_utils_1.resolveActor)(userId, this.requestContextService.getUserId());
+        const actor = this.actorOf(userId);
         const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
         if (existing.svhStatus !== 'DRAFT') {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${existing.svhStatus}`, [
@@ -1904,21 +1992,48 @@ let StockVoucherService = class StockVoucherService {
             meta: { limit: take, offset: skip, count: rows.length },
         };
     }
-    async loadForWrite(tx, rules, svhId, accYear) {
-        const existing = await tx.stockVoucher.findUnique({
-            where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
-            select: {
-                svhId: true,
-                svhRefno: true,
-                svhStatus: true,
-                svhIsDeleted: true,
-                svhVoucherType: true,
-            },
-        });
-        if (!existing || existing.svhVoucherType !== rules.voucherType) {
-            (0, module_service_utils_1.throwStockNotFound)(`${rules.displayName} not found`, 'svhId', `No ${rules.voucherType} voucher ${svhId} in ${accYear}.`, stock_error_codes_1.StockErrorCode.VOUCHER_NOT_FOUND);
+    async loadForWrite(tx, rules, svhId, accYear, companyId, branchId) {
+        const [row] = await tx.$queryRaw `
+      SELECT svh_refno, svh_status, svh_is_deleted, svh_voucher_type,
+             svh_company_id, svh_branch_id,
+             to_char(svh_doc_date, 'YYYY-MM-DD') AS doc_date
+        FROM stock.stock_voucher
+       WHERE svh_id       = ${svhId}::uuid
+         AND svh_acc_year = ${accYear}::bpchar
+         FOR UPDATE`;
+        if (!row ||
+            row.svh_voucher_type !== rules.voucherType ||
+            row.svh_company_id !== companyId ||
+            row.svh_branch_id !== branchId) {
+            (0, module_service_utils_1.throwStockNotFound)(`${rules.displayName} not found`, 'svhId', `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`, stock_error_codes_1.StockErrorCode.VOUCHER_NOT_FOUND);
         }
-        return existing;
+        return {
+            svhRefno: row.svh_refno,
+            svhStatus: row.svh_status,
+            svhIsDeleted: row.svh_is_deleted,
+            docDate: row.doc_date,
+        };
+    }
+    async lockForPreflight(tx, rules, svhId, accYear) {
+        if (rules.postShape === 'TRANSFER_OUT' || rules.postShape === 'TRANSFER_IN') {
+            return;
+        }
+        await (0, stock_voucher_posting_helper_1.lockVoucherItems)(tx, svhId, accYear);
+    }
+    assertDocDateInYear(rules, docDate, accYear) {
+        const dateYear = accYearOfDate(docDate);
+        if (dateYear !== accYear.trim()) {
+            (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be posted`, [
+                {
+                    field: 'docDate',
+                    code: stock_error_codes_1.StockErrorCode.DOC_DATE_OUTSIDE_YEAR,
+                    message: `${docDate} falls in ${dateYear}, not in ${accYear.trim()}, the year this document is filed under. Correct the date and save it first.`,
+                },
+            ]);
+        }
+    }
+    actorOf(supplied) {
+        return (0, module_service_utils_1.resolveActor)(this.requestContextService.getUserId(), supplied);
     }
     async logStatusChange(tx, step) {
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -2048,6 +2163,10 @@ let StockVoucherService = class StockVoucherService {
             postedByName: row.posted_by_name,
             cancelledOn: row.cancelled_on?.toISOString() ?? null,
             cancelReason: row.cancel_reason,
+            createdOn: row.svh_created_on.toISOString(),
+            createdBy: row.svh_created_by,
+            createdByName: row.created_by_name,
+            modifiedOn: row.svh_modified_on?.toISOString() ?? null,
             rateSource: row.svh_rate_source,
             remarks: row.svh_remarks,
             isDeleted: row.svh_is_deleted,
@@ -2190,4 +2309,9 @@ exports.StockVoucherService = StockVoucherService = __decorate([
         request_context_service_1.RequestContextService,
         stock_posting_service_1.StockPostingService])
 ], StockVoucherService);
+function accYearOfDate(date) {
+    const [year, month] = date.split('-').map(Number);
+    const start = month >= 4 ? year : year - 1;
+    return `${start}-${start + 1}`;
+}
 //# sourceMappingURL=stock-voucher.service.js.map

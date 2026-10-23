@@ -24,6 +24,6 @@ export enum ItemSectionErrorCode {
   PARENT_DELETED = 'ITEM_SECTION_PARENT_DELETED',
   /** sec_photo is empty, not valid base64, or holds no image data. */
   PHOTO_INVALID = 'ITEM_SECTION_PHOTO_INVALID',
-  /** Another item section already has this name. */
+  /** Another live item section already has this name, ignoring case. */
   NAME_TAKEN = 'ITEM_SECTION_NAME_TAKEN',
 }

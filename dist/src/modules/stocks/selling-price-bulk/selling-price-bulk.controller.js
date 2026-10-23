@@ -22,6 +22,8 @@ const selling_price_bulk_exception_filter_1 = require("./selling-price-bulk-exce
 const selling_price_bulk_service_1 = require("./selling-price-bulk.service");
 const list_selling_price_query_dto_1 = require("./dto/list-selling-price-query.dto");
 const price_buckets_query_dto_1 = require("./dto/price-buckets-query.dto");
+const price_schedule_query_dto_1 = require("./dto/price-schedule-query.dto");
+const cancel_price_schedule_dto_1 = require("./dto/cancel-price-schedule.dto");
 const save_selling_price_bulk_dto_1 = require("./dto/save-selling-price-bulk.dto");
 const selling_price_bulk_response_dto_1 = require("./dto/selling-price-bulk-response.dto");
 class PriceBucketsParamDto {
@@ -59,6 +61,18 @@ let SellingPriceBulkController = class SellingPriceBulkController {
             message: this.sellingPriceBulkService.buildSaveMessage(data),
             data,
         };
+    }
+    async listSchedule(queryDto) {
+        const data = await this.sellingPriceBulkService.listSchedule(queryDto);
+        return {
+            success: true,
+            message: `${data.length} scheduled price${data.length === 1 ? '' : 's'} found`,
+            data,
+        };
+    }
+    async cancelSchedule(dto) {
+        const data = await this.sellingPriceBulkService.cancelSchedule(dto.ipmId);
+        return { success: true, message: 'Scheduled price cancelled', data };
     }
 };
 exports.SellingPriceBulkController = SellingPriceBulkController;
@@ -144,6 +158,45 @@ __decorate([
     __metadata("design:paramtypes", [save_selling_price_bulk_dto_1.SaveSellingPriceBulkDto]),
     __metadata("design:returntype", Promise)
 ], SellingPriceBulkController.prototype, "saveBulk", null);
+__decorate([
+    (0, common_1.Get)('price-schedule'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Notes 140 B — the prices scheduled to start after today',
+        description: 'Every live price row this branch can see (its own and the chain rows) whose ' +
+            'effectiveFrom is after today, in the price-bulk row shape plus effectiveFrom, ' +
+            'effectiveTo and previous: the prices of the row it replaces — the row of the same ' +
+            'key ending the day before, else what priced the bucket at this branch that day — ' +
+            'so the screen can show "110 → 118 from 23-10". Levels use the tax in force on the ' +
+            "day the row starts; stock and cost are today's. itemId narrows to one item.",
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceScheduleSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [price_schedule_query_dto_1.PriceScheduleQueryDto]),
+    __metadata("design:returntype", Promise)
+], SellingPriceBulkController.prototype, "listSchedule", null);
+__decorate([
+    (0, common_1.Post)('price-schedule/cancel'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Notes 140 B — cancel a scheduled price before it starts',
+        description: 'Soft-deletes the row and gives the row before it (same key, ending the day before it ' +
+            "started) the cancelled row's end back, so the price in force today simply carries on. " +
+            'Both writes are audited like a price save. 409 STOCK_PRICE_SCHEDULE_STARTED when the ' +
+            'row is already in force; 404 STOCK_PRICE_SCHEDULE_NOT_FOUND when there is no live row; ' +
+            '403 STOCK_PRICE_CHAIN_HQ_ONLY for a chain row from a non-HQ caller.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceScheduleCancelSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [cancel_price_schedule_dto_1.CancelPriceScheduleDto]),
+    __metadata("design:returntype", Promise)
+], SellingPriceBulkController.prototype, "cancelSchedule", null);
 exports.SellingPriceBulkController = SellingPriceBulkController = __decorate([
     (0, swagger_1.ApiTags)('Change Selling Price'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

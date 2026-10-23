@@ -160,8 +160,10 @@ class SaveSellingPriceBulkDto {
     branchId;
     scope;
     confirmed;
+    effectiveFrom;
     rows;
     userId;
+    originMenuId;
 }
 exports.SaveSellingPriceBulkDto = SaveSellingPriceBulkDto;
 __decorate([
@@ -196,6 +198,24 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveSellingPriceBulkDto.prototype, "confirmed", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        format: 'date',
+        example: '2026-10-23',
+        description: 'Notes 140 A — the day the new prices start, YYYY-MM-DD. Absent or today: the row in ' +
+            "force today is updated, as always. A later day leaves today's price alone: the row in " +
+            'force on that day is split (it ends the day before, a new row carries the new prices ' +
+            'from that day to its old end), or updated in place when it already starts that day, or ' +
+            'a new row is inserted from that day when the bucket has none. Bills dated on or after ' +
+            'it pick the new row up by themselves. Before today is a 400 STOCK_PRICE_FROM_IN_PAST, ' +
+            'more than a year ahead a 400 STOCK_PRICE_FROM_TOO_FAR. The MRP, minimum and cost checks ' +
+            'judge the row as it will stand on that day.',
+    }),
+    (0, dtoDecorators_1.OptionalDateString)(),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'effectiveFrom must be a date, YYYY-MM-DD' }),
+    __metadata("design:type", String)
+], SaveSellingPriceBulkDto.prototype, "effectiveFrom", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({
         type: SaveSellingPriceRowDto,
         isArray: true,
@@ -213,4 +233,16 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], SaveSellingPriceBulkDto.prototype, "userId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 12,
+        description: 'The quick rate popup (plan 2026-10-23 §3.3): the menu of the screen it was opened from — ' +
+            '12 Sale Bill, 14 Quotation, 11 Sales Order, 182 DC, 29 the item list. The price log ' +
+            'files the change under its source as always (CHANGE_SELLING_PRICE, menu 30) and adds ' +
+            '"via <menu name> (menu N)" to its reason, so a rate changed during billing can be told ' +
+            'apart. Omit on menu 30 itself.',
+    }),
+    (0, dtoDecorators_1.OptionalInteger)(1),
+    __metadata("design:type", Number)
+], SaveSellingPriceBulkDto.prototype, "originMenuId", void 0);
 //# sourceMappingURL=save-selling-price-bulk.dto.js.map

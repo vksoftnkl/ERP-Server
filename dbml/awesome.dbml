@@ -2943,7 +2943,7 @@ Table ui_table_columns {
 
 Table item_category_master {
   categoryId String [pk]
-  categoryName String [unique, not null]
+  categoryName String [not null]
   categoryAlias String
   categoryShort String
   categoryDescription String
@@ -3013,10 +3013,6 @@ Table godown_locations {
   transportBandsFrom txn_transport_detail [not null]
   transportBandsTo txn_transport_detail [not null]
   gdlSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
-
-  indexes {
-    (gdlBranchId, gdlParentId, gdlName) [unique]
-  }
 }
 
 Table item_batch_master {
@@ -3095,7 +3091,8 @@ Table item_batch_stock {
 
 Table item_brand_master {
   brand_id String [pk]
-  brand_name String [unique, not null]
+  brand_name String [not null, note: 'Unique among live brands, ignoring case: uq_brand_name ON (lower(brand_name)) WHERE NOT
+brand_is_deleted (notes 139 A2/B6). Partial + expression, so DB-only, never declared here.']
   brand_alias String
   brand_short String
   brand_description String
@@ -3138,7 +3135,7 @@ Table item_ean_codes {
 
 Table item_group_master {
   itgId String [pk]
-  itgName String [unique, not null]
+  itgName String [not null]
   itgAlias String
   itgShort String
   itgDescription String
@@ -3294,6 +3291,67 @@ changes nothing until this item is explicitly re-saved.']
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
   itemSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+}
+
+Table item_price_change_log {
+  ipclId String [pk]
+  ipclChangedOn DateTime [default: `now()`, not null]
+  ipclChangeSetId String [not null, note: 'One save / one request.']
+  ipclPriceTable String [not null, note: 'IPM item_price_master | IQP item_qty_price']
+  ipclRowId String [not null, note: 'ipm_id / iqp_id']
+  ipclAction String [not null, note: 'CREATE | UPDATE | DELETE | RESTORE | REKEY']
+  ipclSource String [not null, note: 'ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT']
+  ipclMenuId Int
+  ipclCompanyId String [note: 'NULL = shared item / chain price.']
+  ipclBranchId String [note: 'NULL = all branches.']
+  ipclItemId String [not null]
+  ipclUnitId String [note: 'iuc_id']
+  ipclGodownId String [note: 'IPM only.']
+  ipclPartyId String [note: 'IQP only.']
+  ipclPriceLevel Int [note: 'IQP only.']
+  ipclBucketMrp Decimal [note: 'IPM only.']
+  ipclBucketSp Decimal [note: 'IPM only.']
+  ipclEffectiveFrom DateTime
+  ipclEffectiveTo DateTime
+  ipclItemCode String
+  ipclItemName String
+  ipclUnitName String
+  ipclBranchName String
+  ipclGodownName String
+  ipclPartyName String
+  ipclUserId String
+  ipclUserName String
+  ipclDeviceId String
+  ipclDeviceName String
+  ipclIp String
+  ipclApp String [note: 'DESKTOP | WEB | API | SYSTEM']
+  ipclReason String
+  ipclSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  ipclBefore Json
+  ipclAfter Json
+  ipclChanged String[] [not null]
+  ipclOldPriceA Decimal
+  ipclNewPriceA Decimal
+  ipclOldMrp Decimal
+  ipclNewMrp Decimal
+  ipclOldCost Decimal
+  ipclNewCost Decimal
+  ipclOldSlabPrice Decimal
+  ipclNewSlabPrice Decimal
+  ipclSlabFromQty Decimal
+  ipclSlabToQty Decimal
+
+  Note: 'Notes 144 — append-only log of every change to item_price_master (IPM) and
+item_qty_price (IQP): who, when, where, device, before / after. Written only
+by the API\'s PriceMasterWriter, in the same transaction as the price write
+(migration 20261023120000_item_price_change_log_notes_144).
+
+No relations on purpose: a log row outlives the price row, the item and the
+user it names, and it carries their names as they were.
+
+DB-only, invisible to Prisma: the CHECKs ck_ipcl_table / _action / _source /
+_app / _shape / _changed, and the partial sync index
+ix_sync_pending_item_price_change_log (where the sync functions exist).'
 }
 
 Table item_price_levels {
@@ -3658,7 +3716,9 @@ Table item_unit_conversion {
 
 Table item_unit_master {
   unit_id String [pk]
-  unit_name String [unique, not null]
+  unit_name String [not null, note: 'Unique among live units: uq_unit_name ON (unit_name) WHERE NOT unit_is_deleted (notes 139
+A2). Partial, so DB-only, never declared here. Case-insensitive only in UnitsMasterService
+until the live "Box" / "BOX" pair is merged.']
   unit_alias String
   unit_code String
   gstUnit item_gst_units
@@ -4843,7 +4903,7 @@ Table printer_profile {
 │ Inferred, most likely to differ from §6: everything from prfConnKind    │
 │ down to prfCutSequence — the connection and capability block. The       │
 │ vocabularies below are guesses at the CHECK lists.                      │
-└��────────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────┘
 
 Declared here WITHOUT any CHECK constraint, as every other model in this
 module is: the vocabularies live in the migration and in

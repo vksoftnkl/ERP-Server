@@ -14,6 +14,7 @@ import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/s
 import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
 import { refuseBaseUnitChange } from '../utils/item-base-unit.helper';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
+import type { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { toNumber } from 'src/common/utils/module-service.utils';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -229,13 +230,15 @@ export class ItemsMasterService {
       if (await this.priceBucketService.rekeyItem(tx, itemId)) {
         children.prices = await this.itemsPriceMasterService.findByItemId(itemId, tx);
       }
+      // Notes 140 C — read-only beside the prices the card just saved.
+      const scheduled_prices = await this.itemsPriceMasterService.findScheduledByItemId(itemId, tx);
       // Notes 137 C3, against the rows this save leaves: the payload may have
       // moved the price rows along with the item.
       if (saved.before) {
         await this.assertCompanyMove(tx, saved.before, saved.payload.item_company_id);
       }
       const item = await this.alignBaseUnit(tx, saved.payload, dto, children.unit_conversions);
-      return { item, ...children };
+      return { item, ...children, scheduled_prices };
     }, COMPOSITE_TRANSACTION_OPTIONS);
   }
   async getById(itemId: string): Promise<ItemPayload> {
@@ -264,13 +267,21 @@ export class ItemsMasterService {
    */
   async getComposite(itemId: string): Promise<ItemCompositePayload> {
     const item = await this.getById(itemId);
-    const [unit_conversions, prices, ean_codes, reorders] = await Promise.all([
+    const [unit_conversions, prices, scheduled_prices, ean_codes, reorders] = await Promise.all([
       this.itemUnitConversionService.findByItemId(itemId),
       this.itemsPriceMasterService.findByItemId(itemId),
+      this.itemsPriceMasterService.findScheduledByItemId(itemId),
       this.itemsEanCodeMasterService.findByItemId(itemId),
       this.itemsReorderMasterService.findByItemId(itemId),
     ]);
-    return this.resolveCompositeNames({ item, unit_conversions, prices, ean_codes, reorders });
+    return this.resolveCompositeNames({
+      item,
+      unit_conversions,
+      prices,
+      scheduled_prices,
+      ean_codes,
+      reorders,
+    });
   }
   /**
    * Enriches the composite payload with human-readable names for every
@@ -294,7 +305,9 @@ export class ItemsMasterService {
   private async resolveCompositeNames(
     composite: ItemCompositePayload,
   ): Promise<ItemCompositePayload> {
-    const { item, unit_conversions, prices, ean_codes, reorders } = composite;
+    const { item, unit_conversions, ean_codes, reorders } = composite;
+    // Notes 140 C — scheduled prices are named exactly like today's.
+    const prices = [...composite.prices, ...composite.scheduled_prices];
     const collect = (...ids: (string | null | undefined)[]): string[] =>
       Array.from(new Set(ids.filter((id): id is string => !!id)));
     const unitIdByConversionId = new Map(unit_conversions.map((r) => [r.iuc_id, r.iuc_unit_id]));
@@ -420,6 +433,17 @@ export class ItemsMasterService {
     const taxName = new Map(taxes.map((r) => [r.taxId, r.taxName]));
     const nameOf = <T>(map: Map<string, T>, id: string | null | undefined): T | null =>
       id ? (map.get(id) ?? null) : null;
+    const namePrice = <T extends ItemPricePayload>(r: T): T => {
+      const unitId = conversionUnitId(r.ipm_uc_unit_id);
+      return {
+        ...r,
+        ipm_company_name: nameOf(companyName, r.ipm_company_id),
+        ipm_branch_name: nameOf(branchName, r.ipm_branch_id),
+        ipm_uc_unit_id: unitId ?? r.ipm_uc_unit_id,
+        ipm_unit_name: nameOf(unitName, unitId),
+        ipm_godown_name: nameOf(godownName, r.ipm_godown_id),
+      };
+    };
     return {
       item: {
         ...item,
@@ -439,17 +463,8 @@ export class ItemsMasterService {
         iuc_unit_name: nameOf(unitName, r.iuc_unit_id),
         iuc_base_unit_name: nameOf(unitName, r.iuc_base_unit_id),
       })),
-      prices: prices.map((r) => {
-        const unitId = conversionUnitId(r.ipm_uc_unit_id);
-        return {
-          ...r,
-          ipm_company_name: nameOf(companyName, r.ipm_company_id),
-          ipm_branch_name: nameOf(branchName, r.ipm_branch_id),
-          ipm_uc_unit_id: unitId ?? r.ipm_uc_unit_id,
-          ipm_unit_name: nameOf(unitName, unitId),
-          ipm_godown_name: nameOf(godownName, r.ipm_godown_id),
-        };
-      }),
+      prices: composite.prices.map(namePrice),
+      scheduled_prices: composite.scheduled_prices.map(namePrice),
       ean_codes: ean_codes.map((r) => {
         const unitId = conversionUnitId(r.ean_unit_id);
         return {

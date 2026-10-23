@@ -72,8 +72,6 @@ describe('SaveTaxRateDto (through the house pipe)', () => {
     ['a name over 100 characters', { tax_name: 'n'.repeat(101) }, 'tax_name'],
     ['a code over 30 characters', { tax_code: 'c'.repeat(31) }, 'tax_code'],
     ['a fractional sort order', { tax_sort_order: 1.5 }, 'tax_sort_order'],
-    ['a negative rate', { tax_rate_perc: -1 }, 'tax_rate_perc'],
-    ['a negative cess per unit', { tax_cess_per_unit: -0.5 }, 'tax_cess_per_unit'],
     [
       'an additional-cess basis over 10 characters',
       { tax_acess_basis: 'PER_UNIT_EACH' },
@@ -86,6 +84,17 @@ describe('SaveTaxRateDto (through the house pipe)', () => {
     await expect(refusedFields({ tax_name: 'GST 18%', ...body }, SaveTaxRateDto)).resolves.toEqual([
       field,
     ]);
+  });
+
+  it('leaves a negative rate or cess to the service, which names it with its own code', async () => {
+    // Notes 139 B9: a DTO minimum answered VALIDATION_MIN, so TAX_RATE_PERC_OUT_OF_RANGE and
+    // TAX_RATE_CESS_NEGATIVE could never be reached.
+    await expect(
+      refusedFields(
+        { tax_name: 'GST 18%', tax_rate_perc: -1, tax_cess_per_unit: -0.5, tax_acess_perc: -2 },
+        SaveTaxRateDto,
+      ),
+    ).resolves.toEqual([]);
   });
 
   it('reports a bad line under its grid path', async () => {

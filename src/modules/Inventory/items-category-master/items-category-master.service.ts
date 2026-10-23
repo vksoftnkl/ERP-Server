@@ -98,95 +98,102 @@ export class ItemsCategoryMasterService {
     categoryId: string,
     wantDeleted: boolean,
   ): Promise<{ category_id: string; deleted: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.categoryMaster.findFirst({
-        where: {
-          categoryId,
-        },
-      });
-      if (!existing) {
-        throwInventoryNotFound<ItemCategoryErrorDetail>(
-          'Item category not found',
-          'category_id',
-          `No item category found with id ${categoryId}`,
-          ItemCategoryErrorCode.NOT_FOUND,
-        );
-      }
-      assertDeleteState(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
-      if (wantDeleted) {
-        await assertNoLiveChildren(tx, ITEM_CATEGORY_TREE, categoryId);
-        await assertNoLiveReferences(
-          tx,
-          ITEM_CATEGORY_REFERENCES,
-          categoryId,
-          ITEM_CATEGORY_DELETE_STATE,
-        );
-      } else {
-        await assertParentLive(tx, ITEM_CATEGORY_TREE, existing.categoryParentId);
-      }
-      const wasDeleted = existing.categoryIsDeleted;
-      const nextDeleted = wantDeleted;
-      // The subtree walk sees live rows only, so it is read while this row is
-      // live: before the flip on delete, after it on restore (below). A restore
-      // used to read it while still deleted, get nothing, and never put the ids
-      // back into the ancestors' path caches.
-      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
-      const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
-      const modifiedOn = new Date();
-      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.categoryMaster.updateMany({
-        where: {
-          categoryId,
-          categoryIsDeleted: wasDeleted,
-        },
-        data: {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Find regardless of current deleted state
+        const existing = await tx.categoryMaster.findFirst({
+          where: {
+            categoryId,
+          },
+        });
+        if (!existing) {
+          throwInventoryNotFound<ItemCategoryErrorDetail>(
+            'Item category not found',
+            'category_id',
+            `No item category found with id ${categoryId}`,
+            ItemCategoryErrorCode.NOT_FOUND,
+          );
+        }
+        assertDeleteState(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
+        if (wantDeleted) {
+          await assertNoLiveChildren(tx, ITEM_CATEGORY_TREE, categoryId);
+          await assertNoLiveReferences(
+            tx,
+            ITEM_CATEGORY_REFERENCES,
+            categoryId,
+            ITEM_CATEGORY_DELETE_STATE,
+          );
+        } else {
+          await assertParentLive(tx, ITEM_CATEGORY_TREE, existing.categoryParentId);
+        }
+        const wasDeleted = existing.categoryIsDeleted;
+        const nextDeleted = wantDeleted;
+        // The subtree walk sees live rows only, so it is read while this row is
+        // live: before the flip on delete, after it on restore (below). A restore
+        // used to read it while still deleted, get nothing, and never put the ids
+        // back into the ancestors' path caches.
+        const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
+        const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
+        const modifiedOn = new Date();
+        const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+        // Guarded update: only flips if state hasn't changed since the read
+        const result = await tx.categoryMaster.updateMany({
+          where: {
+            categoryId,
+            categoryIsDeleted: wasDeleted,
+          },
+          data: {
+            categoryIsDeleted: nextDeleted,
+            categoryModifiedOn: modifiedOn,
+            categoryModifiedBy: userId,
+          },
+        });
+        if (result.count === 0) {
+          throwInventoryNotFound<ItemCategoryErrorDetail>(
+            'Item category not found',
+            'category_id',
+            `No item category found with id ${categoryId}`,
+            ItemCategoryErrorCode.NOT_FOUND,
+          );
+        }
+        if (nextDeleted) {
+          await this.removePathIds(tx, ancestorIds, subtreeIds);
+        } else {
+          await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
+        }
+        const originalRecord = this.toPayload(existing);
+        const modifiedRecord = this.toPayload({
+          ...existing,
           categoryIsDeleted: nextDeleted,
           categoryModifiedOn: modifiedOn,
           categoryModifiedBy: userId,
-        },
-      });
-      if (result.count === 0) {
-        throwInventoryNotFound<ItemCategoryErrorDetail>(
-          'Item category not found',
-          'category_id',
-          `No item category found with id ${categoryId}`,
-          ItemCategoryErrorCode.NOT_FOUND,
+        });
+        await this.auditLogService.logEntityChange(
+          {
+            action: nextDeleted ? 'cancel' : 'update',
+            tableName: ITEM_CATEGORY_TABLE_NAME,
+            screenName: ITEM_CATEGORY_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: categoryId,
+            displayName: existing.categoryName,
+            originalRecord,
+            modifiedRecord,
+            userId,
+            notes: nextDeleted ? 'Item category soft deleted' : 'Item category restored',
+          },
+          tx,
         );
-      }
-      if (nextDeleted) {
-        await this.removePathIds(tx, ancestorIds, subtreeIds);
-      } else {
-        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
-      }
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        categoryIsDeleted: nextDeleted,
-        categoryModifiedOn: modifiedOn,
-        categoryModifiedBy: userId,
+        return {
+          category_id: categoryId,
+          deleted: nextDeleted,
+        };
       });
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: ITEM_CATEGORY_TABLE_NAME,
-          screenName: ITEM_CATEGORY_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: categoryId,
-          displayName: existing.categoryName,
-          originalRecord,
-          modifiedRecord,
-          userId,
-          notes: nextDeleted ? 'Item category soft deleted' : 'Item category restored',
-        },
-        tx,
-      );
-      return {
-        category_id: categoryId,
-        deleted: nextDeleted,
-      };
-    });
+    } catch (error: unknown) {
+      // A restore whose name a live item category took meanwhile (names of
+      // deleted rows are free since notes 139 A2).
+      this.handleWriteError(error);
+      throw error;
+    }
   }
   private async createItemCategory(
     saveItemCategoryDto: SaveItemCategoryDto,

@@ -1,9 +1,9 @@
 export declare class SaveItemCategoryDto {
     category_id?: string;
     category_name: string;
-    category_alias?: string;
-    category_short?: string;
-    category_description?: string;
+    category_alias?: string | null;
+    category_short?: string | null;
+    category_description?: string | null;
     category_parent_id?: string | null;
     category_sort?: number;
     category_level?: number;

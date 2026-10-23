@@ -117,7 +117,14 @@ export class StockPostingService {
   async cancel(
     tx: Prisma.TransactionClient,
     source: StockVoucherSource,
-    opts: { actor: string; reason: string; cancelledOn: Date; ledgerSource?: StockLedgerSourceLabel },
+    opts: {
+      actor: string;
+      reason: string;
+      cancelledOn: Date;
+      ledgerSource?: StockLedgerSourceLabel;
+      /** Notes 143 #4 — see CancelStockVoucherParams.refuseNegative. */
+      refuseNegative?: boolean;
+    },
   ): Promise<number> {
     await this.assertNotFrozen(tx, source);
 
@@ -128,6 +135,7 @@ export class StockPostingService {
       actor: opts.actor,
       reason: opts.reason,
       cancelledOn: opts.cancelledOn,
+      refuseNegative: opts.refuseNegative,
     });
     if (!opts.ledgerSource && StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
       await this.accounts.reverseForVoucher(tx, {

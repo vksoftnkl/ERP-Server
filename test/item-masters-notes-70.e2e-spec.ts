@@ -24,6 +24,7 @@ import { ItemsEanCodeMasterService } from '../src/modules/Inventory/items-ean-co
 import { ItemsReorderMasterService } from '../src/modules/Inventory/items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from '../src/modules/Inventory/items-master/item-master-update.service';
 import { ItemsMasterService } from '../src/modules/Inventory/items-master/items-master.service';
+import { priceWriterFor } from './helpers/price-writer';
 
 /**
  * NOTES 70 — the item-related masters — against the real database, in one
@@ -111,6 +112,8 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
       getCompanyId: () => fixture.companyId,
       getIpAddress: () => null,
     } as unknown as RequestContextService;
+    // Notes 144 — the real price writer: every price write lands a log row too.
+    const priceWriter = priceWriterFor(ctx);
     const db = transactional(tx);
     // The REAL audit service, so a delete/restore whose audit call is malformed
     // fails here and not first on the live box (notes 71 B1's lesson).
@@ -126,15 +129,15 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
     categories = new ItemsCategoryMasterService(db, audit, ctx);
     godowns = new GodownsMasterService(db, audit, ctx);
     units = new UnitsMasterService(db, audit, ctx);
-    qtyPrices = new ItemsQtyPriceMasterService(db, audit, {} as never, ctx);
+    qtyPrices = new ItemsQtyPriceMasterService(db, audit, {} as never, ctx, priceWriter);
     taxes = new TaxRateMasterService(db, audit, ctx);
     const noGrid = {} as never;
     const iuc = new ItemUnitConversionService(db, audit, noGrid, ctx);
     // No setting overrides: sales.default_price_level reads its catalog default.
     const buckets = new PriceBucketService({
       resolveEffective: () => Promise.resolve([]),
-    } as never);
-    const price = new ItemsPriceMasterService(db, audit, noGrid, ctx, buckets);
+    } as never, priceWriter);
+    const price = new ItemsPriceMasterService(db, audit, noGrid, ctx, buckets, priceWriter);
     const ean = new ItemsEanCodeMasterService(db, audit, noGrid, ctx);
     const reorder = new ItemsReorderMasterService(db, audit, noGrid, ctx);
     items = new ItemsMasterService(

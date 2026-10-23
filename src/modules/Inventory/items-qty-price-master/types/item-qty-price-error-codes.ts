@@ -24,4 +24,10 @@ export enum ItemQtyPriceErrorCode {
   DUPLICATE = 'ITEM_QTY_PRICE_DUPLICATE',
   /** The item, unit, company, branch or party named does not exist (foreign key on save). */
   REFERENCE_NOT_FOUND = 'ITEM_QTY_PRICE_REFERENCE_NOT_FOUND',
+  /** iqp_item_unit_id is not a live unit row (item_unit_conversion) of iqp_item_id. */
+  UNIT_NOT_OF_ITEM = 'ITEM_QTY_PRICE_UNIT_NOT_OF_ITEM',
+  /** The price mode's own figure is missing: P needs iqp_disc_pct, R iqp_flat_off, F iqp_price. */
+  VALUE_REQUIRED = 'ITEM_QTY_PRICE_VALUE_REQUIRED',
+  /** The slab's qty range overlaps a live slab of the same item, unit and scope on a shared date. */
+  OVERLAP = 'ITEM_QTY_PRICE_OVERLAP',
 }

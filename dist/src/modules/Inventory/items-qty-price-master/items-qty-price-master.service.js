@@ -19,6 +19,8 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const price_master_writer_service_1 = require("../item-price-log/price-master-writer.service");
+const price_change_log_types_1 = require("../item-price-log/types/price-change-log.types");
 const ITEM_QTY_PRICE_TABLE_NAME = 'item qty price';
 const ITEM_QTY_PRICE_AUDIT_SCREEN_NAME = 'Item Qty Price Master';
 const ITEM_QTY_PRICE_INCLUDE = {
@@ -34,11 +36,13 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
     auditLogService;
     configuredGridSqlService;
     requestContextService;
-    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService) {
+    priceWriter;
+    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService, priceWriter) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.configuredGridSqlService = configuredGridSqlService;
         this.requestContextService = requestContextService;
+        this.priceWriter = priceWriter;
     }
     async save(saveItemQtyPriceDto, tx) {
         const saveItems = Array.isArray(saveItemQtyPriceDto)
@@ -49,6 +53,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             for (const saveItem of saveItems) {
                 savedItems.push(await this.saveItemQtyPrice(client, saveItem));
             }
+            await this.assertNoOverlaps(client, savedItems.map((saved) => saved.iqp_id), Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single', 'iqp_from_qty');
             return savedItems;
         };
         try {
@@ -120,6 +125,9 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             for (const id of ids) {
                 results.push(await this.setDeletedItemQtyPrice(client, id, wantDeleted));
             }
+            if (!wantDeleted) {
+                await this.assertNoOverlaps(client, ids, Array.isArray(iqpId) ? 'indexed' : 'single', 'iqp_id');
+            }
             return results;
         };
         try {
@@ -156,11 +164,8 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         const nextDeleted = wantDeleted;
         const modifiedOn = new Date();
         const modifiedBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-        const result = await tx.itemQtyPrice.updateMany({
-            where: { iqpId, iqpIsDeleted: wasDeleted },
-            data: { iqpIsDeleted: nextDeleted, iqpModifiedOn: modifiedOn, iqpModifiedBy: modifiedBy },
-        });
-        if (result.count === 0) {
+        const moved = await this.priceWriter.setQtyPriceDeleted(tx, price_change_log_types_1.PRICE_ORIGIN.QTY_PRICE, iqpId, wasDeleted, { iqpIsDeleted: nextDeleted, iqpModifiedOn: modifiedOn, iqpModifiedBy: modifiedBy });
+        if (moved === 0) {
             this.throwNotFound(iqpId);
         }
         const originalRecord = this.toPayload(existing);
@@ -189,6 +194,8 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         const effectiveTo = this.parseOptionalDate(saveItemQtyPriceDto.iqp_effective_to, 'iqp_effective_to') ?? null;
         this.validateDateRange(effectiveFrom, effectiveTo);
         this.validateQtyRange(saveItemQtyPriceDto.iqp_from_qty ?? 0, saveItemQtyPriceDto.iqp_to_qty ?? null);
+        this.validatePriceValue(saveItemQtyPriceDto, null);
+        await this.assertUnitOfItem(tx, saveItemQtyPriceDto.iqp_item_id, saveItemQtyPriceDto.iqp_item_unit_id);
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveItemQtyPriceDto.iqp_created_by, this.requestContextService.getUserId());
         const data = {
@@ -199,7 +206,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             iqpCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveItemQtyPriceDto);
-        const created = await tx.itemQtyPrice.create({ data, include: ITEM_QTY_PRICE_INCLUDE });
+        const created = await this.priceWriter.createQtyPrice(tx, price_change_log_types_1.PRICE_ORIGIN.QTY_PRICE, data, ITEM_QTY_PRICE_INCLUDE);
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange({
             action: 'New',
@@ -225,17 +232,19 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             this.throwNotFound(iqpId);
         }
         const nextEffectiveFrom = this.parseRequiredDate(saveItemQtyPriceDto.iqp_effective_from, 'iqp_effective_from');
-        const nextEffectiveTo = (0, module_service_utils_1.hasOwnProperty)(saveItemQtyPriceDto, 'iqp_effective_to')
+        const nextEffectiveTo = saveItemQtyPriceDto.iqp_effective_to !== undefined
             ? (this.parseOptionalDate(saveItemQtyPriceDto.iqp_effective_to, 'iqp_effective_to') ?? null)
             : existing.iqpEffectiveTo;
         this.validateDateRange(nextEffectiveFrom, nextEffectiveTo);
-        const nextFromQty = (0, module_service_utils_1.hasOwnProperty)(saveItemQtyPriceDto, 'iqp_from_qty')
-            ? (saveItemQtyPriceDto.iqp_from_qty ?? 0)
+        const nextFromQty = saveItemQtyPriceDto.iqp_from_qty !== undefined
+            ? saveItemQtyPriceDto.iqp_from_qty
             : (0, module_service_utils_1.toNumber)(existing.iqpFromQty);
-        const nextToQty = (0, module_service_utils_1.hasOwnProperty)(saveItemQtyPriceDto, 'iqp_to_qty')
-            ? (saveItemQtyPriceDto.iqp_to_qty ?? null)
+        const nextToQty = saveItemQtyPriceDto.iqp_to_qty !== undefined
+            ? saveItemQtyPriceDto.iqp_to_qty
             : (0, module_service_utils_1.toNullableNumber)(existing.iqpToQty);
         this.validateQtyRange(nextFromQty, nextToQty);
+        this.validatePriceValue(saveItemQtyPriceDto, existing);
+        await this.assertUnitOfItem(tx, saveItemQtyPriceDto.iqp_item_id, saveItemQtyPriceDto.iqp_item_unit_id);
         const data = {
             iqpItemId: saveItemQtyPriceDto.iqp_item_id,
             iqpItemUnitId: saveItemQtyPriceDto.iqp_item_unit_id,
@@ -244,11 +253,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             iqpModifiedBy: (0, module_service_utils_1.resolveActor)(saveItemQtyPriceDto.iqp_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemQtyPriceDto);
-        const updated = await tx.itemQtyPrice.update({
-            where: { iqpId },
-            data,
-            include: ITEM_QTY_PRICE_INCLUDE,
-        });
+        const updated = await this.priceWriter.updateQtyPrice(tx, price_change_log_types_1.PRICE_ORIGIN.QTY_PRICE, iqpId, data, ITEM_QTY_PRICE_INCLUDE);
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange({
             action: 'update',
@@ -293,6 +298,91 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             data.iqpIsActive = saveItemQtyPriceDto.iqp_is_active;
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemQtyPriceDto, 'iqp_sync_date'))
             data.iqpSyncDate = this.parseOptionalDate(saveItemQtyPriceDto.iqp_sync_date, 'iqp_sync_date');
+    }
+    validatePriceValue(saveItemQtyPriceDto, existing) {
+        const mode = saveItemQtyPriceDto.iqp_price_mode ?? existing?.iqpPriceMode ?? 'P';
+        const [field, sent, stored] = mode === 'F'
+            ? ['iqp_price', saveItemQtyPriceDto.iqp_price, existing?.iqpPrice]
+            : mode === 'R'
+                ? ['iqp_flat_off', saveItemQtyPriceDto.iqp_flat_off, existing?.iqpFlatOff]
+                : ['iqp_disc_pct', saveItemQtyPriceDto.iqp_disc_pct, existing?.iqpDiscPct];
+        const value = sent !== undefined ? sent : (0, module_service_utils_1.toNullableNumber)(stored ?? null);
+        if (value === null || value === undefined) {
+            (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
+                {
+                    field,
+                    code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.VALUE_REQUIRED,
+                    message: `Price mode ${mode} needs ${field}.`,
+                },
+            ]);
+        }
+    }
+    async assertUnitOfItem(tx, itemId, itemUnitId) {
+        const unit = await tx.itemUnitConversion.findFirst({
+            where: { iucId: itemUnitId, iucItemId: itemId, iucIsDeleted: false },
+            select: { iucId: true },
+        });
+        if (!unit) {
+            (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
+                {
+                    field: 'iqp_item_unit_id',
+                    code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.UNIT_NOT_OF_ITEM,
+                    message: `${itemUnitId} is not a live unit of item ${itemId}.`,
+                },
+            ]);
+        }
+    }
+    async assertNoOverlaps(tx, iqpIds, shape, column) {
+        if (!iqpIds.length) {
+            return;
+        }
+        await tx.$queryRaw `
+      SELECT count(pg_advisory_xact_lock(hashtext('inventory.item_qty_price'), hashtext(k)))::int AS locked
+        FROM (SELECT DISTINCT iqp_item_id::text AS k
+                FROM inventory.item_qty_price
+               WHERE iqp_id = ANY(${iqpIds}::uuid[])
+               ORDER BY 1) AS items
+    `;
+        const [clash] = await tx.$queryRaw `
+      SELECT r.iqp_id::text,
+             o.iqp_id::text                AS other_id,
+             o.iqp_from_qty::text          AS other_from,
+             o.iqp_to_qty::text            AS other_to,
+             o.iqp_effective_from::text    AS other_effective_from,
+             o.iqp_effective_to::text      AS other_effective_to
+        FROM inventory.item_qty_price r
+        JOIN inventory.item_qty_price o
+          ON o.iqp_id <> r.iqp_id
+         AND o.iqp_is_deleted = false
+         AND o.iqp_item_id = r.iqp_item_id
+         AND o.iqp_item_unit_id = r.iqp_item_unit_id
+         AND o.iqp_company_id IS NOT DISTINCT FROM r.iqp_company_id
+         AND o.iqp_branch_id IS NOT DISTINCT FROM r.iqp_branch_id
+         AND o.iqp_party_id IS NOT DISTINCT FROM r.iqp_party_id
+         AND o.iqp_price_level IS NOT DISTINCT FROM r.iqp_price_level
+         AND o.iqp_from_qty < COALESCE(r.iqp_to_qty, 'Infinity'::numeric)
+         AND r.iqp_from_qty < COALESCE(o.iqp_to_qty, 'Infinity'::numeric)
+         AND o.iqp_effective_from <= COALESCE(r.iqp_effective_to, 'infinity'::date)
+         AND r.iqp_effective_from <= COALESCE(o.iqp_effective_to, 'infinity'::date)
+       WHERE r.iqp_id = ANY(${iqpIds}::uuid[])
+         AND r.iqp_is_deleted = false
+       ORDER BY array_position(${iqpIds}::uuid[], r.iqp_id), o.iqp_from_qty, o.iqp_id
+       LIMIT 1
+    `;
+        if (!clash) {
+            return;
+        }
+        const index = iqpIds.indexOf(clash.iqp_id);
+        const range = `${clash.other_from}–${clash.other_to ?? 'above'}`;
+        const dates = `${clash.other_effective_from} to ${clash.other_effective_to ?? 'open'}`;
+        (0, module_service_utils_1.throwInventoryConflict)('Qty price slabs overlap', [
+            {
+                field: shape === 'indexed' ? `${index}.${column}` : column,
+                code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.OVERLAP,
+                message: `The qty range overlaps slab ${clash.other_id} (${range}, ${dates}) for the same ` +
+                    'item, unit and scope. Close one range where the other starts, or end one date first.',
+            },
+        ]);
     }
     validateDateRange(effectiveFrom, effectiveTo) {
         if (!effectiveTo) {
@@ -420,6 +510,7 @@ exports.ItemsQtyPriceMasterService = ItemsQtyPriceMasterService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
         configured_grid_sql_service_1.ConfiguredGridSqlService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        price_master_writer_service_1.PriceMasterWriter])
 ], ItemsQtyPriceMasterService);
 //# sourceMappingURL=items-qty-price-master.service.js.map

@@ -24,6 +24,8 @@ export enum ItemGroupErrorCode {
   PARENT_DELETED = 'ITEM_GROUP_PARENT_DELETED',
   /** itg_photo is empty or not valid base64. */
   PHOTO_INVALID = 'ITEM_GROUP_PHOTO_INVALID',
-  /** Another item group already has this name. */
+  /** Another live item group already has this name, ignoring case. */
   NAME_TAKEN = 'ITEM_GROUP_NAME_TAKEN',
+  /** itg_track_preset_id names no live stock tracking preset. */
+  TRACK_PRESET_NOT_FOUND = 'ITEM_GROUP_TRACK_PRESET_NOT_FOUND',
 }

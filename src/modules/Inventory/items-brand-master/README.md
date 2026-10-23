@@ -74,8 +74,10 @@ materialized ancestor path.
 
 ## Business rules
 
-- **Brand name uniqueness** is enforced by the `brand_name` DB unique constraint; violations
-  surface as a conflict on field `brand_name` (`handleWriteError` / `throwOnUniqueConstraintError`).
+- **Brand name** is trimmed and a blank one refused (notes 139 A1). It is unique among **live**
+  brands ignoring case — `uq_brand_name` on `lower(brand_name)` `WHERE NOT brand_is_deleted` — so a
+  deleted brand's name is free again; a clash, a restore included, is a 409 `ITEM_BRAND_NAME_TAKEN`
+  on `brand_name` (notes 139 A2/B6). A blank alias, short name or description is stored as NULL (B7).
 - **Parent must exist and be active** — `ensureParentExists` validates `brand_parent_id`
   against a non-deleted brand before create/update.
 - **A brand cannot be its own parent** — on update, `brand_parent_id === brand_id` is rejected

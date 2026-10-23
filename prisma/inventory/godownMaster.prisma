@@ -60,8 +60,8 @@ model GodownLocation {
  // @@index([gdlBranchId], map: "idx_gdl_branch")
   @@index([gdlParentId], map: "idx_gdl_parent")
   @@index([gdlBranchId, gdlParentId, gdlSort], map: "idx_gdl_sort")
-  // This is the UNIQUE constraint you defined
-  @@unique([gdlBranchId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
+  // uq_gdl_unique_name_per_parent ON (gdl_branch_id, gdl_parent_id, lower(gdl_name)) NULLS NOT
+  // DISTINCT WHERE NOT gdl_is_deleted (notes 139 A2/B2/B6): partial + expression, so DB-only.
   // NOTE:
   // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
   // - GIN index on array is also not expressible in Prisma schema.

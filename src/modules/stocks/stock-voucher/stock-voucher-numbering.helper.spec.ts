@@ -286,5 +286,63 @@ describe('stock-voucher-numbering.helper', () => {
 
       expect(accountsCounter).not.toHaveBeenCalled();
     });
+
+    // Notes 143 #10 — a device that printed OPN0042 offline left the counter
+    // pointing at a taken number, and every server-numbered save after it drew
+    // 42, hit ux_svh_refno and rolled the counter back to draw 42 again.
+    it('steps the counter past a number a document already holds', async () => {
+      accountsCounter
+        .mockResolvedValueOnce({
+          lastNo: BigInt(42),
+          refno: 'OPN0042',
+          periodKey: ACC_YEAR,
+        })
+        .mockResolvedValueOnce({
+          lastNo: BigInt(43),
+          refno: 'OPN0043',
+          periodKey: ACC_YEAR,
+        });
+      const taken = [true, false];
+      tx.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('AS taken')
+            ? [{ taken: taken.shift() }]
+            : strings.join('?').includes('next_slno')
+              ? [{ next_slno: BigInt(41) }]
+              : [{ locked: 1 }],
+        ),
+      );
+
+      await expect(allocateStockVoucherNumber(client(), SCOPE, 'OPN', {}, 1)).resolves.toEqual({
+        slno: BigInt(41),
+        refno: 'OPN0043',
+      });
+      expect(accountsCounter).toHaveBeenCalledTimes(2);
+      // ux_svh_refno's scope: year, company, branch and the number.
+      const check = tx.$queryRaw.mock.calls.find((call: unknown[]) =>
+        sqlOf(call).includes('AS taken'),
+      );
+      expect(check?.slice(1)).toEqual([ACC_YEAR, COMPANY_ID, BRANCH_ID, 'OPN0042']);
+    });
+
+    it('gives up with 409 STOCK_REFNO_SERIES_EXHAUSTED rather than loop for ever', async () => {
+      tx.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('AS taken')
+            ? [{ taken: true }]
+            : strings.join('?').includes('next_slno')
+              ? [{ next_slno: BigInt(41) }]
+              : [{ locked: 1 }],
+        ),
+      );
+
+      const refusal = await refusalOf(allocateStockVoucherNumber(client(), SCOPE, 'OPN', {}, 1));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'refno', code: StockErrorCode.REFNO_SERIES_EXHAUSTED }] },
+      });
+      expect(accountsCounter).toHaveBeenCalledTimes(1000);
+    });
   });
 });

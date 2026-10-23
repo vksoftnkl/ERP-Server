@@ -86,12 +86,34 @@ async function allocateStockVoucherNumber(tx, scope, typeCode, supplied = {}, re
 }
 async function nextAccountsRefno(tx, scope, vchrTypeId) {
     await resolveDeviceCode(tx, scope.deviceId);
-    const allocated = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
-        vchrTypeId,
-        companyId: scope.companyId,
-        branchId: scope.branchId,
-        accYear: scope.accYear,
-    });
-    return allocated.refno;
+    for (let attempt = 0; attempt < MAX_TAKEN_REFNO_SKIPS; attempt += 1) {
+        const { refno } = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
+            vchrTypeId,
+            companyId: scope.companyId,
+            branchId: scope.branchId,
+            accYear: scope.accYear,
+        });
+        const [taken] = await tx.$queryRaw `
+      SELECT EXISTS (
+        SELECT 1
+          FROM stock.stock_voucher
+         WHERE svh_acc_year   = ${scope.accYear}::bpchar
+           AND svh_company_id = ${scope.companyId}::uuid
+           AND svh_branch_id  = ${scope.branchId}::uuid
+           AND svh_refno      = ${refno}
+           AND svh_is_deleted = false
+      ) AS taken`;
+        if (!taken?.taken) {
+            return refno;
+        }
+    }
+    (0, module_service_utils_1.throwStockConflict)('No free voucher number', [
+        {
+            field: 'refno',
+            code: stock_error_codes_1.StockErrorCode.REFNO_SERIES_EXHAUSTED,
+            message: `The next ${MAX_TAKEN_REFNO_SKIPS} numbers of this series are all on documents already. Move the series past them (Voucher Sequence) and save again.`,
+        },
+    ]);
 }
+const MAX_TAKEN_REFNO_SKIPS = 1000;
 //# sourceMappingURL=stock-voucher-numbering.helper.js.map

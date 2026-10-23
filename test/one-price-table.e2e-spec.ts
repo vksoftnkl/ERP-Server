@@ -23,6 +23,7 @@ import type { SaveSellingPriceBulkDto } from '../src/modules/stocks/selling-pric
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import type { ItemPriceLookupPayload } from '../src/modules/master-lookup/types/master-lookup-api.types';
 import type { ItemPriceLookupQueryDto } from '../src/modules/master-lookup/dto/item-price-lookup-query.dto';
+import { grantPriceEdit, priceWriterFor } from './helpers/price-writer';
 
 /**
  * ONE PRICE TABLE (plan-nestjs-one-price-table.md §7) against the real
@@ -144,6 +145,8 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
         );
     });
     fixture = await createFixture();
+    // A price save needs Edit on menu 30 (quick rate popup plan, 2026-10-23).
+    await grantPriceEdit(tx, fixture.userId);
     const ctx = {
       getUserId: () => fixture.userId,
       getCompanyId: () => fixture.companyId,
@@ -151,6 +154,8 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
       getDeviceId: () => null,
       getIpAddress: () => null,
     } as unknown as RequestContextService;
+    // Notes 144 — the real price writer: every price write lands a log row too.
+    const priceWriter = priceWriterFor(ctx);
     const db = transactional(tx);
     // The REAL audit service: a mock is how notes 71 B1 (every valid menu 30
     // save refused by the audit call) got past this suite.
@@ -162,9 +167,9 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
       resolveEffective: () =>
         Promise.resolve([{ asdKey: 'inventory.below_cost_price', value: 'allow' }]),
     } as never;
-    const buckets = new PriceBucketService(settings);
+    const buckets = new PriceBucketService(settings, priceWriter);
     const iuc = new ItemUnitConversionService(db, audit, grid, ctx);
-    prices = new ItemsPriceMasterService(db, audit, grid, ctx, buckets);
+    prices = new ItemsPriceMasterService(db, audit, grid, ctx, buckets, priceWriter);
     const ean = new ItemsEanCodeMasterService(db, audit, grid, ctx);
     const reorder = new ItemsReorderMasterService(db, audit, grid, ctx);
     items = new ItemsMasterService(
@@ -187,7 +192,7 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
     );
     lookup = new ItemPriceLookup(db);
     gateway = new PriceBucketGateway(db);
-    menu30 = new SellingPriceBulkService(db, audit, ctx, settings, gateway);
+    menu30 = new SellingPriceBulkService(db, audit, ctx, settings, gateway, priceWriter);
   });
 
   afterAll(async () => {

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { AppSettingValueService } from "../../settings/appSettings/app-setting-value.service";
 import { type BucketKey } from './price-resolver';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
 export declare const DEFAULT_PRICE_LEVEL_SETTING_KEY = "sales.default_price_level";
 export interface PriceBucketSource {
     companyId: string | null;
@@ -12,7 +13,8 @@ type ReadClient = Pick<Prisma.TransactionClient, '$queryRaw' | 'itemMaster'>;
 export declare function todayIso(now?: Date): string;
 export declare class PriceBucketService {
     private readonly appSettingValueService;
-    constructor(appSettingValueService: AppSettingValueService);
+    private readonly priceWriter;
+    constructor(appSettingValueService: AppSettingValueService, priceWriter: PriceMasterWriter);
     deriveBuckets(client: ReadClient, itemId: string, rows: readonly PriceBucketSource[], onDate?: string): Promise<BucketKey[]>;
     rekeyItem(tx: Prisma.TransactionClient, itemId: string): Promise<number>;
     private defaultPriceLevel;

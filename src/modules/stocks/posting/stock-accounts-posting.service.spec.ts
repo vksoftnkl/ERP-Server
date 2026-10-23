@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { HttpException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import type { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
@@ -171,7 +171,11 @@ describe('StockAccountsPostingService', () => {
       voucherPosting as unknown as VoucherPostingService,
       cogs,
     );
+    // Every post logs one "accounts voucher … legs" line; a run should read PASS/FAIL only.
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   const posted = () =>
     voucherPosting.postLegs.mock.calls[0][1] as {

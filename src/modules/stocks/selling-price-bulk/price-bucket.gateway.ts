@@ -2,14 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
-import { DEFAULT_ACTOR, toNumber } from 'src/common/utils/module-service.utils';
+import { toNumber } from 'src/common/utils/module-service.utils';
 import {
   bucketKeySql,
   effectivePolicyLateral,
 } from '../stock-voucher/stock-voucher-posting.helper';
 import type { ScopeResolution } from './selling-price-scope.helper';
 import {
-  PRICE_LEVELS,
   type CostBasis,
   type PagedResult,
   type PriceLevel,
@@ -93,6 +92,28 @@ export interface PriceGridRecord {
   prices: [number, number, number, number];
 }
 
+/**
+ * Notes 140 B — a scheduled row as the database answers it: the grid record of
+ * the row itself, its period, and the row it replaces.
+ */
+export interface PriceScheduleRecord extends PriceGridRecord {
+  effectiveFrom: string;
+  effectiveTo: string;
+  /** The row before it on the same key, else what priced the bucket the day before. */
+  previous: {
+    bucketId: string;
+    priceScope: PriceScope;
+    prices: [number, number, number, number];
+  } | null;
+}
+
+/** S1's answer: the row in force on the day asked, locked, with its period (`YYYY-MM-DD`). */
+export interface LockedPriceRow {
+  ipmId: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+}
+
 /** What pricing a save row needs before its levels can be recomputed. */
 export interface RowCost {
   /** The item's code and name, for the problem list. */
@@ -150,12 +171,6 @@ export interface BucketPriceCandidate {
   actor: string;
 }
 
-/**
- * The profit type every write here stores. `ipm_profit_type` is NOT NULL and
- * SaveItemPriceDto pins it to three values; "By User" is the only honest one —
- * the operator typed the price, nothing derived it.
- */
-const PROFIT_TYPE = 'By User';
 
 /**
  * `resolveEffectivePrice` (price-resolver.ts) AS SQL, for statements that price
@@ -283,6 +298,14 @@ function costColumns(a: { mc: string; sic: string; p: string; factor: string }):
         ` WHEN ${a.p}.ipm_cost_price IS NOT NULL THEN 'PRICE_ROW' END`,
     ),
   };
+}
+
+/**
+ * A day for a statement: `CURRENT_DATE` when none is given — today's behaviour,
+ * byte for byte — else the given `YYYY-MM-DD` (notes 140 A).
+ */
+export function daySql(day: string | null | undefined): Prisma.Sql {
+  return day ? Prisma.sql`${day}::date` : Prisma.raw('CURRENT_DATE');
 }
 
 interface GridSqlRow {
@@ -620,6 +643,9 @@ export class PriceBucketGateway {
    * bucket, and the COST — the branch's running average from
    * `stock.stock_item_cost` scaled to the unit, else the cost on the row the
    * resolver picks for this bucket. One statement, in the caller's transaction.
+   *
+   * Notes 140 A — `onDate` (`YYYY-MM-DD`) reads the policy and the resolved row
+   * as they will stand on the day a scheduled price starts; omitted is today.
    */
   async loadRowCosts(
     tx: Prisma.TransactionClient,
@@ -631,6 +657,7 @@ export class PriceBucketGateway {
     }>,
     companyId: string,
     branchId: string,
+    onDate?: string,
   ): Promise<RowCost[]> {
     if (!rows.length) {
       return [];
@@ -672,7 +699,7 @@ export class PriceBucketGateway {
             branchId: Prisma.sql`${branchId}::uuid`,
             itemId: Prisma.raw('q.item_id'),
             itemGroupId: Prisma.raw('i.item_group_id'),
-            onDate: Prisma.raw('CURRENT_DATE'),
+            onDate: daySql(onDate),
           })}
       ),
       ${mrpCostCte({
@@ -708,7 +735,7 @@ export class PriceBucketGateway {
           salePrice: Prisma.raw('CASE WHEN k.track_sp AND k.sp > 0 THEN k.sp END'),
           companyId,
           branchId,
-          onDate: Prisma.raw('CURRENT_DATE'),
+          onDate: daySql(onDate),
         })}
        ORDER BY k.ord
     `;
@@ -795,14 +822,20 @@ export class PriceBucketGateway {
    * §5.5 row 2 (a *This branch* save over a CHAIN-sourced row creates an
    * override rather than editing the chain). Returns null when there is none,
    * and the caller inserts. A headline edit is key (-1, -1) of the same table.
+   *
+   * Notes 140 A — the row in force on `onDate` (`YYYY-MM-DD`), today when
+   * omitted, with its period: a scheduled save splits it or updates it in place.
    */
   async findBucketRowForUpdate(
     tx: Prisma.TransactionClient,
     candidate: BucketPriceCandidate,
     scope: ScopeResolution,
-  ): Promise<{ ipmId: string } | null> {
-    const [row] = await tx.$queryRaw<Array<{ ipmId: string }>>`
-      SELECT ipm_id AS "ipmId"
+    onDate?: string,
+  ): Promise<LockedPriceRow | null> {
+    const [row] = await tx.$queryRaw<LockedPriceRow[]>`
+      SELECT ipm_id                   AS "ipmId",
+             ipm_effective_from::text AS "effectiveFrom",
+             ipm_effective_to::text   AS "effectiveTo"
         FROM inventory.item_price_master
        WHERE ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
          AND ipm_branch_id  IS NOT DISTINCT FROM ${scope.targetBranchId}::uuid
@@ -810,114 +843,266 @@ export class PriceBucketGateway {
          AND ipm_uc_unit_id = ${candidate.uomId}::uuid
          AND ipm_key_mrp    = COALESCE(${candidate.mrp}::numeric, -1)
          AND ipm_key_sp     = COALESCE(${candidate.salePrice}::numeric, -1)
-         AND CURRENT_DATE BETWEEN ipm_effective_from AND ipm_effective_to
+         AND ${daySql(onDate)} BETWEEN ipm_effective_from AND ipm_effective_to
          AND ipm_is_deleted = false
        FOR UPDATE
     `;
     return row ?? null;
   }
 
-  /** S2 — update the row S1 found. Min price and round-off keep their stored value when not sent. */
-  async updateBucketPrice(
-    tx: Prisma.TransactionClient,
-    ipmId: string,
-    candidate: BucketPriceCandidate,
-  ): Promise<string> {
-    const l = this.levelColumns(candidate);
-    await tx.$executeRaw`
-      UPDATE inventory.item_price_master
-         SET ipm_sales_price_a = COALESCE(${l.a.price}::numeric, ipm_sales_price_a),
-             ipm_sales_price_b = COALESCE(${l.b.price}::numeric, ipm_sales_price_b),
-             ipm_sales_price_c = COALESCE(${l.c.price}::numeric, ipm_sales_price_c),
-             ipm_sales_price_d = COALESCE(${l.d.price}::numeric, ipm_sales_price_d),
-             ipm_price_a_wot = COALESCE(${l.a.priceWot}::numeric, ipm_price_a_wot),
-             ipm_price_b_wot = COALESCE(${l.b.priceWot}::numeric, ipm_price_b_wot),
-             ipm_price_c_wot = COALESCE(${l.c.priceWot}::numeric, ipm_price_c_wot),
-             ipm_price_d_wot = COALESCE(${l.d.priceWot}::numeric, ipm_price_d_wot),
-             ipm_price_a_markup_perc = COALESCE(${l.a.markupPerc}::numeric, ipm_price_a_markup_perc),
-             ipm_price_b_markup_perc = COALESCE(${l.b.markupPerc}::numeric, ipm_price_b_markup_perc),
-             ipm_price_c_markup_perc = COALESCE(${l.c.markupPerc}::numeric, ipm_price_c_markup_perc),
-             ipm_price_d_markup_perc = COALESCE(${l.d.markupPerc}::numeric, ipm_price_d_markup_perc),
-             ipm_min_price   = COALESCE(${candidate.minPrice}::numeric, ipm_min_price),
-             ipm_cost_price  = ${candidate.costRate},
-             ipm_cost_wot    = ${candidate.costWot},
-             ipm_profit_type = ${PROFIT_TYPE},
-             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),
-             ipm_updated_on  = now(),
-             ipm_updated_by  = ${this.actorColumn(candidate.actor)}::uuid
-       WHERE ipm_id = ${ipmId}::uuid
+  /**
+   * Notes 140 A — the database's today, and the furthest day a price may be
+   * scheduled for. CURRENT_DATE rather than the server clock: every statement
+   * here compares the effective dates with CURRENT_DATE, and the two disagree
+   * for five and a half hours a day when the server runs on UTC.
+   */
+  async calendar(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  ): Promise<{ today: string; latest: string }> {
+    const [row] = await client.$queryRaw<Array<{ today: string; latest: string }>>`
+      SELECT CURRENT_DATE::text AS today,
+             (CURRENT_DATE + interval '1 year')::date::text AS latest
     `;
-    return ipmId;
+    return row;
   }
 
   /**
-   * S3 — insert a row at the target scope, returning its `ipm_id`.
-   *
-   * The ATTRIBUTES come from the headline row of the same unit at the target
-   * scope or wider — godown, cess, discount, loading, freight, loyalty points,
-   * the unit remark. Without the copy a bucket-priced line would lose its cess
-   * and loading charge at the till, which is exactly the fault the two-table
-   * design had. `ipm_max_price` is the bucket's MRP (ck_ipm_bucket_mrp_is_max),
-   * else the headline's.
-   *
-   * Never sets the effective-from/to pair: this screen writes "now" rows only,
-   * and `ex_ipm_overlap` is what enforces that two of them cannot claim one
-   * bucket at one scope.
+   * Notes 140 B — the row a cancel names, locked, with what the cancel must
+   * know about it. Null when there is no such row at all.
    */
-  async insertBucketPrice(
+  async lockScheduledRow(
     tx: Prisma.TransactionClient,
-    candidate: BucketPriceCandidate,
-    scope: ScopeResolution,
-  ): Promise<string> {
-    const l = this.levelColumns(candidate);
-    const actor = this.actorColumn(candidate.actor);
-    const [row] = await tx.$queryRaw<Array<{ ipmId: string }>>`
-      INSERT INTO inventory.item_price_master (
-        ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id, ipm_godown_id, ipm_sl_no,
-        ipm_cost_price, ipm_cost_wot,
-        ipm_sales_price_a, ipm_sales_price_b, ipm_sales_price_c, ipm_sales_price_d,
-        ipm_price_a_wot, ipm_price_b_wot, ipm_price_c_wot, ipm_price_d_wot,
-        ipm_price_a_markup_perc, ipm_price_b_markup_perc, ipm_price_c_markup_perc, ipm_price_d_markup_perc,
-        ipm_max_price, ipm_min_price, ipm_disc_perc, ipm_disc_qty, ipm_addl_cess,
-        ipm_profit_type, ipm_round_off, ipm_loading_charge, ipm_freight_charge, ipm_loyalty_points,
-        ipm_uom_remarks, ipm_bucket_mrp, ipm_bucket_sp,
-        ipm_created_on, ipm_created_by, ipm_updated_on, ipm_updated_by
-      )
-      SELECT ${candidate.companyId}::uuid, ${scope.targetBranchId}::uuid,
-             ${candidate.itemId}::uuid, ${candidate.uomId}::uuid,
-             h.ipm_godown_id, COALESCE(h.ipm_sl_no, 0),
-             ${candidate.costRate}, ${candidate.costWot},
-             COALESCE(${l.a.price}::numeric, 0), COALESCE(${l.b.price}::numeric, 0),
-             COALESCE(${l.c.price}::numeric, 0), COALESCE(${l.d.price}::numeric, 0),
-             COALESCE(${l.a.priceWot}::numeric, 0), COALESCE(${l.b.priceWot}::numeric, 0),
-             COALESCE(${l.c.priceWot}::numeric, 0), COALESCE(${l.d.priceWot}::numeric, 0),
-             COALESCE(${l.a.markupPerc}::numeric, 0), COALESCE(${l.b.markupPerc}::numeric, 0),
-             COALESCE(${l.c.markupPerc}::numeric, 0), COALESCE(${l.d.markupPerc}::numeric, 0),
-             COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0),
-             COALESCE(${candidate.minPrice}::numeric, h.ipm_min_price, 0),
-             COALESCE(h.ipm_disc_perc, 0), COALESCE(h.ipm_disc_qty, 0), COALESCE(h.ipm_addl_cess, 0),
-             ${PROFIT_TYPE}, COALESCE(${candidate.roundOff}::numeric, h.ipm_round_off, 0),
-             COALESCE(h.ipm_loading_charge, 0), COALESCE(h.ipm_freight_charge, 0),
-             COALESCE(h.ipm_loyalty_points, 0), h.ipm_uom_remarks,
-             ${candidate.mrp}::numeric, ${candidate.salePrice}::numeric,
-             now(), ${actor}::uuid, now(), ${actor}::uuid
-        FROM (SELECT 1) one
-        LEFT JOIN LATERAL (
-          SELECT hp.*
-            FROM inventory.item_price_master hp
-           WHERE hp.ipm_item_id    = ${candidate.itemId}::uuid
-             AND hp.ipm_uc_unit_id = ${candidate.uomId}::uuid
-             AND hp.ipm_key_mrp = -1 AND hp.ipm_key_sp = -1
-             AND hp.ipm_is_deleted = false
-             AND CURRENT_DATE BETWEEN hp.ipm_effective_from AND hp.ipm_effective_to
-             AND (hp.ipm_company_id IS NULL OR hp.ipm_company_id = ${candidate.companyId}::uuid)
-             AND (hp.ipm_branch_id  IS NULL OR hp.ipm_branch_id  = ${scope.targetBranchId}::uuid)
-           ORDER BY (hp.ipm_branch_id IS NULL), (hp.ipm_company_id IS NULL), hp.ipm_id
-           LIMIT 1
-        ) h ON true
-      RETURNING ipm_id AS "ipmId"
+    ipmId: string,
+  ): Promise<{
+    ipmId: string;
+    branchId: string | null;
+    isDeleted: boolean;
+    started: boolean;
+    effectiveFrom: string;
+    effectiveTo: string;
+  } | null> {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        ipmId: string;
+        branchId: string | null;
+        isDeleted: boolean;
+        started: boolean;
+        effectiveFrom: string;
+        effectiveTo: string;
+      }>
+    >`
+      SELECT ipm_id                            AS "ipmId",
+             ipm_branch_id                     AS "branchId",
+             ipm_is_deleted                    AS "isDeleted",
+             ipm_effective_from <= CURRENT_DATE AS "started",
+             ipm_effective_from::text          AS "effectiveFrom",
+             ipm_effective_to::text            AS "effectiveTo"
+        FROM inventory.item_price_master
+       WHERE ipm_id = ${ipmId}::uuid
+       FOR UPDATE
     `;
-    return row.ipmId;
+    return row ?? null;
+  }
+
+  /**
+   * Notes 140 B — the live row of the same key that ends the day before
+   * `ipmId` starts (the row a split closed, or an earlier schedule), locked.
+   */
+  async findRowBeforeForUpdate(
+    tx: Prisma.TransactionClient,
+    ipmId: string,
+  ): Promise<{ ipmId: string } | null> {
+    const [row] = await tx.$queryRaw<Array<{ ipmId: string }>>`
+      SELECT b.ipm_id AS "ipmId"
+        FROM inventory.item_price_master c
+        JOIN inventory.item_price_master b
+          ON b.ipm_company_id IS NOT DISTINCT FROM c.ipm_company_id
+         AND b.ipm_branch_id  IS NOT DISTINCT FROM c.ipm_branch_id
+         AND b.ipm_item_id    = c.ipm_item_id
+         AND b.ipm_uc_unit_id = c.ipm_uc_unit_id
+         AND b.ipm_key_mrp    = c.ipm_key_mrp
+         AND b.ipm_key_sp     = c.ipm_key_sp
+         AND b.ipm_effective_to = c.ipm_effective_from - 1
+         AND b.ipm_is_deleted = false
+         AND b.ipm_id <> c.ipm_id
+       WHERE c.ipm_id = ${ipmId}::uuid
+       FOR UPDATE OF b
+    `;
+    return row ?? null;
+  }
+
+  /**
+   * Notes 140 B — every live price row this branch can see (its own and the
+   * chain's) that starts after today, as grid records, each with the prices
+   * it replaces: the row of the same key that ends the day before it, else
+   * whatever the resolver priced the bucket with that day at this branch (a
+   * new override replaces the chain's price, a new bucket the headline's).
+   * Stock and cost are today's, exactly as the grid shows them.
+   */
+  async listScheduled(
+    companyId: string,
+    branchId: string,
+    itemId?: string,
+  ): Promise<PriceScheduleRecord[]> {
+    const key = bucketKeySql({
+      trackMrp: Prisma.raw('pol.track_mrp'),
+      trackSalePrice: Prisma.raw('pol.track_sp'),
+      mrp: Prisma.raw('b.sbl_mrp'),
+      salePrice: Prisma.raw('b.sbl_sale_price'),
+    });
+    const cost = costColumns({ mc: 'mc', sic: 'sic', p: 'f', factor: 'iuc.iuc_to_base_factor' });
+    const rows = await this.prisma.$queryRaw<
+      Array<
+        GridSqlRow & {
+          effectiveFrom: string;
+          effectiveTo: string;
+          previousId: string | null;
+          previousBranchId: string | null;
+          previousA: Prisma.Decimal | null;
+          previousB: Prisma.Decimal | null;
+          previousC: Prisma.Decimal | null;
+          previousD: Prisma.Decimal | null;
+        }
+      >
+    >`
+      WITH f AS (
+        SELECT p.*, i.item_code, i.item_name_en, i.item_default_barcode
+          FROM inventory.item_price_master p
+          JOIN inventory.item_master i ON i.item_id = p.ipm_item_id AND i.item_is_deleted = false
+         WHERE p.ipm_is_deleted = false
+           AND p.ipm_effective_from > CURRENT_DATE
+           AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${companyId}::uuid)
+           AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${branchId}::uuid)
+           ${itemId ? Prisma.sql`AND p.ipm_item_id = ${itemId}::uuid` : Prisma.empty}
+      ),
+      pol AS (
+        SELECT i.item_id,
+               COALESCE(stp.stp_track_mrp, false)        AS track_mrp,
+               COALESCE(stp.stp_track_sale_price, false) AS track_sp
+          FROM inventory.item_master i
+          ${effectivePolicyLateral({
+            companyId: Prisma.sql`${companyId}::uuid`,
+            branchId: Prisma.sql`${branchId}::uuid`,
+            itemId: Prisma.raw('i.item_id'),
+            itemGroupId: Prisma.raw('i.item_group_id'),
+            onDate: Prisma.raw('CURRENT_DATE'),
+          })}
+         WHERE i.item_id IN (SELECT ipm_item_id FROM f)
+      ),
+      stock AS (
+        SELECT b.sbl_item_id                  AS item_id,
+               COALESCE(${key.mrp}, -1)       AS key_mrp,
+               COALESCE(${key.salePrice}, -1) AS key_sp,
+               SUM(b.sbl_on_hand_qty)         AS qty
+          FROM stock.stock_balance b
+          JOIN pol ON pol.item_id = b.sbl_item_id
+         WHERE b.sbl_company_id = ${companyId}::uuid
+           AND b.sbl_branch_id  = ${branchId}::uuid
+           AND b.sbl_bucket     = 'SALEABLE'
+           AND b.sbl_is_deleted = false
+         GROUP BY 1, 2, 3
+      ),
+      ${mrpCostCte({
+        companyId,
+        branchId,
+        pairs: Prisma.sql`
+          SELECT DISTINCT f.ipm_item_id AS item_id, f.ipm_bucket_mrp AS mrp
+            FROM f JOIN pol ON pol.item_id = f.ipm_item_id
+           WHERE pol.track_mrp AND f.ipm_bucket_mrp IS NOT NULL`,
+      })}
+      SELECT f.ipm_item_id          AS "itemId",
+             f.item_code            AS "itemCode",
+             f.item_default_barcode AS "barcode",
+             f.item_name_en         AS "itemName",
+             f.ipm_uc_unit_id       AS "uomId",
+             u.unit_name            AS "unitName",
+             COALESCE(st.qty, 0) / NULLIF(iuc.iuc_to_base_factor, 0) AS "stockQty",
+             f.ipm_bucket_mrp       AS "mrp",
+             f.ipm_bucket_sp        AS "salePrice",
+             (f.ipm_key_mrp <> -1 OR f.ipm_key_sp <> -1) AS "priceIsBucket",
+             f.ipm_branch_id        AS "priceBranchId",
+             f.ipm_id               AS "bucketId",
+             f.ipm_max_price        AS "maxPrice",
+             ${cost.rate}           AS "costRate",
+             ${cost.wot}            AS "costWot",
+             ${cost.basis}          AS "costBasis",
+             f.ipm_min_price        AS "minPrice",
+             f.ipm_round_off        AS "roundOff",
+             f.ipm_sales_price_a    AS "priceA",
+             f.ipm_sales_price_b    AS "priceB",
+             f.ipm_sales_price_c    AS "priceC",
+             f.ipm_sales_price_d    AS "priceD",
+             f.ipm_effective_from::text AS "effectiveFrom",
+             f.ipm_effective_to::text   AS "effectiveTo",
+             COALESCE(pk.ipm_id, p.ipm_id) AS "previousId",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_branch_id ELSE p.ipm_branch_id END
+                                    AS "previousBranchId",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_a ELSE p.ipm_sales_price_a END
+                                    AS "previousA",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_b ELSE p.ipm_sales_price_b END
+                                    AS "previousB",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_c ELSE p.ipm_sales_price_c END
+                                    AS "previousC",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_d ELSE p.ipm_sales_price_d END
+                                    AS "previousD"
+        FROM f
+        JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = f.ipm_uc_unit_id
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN pol ON pol.item_id = f.ipm_item_id
+        LEFT JOIN stock st
+               ON st.item_id = f.ipm_item_id AND st.key_mrp = f.ipm_key_mrp AND st.key_sp = f.ipm_key_sp
+        LEFT JOIN mrp_cost mc
+               ON pol.track_mrp AND mc.item_id = f.ipm_item_id AND mc.mrp = f.ipm_bucket_mrp
+        LEFT JOIN stock.stock_item_cost sic
+               ON sic.sic_company_id = ${companyId}::uuid
+              AND sic.sic_branch_id  = ${branchId}::uuid
+              AND sic.sic_item_id    = f.ipm_item_id
+              AND sic.sic_is_deleted = false
+        LEFT JOIN LATERAL (
+          SELECT k.*
+            FROM inventory.item_price_master k
+           WHERE k.ipm_is_deleted = false
+             AND k.ipm_company_id IS NOT DISTINCT FROM f.ipm_company_id
+             AND k.ipm_branch_id  IS NOT DISTINCT FROM f.ipm_branch_id
+             AND k.ipm_item_id    = f.ipm_item_id
+             AND k.ipm_uc_unit_id = f.ipm_uc_unit_id
+             AND k.ipm_key_mrp    = f.ipm_key_mrp
+             AND k.ipm_key_sp     = f.ipm_key_sp
+             AND k.ipm_effective_to = f.ipm_effective_from - 1
+           LIMIT 1
+        ) pk ON true
+        ${effectivePriceLateral({
+          itemId: Prisma.raw('f.ipm_item_id'),
+          uomId: Prisma.raw('f.ipm_uc_unit_id'),
+          mrp: Prisma.raw('f.ipm_bucket_mrp'),
+          salePrice: Prisma.raw('f.ipm_bucket_sp'),
+          companyId,
+          branchId,
+          onDate: Prisma.raw('(f.ipm_effective_from - 1)'),
+        })}
+       ORDER BY f.item_name_en, f.ipm_item_id, iuc.iuc_unit_slno, f.ipm_uc_unit_id,
+                f.ipm_effective_from, f.ipm_key_mrp, f.ipm_key_sp,
+                (f.ipm_branch_id IS NOT NULL), f.ipm_id
+    `;
+    const amount = (value: Prisma.Decimal | null) => (value === null ? 0 : toNumber(value));
+    return rows.map((row) => ({
+      ...this.toGridRecord(row),
+      effectiveFrom: row.effectiveFrom,
+      effectiveTo: row.effectiveTo,
+      previous:
+        row.previousId === null
+          ? null
+          : {
+              bucketId: row.previousId,
+              priceScope: row.previousBranchId === null ? 'CHAIN' : 'BRANCH',
+              prices: [
+                amount(row.previousA),
+                amount(row.previousB),
+                amount(row.previousC),
+                amount(row.previousD),
+              ],
+            },
+    }));
   }
 
   /**
@@ -1155,31 +1340,5 @@ export class PriceBucketGateway {
       roundOff: amount(row.roundOff),
       prices: [amount(row.priceA), amount(row.priceB), amount(row.priceC), amount(row.priceD)],
     };
-  }
-
-  /**
-   * The candidate's four levels by column suffix — the ONE place the ordinal
-   * 1–4 meets the a–d columns. A level the payload did not send is null: S2
-   * keeps the stored figure, S3 stores 0.
-   */
-  private levelColumns(
-    candidate: BucketPriceCandidate,
-  ): Record<
-    'a' | 'b' | 'c' | 'd',
-    { price: number | null; priceWot: number | null; markupPerc: number | null }
-  > {
-    const at = (level: PriceLevel) =>
-      candidate.levels.find((entry) => entry.level === level) ?? {
-        price: null,
-        priceWot: null,
-        markupPerc: null,
-      };
-    const [a, b, c, d] = PRICE_LEVELS.map(at);
-    return { a, b, c, d };
-  }
-
-  /** ipm_created_by / ipm_updated_by are uuids: the nil-uuid sentinel is stored as NULL. */
-  private actorColumn(actor: string): string | null {
-    return actor && actor !== DEFAULT_ACTOR ? actor : null;
   }
 }

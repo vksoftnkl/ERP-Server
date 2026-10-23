@@ -79,8 +79,17 @@ export declare class SellingPriceNoStockRowDto {
     mrp: number | null;
     salePrice: number | null;
 }
+export declare class SellingPriceSavedRowDto {
+    lineNo: number;
+    bucketId: string;
+    scheduled: boolean;
+    effectiveFrom: string;
+    effectiveTo: string;
+}
 export declare class SellingPriceSaveDataDto {
     saved: number;
+    effectiveFrom: string;
+    rows: SellingPriceSavedRowDto[];
     masterRowsSaved: number;
     noStock: SellingPriceNoStockRowDto[];
     needsConfirm: boolean;
@@ -91,4 +100,29 @@ export declare class SellingPriceSaveSuccessDto {
     success: true;
     message: string;
     data: SellingPriceSaveDataDto;
+}
+export declare class SellingPriceSchedulePreviousDto {
+    bucketId: string | null;
+    priceScope: string | null;
+    levels: SellingPriceLevelDto[];
+}
+export declare class SellingPriceScheduleRowDto extends SellingPriceRowDto {
+    effectiveFrom: string;
+    effectiveTo: string;
+    previous: SellingPriceSchedulePreviousDto | null;
+}
+export declare class SellingPriceScheduleSuccessDto {
+    success: true;
+    message: string;
+    data: SellingPriceScheduleRowDto[];
+}
+export declare class SellingPriceScheduleCancelDataDto {
+    bucketId: string;
+    restoredId: string | null;
+    restoredTo: string | null;
+}
+export declare class SellingPriceScheduleCancelSuccessDto {
+    success: true;
+    message: string;
+    data: SellingPriceScheduleCancelDataDto;
 }

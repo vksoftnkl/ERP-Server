@@ -11,6 +11,7 @@ import { ItemMasterUpdateService } from '../src/modules/Inventory/items-master/i
 import { ItemsMasterService } from '../src/modules/Inventory/items-master/items-master.service';
 import { StockTrackPolicyService } from '../src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import type { SaveItemCompositeDto } from '../src/modules/Inventory/items-master/dto/save-item-composite.dto';
+import { priceWriterFor } from './helpers/price-writer';
 
 /**
  * NOTES 138 (a saved item's base unit is locked, 2026-10-22) AGAINST THE REAL
@@ -88,6 +89,8 @@ describe('Item master, notes 138 (e2e — one rolled-back transaction)', () => {
       getUserId: () => fixture.userId,
       getCompanyId: () => fixture.companyId,
     } as unknown as RequestContextService;
+    // Notes 144 — the real price writer: every price write lands a log row too.
+    const priceWriter = priceWriterFor(ctx);
     const audit = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     } as unknown as AuditLogService;
@@ -96,8 +99,8 @@ describe('Item master, notes 138 (e2e — one rolled-back transaction)', () => {
     iuc = new ItemUnitConversionService(db, audit, grid, ctx);
     const buckets = new PriceBucketService({
       resolveEffective: () => Promise.resolve([]),
-    } as never);
-    const price = new ItemsPriceMasterService(db, audit, grid, ctx, buckets);
+    } as never, priceWriter);
+    const price = new ItemsPriceMasterService(db, audit, grid, ctx, buckets, priceWriter);
     const ean = new ItemsEanCodeMasterService(db, audit, grid, ctx);
     const reorder = new ItemsReorderMasterService(db, audit, grid, ctx);
     service = new ItemsMasterService(

@@ -75,9 +75,11 @@ round trip returns what a line cannot be built without:
   itself keeps working, because a LEFT JOIN to a missing relation is an error,
   not an empty row.
 * **`alreadyOpened`** — a warning while the operator is still typing, not a
-  refusal. It says only that the ITEM has an opening in the branch; the
-  preflight's rule is per holding (godown × lot × bucket), finer than this can
-  see, and is the real check.
+  refusal. It says the ITEM has an opening in the branch **in the year
+  `onDate` falls in**, and in `godownId` / `bucket` when the screen sends them
+  (notes 143 #8). The preflight's rule is per holding (godown × lot × bucket)
+  per year; the lot is not keyed yet when the item is picked, so the preflight
+  stays the real check.
 
 **It returns no cost, deliberately.** The engine resolves `rateSource` only
 when a line arrives at cost 0. A picker that seeds the cost cell hands the
@@ -119,15 +121,17 @@ sent, or a keyed unit whose base unit has no conversion row.
   never `item_unit_master`. So is `baseUomId`.
 * **Send the conversion, and the base quantities with it.** `baseUomId`,
   `toBaseFactor` and `baseQty` are **required**, and `freeBaseQty` optional; all
-  four are written straight through. The save path no longer opens
-  `item_unit_conversion` at all, so nothing multiplies `qty × factor` and nothing
-  resolves the base unit for you. `svi_value` is `GENERATED` from `baseQty +
-  freeBaseQty`, so these are the numbers the document is valued on — a wrong
-  factor now multiplies the opening quantity of the whole branch, and only the
-  screen can prevent it. What went with the lookup is the cross-check that the
-  unit belonged to the item: the foreign keys still refuse an `iuc_id` that does
-  not exist, but one belonging to a *different* item is now the client's to get
-  right.
+  four are written straight through. The save path does not open
+  `item_unit_conversion`: the factor is the line's own (a document keeps the
+  conversion it was keyed with, notes 138). But the base quantities must agree
+  with it (notes 143 #3): `baseQty` = `qty × toBaseFactor` and `freeBaseQty`
+  (0 when omitted) = `freeQty × toBaseFactor`, compared at numeric(18,6), or the
+  save is **422 `STOCK_LINE_BASE_QTY_MISMATCH` / `STOCK_LINE_FREE_BASE_QTY_MISMATCH`**
+  naming the line — refused, never corrected. `svi_value` is `GENERATED` from
+  `baseQty + freeBaseQty`, so these are the numbers the document is valued on.
+  At post the preflight refuses a unit that is not the item's, a `baseUomId`
+  that is not the base row the unit converts into, and a stored base quantity
+  that is not `qty × factor` (a draft saved before the rule).
 * **Default the rate source to `MANUAL`.** On a go-live day `stock_item_cost` is
   empty, so `AVG_COST` and `LAST_PURCHASE` have nothing to read. The preflight
   reports it, but the honest default is manual entry.
@@ -232,9 +236,13 @@ the branch was wrong, the sentence is the point.
 ## Cancelling a posted opening can legitimately fail
 
 Cancelling an opening after stock has been sold from it drives the holding
-negative, and `fn_sml_apply` refuses that under `stp_allow_negative = 'BLOCK'`.
-That surfaces as **409 naming the item**. It is correct behaviour, not a bug to
-retry around: the fix is an ADJUSTMENT with a reason.
+negative, and the engine refuses that **whatever the item's
+`stp_allow_negative` says** (notes 143 #4 — before that an ALLOW item went to
+−8 and accounts reversed the whole opening). That surfaces as **409
+`STOCK_CANCEL_WOULD_GO_NEGATIVE` naming the item**. It is correct behaviour,
+not a bug to retry around: the fix is an ADJUSTMENT with a reason, then the
+cancel. The same holds for every stock voucher's cancel; a sales document's
+stock reversal keeps the item's own policy.
 
 A POSTED voucher is **cancelled, never deleted**. `svh_is_deleted` is not read
 by the cancellation's ledger scan, so soft-deleting a posted document would hide

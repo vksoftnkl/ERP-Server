@@ -30,6 +30,8 @@ model Menu {
   sections               FormSection[]
   /// Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)
   voucherTypes           AccVoucherType[]
+  /// Tables this screen maintains (public.db_table_master.dtm_menu_id)
+  dbTables               DbTableMaster[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")

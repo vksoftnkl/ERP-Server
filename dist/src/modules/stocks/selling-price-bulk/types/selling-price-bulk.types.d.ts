@@ -75,11 +75,35 @@ export interface SellingPriceNoStockRow {
     mrp: number | null;
     salePrice: number | null;
 }
+export interface SellingPriceSavedRow {
+    lineNo: number;
+    bucketId: string;
+    scheduled: boolean;
+    effectiveFrom: string;
+    effectiveTo: string;
+}
 export interface SellingPriceSaveResult {
     saved: number;
+    effectiveFrom: string;
+    rows: SellingPriceSavedRow[];
     masterRowsSaved: number;
     noStock: SellingPriceNoStockRow[];
     needsConfirm: boolean;
     problems: SellingPriceProblem[];
     belowCostPolicy: BelowCostPolicy;
+}
+export interface SellingPriceSchedulePrevious {
+    bucketId: string | null;
+    priceScope: PriceScope | null;
+    levels: SellingPriceLevelValue[];
+}
+export interface SellingPriceScheduleRow extends SellingPriceRow {
+    effectiveFrom: string;
+    effectiveTo: string;
+    previous: SellingPriceSchedulePrevious | null;
+}
+export interface SellingPriceScheduleCancelResult {
+    bucketId: string;
+    restoredId: string | null;
+    restoredTo: string | null;
 }

@@ -14,6 +14,10 @@ import {
   ItemStockBalancePayload,
 } from './types/item-stock-balance-api.types';
 import { StockErrorCode } from '../types/stock-error-codes';
+import {
+  databaseToday,
+  priceRowsInForce,
+} from 'src/modules/Inventory/items-price-master/price-period.helper';
 
 /**
  * The unit shape a price payload reports (base unit, factors, slno, is_* flags)
@@ -207,6 +211,9 @@ export class ItemStockBalanceService {
       ...new Set(rows.map((s) => s.base_unit_id).filter((u): u is string => !!u)),
     ];
     const allGodownIds = [...new Set(rows.map((s) => s.sbl_godown_id))];
+    // Notes 140 — the price rows in force today: a key may also hold the row a
+    // scheduled price closed and the scheduled row itself.
+    const today = await databaseToday(this.prisma);
 
     const [items, units, godowns, priceMasters] = await Promise.all([
       this.prisma.itemMaster.findMany({
@@ -238,6 +245,7 @@ export class ItemStockBalanceService {
           ipmIsDeleted: false,
           ipmBucketMrp: null,
           ipmBucketSp: null,
+          ...priceRowsInForce(today),
         },
         select: {
           ipmItemId: true,

@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-17.1",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17",
+  "version": "2026-10-23.3",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -2441,6 +2441,70 @@
       "title": "Cannot void",
       "line": "Only this till's cashier, on this PC, or a supervisor can void.",
       "todo": "Ask a supervisor."
+    },
+    {
+      "code": "TXN_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TXN_DOC_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This document is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "TXN_TYPE_NOT_IN_DOC",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "TXN_STATUS_NOT_IN_DOC",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "IPCL_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "IPCL_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This document is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "IPCL_BAD_RANGE",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "STOCK_PRICE_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
     }
   ]
 }

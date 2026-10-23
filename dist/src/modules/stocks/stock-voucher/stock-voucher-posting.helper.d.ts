@@ -108,6 +108,7 @@ export type HoldingSource = Prisma.Sql;
 export declare function transitHoldingsOf(outId: string, outAccYear: string): HoldingSource;
 export declare function reservationHoldingsOf(srcDocType: string, srcDocId: string): HoldingSource;
 export declare function openReservationHoldings(companyId?: string | null): HoldingSource;
+export declare function lockVoucherItems(tx: Prisma.TransactionClient, svhId: string, accYear: string): Promise<void>;
 export declare function ensureBalanceRows(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string): Promise<void>;
 export declare function refreshReserved(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string, on: Date): Promise<number>;
 export declare function refreshTransitIn(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string, on: Date): Promise<number>;
@@ -131,6 +132,7 @@ export interface CancelStockVoucherParams {
     actor: string;
     reason: string;
     cancelledOn: Date;
+    refuseNegative?: boolean;
 }
 export declare function cancelStockVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;
 export declare function cancelDraftVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;

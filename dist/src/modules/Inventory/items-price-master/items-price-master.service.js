@@ -17,6 +17,10 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const price_bucket_service_1 = require("./price-bucket.service");
+const price_master_writer_service_1 = require("../item-price-log/price-master-writer.service");
+const price_change_log_types_1 = require("../item-price-log/types/price-change-log.types");
+const price_resolver_1 = require("./price-resolver");
+const price_period_helper_1 = require("./price-period.helper");
 const item_tax_rate_helper_1 = require("../utils/item-tax-rate.helper");
 const selling_price_math_helper_1 = require("../../stocks/selling-price-bulk/selling-price-math.helper");
 const item_child_helper_1 = require("../utils/item-child.helper");
@@ -63,12 +67,14 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
     configuredGridSqlService;
     requestContextService;
     priceBucketService;
-    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService, priceBucketService) {
+    priceWriter;
+    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService, priceBucketService, priceWriter) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.configuredGridSqlService = configuredGridSqlService;
         this.requestContextService = requestContextService;
         this.priceBucketService = priceBucketService;
+        this.priceWriter = priceWriter;
     }
     async save(saveItemPriceDto, tx) {
         const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
@@ -135,8 +141,9 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         return this.toPayload(record);
     }
     async findByItemId(itemId, client = this.prisma) {
+        const today = await (0, price_period_helper_1.databaseToday)(client);
         const records = await client.itemPriceMaster.findMany({
-            where: { ipmItemId: itemId, ipmIsDeleted: false },
+            where: { ipmItemId: itemId, ipmIsDeleted: false, ...(0, price_period_helper_1.priceRowsInForce)(today) },
             orderBy: [
                 { ipmSlNo: 'asc' },
                 { itemUnitConversion: { iucUnitSlno: 'asc' } },
@@ -144,6 +151,22 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             ],
         });
         return records.map((record) => this.toPayload(record));
+    }
+    async findScheduledByItemId(itemId, client = this.prisma) {
+        const today = await (0, price_period_helper_1.databaseToday)(client);
+        const records = await client.itemPriceMaster.findMany({
+            where: { ipmItemId: itemId, ipmIsDeleted: false, ...(0, price_period_helper_1.priceRowsScheduledAfter)(today) },
+            orderBy: [
+                { itemUnitConversion: { iucUnitSlno: 'asc' } },
+                { ipmEffectiveFrom: 'asc' },
+                { ipmId: 'asc' },
+            ],
+        });
+        return records.map((record) => ({
+            ...this.toPayload(record),
+            ipm_effective_from: (0, price_resolver_1.toDay)(record.ipmEffectiveFrom),
+            ipm_effective_to: (0, price_resolver_1.toDay)(record.ipmEffectiveTo),
+        }));
     }
     async toggleDelete(ipmId, tx) {
         const toggleIds = Array.isArray(ipmId) ? ipmId : [ipmId];
@@ -207,15 +230,10 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         }
         const nextDeleted = !existing.ipmIsDeleted;
         const updatedOn = new Date();
-        const updated = await tx.itemPriceMaster.update({
-            where: {
-                ipmId,
-            },
-            data: {
-                ipmIsDeleted: nextDeleted,
-                ipmUpdatedOn: updatedOn,
-                ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
-            },
+        const updated = await this.priceWriter.updatePrice(tx, price_change_log_types_1.PRICE_ORIGIN.ITEM_CARD, ipmId, {
+            ipmIsDeleted: nextDeleted,
+            ipmUpdatedOn: updatedOn,
+            ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
         });
         await this.auditLogService.logEntityChange({
             action: nextDeleted ? 'cancel' : 'update',
@@ -263,10 +281,9 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         };
         this.applyOptionalFields(data, saveItemPriceDto);
         await this.applyBucket(tx, data, saveItemPriceDto, null);
+        await this.applyOpenPeriod(tx, data);
         await this.fillLevelFigures(tx, data, saveItemPriceDto, null);
-        const created = await tx.itemPriceMaster.create({
-            data,
-        });
+        const created = await this.priceWriter.createPrice(tx, price_change_log_types_1.PRICE_ORIGIN.ITEM_CARD, data);
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange({
             action: 'New',
@@ -318,12 +335,7 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         this.applyOptionalFields(data, saveItemPriceDto);
         await this.applyBucket(tx, data, saveItemPriceDto, existing);
         await this.fillLevelFigures(tx, data, saveItemPriceDto, existing);
-        const updated = await tx.itemPriceMaster.update({
-            where: {
-                ipmId,
-            },
-            data,
-        });
+        const updated = await this.priceWriter.updatePrice(tx, price_change_log_types_1.PRICE_ORIGIN.ITEM_CARD, ipmId, data);
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange({
             action: 'update',
@@ -341,21 +353,95 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
     }
     async applyBucket(tx, data, dto, existing) {
         const pick = (sent, stored) => sent !== undefined ? sent : stored !== undefined ? (0, module_service_utils_1.toNumber)(stored) : 0;
-        const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
-            {
-                companyId: dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
-                branchId: dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
-                maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
-                prices: [
-                    pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
-                    pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
-                    pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
-                    pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
-                ],
-            },
+        const scope = {
+            companyId: dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
+            branchId: dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
+        };
+        const next = {
+            ...scope,
+            maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
+            prices: [
+                pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
+                pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
+                pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
+                pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
+            ],
+        };
+        if (!existing) {
+            const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [next]);
+            data.ipmBucketMrp = key.mrp;
+            data.ipmBucketSp = key.salePrice;
+            return;
+        }
+        const stored = {
+            ...scope,
+            maxPrice: (0, module_service_utils_1.toNumber)(existing.ipmMaxPrice),
+            prices: [
+                (0, module_service_utils_1.toNumber)(existing.ipmSalesPriceA),
+                (0, module_service_utils_1.toNumber)(existing.ipmSalesPriceB),
+                (0, module_service_utils_1.toNumber)(existing.ipmSalesPriceC),
+                (0, module_service_utils_1.toNumber)(existing.ipmSalesPriceD),
+            ],
+        };
+        const [key, kept] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
+            next,
+            stored,
         ]);
+        if (!(0, price_resolver_1.sameBucket)(key, kept)) {
+            this.refuseBucketChange(existing, next, kept, key);
+        }
         data.ipmBucketMrp = key.mrp;
         data.ipmBucketSp = key.salePrice;
+    }
+    refuseBucketChange(existing, next, from, to) {
+        const stored = (0, price_resolver_1.bucketKeyOfRow)(existing);
+        const describe = (key) => [
+            key.mrp !== null ? `MRP ${key.mrp}` : null,
+            key.salePrice !== null ? `sale price ${key.salePrice}` : null,
+        ]
+            .filter(Boolean)
+            .join(', ') || 'no bucket';
+        const levels = ['a', 'b', 'c', 'd'];
+        const storedPrices = [
+            existing.ipmSalesPriceA,
+            existing.ipmSalesPriceB,
+            existing.ipmSalesPriceC,
+            existing.ipmSalesPriceD,
+        ].map((price) => (0, module_service_utils_1.toNumber)(price));
+        const level = from.mrp !== to.mrp
+            ? null
+            : levels.find((_, index) => next.prices[index] === to.salePrice && next.prices[index] !== storedPrices[index]);
+        (0, module_service_utils_1.throwInventoryBadRequest)('This edit would move the price onto other stock', [
+            {
+                field: level ? `ipm_sales_price_${level}` : 'ipm_max_price',
+                code: item_price_error_codes_1.ItemPriceErrorCode.BUCKET_CHANGED,
+                message: `Price row ${existing.ipmId} prices the stock at ${describe(stored)}; this edit would ` +
+                    `make it the price of ${describe(to)}. Add a new price row for that stock instead.`,
+            },
+        ]);
+    }
+    async applyOpenPeriod(tx, data) {
+        const [gap] = await tx.$queryRaw `
+      WITH k AS (
+        SELECT ipm_effective_from, ipm_effective_to
+          FROM inventory.item_price_master
+         WHERE ipm_is_deleted = false
+           AND ipm_company_id IS NOT DISTINCT FROM ${data.ipmCompanyId ?? null}::uuid
+           AND ipm_branch_id  IS NOT DISTINCT FROM ${data.ipmBranchId ?? null}::uuid
+           AND ipm_item_id    = ${data.ipmItemId}::uuid
+           AND ipm_uc_unit_id = ${data.ipmUcUnitId}::uuid
+           AND ipm_key_mrp    = COALESCE(${data.ipmBucketMrp ?? null}::numeric, -1)
+           AND ipm_key_sp     = COALESCE(${data.ipmBucketSp ?? null}::numeric, -1)
+      )
+      SELECT (SELECT MAX(ipm_effective_to) + 1 FROM k WHERE ipm_effective_to < CURRENT_DATE)::text
+                 AS "from",
+             (SELECT MIN(ipm_effective_from) - 1 FROM k WHERE ipm_effective_from > CURRENT_DATE)::text
+                 AS "to"
+    `;
+        if (gap?.from)
+            data.ipmEffectiveFrom = (0, price_period_helper_1.toDateColumn)(gap.from);
+        if (gap?.to)
+            data.ipmEffectiveTo = (0, price_period_helper_1.toDateColumn)(gap.to);
     }
     async fillLevelFigures(tx, data, dto, existing) {
         const levels = [
@@ -723,6 +809,7 @@ exports.ItemsPriceMasterService = ItemsPriceMasterService = __decorate([
         audit_log_service_1.AuditLogService,
         configured_grid_sql_service_1.ConfiguredGridSqlService,
         request_context_service_1.RequestContextService,
-        price_bucket_service_1.PriceBucketService])
+        price_bucket_service_1.PriceBucketService,
+        price_master_writer_service_1.PriceMasterWriter])
 ], ItemsPriceMasterService);
 //# sourceMappingURL=items-price-master.service.js.map

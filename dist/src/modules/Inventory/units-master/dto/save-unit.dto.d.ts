@@ -1,3 +1,4 @@
+export declare const MAX_UNIT_DECIMAL_COUNT = 3;
 export declare class SaveUnitDto {
     unit_id?: string;
     unit_name: string;

@@ -1329,7 +1329,7 @@ describe('stock-voucher-posting.helper', () => {
       });
     });
 
-    it('never forces BLOCK on a cancel, a transfer included', async () => {
+    it('never forces BLOCK on a cancel that does not ask for it (a sales shadow), a transfer included', async () => {
       const db = makeTx({
         transferGuard: [{ status: 'POSTED', refno: 'TRF/0001' }],
         lockHeader: header({ status: 'POSTED' }),
@@ -1339,6 +1339,44 @@ describe('stock-voucher-posting.helper', () => {
 
       // Only the reversal flag of ledgerRowsOf is true.
       expect(db.callOf('negative')?.values.filter((v) => v === true)).toHaveLength(1);
+    });
+
+    it('forces BLOCK on a stock voucher cancel, whatever the policy (notes 143 #4)', async () => {
+      const db = makeTx({
+        lockHeader: header({ status: 'POSTED' }),
+        negative: [
+          {
+            itemName: 'Milk 500ml',
+            batchNo: null,
+            godownName: 'Main',
+            onHand: '-8',
+            allowNegative: 'BLOCK',
+          },
+        ],
+      });
+
+      const refusal = await refusalOf(
+        cancelStockVoucher(db.tx, cancelParams(OPENING, { refuseNegative: true })),
+      );
+
+      // The reversal flag of ledgerRowsOf, then forceBlock in the CASE and the WHERE.
+      expect(db.callOf('negative')?.values.filter((v) => v === true)).toHaveLength(3);
+      expect(refusal).toEqual({
+        status: 409,
+        body: {
+          success: false,
+          message: 'Cancelling this opening stock would drive stock negative',
+          errors: [
+            {
+              field: 'lines',
+              code: StockErrorCode.CANCEL_WOULD_GO_NEGATIVE,
+              message:
+                'Milk 500ml: stock would go negative (-8 on hand) in Main — stock it brought in has moved out since. Adjust it first, then cancel.',
+            },
+          ],
+        },
+      });
+      expect(db.raw.stockVoucher.update).not.toHaveBeenCalled();
     });
 
     it('refuses a voucher that is not POSTED, and one that is gone', async () => {

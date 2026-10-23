@@ -38,6 +38,10 @@ export enum StockErrorCode {
   LINK_INCOMPLETE = 'STOCK_LINK_INCOMPLETE',
   /** A document with no lines. */
   LINES_REQUIRED = 'STOCK_LINES_REQUIRED',
+  /** Notes 143 #6 — the document date falls in another accounting year than the one it is filed under. */
+  DOC_DATE_OUTSIDE_YEAR = 'STOCK_DOC_DATE_OUTSIDE_YEAR',
+  /** Notes 143 #10 — the next 1000 numbers of the refno series are all taken; move the series on. */
+  REFNO_SERIES_EXHAUSTED = 'STOCK_REFNO_SERIES_EXHAUSTED',
   /** A freeze on a document that is not a physical count. */
   FREEZE_NOT_ALLOWED = 'STOCK_FREEZE_NOT_ALLOWED',
   /** A stock freeze without both freezeFrom and freezeTo. */
@@ -60,6 +64,10 @@ export enum StockErrorCode {
   LINE_QTY_REQUIRED = 'STOCK_LINE_QTY_REQUIRED',
   /** A line that names no unit (uomId). */
   LINE_UNIT_REQUIRED = 'STOCK_LINE_UNIT_REQUIRED',
+  /** Notes 143 #3 — baseQty is not qty × toBaseFactor (at numeric(18,6)). */
+  LINE_BASE_QTY_MISMATCH = 'STOCK_LINE_BASE_QTY_MISMATCH',
+  /** Notes 143 #3 — freeBaseQty (0 when omitted) is not freeQty × toBaseFactor. */
+  LINE_FREE_BASE_QTY_MISMATCH = 'STOCK_LINE_FREE_BASE_QTY_MISMATCH',
   /** A per-line direction on a document that is not a stock adjustment. */
   LINE_DIRECTION_NOT_ALLOWED = 'STOCK_LINE_DIRECTION_NOT_ALLOWED',
   /** A line that must name its lot (transfer, move, write-off, despatch …) names none. */
@@ -96,6 +104,17 @@ export enum StockErrorCode {
   INSUFFICIENT_STOCK = 'STOCK_INSUFFICIENT_STOCK',
   /** The movement would drive a holding negative and the item's policy is BLOCK. */
   NEGATIVE_BLOCKED = 'STOCK_NEGATIVE_BLOCKED',
+  /**
+   * A price save (Change Selling Price, menu 30, or the quick rate popup) by a
+   * user without Edit on menu 30. Built by assertMenuRight as STOCK_PRICE_RIGHT_EDIT.
+   */
+  PRICE_RIGHT_EDIT = 'STOCK_PRICE_RIGHT_EDIT',
+  /**
+   * Notes 143 #4 — cancelling a stock voucher would drive a holding negative:
+   * the stock it brought in has since moved out. Refused whatever the item's
+   * policy; the fix is an adjustment, then the cancel.
+   */
+  CANCEL_WOULD_GO_NEGATIVE = 'STOCK_CANCEL_WOULD_GO_NEGATIVE',
   /** The item's issue strategy is MANUAL, so an outward line must name its lot. */
   PICK_MANUAL_LOT_REQUIRED = 'STOCK_PICK_MANUAL_LOT_REQUIRED',
   /** An outward line names no lot and the godown holds no matching stock to pick from. */
@@ -318,6 +337,14 @@ export enum StockErrorCode {
   PRICE_BUCKET_SP_ZERO = 'STOCK_PRICE_BUCKET_SP_ZERO',
   /** A negative selling price. */
   PRICE_NEGATIVE = 'STOCK_PRICE_NEGATIVE',
+  /** effectiveFrom before today: bills already made at the old price would change meaning (notes 140 A). */
+  PRICE_FROM_IN_PAST = 'STOCK_PRICE_FROM_IN_PAST',
+  /** effectiveFrom more than a year ahead — a typo in the year, most likely (notes 140 A). */
+  PRICE_FROM_TOO_FAR = 'STOCK_PRICE_FROM_TOO_FAR',
+  /** No live price row with that id to cancel (notes 140 B). */
+  PRICE_SCHEDULE_NOT_FOUND = 'STOCK_PRICE_SCHEDULE_NOT_FOUND',
+  /** The scheduled price is already in force: cancelling it would rewrite past bills (notes 140 B). */
+  PRICE_SCHEDULE_STARTED = 'STOCK_PRICE_SCHEDULE_STARTED',
 
   // ── balance reads and presets ─────────────────────────────────────────────
   /** No item stock balance row for the scope asked. */

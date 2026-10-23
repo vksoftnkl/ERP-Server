@@ -87,6 +87,10 @@ class PhysicalStockHeaderDto {
     postedByName;
     cancelledOn;
     cancelReason;
+    createdOn;
+    createdBy;
+    createdByName;
+    modifiedOn;
     rateSource;
     remarks;
     isDeleted;
@@ -281,6 +285,28 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], PhysicalStockHeaderDto.prototype, "cancelReason", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date-time' }),
+    __metadata("design:type", String)
+], PhysicalStockHeaderDto.prototype, "createdOn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'svh_created_by as stored — free text, usually a user id.',
+    }),
+    __metadata("design:type", Object)
+], PhysicalStockHeaderDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Display name of the createdBy user; null when createdBy names no user.',
+    }),
+    __metadata("design:type", Object)
+], PhysicalStockHeaderDto.prototype, "createdByName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'date-time', nullable: true }),
+    __metadata("design:type", Object)
+], PhysicalStockHeaderDto.prototype, "modifiedOn", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: stock_voucher_types_1.STOCK_RATE_SOURCES,

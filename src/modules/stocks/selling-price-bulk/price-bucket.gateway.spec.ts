@@ -1,5 +1,4 @@
 import { Prisma } from '@prisma/client';
-import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import {
   PriceBucketGateway,
@@ -496,92 +495,8 @@ describe('PriceBucketGateway', () => {
     });
   });
 
-  // ── S2 — update ───────────────────────────────────────────────────────────
-  describe('updateBucketPrice', () => {
-    it('writes the levels it was sent, keeps the others, and stamps the cost it priced against', async () => {
-      await expect(
-        gateway.updateBucketPrice(
-          txClient(),
-          IPM_ID,
-          candidate({
-            levels: [
-              { level: 1, price: 38, priceWot: 32.20339, markupPerc: 49.019608 },
-              { level: 3, price: 36, priceWot: 30.508475, markupPerc: 41.176471 },
-            ],
-            minPrice: 30,
-            roundOff: 0.5,
-          }),
-        ),
-      ).resolves.toBe(IPM_ID);
-
-      expect(statementOf(tx.$executeRaw).values).toEqual([
-        38,
-        null,
-        36,
-        null,
-        32.20339,
-        null,
-        30.508475,
-        null,
-        49.019608,
-        null,
-        41.176471,
-        null,
-        30,
-        25.5,
-        21.610169,
-        'By User',
-        0.5,
-        USER_ID,
-        IPM_ID,
-      ]);
-    });
-
-    it('stores the nil-uuid actor as NULL, never as a user', async () => {
-      await gateway.updateBucketPrice(txClient(), IPM_ID, candidate({ actor: DEFAULT_ACTOR }));
-
-      const values = statementOf(tx.$executeRaw).values;
-      expect(values.at(-2)).toBeNull();
-    });
-  });
-
-  // ── S3 — insert ───────────────────────────────────────────────────────────
-  describe('insertBucketPrice', () => {
-    it('inserts at the target scope, copying the attributes from the headline, and returns the new id', async () => {
-      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
-
-      await expect(
-        gateway.insertBucketPrice(txClient(), candidate({ salePrice: 38 }), branchScope),
-      ).resolves.toBe(OTHER_IPM_ID);
-
-      const statement = statementOf(tx.$queryRaw);
-      expect(statement.values.slice(0, 6)).toEqual([
-        COMPANY_ID,
-        BRANCH_ID,
-        ITEM_ID,
-        UOM_ID,
-        25.5,
-        21.610169,
-      ]);
-      expect(statement.values).toContain('By User');
-      expect(statement.values.filter((value) => value === USER_ID)).toHaveLength(2);
-      // The bucket's own MRP becomes the row's max price and its bucket MRP.
-      expect(statement.values.filter((value) => value === 40)).toHaveLength(2);
-      expect(statement.values).toContain(38);
-      expect(statement.sql).toContain('RETURNING ipm_id');
-      expect(statement.sql).toContain('hp.ipm_key_mrp = -1 AND hp.ipm_key_sp = -1');
-    });
-
-    it('stores the nil-uuid actor as NULL on both stamps, at chain scope too', async () => {
-      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
-
-      await gateway.insertBucketPrice(txClient(), candidate({ actor: DEFAULT_ACTOR }), chainScope);
-
-      const values = statementOf(tx.$queryRaw).values;
-      expect(values).not.toContain(DEFAULT_ACTOR);
-      expect(values.slice(0, 2)).toEqual([COMPANY_ID, null]);
-    });
-  });
+  // S2 / S3 moved to PriceMasterWriter with their statements (notes 144):
+  // see src/modules/Inventory/item-price-log/price-master-writer.service.spec.ts.
 
   // ── the audit snapshot ────────────────────────────────────────────────────
   describe('snapshotRows', () => {

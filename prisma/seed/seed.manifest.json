@@ -13,6 +13,10 @@
       "description": "fixed.menu_master — the menu tree; runs first because form_section and user_menus reference menus by id"
     },
     {
+      "file": "Db_Table_Master.sql",
+      "description": "public.db_table_master — the table registry (what every table is); after Menu_Master.sql because dtm_menu_id references a menu (an absent menu is dropped to NULL)"
+    },
+    {
       "file": "Ui_Tables.sql",
       "description": "fixed.ui_tables — entry-screen item grid registry; parent of ui_table_columns"
     },

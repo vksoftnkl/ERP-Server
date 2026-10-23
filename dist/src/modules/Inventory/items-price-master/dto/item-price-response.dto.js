@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ItemPriceSuccessDeleteDto = exports.ItemPriceSuccessListDto = exports.ItemPriceSuccessSaveDto = exports.ItemPriceSuccessSingleDto = exports.ItemPriceDeleteResultDto = exports.ItemPricePayloadDto = exports.ItemPriceListMetaDto = exports.ItemPriceErrorResponseDto = exports.ItemPriceErrorFieldDto = void 0;
+exports.ItemPriceSuccessDeleteDto = exports.ItemPriceSuccessListDto = exports.ItemPriceSuccessSaveDto = exports.ItemPriceSuccessSingleDto = exports.ItemPriceDeleteResultDto = exports.ScheduledItemPricePayloadDto = exports.ItemPricePayloadDto = exports.ItemPriceListMetaDto = exports.ItemPriceErrorResponseDto = exports.ItemPriceErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const module_response_dto_1 = require("../../../../common/utils/module-response.dto");
 Object.defineProperty(exports, "ItemPriceErrorFieldDto", { enumerable: true, get: function () { return module_response_dto_1.InventoryErrorFieldDto; } });
@@ -279,6 +279,19 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_godown_name", void 0);
+class ScheduledItemPricePayloadDto extends ItemPricePayloadDto {
+    ipm_effective_from;
+    ipm_effective_to;
+}
+exports.ScheduledItemPricePayloadDto = ScheduledItemPricePayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '2026-10-23', description: 'After today.' }),
+    __metadata("design:type", String)
+], ScheduledItemPricePayloadDto.prototype, "ipm_effective_from", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '9999-12-31' }),
+    __metadata("design:type", String)
+], ScheduledItemPricePayloadDto.prototype, "ipm_effective_to", void 0);
 class ItemPriceDeleteResultDto {
     ipm_id;
     deleted;

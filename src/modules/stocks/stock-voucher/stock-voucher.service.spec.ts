@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpException } from '@nestjs/common';
+import { ArgumentsHost, HttpException, Logger } from '@nestjs/common';
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -113,6 +113,21 @@ const payload = (overrides: Partial<SaveStockVoucherDto> = {}): SaveStockVoucher
   ],
 });
 
+/**
+ * Notes 143 #1 — the row StockVoucherService.loadForWrite reads under FOR
+ * UPDATE: a live OPENING draft of this company and branch, dated in ACC_YEAR.
+ */
+const lockedHeader = (overrides: Record<string, unknown> = {}) => ({
+  svh_refno: 'OPN/x',
+  svh_status: 'DRAFT',
+  svh_is_deleted: false,
+  svh_voucher_type: 'OPENING',
+  svh_company_id: COMPANY_ID,
+  svh_branch_id: BRANCH_ID,
+  doc_date: '2026-04-01',
+  ...overrides,
+});
+
 /** What Prisma hands back when a PL/pgSQL function RAISEs inside a raw query. */
 const engineError = (sqlState: string, message: string) =>
   Object.assign(new Error('Raw query failed'), {
@@ -140,6 +155,8 @@ describe('StockVoucherService', () => {
     $executeRaw: jest.Mock;
   };
   let auditLogService: { logEntityChange: jest.Mock; logDocumentRevision: jest.Mock };
+  /** What loadForWrite's FOR UPDATE read answers with, over lockedHeader()'s draft. */
+  let lockedOverrides: Record<string, unknown>;
 
   const conversionRow = (overrides: Record<string, unknown> = {}) => ({
     iucId: UOM_ID,
@@ -152,6 +169,7 @@ describe('StockVoucherService', () => {
   });
 
   beforeEach(() => {
+    lockedOverrides = {};
     client = {
       deviceMaster: {
         findFirst: jest.fn().mockResolvedValue({
@@ -205,6 +223,8 @@ describe('StockVoucherService', () => {
               link_src_doc_id: null,
               link_src_acc_year: null,
               locked: 1,
+              // Notes 143 #1 — the service's own locked read (loadForWrite).
+              ...lockedHeader(lockedOverrides),
             },
           ]);
         }
@@ -309,31 +329,35 @@ describe('StockVoucherService', () => {
       expect(client.itemUnitConversion.findMany).not.toHaveBeenCalled();
     });
 
-    it('does NOT recompute base_qty as qty × factor — the payload wins even when they disagree', async () => {
-      await service.save(
-        OPENING_RULES,
-        payload({
-          lines: [
-            {
-              lineNo: 1,
-              itemId: ITEM_ID,
-              uomId: UOM_ID,
-              baseUomId: BASE_UOM_ID,
-              toBaseFactor: 12,
-              // 10 × 12 would be 120. The server multiplies nothing, so what
-              // the client sent is what is stored — this is the whole point of
-              // the change, and the assertion that would catch a reintroduced
-              // multiplication.
-              baseQty: 97,
-              godownId: GODOWN_ID,
-              qty: 10,
-              costRate: 20,
-            },
-          ],
-        }),
+    it('refuses a base_qty that is not qty × factor rather than storing it (notes 143 #3)', async () => {
+      const refusal = await refusalOf(
+        service.save(
+          OPENING_RULES,
+          payload({
+            lines: [
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                // 10 × 12 is 120. Stored as sent, 97 is what the ledger would
+                // have moved; it is refused, and never quietly corrected.
+                baseQty: 97,
+                godownId: GODOWN_ID,
+                qty: 10,
+                costRate: 20,
+              },
+            ],
+          }),
+        ),
       );
 
-      expect(Number(createdLine().sviBaseQty)).toBe(97);
+      expect(refusal).toMatchObject({
+        status: 422,
+        errors: [{ field: 'lines.0.baseQty', code: StockErrorCode.LINE_BASE_QTY_MISMATCH }],
+      });
+      expect(client.stockVoucher.create).not.toHaveBeenCalled();
     });
 
     it('takes free_base_qty from the payload rather than multiplying free qty', async () => {
@@ -1363,7 +1387,7 @@ describe('StockVoucherService', () => {
               uomId: UOM_ID,
               baseUomId: BASE_UOM_ID,
               toBaseFactor: 12,
-              baseQty: 120,
+              baseQty: 12,
               godownId: GODOWN_ID,
               qty: 1,
               costRate: 20,
@@ -1384,7 +1408,7 @@ describe('StockVoucherService', () => {
               uomId: UOM_ID,
               baseUomId: BASE_UOM_ID,
               toBaseFactor: 12,
-              baseQty: 120,
+              baseQty: 12,
               godownId: GODOWN_ID,
               qty: 1,
               costRate: 20,
@@ -1407,7 +1431,7 @@ describe('StockVoucherService', () => {
               uomId: UOM_ID,
               baseUomId: BASE_UOM_ID,
               toBaseFactor: 12,
-              baseQty: 120,
+              baseQty: 12,
               godownId: GODOWN_ID,
               qty: 1,
               costRate: 20,
@@ -1440,7 +1464,7 @@ describe('StockVoucherService', () => {
               uomId: UOM_ID,
               baseUomId: BASE_UOM_ID,
               toBaseFactor: 12,
-              baseQty: 120,
+              baseQty: 12,
               godownId: GODOWN_ID,
               qty: 1,
               costRate: 0,
@@ -1466,7 +1490,7 @@ describe('StockVoucherService', () => {
               uomId: UOM_ID,
               baseUomId: BASE_UOM_ID,
               toBaseFactor: 12,
-              baseQty: 120,
+              baseQty: 12,
               godownId: GODOWN_ID,
               qty: 1,
               costRate: 0,
@@ -1491,7 +1515,7 @@ describe('StockVoucherService', () => {
                 uomId: UOM_ID,
                 baseUomId: BASE_UOM_ID,
                 toBaseFactor: 12,
-                baseQty: 120,
+                baseQty: 12,
                 godownId: GODOWN_ID,
                 qty: 1,
                 costRate: 0,
@@ -1603,7 +1627,7 @@ describe('StockVoucherService', () => {
                 uomId: UOM_ID,
                 baseUomId: BASE_UOM_ID,
                 toBaseFactor: 12,
-                baseQty: 120,
+                baseQty: 12,
                 godownId: GODOWN_ID,
                 qty: 1,
                 costRate: 20,
@@ -1654,7 +1678,7 @@ describe('StockVoucherService', () => {
                   uomId: UOM_ID,
                   baseUomId: BASE_UOM_ID,
                   toBaseFactor: 12,
-                  baseQty: 120,
+                  baseQty: 12,
                   godownId: GODOWN_ID,
                   qty: 1,
                   costRate: 20,
@@ -1681,7 +1705,7 @@ describe('StockVoucherService', () => {
                 uomId: UOM_ID,
                 baseUomId: BASE_UOM_ID,
                 toBaseFactor: 12,
-                baseQty: 120,
+                baseQty: 12,
                 godownId: GODOWN_ID,
                 qty: 1,
                 costRate: 20,
@@ -1707,7 +1731,7 @@ describe('StockVoucherService', () => {
     };
 
     it('answers 409 on an update of a POSTED voucher instead of a trigger 500', async () => {
-      client.stockVoucher.findUnique.mockResolvedValue(posted);
+      lockedOverrides = { svh_status: 'POSTED' };
 
       await expect(
         service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
@@ -1941,7 +1965,62 @@ describe('StockVoucherService', () => {
       await expect(
         service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
       ).rejects.toMatchObject({ status: 422 });
-      expect(client.$transaction).not.toHaveBeenCalled();
+      // Notes 143 #2 — refused INSIDE the post's transaction now, so it rolls
+      // back; what matters is that the engine never wrote a ledger row.
+      expect(client.$executeRaw).not.toHaveBeenCalled();
+      expect(client.txnStatusLog.create).not.toHaveBeenCalled();
+    });
+
+    it('runs the preflight under the row lock and the item locks, in that order (notes 143 #2)', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader());
+      const order: string[] = [];
+      const queryRaw = client.$queryRaw.getMockImplementation()!;
+      client.$queryRaw.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = Array.isArray(strings) ? strings.join('?') : '';
+        if (sql.includes('svh_company_id, svh_branch_id') && sql.includes('FOR UPDATE')) {
+          order.push('row lock');
+        } else if (sql.includes('pg_advisory_xact_lock(hashtextextended')) {
+          order.push('item locks');
+        }
+        return queryRaw(strings, ...values);
+      });
+      const validate = jest.spyOn(service, 'validate').mockImplementation(async () => {
+        order.push('preflight');
+        return [
+          {
+            sviId: 'svi1',
+            lineNo: 1,
+            splitNo: 1,
+            itemId: ITEM_ID,
+            itemCode: 'SALT',
+            itemName: 'Salt',
+            problem: 'this holding already has an opening in this year',
+          },
+        ];
+      });
+
+      await expect(
+        service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+      ).rejects.toMatchObject({ status: 422 });
+
+      expect(order).toEqual(['row lock', 'item locks', 'preflight']);
+      // Handed the transaction, so it reads what the locks now hold.
+      expect(validate.mock.calls[0][5]).toBe(client);
+    });
+
+    it('refuses a draft re-filed under the wrong year at post (notes 143 #6)', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader());
+      lockedOverrides = { doc_date: '2027-04-02' };
+
+      const refusal = await refusalOf(
+        service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        errors: [{ field: 'docDate', code: StockErrorCode.DOC_DATE_OUTSIDE_YEAR }],
+      });
+      expect(client.$executeRaw).not.toHaveBeenCalled();
     });
   });
 
@@ -2657,9 +2736,7 @@ describe('StockVoucherService', () => {
 
   describe('updates that cannot proceed', () => {
     it('refuses an update of a voucher saved under another type', async () => {
-      client.stockVoucher.findUnique.mockResolvedValue(
-        storedHeader({ svhVoucherType: 'PHYSICAL' }),
-      );
+      lockedOverrides = { svh_voucher_type: 'PHYSICAL' };
 
       const refusal = await refusalOf(
         service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
@@ -2673,7 +2750,7 @@ describe('StockVoucherService', () => {
     });
 
     it('refuses an update of a deleted draft as 409 STOCK_VOUCHER_DELETED', async () => {
-      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhIsDeleted: true }));
+      lockedOverrides = { svh_is_deleted: true, svh_refno: 'OPN/2026-2027/TILL-01/1' };
 
       const refusal = await refusalOf(
         service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
@@ -2689,6 +2766,119 @@ describe('StockVoucherService', () => {
           },
         ],
       });
+    });
+
+    it('refuses an update of another company’s draft as 404, before writing (notes 143 #1)', async () => {
+      lockedOverrides = { svh_company_id: '01000000-0000-7000-8000-0000000000c9' };
+
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 404,
+        errors: [{ field: 'svhId', code: StockErrorCode.VOUCHER_NOT_FOUND }],
+      });
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+      expect(client.stockVoucherItem.createMany).not.toHaveBeenCalled();
+    });
+
+    it('takes the row lock before it reads the document it is about to change (notes 143 #1)', async () => {
+      let lockedFirst = false;
+      // Already spied in the outer beforeEach; spyOn hands back that spy.
+      jest.spyOn(service, 'getById').mockImplementation(async () => {
+        lockedFirst = client.$queryRaw.mock.calls.some((call: unknown[]) =>
+          (call[0] as string[]).join('?').includes('FOR UPDATE'),
+        );
+        return { header: { svhId: SVH_ID } as never, lines: [] };
+      });
+
+      await service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never }));
+
+      expect(lockedFirst).toBe(true);
+    });
+  });
+
+  // ── notes 143 — payload rules, the actor, and the cancel ──────────────────
+  describe('notes 143', () => {
+    const line = (overrides: Record<string, unknown> = {}) => ({
+      lineNo: 1,
+      itemId: ITEM_ID,
+      uomId: UOM_ID,
+      baseUomId: BASE_UOM_ID,
+      toBaseFactor: 12,
+      baseQty: 120,
+      godownId: GODOWN_ID,
+      qty: 10,
+      costRate: 20,
+      ...overrides,
+    });
+
+    it('#3 refuses free goods with no free base quantity — they posted nothing', async () => {
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ lines: [line({ freeQty: 2 })] as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        errors: [
+          { field: 'lines.0.freeBaseQty', code: StockErrorCode.LINE_FREE_BASE_QTY_MISMATCH },
+        ],
+      });
+    });
+
+    it('#3 compares at numeric(18,6), so a float-rounded base quantity still passes', async () => {
+      // 0.1 × 3 is 0.30000000000000004 in float64; the column holds 0.300000.
+      await service.save(
+        OPENING_RULES,
+        payload({ lines: [line({ qty: 0.1, toBaseFactor: 3, baseQty: 0.1 * 3 })] as never }),
+      );
+
+      expect(client.stockVoucher.create).toHaveBeenCalled();
+    });
+
+    it('#6 refuses a date outside the year the document is filed under', async () => {
+      const refusal = await refusalOf(
+        service.save(OPENING_RULES, payload({ header: { docDate: '2027-04-01' } as never })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        errors: [
+          {
+            field: 'docDate',
+            code: StockErrorCode.DOC_DATE_OUTSIDE_YEAR,
+            message:
+              '2027-04-01 falls in 2027-2028, not in 2026-2027, the year this document is filed under.',
+          },
+        ],
+      });
+    });
+
+    it('#6 takes 31 March as the last day of the year, not the first of the next', async () => {
+      await service.save(OPENING_RULES, payload({ header: { docDate: '2027-03-31' } as never }));
+
+      expect(client.stockVoucher.create).toHaveBeenCalled();
+    });
+
+    it('#9 files the LOGIN as the actor, not the userId the body names', async () => {
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { userId: '01000000-0000-7000-8000-0000000000aa' } as never }),
+      );
+
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBe(USER_ID);
+    });
+
+    it('#4 asks the engine to refuse a cancel that would go negative', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(storedHeader({ svhStatus: 'POSTED' }));
+      const engineCancel = jest
+        .spyOn((service as unknown as { stockPosting: StockPostingService }).stockPosting, 'cancel')
+        .mockResolvedValue(2);
+
+      await service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'wrong godown', COMPANY_ID, BRANCH_ID);
+
+      expect(engineCancel.mock.calls[0][2]).toMatchObject({ refuseNegative: true, actor: USER_ID });
     });
   });
 
@@ -2983,6 +3173,10 @@ describe('StockVoucherService', () => {
         posted_by_name: 'Store Keeper',
         cancelled_on: null,
         cancel_reason: null,
+        svh_created_on: new Date('2026-04-01T04:45:00.000Z'),
+        svh_created_by: USER_ID,
+        created_by_name: 'Store Keeper',
+        svh_modified_on: null,
         svh_rate_source: 'MANUAL',
         svh_remarks: 'go-live',
         svh_is_deleted: false,
@@ -3074,6 +3268,7 @@ describe('StockVoucherService', () => {
             svh_sync_date: new Date('2026-04-02T00:00:00.000Z'),
             cancelled_on: new Date('2026-04-03T00:00:00.000Z'),
             cancel_reason: 'wrong godown',
+            svh_modified_on: new Date('2026-04-01T05:00:00.000Z'),
           }),
         ]);
 
@@ -3127,6 +3322,10 @@ describe('StockVoucherService', () => {
           postedByName: 'Store Keeper',
           cancelledOn: '2026-04-03T00:00:00.000Z',
           cancelReason: 'wrong godown',
+          createdOn: '2026-04-01T04:45:00.000Z',
+          createdBy: USER_ID,
+          createdByName: 'Store Keeper',
+          modifiedOn: '2026-04-01T05:00:00.000Z',
           rateSource: 'MANUAL',
           remarks: 'go-live',
           isDeleted: false,
@@ -3151,7 +3350,22 @@ describe('StockVoucherService', () => {
           freezeTo: null,
           syncDate: null,
           linkSrcAccYear: null,
+          modifiedOn: null,
         });
+      });
+
+      it('passes a created-by that names no user through as text, with no name', async () => {
+        stubDocument([headerRow({ svh_created_by: 'IMPORT-JOB', created_by_name: null })]);
+
+        const { header } = await service.getById(
+          OPENING_RULES,
+          SVH_ID,
+          ACC_YEAR,
+          COMPANY_ID,
+          BRANCH_ID,
+        );
+
+        expect(header).toMatchObject({ createdBy: 'IMPORT-JOB', createdByName: null });
       });
 
       it('maps each line, a missing value as 0 and a stored direction as a number', async () => {
@@ -3583,9 +3797,39 @@ describe('StockVoucherService', () => {
       await service.validate(PHYSICAL_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
       const count = flagsOf(client.$queryRaw);
 
-      // [canPick, refuse a repeat holding, QTY, count ×4, not a receipt, not a count]
-      expect(opening).toEqual([true, true, true, false, false, false, false, true, true]);
-      expect(count).toEqual([false, false, false, true, true, true, true, true, false]);
+      // [canPick, refuse a repeat holding, SIMPLE (other-branch item), SIMPLE
+      //  (inactive item), SIMPLE (inactive godown), QTY, count ×4, QTY (base
+      //  qty, notes 143 #3), not a receipt, not a count]
+      expect(opening).toEqual([
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+      ]);
+      expect(count).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+      ]);
     });
   });
 
@@ -3783,6 +4027,8 @@ describe('StockVoucherExceptionFilter — the SQLSTATE map', () => {
     } as unknown as ArgumentsHost;
   });
 
+  afterEach(() => jest.restoreAllMocks());
+
   // One case per row of §12 of the plan. Every one of these arrives from Prisma
   // as code P2010 — a filter switching on error.code would answer 500 to all of
   // them with the same useless message.
@@ -3814,9 +4060,16 @@ describe('StockVoucherExceptionFilter — the SQLSTATE map', () => {
   });
 
   it('lets an unrecognised failure fall through to 500 rather than dressing it up', () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
     filter.catch(engineError('42P01', 'relation "stock.stock_voucher" does not exist'), host);
 
     expect(status).toHaveBeenCalledWith(500);
+    // The stack goes to the server log, never to the client.
+    expect(logged).toHaveBeenCalledWith(
+      'POST /api/v1/stock/opening/post',
+      expect.stringContaining('Raw query failed'),
+    );
   });
 
   it('passes an HttpException the service already built through untouched', () => {

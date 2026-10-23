@@ -60,6 +60,9 @@ export declare class StockVoucherService {
     countSheet(rules: StockVoucherTypeRules, query: CountSheetQuery): Promise<PagedResult<StockCountSheetRow>>;
     variance(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, limit?: number, offset?: number): Promise<PagedResult<StockVarianceRow>>;
     private loadForWrite;
+    private lockForPreflight;
+    private assertDocDateInYear;
+    private actorOf;
     private logStatusChange;
     private findLastStatusStep;
     private toStatusEvent;

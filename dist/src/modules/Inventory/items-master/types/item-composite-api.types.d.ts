@@ -2,7 +2,7 @@ export type { InventorySuccessResponse as ItemCompositeSuccessResponse } from ".
 import { ItemPayload } from './item-api.types';
 import { ItemUnitConversionPayload } from '../../item-unit-conversion/types/item-unit-conversion-api.types';
 import { ItemUnitConversionDeleteResult } from '../../item-unit-conversion/types/item-unit-conversion-api.types';
-import { ItemPricePayload } from '../../items-price-master/types/item-price-api.types';
+import { ItemPricePayload, ScheduledItemPricePayload } from '../../items-price-master/types/item-price-api.types';
 import { ItemPriceDeleteResult } from '../../items-price-master/types/item-price-api.types';
 import { ItemEanCodePayload } from '../../items-ean-code-master/types/item-ean-code-api.types';
 import { ItemEanCodeDeleteResult } from '../../items-ean-code-master/types/item-ean-code-api.types';
@@ -12,6 +12,7 @@ export interface ItemCompositePayload {
     item: ItemPayload;
     unit_conversions: ItemUnitConversionPayload[];
     prices: ItemPricePayload[];
+    scheduled_prices: ScheduledItemPricePayload[];
     ean_codes: ItemEanCodePayload[];
     reorders: ItemReorderPayload[];
 }

@@ -5,6 +5,13 @@ import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import { SaveItemQtyPriceDto } from './dto/save-item-qty-price.dto';
 import { ItemsQtyPriceMasterService } from './items-qty-price-master.service';
 import { ItemQtyPriceErrorCode } from './types/item-qty-price-error-codes';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
+
+/** Notes 144 — the change log the writer calls: nothing snapshotted, every record accepted. */
+const changeLogStub = () => ({
+  snapshot: jest.fn().mockResolvedValue(new Map()),
+  record: jest.fn().mockResolvedValue(true),
+});
 
 const IQP_ID = '019c6f6c-be87-7a11-8905-36092c46aa01';
 const OTHER_IQP_ID = '019c6f6c-be87-7a11-8905-36092c46aa09';
@@ -51,10 +58,12 @@ const written = (data: Record<string, unknown>) =>
     ) as Partial<ItemQtyPrice>,
   );
 
+/** The smallest slab the API takes: mode P (the default) needs its % (notes 139 A4). */
 const newSlab = (overrides: Partial<SaveItemQtyPriceDto> = {}): SaveItemQtyPriceDto => ({
   iqp_item_id: ITEM_ID,
   iqp_item_unit_id: UNIT_ID,
   iqp_effective_from: '2026-04-01',
+  iqp_disc_pct: 5,
   ...overrides,
 });
 
@@ -81,6 +90,8 @@ type PrismaMock = {
     update: jest.Mock;
     updateMany: jest.Mock;
   };
+  itemUnitConversion: { findFirst: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
 
@@ -94,6 +105,10 @@ const makePrisma = (): PrismaMock => {
       update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => written(data)),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    // The slab's unit row is a live unit of its item.
+    itemUnitConversion: { findFirst: jest.fn().mockResolvedValue({ iucId: UNIT_ID }) },
+    // The per-item lock, then the overlap probe: no clash.
+    $queryRaw: jest.fn().mockResolvedValue([]),
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: PrismaMock) => unknown) =>
@@ -129,6 +144,9 @@ describe('ItemsQtyPriceMasterService', () => {
       audit as never,
       grid as never,
       context as never,
+      // Notes 144 — the REAL writer over this spec's prisma mock (so the
+      // itemQtyPrice assertions still see the write); the change log is stubbed.
+      new PriceMasterWriter(changeLogStub() as never),
     );
   });
 
@@ -367,6 +385,7 @@ describe('ItemsQtyPriceMasterService', () => {
           iqpModifiedOn: expect.any(Date),
           iqpModifiedBy: USER_ID,
           iqpPriceMode: 'F',
+          iqpDiscPct: 5,
           iqpPrice: 99,
         },
         include: expect.any(Object),
@@ -426,6 +445,118 @@ describe('ItemsQtyPriceMasterService', () => {
           data: expect.objectContaining({ iqpFromQty: 80, iqpToQty: null }) as object,
         }),
       );
+    });
+  });
+
+  // ── notes 139 A4: what a slab must hold ───────────────────────────────────
+  describe('slab rules (notes 139 A4)', () => {
+    /** The overlap probe's answer: OTHER_IQP_ID holds 5–15 from 2026-04-01, open. */
+    const clashWith = (iqpId: string) => [
+      {
+        iqp_id: iqpId,
+        other_id: OTHER_IQP_ID,
+        other_from: '5',
+        other_to: '15',
+        other_effective_from: '2026-04-01',
+        other_effective_to: null,
+      },
+    ];
+
+    it("refuses a unit row that is not one of the item's own and creates nothing", async () => {
+      prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(newSlab()));
+
+      expect(prisma.itemUnitConversion.findFirst).toHaveBeenCalledWith({
+        where: { iucId: UNIT_ID, iucItemId: ITEM_ID, iucIsDeleted: false },
+        select: { iucId: true },
+      });
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'iqp_item_unit_id', code: ItemQtyPriceErrorCode.UNIT_NOT_OF_ITEM }],
+        },
+      });
+      expect(prisma.itemQtyPrice.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['P', { iqp_disc_pct: null }, 'iqp_disc_pct'],
+      ['R', { iqp_flat_off: null }, 'iqp_flat_off'],
+      ['F', { iqp_price: undefined }, 'iqp_price'],
+    ])('refuses mode %s without its own figure', async (mode, overrides, field) => {
+      const refusal = await refusalOf(
+        service.save(newSlab({ iqp_price_mode: mode, ...overrides })),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field, code: ItemQtyPriceErrorCode.VALUE_REQUIRED }] },
+      });
+      expect(prisma.itemQtyPrice.create).not.toHaveBeenCalled();
+    });
+
+    it("judges an update's figure against the stored one when it sends none", async () => {
+      prisma.itemQtyPrice.findFirst.mockResolvedValue(slabRow());
+
+      await expect(
+        service.save(newSlab({ iqp_id: IQP_ID, iqp_disc_pct: undefined })),
+      ).resolves.toMatchObject({ iqp_id: IQP_ID });
+      const switched = await refusalOf(
+        service.save(newSlab({ iqp_id: IQP_ID, iqp_price_mode: 'F' })),
+      );
+
+      expect(switched).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'iqp_price', code: ItemQtyPriceErrorCode.VALUE_REQUIRED }],
+        },
+      });
+    });
+
+    it('refuses a slab that overlaps a live one with a 409 naming the other slab', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ locked: 1 }])
+        .mockResolvedValueOnce(clashWith(IQP_ID));
+
+      const refusal = await refusalOf(service.save(newSlab({ iqp_from_qty: 1, iqp_to_qty: 10 })));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'iqp_from_qty', code: ItemQtyPriceErrorCode.OVERLAP }] },
+      });
+      const message = (refusal.body as { errors: Array<{ message: string }> }).errors[0].message;
+      expect(message).toContain(`${OTHER_IQP_ID} (5–15, 2026-04-01 to open)`);
+    });
+
+    it('names the clashing payload row of a batch by its index', async () => {
+      prisma.itemQtyPrice.create
+        .mockResolvedValueOnce(slabRow({ iqpId: IQP_ID }))
+        .mockResolvedValueOnce(slabRow({ iqpId: OTHER_IQP_ID }));
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ locked: 1 }])
+        .mockResolvedValueOnce(clashWith(OTHER_IQP_ID));
+
+      const refusal = await refusalOf(service.save([newSlab(), newSlab({ iqp_from_qty: 50 })]));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: '1.iqp_from_qty', code: ItemQtyPriceErrorCode.OVERLAP }] },
+      });
+    });
+
+    it('refuses a restore that would overlap a live slab', async () => {
+      prisma.itemQtyPrice.findFirst.mockResolvedValue(slabRow({ iqpIsDeleted: true }));
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ locked: 1 }])
+        .mockResolvedValueOnce(clashWith(IQP_ID));
+
+      const refusal = await refusalOf(service.restore(IQP_ID));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'iqp_id', code: ItemQtyPriceErrorCode.OVERLAP }] },
+      });
     });
   });
 

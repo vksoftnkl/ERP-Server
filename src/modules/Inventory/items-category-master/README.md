@@ -62,9 +62,11 @@ optionally hang off a parent category to form a hierarchy.
 
 ### Validation rules
 
-- **Name uniqueness** on `category_name` is enforced by the DB unique index `uq_category_name`;
-  a conflicting write surfaces as `Item category name already exists`
-  (`throwOnUniqueConstraintError`).
+- **Name** is trimmed and a blank one refused (notes 139 A1). It is unique among **live**
+  categories ignoring case — `uq_category_name` on `lower(category_name)` `WHERE NOT
+  category_is_deleted` — so a deleted category's name is free again; a clash, a restore included,
+  is a 409 `ITEM_CATEGORY_NAME_TAKEN` (notes 139 A2/B6). A blank alias, short name or description
+  is stored as NULL (B7).
 - **Parent must exist and be active** — when `category_parent_id` is supplied, the service checks
   for a non-deleted category (`ensureParentExists`), else raises a bad request.
 - **A category cannot be its own parent** — on update, `category_parent_id === category_id` is

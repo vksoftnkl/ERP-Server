@@ -157,7 +157,7 @@ export class OpeningStockVoucherController {
   @ApiOperation({
     summary: 'The item picker — fill an opening line for one item',
     description:
-      'Unit, base unit (as an iuc_id), conversion factor, tax and cess, the tracking signature in force on onDate, an MRP / sale-price seed for the bucket, and whether the item has already been opened in this branch. Deliberately returns no cost: the cost cell stays empty unless a human types one, so the engine can apply the rate source. 404 names which of the four causes left the item unpickable.',
+      'Unit, base unit (as an iuc_id), conversion factor, tax and cess, the tracking signature in force on onDate, an MRP / sale-price seed for the bucket, and whether the item already has an opening in this branch in the year onDate falls in (in godownId / bucket when sent; notes 143 #8). Deliberately returns no cost: the cost cell stays empty unless a human types one, so the engine can apply the rate source. 404 names which of the four causes left the item unpickable.',
   })
   @ApiOkResponse({ type: OpeningStockItemLookupSuccessDto })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
@@ -171,7 +171,7 @@ export class OpeningStockVoucherController {
       // The warning goes in the message too, so a client that shows messages
       // and ignores flags still hears it while the operator is typing.
       message: data.alreadyOpened
-        ? `${data.itemName} has already been opened in this branch`
+        ? `${data.itemName} already has an opening in this branch this year`
         : 'Item fetched successfully',
       data,
     };

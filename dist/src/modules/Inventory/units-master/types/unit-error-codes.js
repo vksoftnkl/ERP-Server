@@ -12,5 +12,8 @@ var UnitErrorCode;
     UnitErrorCode["NOT_DELETED"] = "UNIT_NOT_DELETED";
     UnitErrorCode["BASE_DELETED"] = "UNIT_BASE_DELETED";
     UnitErrorCode["NAME_TAKEN"] = "UNIT_NAME_TAKEN";
+    UnitErrorCode["CODE_NOT_FOUND"] = "UNIT_CODE_NOT_FOUND";
+    UnitErrorCode["BASE_NOT_FOUND"] = "UNIT_BASE_NOT_FOUND";
+    UnitErrorCode["PACK_BASE_REQUIRED"] = "UNIT_PACK_BASE_REQUIRED";
 })(UnitErrorCode || (exports.UnitErrorCode = UnitErrorCode = {}));
 //# sourceMappingURL=unit-error-codes.js.map

@@ -76,61 +76,67 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
         return this.setDeleted(secId, false);
     }
     async setDeleted(secId, wantDeleted) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.itemSectionMaster.findFirst({
-                where: { secId },
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const existing = await tx.itemSectionMaster.findFirst({
+                    where: { secId },
+                });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item section not found', 'sec_id', `No item section found with id ${secId}`, item_section_error_codes_1.ItemSectionErrorCode.NOT_FOUND);
+                }
+                (0, master_tree_helper_1.assertDeleteState)(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
+                if (wantDeleted) {
+                    await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_SECTION_TREE, secId);
+                    await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_SECTION_REFERENCES, secId, ITEM_SECTION_DELETE_STATE);
+                }
+                else {
+                    await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_SECTION_TREE, existing.secParentId);
+                }
+                const wasDeleted = existing.secIsDeleted;
+                const nextDeleted = wantDeleted;
+                const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
+                const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
+                const modifiedOn = new Date();
+                const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+                const result = await tx.itemSectionMaster.updateMany({
+                    where: { secId, secIsDeleted: wasDeleted },
+                    data: { secIsDeleted: nextDeleted, secModifiedOn: modifiedOn, secModifiedBy: userId },
+                });
+                if (result.count === 0) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item section not found', 'sec_id', `No item section found with id ${secId}`, item_section_error_codes_1.ItemSectionErrorCode.NOT_FOUND);
+                }
+                if (nextDeleted) {
+                    await this.removePathIds(tx, ancestorIds, subtreeIds);
+                }
+                else {
+                    await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
+                }
+                const originalRecord = this.toPayload(existing);
+                const modifiedRecord = this.toPayload({
+                    ...existing,
+                    secIsDeleted: nextDeleted,
+                    secModifiedOn: modifiedOn,
+                    secModifiedBy: userId,
+                });
+                await this.auditLogService.logEntityChange({
+                    action: nextDeleted ? 'cancel' : 'update',
+                    tableName: ITEM_SECTION_TABLE_NAME,
+                    screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
+                    screenType: 'master',
+                    pk: secId,
+                    displayName: existing.secName,
+                    originalRecord,
+                    modifiedRecord,
+                    userId,
+                    notes: nextDeleted ? 'Item section soft deleted' : 'Item section restored',
+                }, tx);
+                return { sec_id: secId, deleted: nextDeleted };
             });
-            if (!existing) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item section not found', 'sec_id', `No item section found with id ${secId}`, item_section_error_codes_1.ItemSectionErrorCode.NOT_FOUND);
-            }
-            (0, master_tree_helper_1.assertDeleteState)(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
-            if (wantDeleted) {
-                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_SECTION_TREE, secId);
-                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_SECTION_REFERENCES, secId, ITEM_SECTION_DELETE_STATE);
-            }
-            else {
-                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_SECTION_TREE, existing.secParentId);
-            }
-            const wasDeleted = existing.secIsDeleted;
-            const nextDeleted = wantDeleted;
-            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
-            const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
-            const modifiedOn = new Date();
-            const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const result = await tx.itemSectionMaster.updateMany({
-                where: { secId, secIsDeleted: wasDeleted },
-                data: { secIsDeleted: nextDeleted, secModifiedOn: modifiedOn, secModifiedBy: userId },
-            });
-            if (result.count === 0) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item section not found', 'sec_id', `No item section found with id ${secId}`, item_section_error_codes_1.ItemSectionErrorCode.NOT_FOUND);
-            }
-            if (nextDeleted) {
-                await this.removePathIds(tx, ancestorIds, subtreeIds);
-            }
-            else {
-                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
-            }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
-                ...existing,
-                secIsDeleted: nextDeleted,
-                secModifiedOn: modifiedOn,
-                secModifiedBy: userId,
-            });
-            await this.auditLogService.logEntityChange({
-                action: nextDeleted ? 'cancel' : 'update',
-                tableName: ITEM_SECTION_TABLE_NAME,
-                screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
-                screenType: 'master',
-                pk: secId,
-                displayName: existing.secName,
-                originalRecord,
-                modifiedRecord,
-                userId,
-                notes: nextDeleted ? 'Item section soft deleted' : 'Item section restored',
-            }, tx);
-            return { sec_id: secId, deleted: nextDeleted };
-        });
+        }
+        catch (error) {
+            this.handleWriteError(error);
+            throw error;
+        }
     }
     async createItemSection(saveItemSectionDto) {
         try {

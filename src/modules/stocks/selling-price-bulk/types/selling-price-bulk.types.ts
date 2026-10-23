@@ -246,10 +246,26 @@ export interface SellingPriceNoStockRow {
   salePrice: number | null;
 }
 
+/** Notes 140 A — one row a save wrote, and the period it prices. */
+export interface SellingPriceSavedRow {
+  lineNo: number;
+  /** The item_price_master row written (for a split, the NEW row). */
+  bucketId: string;
+  /** True when the row starts after today: a scheduled price, not yet on the shelf. */
+  scheduled: boolean;
+  /** `YYYY-MM-DD`. */
+  effectiveFrom: string;
+  effectiveTo: string;
+}
+
 /** §5.4 — what a save answers with. */
 export interface SellingPriceSaveResult {
   /** item_price_master rows written — S2 and S3 together, buckets and headlines alike. */
   saved: number;
+  /** Notes 140 A — the day the saved prices start, `YYYY-MM-DD`: the body's, else today. */
+  effectiveFrom: string;
+  /** Notes 140 A — per row written; empty on `needsConfirm`. */
+  rows: SellingPriceSavedRow[];
   /**
    * ALWAYS 0. The headline fan-out is gone — a headline edit is S1–S3 on the
    * same table — and the key is kept for one release so a client built
@@ -268,4 +284,30 @@ export interface SellingPriceSaveResult {
   problems: SellingPriceProblem[];
   /** What `inventory.below_cost_price` resolved to for this caller. */
   belowCostPolicy: BelowCostPolicy;
+}
+
+/** Notes 140 B — the prices a scheduled row replaces: the row before it, else what the shelf showed. */
+export interface SellingPriceSchedulePrevious {
+  /** The ipm_id that priced the bucket the day before; null when nothing did. */
+  bucketId: string | null;
+  priceScope: PriceScope | null;
+  levels: SellingPriceLevelValue[];
+}
+
+/** Notes 140 B — one scheduled price: a grid row, its period, and what it replaces. */
+export interface SellingPriceScheduleRow extends SellingPriceRow {
+  /** `YYYY-MM-DD`, after today. */
+  effectiveFrom: string;
+  effectiveTo: string;
+  previous: SellingPriceSchedulePrevious | null;
+}
+
+/** Notes 140 B — what a cancel did. */
+export interface SellingPriceScheduleCancelResult {
+  /** The scheduled row, now deleted. */
+  bucketId: string;
+  /** The row before it, which now runs to the cancelled row's end; null when there was none. */
+  restoredId: string | null;
+  /** `YYYY-MM-DD` — the restored row's new end, null with no restored row. */
+  restoredTo: string | null;
 }

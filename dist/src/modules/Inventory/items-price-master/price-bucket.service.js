@@ -18,6 +18,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const price_resolver_1 = require("./price-resolver");
 const item_price_error_codes_1 = require("./types/item-price-error-codes");
+const price_master_writer_service_1 = require("../item-price-log/price-master-writer.service");
 exports.DEFAULT_PRICE_LEVEL_SETTING_KEY = 'sales.default_price_level';
 function todayIso(now = new Date()) {
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -26,8 +27,10 @@ function todayIso(now = new Date()) {
 }
 let PriceBucketService = class PriceBucketService {
     appSettingValueService;
-    constructor(appSettingValueService) {
+    priceWriter;
+    constructor(appSettingValueService, priceWriter) {
         this.appSettingValueService = appSettingValueService;
+        this.priceWriter = priceWriter;
     }
     async deriveBuckets(client, itemId, rows, onDate = todayIso()) {
         if (!rows.length) {
@@ -109,10 +112,7 @@ let PriceBucketService = class PriceBucketService {
         await tx.$executeRaw `SET CONSTRAINTS inventory.ex_ipm_overlap DEFERRED`;
         const now = new Date();
         for (const { row, key } of changed) {
-            await tx.itemPriceMaster.update({
-                where: { ipmId: row.ipmId },
-                data: { ipmBucketMrp: key.mrp, ipmBucketSp: key.salePrice, ipmUpdatedOn: now },
-            });
+            await this.priceWriter.rekeyPrice(tx, row.ipmId, key, now);
         }
         await tx.$executeRaw `SET CONSTRAINTS inventory.ex_ipm_overlap IMMEDIATE`;
         return changed.length;
@@ -137,7 +137,8 @@ let PriceBucketService = class PriceBucketService {
 exports.PriceBucketService = PriceBucketService;
 exports.PriceBucketService = PriceBucketService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [app_setting_value_service_1.AppSettingValueService])
+    __metadata("design:paramtypes", [app_setting_value_service_1.AppSettingValueService,
+        price_master_writer_service_1.PriceMasterWriter])
 ], PriceBucketService);
 function toBucketSource(row) {
     return {

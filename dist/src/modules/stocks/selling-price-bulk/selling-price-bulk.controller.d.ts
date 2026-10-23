@@ -1,8 +1,10 @@
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { ListSellingPriceQueryDto } from './dto/list-selling-price-query.dto';
 import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
+import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
+import { CancelPriceScheduleDto } from './dto/cancel-price-schedule.dto';
 import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
-import type { PagedResult, SellingPriceRow, SellingPriceSaveResult } from './types/selling-price-bulk.types';
+import type { PagedResult, SellingPriceRow, SellingPriceSaveResult, SellingPriceScheduleCancelResult, SellingPriceScheduleRow } from './types/selling-price-bulk.types';
 declare class PriceBucketsParamDto {
     itemId: string;
 }
@@ -17,5 +19,7 @@ export declare class SellingPriceBulkController {
     listPrices(queryDto: ListSellingPriceQueryDto): Promise<SellingPriceSuccessResponse<PagedResult<SellingPriceRow>>>;
     listBuckets(params: PriceBucketsParamDto, queryDto: PriceBucketsQueryDto): Promise<SellingPriceSuccessResponse<SellingPriceRow[]>>;
     saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSuccessResponse<SellingPriceSaveResult>>;
+    listSchedule(queryDto: PriceScheduleQueryDto): Promise<SellingPriceSuccessResponse<SellingPriceScheduleRow[]>>;
+    cancelSchedule(dto: CancelPriceScheduleDto): Promise<SellingPriceSuccessResponse<SellingPriceScheduleCancelResult>>;
 }
 export {};

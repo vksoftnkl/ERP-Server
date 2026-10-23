@@ -21,4 +21,6 @@ export interface OpeningStockItemLookupArgs {
     itemId: string;
     uomId?: string;
     onDate: string;
+    godownId?: string;
+    bucket?: string;
 }

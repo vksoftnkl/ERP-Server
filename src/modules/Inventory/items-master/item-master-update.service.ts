@@ -31,7 +31,7 @@ import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils
 import { ItemErrorCode } from './types/item-error-codes';
 import { baseUnitChange, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
 
-export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
+export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item' | 'scheduled_prices'>;
 
 /**
  * item_ean_codes.ean_unit_id, item_reorders.ir_unit_id and
@@ -333,6 +333,13 @@ export class ItemMasterUpdateService {
    * operator's choice, not this service's. Stored rows the payload no longer
    * claims are soft-deleted as before, and ItemsMasterService.saveComposite
    * re-keys whatever is left (PriceBucketService.rekeyItem).
+   *
+   * ONLY TODAY'S ROWS TAKE PART (notes 140 C): `findByItemId` reads the rows in
+   * force today. A price Change Selling Price scheduled for a later day, and
+   * the row its split closed, share a key with today's row; they are never
+   * matched, updated or soft-deleted here — a payload naming one by id is
+   * refused like any row that is not the item's — and a row this save adds
+   * fills the gap around today (ItemsPriceMasterService.applyOpenPeriod).
    */
   private async syncPrices(
     itemId: string,

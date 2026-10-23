@@ -159,6 +159,24 @@ export class OpeningStockHeaderDto {
   @ApiPropertyOptional({ nullable: true })
   cancelReason!: string | null;
 
+  @ApiProperty({ format: 'date-time' })
+  createdOn!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'svh_created_by as stored — free text, usually a user id.',
+  })
+  createdBy!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Display name of the createdBy user; null when createdBy names no user.',
+  })
+  createdByName!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  modifiedOn!: string | null;
+
   @ApiPropertyOptional({ enum: STOCK_RATE_SOURCES, nullable: true })
   rateSource!: string | null;
 

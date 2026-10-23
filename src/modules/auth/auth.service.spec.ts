@@ -253,7 +253,7 @@ describe('AuthService', () => {
       token_type: 'Bearer',
       usrId: TEST_USER_ID,
       user_type: 'USER',
-      user_name: 'John Doe',
+      user_name: 'john.doe',
       device_id: null,
       device_name: null,
       dev_company_id: null,
@@ -267,7 +267,8 @@ describe('AuthService', () => {
         usrIsDeleted: false,
         usrIsActive: true,
         usrIsLocked: false,
-        usrWebLogin: true,
+        // no device type given: any channel open to the user will do
+        OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
       },
     });
     expect(tokenService.signAccessToken).toHaveBeenCalledWith({
@@ -276,6 +277,9 @@ describe('AuthService', () => {
       sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
       user_type: 'USER',
       company_id: TEST_COMPANY_ID,
+      // no device matched this login, so the token carries no counter or branch
+      branch_id: null,
+      device_id: null,
     });
     expect(tokenService.signRefreshToken).toHaveBeenCalledWith({
       sub: TEST_USER_ID,
@@ -283,6 +287,8 @@ describe('AuthService', () => {
       sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
       user_type: 'USER',
       company_id: TEST_COMPANY_ID,
+      branch_id: null,
+      device_id: null,
     });
     expect(authSessionService.storeTokenSession).toHaveBeenCalledWith(
       'signed-jwt-token',
@@ -337,7 +343,7 @@ describe('AuthService', () => {
       token_type: 'Bearer',
       usrId: TEST_USER_ID,
       user_type: 'USER',
-      user_name: 'John Doe',
+      user_name: 'john.doe',
       device_id: null,
       device_name: null,
       dev_company_id: null,

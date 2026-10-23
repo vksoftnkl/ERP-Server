@@ -23,6 +23,8 @@ export declare class SaveSellingPriceBulkDto {
     branchId: string;
     scope: (typeof PRICE_SCOPES)[number];
     confirmed?: boolean;
+    effectiveFrom?: string;
     rows: SaveSellingPriceRowDto[];
     userId?: string;
+    originMenuId?: number;
 }

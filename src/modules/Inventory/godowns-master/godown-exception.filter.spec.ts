@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Logger, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { GodownExceptionFilter } from './godown-exception.filter';
 
@@ -24,6 +24,8 @@ describe('GodownExceptionFilter', () => {
       status,
     } as unknown as Response;
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('passes through standardized error payloads', () => {
     const exception = new NotFoundException({
@@ -56,14 +58,20 @@ describe('GodownExceptionFilter', () => {
       errors: [
         {
           field: 'gdl_name',
-          code: 'VALIDATION_FAILED', message: 'gdl_name should not be empty',
+          code: 'VALIDATION_FAILED',
+          message: 'gdl_name should not be empty',
         },
       ],
     });
   });
 
   it('returns internal server error envelope for unknown errors', () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
     filter.catch(new Error('boom'), createHost(response));
+
+    // The stack goes to the server log, never to the client.
+    expect(logged).toHaveBeenCalledWith('POST /test', expect.stringContaining('boom'));
 
     expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     expect(json).toHaveBeenCalledWith({

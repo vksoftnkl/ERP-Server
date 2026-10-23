@@ -10,14 +10,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PriceBucketGateway = void 0;
+exports.daySql = daySql;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
-const selling_price_bulk_types_1 = require("./types/selling-price-bulk.types");
-const PROFIT_TYPE = 'By User';
 function effectivePriceLateral(args) {
     return client_1.Prisma.sql `
     LEFT JOIN LATERAL (
@@ -86,6 +85,9 @@ function costColumns(a) {
             ` WHEN ${itemRate} IS NOT NULL THEN 'ITEM'` +
             ` WHEN ${a.p}.ipm_cost_price IS NOT NULL THEN 'PRICE_ROW' END`),
     };
+}
+function daySql(day) {
+    return day ? client_1.Prisma.sql `${day}::date` : client_1.Prisma.raw('CURRENT_DATE');
 }
 let PriceBucketGateway = class PriceBucketGateway {
     prisma;
@@ -310,7 +312,7 @@ let PriceBucketGateway = class PriceBucketGateway {
     `;
         return rows.map((row) => this.toGridRecord(row));
     }
-    async loadRowCosts(tx, rows, companyId, branchId) {
+    async loadRowCosts(tx, rows, companyId, branchId, onDate) {
         if (!rows.length) {
             return [];
         }
@@ -339,7 +341,7 @@ let PriceBucketGateway = class PriceBucketGateway {
             branchId: client_1.Prisma.sql `${branchId}::uuid`,
             itemId: client_1.Prisma.raw('q.item_id'),
             itemGroupId: client_1.Prisma.raw('i.item_group_id'),
-            onDate: client_1.Prisma.raw('CURRENT_DATE'),
+            onDate: daySql(onDate),
         })}
       ),
       ${mrpCostCte({
@@ -375,7 +377,7 @@ let PriceBucketGateway = class PriceBucketGateway {
             salePrice: client_1.Prisma.raw('CASE WHEN k.track_sp AND k.sp > 0 THEN k.sp END'),
             companyId,
             branchId,
-            onDate: client_1.Prisma.raw('CURRENT_DATE'),
+            onDate: daySql(onDate),
         })}
        ORDER BY k.ord
     `;
@@ -432,9 +434,11 @@ let PriceBucketGateway = class PriceBucketGateway {
         });
         return problems;
     }
-    async findBucketRowForUpdate(tx, candidate, scope) {
+    async findBucketRowForUpdate(tx, candidate, scope, onDate) {
         const [row] = await tx.$queryRaw `
-      SELECT ipm_id AS "ipmId"
+      SELECT ipm_id                   AS "ipmId",
+             ipm_effective_from::text AS "effectiveFrom",
+             ipm_effective_to::text   AS "effectiveTo"
         FROM inventory.item_price_master
        WHERE ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
          AND ipm_branch_id  IS NOT DISTINCT FROM ${scope.targetBranchId}::uuid
@@ -442,89 +446,198 @@ let PriceBucketGateway = class PriceBucketGateway {
          AND ipm_uc_unit_id = ${candidate.uomId}::uuid
          AND ipm_key_mrp    = COALESCE(${candidate.mrp}::numeric, -1)
          AND ipm_key_sp     = COALESCE(${candidate.salePrice}::numeric, -1)
-         AND CURRENT_DATE BETWEEN ipm_effective_from AND ipm_effective_to
+         AND ${daySql(onDate)} BETWEEN ipm_effective_from AND ipm_effective_to
          AND ipm_is_deleted = false
        FOR UPDATE
     `;
         return row ?? null;
     }
-    async updateBucketPrice(tx, ipmId, candidate) {
-        const l = this.levelColumns(candidate);
-        await tx.$executeRaw `
-      UPDATE inventory.item_price_master
-         SET ipm_sales_price_a = COALESCE(${l.a.price}::numeric, ipm_sales_price_a),
-             ipm_sales_price_b = COALESCE(${l.b.price}::numeric, ipm_sales_price_b),
-             ipm_sales_price_c = COALESCE(${l.c.price}::numeric, ipm_sales_price_c),
-             ipm_sales_price_d = COALESCE(${l.d.price}::numeric, ipm_sales_price_d),
-             ipm_price_a_wot = COALESCE(${l.a.priceWot}::numeric, ipm_price_a_wot),
-             ipm_price_b_wot = COALESCE(${l.b.priceWot}::numeric, ipm_price_b_wot),
-             ipm_price_c_wot = COALESCE(${l.c.priceWot}::numeric, ipm_price_c_wot),
-             ipm_price_d_wot = COALESCE(${l.d.priceWot}::numeric, ipm_price_d_wot),
-             ipm_price_a_markup_perc = COALESCE(${l.a.markupPerc}::numeric, ipm_price_a_markup_perc),
-             ipm_price_b_markup_perc = COALESCE(${l.b.markupPerc}::numeric, ipm_price_b_markup_perc),
-             ipm_price_c_markup_perc = COALESCE(${l.c.markupPerc}::numeric, ipm_price_c_markup_perc),
-             ipm_price_d_markup_perc = COALESCE(${l.d.markupPerc}::numeric, ipm_price_d_markup_perc),
-             ipm_min_price   = COALESCE(${candidate.minPrice}::numeric, ipm_min_price),
-             ipm_cost_price  = ${candidate.costRate},
-             ipm_cost_wot    = ${candidate.costWot},
-             ipm_profit_type = ${PROFIT_TYPE},
-             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),
-             ipm_updated_on  = now(),
-             ipm_updated_by  = ${this.actorColumn(candidate.actor)}::uuid
-       WHERE ipm_id = ${ipmId}::uuid
+    async calendar(client) {
+        const [row] = await client.$queryRaw `
+      SELECT CURRENT_DATE::text AS today,
+             (CURRENT_DATE + interval '1 year')::date::text AS latest
     `;
-        return ipmId;
+        return row;
     }
-    async insertBucketPrice(tx, candidate, scope) {
-        const l = this.levelColumns(candidate);
-        const actor = this.actorColumn(candidate.actor);
+    async lockScheduledRow(tx, ipmId) {
         const [row] = await tx.$queryRaw `
-      INSERT INTO inventory.item_price_master (
-        ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id, ipm_godown_id, ipm_sl_no,
-        ipm_cost_price, ipm_cost_wot,
-        ipm_sales_price_a, ipm_sales_price_b, ipm_sales_price_c, ipm_sales_price_d,
-        ipm_price_a_wot, ipm_price_b_wot, ipm_price_c_wot, ipm_price_d_wot,
-        ipm_price_a_markup_perc, ipm_price_b_markup_perc, ipm_price_c_markup_perc, ipm_price_d_markup_perc,
-        ipm_max_price, ipm_min_price, ipm_disc_perc, ipm_disc_qty, ipm_addl_cess,
-        ipm_profit_type, ipm_round_off, ipm_loading_charge, ipm_freight_charge, ipm_loyalty_points,
-        ipm_uom_remarks, ipm_bucket_mrp, ipm_bucket_sp,
-        ipm_created_on, ipm_created_by, ipm_updated_on, ipm_updated_by
-      )
-      SELECT ${candidate.companyId}::uuid, ${scope.targetBranchId}::uuid,
-             ${candidate.itemId}::uuid, ${candidate.uomId}::uuid,
-             h.ipm_godown_id, COALESCE(h.ipm_sl_no, 0),
-             ${candidate.costRate}, ${candidate.costWot},
-             COALESCE(${l.a.price}::numeric, 0), COALESCE(${l.b.price}::numeric, 0),
-             COALESCE(${l.c.price}::numeric, 0), COALESCE(${l.d.price}::numeric, 0),
-             COALESCE(${l.a.priceWot}::numeric, 0), COALESCE(${l.b.priceWot}::numeric, 0),
-             COALESCE(${l.c.priceWot}::numeric, 0), COALESCE(${l.d.priceWot}::numeric, 0),
-             COALESCE(${l.a.markupPerc}::numeric, 0), COALESCE(${l.b.markupPerc}::numeric, 0),
-             COALESCE(${l.c.markupPerc}::numeric, 0), COALESCE(${l.d.markupPerc}::numeric, 0),
-             COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0),
-             COALESCE(${candidate.minPrice}::numeric, h.ipm_min_price, 0),
-             COALESCE(h.ipm_disc_perc, 0), COALESCE(h.ipm_disc_qty, 0), COALESCE(h.ipm_addl_cess, 0),
-             ${PROFIT_TYPE}, COALESCE(${candidate.roundOff}::numeric, h.ipm_round_off, 0),
-             COALESCE(h.ipm_loading_charge, 0), COALESCE(h.ipm_freight_charge, 0),
-             COALESCE(h.ipm_loyalty_points, 0), h.ipm_uom_remarks,
-             ${candidate.mrp}::numeric, ${candidate.salePrice}::numeric,
-             now(), ${actor}::uuid, now(), ${actor}::uuid
-        FROM (SELECT 1) one
-        LEFT JOIN LATERAL (
-          SELECT hp.*
-            FROM inventory.item_price_master hp
-           WHERE hp.ipm_item_id    = ${candidate.itemId}::uuid
-             AND hp.ipm_uc_unit_id = ${candidate.uomId}::uuid
-             AND hp.ipm_key_mrp = -1 AND hp.ipm_key_sp = -1
-             AND hp.ipm_is_deleted = false
-             AND CURRENT_DATE BETWEEN hp.ipm_effective_from AND hp.ipm_effective_to
-             AND (hp.ipm_company_id IS NULL OR hp.ipm_company_id = ${candidate.companyId}::uuid)
-             AND (hp.ipm_branch_id  IS NULL OR hp.ipm_branch_id  = ${scope.targetBranchId}::uuid)
-           ORDER BY (hp.ipm_branch_id IS NULL), (hp.ipm_company_id IS NULL), hp.ipm_id
-           LIMIT 1
-        ) h ON true
-      RETURNING ipm_id AS "ipmId"
+      SELECT ipm_id                            AS "ipmId",
+             ipm_branch_id                     AS "branchId",
+             ipm_is_deleted                    AS "isDeleted",
+             ipm_effective_from <= CURRENT_DATE AS "started",
+             ipm_effective_from::text          AS "effectiveFrom",
+             ipm_effective_to::text            AS "effectiveTo"
+        FROM inventory.item_price_master
+       WHERE ipm_id = ${ipmId}::uuid
+       FOR UPDATE
     `;
-        return row.ipmId;
+        return row ?? null;
+    }
+    async findRowBeforeForUpdate(tx, ipmId) {
+        const [row] = await tx.$queryRaw `
+      SELECT b.ipm_id AS "ipmId"
+        FROM inventory.item_price_master c
+        JOIN inventory.item_price_master b
+          ON b.ipm_company_id IS NOT DISTINCT FROM c.ipm_company_id
+         AND b.ipm_branch_id  IS NOT DISTINCT FROM c.ipm_branch_id
+         AND b.ipm_item_id    = c.ipm_item_id
+         AND b.ipm_uc_unit_id = c.ipm_uc_unit_id
+         AND b.ipm_key_mrp    = c.ipm_key_mrp
+         AND b.ipm_key_sp     = c.ipm_key_sp
+         AND b.ipm_effective_to = c.ipm_effective_from - 1
+         AND b.ipm_is_deleted = false
+         AND b.ipm_id <> c.ipm_id
+       WHERE c.ipm_id = ${ipmId}::uuid
+       FOR UPDATE OF b
+    `;
+        return row ?? null;
+    }
+    async listScheduled(companyId, branchId, itemId) {
+        const key = (0, stock_voucher_posting_helper_1.bucketKeySql)({
+            trackMrp: client_1.Prisma.raw('pol.track_mrp'),
+            trackSalePrice: client_1.Prisma.raw('pol.track_sp'),
+            mrp: client_1.Prisma.raw('b.sbl_mrp'),
+            salePrice: client_1.Prisma.raw('b.sbl_sale_price'),
+        });
+        const cost = costColumns({ mc: 'mc', sic: 'sic', p: 'f', factor: 'iuc.iuc_to_base_factor' });
+        const rows = await this.prisma.$queryRaw `
+      WITH f AS (
+        SELECT p.*, i.item_code, i.item_name_en, i.item_default_barcode
+          FROM inventory.item_price_master p
+          JOIN inventory.item_master i ON i.item_id = p.ipm_item_id AND i.item_is_deleted = false
+         WHERE p.ipm_is_deleted = false
+           AND p.ipm_effective_from > CURRENT_DATE
+           AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${companyId}::uuid)
+           AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${branchId}::uuid)
+           ${itemId ? client_1.Prisma.sql `AND p.ipm_item_id = ${itemId}::uuid` : client_1.Prisma.empty}
+      ),
+      pol AS (
+        SELECT i.item_id,
+               COALESCE(stp.stp_track_mrp, false)        AS track_mrp,
+               COALESCE(stp.stp_track_sale_price, false) AS track_sp
+          FROM inventory.item_master i
+          ${(0, stock_voucher_posting_helper_1.effectivePolicyLateral)({
+            companyId: client_1.Prisma.sql `${companyId}::uuid`,
+            branchId: client_1.Prisma.sql `${branchId}::uuid`,
+            itemId: client_1.Prisma.raw('i.item_id'),
+            itemGroupId: client_1.Prisma.raw('i.item_group_id'),
+            onDate: client_1.Prisma.raw('CURRENT_DATE'),
+        })}
+         WHERE i.item_id IN (SELECT ipm_item_id FROM f)
+      ),
+      stock AS (
+        SELECT b.sbl_item_id                  AS item_id,
+               COALESCE(${key.mrp}, -1)       AS key_mrp,
+               COALESCE(${key.salePrice}, -1) AS key_sp,
+               SUM(b.sbl_on_hand_qty)         AS qty
+          FROM stock.stock_balance b
+          JOIN pol ON pol.item_id = b.sbl_item_id
+         WHERE b.sbl_company_id = ${companyId}::uuid
+           AND b.sbl_branch_id  = ${branchId}::uuid
+           AND b.sbl_bucket     = 'SALEABLE'
+           AND b.sbl_is_deleted = false
+         GROUP BY 1, 2, 3
+      ),
+      ${mrpCostCte({
+            companyId,
+            branchId,
+            pairs: client_1.Prisma.sql `
+          SELECT DISTINCT f.ipm_item_id AS item_id, f.ipm_bucket_mrp AS mrp
+            FROM f JOIN pol ON pol.item_id = f.ipm_item_id
+           WHERE pol.track_mrp AND f.ipm_bucket_mrp IS NOT NULL`,
+        })}
+      SELECT f.ipm_item_id          AS "itemId",
+             f.item_code            AS "itemCode",
+             f.item_default_barcode AS "barcode",
+             f.item_name_en         AS "itemName",
+             f.ipm_uc_unit_id       AS "uomId",
+             u.unit_name            AS "unitName",
+             COALESCE(st.qty, 0) / NULLIF(iuc.iuc_to_base_factor, 0) AS "stockQty",
+             f.ipm_bucket_mrp       AS "mrp",
+             f.ipm_bucket_sp        AS "salePrice",
+             (f.ipm_key_mrp <> -1 OR f.ipm_key_sp <> -1) AS "priceIsBucket",
+             f.ipm_branch_id        AS "priceBranchId",
+             f.ipm_id               AS "bucketId",
+             f.ipm_max_price        AS "maxPrice",
+             ${cost.rate}           AS "costRate",
+             ${cost.wot}            AS "costWot",
+             ${cost.basis}          AS "costBasis",
+             f.ipm_min_price        AS "minPrice",
+             f.ipm_round_off        AS "roundOff",
+             f.ipm_sales_price_a    AS "priceA",
+             f.ipm_sales_price_b    AS "priceB",
+             f.ipm_sales_price_c    AS "priceC",
+             f.ipm_sales_price_d    AS "priceD",
+             f.ipm_effective_from::text AS "effectiveFrom",
+             f.ipm_effective_to::text   AS "effectiveTo",
+             COALESCE(pk.ipm_id, p.ipm_id) AS "previousId",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_branch_id ELSE p.ipm_branch_id END
+                                    AS "previousBranchId",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_a ELSE p.ipm_sales_price_a END
+                                    AS "previousA",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_b ELSE p.ipm_sales_price_b END
+                                    AS "previousB",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_c ELSE p.ipm_sales_price_c END
+                                    AS "previousC",
+             CASE WHEN pk.ipm_id IS NOT NULL THEN pk.ipm_sales_price_d ELSE p.ipm_sales_price_d END
+                                    AS "previousD"
+        FROM f
+        JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = f.ipm_uc_unit_id
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN pol ON pol.item_id = f.ipm_item_id
+        LEFT JOIN stock st
+               ON st.item_id = f.ipm_item_id AND st.key_mrp = f.ipm_key_mrp AND st.key_sp = f.ipm_key_sp
+        LEFT JOIN mrp_cost mc
+               ON pol.track_mrp AND mc.item_id = f.ipm_item_id AND mc.mrp = f.ipm_bucket_mrp
+        LEFT JOIN stock.stock_item_cost sic
+               ON sic.sic_company_id = ${companyId}::uuid
+              AND sic.sic_branch_id  = ${branchId}::uuid
+              AND sic.sic_item_id    = f.ipm_item_id
+              AND sic.sic_is_deleted = false
+        LEFT JOIN LATERAL (
+          SELECT k.*
+            FROM inventory.item_price_master k
+           WHERE k.ipm_is_deleted = false
+             AND k.ipm_company_id IS NOT DISTINCT FROM f.ipm_company_id
+             AND k.ipm_branch_id  IS NOT DISTINCT FROM f.ipm_branch_id
+             AND k.ipm_item_id    = f.ipm_item_id
+             AND k.ipm_uc_unit_id = f.ipm_uc_unit_id
+             AND k.ipm_key_mrp    = f.ipm_key_mrp
+             AND k.ipm_key_sp     = f.ipm_key_sp
+             AND k.ipm_effective_to = f.ipm_effective_from - 1
+           LIMIT 1
+        ) pk ON true
+        ${effectivePriceLateral({
+            itemId: client_1.Prisma.raw('f.ipm_item_id'),
+            uomId: client_1.Prisma.raw('f.ipm_uc_unit_id'),
+            mrp: client_1.Prisma.raw('f.ipm_bucket_mrp'),
+            salePrice: client_1.Prisma.raw('f.ipm_bucket_sp'),
+            companyId,
+            branchId,
+            onDate: client_1.Prisma.raw('(f.ipm_effective_from - 1)'),
+        })}
+       ORDER BY f.item_name_en, f.ipm_item_id, iuc.iuc_unit_slno, f.ipm_uc_unit_id,
+                f.ipm_effective_from, f.ipm_key_mrp, f.ipm_key_sp,
+                (f.ipm_branch_id IS NOT NULL), f.ipm_id
+    `;
+        const amount = (value) => (value === null ? 0 : (0, module_service_utils_1.toNumber)(value));
+        return rows.map((row) => ({
+            ...this.toGridRecord(row),
+            effectiveFrom: row.effectiveFrom,
+            effectiveTo: row.effectiveTo,
+            previous: row.previousId === null
+                ? null
+                : {
+                    bucketId: row.previousId,
+                    priceScope: row.previousBranchId === null ? 'CHAIN' : 'BRANCH',
+                    prices: [
+                        amount(row.previousA),
+                        amount(row.previousB),
+                        amount(row.previousC),
+                        amount(row.previousD),
+                    ],
+                },
+        }));
     }
     async snapshotRows(tx, ipmIds) {
         if (!ipmIds.length) {
@@ -719,18 +832,6 @@ let PriceBucketGateway = class PriceBucketGateway {
             roundOff: amount(row.roundOff),
             prices: [amount(row.priceA), amount(row.priceB), amount(row.priceC), amount(row.priceD)],
         };
-    }
-    levelColumns(candidate) {
-        const at = (level) => candidate.levels.find((entry) => entry.level === level) ?? {
-            price: null,
-            priceWot: null,
-            markupPerc: null,
-        };
-        const [a, b, c, d] = selling_price_bulk_types_1.PRICE_LEVELS.map(at);
-        return { a, b, c, d };
-    }
-    actorColumn(actor) {
-        return actor && actor !== module_service_utils_1.DEFAULT_ACTOR ? actor : null;
     }
 };
 exports.PriceBucketGateway = PriceBucketGateway;

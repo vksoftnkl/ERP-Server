@@ -97,6 +97,8 @@ with fourteen ledger pickers is corrected in one round-trip.
 | `tax_name` / `tax_code` unique among **live** rows, case-insensitively | `ux_tax_name`, `ux_tax_code` (partial — invisible to Prisma, so the check must live here) |
 | No two lines override the same `(role, supply nature)`; two lines both leaving the nature open collide | `ux_trl_rate_role` (`NULLS NOT DISTINCT`) |
 | A rate may not supersede itself | `ck_tax_no_self_supersede` |
+| A new link may only name a **live** rate (404 `TAX_RATE_SUPERSEDED_NOT_FOUND`); a link the rate already holds is kept after its target is deleted (notes 139 B8) | **nothing** — `fk_tax_supersedes` accepts a deleted row |
+| A negative rate or cess answers `TAX_RATE_PERC_OUT_OF_RANGE` / `TAX_RATE_CESS_NEGATIVE` — the DTO carries no minimum, so the generic `VALIDATION_MIN` cannot pre-empt them (notes 139 B9) | `ck_tax_rate`, `ck_tax_cess_nonneg` |
 | A supersession chain may not loop | **nothing** — see below |
 
 ### The two rules only this module can state

@@ -14,5 +14,6 @@ var ItemGroupErrorCode;
     ItemGroupErrorCode["PARENT_DELETED"] = "ITEM_GROUP_PARENT_DELETED";
     ItemGroupErrorCode["PHOTO_INVALID"] = "ITEM_GROUP_PHOTO_INVALID";
     ItemGroupErrorCode["NAME_TAKEN"] = "ITEM_GROUP_NAME_TAKEN";
+    ItemGroupErrorCode["TRACK_PRESET_NOT_FOUND"] = "ITEM_GROUP_TRACK_PRESET_NOT_FOUND";
 })(ItemGroupErrorCode || (exports.ItemGroupErrorCode = ItemGroupErrorCode = {}));
 //# sourceMappingURL=item-group-error-codes.js.map

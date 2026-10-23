@@ -1,0 +1,96 @@
+/// Notes 144 — append-only log of every change to item_price_master (IPM) and
+/// item_qty_price (IQP): who, when, where, device, before / after. Written only
+/// by the API's PriceMasterWriter, in the same transaction as the price write
+/// (migration 20261023120000_item_price_change_log_notes_144).
+///
+/// No relations on purpose: a log row outlives the price row, the item and the
+/// user it names, and it carries their names as they were.
+///
+/// DB-only, invisible to Prisma: the CHECKs ck_ipcl_table / _action / _source /
+/// _app / _shape / _changed, and the partial sync index
+/// ix_sync_pending_item_price_change_log (where the sync functions exist).
+model ItemPriceChangeLog {
+  ipclId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipcl_id")
+  ipclChangedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("ipcl_changed_on")
+  /// One save / one request.
+  ipclChangeSetId  String    @db.Uuid @map("ipcl_change_set_id")
+  /// IPM item_price_master | IQP item_qty_price
+  ipclPriceTable   String    @db.VarChar(4) @map("ipcl_price_table")
+  /// ipm_id / iqp_id
+  ipclRowId        String    @db.Uuid @map("ipcl_row_id")
+  /// CREATE | UPDATE | DELETE | RESTORE | REKEY
+  ipclAction       String    @db.VarChar(10) @map("ipcl_action")
+  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT
+  ipclSource       String    @db.VarChar(30) @map("ipcl_source")
+  ipclMenuId       Int?      @map("ipcl_menu_id")
+
+  // Where the price applies — AFTER for create / update / restore / rekey,
+  // BEFORE for delete.
+  /// NULL = shared item / chain price.
+  ipclCompanyId    String?   @db.Uuid @map("ipcl_company_id")
+  /// NULL = all branches.
+  ipclBranchId     String?   @db.Uuid @map("ipcl_branch_id")
+  ipclItemId       String    @db.Uuid @map("ipcl_item_id")
+  /// iuc_id
+  ipclUnitId       String?   @db.Uuid @map("ipcl_unit_id")
+  /// IPM only.
+  ipclGodownId     String?   @db.Uuid @map("ipcl_godown_id")
+  /// IQP only.
+  ipclPartyId      String?   @db.Uuid @map("ipcl_party_id")
+  /// IQP only.
+  ipclPriceLevel   Int?      @db.SmallInt @map("ipcl_price_level")
+  /// IPM only.
+  ipclBucketMrp    Decimal?  @db.Decimal(18, 2) @map("ipcl_bucket_mrp")
+  /// IPM only.
+  ipclBucketSp     Decimal?  @db.Decimal(18, 2) @map("ipcl_bucket_sp")
+  ipclEffectiveFrom DateTime? @db.Date @map("ipcl_effective_from")
+  ipclEffectiveTo  DateTime? @db.Date @map("ipcl_effective_to")
+
+  // Names as they were at the time of the change.
+  ipclItemCode     String?   @db.VarChar(60) @map("ipcl_item_code")
+  ipclItemName     String?   @db.VarChar(250) @map("ipcl_item_name")
+  ipclUnitName     String?   @db.VarChar(60) @map("ipcl_unit_name")
+  ipclBranchName   String?   @db.VarChar(120) @map("ipcl_branch_name")
+  ipclGodownName   String?   @db.VarChar(120) @map("ipcl_godown_name")
+  ipclPartyName    String?   @db.VarChar(250) @map("ipcl_party_name")
+
+  // Who / from where — from the token and the request context, never the body.
+  ipclUserId       String?   @db.Uuid @map("ipcl_user_id")
+  ipclUserName     String?   @db.VarChar(150) @map("ipcl_user_name")
+  ipclDeviceId     String?   @db.Uuid @map("ipcl_device_id")
+  ipclDeviceName   String?   @db.VarChar(150) @map("ipcl_device_name")
+  ipclIp           String?   @db.VarChar(60) @map("ipcl_ip")
+  /// DESKTOP | WEB | API | SYSTEM
+  ipclApp          String?   @db.VarChar(30) @map("ipcl_app")
+  ipclReason       String?   @db.VarChar(500) @map("ipcl_reason")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  ipclSyncDate     DateTime? @db.Timestamptz(6) @map("ipcl_sync_date")
+
+  // What: every column of the row, before and after, under its raw column name.
+  ipclBefore       Json?     @db.JsonB @map("ipcl_before")
+  ipclAfter        Json?     @db.JsonB @map("ipcl_after")
+  ipclChanged      String[]  @map("ipcl_changed")
+
+  // The figures the report filters and sorts on: GENERATED ALWAYS … STORED
+  // from the two jsonb columns, never written. Prisma has no generated-column
+  // concept; the no-argument @default(dbgenerated()) keeps migrate from
+  // emitting a DROP DEFAULT on them.
+  ipclOldPriceA    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_price_a")
+  ipclNewPriceA    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_price_a")
+  ipclOldMrp       Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_mrp")
+  ipclNewMrp       Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_mrp")
+  ipclOldCost      Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_cost")
+  ipclNewCost      Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_cost")
+  ipclOldSlabPrice Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_slab_price")
+  ipclNewSlabPrice Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_slab_price")
+  ipclSlabFromQty  Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_slab_from_qty")
+  ipclSlabToQty    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_slab_to_qty")
+
+  @@index([ipclCompanyId, ipclBranchId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_scope_date")
+  @@index([ipclItemId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_item_date")
+  @@index([ipclUserId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_user_date")
+  @@index([ipclChangedOn(sort: Desc)], map: "ix_ipcl_date")
+  @@index([ipclChangeSetId], map: "ix_ipcl_set")
+  @@map("item_price_change_log")
+  @@schema("inventory")
+}

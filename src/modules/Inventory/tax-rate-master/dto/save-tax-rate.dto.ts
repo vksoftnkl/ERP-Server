@@ -70,9 +70,10 @@ export class SaveTaxRateDto {
     example: 18,
     default: 0,
     description:
-      'The TOTAL GST rate, 0…100. CGST, SGST and IGST are derived from it by the database.',
+      'The TOTAL GST rate, 0…100 (else 400 TAX_RATE_PERC_OUT_OF_RANGE). CGST, SGST and IGST are ' +
+      'derived from it by the database.',
   })
-  @OptionalNumber(0)
+  @OptionalNumber()
   tax_rate_perc?: number;
 
   @ApiPropertyOptional({
@@ -87,11 +88,11 @@ export class SaveTaxRateDto {
   tax_cess_basis?: string;
 
   @ApiPropertyOptional({ default: 0 })
-  @OptionalNumber(0)
+  @OptionalNumber()
   tax_cess_perc?: number;
 
   @ApiPropertyOptional({ default: 0 })
-  @OptionalNumber(0)
+  @OptionalNumber()
   tax_cess_per_unit?: number;
 
   @ApiPropertyOptional({
@@ -105,11 +106,11 @@ export class SaveTaxRateDto {
   tax_acess_basis?: string;
 
   @ApiPropertyOptional({ default: 0 })
-  @OptionalNumber(0)
+  @OptionalNumber()
   tax_acess_perc?: number;
 
   @ApiPropertyOptional({ default: 0 })
-  @OptionalNumber(0)
+  @OptionalNumber()
   tax_acess_per_unit?: number;
 
   @ApiPropertyOptional({

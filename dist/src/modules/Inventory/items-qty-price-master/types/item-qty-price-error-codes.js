@@ -13,5 +13,8 @@ var ItemQtyPriceErrorCode;
     ItemQtyPriceErrorCode["DATE_INVALID"] = "ITEM_QTY_PRICE_DATE_INVALID";
     ItemQtyPriceErrorCode["DUPLICATE"] = "ITEM_QTY_PRICE_DUPLICATE";
     ItemQtyPriceErrorCode["REFERENCE_NOT_FOUND"] = "ITEM_QTY_PRICE_REFERENCE_NOT_FOUND";
+    ItemQtyPriceErrorCode["UNIT_NOT_OF_ITEM"] = "ITEM_QTY_PRICE_UNIT_NOT_OF_ITEM";
+    ItemQtyPriceErrorCode["VALUE_REQUIRED"] = "ITEM_QTY_PRICE_VALUE_REQUIRED";
+    ItemQtyPriceErrorCode["OVERLAP"] = "ITEM_QTY_PRICE_OVERLAP";
 })(ItemQtyPriceErrorCode || (exports.ItemQtyPriceErrorCode = ItemQtyPriceErrorCode = {}));
 //# sourceMappingURL=item-qty-price-error-codes.js.map

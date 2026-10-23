@@ -12,12 +12,22 @@ import {
   ItemPriceListItem,
   ItemPriceListMeta,
   ItemPricePayload,
+  ScheduledItemPricePayload,
 } from './types/item-price-api.types';
 import { ItemPriceErrorCode } from './types/item-price-error-codes';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PriceBucketService } from './price-bucket.service';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
+import { PRICE_ORIGIN } from '../item-price-log/types/price-change-log.types';
+import { sameBucket, bucketKeyOfRow, toDay, type BucketKey } from './price-resolver';
+import {
+  databaseToday,
+  priceRowsInForce,
+  priceRowsScheduledAfter,
+  toDateColumn,
+} from './price-period.helper';
 import { resolveItemTaxRates } from '../utils/item-tax-rate.helper';
 import { recomputeLevel } from 'src/modules/stocks/selling-price-bulk/selling-price-math.helper';
 import { assertChildDeletable, assertItemsLive } from '../utils/item-child.helper';
@@ -96,6 +106,8 @@ export class ItemsPriceMasterService {
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly requestContextService: RequestContextService,
     private readonly priceBucketService: PriceBucketService,
+    /** Notes 144 — the one writer of the price table; it logs every change it makes. */
+    private readonly priceWriter: PriceMasterWriter,
   ) {}
   async save(
     saveItemPriceDto: SaveItemPriceDto,
@@ -198,12 +210,20 @@ export class ItemsPriceMasterService {
     }
     return this.toPayload(record);
   }
+  /**
+   * The item's prices TODAY — the rows in force on the database's today
+   * (notes 140 C). What the item card shows and syncs: a scheduled row (it
+   * starts after today) and a row a split closed (it ended before today) share
+   * their key with today's row, and matched by key they would be claimed,
+   * refused as duplicates or soft-deleted as unclaimed.
+   */
   async findByItemId(
     itemId: string,
     client: InventoryWriteClient = this.prisma,
   ): Promise<ItemPricePayload[]> {
+    const today = await databaseToday(client);
     const records = await client.itemPriceMaster.findMany({
-      where: { ipmItemId: itemId, ipmIsDeleted: false },
+      where: { ipmItemId: itemId, ipmIsDeleted: false, ...priceRowsInForce(today) },
       orderBy: [
         { ipmSlNo: 'asc' },
         { itemUnitConversion: { iucUnitSlno: 'asc' } },
@@ -211,6 +231,30 @@ export class ItemsPriceMasterService {
       ],
     });
     return records.map((record) => this.toPayload(record));
+  }
+  /**
+   * Notes 140 C — the item's scheduled prices: live rows starting after today,
+   * with their period, in start order. Read-only on the item card; Change
+   * Selling Price writes and cancels them.
+   */
+  async findScheduledByItemId(
+    itemId: string,
+    client: InventoryWriteClient = this.prisma,
+  ): Promise<ScheduledItemPricePayload[]> {
+    const today = await databaseToday(client);
+    const records = await client.itemPriceMaster.findMany({
+      where: { ipmItemId: itemId, ipmIsDeleted: false, ...priceRowsScheduledAfter(today) },
+      orderBy: [
+        { itemUnitConversion: { iucUnitSlno: 'asc' } },
+        { ipmEffectiveFrom: 'asc' },
+        { ipmId: 'asc' },
+      ],
+    });
+    return records.map((record) => ({
+      ...this.toPayload(record),
+      ipm_effective_from: toDay(record.ipmEffectiveFrom),
+      ipm_effective_to: toDay(record.ipmEffectiveTo),
+    }));
   }
   async toggleDelete(ipmId: string, tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult>;
   async toggleDelete(
@@ -312,15 +356,10 @@ export class ItemsPriceMasterService {
     }
     const nextDeleted = !existing.ipmIsDeleted;
     const updatedOn = new Date();
-    const updated = await tx.itemPriceMaster.update({
-      where: {
-        ipmId,
-      },
-      data: {
-        ipmIsDeleted: nextDeleted,
-        ipmUpdatedOn: updatedOn,
-        ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
-      },
+    const updated = await this.priceWriter.updatePrice(tx, PRICE_ORIGIN.ITEM_CARD, ipmId, {
+      ipmIsDeleted: nextDeleted,
+      ipmUpdatedOn: updatedOn,
+      ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
     });
     await this.auditLogService.logEntityChange(
       {
@@ -377,10 +416,9 @@ export class ItemsPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemPriceDto);
     await this.applyBucket(tx, data, saveItemPriceDto, null);
+    await this.applyOpenPeriod(tx, data);
     await this.fillLevelFigures(tx, data, saveItemPriceDto, null);
-    const created = await tx.itemPriceMaster.create({
-      data,
-    });
+    const created = await this.priceWriter.createPrice(tx, PRICE_ORIGIN.ITEM_CARD, data);
     const payload = this.toPayload(created);
     await this.auditLogService.logEntityChange(
       {
@@ -450,12 +488,7 @@ export class ItemsPriceMasterService {
     this.applyOptionalFields(data, saveItemPriceDto);
     await this.applyBucket(tx, data, saveItemPriceDto, existing);
     await this.fillLevelFigures(tx, data, saveItemPriceDto, existing);
-    const updated = await tx.itemPriceMaster.update({
-      where: {
-        ipmId,
-      },
-      data,
-    });
+    const updated = await this.priceWriter.updatePrice(tx, PRICE_ORIGIN.ITEM_CARD, ipmId, data);
     const payload = this.toPayload(updated);
     await this.auditLogService.logEntityChange(
       {
@@ -482,6 +515,15 @@ export class ItemsPriceMasterService {
    *
    * ck_ipm_bucket_mrp_is_max holds by construction: the MRP bucket IS
    * NULLIF(ipm_max_price, 0).
+   *
+   * Notes 140 D — an UPDATE may not move the row onto other stock. The key is
+   * derived twice under the policy in force now and at the row's new scope:
+   * from what the row will hold, and from what it holds. When they differ the
+   * edit itself changed the bucket — a new MRP on an MRP row, a new
+   * default-level price on a sale-price row — and the "MRP 300" price would
+   * silently become the "MRP 320" one: 400 ITEM_PRICE_BUCKET_CHANGED. A price
+   * for other stock is a new row. When they agree the derived key is written
+   * as before, which is how a save that changed the item's tracking re-keys.
    */
   private async applyBucket(
     tx: Prisma.TransactionClient,
@@ -491,23 +533,123 @@ export class ItemsPriceMasterService {
   ): Promise<void> {
     const pick = (sent: number | undefined, stored: Prisma.Decimal | undefined) =>
       sent !== undefined ? sent : stored !== undefined ? toNumber(stored) : 0;
-    const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
-      {
-        companyId:
-          dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
-        branchId:
-          dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
-        maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
-        prices: [
-          pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
-          pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
-          pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
-          pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
-        ],
-      },
+    const scope = {
+      companyId:
+        dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
+      branchId:
+        dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
+    };
+    const next = {
+      ...scope,
+      maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
+      prices: [
+        pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
+        pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
+        pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
+        pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
+      ] as const,
+    };
+    if (!existing) {
+      const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [next]);
+      data.ipmBucketMrp = key.mrp;
+      data.ipmBucketSp = key.salePrice;
+      return;
+    }
+    const stored = {
+      ...scope,
+      maxPrice: toNumber(existing.ipmMaxPrice),
+      prices: [
+        toNumber(existing.ipmSalesPriceA),
+        toNumber(existing.ipmSalesPriceB),
+        toNumber(existing.ipmSalesPriceC),
+        toNumber(existing.ipmSalesPriceD),
+      ] as const,
+    };
+    const [key, kept] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
+      next,
+      stored,
     ]);
+    if (!sameBucket(key, kept)) {
+      this.refuseBucketChange(existing, next, kept, key);
+    }
     data.ipmBucketMrp = key.mrp;
     data.ipmBucketSp = key.salePrice;
+  }
+  /** Notes 140 D — the refusal, naming the row and the figure that moved it. */
+  private refuseBucketChange(
+    existing: ItemPriceMaster,
+    next: { maxPrice: number; prices: readonly number[] },
+    from: BucketKey,
+    to: BucketKey,
+  ): never {
+    const stored = bucketKeyOfRow(existing);
+    const describe = (key: BucketKey) =>
+      [
+        key.mrp !== null ? `MRP ${key.mrp}` : null,
+        key.salePrice !== null ? `sale price ${key.salePrice}` : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || 'no bucket';
+    const levels = ['a', 'b', 'c', 'd'] as const;
+    const storedPrices = [
+      existing.ipmSalesPriceA,
+      existing.ipmSalesPriceB,
+      existing.ipmSalesPriceC,
+      existing.ipmSalesPriceD,
+    ].map((price) => toNumber(price));
+    // The figure that moved it: the MRP for an MRP bucket, else the level
+    // whose new price is the new sale-price bucket.
+    const level =
+      from.mrp !== to.mrp
+        ? null
+        : levels.find(
+            (_, index) =>
+              next.prices[index] === to.salePrice && next.prices[index] !== storedPrices[index],
+          );
+    throwInventoryBadRequest<ItemPriceErrorDetail>(
+      'This edit would move the price onto other stock',
+      [
+        {
+          field: level ? `ipm_sales_price_${level}` : 'ipm_max_price',
+          code: ItemPriceErrorCode.BUCKET_CHANGED,
+          message:
+            `Price row ${existing.ipmId} prices the stock at ${describe(stored)}; this edit would ` +
+            `make it the price of ${describe(to)}. Add a new price row for that stock instead.`,
+        },
+      ],
+    );
+  }
+  /**
+   * Notes 140 C — a NEW row is in force today and fills exactly the gap its key
+   * has around today: from the day after the key's last closed row (a split's
+   * history) and to the day before its next scheduled row. A key with neither
+   * keeps the column defaults (1900-01-01 … 9999-12-31), so nothing changes
+   * for an item that has never had a price scheduled. Without this the
+   * defaults would overlap those rows and ex_ipm_overlap would refuse the row.
+   */
+  private async applyOpenPeriod(
+    tx: Prisma.TransactionClient,
+    data: Prisma.ItemPriceMasterUncheckedCreateInput,
+  ): Promise<void> {
+    const [gap] = await tx.$queryRaw<Array<{ from: string | null; to: string | null }>>`
+      WITH k AS (
+        SELECT ipm_effective_from, ipm_effective_to
+          FROM inventory.item_price_master
+         WHERE ipm_is_deleted = false
+           AND ipm_company_id IS NOT DISTINCT FROM ${data.ipmCompanyId ?? null}::uuid
+           AND ipm_branch_id  IS NOT DISTINCT FROM ${data.ipmBranchId ?? null}::uuid
+           AND ipm_item_id    = ${data.ipmItemId}::uuid
+           AND ipm_uc_unit_id = ${data.ipmUcUnitId}::uuid
+           AND ipm_key_mrp    = COALESCE(${data.ipmBucketMrp ?? null}::numeric, -1)
+           AND ipm_key_sp     = COALESCE(${data.ipmBucketSp ?? null}::numeric, -1)
+      )
+      SELECT (SELECT MAX(ipm_effective_to) + 1 FROM k WHERE ipm_effective_to < CURRENT_DATE)::text
+                 AS "from",
+             (SELECT MIN(ipm_effective_from) - 1 FROM k WHERE ipm_effective_from > CURRENT_DATE)::text
+                 AS "to"
+    `;
+    if (gap?.from) data.ipmEffectiveFrom = toDateColumn(gap.from);
+    if (gap?.to) data.ipmEffectiveTo = toDateColumn(gap.to);
   }
   /**
    * Notes 71 B4 — a level whose PRICE is sent but whose without-tax figure or

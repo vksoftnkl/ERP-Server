@@ -1,7 +1,14 @@
 import { Prisma } from '@prisma/client';
 import type { ResolvedRoleLedger } from '../ledgerRole/ledger-map.helper';
 import type { VoucherTypeRules } from './types/vouchers-api.types';
-import { derive, roleKey, toWire, type DeriveInput, type TypedLineInput } from './voucher-derive';
+import {
+  derive,
+  roleKey,
+  toWire,
+  type DeriveInput,
+  type InstrumentInput,
+  type TypedLineInput,
+} from './voucher-derive';
 import type {
   BillFacts,
   LedgerFacts,
@@ -319,18 +326,66 @@ const CON = type({
   crGroups: grp([G.CASH, G.BANK]),
 });
 const JRL = type({ typeId: 24, typeCode: 'Jrl', typeName: 'Journal' });
+/** As the live type: parties on the lines, each line's instrument bringing the money in (notes 54 / 126). */
 const RCPV = type({
+  instruments: true,
   typeId: 30,
   typeCode: 'RcpV',
   typeName: 'Receipt Voucher',
   nature: 'RECEIPT',
   menuId: 260,
-  partyMode: 'ONE',
+  partyMode: 'MANY',
   partySide: 'CR',
   billwiseMode: 'DEMAND',
   raiseBillType: null,
   drGroups: grp([G.CASH, G.BANK]),
   crGroups: [],
+});
+
+function tender(
+  id: string,
+  name: string,
+  typeId: number,
+  ledger: LedgerFacts,
+  extra: Partial<TenderFacts> = {},
+): TenderFacts {
+  return {
+    tndId: id,
+    name,
+    shortName: name,
+    typeId,
+    typeName: name,
+    isCash: typeId === 1,
+    needsRef: typeId !== 1,
+    ledgerId: ledger.ledId,
+    ledgerName: ledger.name,
+    settlementLedgerId: null,
+    isActive: true,
+    isDeleted: false,
+    companyId: 'c-1',
+    branchId: null,
+    hotkey: null,
+    displayPosition: 0,
+    ...extra,
+  };
+}
+const T = {
+  CASH: tender('t-cash', 'CASH', 1, L.CASH),
+  CHEQUE: tender('t-chq', 'CHEQUE', 5, L.CHEQUES_IN_HAND),
+  UPI: tender('t-upi', 'UPI', 3, L.HDFC),
+  TEMP_CR: tender('t-tmp', 'TEMP.CR', 8, L.HDFC),
+  NEFT: tender('t-neft', 'NEFT', 6, L.HDFC),
+};
+const TENDERS = new Map(Object.values(T).map((t) => [t.tndId, t]));
+
+/** A line's instrument: the tender, plus whatever else the shape needs. */
+const paidBy = (tenderId: string, extra: Partial<InstrumentInput> = {}): InstrumentInput => ({
+  tenderId,
+  refNo: null,
+  instrumentDate: null,
+  bankName: null,
+  cheque: null,
+  ...extra,
 });
 
 function line(
@@ -392,6 +447,7 @@ function input(over: Partial<DeriveInput>): DeriveInput {
 const legOf = (d: ReturnType<typeof derive>, ledId: string) =>
   d.legs.find((l) => l.ledger.ledId === ledId);
 const codes = (i: DeriveInput) => i.ctx.refusals.map((r) => r.code);
+const refusalsOf = (i: DeriveInput) => i.ctx.refusals.map((r) => [r.code, r.line]);
 
 describe('derive — the PNG example (§4.1, §11.1 #5)', () => {
   const pngLines = () => [
@@ -626,15 +682,26 @@ describe('derive — the other types', () => {
   it('#3 · a Contra with a Sundry Debtors ledger is refused on the side rule; a plain one has no party', () => {
     const bad = input({
       type: CON,
-      lines: [line(1, 'CR', L.CASH, 85000), line(2, 'DR', L.KRISHNA, 85000)],
+      tenders: TENDERS,
+      lines: [
+        line(1, 'CR', L.CASH, 85000, { tenderId: T.CASH.tndId }),
+        line(2, 'DR', L.KRISHNA, 85000),
+      ],
     });
     derive(bad);
-    expect(codes(bad)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(bad.ctx.refusals[0].line).toBe(2);
+    // notes 126: a party line has no tender to name either
+    expect(refusalsOf(bad)).toEqual([
+      ['VCH_LEDGER_SIDE', 2],
+      ['VCH_MONEY_LINE_NO_TENDER', 2],
+    ]);
 
     const ok = input({
       type: CON,
-      lines: [line(1, 'CR', L.CASH, 85000), line(2, 'DR', L.HDFC, 85000)],
+      tenders: TENDERS,
+      lines: [
+        line(1, 'CR', L.CASH, 85000, { tenderId: T.CASH.tndId }),
+        line(2, 'DR', L.HDFC, 85000, { tenderId: T.NEFT.tndId }),
+      ],
     });
     const d = derive(ok);
     expect(codes(ok)).toEqual([]);
@@ -706,26 +773,26 @@ describe('derive — the other types', () => {
       isActive: true,
       companyId: 'c-1',
     };
-    const short = input({
-      type: RCPV,
-      header: {
-        date: '2026-09-15',
-        partyId: L.KRISHNA.ledId,
-        posStcd: null,
-        reverseCharge: false,
-        docRefno: null,
-      },
-      lines: [line(1, 'DR', L.HDFC, 10000)],
-      allocations: [
-        { index: 0, lineRowNo: 0, billId: 'b-1', billAccYear: '2026-2027', amount: D(5000) },
-      ],
-      party: L.KRISHNA,
-      bills: new Map([['b-1|2026-2027', bill]]),
-    });
+    // Cr Krishna, paid by NEFT into HDFC
+    const receipt = (amount: number, allocated: number) =>
+      input({
+        type: RCPV,
+        tenders: TENDERS,
+        lines: [
+          line(1, 'CR', L.KRISHNA, amount, {
+            instrument: paidBy(T.NEFT.tndId, { refNo: 'UTR-1' }),
+          }),
+        ],
+        allocations: [
+          { index: 0, lineRowNo: 1, billId: 'b-1', billAccYear: '2026-2027', amount: D(allocated) },
+        ],
+        bills: new Map([['b-1|2026-2027', bill]]),
+      });
+    const short = receipt(10000, 5000);
     const ds = derive(short);
     expect(codes(short)).toEqual([]);
     expect(ds.bills.map((b) => [b.lineRowNo, b.party.ledId, b.billType, b.side, b.amount.toFixed(2), b.dueDate, b.isAdvance])).toEqual([
-      [0, L.KRISHNA.ledId, 'ADVANCE', 'CR', '5000.00', null, true],
+      [1, L.KRISHNA.ledId, 'ADVANCE', 'CR', '5000.00', null, true],
     ]);
     expect(toWire('RcpV', '2026-09-15', ds).bills[0]).toMatchObject({
       billType: 'ADVANCE',
@@ -742,43 +809,13 @@ describe('derive — the other types', () => {
     expect(codes(strict)).toEqual(['VCH_BILLWISE_SHORT']);
     expect(strict.ctx.refusals[0].message).toContain('must be allocated bill by bill');
 
-    const exact = input({
-      type: RCPV,
-      header: {
-        date: '2026-09-15',
-        partyId: L.KRISHNA.ledId,
-        posStcd: null,
-        reverseCharge: false,
-        docRefno: null,
-      },
-      lines: [line(1, 'DR', L.HDFC, 10000)],
-      allocations: [
-        { index: 0, lineRowNo: 0, billId: 'b-1', billAccYear: '2026-2027', amount: D(10000) },
-      ],
-      party: L.KRISHNA,
-      bills: new Map([['b-1|2026-2027', bill]]),
-    });
+    const exact = receipt(10000, 10000);
     const d = derive(exact);
     expect(codes(exact)).toEqual([]);
     expect(d.allocations[0]).toMatchObject({ adjType: 'ALLOCATION', settlementMode: 'BANK' });
     expect(d.bills).toEqual([]);
 
-    const over = input({
-      type: RCPV,
-      header: {
-        date: '2026-09-15',
-        partyId: L.KRISHNA.ledId,
-        posStcd: null,
-        reverseCharge: false,
-        docRefno: null,
-      },
-      lines: [line(1, 'DR', L.HDFC, 13000)],
-      allocations: [
-        { index: 0, lineRowNo: 0, billId: 'b-1', billAccYear: '2026-2027', amount: D(13000) },
-      ],
-      party: L.KRISHNA,
-      bills: new Map([['b-1|2026-2027', bill]]),
-    });
+    const over = receipt(13000, 13000);
     derive(over);
     expect(codes(over)).toEqual(['VCH_BILL_OVERSPENT']);
   });
@@ -859,9 +896,11 @@ describe('derive — the other types', () => {
 });
 
 // ─── notes (53): Receipt / Payment Voucher with MANY parties ─────────────────
+// The side rule speaks first; notes 126 then refuses every typed cash / bank
+// line on its own — the money side is a tender, never a typed ledger.
 describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', () => {
-  const RCPV_MANY = type({ ...RCPV, partyMode: 'MANY' });
   const PMTV = type({
+    instruments: true,
     typeId: 31,
     typeCode: 'PmtV',
     typeName: 'Payment Voucher',
@@ -875,7 +914,7 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
     crGroups: grp([G.CASH, G.BANK]),
   });
   /** RcpV as the register held it before 20260928170000: no group list at all. */
-  const RCPV_UNLISTED = type({ ...RCPV_MANY, drGroups: [], crGroups: [] });
+  const RCPV_UNLISTED = type({ ...RCPV, drGroups: [], crGroups: [] });
   const SALES = ledger('l-sales', 'Sales A/c', [[G.SALES_ACCOUNTS, 'Sales Accounts']]);
   /** The reserved id of Bank OD A/c (prisma/seed/Account_Groups.sql) — matched by id, not name. */
   const OD_GROUP = '019eee86-f34b-7d50-af11-254d259a8440';
@@ -902,6 +941,8 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
     },
   ];
   const messages = (i: DeriveInput) => i.ctx.refusals.map((r) => r.message);
+  const sideMessages = (i: DeriveInput) =>
+    i.ctx.refusals.filter((r) => r.code === 'VCH_LEDGER_SIDE').map((r) => r.message);
 
   it('RcpV with Cr Cash is refused — cash to bank is a Contra, even with no group list on the type', () => {
     const i = input({
@@ -910,9 +951,12 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
       lines: [line(1, 'DR', L.HDFC, 5000), line(2, 'CR', L.CASH, 5000)],
     });
     derive(i);
-    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(i.ctx.refusals[0].line).toBe(2);
-    expect(messages(i)[0]).toMatch(/Cash — Counter 1 may not be credited on a Receipt Voucher — cash to bank is a Contra/);
+    expect(refusalsOf(i)).toEqual([
+      ['VCH_MONEY_LINE_NO_TENDER', 1],
+      ['VCH_LEDGER_SIDE', 2],
+      ['VCH_MONEY_LINE_NO_TENDER', 2],
+    ]);
+    expect(sideMessages(i)[0]).toMatch(/Cash — Counter 1 may not be credited on a Receipt Voucher — cash to bank is a Contra/);
   });
 
   it('RcpV with Dr Sales A/c is refused — the DR side takes cash or bank only', () => {
@@ -929,9 +973,9 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
     expect(messages(i)[0]).toMatch(/Sales A\/c \(Sales Accounts\) may not be debited on a Receipt Voucher — the DR side takes cash or bank only/);
   });
 
-  it('RcpV with Dr Bank / Cr customer passes, and so does Dr Bank OD (any of the three money groups)', () => {
+  it('RcpV with Dr Bank / Cr customer passes the side rule, and so does Dr Bank OD (any of the three money groups)', () => {
     /** RcpV as 20260928170000 leaves it: the DR list names all three money groups. */
-    const RCPV_THREE = type({ ...RCPV_MANY, drGroups: grp([G.CASH, G.BANK, OD_GROUP]) });
+    const RCPV_THREE = type({ ...RCPV, drGroups: grp([G.CASH, G.BANK, OD_GROUP]) });
     for (const money of [L.HDFC, OD]) {
       const i = input({
         type: RCPV_THREE,
@@ -940,9 +984,9 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
         allocations: [{ index: 0, lineRowNo: 2, billId: 'k-1', billAccYear: '2026-2027', amount: D(6000) }],
         bills: new Map([kBill()]),
       });
-      const d = derive(i);
-      expect(codes(i)).toEqual([]);
-      expect(d.legs).toHaveLength(2);
+      derive(i);
+      // no side refusal; notes 126 knows the OD as money too, and wants it from the tender list
+      expect(refusalsOf(i)).toEqual([['VCH_MONEY_LINE_NO_TENDER', 1]]);
     }
   });
 
@@ -953,9 +997,12 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
       lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', L.HDFC, 2000)],
     });
     derive(i);
-    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(i.ctx.refusals[0].line).toBe(1);
-    expect(messages(i)[0]).toMatch(/bank to cash is a Contra/);
+    expect(refusalsOf(i)).toEqual([
+      ['VCH_LEDGER_SIDE', 1],
+      ['VCH_MONEY_LINE_NO_TENDER', 1],
+      ['VCH_MONEY_LINE_NO_TENDER', 2],
+    ]);
+    expect(sideMessages(i)[0]).toMatch(/bank to cash is a Contra/);
   });
 
   it('PmtV with Cr Sales A/c is refused as the money rule, not as a list of group names', () => {
@@ -974,27 +1021,35 @@ describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', 
     const i = input({
       type: CON,
       ledgers: WITH_MORE,
-      lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', SALES, 2000)],
+      tenders: TENDERS,
+      lines: [line(1, 'DR', L.CASH, 2000, { tenderId: T.CASH.tndId }), line(2, 'CR', SALES, 2000)],
     });
     derive(i);
-    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
-    expect(messages(i)[0]).toMatch(/may not be credited on a Contra/);
-    expect(messages(i)[0]).not.toMatch(/cash or bank only/);
+    expect(refusalsOf(i)).toEqual([
+      ['VCH_LEDGER_SIDE', 2],
+      ['VCH_MONEY_LINE_NO_TENDER', 2],
+    ]);
+    expect(sideMessages(i)[0]).toMatch(/may not be credited on a Contra/);
+    expect(sideMessages(i)[0]).not.toMatch(/cash or bank only/);
   });
 
-  it('Jrl with Dr Cash / Cr Bank still passes — the rule is keyed on nature, and a Journal has no money side', () => {
+  it('Jrl with Dr Cash / Cr Bank passes the side rule (keyed on nature) — notes 126 refuses both lines: a Journal has no money side', () => {
     const i = input({
       type: JRL,
       lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', L.HDFC, 2000)],
     });
     derive(i);
-    expect(codes(i)).toEqual([]);
+    expect(refusalsOf(i)).toEqual([
+      ['VCH_MONEY_LEDGER_NOT_ALLOWED', 1],
+      ['VCH_MONEY_LEDGER_NOT_ALLOWED', 2],
+    ]);
+    expect(messages(i)[0]).toMatch(/a Journal has no money side/);
   });
 });
 
 describe('derive — multi-party Receipt and Payment (notes 53)', () => {
-  const RCPV_MANY = type({ ...RCPV, partyMode: 'MANY' });
   const PMTV_MANY = type({
+    instruments: true,
     typeId: 31,
     typeCode: 'PmtV',
     typeName: 'Payment Voucher',
@@ -1060,19 +1115,19 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     amount: D(amount),
   });
 
-  // Dr Cash 15,000; Cr Krishna 10,000 (6,000 + 4,000); Cr Ravi 5,000 (one bill).
+  // Cr Krishna 10,000 (6,000 + 4,000); Cr Ravi 5,000 (one bill); both paid in cash.
   const receipt = (raviAllocated: number) =>
     input({
-      type: RCPV_MANY,
+      type: RCPV,
+      tenders: TENDERS,
       lines: [
-        line(1, 'DR', L.CASH, 15000),
-        line(2, 'CR', L.KRISHNA, 10000),
-        line(3, 'CR', L.RAVI, 5000),
+        line(1, 'CR', L.KRISHNA, 10000, { instrument: paidBy(T.CASH.tndId) }),
+        line(2, 'CR', L.RAVI, 5000, { instrument: paidBy(T.CASH.tndId) }),
       ],
       allocations: [
-        alloc(0, 2, 'k-1', 6000),
-        alloc(1, 2, 'k-2', 4000),
-        alloc(2, 3, 'r-1', raviAllocated),
+        alloc(0, 1, 'k-1', 6000),
+        alloc(1, 1, 'k-2', 4000),
+        alloc(2, 2, 'r-1', raviAllocated),
       ],
       bills: new Map([
         bill('k-1', L.KRISHNA.ledId, 'DR', 6000),
@@ -1090,14 +1145,21 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     expect(
       d.allocations.map((a) => [a.lineRowNo, a.party.ledId, a.bill.ablId, a.amount.toFixed(2)]),
     ).toEqual([
-      [2, L.KRISHNA.ledId, 'k-1', '6000.00'],
-      [2, L.KRISHNA.ledId, 'k-2', '4000.00'],
-      [3, L.RAVI.ledId, 'r-1', '5000.00'],
+      [1, L.KRISHNA.ledId, 'k-1', '6000.00'],
+      [1, L.KRISHNA.ledId, 'k-2', '4000.00'],
+      [2, L.RAVI.ledId, 'r-1', '5000.00'],
     ]);
     expect(d.allocations.every((a) => a.adjType === 'ALLOCATION')).toBe(true);
     expect(d.allocations.every((a) => a.settlementMode === 'CASH')).toBe(true);
-    // two parties → no single opposite ledger on the legs
-    expect(d.legs.every((l) => l.oppLedgerId === null)).toBe(true);
+    // each party line pairs with its own instrument's cash leg
+    expect(d.legs.map((l) => [l.drCr, l.ledger.ledId, l.amount.toFixed(2), l.oppLedgerId])).toEqual(
+      [
+        ['CR', L.KRISHNA.ledId, '10000.00', L.CASH.ledId],
+        ['CR', L.RAVI.ledId, '5000.00', L.CASH.ledId],
+        ['DR', L.CASH.ledId, '10000.00', L.KRISHNA.ledId],
+        ['DR', L.CASH.ledId, '5000.00', L.RAVI.ledId],
+      ],
+    );
     expect(toWire('RcpV', '2026-09-15', d).totals).toEqual({
       debit: 15000,
       credit: 15000,
@@ -1110,7 +1172,7 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     const d = derive(i);
     expect(codes(i)).toEqual([]);
     expect(d.bills.map((b) => [b.lineRowNo, b.party.ledId, b.billType, b.side, b.amount.toFixed(2)])).toEqual([
-      [3, L.RAVI.ledId, 'ADVANCE', 'CR', '1000.00'],
+      [2, L.RAVI.ledId, 'ADVANCE', 'CR', '1000.00'],
     ]);
     expect(d.allocations).toHaveLength(3);
     expect(toWire('RcpV', '2026-09-15', d).totals).toEqual({ debit: 15000, credit: 15000, difference: 0 });
@@ -1120,7 +1182,7 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     const base = receipt(5000);
     const i = input({
       ...base,
-      allocations: [...base.allocations, alloc(3, 3, 'r-2', 500)],
+      allocations: [...base.allocations, alloc(3, 2, 'r-2', 500)],
       bills: new Map([...base.bills, bill('r-2', L.RAVI.ledId, 'DR', 500)]),
     });
     derive(i);
@@ -1137,16 +1199,19 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
   });
 
   // Dr Sundaram 9,800 (net; PAN → 2%), Dr Murugan 8,000 (net; no PAN → 20%),
-  // Dr Lakshmi 3,000 (no TDS); Cr HDFC 20,800.
+  // Dr Lakshmi 3,000 (no TDS); each paid by NEFT from HDFC — 20,800 out.
+  const byNeft = (refNo: string) => ({
+    instrument: paidBy(T.NEFT.tndId, { refNo, bankLedgerId: L.HDFC.ledId }),
+  });
   const payment = (over: Partial<DeriveInput> = {}) =>
     input({
       type: PMTV_MANY,
       ledgers: MANY_LEDGERS,
+      tenders: TENDERS,
       lines: [
-        line(1, 'DR', L.SUNDARAM, 9800),
-        line(2, 'DR', MURUGAN, 8000),
-        line(3, 'DR', LAKSHMI, 3000),
-        line(4, 'CR', L.HDFC, 20800),
+        line(1, 'DR', L.SUNDARAM, 9800, byNeft('UTR-1')),
+        line(2, 'DR', MURUGAN, 8000, byNeft('UTR-2')),
+        line(3, 'DR', LAKSHMI, 3000, byNeft('UTR-3')),
       ],
       allocations: [alloc(0, 1, 's-1', 10000), alloc(1, 2, 'm-1', 10000), alloc(2, 3, 'l-1', 3000)],
       bills: new Map([
@@ -1234,12 +1299,6 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
         [L.SUNDARAM.ledId, { rate: high, annualBaseSoFar: D(95000) }],
         [MURUGAN.ledId, { rate: high, annualBaseSoFar: D(0) }],
       ]),
-      lines: [
-        line(1, 'DR', L.SUNDARAM, 9800),
-        line(2, 'DR', MURUGAN, 8000),
-        line(3, 'DR', LAKSHMI, 3000),
-        line(4, 'CR', L.HDFC, 20800),
-      ],
     });
     const d = derive(i);
     expect(codes(i)).toEqual([]);
@@ -1277,42 +1336,7 @@ const RCPV_INS = type({
   crGroups: [],
 });
 
-function tender(
-  id: string,
-  name: string,
-  typeId: number,
-  ledger: LedgerFacts,
-  extra: Partial<TenderFacts> = {},
-): TenderFacts {
-  return {
-    tndId: id,
-    name,
-    shortName: name,
-    typeId,
-    typeName: name,
-    isCash: typeId === 1,
-    needsRef: typeId !== 1,
-    ledgerId: ledger.ledId,
-    ledgerName: ledger.name,
-    settlementLedgerId: null,
-    isActive: true,
-    isDeleted: false,
-    companyId: 'c-1',
-    branchId: null,
-    hotkey: null,
-    displayPosition: 0,
-    ...extra,
-  };
-}
-const T = {
-  CASH: tender('t-cash', 'CASH', 1, L.CASH),
-  CHEQUE: tender('t-chq', 'CHEQUE', 5, L.CHEQUES_IN_HAND),
-  UPI: tender('t-upi', 'UPI', 3, L.HDFC),
-  TEMP_CR: tender('t-tmp', 'TEMP.CR', 8, L.HDFC),
-};
-const TENDERS = new Map(Object.values(T).map((t) => [t.tndId, t]));
-
-const bill = (id: string, party: LedgerFacts, amount: number): BillFacts => ({
+const bill =(id: string, party: LedgerFacts, amount: number): BillFacts => ({
   ablId: id,
   ablAccYear: '2026-2027',
   partyId: party.ledId,
@@ -1424,18 +1448,15 @@ describe('derive — notes (54) instruments', () => {
     });
   });
 
-  it('a typed Dr cash line still works beside instrument lines (the older shape)', () => {
+  it('a typed Dr cash line is refused — notes 126 retired the older shape; the money side is the instrument', () => {
     const i = input({
       type: RCPV_INS,
       tenders: TENDERS,
       lines: [line(1, 'DR', L.CASH, 500), line(2, 'CR', L.RAVI, 500)],
     });
-    const d = derive(i);
-    // the unallocated party line is kept as an advance (notes 57); nothing about the instrument is refused
-    expect(codes(i)).toEqual([]);
-    expect(d.bills.map((b) => [b.party.ledId, b.billType, b.amount.toFixed(2)])).toEqual([[L.RAVI.ledId, 'ADVANCE', '500.00']]);
-    expect(d.legs.filter((l) => l.source === 'INSTRUMENT')).toHaveLength(0);
-    expect(d.totals.debit.toNumber()).toBe(500);
+    derive(i);
+    expect(refusalsOf(i)).toEqual([['VCH_MONEY_LINE_NO_TENDER', 1]]);
+    expect(i.ctx.refusals[0].message).toMatch(/picked from the tender list/);
   });
 
   it('refuses an instrument on a type without them, on the wrong side, and a credit-shaped tender', () => {

@@ -79,73 +79,79 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
         return this.setDeleted(brandId, false);
     }
     async setDeleted(brandId, wantDeleted) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.itemBrandMaster.findFirst({
-                where: {
-                    brand_id: brandId,
-                },
-            });
-            if (!existing) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item brand not found', 'brand_id', `No item brand found with id ${brandId}`, item_brand_error_codes_1.ItemBrandErrorCode.NOT_FOUND);
-            }
-            (0, master_tree_helper_1.assertDeleteState)(existing.brand_is_deleted, wantDeleted, ITEM_BRAND_DELETE_STATE);
-            if (wantDeleted) {
-                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_BRAND_TREE, brandId);
-                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_BRAND_REFERENCES, brandId, ITEM_BRAND_DELETE_STATE);
-            }
-            else {
-                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_BRAND_TREE, existing.brand_parent_id);
-            }
-            const wasDeleted = existing.brand_is_deleted;
-            const nextDeleted = wantDeleted;
-            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, brandId) : [];
-            const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
-            const modifiedOn = new Date();
-            const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const result = await tx.itemBrandMaster.updateMany({
-                where: {
-                    brand_id: brandId,
-                    brand_is_deleted: wasDeleted,
-                },
-                data: {
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const existing = await tx.itemBrandMaster.findFirst({
+                    where: {
+                        brand_id: brandId,
+                    },
+                });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item brand not found', 'brand_id', `No item brand found with id ${brandId}`, item_brand_error_codes_1.ItemBrandErrorCode.NOT_FOUND);
+                }
+                (0, master_tree_helper_1.assertDeleteState)(existing.brand_is_deleted, wantDeleted, ITEM_BRAND_DELETE_STATE);
+                if (wantDeleted) {
+                    await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_BRAND_TREE, brandId);
+                    await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_BRAND_REFERENCES, brandId, ITEM_BRAND_DELETE_STATE);
+                }
+                else {
+                    await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_BRAND_TREE, existing.brand_parent_id);
+                }
+                const wasDeleted = existing.brand_is_deleted;
+                const nextDeleted = wantDeleted;
+                const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, brandId) : [];
+                const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
+                const modifiedOn = new Date();
+                const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+                const result = await tx.itemBrandMaster.updateMany({
+                    where: {
+                        brand_id: brandId,
+                        brand_is_deleted: wasDeleted,
+                    },
+                    data: {
+                        brand_is_deleted: nextDeleted,
+                        brand_modified_on: modifiedOn,
+                        brand_modified_by: userId,
+                    },
+                });
+                if (result.count === 0) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item brand not found', 'brand_id', `No item brand found with id ${brandId}`, item_brand_error_codes_1.ItemBrandErrorCode.NOT_FOUND);
+                }
+                if (nextDeleted) {
+                    await this.removePathIds(tx, ancestorIds, subtreeIds);
+                }
+                else {
+                    await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, brandId));
+                }
+                const originalRecord = this.toPayload(existing);
+                const modifiedRecord = this.toPayload({
+                    ...existing,
                     brand_is_deleted: nextDeleted,
                     brand_modified_on: modifiedOn,
                     brand_modified_by: userId,
-                },
+                });
+                await this.auditLogService.logEntityChange({
+                    action: nextDeleted ? 'cancel' : 'update',
+                    tableName: ITEM_BRAND_TABLE_NAME,
+                    screenName: ITEM_BRAND_AUDIT_SCREEN_NAME,
+                    screenType: 'master',
+                    pk: brandId,
+                    displayName: existing.brand_name,
+                    originalRecord,
+                    modifiedRecord,
+                    userId,
+                    notes: nextDeleted ? 'Item brand soft deleted' : 'Item brand restored',
+                }, tx);
+                return {
+                    brand_id: brandId,
+                    deleted: nextDeleted,
+                };
             });
-            if (result.count === 0) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item brand not found', 'brand_id', `No item brand found with id ${brandId}`, item_brand_error_codes_1.ItemBrandErrorCode.NOT_FOUND);
-            }
-            if (nextDeleted) {
-                await this.removePathIds(tx, ancestorIds, subtreeIds);
-            }
-            else {
-                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, brandId));
-            }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
-                ...existing,
-                brand_is_deleted: nextDeleted,
-                brand_modified_on: modifiedOn,
-                brand_modified_by: userId,
-            });
-            await this.auditLogService.logEntityChange({
-                action: nextDeleted ? 'cancel' : 'update',
-                tableName: ITEM_BRAND_TABLE_NAME,
-                screenName: ITEM_BRAND_AUDIT_SCREEN_NAME,
-                screenType: 'master',
-                pk: brandId,
-                displayName: existing.brand_name,
-                originalRecord,
-                modifiedRecord,
-                userId,
-                notes: nextDeleted ? 'Item brand soft deleted' : 'Item brand restored',
-            }, tx);
-            return {
-                brand_id: brandId,
-                deleted: nextDeleted,
-            };
-        });
+        }
+        catch (error) {
+            this.handleWriteError(error);
+            throw error;
+        }
     }
     async createItemBrand(saveItemBrandDto) {
         try {

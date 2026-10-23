@@ -69,7 +69,9 @@ attributes (color, icon, photo).
   never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
   itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
   (notes 70 B1-B3).
-- `sec_name` is unique among live sections (`uq_sec_name`, notes 70 D6): a duplicate is a 409.
+- `sec_name` is trimmed, a blank one refused, and unique among live sections ignoring case
+  (`uq_sec_name` on `lower(sec_name)`, notes 70 D6 / 139 A1/B6): a duplicate, a restore included, is
+  a 409 `ITEM_SECTION_NAME_TAKEN`. A blank alias, short name or description is stored as NULL.
 
 ## Validation & uniqueness
 

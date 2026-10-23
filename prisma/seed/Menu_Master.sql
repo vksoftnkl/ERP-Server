@@ -235,11 +235,14 @@ VALUES
     ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  21.00, NULL, NULL, NULL, true , false)
     ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  28.00, NULL, NULL, NULL, true , false)
     ,( 263,    5, 'Cheque Books'                         , NULL                  , true ,  14.00, NULL, NULL, NULL, true , true)
-    -- ============ &6 Reports (menu 6, 24 rows) ============
+    -- ============ &6 Reports (menu 6, 25 rows) ============
+    -- 290 Price Change Log (notes 144, 20261023130000_price_change_log_menu_notes_144):
+    -- the report over inventory.item_price_change_log, beside Audit Logs.
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,   6.00, '0', NULL, NULL, true , false)
     ,(  74,    6, 'Sales Reports'                        , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  76,   74, 'Sales Bills'                          , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 106,    6, 'Audit Logs'                           , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,( 290,    6, 'Price Change Log'                     , NULL                  , true ,   1.50, NULL, NULL, NULL, true , false)
     ,( 137,    6, 'Financial Statements'                 , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
     ,( 279,    6, 'Party Outstanding'                    , NULL                  , true ,   7.50, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , true ,   0.50, NULL, NULL, NULL, true , false)
@@ -426,6 +429,15 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,PRINT,EXPORT}'
  WHERE menu_id = 284
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 290 Price Change Log (item-price-log/*; 20261023130000_price_change_log_menu_notes_144)
+-- is a read-only report like 258: view, print, export. Its VIEW right is the
+-- report's access (notes 144: "a normal menu right").
+-- Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,PRINT,EXPORT}'
+ WHERE menu_id = 290
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

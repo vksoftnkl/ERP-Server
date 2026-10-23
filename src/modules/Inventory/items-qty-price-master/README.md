@@ -27,6 +27,17 @@ item + unit, optionally scoped by company, branch, party and price level.
   holds its key.
 - One live slab per (item, unit, company, branch, party, level, from, to, effective-from) —
   `uq_iqp_slab`, NULLS NOT DISTINCT (notes 70 D7): a re-POST is a 409, not a second slab.
+- Notes 139 A4, checked in the service:
+  - `iqp_item_unit_id` must be a live unit row **of `iqp_item_id`** — 400
+    `ITEM_QTY_PRICE_UNIT_NOT_OF_ITEM` (the foreign key alone accepted another item's unit).
+  - The mode's own figure is required — P `iqp_disc_pct`, R `iqp_flat_off`, F `iqp_price` — 400
+    `ITEM_QTY_PRICE_VALUE_REQUIRED`; an update that omits it is judged on the stored one.
+    `iqp_disc_pct` is at most 100 (DTO 400 `VALIDATION_MAX`).
+  - No two live slabs (inactive included) of one item, unit and scope may share a qty on a shared
+    date: `[from, to)` against `[from, to)`, dates inclusive, NULL bounds open — 409
+    `ITEM_QTY_PRICE_OVERLAP`, field `<index>.iqp_from_qty` in a batch, `iqp_id` on a restore. A
+    batch is judged after all its rows are written, under one advisory lock per item, so a ladder
+    re-cut in one save passes.
 
 ## Resolved names
 

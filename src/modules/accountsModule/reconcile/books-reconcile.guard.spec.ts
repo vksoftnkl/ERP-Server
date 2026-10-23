@@ -59,7 +59,7 @@ describe('assertBooksReconcile', () => {
 
   /** Every raw statement the guard ran, as its SQL text and bound values. */
   const statements = () =>
-    queryRaw.mock.calls.map(([strings, ...values]) => ({
+    queryRaw.mock.calls.map(([strings, ...values]: unknown[]) => ({
       sql: (strings as TemplateStringsArray).join('?'),
       values,
     }));

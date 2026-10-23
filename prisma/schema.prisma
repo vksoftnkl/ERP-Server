@@ -4675,6 +4675,8 @@ model Menu {
   sections               FormSection[]
   /// Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)
   voucherTypes           AccVoucherType[]
+  /// Tables this screen maintains (public.db_table_master.dtm_menu_id)
+  dbTables               DbTableMaster[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")
@@ -4838,7 +4840,8 @@ model categoryMaster {
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
   @@map("item_category_master")
   @@schema("inventory")
-  @@unique([categoryName], map: "uq_category_name")
+  // uq_category_name ON (lower(category_name)) WHERE NOT category_is_deleted (notes 139 A2/B6):
+  // partial + expression, so DB-only, never declared here.
   @@index([categoryParentId], map: "idx_category_parent_id")
   @@index([categoryIsActive], map: "idx_category_active")
 }
@@ -4905,8 +4908,8 @@ model GodownLocation {
  // @@index([gdlBranchId], map: "idx_gdl_branch")
   @@index([gdlParentId], map: "idx_gdl_parent")
   @@index([gdlBranchId, gdlParentId, gdlSort], map: "idx_gdl_sort")
-  // This is the UNIQUE constraint you defined
-  @@unique([gdlBranchId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
+  // uq_gdl_unique_name_per_parent ON (gdl_branch_id, gdl_parent_id, lower(gdl_name)) NULLS NOT
+  // DISTINCT WHERE NOT gdl_is_deleted (notes 139 A2/B2/B6): partial + expression, so DB-only.
   // NOTE:
   // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
   // - GIN index on array is also not expressible in Prisma schema.
@@ -5041,7 +5044,9 @@ model ItemBatchStock {
 model ItemBrandMaster {
   brand_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  brand_name        String   @unique @db.VarChar(150)
+  /// Unique among live brands, ignoring case: uq_brand_name ON (lower(brand_name)) WHERE NOT
+  /// brand_is_deleted (notes 139 A2/B6). Partial + expression, so DB-only, never declared here.
+  brand_name        String   @db.VarChar(150)
   brand_alias       String?  @db.VarChar(150)
   brand_short       String?  @db.VarChar(50)
   brand_description String?  @db.VarChar(250)
@@ -5168,7 +5173,8 @@ model ItemGroupMaster {
 
   @@map("item_group_master")
    @@schema("inventory")
-  @@unique([itgName], map: "uq_itg_name")
+  // uq_itg_name ON (lower(itg_name)) WHERE NOT itg_is_deleted (notes 139 A2/B6): partial +
+  // expression, so DB-only, never declared here.
   @@index([itgParentId], map: "idx_itg_parent_id")
   @@index([itgIsActive], map: "idx_itg_active")
 }
@@ -5334,6 +5340,104 @@ model ItemMaster {
   @@index([itemGroupId], map: "idx_item_group")
   @@index([itemNameEn], map: "idx_item_name_en")
   @@index([itemDefaultBarcode], map: "idx_item_barcode")
+}
+
+// ----- prisma/inventory/itemPriceChangeLog.prisma -----
+/// Notes 144 — append-only log of every change to item_price_master (IPM) and
+/// item_qty_price (IQP): who, when, where, device, before / after. Written only
+/// by the API's PriceMasterWriter, in the same transaction as the price write
+/// (migration 20261023120000_item_price_change_log_notes_144).
+///
+/// No relations on purpose: a log row outlives the price row, the item and the
+/// user it names, and it carries their names as they were.
+///
+/// DB-only, invisible to Prisma: the CHECKs ck_ipcl_table / _action / _source /
+/// _app / _shape / _changed, and the partial sync index
+/// ix_sync_pending_item_price_change_log (where the sync functions exist).
+model ItemPriceChangeLog {
+  ipclId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipcl_id")
+  ipclChangedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("ipcl_changed_on")
+  /// One save / one request.
+  ipclChangeSetId  String    @db.Uuid @map("ipcl_change_set_id")
+  /// IPM item_price_master | IQP item_qty_price
+  ipclPriceTable   String    @db.VarChar(4) @map("ipcl_price_table")
+  /// ipm_id / iqp_id
+  ipclRowId        String    @db.Uuid @map("ipcl_row_id")
+  /// CREATE | UPDATE | DELETE | RESTORE | REKEY
+  ipclAction       String    @db.VarChar(10) @map("ipcl_action")
+  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT
+  ipclSource       String    @db.VarChar(30) @map("ipcl_source")
+  ipclMenuId       Int?      @map("ipcl_menu_id")
+
+  // Where the price applies — AFTER for create / update / restore / rekey,
+  // BEFORE for delete.
+  /// NULL = shared item / chain price.
+  ipclCompanyId    String?   @db.Uuid @map("ipcl_company_id")
+  /// NULL = all branches.
+  ipclBranchId     String?   @db.Uuid @map("ipcl_branch_id")
+  ipclItemId       String    @db.Uuid @map("ipcl_item_id")
+  /// iuc_id
+  ipclUnitId       String?   @db.Uuid @map("ipcl_unit_id")
+  /// IPM only.
+  ipclGodownId     String?   @db.Uuid @map("ipcl_godown_id")
+  /// IQP only.
+  ipclPartyId      String?   @db.Uuid @map("ipcl_party_id")
+  /// IQP only.
+  ipclPriceLevel   Int?      @db.SmallInt @map("ipcl_price_level")
+  /// IPM only.
+  ipclBucketMrp    Decimal?  @db.Decimal(18, 2) @map("ipcl_bucket_mrp")
+  /// IPM only.
+  ipclBucketSp     Decimal?  @db.Decimal(18, 2) @map("ipcl_bucket_sp")
+  ipclEffectiveFrom DateTime? @db.Date @map("ipcl_effective_from")
+  ipclEffectiveTo  DateTime? @db.Date @map("ipcl_effective_to")
+
+  // Names as they were at the time of the change.
+  ipclItemCode     String?   @db.VarChar(60) @map("ipcl_item_code")
+  ipclItemName     String?   @db.VarChar(250) @map("ipcl_item_name")
+  ipclUnitName     String?   @db.VarChar(60) @map("ipcl_unit_name")
+  ipclBranchName   String?   @db.VarChar(120) @map("ipcl_branch_name")
+  ipclGodownName   String?   @db.VarChar(120) @map("ipcl_godown_name")
+  ipclPartyName    String?   @db.VarChar(250) @map("ipcl_party_name")
+
+  // Who / from where — from the token and the request context, never the body.
+  ipclUserId       String?   @db.Uuid @map("ipcl_user_id")
+  ipclUserName     String?   @db.VarChar(150) @map("ipcl_user_name")
+  ipclDeviceId     String?   @db.Uuid @map("ipcl_device_id")
+  ipclDeviceName   String?   @db.VarChar(150) @map("ipcl_device_name")
+  ipclIp           String?   @db.VarChar(60) @map("ipcl_ip")
+  /// DESKTOP | WEB | API | SYSTEM
+  ipclApp          String?   @db.VarChar(30) @map("ipcl_app")
+  ipclReason       String?   @db.VarChar(500) @map("ipcl_reason")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  ipclSyncDate     DateTime? @db.Timestamptz(6) @map("ipcl_sync_date")
+
+  // What: every column of the row, before and after, under its raw column name.
+  ipclBefore       Json?     @db.JsonB @map("ipcl_before")
+  ipclAfter        Json?     @db.JsonB @map("ipcl_after")
+  ipclChanged      String[]  @map("ipcl_changed")
+
+  // The figures the report filters and sorts on: GENERATED ALWAYS … STORED
+  // from the two jsonb columns, never written. Prisma has no generated-column
+  // concept; the no-argument @default(dbgenerated()) keeps migrate from
+  // emitting a DROP DEFAULT on them.
+  ipclOldPriceA    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_price_a")
+  ipclNewPriceA    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_price_a")
+  ipclOldMrp       Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_mrp")
+  ipclNewMrp       Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_mrp")
+  ipclOldCost      Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_cost")
+  ipclNewCost      Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_cost")
+  ipclOldSlabPrice Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_old_slab_price")
+  ipclNewSlabPrice Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_new_slab_price")
+  ipclSlabFromQty  Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_slab_from_qty")
+  ipclSlabToQty    Decimal?  @default(dbgenerated()) @db.Decimal @map("ipcl_slab_to_qty")
+
+  @@index([ipclCompanyId, ipclBranchId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_scope_date")
+  @@index([ipclItemId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_item_date")
+  @@index([ipclUserId, ipclChangedOn(sort: Desc)], map: "ix_ipcl_user_date")
+  @@index([ipclChangedOn(sort: Desc)], map: "ix_ipcl_date")
+  @@index([ipclChangeSetId], map: "ix_ipcl_set")
+  @@map("item_price_change_log")
+  @@schema("inventory")
 }
 
 // ----- prisma/inventory/itemPriceLevels.prisma -----
@@ -5909,7 +6013,10 @@ model Unit {
   unit_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   // Master fields
-  unit_name        String   @unique @db.VarChar(50)
+  /// Unique among live units: uq_unit_name ON (unit_name) WHERE NOT unit_is_deleted (notes 139
+  /// A2). Partial, so DB-only, never declared here. Case-insensitive only in UnitsMasterService
+  /// until the live "Box" / "BOX" pair is merged.
+  unit_name        String   @db.VarChar(50)
   unit_alias       String?  @db.VarChar(50)
  unit_code        String?  @db.Text
   gstUnit          ItemGstUnits? @relation(fields: [unit_code], references: [itemGstUnitCode], onDelete: SetNull, onUpdate: Cascade)
@@ -6763,6 +6870,65 @@ model CompanyGroupMaster {
   cogModifiedBy   String?   @db.VarChar(100)                                @map("cog_modified_by")
   @@index([cogIsActive], name: "idx_cog_group_active")
   @@map("company_group_master")
+  @@schema("public")
+}
+
+// ----- prisma/public/dbTableMaster.prisma -----
+/// public.db_table_master — the table registry: what every table in the
+/// database IS (migration 20261023140000_db_table_master). Modelled on
+/// fixed.menu_master: int id, self-parent, name, active flag, dates.
+///
+/// One row per ordinary table and per partitioned PARENT, never a partition.
+/// Rows come from prisma/seed/Db_Table_Master.sql, ids written out.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   dtmKind       MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING |
+///                 METADATA | SYSTEM
+///   dtmWriteMode  EDITABLE | APPEND_ONLY | DERIVED
+/// plus ck_dtm_retention (> 0) and ck_dtm_parent (not itself).
+///
+/// DB-only, invisible to Prisma: the views public.v_db_table_master (the
+/// registry plus partitioning, row estimate and size from pg_catalog) and
+/// public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION), and
+/// the partial sync index ix_sync_pending_db_table_master (where the sync
+/// functions exist).
+model DbTableMaster {
+  dtmId            Int       @id(map: "pk_db_table_master") @default(autoincrement()) @map("dtm_id")
+  dtmSchema        String    @db.VarChar(63) @map("dtm_schema")
+  /// The partitioned PARENT, never a partition.
+  dtmTable         String    @db.VarChar(63) @map("dtm_table")
+  /// An item / line table points at its header, a child master at its master.
+  /// NULL for a table shared by several headers (txn_charge_detail,
+  /// acc_tender_detail, txn_transport_detail, txn_status_log).
+  dtmParentId      Int?      @map("dtm_parent_id")
+  parent           DbTableMaster?  @relation("DbTableHierarchy", fields: [dtmParentId], references: [dtmId], onDelete: SetNull, onUpdate: Cascade, map: "fk_dtm_parent")
+  children         DbTableMaster[] @relation("DbTableHierarchy")
+  dtmName          String    @db.VarChar(200) @map("dtm_name")
+  /// MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING | METADATA | SYSTEM
+  dtmKind          String    @db.VarChar(20) @map("dtm_kind")
+  /// CORE HR UI AUDIT SYSTEM ACCOUNTS TILL SALES LOYALTY PURCHASE INVENTORY STOCK GST PRINT TRANSPORT
+  dtmModule        String?   @db.VarChar(30) @map("dtm_module")
+  /// Column prefix ('sbi_'). Not unique: stl_, atc_, sdr_ and tax_ are each used twice.
+  dtmColPrefix     String?   @db.VarChar(30) @map("dtm_col_prefix")
+  /// The screen that maintains it.
+  dtmMenuId        Int?      @map("dtm_menu_id")
+  menu             Menu?     @relation(fields: [dtmMenuId], references: [menuId], onDelete: SetNull, onUpdate: Cascade, map: "fk_dtm_menu")
+  /// EDITABLE | APPEND_ONLY | DERIVED
+  dtmWriteMode     String    @default("EDITABLE") @db.VarChar(12) @map("dtm_write_mode")
+  /// NULL = kept forever.
+  dtmRetentionDays Int?      @map("dtm_retention_days")
+  dtmDescription   String?   @db.Text @map("dtm_description")
+  /// false = retired, table kept.
+  dtmIsActive      Boolean   @default(true) @map("dtm_is_active")
+  dtmCreatedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("dtm_created_on")
+  dtmModifiedOn    DateTime? @updatedAt @db.Timestamptz(6) @map("dtm_modified_on")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  dtmSyncDate      DateTime? @db.Timestamptz(6) @map("dtm_sync_date")
+
+  @@unique([dtmSchema, dtmTable], map: "uq_dtm_table")
+  @@index([dtmParentId], map: "ix_dtm_parent")
+  @@index([dtmMenuId], map: "ix_dtm_menu")
+  @@map("db_table_master")
   @@schema("public")
 }
 

@@ -22,6 +22,9 @@ export declare class UnitsMasterService {
     private createUnit;
     private updateUnit;
     private validateConversionRules;
+    private validatePackRule;
+    private assertReferences;
+    private assertNameFree;
     private applyOptionalFields;
     private toPayload;
     private handleWriteError;

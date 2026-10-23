@@ -68,4 +68,15 @@ export interface ItemPricePayload {
   ipm_godown_name?: string | null;
 }
 
+/**
+ * Notes 140 C — a price Change Selling Price scheduled to start after today:
+ * the item card shows it read-only (`scheduled_prices[]`) and never sends it
+ * back. It carries its period, which `prices[]` rows (always today's) do not.
+ */
+export interface ScheduledItemPricePayload extends ItemPricePayload {
+  /** `YYYY-MM-DD`, after today. */
+  ipm_effective_from: string;
+  ipm_effective_to: string;
+}
+
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;

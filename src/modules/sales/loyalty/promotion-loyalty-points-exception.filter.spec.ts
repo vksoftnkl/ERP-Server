@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { PromotionLoyaltyPointsExceptionFilter } from './promotion-loyalty-points-exception.filter';
 
 describe('PromotionLoyaltyPointsExceptionFilter', () => {
@@ -13,13 +13,15 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     ({
       switchToHttp: () => ({
         getResponse: () => response,
-      getRequest: () => ({ method: 'POST', url: '/test' }),
+        getRequest: () => ({ method: 'POST', url: '/test' }),
       }),
     }) as never;
 
   beforeEach(() => {
     filter = new PromotionLoyaltyPointsExceptionFilter();
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('passes through module-shaped error responses', () => {
     const response = createResponse();
@@ -57,11 +59,13 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
       errors: [
         {
           field: 'ls_end_date',
-          code: 'VALIDATION_FAILED', message: 'ls_end_date must be greater than or equal to ls_start_date',
+          code: 'VALIDATION_FAILED',
+          message: 'ls_end_date must be greater than or equal to ls_start_date',
         },
         {
           field: 'gift_points',
-          code: 'VALIDATION_FAILED', message: 'gift_points must be greater than 0',
+          code: 'VALIDATION_FAILED',
+          message: 'gift_points must be greater than 0',
         },
       ],
     });
@@ -69,9 +73,12 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
 
   it('returns a generic 500 payload for unexpected exceptions', () => {
     const response = createResponse();
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     filter.catch(new Error('boom'), createHost(response));
 
+    // The stack goes to the server log, never to the client.
+    expect(logged).toHaveBeenCalledWith('POST /test', expect.stringContaining('boom'));
     expect(response.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     expect(response.json).toHaveBeenCalledWith({
       success: false,

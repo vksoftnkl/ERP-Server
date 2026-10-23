@@ -25,6 +25,7 @@ export declare class ItemsGroupMasterService {
     private createItemGroup;
     private updateItemGroup;
     private ensureParentExists;
+    private ensureTrackPresetExists;
     private applyOptionalFields;
     private getAncestorIds;
     private getActiveSubtreeIds;

@@ -190,7 +190,7 @@ let TaxRateMasterService = class TaxRateMasterService {
             }
             await this.assertNameIsFree(tx, effective.taxName, null);
             await this.assertCodeIsFree(tx, effective.taxCode, null);
-            await this.assertSupersedesExists(tx, effective.taxSupersedesId);
+            await this.assertSupersedesExists(tx, effective.taxSupersedesId, null);
             const created = await tx.taxRateMaster.create({ data });
             await this.audit(tx, 'insert', TAX_TABLE_NAME, created.taxId, created.taxName, null, (0, tax_rate_utils_1.toTaxRatePayload)({ ...created, ledgerOverrides: [] }), 'Tax rate created');
             await this.syncLines(tx, created.taxId, dto);
@@ -226,7 +226,7 @@ let TaxRateMasterService = class TaxRateMasterService {
             }
             await this.assertNameIsFree(tx, effective.taxName, taxId);
             await this.assertCodeIsFree(tx, effective.taxCode, taxId);
-            await this.assertSupersedesExists(tx, effective.taxSupersedesId);
+            await this.assertSupersedesExists(tx, effective.taxSupersedesId, existing.taxSupersedesId);
             await this.assertNoSupersedeCycle(tx, taxId, effective.taxSupersedesId);
             const updated = await tx.taxRateMaster.update({ where: { taxId }, data });
             await this.syncLines(tx, taxId, dto);
@@ -415,11 +415,11 @@ let TaxRateMasterService = class TaxRateMasterService {
             ]);
         }
     }
-    async assertSupersedesExists(client, supersedesId) {
-        if (!supersedesId)
+    async assertSupersedesExists(client, supersedesId, storedSupersedesId) {
+        if (!supersedesId || supersedesId === storedSupersedesId)
             return;
         const target = await client.taxRateMaster.findFirst({
-            where: { taxId: supersedesId },
+            where: { taxId: supersedesId, taxIsDeleted: false },
             select: { taxId: true },
         });
         if (!target) {

@@ -175,6 +175,8 @@ export interface PostStockVoucherResult {
  */
 interface ApplyParams extends PostStockVoucherParams {
   reversal: boolean;
+  /** See CancelStockVoucherParams.refuseNegative. */
+  refuseNegative?: boolean;
 }
 /**
  * The ledger rows one engine run derives everything from: this document's, in
@@ -2158,6 +2160,33 @@ async function lockHoldingItems(
   `;
 }
 /**
+ * Notes 143 #2 — the same per-item lock, taken from the document's LINES before
+ * the preflight runs, so the preflight and the post see one state of the item.
+ *
+ * Two tills posting openings of one holding both passed "already opened" when
+ * the check ran before any lock: each read a ledger without the other's row.
+ * Under this lock the second waits, then reads the first's committed rows and
+ * is refused. Re-taken by `applyLedgerRows` later in the same transaction,
+ * which an advisory lock allows.
+ */
+export async function lockVoucherItems(
+  tx: Prisma.TransactionClient,
+  svhId: string,
+  accYear: string,
+): Promise<void> {
+  await lockHoldingItems(
+    tx,
+    Prisma.sql`
+      SELECT svi.svi_company_id AS company_id, svi.svi_branch_id AS branch_id,
+             svi.svi_item_id AS item_id
+        FROM stock.stock_voucher_item svi
+       WHERE svi.svi_voucher_id = ${svhId}::uuid
+         AND svi.svi_acc_year   = ${accYear}::bpchar
+         AND svi.svi_is_deleted = false
+    `,
+  );
+}
+/**
  * A zero balance row for every holding that has none yet, `ON CONFLICT DO
  * NOTHING` — so a reservation or a transit can exist before the holding's
  * first movement, and the inbound quantity is visible before the goods arrive
@@ -2823,6 +2852,11 @@ interface NegativeHolding {
  * cannot carry negative stock, and a despatch that left the source below zero
  * would deliver goods to the destination that were never there.
  *
+ * A STOCK VOUCHER'S CANCEL is BLOCK too, whatever the policy (notes 143 #4,
+ * `refuseNegative`): open 10, sell 8, cancel the opening, and an ALLOW item
+ * read −8 while accounts reversed the whole opening value. The stock that
+ * moved out is the operator's to account for first, with an adjustment.
+ *
  * Checked here rather than left to `ck_sbl_accum`, which only keeps the four
  * accumulators non-negative: on-hand is allowed to go below zero by design, so
  * the database cannot know whether THIS item may.
@@ -2832,8 +2866,10 @@ async function assertNegativeStockPolicy(
   params: ApplyParams,
 ): Promise<void> {
   const { rules, svhId } = params;
+  const cancelRefused = params.reversal && params.refuseNegative === true;
   const forceBlock =
-    (isTransferShape(rules.postShape) || rules.blockNegative === true) && !params.reversal;
+    ((isTransferShape(rules.postShape) || rules.blockNegative === true) && !params.reversal) ||
+    cancelRefused;
   const holdings = await tx.$queryRaw<NegativeHolding[]>`
     WITH touched AS (
       SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
@@ -2881,6 +2917,16 @@ async function assertNegativeStockPolicy(
     }
   }
   const blocked = holdings.filter((row) => row.allowNegative === 'BLOCK');
+  if (blocked.length && cancelRefused) {
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(
+      `Cancelling this ${rules.displayName.toLowerCase()} would drive stock negative`,
+      blocked.map((row) => ({
+        field: 'lines',
+        code: StockErrorCode.CANCEL_WOULD_GO_NEGATIVE,
+        message: `${describe(row)} — stock it brought in has moved out since. Adjust it first, then cancel.`,
+      })),
+    );
+  }
   if (blocked.length) {
     throwStockConflict<StockErrorDetail, StockErrorResponse>(
       `This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`,
@@ -3038,6 +3084,15 @@ export interface CancelStockVoucherParams {
   reason: string;
   /** One instant for every reversal row, the header stamp and the trail row. */
   cancelledOn: Date;
+  /**
+   * Notes 143 #4 — refuse a reversal that drives a holding negative, whatever
+   * the item's policy says. A stock voucher's cancel sets it: cancelling an
+   * opening after the stock was sold would otherwise leave −8 on the shelf and
+   * reverse the whole opening value in accounts. A sales document's stock
+   * shadow leaves it unset and keeps the item's policy, so a counter cancel is
+   * never blocked by it.
+   */
+  refuseNegative?: boolean;
 }
 /**
  * Cancels one POSTED voucher by REVERSAL, never by delete: every ledger row the
@@ -3097,7 +3152,7 @@ export async function cancelStockVoucher(
   await lockHeaderInStatus(tx, params, 'POSTED');
   const rowsReversed = await writeReversalLedger(tx, params);
   const apply = { rules, svhId, accYear, actor, postedOn: cancelledOn };
-  await applyLedgerRows(tx, { ...apply, reversal: true });
+  await applyLedgerRows(tx, { ...apply, reversal: true, refuseNegative: params.refuseNegative });
   await recomputeHeaderTotals(tx, apply);
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },

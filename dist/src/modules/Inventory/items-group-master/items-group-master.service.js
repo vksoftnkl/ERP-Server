@@ -87,67 +87,73 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
         return this.setDeleted(itgId, false);
     }
     async setDeleted(itgId, wantDeleted) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.itemGroupMaster.findFirst({
-                where: { itgId },
-            });
-            if (!existing) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No item group found with id ${itgId}`, item_group_error_codes_1.ItemGroupErrorCode.NOT_FOUND);
-            }
-            (0, master_tree_helper_1.assertDeleteState)(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
-            if (wantDeleted) {
-                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_GROUP_TREE, itgId);
-                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
-            }
-            else {
-                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_GROUP_TREE, existing.itgParentId);
-            }
-            const wasDeleted = existing.itgIsDeleted;
-            const nextDeleted = wantDeleted;
-            const modifiedOn = new Date();
-            const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
-            const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
-            const result = await tx.itemGroupMaster.updateMany({
-                where: { itgId, itgIsDeleted: wasDeleted },
-                data: {
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const existing = await tx.itemGroupMaster.findFirst({
+                    where: { itgId },
+                });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No item group found with id ${itgId}`, item_group_error_codes_1.ItemGroupErrorCode.NOT_FOUND);
+                }
+                (0, master_tree_helper_1.assertDeleteState)(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
+                if (wantDeleted) {
+                    await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_GROUP_TREE, itgId);
+                    await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
+                }
+                else {
+                    await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_GROUP_TREE, existing.itgParentId);
+                }
+                const wasDeleted = existing.itgIsDeleted;
+                const nextDeleted = wantDeleted;
+                const modifiedOn = new Date();
+                const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+                const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
+                const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
+                const result = await tx.itemGroupMaster.updateMany({
+                    where: { itgId, itgIsDeleted: wasDeleted },
+                    data: {
+                        itgIsDeleted: nextDeleted,
+                        itgModifiedOn: modifiedOn,
+                        itgModifiedBy: userId,
+                    },
+                });
+                if (result.count === 0) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No item group found with id ${itgId}`, item_group_error_codes_1.ItemGroupErrorCode.NOT_FOUND);
+                }
+                if (nextDeleted) {
+                    await this.removePathIds(tx, ancestorIds, subtreeIds);
+                    await this.stockTrackPolicyService.retireForGroup(itgId, tx);
+                }
+                else {
+                    await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
+                    await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
+                }
+                const originalRecord = this.toPayload(existing);
+                const modifiedRecord = this.toPayload({
+                    ...existing,
                     itgIsDeleted: nextDeleted,
                     itgModifiedOn: modifiedOn,
                     itgModifiedBy: userId,
-                },
+                });
+                await this.auditLogService.logEntityChange({
+                    action: nextDeleted ? 'cancel' : 'update',
+                    tableName: ITEM_GROUP_TABLE_NAME,
+                    screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+                    screenType: 'master',
+                    pk: itgId,
+                    displayName: existing.itgName,
+                    originalRecord,
+                    modifiedRecord,
+                    userId,
+                    notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
+                }, tx);
+                return { itg_id: itgId, deleted: nextDeleted };
             });
-            if (result.count === 0) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No item group found with id ${itgId}`, item_group_error_codes_1.ItemGroupErrorCode.NOT_FOUND);
-            }
-            if (nextDeleted) {
-                await this.removePathIds(tx, ancestorIds, subtreeIds);
-                await this.stockTrackPolicyService.retireForGroup(itgId, tx);
-            }
-            else {
-                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
-                await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
-            }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
-                ...existing,
-                itgIsDeleted: nextDeleted,
-                itgModifiedOn: modifiedOn,
-                itgModifiedBy: userId,
-            });
-            await this.auditLogService.logEntityChange({
-                action: nextDeleted ? 'cancel' : 'update',
-                tableName: ITEM_GROUP_TABLE_NAME,
-                screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
-                screenType: 'master',
-                pk: itgId,
-                displayName: existing.itgName,
-                originalRecord,
-                modifiedRecord,
-                userId,
-                notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
-            }, tx);
-            return { itg_id: itgId, deleted: nextDeleted };
-        });
+        }
+        catch (error) {
+            this.handleWriteError(error);
+            throw error;
+        }
     }
     async createItemGroup(saveItemGroupDto) {
         try {
@@ -155,6 +161,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 if (saveItemGroupDto.itg_parent_id) {
                     await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
                 }
+                await this.ensureTrackPresetExists(saveItemGroupDto.itg_track_preset_id, null, tx);
                 const now = new Date();
                 const createdBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
                 const data = {
@@ -229,6 +236,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 if (saveItemGroupDto.itg_parent_id) {
                     await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
                 }
+                await this.ensureTrackPresetExists(saveItemGroupDto.itg_track_preset_id, existing.itgTrackPresetId, tx);
                 const hasParentField = saveItemGroupDto.itg_parent_id !== undefined;
                 const nextParentId = hasParentField
                     ? (saveItemGroupDto.itg_parent_id ?? null)
@@ -306,6 +314,24 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     field: 'itg_parent_id',
                     code: item_group_error_codes_1.ItemGroupErrorCode.PARENT_NOT_FOUND,
                     message: `No active item group found with id ${parentId}`,
+                },
+            ]);
+        }
+    }
+    async ensureTrackPresetExists(presetId, storedPresetId, tx) {
+        if (!presetId || presetId === storedPresetId) {
+            return;
+        }
+        const preset = await tx.stockTrackPreset.findFirst({
+            where: { sptId: presetId, sptIsDeleted: false },
+            select: { sptId: true },
+        });
+        if (!preset) {
+            (0, module_service_utils_1.throwInventoryBadRequest)('Stock tracking preset does not exist', [
+                {
+                    field: 'itg_track_preset_id',
+                    code: item_group_error_codes_1.ItemGroupErrorCode.TRACK_PRESET_NOT_FOUND,
+                    message: `No live stock tracking preset found with id ${presetId}`,
                 },
             ]);
         }

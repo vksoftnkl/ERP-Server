@@ -101,84 +101,96 @@ export class ItemsSectionMasterService {
     secId: string,
     wantDeleted: boolean,
   ): Promise<{ sec_id: string; deleted: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.itemSectionMaster.findFirst({
-        where: { secId },
-      });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Find regardless of current deleted state
+        const existing = await tx.itemSectionMaster.findFirst({
+          where: { secId },
+        });
 
-      if (!existing) {
-        throwInventoryNotFound<ItemSectionErrorDetail>(
-          'Item section not found',
-          'sec_id',
-          `No item section found with id ${secId}`,
-          ItemSectionErrorCode.NOT_FOUND,
+        if (!existing) {
+          throwInventoryNotFound<ItemSectionErrorDetail>(
+            'Item section not found',
+            'sec_id',
+            `No item section found with id ${secId}`,
+            ItemSectionErrorCode.NOT_FOUND,
+          );
+        }
+
+        assertDeleteState(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
+        if (wantDeleted) {
+          await assertNoLiveChildren(tx, ITEM_SECTION_TREE, secId);
+          await assertNoLiveReferences(
+            tx,
+            ITEM_SECTION_REFERENCES,
+            secId,
+            ITEM_SECTION_DELETE_STATE,
+          );
+        } else {
+          await assertParentLive(tx, ITEM_SECTION_TREE, existing.secParentId);
+        }
+        const wasDeleted = existing.secIsDeleted;
+        const nextDeleted = wantDeleted;
+        // The subtree walk sees live rows only, so it is read while this row is
+        // live: before the flip on delete, after it on restore (below). A restore
+        // used to read it while still deleted, get nothing, and never put the ids
+        // back into the ancestors' path caches.
+        const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
+        const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
+        const modifiedOn = new Date();
+        const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+        // Guarded update: only flips if state hasn't changed since the read
+        const result = await tx.itemSectionMaster.updateMany({
+          where: { secId, secIsDeleted: wasDeleted },
+          data: { secIsDeleted: nextDeleted, secModifiedOn: modifiedOn, secModifiedBy: userId },
+        });
+
+        if (result.count === 0) {
+          throwInventoryNotFound<ItemSectionErrorDetail>(
+            'Item section not found',
+            'sec_id',
+            `No item section found with id ${secId}`,
+            ItemSectionErrorCode.NOT_FOUND,
+          );
+        }
+
+        if (nextDeleted) {
+          await this.removePathIds(tx, ancestorIds, subtreeIds);
+        } else {
+          await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
+        }
+
+        const originalRecord = this.toPayload(existing);
+        const modifiedRecord = this.toPayload({
+          ...existing,
+          secIsDeleted: nextDeleted,
+          secModifiedOn: modifiedOn,
+          secModifiedBy: userId,
+        });
+        await this.auditLogService.logEntityChange(
+          {
+            action: nextDeleted ? 'cancel' : 'update',
+            tableName: ITEM_SECTION_TABLE_NAME,
+            screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: secId,
+            displayName: existing.secName,
+            originalRecord,
+            modifiedRecord,
+            userId,
+            notes: nextDeleted ? 'Item section soft deleted' : 'Item section restored',
+          },
+          tx,
         );
-      }
 
-      assertDeleteState(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
-      if (wantDeleted) {
-        await assertNoLiveChildren(tx, ITEM_SECTION_TREE, secId);
-        await assertNoLiveReferences(tx, ITEM_SECTION_REFERENCES, secId, ITEM_SECTION_DELETE_STATE);
-      } else {
-        await assertParentLive(tx, ITEM_SECTION_TREE, existing.secParentId);
-      }
-      const wasDeleted = existing.secIsDeleted;
-      const nextDeleted = wantDeleted;
-      // The subtree walk sees live rows only, so it is read while this row is
-      // live: before the flip on delete, after it on restore (below). A restore
-      // used to read it while still deleted, get nothing, and never put the ids
-      // back into the ancestors' path caches.
-      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
-      const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
-      const modifiedOn = new Date();
-      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.itemSectionMaster.updateMany({
-        where: { secId, secIsDeleted: wasDeleted },
-        data: { secIsDeleted: nextDeleted, secModifiedOn: modifiedOn, secModifiedBy: userId },
+        return { sec_id: secId, deleted: nextDeleted };
       });
-
-      if (result.count === 0) {
-        throwInventoryNotFound<ItemSectionErrorDetail>(
-          'Item section not found',
-          'sec_id',
-          `No item section found with id ${secId}`,
-          ItemSectionErrorCode.NOT_FOUND,
-        );
-      }
-
-      if (nextDeleted) {
-        await this.removePathIds(tx, ancestorIds, subtreeIds);
-      } else {
-        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
-      }
-
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        secIsDeleted: nextDeleted,
-        secModifiedOn: modifiedOn,
-        secModifiedBy: userId,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: ITEM_SECTION_TABLE_NAME,
-          screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: secId,
-          displayName: existing.secName,
-          originalRecord,
-          modifiedRecord,
-          userId,
-          notes: nextDeleted ? 'Item section soft deleted' : 'Item section restored',
-        },
-        tx,
-      );
-
-      return { sec_id: secId, deleted: nextDeleted };
-    });
+    } catch (error: unknown) {
+      // A restore whose name a live item section took meanwhile (names of
+      // deleted rows are free since notes 139 A2).
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   private async createItemSection(

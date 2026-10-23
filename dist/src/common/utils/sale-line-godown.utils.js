@@ -4,6 +4,7 @@ exports.saleGodownKey = void 0;
 exports.branchDefaultGodownId = branchDefaultGodownId;
 exports.resolveDefaultSaleGodowns = resolveDefaultSaleGodowns;
 exports.saleLineAllowsNegativeStock = saleLineAllowsNegativeStock;
+const price_period_helper_1 = require("../../modules/Inventory/items-price-master/price-period.helper");
 const saleGodownKey = (line) => `${line.itemId}|${line.iucId}`;
 exports.saleGodownKey = saleGodownKey;
 async function branchDefaultGodownId(prisma, branchId) {
@@ -24,11 +25,13 @@ async function resolveDefaultSaleGodowns(prisma, branchId, lines) {
     if (lines.length === 0)
         return result;
     const itemIds = [...new Set(lines.map((line) => line.itemId))];
+    const today = await (0, price_period_helper_1.databaseToday)(prisma);
     const [priceRows, branchDefault] = await Promise.all([
         prisma.itemPriceMaster.findMany({
             where: {
                 ipmItemId: { in: itemIds },
                 OR: [{ ipmBranchId: branchId }, { ipmBranchId: null }],
+                ...(0, price_period_helper_1.priceRowsInForce)(today),
                 ipmBucketMrp: null,
                 ipmBucketSp: null,
                 ipmIsDeleted: false,

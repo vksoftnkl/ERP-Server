@@ -9,10 +9,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveUnitDto = void 0;
+exports.SaveUnitDto = exports.MAX_UNIT_DECIMAL_COUNT = void 0;
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+exports.MAX_UNIT_DECIMAL_COUNT = 3;
 class SaveUnitDto {
     unit_id;
     unit_name;
@@ -41,7 +43,12 @@ __decorate([
     __metadata("design:type", String)
 ], SaveUnitDto.prototype, "unit_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 50 }),
+    (0, swagger_1.ApiProperty)({
+        maxLength: 50,
+        description: 'Trimmed. Unique among live units ignoring case: a new or renamed unit whose name only ' +
+            'differs in case from another live unit is a 409 UNIT_NAME_TAKEN (notes 139 B6).',
+    }),
+    (0, class_transformer_1.Transform)(({ value }) => (0, dtoDecorators_1.toTrimmedString)(value)),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
     (0, class_validator_1.MaxLength)(50),
@@ -53,7 +60,11 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_alias", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 30,
+        nullable: true,
+        description: 'A GST unit code (item_gst_units); an unknown one is a 400 UNIT_CODE_NOT_FOUND.',
+    }),
     (0, dtoDecorators_1.NullableString)(30),
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_code", void 0);
@@ -63,13 +74,14 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_description", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0, maximum: exports.MAX_UNIT_DECIMAL_COUNT }),
     (0, dtoDecorators_1.NullableInteger)(0),
+    (0, class_validator_1.Max)(exports.MAX_UNIT_DECIMAL_COUNT),
     __metadata("design:type", Number)
 ], SaveUnitDto.prototype, "unit_decimal_count", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, dtoDecorators_1.NullableNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0 }),
+    (0, dtoDecorators_1.NullableNumber)(0),
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_weight", void 0);
 __decorate([
@@ -88,7 +100,10 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_attach_charge", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: false }),
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: 'A pack unit needs unit_base_unit_id: 400 UNIT_PACK_BASE_REQUIRED without one.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)

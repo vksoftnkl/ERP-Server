@@ -31,6 +31,8 @@ type PrismaMock = {
       [Prisma.GridColumnFindManyArgs]
     >;
   };
+  // Notes 139 A3: a preset named on a save must be a live one.
+  stockTrackPreset: { findFirst: jest.Mock };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
   // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
   $queryRaw: jest.Mock;
@@ -94,6 +96,13 @@ describe('ItemsGroupMasterService', () => {
           Promise<Array<{ gridColumnName: string; gridColumnNumber: number }>>,
           [Prisma.GridColumnFindManyArgs]
         >(),
+      },
+      stockTrackPreset: {
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { sptId: string } }) =>
+            Promise.resolve({ sptId: where.sptId }),
+          ),
       },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
       // No cycle, no live children or references, a live parent: the guards pass.
@@ -563,6 +572,22 @@ describe('ItemsGroupMasterService', () => {
     const [syncedGroup, syncedTx] = stockTrackPolicyService.syncFromItemGroup.mock.calls[0];
     expect(syncedGroup.itgTrackPresetId).toBe(presetId);
     expect(syncedTx).toBeDefined();
+    expect(prisma.stockTrackPreset.findFirst).toHaveBeenCalledWith({
+      where: { sptId: presetId, sptIsDeleted: false },
+      select: { sptId: true },
+    });
+  });
+  it('refuses a preset id that names no live preset with a 400, not a 500 (notes 139 A3)', async () => {
+    prisma.stockTrackPreset.findFirst.mockResolvedValue(null);
+    const presetId = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f4bbbb';
+    const refusal = await service
+      .save({ itg_name: 'Pharma', itg_track_preset_id: presetId })
+      .catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(BadRequestException);
+    expect((refusal as BadRequestException).getResponse()).toMatchObject({
+      errors: [{ field: 'itg_track_preset_id', code: 'ITEM_GROUP_TRACK_PRESET_NOT_FOUND' }],
+    });
+    expect(prisma.itemGroupMaster.create).not.toHaveBeenCalled();
   });
   it('still syncs the GROUP track policy when no preset is sent, so a cleared preset retires the row', async () => {
     const createdRecord = makeRecord({ itgTrackPresetId: null, itgPathIdsCache: [] });

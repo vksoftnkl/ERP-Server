@@ -80,10 +80,18 @@ Both `GET` routes require a `gdl_id` query parameter and return a single record 
 
 ### Uniqueness & validation
 
-- **Name is unique per `(gdl_branch_id, gdl_parent_id, gdl_name)`** — DB constraint
-  `uq_gdl_unique_name_per_parent`. A violation is mapped to a conflict error:
-  "Duplicate gdl_name under the same parent is not allowed" (`handleWriteError` →
+- **Name is unique among live locations per `(gdl_branch_id, gdl_parent_id, lower(gdl_name))`** —
+  `uq_gdl_unique_name_per_parent`, partial (`WHERE NOT gdl_is_deleted`) and `NULLS NOT DISTINCT`, so
+  two top-level godowns of one branch clash too and a deleted name is free again (notes 139
+  A2/B2/B6). A violation, a restore included, is a 409 `GODOWN_NAME_TAKEN` (`handleWriteError` →
   `throwOnUniqueConstraintError`).
+- **`gdl_branch_id` must be a live branch** — there is no foreign key; an unknown one is a 400
+  `GODOWN_BRANCH_NOT_FOUND` (notes 139 B1).
+- **A godown changes branch alone** — the move is a 409 `GODOWN_BRANCH_CHANGE_HAS_CHILDREN` while
+  live locations sit under it, and `GODOWN_BRANCH_CHANGE_IN_USE` while stock is on hand there or a
+  branch names it as its default godown (notes 139 B3).
+- **`gdl_level` is the depth from 1** — every create, the company seed's Main Godown included
+  (notes 139 B4).
 - A foreign-key violation is mapped to a bad-request on `gdl_parent_id`
   ("Invalid gdl_parent_id reference").
 

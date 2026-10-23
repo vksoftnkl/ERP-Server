@@ -3,7 +3,10 @@ model Unit {
   unit_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   // Master fields
-  unit_name        String   @unique @db.VarChar(50)
+  /// Unique among live units: uq_unit_name ON (unit_name) WHERE NOT unit_is_deleted (notes 139
+  /// A2). Partial, so DB-only, never declared here. Case-insensitive only in UnitsMasterService
+  /// until the live "Box" / "BOX" pair is merged.
+  unit_name        String   @db.VarChar(50)
   unit_alias       String?  @db.VarChar(50)
  unit_code        String?  @db.Text
   gstUnit          ItemGstUnits? @relation(fields: [unit_code], references: [itemGstUnitCode], onDelete: SetNull, onUpdate: Cascade)

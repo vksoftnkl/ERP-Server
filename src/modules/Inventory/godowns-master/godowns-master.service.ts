@@ -10,6 +10,7 @@ import {
   hasOwnProperty,
   isForeignKeyConstraintError,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
   toNumber,
@@ -22,6 +23,7 @@ import {
   assertNoLiveReferences,
   assertNotUnderOwnSubtree,
   assertParentLive,
+  countLiveReferences,
   relevelSubtree,
   type LiveReference,
 } from '../utils/master-tree.helper';
@@ -109,94 +111,101 @@ export class GodownsMasterService {
     gdlId: string,
     wantDeleted: boolean,
   ): Promise<{ gdl_id: string; deleted: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.godownLocation.findFirst({
-        where: { gdlId },
-      });
-      if (!existing) {
-        throwInventoryNotFound<GodownErrorDetail>(
-          'Godown location not found',
-          'gdl_id',
-          `No godown location found with id ${gdlId}`,
-          GodownErrorCode.NOT_FOUND,
-        );
-      }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Find regardless of current deleted state
+        const existing = await tx.godownLocation.findFirst({
+          where: { gdlId },
+        });
+        if (!existing) {
+          throwInventoryNotFound<GodownErrorDetail>(
+            'Godown location not found',
+            'gdl_id',
+            `No godown location found with id ${gdlId}`,
+            GodownErrorCode.NOT_FOUND,
+          );
+        }
 
-      assertDeleteState(existing.gdlIsDeleted, wantDeleted, GODOWN_DELETE_STATE);
-      if (wantDeleted) {
-        await assertNoLiveChildren(tx, GODOWN_TREE, gdlId);
-        await assertNoLiveReferences(tx, GODOWN_REFERENCES, gdlId, GODOWN_DELETE_STATE);
-      } else {
-        await assertParentLive(tx, GODOWN_TREE, existing.gdlParentId);
-      }
-      const wasDeleted = existing.gdlIsDeleted;
-      const nextDeleted = wantDeleted;
-      const now = new Date();
-      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // Read while this row is live: before the flip on delete, after it on
-      // restore (below) — a restore used to read it while still deleted, get
-      // nothing, and never put the ids back into the ancestors' path caches.
-      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, gdlId) : [];
-      const ancestorIds = await this.getAncestorIds(tx, existing.gdlParentId);
+        assertDeleteState(existing.gdlIsDeleted, wantDeleted, GODOWN_DELETE_STATE);
+        if (wantDeleted) {
+          await assertNoLiveChildren(tx, GODOWN_TREE, gdlId);
+          await assertNoLiveReferences(tx, GODOWN_REFERENCES, gdlId, GODOWN_DELETE_STATE);
+        } else {
+          await assertParentLive(tx, GODOWN_TREE, existing.gdlParentId);
+        }
+        const wasDeleted = existing.gdlIsDeleted;
+        const nextDeleted = wantDeleted;
+        const now = new Date();
+        const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+        // Read while this row is live: before the flip on delete, after it on
+        // restore (below) — a restore used to read it while still deleted, get
+        // nothing, and never put the ids back into the ancestors' path caches.
+        const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, gdlId) : [];
+        const ancestorIds = await this.getAncestorIds(tx, existing.gdlParentId);
 
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.godownLocation.updateMany({
-        where: {
-          gdlId,
-          gdlIsDeleted: wasDeleted,
-        },
-        data: {
+        // Guarded update: only flips if state hasn't changed since the read
+        const result = await tx.godownLocation.updateMany({
+          where: {
+            gdlId,
+            gdlIsDeleted: wasDeleted,
+          },
+          data: {
+            gdlIsDeleted: nextDeleted,
+            gdlModifiedOn: now,
+            gdlModifiedBy: userId,
+          },
+        });
+
+        if (result.count === 0) {
+          throwInventoryNotFound<GodownErrorDetail>(
+            'Godown location not found',
+            'gdl_id',
+            `No godown location found with id ${gdlId}`,
+            GodownErrorCode.NOT_FOUND,
+          );
+        }
+
+        if (nextDeleted) {
+          await this.removePathIds(tx, ancestorIds, subtreeIds);
+        } else {
+          await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, gdlId));
+        }
+
+        const originalRecord = this.toPayload(existing);
+        const modifiedRecord = this.toPayload({
+          ...existing,
           gdlIsDeleted: nextDeleted,
           gdlModifiedOn: now,
           gdlModifiedBy: userId,
-        },
-      });
+        });
 
-      if (result.count === 0) {
-        throwInventoryNotFound<GodownErrorDetail>(
-          'Godown location not found',
-          'gdl_id',
-          `No godown location found with id ${gdlId}`,
-          GodownErrorCode.NOT_FOUND,
+        await this.auditLogService.logEntityChange(
+          {
+            action: nextDeleted ? 'cancel' : 'update',
+            tableName: GODOWN_LOCATION_TABLE_NAME,
+            screenName: GODOWN_LOCATION_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: gdlId,
+            displayName: existing.gdlName,
+            originalRecord,
+            modifiedRecord,
+            userId,
+            notes: nextDeleted ? 'Godown location soft deleted' : 'Godown location restored',
+          },
+          tx,
         );
-      }
 
-      if (nextDeleted) {
-        await this.removePathIds(tx, ancestorIds, subtreeIds);
-      } else {
-        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, gdlId));
-      }
-
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        gdlIsDeleted: nextDeleted,
-        gdlModifiedOn: now,
-        gdlModifiedBy: userId,
+        return {
+          gdl_id: gdlId,
+          deleted: nextDeleted,
+        };
       });
-
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: GODOWN_LOCATION_TABLE_NAME,
-          screenName: GODOWN_LOCATION_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: gdlId,
-          displayName: existing.gdlName,
-          originalRecord,
-          modifiedRecord,
-          userId,
-          notes: nextDeleted ? 'Godown location soft deleted' : 'Godown location restored',
-        },
-        tx,
-      );
-
-      return {
-        gdl_id: gdlId,
-        deleted: nextDeleted,
-      };
-    });
+    } catch (error: unknown) {
+      // A restore whose name a live godown location took meanwhile (names of
+      // deleted rows are free since notes 139 A2).
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   private async createGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
@@ -205,6 +214,7 @@ export class GodownsMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const now = new Date();
+        await this.assertBranchLive(tx, gdlBranchId);
         await this.validateParentAssignment(tx, {
           parentId: saveGodownDto.gdl_parent_id ?? null,
           gdlBranchId,
@@ -283,8 +293,10 @@ export class GodownsMasterService {
         gdlModifiedBy: actor,
       },
     });
-    // A root node: its path is itself and its depth the column's default, 0.
+    // A root node: its path is itself and its level 1, as every other create
+    // leaves it (notes 139 B4: this one kept the column default, 0).
     await this.ensureSelfInPath(tx, created.gdlId);
+    await relevelSubtree(tx, GODOWN_TREE, created.gdlId);
     const refreshed = await this.findActiveLocation(tx, created.gdlId);
     const payload = this.toPayload(refreshed ?? { ...created, gdlPathIdsCache: [created.gdlId] });
     await this.auditLogService.logEntityChange(
@@ -312,6 +324,10 @@ export class GodownsMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await this.getActiveLocationOrThrow(tx, gdlId);
         const gdlBranchId = saveGodownDto.gdl_branch_id ?? existing.gdlBranchId;
+        if (gdlBranchId !== existing.gdlBranchId) {
+          await this.assertBranchLive(tx, gdlBranchId);
+          await this.assertBranchChangeAllowed(tx, existing);
+        }
         // `!== undefined`, not hasOwnProperty (notes 70 B5): every declared DTO
         // field is an own property (ES2022 class fields), so an update that
         // OMITTED gdl_parent_id set the parent to NULL — the child silently
@@ -534,6 +550,68 @@ export class GodownsMasterService {
     }
 
     return record;
+  }
+
+  /** Notes 139 B1 — gdl_branch_id has no foreign key; an unknown id was stored. */
+  private async assertBranchLive(tx: GodownLocationWriteClient, branchId: string): Promise<void> {
+    const branch = await tx.branchMaster.findFirst({
+      where: { brId: branchId, brIsDeleted: false },
+      select: { brId: true },
+    });
+    if (!branch) {
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        {
+          field: 'gdl_branch_id',
+          code: GodownErrorCode.BRANCH_NOT_FOUND,
+          message: `No live branch found with id ${branchId}`,
+        },
+      ]);
+    }
+  }
+
+  /**
+   * Notes 139 B3 — a godown changes branch alone. Its child locations used to
+   * stay in the old branch under a parent of the new one, and stock on hand or
+   * a branch's default-godown link would point across branches, so the move is
+   * refused while either is there: move or delete the children, empty the
+   * godown, re-point the default first.
+   */
+  private async assertBranchChangeAllowed(
+    tx: GodownLocationWriteClient,
+    existing: GodownLocation,
+  ): Promise<void> {
+    const children = await tx.godownLocation.findMany({
+      where: { gdlParentId: existing.gdlId, gdlIsDeleted: false },
+      select: { gdlName: true },
+      orderBy: { gdlName: 'asc' },
+    });
+    if (children.length > 0) {
+      const names = children.slice(0, 3).map((child) => child.gdlName);
+      throwInventoryConflict<GodownErrorDetail>('This godown location still has live children', [
+        {
+          field: 'gdl_branch_id',
+          code: GodownErrorCode.BRANCH_CHANGE_HAS_CHILDREN,
+          message:
+            `${children.length} live location${children.length === 1 ? '' : 's'} sit under it ` +
+            `(${names.join(', ')}${children.length > 3 ? ', …' : ''}) and would stay in the old ` +
+            'branch. Move or delete them first.',
+        },
+      ]);
+    }
+    const used = (await countLiveReferences(tx, GODOWN_REFERENCES, existing.gdlId)).filter(
+      (ref) => ref.count > 0,
+    );
+    if (used.length > 0) {
+      throwInventoryConflict<GodownErrorDetail>('This godown location is still in use', [
+        {
+          field: 'gdl_branch_id',
+          code: GodownErrorCode.BRANCH_CHANGE_IN_USE,
+          message:
+            `Used by ${used.map((ref) => `${ref.count} ${ref.label}`).join(', ')}, which belong ` +
+            'to its current branch. Clear those first.',
+        },
+      ]);
+    }
   }
 
   private async validateParentAssignment(

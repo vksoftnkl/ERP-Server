@@ -18,6 +18,7 @@ exports.settleTransitShort = settleTransitShort;
 exports.transitHoldingsOf = transitHoldingsOf;
 exports.reservationHoldingsOf = reservationHoldingsOf;
 exports.openReservationHoldings = openReservationHoldings;
+exports.lockVoucherItems = lockVoucherItems;
 exports.ensureBalanceRows = ensureBalanceRows;
 exports.refreshReserved = refreshReserved;
 exports.refreshTransitIn = refreshTransitIn;
@@ -1360,6 +1361,16 @@ async function lockHoldingItems(tx, holdings) {
              ORDER BY 1, 2, 3) t
   `;
 }
+async function lockVoucherItems(tx, svhId, accYear) {
+    await lockHoldingItems(tx, client_1.Prisma.sql `
+      SELECT svi.svi_company_id AS company_id, svi.svi_branch_id AS branch_id,
+             svi.svi_item_id AS item_id
+        FROM stock.stock_voucher_item svi
+       WHERE svi.svi_voucher_id = ${svhId}::uuid
+         AND svi.svi_acc_year   = ${accYear}::bpchar
+         AND svi.svi_is_deleted = false
+    `);
+}
 async function ensureBalanceRows(tx, holdings, actor) {
     await lockHoldingItems(tx, holdings);
     await tx.$executeRaw `
@@ -1782,7 +1793,9 @@ async function rebuildStockDerivedFigures(tx, scope, actor, on) {
 }
 async function assertNegativeStockPolicy(tx, params) {
     const { rules, svhId } = params;
-    const forceBlock = (isTransferShape(rules.postShape) || rules.blockNegative === true) && !params.reversal;
+    const cancelRefused = params.reversal && params.refuseNegative === true;
+    const forceBlock = ((isTransferShape(rules.postShape) || rules.blockNegative === true) && !params.reversal) ||
+        cancelRefused;
     const holdings = await tx.$queryRaw `
     WITH touched AS (
       SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
@@ -1827,6 +1840,13 @@ async function assertNegativeStockPolicy(tx, params) {
         }
     }
     const blocked = holdings.filter((row) => row.allowNegative === 'BLOCK');
+    if (blocked.length && cancelRefused) {
+        (0, module_service_utils_1.throwStockConflict)(`Cancelling this ${rules.displayName.toLowerCase()} would drive stock negative`, blocked.map((row) => ({
+            field: 'lines',
+            code: stock_error_codes_1.StockErrorCode.CANCEL_WOULD_GO_NEGATIVE,
+            message: `${describe(row)} — stock it brought in has moved out since. Adjust it first, then cancel.`,
+        })));
+    }
     if (blocked.length) {
         (0, module_service_utils_1.throwStockConflict)(`This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`, blocked.map((row) => ({ field: 'lines', code: stock_error_codes_1.StockErrorCode.NEGATIVE_BLOCKED, message: `${describe(row)} — policy is BLOCK` })));
     }
@@ -1921,7 +1941,7 @@ async function cancelStockVoucher(tx, params) {
     await lockHeaderInStatus(tx, params, 'POSTED');
     const rowsReversed = await writeReversalLedger(tx, params);
     const apply = { rules, svhId, accYear, actor, postedOn: cancelledOn };
-    await applyLedgerRows(tx, { ...apply, reversal: true });
+    await applyLedgerRows(tx, { ...apply, reversal: true, refuseNegative: params.refuseNegative });
     await recomputeHeaderTotals(tx, apply);
     await tx.stockVoucher.update({
         where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },

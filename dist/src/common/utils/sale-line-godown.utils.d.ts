@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-export type SaleGodownReader = Pick<Prisma.TransactionClient, 'branchMaster' | 'godownLocation' | 'itemPriceMaster'>;
+export type SaleGodownReader = Pick<Prisma.TransactionClient, 'branchMaster' | 'godownLocation' | 'itemPriceMaster' | '$queryRaw'>;
 export type SaleGodown = {
     gdlId: string;
     gdlName: string;

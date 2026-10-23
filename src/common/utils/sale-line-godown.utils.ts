@@ -1,4 +1,8 @@
 import { Prisma } from '@prisma/client';
+import {
+  databaseToday,
+  priceRowsInForce,
+} from 'src/modules/Inventory/items-price-master/price-period.helper';
 
 /**
  * notes (51): ONE rule for "which godown does a sale line use when nobody has
@@ -12,11 +16,13 @@ import { Prisma } from '@prisma/client';
  *      godown is still live.
  *
  * The price row is picked the way item-price picks it: the row for the line's
- * unit conversion, a branch-specific row beating a branch-less one.
+ * unit conversion, a branch-specific row beating a branch-less one — among the
+ * rows in force today (notes 140: a key may also hold a closed and a scheduled
+ * row, and the card edits today's godown).
  */
 export type SaleGodownReader = Pick<
   Prisma.TransactionClient,
-  'branchMaster' | 'godownLocation' | 'itemPriceMaster'
+  'branchMaster' | 'godownLocation' | 'itemPriceMaster' | '$queryRaw'
 >;
 
 export type SaleGodown = { gdlId: string; gdlName: string; gdlNegativeStock: boolean };
@@ -55,11 +61,13 @@ export async function resolveDefaultSaleGodowns(
   const result = new Map<string, SaleGodown | null>();
   if (lines.length === 0) return result;
   const itemIds = [...new Set(lines.map((line) => line.itemId))];
+  const today = await databaseToday(prisma);
   const [priceRows, branchDefault] = await Promise.all([
     prisma.itemPriceMaster.findMany({
       where: {
         ipmItemId: { in: itemIds },
         OR: [{ ipmBranchId: branchId }, { ipmBranchId: null }],
+        ...priceRowsInForce(today),
         // The HEADLINE rows only. The price table also holds MRP buckets
         // (plan-nestjs-one-price-table.md), and a line with no MRP yet has no
         // bucket to read a godown from; a bucket row's godown is copied from

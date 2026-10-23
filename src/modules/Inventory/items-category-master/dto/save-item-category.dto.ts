@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { NullableUuid } from 'src/common/dto/dtoDecorators';
+import { NullableString, NullableUuid, toTrimmedString } from 'src/common/dto/dtoDecorators';
 
 const toNullablePhotoString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -61,29 +61,24 @@ export class SaveItemCategoryDto {
   @IsUUID('all')
   category_id?: string;
 
-  @ApiProperty({ maxLength: 150 })
+  @ApiProperty({ maxLength: 150, description: 'Trimmed; a blank name is refused (notes 139 A1).' })
+  @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
   category_name!: string;
 
-  @ApiPropertyOptional({ maxLength: 100 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  category_alias?: string;
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(100)
+  category_alias?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 50 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  category_short?: string;
+  @ApiPropertyOptional({ maxLength: 50, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(50)
+  category_short?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(250)
-  category_description?: string;
+  @ApiPropertyOptional({ maxLength: 250, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(250)
+  category_description?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()

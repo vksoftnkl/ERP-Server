@@ -54,4 +54,8 @@ export interface ItemPricePayload {
     ipm_unit_name?: string | null;
     ipm_godown_name?: string | null;
 }
+export interface ScheduledItemPricePayload extends ItemPricePayload {
+    ipm_effective_from: string;
+    ipm_effective_to: string;
+}
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;

@@ -8,6 +8,14 @@ import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-opt
 import { GetItemStockBalanceQueryDto } from './dto/get-item-stock-balance-query.dto';
 import { ItemStockBalanceService } from './itemstockBalanceService';
 
+// The database's today (notes 140), read apart from $queryRaw so the stock
+// query's mocked rows never answer for it.
+jest.mock('src/modules/Inventory/items-price-master/price-period.helper', () => ({
+  ...jest.requireActual<object>('src/modules/Inventory/items-price-master/price-period.helper'),
+  databaseToday: jest.fn().mockResolvedValue('2026-06-15'),
+}));
+const TODAY_COLUMN = new Date('2026-06-15T00:00:00.000Z');
+
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46b101';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46b102';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46b103';
@@ -629,7 +637,7 @@ describe('ItemStockBalanceService', () => {
       expect(prisma.godownLocation.findMany).not.toHaveBeenCalled();
     });
 
-    it('reads only the headline price rows of the items found', async () => {
+    it('reads only the headline price rows of the items found, as they stand today', async () => {
       await service.getBulkList(bulkQuery());
 
       expect(prisma.itemPriceMaster.findMany).toHaveBeenCalledWith(
@@ -639,6 +647,8 @@ describe('ItemStockBalanceService', () => {
             ipmIsDeleted: false,
             ipmBucketMrp: null,
             ipmBucketSp: null,
+            ipmEffectiveFrom: { lte: TODAY_COLUMN },
+            ipmEffectiveTo: { gte: TODAY_COLUMN },
           },
         }),
       );

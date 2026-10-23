@@ -144,7 +144,7 @@ describe('OpeningStockVoucherController', () => {
 
       const response = await controller.lookupItem(query);
 
-      expect(response.message).toBe('Milk 500ml has already been opened in this branch');
+      expect(response.message).toBe('Milk 500ml already has an opening in this branch this year');
       expect(response.data.alreadyOpened).toBe(true);
     });
   });

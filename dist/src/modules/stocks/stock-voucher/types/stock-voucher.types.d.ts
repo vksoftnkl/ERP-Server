@@ -93,6 +93,10 @@ export interface StockVoucherHeaderPayload {
     postedByName: string | null;
     cancelledOn: string | null;
     cancelReason: string | null;
+    createdOn: string;
+    createdBy: string | null;
+    createdByName: string | null;
+    modifiedOn: string | null;
     rateSource: StockRateSource | null;
     reasonId: string | null;
     reasonName: string | null;

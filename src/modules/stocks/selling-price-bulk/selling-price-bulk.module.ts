@@ -5,6 +5,7 @@ import { SellingPriceBulkController } from './selling-price-bulk.controller';
 import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.filter';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { PriceBucketGateway } from './price-bucket.gateway';
+import { ItemPriceLogModule } from '../../Inventory/item-price-log/item-price-log.module';
 
 /**
  * Change Selling Price (bulk), menu 30.
@@ -26,7 +27,8 @@ import { PriceBucketGateway } from './price-bucket.gateway';
  * worth more than module tidiness.
  */
 @Module({
-  imports: [AuditLogModule, AppSettingsModule],
+  // ItemPriceLogModule: the save's writes go through its PriceMasterWriter (notes 144).
+  imports: [AuditLogModule, AppSettingsModule, ItemPriceLogModule],
   controllers: [SellingPriceBulkController],
   providers: [SellingPriceBulkService, SellingPriceBulkExceptionFilter, PriceBucketGateway],
   exports: [SellingPriceBulkService, PriceBucketGateway],

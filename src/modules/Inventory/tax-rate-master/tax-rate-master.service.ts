@@ -314,7 +314,7 @@ export class TaxRateMasterService {
 
         await this.assertNameIsFree(tx, effective.taxName, null);
         await this.assertCodeIsFree(tx, effective.taxCode, null);
-        await this.assertSupersedesExists(tx, effective.taxSupersedesId);
+        await this.assertSupersedesExists(tx, effective.taxSupersedesId, null);
 
         const created = await tx.taxRateMaster.create({ data });
         await this.audit(
@@ -369,7 +369,7 @@ export class TaxRateMasterService {
 
         await this.assertNameIsFree(tx, effective.taxName, taxId);
         await this.assertCodeIsFree(tx, effective.taxCode, taxId);
-        await this.assertSupersedesExists(tx, effective.taxSupersedesId);
+        await this.assertSupersedesExists(tx, effective.taxSupersedesId, existing.taxSupersedesId);
         await this.assertNoSupersedeCycle(tx, taxId, effective.taxSupersedesId);
 
         const updated = await tx.taxRateMaster.update({ where: { taxId }, data });
@@ -719,13 +719,19 @@ export class TaxRateMasterService {
     }
   }
 
+  /**
+   * The rate superseded must be a live one (notes 139 B8: a deleted rate was
+   * accepted). The link a rate already holds is not re-checked, so a rate stays
+   * editable after the one it replaced is deleted.
+   */
   private async assertSupersedesExists(
     client: WriteClient,
     supersedesId: string | null,
+    storedSupersedesId: string | null,
   ): Promise<void> {
-    if (!supersedesId) return;
+    if (!supersedesId || supersedesId === storedSupersedesId) return;
     const target = await client.taxRateMaster.findFirst({
-      where: { taxId: supersedesId },
+      where: { taxId: supersedesId, taxIsDeleted: false },
       select: { taxId: true },
     });
     if (!target) {

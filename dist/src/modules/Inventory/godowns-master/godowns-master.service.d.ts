@@ -32,6 +32,8 @@ export declare class GodownsMasterService {
     private getParentName;
     private getBranchName;
     private getActiveLocationOrThrow;
+    private assertBranchLive;
+    private assertBranchChangeAllowed;
     private validateParentAssignment;
     private getAncestorIds;
     private getActiveSubtreeIds;

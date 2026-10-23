@@ -6,7 +6,10 @@ import { RequestContextService } from 'src/common/request-context/request-contex
 import { AppSettingValueService } from 'src/modules/settings/appSettings/app-setting-value.service';
 import {
   resolveActor,
+  throwStockBadRequest,
+  throwStockConflict,
   throwStockForbidden,
+  throwStockNotFound,
   throwStockUnprocessable,
 } from 'src/common/utils/module-service.utils';
 import { bucketKeyFor } from '../stock-voucher/stock-voucher-posting.helper';
@@ -17,6 +20,7 @@ import {
   ListSellingPriceQueryDto,
 } from './dto/list-selling-price-query.dto';
 import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
+import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-selling-price-bulk.dto';
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
 import { recomputeLevel } from './selling-price-math.helper';
@@ -40,9 +44,19 @@ import {
   type SellingPriceProblem,
   type SellingPriceRow,
   type SellingPriceSaveResult,
+  type SellingPriceSavedRow,
+  type SellingPriceScheduleCancelResult,
+  type SellingPriceScheduleRow,
   type StockErrorDetail,
 } from './types/selling-price-bulk.types';
 import { StockErrorCode } from '../types/stock-error-codes';
+import { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
+import {
+  PRICE_MENU_ID,
+  PRICE_ORIGIN,
+  type PriceWriteOrigin,
+} from '../../Inventory/item-price-log/types/price-change-log.types';
+import { assertMenuRight } from '../../../common/posting/rights';
 
 /** Notes 119 — the code each Q26 verdict is refused with. */
 const PRICE_VERDICT_CODES: Readonly<Record<PriceVerdict, StockErrorCode>> = {
@@ -60,10 +74,25 @@ const AUDIT_SCREEN_NAME = 'Change Selling Price';
 /** What one S1 → S2/S3 did: the row written, and the row as it stood before an update. */
 export interface AppliedBucketPrice {
   ipmId: string;
-  /** to_jsonb of the row before an S2; null after an S3. */
+  /** to_jsonb of the row before an S2; null after an S3 or a split. */
   before: Prisma.JsonObject | null;
   lineNo: number;
   itemName: string;
+  /**
+   * Notes 140 A — a split's old row, which now ends the day before the new
+   * one starts, with its to_jsonb from before the split.
+   */
+  closed?: { ipmId: string; before: Prisma.JsonObject | null };
+}
+
+/** `YYYY-MM-DD` as the screen says it: `DD-MM-YYYY`. */
+function displayDay(day: string): string {
+  return day.split('-').reverse().join('-');
+}
+
+/** A `YYYY-MM-DD` as the UTC midnight resolveItemTaxRates reads its day from. */
+function dayDate(day: string): Date {
+  return new Date(`${day}T00:00:00.000Z`);
 }
 
 /**
@@ -91,6 +120,8 @@ export class SellingPriceBulkService {
     private readonly requestContext: RequestContextService,
     private readonly appSettingValueService: AppSettingValueService,
     private readonly gateway: PriceBucketGateway,
+    /** Notes 144 — every price write goes through it, and is logged by it. */
+    private readonly writer: PriceMasterWriter,
   ) {}
 
   /** §3 — Q25, paged. */
@@ -127,19 +158,27 @@ export class SellingPriceBulkService {
 
   /** §5 — one POST, one transaction, one commit. */
   async saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult> {
-    // BEFORE anything reads or writes. A downgraded scope would be a save that
-    // silently did something other than what the header radio said.
+    // BEFORE anything reads or writes: the right to change prices at all, then
+    // the scope. A downgraded scope would be a save that silently did something
+    // other than what the header radio said.
+    await this.assertCanEditPrices();
     this.assertScopeAllowed(dto.scope);
+    // The quick rate popup names the screen it was opened from (§3.3).
+    const via = dto.originMenuId ? await this.describeOriginMenu(dto.originMenuId) : null;
 
     const confirmed = dto.confirmed === true;
     const policy = await this.resolveBelowCostPolicy(dto);
     const actor = resolveActor(dto.userId, this.requestContext.getUserId());
 
     return this.prisma.$transaction(async (tx) => {
-      const taxRates = await this.resolveItemTaxRates(
-        tx,
-        dto.rows.map((row) => row.itemId),
-      );
+      // Notes 140 A — undefined for a save that starts today, which then runs
+      // exactly as it always has; the day itself for a scheduled one, whose
+      // tax, policy, minimum and target row are all read as of that day.
+      const { from, scheduledFrom } = await this.resolveStartDay(tx, dto.effectiveFrom);
+      const itemIds = dto.rows.map((row) => row.itemId);
+      const taxRates = scheduledFrom
+        ? await this.resolveItemTaxRates(tx, itemIds, dayDate(scheduledFrom))
+        : await this.resolveItemTaxRates(tx, itemIds);
       const costs = await this.gateway.loadRowCosts(
         tx,
         dto.rows.map((row) => ({
@@ -150,6 +189,7 @@ export class SellingPriceBulkService {
         })),
         dto.companyId,
         dto.branchId,
+        scheduledFrom,
       );
       this.assertUnitsBelong(dto.rows, costs);
 
@@ -192,6 +232,8 @@ export class SellingPriceBulkService {
           // commits an empty unit of work.
           return {
             saved: 0,
+            effectiveFrom: from,
+            rows: [],
             masterRowsSaved: 0,
             noStock: [],
             needsConfirm: true,
@@ -204,19 +246,45 @@ export class SellingPriceBulkService {
       // ── Steps 2–4 — write, report, commit. §5.4 ───────────────────────────
       const applied: AppliedBucketPrice[] = [];
       for (let index = 0; index < candidates.length; index += 1) {
-        applied.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index]));
+        // Notes 144 — a price saved below cost on the user's confirmation says
+        // so on its log row, as it does on its audit row.
+        const confirmedHere = confirmed
+          ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
+          : [];
+        const reason = [
+          confirmedHere.length
+            ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
+            : null,
+          via,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        applied.push(
+          await this.applyBucketPrice(
+            tx,
+            candidates[index],
+            resolutions[index],
+            scheduledFrom,
+            reason
+              ? { ...PRICE_ORIGIN.CHANGE_SELLING_PRICE, reason }
+              : PRICE_ORIGIN.CHANGE_SELLING_PRICE,
+          ),
+        );
       }
       const ipmIds = applied.map((row) => row.ipmId);
 
       const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
 
-      await this.auditWrites(tx, dto, applied, {
+      const after = await this.auditWrites(tx, dto, applied, {
         actor,
         confirmedBelowCost: confirmed ? belowCost : [],
+        scheduledFrom,
       });
 
       return {
         saved: ipmIds.length,
+        effectiveFrom: from,
+        rows: applied.map((row) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom)),
         masterRowsSaved: 0,
         noStock,
         needsConfirm: false,
@@ -239,7 +307,12 @@ export class SellingPriceBulkService {
     }
     const parts: string[] = [];
     if (result.saved) {
-      parts.push(`${result.saved} price${result.saved === 1 ? '' : 's'} saved`);
+      // Notes 140 A — a scheduled save says so: the shelf price has NOT moved yet.
+      const scheduled = result.rows.length > 0 && result.rows.every((row) => row.scheduled);
+      parts.push(
+        `${result.saved} price${result.saved === 1 ? '' : 's'} ` +
+          (scheduled ? `scheduled from ${displayDay(result.effectiveFrom)}` : 'saved'),
+      );
     }
     if (!parts.length) {
       parts.push('Nothing to save');
@@ -262,20 +335,31 @@ export class SellingPriceBulkService {
    * arrives in its arguments: no DTO, no request context, no scope switch —
    * the resolution was already made by resolveTargetScope, which is the part
    * the two screens must agree on.
+   *
+   * Notes 140 A — `scheduledFrom` (`YYYY-MM-DD`, after today) makes the price
+   * start that day instead of today. S1 then finds the row in force ON that
+   * day; one that already starts that day (a second edit of one scheduled
+   * change) is updated in place, any other is SPLIT — it ends the day before,
+   * and a copy of it carrying the new prices runs from that day to its old
+   * end. With no row that day S3 inserts one from it. Today's price is never
+   * touched, and a bill dated before the day never sees the new one.
    */
   async applyBucketPrice(
     tx: Prisma.TransactionClient,
     candidate: BucketPriceCandidate,
     scope: ScopeResolution,
+    scheduledFrom?: string,
+    /** Notes 144 — the screen the price log files the writes under. */
+    origin: PriceWriteOrigin = PRICE_ORIGIN.CHANGE_SELLING_PRICE,
   ): Promise<AppliedBucketPrice> {
     // S1 searches AT THE TARGET SCOPE, so a *This branch* save over a
     // CHAIN-sourced row finds nothing and falls through to S3 — that fall-through
     // IS the branch override of §5.5 row 2, and the chain row is never read for
     // update, so it cannot be edited by accident.
-    const existing = await this.gateway.findBucketRowForUpdate(tx, candidate, scope);
+    const existing = await this.gateway.findBucketRowForUpdate(tx, candidate, scope, scheduledFrom);
     if (!existing) {
       return {
-        ipmId: await this.gateway.insertBucketPrice(tx, candidate, scope),
+        ipmId: await this.writer.insertBucketPrice(tx, candidate, scope, scheduledFrom, origin),
         before: null,
         lineNo: candidate.lineNo,
         itemName: candidate.itemName,
@@ -283,12 +367,167 @@ export class SellingPriceBulkService {
     }
     // The row as it stood, locked by S1 — the audit trail's "before".
     const [before] = (await this.gateway.snapshotRows(tx, [existing.ipmId])).values();
+    if (!scheduledFrom || existing.effectiveFrom === scheduledFrom) {
+      return {
+        ipmId: await this.writer.updateBucketPrice(tx, existing.ipmId, candidate, origin),
+        before: before ?? null,
+        lineNo: candidate.lineNo,
+        itemName: candidate.itemName,
+      };
+    }
+    // Shortened first, so the two rows never overlap and ex_ipm_overlap needs
+    // no deferral; the new row takes the end the old one had.
+    await this.writer.closePriceRowBefore(
+      tx,
+      existing.ipmId,
+      scheduledFrom,
+      candidate.actor,
+      origin,
+    );
     return {
-      ipmId: await this.gateway.updateBucketPrice(tx, existing.ipmId, candidate),
-      before: before ?? null,
+      ipmId: await this.writer.insertSplitPrice(
+        tx,
+        existing.ipmId,
+        candidate,
+        { from: scheduledFrom, to: existing.effectiveTo },
+        origin,
+      ),
+      before: null,
       lineNo: candidate.lineNo,
       itemName: candidate.itemName,
+      closed: { ipmId: existing.ipmId, before: before ?? null },
     };
+  }
+
+  /**
+   * Notes 140 B — the scheduled prices this branch can see, each with the
+   * prices it replaces. Levels are recomputed with the tax in force on the
+   * day each row starts; stock and cost are today's, as on the grid.
+   */
+  async listSchedule(queryDto: PriceScheduleQueryDto): Promise<SellingPriceScheduleRow[]> {
+    const records = await this.gateway.listScheduled(
+      queryDto.companyId,
+      queryDto.branchId,
+      queryDto.itemId,
+    );
+    const taxByDay = new Map<string, Map<string, ItemTaxRate>>();
+    for (const day of new Set(records.map((record) => record.effectiveFrom))) {
+      taxByDay.set(
+        day,
+        await this.resolveItemTaxRates(
+          this.prisma,
+          records.filter((record) => record.effectiveFrom === day).map((record) => record.itemId),
+          dayDate(day),
+        ),
+      );
+    }
+    return records.map((record, index) => {
+      const tax = taxByDay.get(record.effectiveFrom)?.get(record.itemId);
+      const row = this.toGridRow(record, index + 1, tax);
+      return {
+        ...row,
+        effectiveFrom: record.effectiveFrom,
+        effectiveTo: record.effectiveTo,
+        previous: record.previous && {
+          bucketId: record.previous.bucketId,
+          priceScope: record.previous.priceScope,
+          levels: PRICE_LEVELS.map((level) =>
+            recomputeLevel(level, record.previous!.prices[level - 1], row.taxPerc, record.costRate),
+          ),
+        },
+      };
+    });
+  }
+
+  /**
+   * Notes 140 B — take back a scheduled price before it starts: the row is
+   * soft-deleted and the row before it (same key, ending the day before it
+   * started) runs on to the cancelled row's end, as if the save had never
+   * been made. A row already in force is refused — cancelling it would change
+   * what bills already made were priced at. A chain row is an HQ action, as
+   * saving one is. Both writes are audited like a price save.
+   */
+  async cancelSchedule(ipmId: string): Promise<SellingPriceScheduleCancelResult> {
+    await this.assertCanEditPrices();
+    const actor = resolveActor(undefined, this.requestContext.getUserId());
+    return this.prisma.$transaction(async (tx) => {
+      const row = await this.gateway.lockScheduledRow(tx, ipmId);
+      if (!row || row.isDeleted) {
+        throwStockNotFound<StockErrorDetail>(
+          'Scheduled price not found',
+          'ipmId',
+          `No live price row ${ipmId}.`,
+          StockErrorCode.PRICE_SCHEDULE_NOT_FOUND,
+        );
+      }
+      if (row.started) {
+        throwStockConflict<StockErrorDetail>('This price is already in force', [
+          {
+            field: 'ipmId',
+            code: StockErrorCode.PRICE_SCHEDULE_STARTED,
+            message:
+              `The price started on ${displayDay(row.effectiveFrom)}; bills may already carry ` +
+              'it. Save a new price instead.',
+          },
+        ]);
+      }
+      if (row.branchId === null) {
+        this.assertScopeAllowed('CHAIN');
+      }
+      const previous = await this.gateway.findRowBeforeForUpdate(tx, ipmId);
+      const ids = previous ? [ipmId, previous.ipmId] : [ipmId];
+      const before = await this.gateway.snapshotRows(tx, ids);
+      const origin: PriceWriteOrigin = {
+        ...PRICE_ORIGIN.CHANGE_SELLING_PRICE,
+        reason: `The price scheduled from ${displayDay(row.effectiveFrom)} was cancelled`,
+      };
+      await this.writer.softDeletePriceRow(tx, ipmId, actor, origin);
+      if (previous) {
+        await this.writer.extendPriceRowTo(tx, previous.ipmId, row.effectiveTo, actor, origin);
+      }
+      const after = await this.gateway.snapshotRows(tx, ids);
+      const from = displayDay(row.effectiveFrom);
+      const displayName = await this.describeRow(tx, after.get(ipmId) ?? null);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: ITEM_PRICE_TABLE_NAME,
+          screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: ipmId,
+          displayName,
+          originalRecord: before.get(ipmId) ?? null,
+          modifiedRecord: after.get(ipmId) ?? null,
+          userId: actor,
+          notes: `${AUDIT_SCREEN_NAME} (menu 30) — the price scheduled from ${from} cancelled`,
+        },
+        tx,
+      );
+      if (previous) {
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: ITEM_PRICE_TABLE_NAME,
+            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: previous.ipmId,
+            displayName,
+            originalRecord: before.get(previous.ipmId) ?? null,
+            modifiedRecord: after.get(previous.ipmId) ?? null,
+            userId: actor,
+            notes:
+              `${AUDIT_SCREEN_NAME} (menu 30) — runs to ${displayDay(row.effectiveTo)} again: ` +
+              `the price scheduled from ${from} was cancelled`,
+          },
+          tx,
+        );
+      }
+      return {
+        bucketId: ipmId,
+        restoredId: previous?.ipmId ?? null,
+        restoredTo: previous ? row.effectiveTo : null,
+      };
+    });
   }
 
   /**
@@ -308,24 +547,41 @@ export class SellingPriceBulkService {
     tx: Prisma.TransactionClient,
     dto: SaveSellingPriceBulkDto,
     applied: readonly AppliedBucketPrice[],
-    context: { actor: string; confirmedBelowCost: readonly SellingPriceProblem[] },
-  ): Promise<void> {
-    const after = await this.gateway.snapshotRows(
-      tx,
-      applied.map((row) => row.ipmId),
-    );
+    context: {
+      actor: string;
+      confirmedBelowCost: readonly SellingPriceProblem[];
+      scheduledFrom?: string;
+    },
+  ): Promise<Map<string, Prisma.JsonObject>> {
+    const after = await this.gateway.snapshotRows(tx, [
+      ...applied.map((row) => row.ipmId),
+      ...applied.flatMap((row) => (row.closed ? [row.closed.ipmId] : [])),
+    ]);
     const scopeLabel = dto.scope === 'CHAIN' ? 'all branches' : 'this branch';
+    // Notes 140 A — a scheduled save names its day on every row it wrote.
+    const fromLabel = context.scheduledFrom ? `, from ${displayDay(context.scheduledFrom)}` : '';
     for (const row of applied) {
       const modified = after.get(row.ipmId) ?? null;
       const confirmed = context.confirmedBelowCost.filter((p) => p.lineNo === row.lineNo);
-      // to_jsonb renders numeric as a JSON number; anything else is no bucket.
-      const amount = (value: unknown) => (typeof value === 'number' ? value : null);
-      const mrp = amount(modified?.ipm_bucket_mrp);
-      const salePrice = amount(modified?.ipm_bucket_sp);
-      const bucket = [
-        mrp !== null ? `MRP ${mrp}` : null,
-        salePrice !== null ? `sale price ${salePrice}` : null,
-      ].filter(Boolean);
+      const displayName = `${row.itemName} · ${this.describeBucket(modified)}`;
+      if (row.closed) {
+        // The split's old row: its prices are untouched, its period now ends.
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: ITEM_PRICE_TABLE_NAME,
+            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: row.closed.ipmId,
+            displayName,
+            originalRecord: row.closed.before,
+            modifiedRecord: after.get(row.closed.ipmId) ?? null,
+            userId: context.actor,
+            notes: `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel} — ends the day before the new price${fromLabel}`,
+          },
+          tx,
+        );
+      }
       await this.auditLogService.logEntityChange(
         {
           action: row.before ? 'update' : 'New',
@@ -333,12 +589,12 @@ export class SellingPriceBulkService {
           screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: row.ipmId,
-          displayName: `${row.itemName} · ${bucket.length ? bucket.join(', ') : 'headline'}`,
+          displayName,
           originalRecord: row.before,
           modifiedRecord: modified,
           userId: context.actor,
           notes:
-            `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel}` +
+            `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel}${fromLabel}` +
             (confirmed.length
               ? ` — confirmed below cost: ${confirmed.map((p) => p.message).join('; ')}`
               : ''),
@@ -346,6 +602,89 @@ export class SellingPriceBulkService {
         tx,
       );
     }
+    return after;
+  }
+
+  /** The audit's name for a row's bucket, off its to_jsonb. */
+  private describeBucket(row: Prisma.JsonObject | null): string {
+    // to_jsonb renders numeric as a JSON number; anything else is no bucket.
+    const amount = (value: unknown) => (typeof value === 'number' ? value : null);
+    const mrp = amount(row?.ipm_bucket_mrp);
+    const salePrice = amount(row?.ipm_bucket_sp);
+    const bucket = [
+      mrp !== null ? `MRP ${mrp}` : null,
+      salePrice !== null ? `sale price ${salePrice}` : null,
+    ].filter(Boolean);
+    return bucket.length ? bucket.join(', ') : 'headline';
+  }
+
+  /** "Item · bucket" for a row known only by its to_jsonb (the cancel route). */
+  private async describeRow(
+    tx: Prisma.TransactionClient,
+    row: Prisma.JsonObject | null,
+  ): Promise<string> {
+    const itemId = typeof row?.ipm_item_id === 'string' ? row.ipm_item_id : null;
+    const item = itemId
+      ? await tx.itemMaster.findUnique({ where: { itemId }, select: { itemNameEn: true } })
+      : null;
+    return `${item?.itemNameEn ?? itemId ?? ''} · ${this.describeBucket(row)}`;
+  }
+
+  /**
+   * Notes 140 A — the day a save's prices start, checked against the
+   * database's calendar: the body's `effectiveFrom`, else today. Before today
+   * is refused — a past bill would change meaning — and so is more than a year
+   * ahead, almost always a typo in the year. `scheduledFrom` is set only for a
+   * day after today; a save from today keeps today's behaviour exactly.
+   */
+  private async resolveStartDay(
+    tx: Prisma.TransactionClient,
+    sent: string | undefined,
+  ): Promise<{ from: string; scheduledFrom: string | undefined }> {
+    const { today, latest } = await this.gateway.calendar(tx);
+    const from = sent ?? today;
+    if (from < today) {
+      throwStockBadRequest<StockErrorDetail>('These prices cannot be saved', [
+        {
+          field: 'effectiveFrom',
+          code: StockErrorCode.PRICE_FROM_IN_PAST,
+          message:
+            `${displayDay(from)} is in the past. A price can start today ` +
+            `(${displayDay(today)}) or later; bills already made keep their prices.`,
+        },
+      ]);
+    }
+    if (from > latest) {
+      throwStockBadRequest<StockErrorDetail>('These prices cannot be saved', [
+        {
+          field: 'effectiveFrom',
+          code: StockErrorCode.PRICE_FROM_TOO_FAR,
+          message: `${displayDay(from)} is more than a year ahead (latest ${displayDay(latest)}). Check the year.`,
+        },
+      ]);
+    }
+    return { from, scheduledFrom: from > today ? from : undefined };
+  }
+
+  /**
+   * Notes 140 A — one written row, as the save answers it. Every row of a
+   * scheduled save starts on its day (split, updated in place or inserted),
+   * so `scheduled` is the save's; the period is the stored row's.
+   */
+  private toSavedRow(
+    row: AppliedBucketPrice,
+    stored: Prisma.JsonObject | undefined,
+    scheduledFrom: string | undefined,
+  ): SellingPriceSavedRow {
+    // to_jsonb renders a date as 'YYYY-MM-DD'.
+    const day = (value: unknown) => (typeof value === 'string' ? value.slice(0, 10) : '');
+    return {
+      lineNo: row.lineNo,
+      bucketId: row.ipmId,
+      scheduled: scheduledFrom !== undefined,
+      effectiveFrom: day(stored?.ipm_effective_from),
+      effectiveTo: day(stored?.ipm_effective_to),
+    };
   }
 
   /**
@@ -368,6 +707,31 @@ export class SellingPriceBulkService {
           'Only an HQ user may save prices for all branches. Save at This branch scope instead.',
       },
     ]);
+  }
+
+  /**
+   * Edit on menu 30, Change Selling Price — the right a price save needs
+   * wherever it is made from: this screen, or the quick rate popup opened from
+   * a bill line or the item list (plan 2026-10-23), which goes read-only
+   * without it. Until then the route checked no right at all, so any login
+   * could change any price. No user in the request has no rights.
+   */
+  private async assertCanEditPrices(): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: PRICE_MENU_ID.CHANGE_SELLING_PRICE,
+      right: 'edit',
+      codePrefix: 'STOCK_PRICE',
+      action: 'change selling prices',
+    });
+  }
+
+  /** "via Sales Entry (menu 12)" — the price log's note of the screen a popup save came from. */
+  private async describeOriginMenu(menuId: number): Promise<string> {
+    const [menu] = await this.prisma.$queryRaw<Array<{ menu_name: string }>>`
+      SELECT menu_name FROM fixed.menu_master WHERE menu_id = ${menuId}::int`;
+    const name = menu?.menu_name.replace(/&/g, '').trim();
+    return name ? `via ${name} (menu ${menuId})` : `via menu ${menuId}`;
   }
 
   /** §0.3 — through the resolver, never by querying app_setting_value. */
@@ -512,37 +876,45 @@ export class SellingPriceBulkService {
       this.prisma,
       records.map((record) => record.itemId),
     );
-    return records.map((record, index) => {
-      const tax = taxRates.get(record.itemId);
-      const taxPerc = tax?.taxPerc ?? 0;
-      return {
-        lineNo: offset + index + 1,
-        itemId: record.itemId,
-        itemCode: record.itemCode,
-        barcode: record.barcode,
-        itemName: record.itemName,
-        uomId: record.uomId,
-        unitName: record.unitName,
-        stockQty: record.stockQty,
-        mrp: record.mrp,
-        salePrice: record.salePrice,
-        maxPrice: record.maxPrice,
-        priceSource: record.priceSource,
-        priceScope: record.priceScope,
-        bucketId: record.bucketId,
-        costRate: record.costRate,
-        costWot: record.costWot,
-        costBasis: record.costBasis,
-        minPrice: record.minPrice,
-        roundOff: record.roundOff,
-        taxPerc,
-        inclTax: tax?.inclTax ?? false,
-        hasCess: tax?.hasCess ?? false,
-        levels: PRICE_LEVELS.map((level) =>
-          recomputeLevel(level, record.prices[level - 1], taxPerc, record.costRate),
-        ),
-      };
-    });
+    return records.map((record, index) =>
+      this.toGridRow(record, offset + index + 1, taxRates.get(record.itemId)),
+    );
+  }
+
+  /** One grid row: the gateway's record plus tax and the four-number levels. */
+  private toGridRow(
+    record: PriceGridRecord,
+    lineNo: number,
+    tax: ItemTaxRate | undefined,
+  ): SellingPriceRow {
+    const taxPerc = tax?.taxPerc ?? 0;
+    return {
+      lineNo,
+      itemId: record.itemId,
+      itemCode: record.itemCode,
+      barcode: record.barcode,
+      itemName: record.itemName,
+      uomId: record.uomId,
+      unitName: record.unitName,
+      stockQty: record.stockQty,
+      mrp: record.mrp,
+      salePrice: record.salePrice,
+      maxPrice: record.maxPrice,
+      priceSource: record.priceSource,
+      priceScope: record.priceScope,
+      bucketId: record.bucketId,
+      costRate: record.costRate,
+      costWot: record.costWot,
+      costBasis: record.costBasis,
+      minPrice: record.minPrice,
+      roundOff: record.roundOff,
+      taxPerc,
+      inclTax: tax?.inclTax ?? false,
+      hasCess: tax?.hasCess ?? false,
+      levels: PRICE_LEVELS.map((level) =>
+        recomputeLevel(level, record.prices[level - 1], taxPerc, record.costRate),
+      ),
+    };
   }
 
   private throwProblems(problems: SellingPriceProblem[], message: string): never {

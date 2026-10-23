@@ -13,6 +13,8 @@ const ITEM_ID = '01000000-0000-7000-8000-000000000001';
 const ROW = { lineNo: 1, itemId: ITEM_ID } as SellingPriceRow;
 const SAVED: SellingPriceSaveResult = {
   saved: 2,
+  effectiveFrom: '2026-06-15',
+  rows: [],
   masterRowsSaved: 0,
   noStock: [],
   needsConfirm: false,
@@ -106,6 +108,8 @@ describe('SellingPriceBulkController', () => {
     expect(Reflect.getMetadata(CACHE_TTL_METADATA, SellingPriceBulkController)).toBeUndefined();
     for (const route of ['listPrices', 'listBuckets', 'saveBulk'] as const) {
       expect(
+        // Only reflected on, never called.
+        // eslint-disable-next-line @typescript-eslint/unbound-method
         Reflect.getMetadata(CACHE_TTL_METADATA, SellingPriceBulkController.prototype[route]),
       ).toBeUndefined();
     }

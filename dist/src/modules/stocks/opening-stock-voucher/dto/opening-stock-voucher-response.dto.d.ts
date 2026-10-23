@@ -49,6 +49,10 @@ export declare class OpeningStockHeaderDto {
     postedByName: string | null;
     cancelledOn: string | null;
     cancelReason: string | null;
+    createdOn: string;
+    createdBy: string | null;
+    createdByName: string | null;
+    modifiedOn: string | null;
     rateSource: string | null;
     remarks: string | null;
     isDeleted: boolean;

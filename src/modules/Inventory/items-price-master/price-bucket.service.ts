@@ -14,6 +14,7 @@ import {
 } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { bucketKeyOfRow, sameBucket, toDay, type BucketKey } from './price-resolver';
 import { ItemPriceErrorCode } from './types/item-price-error-codes';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
 
 /** The setting whose level a sale-price bucket mirrors (slt_sale_price's doctrine). */
 export const DEFAULT_PRICE_LEVEL_SETTING_KEY = 'sales.default_price_level';
@@ -58,7 +59,11 @@ export function todayIso(now: Date = new Date()): string {
  */
 @Injectable()
 export class PriceBucketService {
-  constructor(private readonly appSettingValueService: AppSettingValueService) {}
+  constructor(
+    private readonly appSettingValueService: AppSettingValueService,
+    /** Notes 144 — a re-key is a price change too, and is logged as REKEY. */
+    private readonly priceWriter: PriceMasterWriter,
+  ) {}
 
   /** One key per row, in the order given. All rows belong to `itemId`. */
   async deriveBuckets(
@@ -177,10 +182,7 @@ export class PriceBucketService {
     await tx.$executeRaw`SET CONSTRAINTS inventory.ex_ipm_overlap DEFERRED`;
     const now = new Date();
     for (const { row, key } of changed) {
-      await tx.itemPriceMaster.update({
-        where: { ipmId: row.ipmId },
-        data: { ipmBucketMrp: key.mrp, ipmBucketSp: key.salePrice, ipmUpdatedOn: now },
-      });
+      await this.priceWriter.rekeyPrice(tx, row.ipmId, key, now);
     }
     await tx.$executeRaw`SET CONSTRAINTS inventory.ex_ipm_overlap IMMEDIATE`;
     return changed.length;

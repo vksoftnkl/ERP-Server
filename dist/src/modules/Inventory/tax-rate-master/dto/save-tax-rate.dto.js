@@ -88,9 +88,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: 18,
         default: 0,
-        description: 'The TOTAL GST rate, 0…100. CGST, SGST and IGST are derived from it by the database.',
+        description: 'The TOTAL GST rate, 0…100 (else 400 TAX_RATE_PERC_OUT_OF_RANGE). CGST, SGST and IGST are ' +
+            'derived from it by the database.',
     }),
-    (0, dtoDecorators_1.OptionalNumber)(0),
+    (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
 ], SaveTaxRateDto.prototype, "tax_rate_perc", void 0);
 __decorate([
@@ -106,12 +107,12 @@ __decorate([
 ], SaveTaxRateDto.prototype, "tax_cess_basis", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(0),
+    (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
 ], SaveTaxRateDto.prototype, "tax_cess_perc", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(0),
+    (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
 ], SaveTaxRateDto.prototype, "tax_cess_per_unit", void 0);
 __decorate([
@@ -126,12 +127,12 @@ __decorate([
 ], SaveTaxRateDto.prototype, "tax_acess_basis", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(0),
+    (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
 ], SaveTaxRateDto.prototype, "tax_acess_perc", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalNumber)(0),
+    (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
 ], SaveTaxRateDto.prototype, "tax_acess_per_unit", void 0);
 __decorate([

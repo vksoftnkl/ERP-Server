@@ -23,6 +23,7 @@ import {
   isForeignKeyConstraintError,
   resolveActor,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
   toNullableNumber,
@@ -34,6 +35,8 @@ import {
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
+import { PRICE_ORIGIN } from '../item-price-log/types/price-change-log.types';
 
 const ITEM_QTY_PRICE_TABLE_NAME = 'item qty price';
 const ITEM_QTY_PRICE_AUDIT_SCREEN_NAME = 'Item Qty Price Master';
@@ -68,6 +71,8 @@ export class ItemsQtyPriceMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly requestContextService: RequestContextService,
+    /** Notes 144 — the one writer of the slab table; it logs every change it makes. */
+    private readonly priceWriter: PriceMasterWriter,
   ) {}
 
   async save(
@@ -98,6 +103,14 @@ export class ItemsQtyPriceMasterService {
       for (const saveItem of saveItems) {
         savedItems.push(await this.saveItemQtyPrice(client, saveItem));
       }
+      // After the whole batch, so a ladder re-cut in one save (1–10 → 1–5 and
+      // 10–20 → 5–20) is judged on where it ends, not on the order sent.
+      await this.assertNoOverlaps(
+        client,
+        savedItems.map((saved) => saved.iqp_id),
+        Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single',
+        'iqp_from_qty',
+      );
       return savedItems;
     };
     try {
@@ -207,6 +220,14 @@ export class ItemsQtyPriceMasterService {
       for (const id of ids) {
         results.push(await this.setDeletedItemQtyPrice(client, id, wantDeleted));
       }
+      if (!wantDeleted) {
+        await this.assertNoOverlaps(
+          client,
+          ids,
+          Array.isArray(iqpId) ? 'indexed' : 'single',
+          'iqp_id',
+        );
+      }
       return results;
     };
     try {
@@ -254,11 +275,14 @@ export class ItemsQtyPriceMasterService {
     const modifiedOn = new Date();
     const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     // Guarded update: only flips if state hasn't changed since the read.
-    const result = await tx.itemQtyPrice.updateMany({
-      where: { iqpId, iqpIsDeleted: wasDeleted },
-      data: { iqpIsDeleted: nextDeleted, iqpModifiedOn: modifiedOn, iqpModifiedBy: modifiedBy },
-    });
-    if (result.count === 0) {
+    const moved = await this.priceWriter.setQtyPriceDeleted(
+      tx,
+      PRICE_ORIGIN.QTY_PRICE,
+      iqpId,
+      wasDeleted,
+      { iqpIsDeleted: nextDeleted, iqpModifiedOn: modifiedOn, iqpModifiedBy: modifiedBy },
+    );
+    if (moved === 0) {
       this.throwNotFound(iqpId);
     }
 
@@ -303,6 +327,12 @@ export class ItemsQtyPriceMasterService {
       saveItemQtyPriceDto.iqp_from_qty ?? 0,
       saveItemQtyPriceDto.iqp_to_qty ?? null,
     );
+    this.validatePriceValue(saveItemQtyPriceDto, null);
+    await this.assertUnitOfItem(
+      tx,
+      saveItemQtyPriceDto.iqp_item_id,
+      saveItemQtyPriceDto.iqp_item_unit_id,
+    );
 
     const now = new Date();
     const createdBy = resolveActor(
@@ -317,7 +347,12 @@ export class ItemsQtyPriceMasterService {
       iqpCreatedBy: createdBy,
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
-    const created = await tx.itemQtyPrice.create({ data, include: ITEM_QTY_PRICE_INCLUDE });
+    const created = await this.priceWriter.createQtyPrice(
+      tx,
+      PRICE_ORIGIN.QTY_PRICE,
+      data,
+      ITEM_QTY_PRICE_INCLUDE,
+    );
     const payload = this.toPayload(created);
     await this.auditLogService.logEntityChange(
       {
@@ -352,17 +387,29 @@ export class ItemsQtyPriceMasterService {
       saveItemQtyPriceDto.iqp_effective_from,
       'iqp_effective_from',
     );
-    const nextEffectiveTo = hasOwnProperty(saveItemQtyPriceDto, 'iqp_effective_to')
-      ? (this.parseOptionalDate(saveItemQtyPriceDto.iqp_effective_to, 'iqp_effective_to') ?? null)
-      : existing.iqpEffectiveTo;
+    // `!== undefined`, not hasOwnProperty: every declared DTO field is an own
+    // property (ES2022 class fields), so an omitted bound was validated as 0 /
+    // open while the stored one was kept. An explicit null still clears.
+    const nextEffectiveTo =
+      saveItemQtyPriceDto.iqp_effective_to !== undefined
+        ? (this.parseOptionalDate(saveItemQtyPriceDto.iqp_effective_to, 'iqp_effective_to') ?? null)
+        : existing.iqpEffectiveTo;
     this.validateDateRange(nextEffectiveFrom, nextEffectiveTo);
-    const nextFromQty = hasOwnProperty(saveItemQtyPriceDto, 'iqp_from_qty')
-      ? (saveItemQtyPriceDto.iqp_from_qty ?? 0)
-      : toNumber(existing.iqpFromQty);
-    const nextToQty = hasOwnProperty(saveItemQtyPriceDto, 'iqp_to_qty')
-      ? (saveItemQtyPriceDto.iqp_to_qty ?? null)
-      : toNullableNumber(existing.iqpToQty);
+    const nextFromQty =
+      saveItemQtyPriceDto.iqp_from_qty !== undefined
+        ? saveItemQtyPriceDto.iqp_from_qty
+        : toNumber(existing.iqpFromQty);
+    const nextToQty =
+      saveItemQtyPriceDto.iqp_to_qty !== undefined
+        ? saveItemQtyPriceDto.iqp_to_qty
+        : toNullableNumber(existing.iqpToQty);
     this.validateQtyRange(nextFromQty, nextToQty);
+    this.validatePriceValue(saveItemQtyPriceDto, existing);
+    await this.assertUnitOfItem(
+      tx,
+      saveItemQtyPriceDto.iqp_item_id,
+      saveItemQtyPriceDto.iqp_item_unit_id,
+    );
     const data: Prisma.ItemQtyPriceUncheckedUpdateInput = {
       iqpItemId: saveItemQtyPriceDto.iqp_item_id,
       iqpItemUnitId: saveItemQtyPriceDto.iqp_item_unit_id,
@@ -374,11 +421,13 @@ export class ItemsQtyPriceMasterService {
       ),
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
-    const updated = await tx.itemQtyPrice.update({
-      where: { iqpId },
+    const updated = await this.priceWriter.updateQtyPrice(
+      tx,
+      PRICE_ORIGIN.QTY_PRICE,
+      iqpId,
       data,
-      include: ITEM_QTY_PRICE_INCLUDE,
-    });
+      ITEM_QTY_PRICE_INCLUDE,
+    );
     const payload = this.toPayload(updated);
     await this.auditLogService.logEntityChange(
       {
@@ -432,6 +481,134 @@ export class ItemsQtyPriceMasterService {
       data.iqpIsActive = saveItemQtyPriceDto.iqp_is_active;
     if (hasOwnProperty(saveItemQtyPriceDto, 'iqp_sync_date'))
       data.iqpSyncDate = this.parseOptionalDate(saveItemQtyPriceDto.iqp_sync_date, 'iqp_sync_date');
+  }
+  /**
+   * Notes 139 A4 — a slab must state the figure its mode prices by: a fixed
+   * price with no price, or a % mode with no %, was saved and meant nothing.
+   * On an update an omitted figure is the stored one.
+   */
+  private validatePriceValue(
+    saveItemQtyPriceDto: SaveItemQtyPriceDto,
+    existing: ItemQtyPrice | null,
+  ): void {
+    const mode = saveItemQtyPriceDto.iqp_price_mode ?? existing?.iqpPriceMode ?? 'P';
+    const [field, sent, stored] =
+      mode === 'F'
+        ? (['iqp_price', saveItemQtyPriceDto.iqp_price, existing?.iqpPrice] as const)
+        : mode === 'R'
+          ? (['iqp_flat_off', saveItemQtyPriceDto.iqp_flat_off, existing?.iqpFlatOff] as const)
+          : (['iqp_disc_pct', saveItemQtyPriceDto.iqp_disc_pct, existing?.iqpDiscPct] as const);
+    const value = sent !== undefined ? sent : toNullableNumber(stored ?? null);
+    if (value === null || value === undefined) {
+      throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
+        {
+          field,
+          code: ItemQtyPriceErrorCode.VALUE_REQUIRED,
+          message: `Price mode ${mode} needs ${field}.`,
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 139 A4 — fk_iqp_item_unit only proves the unit row exists; the slab
+   * must name a live unit row OF its own item, or it prices item A in a unit of
+   * item B.
+   */
+  private async assertUnitOfItem(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+    itemUnitId: string,
+  ): Promise<void> {
+    const unit = await tx.itemUnitConversion.findFirst({
+      where: { iucId: itemUnitId, iucItemId: itemId, iucIsDeleted: false },
+      select: { iucId: true },
+    });
+    if (!unit) {
+      throwInventoryBadRequest<ItemQtyPriceErrorDetail>('Validation failed', [
+        {
+          field: 'iqp_item_unit_id',
+          code: ItemQtyPriceErrorCode.UNIT_NOT_OF_ITEM,
+          message: `${itemUnitId} is not a live unit of item ${itemId}.`,
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 139 A4 — two live slabs of one item, unit and scope (company, branch,
+   * party, price level; NULL = all, compared as a value) may not share a qty
+   * on a shared date: [from, to) against [from, to), effective dates inclusive,
+   * a NULL upper bound open. uq_iqp_slab only refuses an exact duplicate.
+   * Overlapping a deleted slab is fine; overlapping an inactive one is not, so
+   * switching it back on cannot create the clash.
+   */
+  private async assertNoOverlaps(
+    tx: Prisma.TransactionClient,
+    iqpIds: readonly string[],
+    shape: 'indexed' | 'single',
+    column: 'iqp_from_qty' | 'iqp_id',
+  ): Promise<void> {
+    if (!iqpIds.length) {
+      return;
+    }
+    // One lock per item, taken in item order: two saves of one item's ladder
+    // would otherwise each pass before the other commits.
+    await tx.$queryRaw<Array<{ locked: number }>>`
+      SELECT count(pg_advisory_xact_lock(hashtext('inventory.item_qty_price'), hashtext(k)))::int AS locked
+        FROM (SELECT DISTINCT iqp_item_id::text AS k
+                FROM inventory.item_qty_price
+               WHERE iqp_id = ANY(${iqpIds}::uuid[])
+               ORDER BY 1) AS items
+    `;
+    const [clash] = await tx.$queryRaw<
+      Array<{
+        iqp_id: string;
+        other_id: string;
+        other_from: string;
+        other_to: string | null;
+        other_effective_from: string;
+        other_effective_to: string | null;
+      }>
+    >`
+      SELECT r.iqp_id::text,
+             o.iqp_id::text                AS other_id,
+             o.iqp_from_qty::text          AS other_from,
+             o.iqp_to_qty::text            AS other_to,
+             o.iqp_effective_from::text    AS other_effective_from,
+             o.iqp_effective_to::text      AS other_effective_to
+        FROM inventory.item_qty_price r
+        JOIN inventory.item_qty_price o
+          ON o.iqp_id <> r.iqp_id
+         AND o.iqp_is_deleted = false
+         AND o.iqp_item_id = r.iqp_item_id
+         AND o.iqp_item_unit_id = r.iqp_item_unit_id
+         AND o.iqp_company_id IS NOT DISTINCT FROM r.iqp_company_id
+         AND o.iqp_branch_id IS NOT DISTINCT FROM r.iqp_branch_id
+         AND o.iqp_party_id IS NOT DISTINCT FROM r.iqp_party_id
+         AND o.iqp_price_level IS NOT DISTINCT FROM r.iqp_price_level
+         AND o.iqp_from_qty < COALESCE(r.iqp_to_qty, 'Infinity'::numeric)
+         AND r.iqp_from_qty < COALESCE(o.iqp_to_qty, 'Infinity'::numeric)
+         AND o.iqp_effective_from <= COALESCE(r.iqp_effective_to, 'infinity'::date)
+         AND r.iqp_effective_from <= COALESCE(o.iqp_effective_to, 'infinity'::date)
+       WHERE r.iqp_id = ANY(${iqpIds}::uuid[])
+         AND r.iqp_is_deleted = false
+       ORDER BY array_position(${iqpIds}::uuid[], r.iqp_id), o.iqp_from_qty, o.iqp_id
+       LIMIT 1
+    `;
+    if (!clash) {
+      return;
+    }
+    const index = iqpIds.indexOf(clash.iqp_id);
+    const range = `${clash.other_from}–${clash.other_to ?? 'above'}`;
+    const dates = `${clash.other_effective_from} to ${clash.other_effective_to ?? 'open'}`;
+    throwInventoryConflict<ItemQtyPriceErrorDetail>('Qty price slabs overlap', [
+      {
+        field: shape === 'indexed' ? `${index}.${column}` : column,
+        code: ItemQtyPriceErrorCode.OVERLAP,
+        message:
+          `The qty range overlaps slab ${clash.other_id} (${range}, ${dates}) for the same ` +
+          'item, unit and scope. Close one range where the other starts, or end one date first.',
+      },
+    ]);
   }
   private validateDateRange(effectiveFrom: Date, effectiveTo: Date | null): void {
     if (!effectiveTo) {

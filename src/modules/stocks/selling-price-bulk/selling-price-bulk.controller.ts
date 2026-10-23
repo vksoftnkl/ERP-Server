@@ -19,17 +19,23 @@ import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { ListSellingPriceQueryDto } from './dto/list-selling-price-query.dto';
 import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
+import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
+import { CancelPriceScheduleDto } from './dto/cancel-price-schedule.dto';
 import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
 import {
   SellingPriceBucketsSuccessDto,
   SellingPriceErrorResponseDto,
   SellingPriceListSuccessDto,
   SellingPriceSaveSuccessDto,
+  SellingPriceScheduleCancelSuccessDto,
+  SellingPriceScheduleSuccessDto,
 } from './dto/selling-price-bulk-response.dto';
 import type {
   PagedResult,
   SellingPriceRow,
   SellingPriceSaveResult,
+  SellingPriceScheduleCancelResult,
+  SellingPriceScheduleRow,
 } from './types/selling-price-bulk.types';
 
 class PriceBucketsParamDto {
@@ -165,5 +171,52 @@ export class SellingPriceBulkController {
       message: this.sellingPriceBulkService.buildSaveMessage(data),
       data,
     };
+  }
+
+  @Get('price-schedule')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Notes 140 B — the prices scheduled to start after today',
+    description:
+      'Every live price row this branch can see (its own and the chain rows) whose ' +
+      'effectiveFrom is after today, in the price-bulk row shape plus effectiveFrom, ' +
+      'effectiveTo and previous: the prices of the row it replaces — the row of the same ' +
+      'key ending the day before, else what priced the bucket at this branch that day — ' +
+      'so the screen can show "110 → 118 from 23-10". Levels use the tax in force on the ' +
+      "day the row starts; stock and cost are today's. itemId narrows to one item.",
+  })
+  @ApiOkResponse({ type: SellingPriceScheduleSuccessDto })
+  @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
+  async listSchedule(
+    @Query() queryDto: PriceScheduleQueryDto,
+  ): Promise<SellingPriceSuccessResponse<SellingPriceScheduleRow[]>> {
+    const data = await this.sellingPriceBulkService.listSchedule(queryDto);
+    return {
+      success: true,
+      message: `${data.length} scheduled price${data.length === 1 ? '' : 's'} found`,
+      data,
+    };
+  }
+
+  @Post('price-schedule/cancel')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Notes 140 B — cancel a scheduled price before it starts',
+    description:
+      'Soft-deletes the row and gives the row before it (same key, ending the day before it ' +
+      "started) the cancelled row's end back, so the price in force today simply carries on. " +
+      'Both writes are audited like a price save. 409 STOCK_PRICE_SCHEDULE_STARTED when the ' +
+      'row is already in force; 404 STOCK_PRICE_SCHEDULE_NOT_FOUND when there is no live row; ' +
+      '403 STOCK_PRICE_CHAIN_HQ_ONLY for a chain row from a non-HQ caller.',
+  })
+  @ApiOkResponse({ type: SellingPriceScheduleCancelSuccessDto })
+  @ApiForbiddenResponse({ type: SellingPriceErrorResponseDto })
+  @ApiNotFoundResponse({ type: SellingPriceErrorResponseDto })
+  @ApiConflictResponse({ type: SellingPriceErrorResponseDto })
+  async cancelSchedule(
+    @Body() dto: CancelPriceScheduleDto,
+  ): Promise<SellingPriceSuccessResponse<SellingPriceScheduleCancelResult>> {
+    const data = await this.sellingPriceBulkService.cancelSchedule(dto.ipmId);
+    return { success: true, message: 'Scheduled price cancelled', data };
   }
 }

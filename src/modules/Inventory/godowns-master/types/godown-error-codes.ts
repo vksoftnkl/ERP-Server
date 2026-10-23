@@ -30,6 +30,12 @@ export enum GodownErrorCode {
   NOT_DELETED = 'GODOWN_NOT_DELETED',
   /** Restore refused: the godown's parent is deleted. */
   PARENT_DELETED = 'GODOWN_PARENT_DELETED',
-  /** Another godown under the same parent already has this name. */
+  /** Another live godown under the same parent (or at the top of the same branch) already has this name, ignoring case. */
   NAME_TAKEN = 'GODOWN_NAME_TAKEN',
+  /** gdl_branch_id names no live branch. */
+  BRANCH_NOT_FOUND = 'GODOWN_BRANCH_NOT_FOUND',
+  /** gdl_branch_id change refused: live child locations still sit under the godown. */
+  BRANCH_CHANGE_HAS_CHILDREN = 'GODOWN_BRANCH_CHANGE_HAS_CHILDREN',
+  /** gdl_branch_id change refused: stock is on hand there, or a branch names it as its default godown. */
+  BRANCH_CHANGE_IN_USE = 'GODOWN_BRANCH_CHANGE_IN_USE',
 }

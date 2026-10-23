@@ -107,6 +107,9 @@ const opening_stock_voucher_module_1 = require("./modules/stocks/opening-stock-v
 const physical_stock_voucher_module_1 = require("./modules/stocks/physical-stock-voucher/physical-stock-voucher.module");
 const stock_transfer_module_1 = require("./modules/stocks/stock-transfer/stock-transfer.module");
 const txn_status_module_1 = require("./modules/txn-status/txn-status.module");
+const txn_adjacent_module_1 = require("./modules/txn-adjacent/txn-adjacent.module");
+const item_price_log_module_1 = require("./modules/Inventory/item-price-log/item-price-log.module");
+const item_inward_history_module_1 = require("./modules/stocks/item-inward-history/item-inward-history.module");
 const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/stock-adjustment.module");
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
@@ -270,6 +273,9 @@ exports.AppModule = AppModule = __decorate([
             physical_stock_voucher_module_1.PhysicalStockVoucherModule,
             stock_transfer_module_1.StockTransferModule,
             txn_status_module_1.TxnStatusModule,
+            txn_adjacent_module_1.TxnAdjacentModule,
+            item_price_log_module_1.ItemPriceLogModule,
+            item_inward_history_module_1.ItemInwardHistoryModule,
             stock_adjustment_module_1.StockAdjustmentModule,
             selling_price_bulk_module_1.SellingPriceBulkModule,
             master_lookup_module_1.MasterLookupModule,

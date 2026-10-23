@@ -108,99 +108,106 @@ export class ItemsGroupMasterService {
     itgId: string,
     wantDeleted: boolean,
   ): Promise<{ itg_id: string; deleted: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.itemGroupMaster.findFirst({
-        where: { itgId },
-      });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Find regardless of current deleted state
+        const existing = await tx.itemGroupMaster.findFirst({
+          where: { itgId },
+        });
 
-      if (!existing) {
-        throwInventoryNotFound<ItemGroupErrorDetail>(
-          'Item group not found',
-          'itg_id',
-          `No item group found with id ${itgId}`,
-          ItemGroupErrorCode.NOT_FOUND,
-        );
-      }
+        if (!existing) {
+          throwInventoryNotFound<ItemGroupErrorDetail>(
+            'Item group not found',
+            'itg_id',
+            `No item group found with id ${itgId}`,
+            ItemGroupErrorCode.NOT_FOUND,
+          );
+        }
 
-      assertDeleteState(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
-      if (wantDeleted) {
-        await assertNoLiveChildren(tx, ITEM_GROUP_TREE, itgId);
-        await assertNoLiveReferences(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
-      } else {
-        await assertParentLive(tx, ITEM_GROUP_TREE, existing.itgParentId);
-      }
-      const wasDeleted = existing.itgIsDeleted;
-      const nextDeleted = wantDeleted;
-      const modifiedOn = new Date();
-      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+        assertDeleteState(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
+        if (wantDeleted) {
+          await assertNoLiveChildren(tx, ITEM_GROUP_TREE, itgId);
+          await assertNoLiveReferences(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
+        } else {
+          await assertParentLive(tx, ITEM_GROUP_TREE, existing.itgParentId);
+        }
+        const wasDeleted = existing.itgIsDeleted;
+        const nextDeleted = wantDeleted;
+        const modifiedOn = new Date();
+        const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
-      // getActiveSubtreeIds only walks live rows, so the subtree has to be read
-      // while this row is still active — before the flip when deleting, after
-      // it when restoring (below). Reading it in the deleted state yields
-      // nothing, and the ancestors' caches never get the ids back.
-      const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
-      const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
+        // getActiveSubtreeIds only walks live rows, so the subtree has to be read
+        // while this row is still active — before the flip when deleting, after
+        // it when restoring (below). Reading it in the deleted state yields
+        // nothing, and the ancestors' caches never get the ids back.
+        const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
+        const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
 
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.itemGroupMaster.updateMany({
-        where: { itgId, itgIsDeleted: wasDeleted },
-        data: {
+        // Guarded update: only flips if state hasn't changed since the read
+        const result = await tx.itemGroupMaster.updateMany({
+          where: { itgId, itgIsDeleted: wasDeleted },
+          data: {
+            itgIsDeleted: nextDeleted,
+            itgModifiedOn: modifiedOn,
+            itgModifiedBy: userId,
+          },
+        });
+
+        if (result.count === 0) {
+          // Lost a race, or row vanished between read and write
+          throwInventoryNotFound<ItemGroupErrorDetail>(
+            'Item group not found',
+            'itg_id',
+            `No item group found with id ${itgId}`,
+            ItemGroupErrorCode.NOT_FOUND,
+          );
+        }
+
+        if (nextDeleted) {
+          await this.removePathIds(tx, ancestorIds, subtreeIds);
+          // Notes 71 B3 — the group's derived GROUP-scope policy goes with it; it
+          // used to stay live and active under a deleted group.
+          await this.stockTrackPolicyService.retireForGroup(itgId, tx);
+        } else {
+          // Now that the row is live again, the same subtree the delete stripped
+          // out — this row plus every descendant that stayed active — reads back.
+          await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
+          // ...and its preset derives the GROUP policy again.
+          await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
+        }
+
+        const originalRecord = this.toPayload(existing);
+        const modifiedRecord = this.toPayload({
+          ...existing,
           itgIsDeleted: nextDeleted,
           itgModifiedOn: modifiedOn,
           itgModifiedBy: userId,
-        },
-      });
+        });
 
-      if (result.count === 0) {
-        // Lost a race, or row vanished between read and write
-        throwInventoryNotFound<ItemGroupErrorDetail>(
-          'Item group not found',
-          'itg_id',
-          `No item group found with id ${itgId}`,
-          ItemGroupErrorCode.NOT_FOUND,
+        await this.auditLogService.logEntityChange(
+          {
+            action: nextDeleted ? 'cancel' : 'update',
+            tableName: ITEM_GROUP_TABLE_NAME,
+            screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: itgId,
+            displayName: existing.itgName,
+            originalRecord,
+            modifiedRecord,
+            userId,
+            notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
+          },
+          tx,
         );
-      }
 
-      if (nextDeleted) {
-        await this.removePathIds(tx, ancestorIds, subtreeIds);
-        // Notes 71 B3 — the group's derived GROUP-scope policy goes with it; it
-        // used to stay live and active under a deleted group.
-        await this.stockTrackPolicyService.retireForGroup(itgId, tx);
-      } else {
-        // Now that the row is live again, the same subtree the delete stripped
-        // out — this row plus every descendant that stayed active — reads back.
-        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
-        // ...and its preset derives the GROUP policy again.
-        await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
-      }
-
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        itgIsDeleted: nextDeleted,
-        itgModifiedOn: modifiedOn,
-        itgModifiedBy: userId,
+        return { itg_id: itgId, deleted: nextDeleted };
       });
-
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: ITEM_GROUP_TABLE_NAME,
-          screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: itgId,
-          displayName: existing.itgName,
-          originalRecord,
-          modifiedRecord,
-          userId,
-          notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
-        },
-        tx,
-      );
-
-      return { itg_id: itgId, deleted: nextDeleted };
-    });
+    } catch (error: unknown) {
+      // A restore whose name a live item group took meanwhile (names of
+      // deleted rows are free since notes 139 A2).
+      this.handleWriteError(error);
+      throw error;
+    }
   }
   private async createItemGroup(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     try {
@@ -208,6 +215,7 @@ export class ItemsGroupMasterService {
         if (saveItemGroupDto.itg_parent_id) {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
+        await this.ensureTrackPresetExists(saveItemGroupDto.itg_track_preset_id, null, tx);
         const now = new Date();
         const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const data: Prisma.ItemGroupMasterUncheckedCreateInput = {
@@ -297,6 +305,11 @@ export class ItemsGroupMasterService {
         if (saveItemGroupDto.itg_parent_id) {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
+        await this.ensureTrackPresetExists(
+          saveItemGroupDto.itg_track_preset_id,
+          existing.itgTrackPresetId,
+          tx,
+        );
         // `!== undefined`, not hasOwnProperty: every declared DTO field is an
         // own property (ES2022 class fields), so an OMITTED parent used to read
         // as "moved to root" and shuffle the path caches. null / "" still clear.
@@ -385,6 +398,33 @@ export class ItemsGroupMasterService {
           field: 'itg_parent_id',
           code: ItemGroupErrorCode.PARENT_NOT_FOUND,
           message: `No active item group found with id ${parentId}`,
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 139 A3 — the preset must be a live one: fk_itg_track_preset used to
+   * answer an unknown id with a 500. The preset the group already holds is not
+   * re-checked, so a group stays editable after its preset is retired.
+   */
+  private async ensureTrackPresetExists(
+    presetId: string | null | undefined,
+    storedPresetId: string | null,
+    tx: ItemGroupWriteClient,
+  ): Promise<void> {
+    if (!presetId || presetId === storedPresetId) {
+      return;
+    }
+    const preset = await tx.stockTrackPreset.findFirst({
+      where: { sptId: presetId, sptIsDeleted: false },
+      select: { sptId: true },
+    });
+    if (!preset) {
+      throwInventoryBadRequest<ItemGroupErrorDetail>('Stock tracking preset does not exist', [
+        {
+          field: 'itg_track_preset_id',
+          code: ItemGroupErrorCode.TRACK_PRESET_NOT_FOUND,
+          message: `No live stock tracking preset found with id ${presetId}`,
         },
       ]);
     }

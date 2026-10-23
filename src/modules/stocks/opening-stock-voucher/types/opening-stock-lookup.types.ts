@@ -60,9 +60,10 @@ export interface OpeningStockItemLookup {
 
   /**
    * A WARNING, not a refusal. The engine's rule is per HOLDING (godown, lot and
-   * bucket), which is finer than this can see, so true only means "this item
-   * has been opened somewhere in this branch". The real check is the preflight,
-   * and only that may block a save.
+   * bucket) per YEAR. This sees the year (onDate's) and, when sent, the godown
+   * and bucket — not the lot, which is not keyed yet — so true means "this
+   * item already has an opening here this year" (notes 143 #8). The real check
+   * is the preflight, and only that may block a post.
    */
   alreadyOpened: boolean;
 }
@@ -84,4 +85,7 @@ export interface OpeningStockItemLookupArgs {
    * must be keyed under the policy that was in force then.
    */
   onDate: string;
+  /** Notes 143 #8 — narrow `alreadyOpened` to this godown / bucket when given. */
+  godownId?: string;
+  bucket?: string;
 }

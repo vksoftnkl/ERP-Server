@@ -408,6 +408,15 @@ export interface StockVoucherHeaderPayload {
   postedByName: string | null;
   cancelledOn: string | null;
   cancelReason: string | null;
+  createdOn: string;
+  /**
+   * svh_created_by as stored — free TEXT, usually a user id but possibly a till
+   * or an import job's name. createdByName is that user's display name, null
+   * when the value names no user.
+   */
+  createdBy: string | null;
+  createdByName: string | null;
+  modifiedOn: string | null;
   rateSource: StockRateSource | null;
   /**
    * The header reason every variance line inherits — a whole count explained

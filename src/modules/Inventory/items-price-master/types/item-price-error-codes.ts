@@ -46,4 +46,9 @@ export enum ItemPriceErrorCode {
   BRANCH_OTHER_COMPANY = 'ITEM_PRICE_BRANCH_OTHER_COMPANY',
   /** ipm_godown_id names no godown, or a godown outside the row's branch / company. */
   GODOWN_OUT_OF_SCOPE = 'ITEM_PRICE_GODOWN_OUT_OF_SCOPE',
+  /**
+   * An update by ipm_id whose new MRP (an MRP bucket) or default-level price (a
+   * sale-price bucket) would move the row onto other stock (notes 140 D).
+   */
+  BUCKET_CHANGED = 'ITEM_PRICE_BUCKET_CHANGED',
 }

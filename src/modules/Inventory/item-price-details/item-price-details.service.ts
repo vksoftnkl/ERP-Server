@@ -16,6 +16,7 @@ import {
 import { ItemPriceDetailErrorCode } from './types/item-price-detail-error-codes';
 import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
+import { databaseToday, priceRowsInForce } from '../items-price-master/price-period.helper';
 @Injectable()
 export class ItemPriceDetailsService {
   constructor(
@@ -75,11 +76,16 @@ export class ItemPriceDetailsService {
         ItemPriceDetailErrorCode.ITEM_NOT_FOUND,
       );
     }
+    // Notes 140 — today's prices only: a key may also hold the row a scheduled
+    // price closed and the scheduled row itself, and "first row per unit"
+    // would land on either.
+    const today = await databaseToday(this.prisma);
     const [priceRecords, unitConversions, taxRecord] = await Promise.all([
       this.prisma.itemPriceMaster.findMany({
         where: {
           ipmItemId: itemId,
           ipmIsDeleted: false,
+          ...priceRowsInForce(today),
         },
         include: { itemUnitConversion: true },
         orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],

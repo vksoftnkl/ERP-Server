@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpStatus,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
@@ -27,6 +28,7 @@ describe('TxnHoldExceptionFilter', () => {
     status = jest.fn().mockReturnValue({ json });
     response = { status } as unknown as Response;
   });
+  afterEach(() => jest.restoreAllMocks());
   // The lease refusals: each keeps its own status and its field-level detail, so
   // the till can tell "someone else has it" from "it is finished with".
   it('passes a lease conflict through as 409', () => {
@@ -88,7 +90,13 @@ describe('TxnHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'txhCompanyId', code: 'VALIDATION_FAILED', message: 'txhCompanyId must be a valid UUID' }],
+      errors: [
+        {
+          field: 'txhCompanyId',
+          code: 'VALIDATION_FAILED',
+          message: 'txhCompanyId must be a valid UUID',
+        },
+      ],
     });
   });
   it('falls back to `request` when the message names no field', () => {
@@ -99,11 +107,19 @@ describe('TxnHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'request', code: 'VALIDATION_FAILED', message: 'each value must be a string' }],
+      errors: [
+        { field: 'request', code: 'VALIDATION_FAILED', message: 'each value must be a string' },
+      ],
     });
   });
   it('answers an unknown error with the 500 envelope', () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     filter.catch(new Error('boom'), createHost(response));
+    // The stack goes to the server log, never to the client.
+    expect(logged).toHaveBeenCalledWith(
+      'POST /v1/txn-holds/x/resume',
+      expect.stringContaining('boom'),
+    );
     expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     expect(json).toHaveBeenCalledWith({
       success: false,

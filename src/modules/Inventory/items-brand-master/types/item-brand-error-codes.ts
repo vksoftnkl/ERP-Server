@@ -24,6 +24,6 @@ export enum ItemBrandErrorCode {
   PARENT_DELETED = 'ITEM_BRAND_PARENT_DELETED',
   /** brand_photo is empty or not valid base64. */
   PHOTO_INVALID = 'ITEM_BRAND_PHOTO_INVALID',
-  /** Another item brand already has this name. */
+  /** Another live item brand already has this name, ignoring case. */
   NAME_TAKEN = 'ITEM_BRAND_NAME_TAKEN',
 }

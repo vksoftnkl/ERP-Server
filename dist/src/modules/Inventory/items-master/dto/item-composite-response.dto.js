@@ -20,6 +20,7 @@ class ItemCompositePayloadDto {
     item;
     unit_conversions;
     prices;
+    scheduled_prices;
     ean_codes;
     reorders;
 }
@@ -33,9 +34,22 @@ __decorate([
     __metadata("design:type", Array)
 ], ItemCompositePayloadDto.prototype, "unit_conversions", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: [item_price_response_dto_1.ItemPricePayloadDto] }),
+    (0, swagger_1.ApiProperty)({
+        type: [item_price_response_dto_1.ItemPricePayloadDto],
+        description: 'The prices in force TODAY (notes 140 C). A row a split closed (ended before today) is ' +
+            'history and is not listed; a scheduled one is in scheduled_prices.',
+    }),
     __metadata("design:type", Array)
 ], ItemCompositePayloadDto.prototype, "prices", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: [item_price_response_dto_1.ScheduledItemPricePayloadDto],
+        description: 'Notes 140 C — prices Change Selling Price scheduled to start after today, with their ' +
+            'period. READ-ONLY: never send them back in prices[]; the save neither matches, updates ' +
+            'nor deletes them.',
+    }),
+    __metadata("design:type", Array)
+], ItemCompositePayloadDto.prototype, "scheduled_prices", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: [item_ean_code_response_dto_1.ItemEanCodePayloadDto] }),
     __metadata("design:type", Array)

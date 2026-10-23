@@ -1,9 +1,9 @@
 export declare class SaveItemSectionDto {
     sec_id?: string;
     sec_name: string;
-    sec_alias?: string;
-    sec_short?: string;
-    sec_description?: string;
+    sec_alias?: string | null;
+    sec_short?: string | null;
+    sec_description?: string | null;
     sec_parent_id?: string | null;
     sec_sort?: number;
     sec_level?: number;

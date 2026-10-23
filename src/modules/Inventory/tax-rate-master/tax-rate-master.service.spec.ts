@@ -629,14 +629,29 @@ describe('TaxRateMasterService', () => {
       });
     });
 
-    it('may name a deleted rate as the one it replaced', async () => {
+    it('refuses a deleted rate as the one it replaced (notes 139 B8)', async () => {
       store.rates.set(B_ID, rateRow({ taxId: B_ID, taxName: 'GST 12%', taxIsDeleted: true }));
 
-      await service.save(dtoOf({ tax_name: 'GST 18%', tax_supersedes_id: B_ID }));
+      const refusal = await refusalOf(
+        service.save(dtoOf({ tax_name: 'GST 18%', tax_supersedes_id: B_ID })),
+      );
 
-      expect(prisma.taxRateMaster.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ taxSupersedesId: B_ID }) as object,
+      expect(refusal).toMatchObject({
+        status: 404,
+        body: {
+          errors: [{ field: 'tax_supersedes_id', code: TaxRateErrorCode.SUPERSEDED_NOT_FOUND }],
+        },
       });
+      expect(prisma.taxRateMaster.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps a stored link to a rate deleted since, so the rate stays editable', async () => {
+      store.rates.set(B_ID, rateRow({ taxId: B_ID, taxName: 'GST 12%', taxIsDeleted: true }));
+      store.rates.set(TAX_ID, rateRow({ taxSupersedesId: B_ID }));
+
+      await service.save(dtoOf({ tax_id: TAX_ID, tax_name: 'GST 18%', tax_supersedes_id: B_ID }));
+
+      expect(prisma.taxRateMaster.update).toHaveBeenCalled();
     });
 
     it('writes every header field it is sent', async () => {

@@ -70,32 +70,27 @@ __decorate([
     __metadata("design:type", String)
 ], SaveItemCategoryDto.prototype, "category_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 150 }),
+    (0, swagger_1.ApiProperty)({ maxLength: 150, description: 'Trimmed; a blank name is refused (notes 139 A1).' }),
+    (0, class_transformer_1.Transform)(({ value }) => (0, dtoDecorators_1.toTrimmedString)(value)),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
     (0, class_validator_1.MaxLength)(150),
     __metadata("design:type", String)
 ], SaveItemCategoryDto.prototype, "category_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MaxLength)(100),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true, description: 'Blank is stored as NULL.' }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
 ], SaveItemCategoryDto.prototype, "category_alias", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MaxLength)(50),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true, description: 'Blank is stored as NULL.' }),
+    (0, dtoDecorators_1.NullableString)(50),
+    __metadata("design:type", Object)
 ], SaveItemCategoryDto.prototype, "category_short", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MaxLength)(250),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true, description: 'Blank is stored as NULL.' }),
+    (0, dtoDecorators_1.NullableString)(250),
+    __metadata("design:type", Object)
 ], SaveItemCategoryDto.prototype, "category_description", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),

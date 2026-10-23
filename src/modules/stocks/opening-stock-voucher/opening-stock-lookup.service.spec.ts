@@ -170,6 +170,26 @@ describe('OpeningStockLookupService', () => {
     },
   );
 
+  // Notes 143 #8 — the badge reads the preflight's grain as far as it can see
+  // it: the year onDate falls in, and the godown / bucket when sent.
+  it('answers alreadyOpened for the year of onDate, and the godown / bucket when sent', async () => {
+    const GODOWN_ID = '01000000-0000-7000-8000-0000000000e1';
+    queryRaw.mockResolvedValueOnce([saltRow()]).mockResolvedValueOnce([saltRow()]);
+
+    // 31 March 2027 is still 2026-2027; 1 April 2027 is the next year.
+    await service.lookupItem(
+      args({ onDate: '2027-03-31', godownId: GODOWN_ID, bucket: 'DAMAGED' }),
+    );
+    await service.lookupItem(args({ onDate: '2027-04-01' }));
+
+    const narrowed = assemble(queryRaw.mock.calls[0] as unknown[]);
+    expect(narrowed.sql).toContain('sml.sml_acc_year = ?::bpchar');
+    expect(narrowed.values).toEqual(expect.arrayContaining(['2026-2027', GODOWN_ID, 'DAMAGED']));
+    const open = assemble(queryRaw.mock.calls[1] as unknown[]);
+    expect(open.values).toEqual(expect.arrayContaining(['2027-2028']));
+    expect(open.values).not.toEqual(expect.arrayContaining([GODOWN_ID]));
+  });
+
   it('restricts by whichever of company / branch is given when only one is', async () => {
     queryRaw.mockResolvedValueOnce([saltRow()]);
 

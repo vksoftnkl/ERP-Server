@@ -14,12 +14,13 @@ const selling_price_bulk_controller_1 = require("./selling-price-bulk.controller
 const selling_price_bulk_exception_filter_1 = require("./selling-price-bulk-exception.filter");
 const selling_price_bulk_service_1 = require("./selling-price-bulk.service");
 const price_bucket_gateway_1 = require("./price-bucket.gateway");
+const item_price_log_module_1 = require("../../Inventory/item-price-log/item-price-log.module");
 let SellingPriceBulkModule = class SellingPriceBulkModule {
 };
 exports.SellingPriceBulkModule = SellingPriceBulkModule;
 exports.SellingPriceBulkModule = SellingPriceBulkModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule],
+        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, item_price_log_module_1.ItemPriceLogModule],
         controllers: [selling_price_bulk_controller_1.SellingPriceBulkController],
         providers: [selling_price_bulk_service_1.SellingPriceBulkService, selling_price_bulk_exception_filter_1.SellingPriceBulkExceptionFilter, price_bucket_gateway_1.PriceBucketGateway],
         exports: [selling_price_bulk_service_1.SellingPriceBulkService, price_bucket_gateway_1.PriceBucketGateway],

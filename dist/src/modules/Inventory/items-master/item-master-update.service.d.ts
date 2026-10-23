@@ -6,7 +6,7 @@ import { ItemsPriceMasterService } from '../items-price-master/items-price-maste
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
-export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
+export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item' | 'scheduled_prices'>;
 export declare class ItemMasterUpdateService {
     private readonly itemUnitConversionService;
     private readonly itemsPriceMasterService;

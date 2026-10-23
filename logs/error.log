@@ -20569,3 +20569,111 @@ DETAIL: Failing row contains (7623cb89-0770-5df0-beab-0779d63af0b4, 019c8ea6-19e
 2026-10-17T13:36:20.205Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-17T13:36:37.700Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-17T13:37:31.787Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-22T08:06:32.769Z ERROR [ModuleExceptionFilter] POST /api/v1/units/create
+PrismaClientKnownRequestError: 
+Invalid `tx.unit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:39
+
+  245 this.applyOptionalFields(data, saveUnitDto);
+  246 try {
+  247   return await this.prisma.$transaction(async (tx) => {
+→ 248     const created = await tx.unit.create(
+Foreign key constraint violated on the constraint: `item_unit_master_unit_code_fkey`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async UnitsMasterService.createUnit (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:247:14)
+    at async UnitsMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.controller.ts:54:18)
+2026-10-22T08:06:49.276Z ERROR [ModuleExceptionFilter] POST /api/v1/units/create
+PrismaClientKnownRequestError: 
+Invalid `tx.unit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:39
+
+  245 this.applyOptionalFields(data, saveUnitDto);
+  246 try {
+  247   return await this.prisma.$transaction(async (tx) => {
+→ 248     const created = await tx.unit.create(
+Foreign key constraint violated on the constraint: `item_unit_master_unit_code_fkey`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async UnitsMasterService.createUnit (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:247:14)
+    at async UnitsMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.controller.ts:54:18)
+2026-10-22T08:06:57.950Z ERROR [ModuleExceptionFilter] POST /api/v1/units/create
+PrismaClientKnownRequestError: 
+Invalid `tx.unit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:39
+
+  245 this.applyOptionalFields(data, saveUnitDto);
+  246 try {
+  247   return await this.prisma.$transaction(async (tx) => {
+→ 248     const created = await tx.unit.create(
+Foreign key constraint violated on the constraint: `item_unit_master_unit_code_fkey`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async UnitsMasterService.createUnit (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:247:14)
+    at async UnitsMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.controller.ts:54:18)
+2026-10-22T08:07:08.494Z ERROR [ModuleExceptionFilter] POST /api/v1/item-groups/create
+PrismaClientKnownRequestError: 
+Invalid `tx.itemGroupMaster.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:322:50
+
+  319   itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+  320 };
+  321 this.applyOptionalFields(data, saveItemGroupDto);
+→ 322 const updated = await tx.itemGroupMaster.update(
+Foreign key constraint violated on the constraint: `fk_itg_track_preset`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:322:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ItemsGroupMasterService.updateItemGroup (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:273:14)
+    at async ItemsGroupMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.controller.ts:70:18)
+2026-10-22T08:25:31.522Z ERROR [ModuleExceptionFilter] POST /api/v1/units/create
+PrismaClientKnownRequestError: 
+Invalid `tx.unit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:39
+
+  245 this.applyOptionalFields(data, saveUnitDto);
+  246 try {
+  247   return await this.prisma.$transaction(async (tx) => {
+→ 248     const created = await tx.unit.create(
+Foreign key constraint violated on the constraint: `item_unit_master_unit_code_fkey`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:248:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async UnitsMasterService.createUnit (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.service.ts:247:14)
+    at async UnitsMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/units-master/units-master.controller.ts:54:18)
+2026-10-22T08:25:38.197Z ERROR [ModuleExceptionFilter] POST /api/v1/item-groups/create
+PrismaClientKnownRequestError: 
+Invalid `tx.itemGroupMaster.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:322:50
+
+  319   itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+  320 };
+  321 this.applyOptionalFields(data, saveItemGroupDto);
+→ 322 const updated = await tx.itemGroupMaster.update(
+Foreign key constraint violated on the constraint: `fk_itg_track_preset`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:322:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ItemsGroupMasterService.updateItemGroup (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.service.ts:273:14)
+    at async ItemsGroupMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/Inventory/items-group-master/items-group-master.controller.ts:70:18)

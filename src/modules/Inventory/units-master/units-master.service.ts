@@ -151,87 +151,98 @@ export class UnitsMasterService {
     unitId: string,
     wantDeleted: boolean,
   ): Promise<{ unit_id: string; deleted: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.unit.findFirst({
-        where: { unit_id: unitId },
-      });
-      if (!existing) {
-        throwInventoryNotFound<UnitErrorDetail>(
-          'Unit not found',
-          'unit_id',
-          `No unit found with id ${unitId}`,
-          UnitErrorCode.NOT_FOUND,
-        );
-      }
-      assertDeleteState(existing.unit_is_deleted, wantDeleted, UNIT_DELETE_STATE);
-      if (wantDeleted) {
-        await assertNoLiveReferences(tx, UNIT_REFERENCES, unitId, UNIT_DELETE_STATE);
-      } else if (existing.unit_base_unit_id) {
-        const base = await tx.unit.findFirst({
-          where: { unit_id: existing.unit_base_unit_id, unit_is_deleted: false },
-          select: { unit_id: true },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Find regardless of current deleted state
+        const existing = await tx.unit.findFirst({
+          where: { unit_id: unitId },
         });
-        if (!base) {
-          throwInventoryConflict<UnitErrorDetail>('The base unit is deleted', [
-            {
-              field: 'unit_base_unit_id',
-              code: UnitErrorCode.BASE_DELETED,
-              message: `Restore base unit ${existing.unit_base_unit_id} first.`,
-            },
-          ]);
+        if (!existing) {
+          throwInventoryNotFound<UnitErrorDetail>(
+            'Unit not found',
+            'unit_id',
+            `No unit found with id ${unitId}`,
+            UnitErrorCode.NOT_FOUND,
+          );
         }
-      }
-      const wasDeleted = existing.unit_is_deleted;
-      const nextDeleted = wantDeleted;
-      const modifiedOn = new Date();
-      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.unit.updateMany({
-        where: { unit_id: unitId, unit_is_deleted: wasDeleted },
-        data: {
+        assertDeleteState(existing.unit_is_deleted, wantDeleted, UNIT_DELETE_STATE);
+        if (wantDeleted) {
+          await assertNoLiveReferences(tx, UNIT_REFERENCES, unitId, UNIT_DELETE_STATE);
+        } else {
+          await this.assertNameFree(tx, existing.unit_name, unitId);
+        }
+        if (!wantDeleted && existing.unit_base_unit_id) {
+          const base = await tx.unit.findFirst({
+            where: { unit_id: existing.unit_base_unit_id, unit_is_deleted: false },
+            select: { unit_id: true },
+          });
+          if (!base) {
+            throwInventoryConflict<UnitErrorDetail>('The base unit is deleted', [
+              {
+                field: 'unit_base_unit_id',
+                code: UnitErrorCode.BASE_DELETED,
+                message: `Restore base unit ${existing.unit_base_unit_id} first.`,
+              },
+            ]);
+          }
+        }
+        const wasDeleted = existing.unit_is_deleted;
+        const nextDeleted = wantDeleted;
+        const modifiedOn = new Date();
+        const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+        // Guarded update: only flips if state hasn't changed since the read
+        const result = await tx.unit.updateMany({
+          where: { unit_id: unitId, unit_is_deleted: wasDeleted },
+          data: {
+            unit_is_deleted: nextDeleted,
+            unit_modified_on: modifiedOn,
+            unit_modified_by: userId,
+          },
+        });
+        if (result.count === 0) {
+          throwInventoryNotFound<UnitErrorDetail>(
+            'Unit not found',
+            'unit_id',
+            `No unit found with id ${unitId}`,
+            UnitErrorCode.NOT_FOUND,
+          );
+        }
+        const originalRecord = this.toPayload(existing);
+        const modifiedRecord = this.toPayload({
+          ...existing,
           unit_is_deleted: nextDeleted,
           unit_modified_on: modifiedOn,
           unit_modified_by: userId,
-        },
-      });
-      if (result.count === 0) {
-        throwInventoryNotFound<UnitErrorDetail>(
-          'Unit not found',
-          'unit_id',
-          `No unit found with id ${unitId}`,
-          UnitErrorCode.NOT_FOUND,
+        });
+        await this.auditLogService.logEntityChange(
+          {
+            action: nextDeleted ? 'cancel' : 'update',
+            tableName: UNIT_TABLE_NAME,
+            screenName: UNIT_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: unitId,
+            displayName: existing.unit_name,
+            originalRecord,
+            modifiedRecord,
+            userId,
+            notes: nextDeleted ? 'Unit soft deleted' : 'Unit restored',
+          },
+          tx,
         );
-      }
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        unit_is_deleted: nextDeleted,
-        unit_modified_on: modifiedOn,
-        unit_modified_by: userId,
+        return { unit_id: unitId, deleted: nextDeleted };
       });
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: UNIT_TABLE_NAME,
-          screenName: UNIT_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: unitId,
-          displayName: existing.unit_name,
-          originalRecord,
-          modifiedRecord,
-          userId,
-          notes: nextDeleted ? 'Unit soft deleted' : 'Unit restored',
-        },
-        tx,
-      );
-      return { unit_id: unitId, deleted: nextDeleted };
-    });
+    } catch (error: unknown) {
+      // A restore whose name a live unit took meanwhile (names of deleted units
+      // are free since notes 139 A2).
+      this.handleWriteError(error);
+      throw error;
+    }
   }
   private async createUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     const baseUnitId = saveUnitDto.unit_base_unit_id ?? null;
     const conversion = saveUnitDto.unit_conversion ?? null;
     this.validateConversionRules(baseUnitId, conversion);
+    this.validatePackRule(saveUnitDto.unit_is_pack_unit ?? false, baseUnitId);
     const now = new Date();
     const createdBy = resolveActor(
       saveUnitDto.unit_created_by,
@@ -245,6 +256,8 @@ export class UnitsMasterService {
     this.applyOptionalFields(data, saveUnitDto);
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.assertReferences(tx, saveUnitDto, null);
+        await this.assertNameFree(tx, data.unit_name, null);
         const created = await tx.unit.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
@@ -305,8 +318,19 @@ export class UnitsMasterService {
           ]);
         }
         this.validateConversionRules(baseUnitId, conversion);
+        this.validatePackRule(
+          saveUnitDto.unit_is_pack_unit ?? existing.unit_is_pack_unit,
+          baseUnitId,
+        );
+        await this.assertReferences(tx, saveUnitDto, existing);
+        const unitName = saveUnitDto.unit_name.trim();
+        // Only a new spelling is checked: the box holds "Box" and "BOX" as two
+        // live units, and either must stay editable until they are merged.
+        if (unitName.toLowerCase() !== existing.unit_name.toLowerCase()) {
+          await this.assertNameFree(tx, unitName, unitId);
+        }
         const data: Prisma.UnitUncheckedUpdateInput = {
-          unit_name: saveUnitDto.unit_name.trim(),
+          unit_name: unitName,
           unit_modified_on: new Date(),
           unit_modified_by: resolveActor(
             saveUnitDto.unit_modified_by,
@@ -358,6 +382,94 @@ export class UnitsMasterService {
           },
         ]);
       }
+    }
+  }
+  /** Notes 139 B5 — a pack unit is a count of its base unit, so it needs one. */
+  private validatePackRule(isPackUnit: boolean, baseUnitId: string | null): void {
+    if (isPackUnit && baseUnitId === null) {
+      throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
+        {
+          field: 'unit_is_pack_unit',
+          code: UnitErrorCode.PACK_BASE_REQUIRED,
+          message: 'A pack unit needs unit_base_unit_id and unit_conversion.',
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 139 A3 — the GST unit code and the base unit named must exist; their
+   * foreign keys used to answer an unknown one with a 500. A value the row
+   * already holds is not re-checked.
+   */
+  private async assertReferences(
+    tx: Prisma.TransactionClient,
+    saveUnitDto: SaveUnitDto,
+    existing: Unit | null,
+  ): Promise<void> {
+    const code = saveUnitDto.unit_code;
+    if (code && code !== existing?.unit_code) {
+      const gstUnit = await tx.itemGstUnits.findUnique({
+        where: { itemGstUnitCode: code },
+        select: { itemGstUnitId: true },
+      });
+      if (!gstUnit) {
+        throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
+          {
+            field: 'unit_code',
+            code: UnitErrorCode.CODE_NOT_FOUND,
+            message: `No GST unit has the code "${code}".`,
+          },
+        ]);
+      }
+    }
+    const baseUnitId = saveUnitDto.unit_base_unit_id;
+    if (baseUnitId && baseUnitId !== existing?.unit_base_unit_id) {
+      const base = await tx.unit.findFirst({
+        where: { unit_id: baseUnitId, unit_is_deleted: false },
+        select: { unit_id: true },
+      });
+      if (!base) {
+        throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
+          {
+            field: 'unit_base_unit_id',
+            code: UnitErrorCode.BASE_NOT_FOUND,
+            message: `No live unit has the id ${baseUnitId}.`,
+          },
+        ]);
+      }
+    }
+  }
+  /**
+   * Notes 139 B6 — a unit name is unique among live units ignoring case.
+   * uq_unit_name only covers the exact spelling until the box's "Box" / "BOX"
+   * pair is merged, so the rest is checked here, under a lock on the folded
+   * name so two saves of "Kg" and "KG" cannot both pass.
+   */
+  private async assertNameFree(
+    tx: Prisma.TransactionClient,
+    unitName: string,
+    unitId: string | null,
+  ): Promise<void> {
+    const folded = unitName.toLowerCase();
+    await tx.$queryRaw`
+      SELECT count(pg_advisory_xact_lock(hashtext('inventory.item_unit_master.unit_name'), hashtext(${folded})))::int AS locked
+    `;
+    const [clash] = await tx.$queryRaw<Array<{ unit_id: string; unit_name: string }>>`
+      SELECT unit_id::text, unit_name
+        FROM inventory.item_unit_master
+       WHERE lower(unit_name) = ${folded}
+         AND unit_is_deleted = false
+         AND (${unitId}::uuid IS NULL OR unit_id <> ${unitId}::uuid)
+       LIMIT 1
+    `;
+    if (clash) {
+      throwInventoryConflict<UnitErrorDetail>('Unit name already exists', [
+        {
+          field: 'unit_name',
+          code: UnitErrorCode.NAME_TAKEN,
+          message: `Unit "${clash.unit_name}" (${clash.unit_id}) already has this name.`,
+        },
+      ]);
     }
   }
   private applyOptionalFields(

@@ -79,73 +79,79 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
         return this.setDeleted(categoryId, false);
     }
     async setDeleted(categoryId, wantDeleted) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.categoryMaster.findFirst({
-                where: {
-                    categoryId,
-                },
-            });
-            if (!existing) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item category not found', 'category_id', `No item category found with id ${categoryId}`, item_category_error_codes_1.ItemCategoryErrorCode.NOT_FOUND);
-            }
-            (0, master_tree_helper_1.assertDeleteState)(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
-            if (wantDeleted) {
-                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, categoryId);
-                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_CATEGORY_REFERENCES, categoryId, ITEM_CATEGORY_DELETE_STATE);
-            }
-            else {
-                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, existing.categoryParentId);
-            }
-            const wasDeleted = existing.categoryIsDeleted;
-            const nextDeleted = wantDeleted;
-            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
-            const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
-            const modifiedOn = new Date();
-            const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const result = await tx.categoryMaster.updateMany({
-                where: {
-                    categoryId,
-                    categoryIsDeleted: wasDeleted,
-                },
-                data: {
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const existing = await tx.categoryMaster.findFirst({
+                    where: {
+                        categoryId,
+                    },
+                });
+                if (!existing) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item category not found', 'category_id', `No item category found with id ${categoryId}`, item_category_error_codes_1.ItemCategoryErrorCode.NOT_FOUND);
+                }
+                (0, master_tree_helper_1.assertDeleteState)(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
+                if (wantDeleted) {
+                    await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, categoryId);
+                    await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_CATEGORY_REFERENCES, categoryId, ITEM_CATEGORY_DELETE_STATE);
+                }
+                else {
+                    await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, existing.categoryParentId);
+                }
+                const wasDeleted = existing.categoryIsDeleted;
+                const nextDeleted = wantDeleted;
+                const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
+                const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
+                const modifiedOn = new Date();
+                const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+                const result = await tx.categoryMaster.updateMany({
+                    where: {
+                        categoryId,
+                        categoryIsDeleted: wasDeleted,
+                    },
+                    data: {
+                        categoryIsDeleted: nextDeleted,
+                        categoryModifiedOn: modifiedOn,
+                        categoryModifiedBy: userId,
+                    },
+                });
+                if (result.count === 0) {
+                    (0, module_service_utils_1.throwInventoryNotFound)('Item category not found', 'category_id', `No item category found with id ${categoryId}`, item_category_error_codes_1.ItemCategoryErrorCode.NOT_FOUND);
+                }
+                if (nextDeleted) {
+                    await this.removePathIds(tx, ancestorIds, subtreeIds);
+                }
+                else {
+                    await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
+                }
+                const originalRecord = this.toPayload(existing);
+                const modifiedRecord = this.toPayload({
+                    ...existing,
                     categoryIsDeleted: nextDeleted,
                     categoryModifiedOn: modifiedOn,
                     categoryModifiedBy: userId,
-                },
+                });
+                await this.auditLogService.logEntityChange({
+                    action: nextDeleted ? 'cancel' : 'update',
+                    tableName: ITEM_CATEGORY_TABLE_NAME,
+                    screenName: ITEM_CATEGORY_AUDIT_SCREEN_NAME,
+                    screenType: 'master',
+                    pk: categoryId,
+                    displayName: existing.categoryName,
+                    originalRecord,
+                    modifiedRecord,
+                    userId,
+                    notes: nextDeleted ? 'Item category soft deleted' : 'Item category restored',
+                }, tx);
+                return {
+                    category_id: categoryId,
+                    deleted: nextDeleted,
+                };
             });
-            if (result.count === 0) {
-                (0, module_service_utils_1.throwInventoryNotFound)('Item category not found', 'category_id', `No item category found with id ${categoryId}`, item_category_error_codes_1.ItemCategoryErrorCode.NOT_FOUND);
-            }
-            if (nextDeleted) {
-                await this.removePathIds(tx, ancestorIds, subtreeIds);
-            }
-            else {
-                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
-            }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
-                ...existing,
-                categoryIsDeleted: nextDeleted,
-                categoryModifiedOn: modifiedOn,
-                categoryModifiedBy: userId,
-            });
-            await this.auditLogService.logEntityChange({
-                action: nextDeleted ? 'cancel' : 'update',
-                tableName: ITEM_CATEGORY_TABLE_NAME,
-                screenName: ITEM_CATEGORY_AUDIT_SCREEN_NAME,
-                screenType: 'master',
-                pk: categoryId,
-                displayName: existing.categoryName,
-                originalRecord,
-                modifiedRecord,
-                userId,
-                notes: nextDeleted ? 'Item category soft deleted' : 'Item category restored',
-            }, tx);
-            return {
-                category_id: categoryId,
-                deleted: nextDeleted,
-            };
-        });
+        }
+        catch (error) {
+            this.handleWriteError(error);
+            throw error;
+        }
     }
     async createItemCategory(saveItemCategoryDto) {
         try {

@@ -20,6 +20,7 @@ export declare class StockPostingService {
         reason: string;
         cancelledOn: Date;
         ledgerSource?: StockLedgerSourceLabel;
+        refuseNegative?: boolean;
     }): Promise<number>;
     private assertNotFrozen;
 }

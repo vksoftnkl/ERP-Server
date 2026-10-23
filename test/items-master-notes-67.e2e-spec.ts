@@ -14,6 +14,7 @@ import { effectivePolicyLateral } from '../src/modules/stocks/stock-voucher/stoc
 import { OpeningStockLookupService } from '../src/modules/stocks/opening-stock-voucher/opening-stock-lookup.service';
 import { PriceBucketGateway } from '../src/modules/stocks/selling-price-bulk/price-bucket.gateway';
 import type { SaveItemCompositeDto } from '../src/modules/Inventory/items-master/dto/save-item-composite.dto';
+import { priceWriterFor } from './helpers/price-writer';
 
 /**
  * NOTES 67 (re-check of notes 50), 68 and 69 AGAINST THE REAL DATABASE, in one
@@ -97,6 +98,8 @@ describe('Item master, notes 67 / 68 / 69 (e2e — one rolled-back transaction)'
       // A GROUP policy is filed under the request's company.
       getCompanyId: () => fixture.companyId,
     } as unknown as RequestContextService;
+    // Notes 144 — the real price writer: every price write lands a log row too.
+    const priceWriter = priceWriterFor(ctx);
     const audit = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     } as unknown as AuditLogService;
@@ -106,8 +109,8 @@ describe('Item master, notes 67 / 68 / 69 (e2e — one rolled-back transaction)'
     // No setting overrides: sales.default_price_level reads its catalog default.
     const buckets = new PriceBucketService({
       resolveEffective: () => Promise.resolve([]),
-    } as never);
-    const price = new ItemsPriceMasterService(db, audit, grid, ctx, buckets);
+    } as never, priceWriter);
+    const price = new ItemsPriceMasterService(db, audit, grid, ctx, buckets, priceWriter);
     const ean = new ItemsEanCodeMasterService(db, audit, grid, ctx);
     const reorder = new ItemsReorderMasterService(db, audit, grid, ctx);
     policy = new StockTrackPolicyService(db, audit, ctx);

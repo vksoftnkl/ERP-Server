@@ -251,6 +251,8 @@ let BillReadService = class BillReadService {
              AND p.ipm_is_deleted = false
              -- the headline row: a bucket row's godown is copied from it
              AND p.ipm_key_mrp = -1 AND p.ipm_key_sp = -1
+             -- today's row (notes 140): a key may also hold a closed and a scheduled one
+             AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
              AND (p.ipm_branch_id = h.so_branch_id OR p.ipm_branch_id IS NULL)
            ORDER BY (p.ipm_branch_id IS NULL), p.ipm_id
            LIMIT 1) pr ON true

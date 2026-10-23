@@ -12,12 +12,13 @@ const item_qty_price_exception_filter_1 = require("./item-qty-price-exception.fi
 const items_qty_price_master_controller_1 = require("./items-qty-price-master.controller");
 const items_qty_price_master_service_1 = require("./items-qty-price-master.service");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const item_price_log_module_1 = require("../item-price-log/item-price-log.module");
 let ItemsQtyPriceMasterModule = class ItemsQtyPriceMasterModule {
 };
 exports.ItemsQtyPriceMasterModule = ItemsQtyPriceMasterModule;
 exports.ItemsQtyPriceMasterModule = ItemsQtyPriceMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, item_price_log_module_1.ItemPriceLogModule],
         controllers: [items_qty_price_master_controller_1.ItemsQtyPriceMasterController],
         providers: [items_qty_price_master_service_1.ItemsQtyPriceMasterService, item_qty_price_exception_filter_1.ItemQtyPriceExceptionFilter],
         exports: [items_qty_price_master_service_1.ItemsQtyPriceMasterService],

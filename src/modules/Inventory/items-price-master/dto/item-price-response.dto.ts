@@ -135,6 +135,13 @@ export class ItemPricePayloadDto {
   })
   ipm_godown_name?: string | null;
 }
+/** Notes 140 C — a scheduled price row, read-only on the item card. */
+export class ScheduledItemPricePayloadDto extends ItemPricePayloadDto {
+  @ApiProperty({ format: 'date', example: '2026-10-23', description: 'After today.' })
+  ipm_effective_from!: string;
+  @ApiProperty({ format: 'date', example: '9999-12-31' })
+  ipm_effective_to!: string;
+}
 export class ItemPriceDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ipm_id!: string;

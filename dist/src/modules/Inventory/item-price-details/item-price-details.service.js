@@ -15,6 +15,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const item_price_detail_error_codes_1 = require("./types/item-price-detail-error-codes");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const item_unit_conversion_service_1 = require("../item-unit-conversion/item-unit-conversion.service");
+const price_period_helper_1 = require("../items-price-master/price-period.helper");
 let ItemPriceDetailsService = class ItemPriceDetailsService {
     prisma;
     itemUnitConversionService;
@@ -56,11 +57,13 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
         if (!itemRecord) {
             (0, module_service_utils_1.throwInventoryNotFound)('Item not found', 'item_id', `No active item found with id ${itemId}`, item_price_detail_error_codes_1.ItemPriceDetailErrorCode.ITEM_NOT_FOUND);
         }
+        const today = await (0, price_period_helper_1.databaseToday)(this.prisma);
         const [priceRecords, unitConversions, taxRecord] = await Promise.all([
             this.prisma.itemPriceMaster.findMany({
                 where: {
                     ipmItemId: itemId,
                     ipmIsDeleted: false,
+                    ...(0, price_period_helper_1.priceRowsInForce)(today),
                 },
                 include: { itemUnitConversion: true },
                 orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],

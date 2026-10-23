@@ -1,9 +1,9 @@
 export declare class SaveItemGroupDto {
     itg_id?: string;
     itg_name: string;
-    itg_alias?: string;
-    itg_short?: string;
-    itg_description?: string;
+    itg_alias?: string | null;
+    itg_short?: string | null;
+    itg_description?: string | null;
     itg_parent_id?: string | null;
     itg_sort?: number;
     itg_level?: number;

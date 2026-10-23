@@ -11,8 +11,12 @@ const BASE_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fd11';
 const TAX_ID = '019c6f6c-be87-7a11-8905-36092c46fd14';
+/** The database's CURRENT_DATE, as `databaseToday` reads it (notes 140). */
+const TODAY = '2026-06-15';
+const TODAY_COLUMN = new Date(`${TODAY}T00:00:00.000Z`);
 
 type PrismaMock = {
+  $queryRaw: jest.Mock<Promise<Array<{ today: string }>>, unknown[]>;
   itemMaster: {
     findFirst: jest.Mock<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>;
   };
@@ -189,6 +193,9 @@ describe('ItemPriceDetailsService', () => {
 
   beforeEach(() => {
     prisma = {
+      $queryRaw: jest
+        .fn<Promise<Array<{ today: string }>>, unknown[]>()
+        .mockResolvedValue([{ today: TODAY }]),
       itemMaster: {
         findFirst: jest.fn<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>(),
       },
@@ -240,10 +247,13 @@ describe('ItemPriceDetailsService', () => {
       },
       include: { trackPreset: { select: { sptName: true } } },
     });
+    // Notes 140 — today's prices only, never a closed or a scheduled row.
     expect(prisma.itemPriceMaster.findMany).toHaveBeenCalledWith({
       where: {
         ipmItemId: ITEM_ID,
         ipmIsDeleted: false,
+        ipmEffectiveFrom: { lte: TODAY_COLUMN },
+        ipmEffectiveTo: { gte: TODAY_COLUMN },
       },
       include: { itemUnitConversion: true },
       orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],

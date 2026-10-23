@@ -188,7 +188,8 @@ describe('ItemsMasterService composite endpoints', () => {
     [K in 'getUserId' | 'getCompanyId']: jest.Mock<ReturnType<RequestContextService[K]>, []>;
   };
   let unitConversionService: ChildServiceMock;
-  let priceService: ChildServiceMock;
+  // Notes 140 C — the price service also reads the item's scheduled prices.
+  let priceService: ChildServiceMock & { findScheduledByItemId: jest.Mock };
   let eanCodeService: ChildServiceMock;
   let reorderService: ChildServiceMock;
   let stockTrackPolicyService: { syncFromItem: jest.Mock; retireForItem: jest.Mock };
@@ -272,7 +273,10 @@ describe('ItemsMasterService composite endpoints', () => {
       };
     };
     unitConversionService = makeChildServiceMock('iuc_id', IUC_ID);
-    priceService = makeChildServiceMock('ipm_id', 'p1');
+    priceService = {
+      ...makeChildServiceMock('ipm_id', 'p1'),
+      findScheduledByItemId: jest.fn().mockResolvedValue([]),
+    };
     eanCodeService = makeChildServiceMock('ean_id', 'e1');
     reorderService = makeChildServiceMock('ir_id', 'r1');
 
@@ -837,6 +841,7 @@ describe('ItemsMasterService composite endpoints', () => {
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
     unitConversionService.findByItemId.mockResolvedValue([{ iuc_id: 'uc1' }]);
     priceService.findByItemId.mockResolvedValue([{ ipm_id: 'p1' }, { ipm_id: 'p2' }]);
+    priceService.findScheduledByItemId.mockResolvedValue([{ ipm_id: 'p3' }]);
     eanCodeService.findByItemId.mockResolvedValue([{ ean_id: 'e1' }]);
     reorderService.findByItemId.mockResolvedValue([{ ir_id: 'r1' }]);
 
@@ -844,12 +849,15 @@ describe('ItemsMasterService composite endpoints', () => {
 
     expect(unitConversionService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
     expect(priceService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+    expect(priceService.findScheduledByItemId).toHaveBeenCalledWith(ITEM_ID);
     expect(eanCodeService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
     expect(reorderService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
 
     expect(result.item.item_id).toBe(ITEM_ID);
     expect(result.unit_conversions).toHaveLength(1);
+    // Notes 140 C — today's prices and the scheduled ones stay apart.
     expect(result.prices).toHaveLength(2);
+    expect(result.scheduled_prices).toEqual([expect.objectContaining({ ipm_id: 'p3' })]);
     expect(result.ean_codes).toHaveLength(1);
     expect(result.reorders).toHaveLength(1);
   });
@@ -874,6 +882,18 @@ describe('ItemsMasterService composite endpoints', () => {
         ipm_item_id: ITEM_ID,
         ipm_uc_unit_id: IUC_ID,
         ipm_godown_id: GODOWN_ID,
+      },
+    ]);
+    priceService.findScheduledByItemId.mockResolvedValue([
+      {
+        ipm_id: 'p2',
+        ipm_company_id: COMPANY_ID,
+        ipm_branch_id: BRANCH_ID,
+        ipm_item_id: ITEM_ID,
+        ipm_uc_unit_id: IUC_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_effective_from: '2026-07-01',
+        ipm_effective_to: '9999-12-31',
       },
     ]);
     // ipm_uc_unit_id / ean_unit_id / ir_unit_id hold an iuc_id, so their unit name is
@@ -926,6 +946,14 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.prices[0].ipm_uc_unit_id).toBe(UNIT_ID);
     expect(result.prices[0].ipm_unit_name).toBe('PCS');
     expect(result.prices[0].ipm_godown_name).toBe('Main Store');
+    // Notes 140 C — a scheduled price is named exactly like today's, and keeps its period.
+    expect(result.scheduled_prices[0]).toMatchObject({
+      ipm_branch_name: 'HQ',
+      ipm_uc_unit_id: UNIT_ID,
+      ipm_unit_name: 'PCS',
+      ipm_godown_name: 'Main Store',
+      ipm_effective_from: '2026-07-01',
+    });
 
     expect(result.ean_codes[0].ean_unit_id).toBe(UNIT_ID);
     expect(result.ean_codes[0].ean_unit_name).toBe('PCS');
@@ -958,6 +986,7 @@ describe('ItemsMasterService composite endpoints', () => {
 
     expect(result.unit_conversions).toEqual([]);
     expect(result.prices).toEqual([]);
+    expect(result.scheduled_prices).toEqual([]);
     expect(result.ean_codes).toEqual([]);
     expect(result.reorders).toEqual([]);
   });
@@ -969,6 +998,7 @@ describe('ItemsMasterService composite endpoints', () => {
 
     expect(unitConversionService.findByItemId).not.toHaveBeenCalled();
     expect(priceService.findByItemId).not.toHaveBeenCalled();
+    expect(priceService.findScheduledByItemId).not.toHaveBeenCalled();
     expect(eanCodeService.findByItemId).not.toHaveBeenCalled();
     expect(reorderService.findByItemId).not.toHaveBeenCalled();
   });

@@ -50,6 +50,10 @@ export declare class ItemPricePayloadDto {
     ipm_unit_name?: string | null;
     ipm_godown_name?: string | null;
 }
+export declare class ScheduledItemPricePayloadDto extends ItemPricePayloadDto {
+    ipm_effective_from: string;
+    ipm_effective_to: string;
+}
 export declare class ItemPriceDeleteResultDto {
     ipm_id: string;
     deleted: boolean;

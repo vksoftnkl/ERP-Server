@@ -17,5 +17,8 @@ var GodownErrorCode;
     GodownErrorCode["NOT_DELETED"] = "GODOWN_NOT_DELETED";
     GodownErrorCode["PARENT_DELETED"] = "GODOWN_PARENT_DELETED";
     GodownErrorCode["NAME_TAKEN"] = "GODOWN_NAME_TAKEN";
+    GodownErrorCode["BRANCH_NOT_FOUND"] = "GODOWN_BRANCH_NOT_FOUND";
+    GodownErrorCode["BRANCH_CHANGE_HAS_CHILDREN"] = "GODOWN_BRANCH_CHANGE_HAS_CHILDREN";
+    GodownErrorCode["BRANCH_CHANGE_IN_USE"] = "GODOWN_BRANCH_CHANGE_IN_USE";
 })(GodownErrorCode || (exports.GodownErrorCode = GodownErrorCode = {}));
 //# sourceMappingURL=godown-error-codes.js.map

@@ -1,3 +1,4 @@
+import { type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
 export declare class OpeningStockVoucherScopeQueryDto {
     companyId: string;
     branchId: string;
@@ -19,4 +20,6 @@ export declare class OpeningStockItemLookupQueryDto {
     itemId: string;
     uomId?: string;
     onDate: string;
+    godownId?: string;
+    bucket?: StockBucket;
 }

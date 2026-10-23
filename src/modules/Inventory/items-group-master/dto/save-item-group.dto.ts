@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { NullableUuid } from 'src/common/dto/dtoDecorators';
+import { NullableString, NullableUuid, toTrimmedString } from 'src/common/dto/dtoDecorators';
 
 const toNullablePhotoString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -61,29 +61,24 @@ export class SaveItemGroupDto {
   @IsUUID('all')
   itg_id?: string;
 
-  @ApiProperty({ maxLength: 150 })
+  @ApiProperty({ maxLength: 150, description: 'Trimmed; a blank name is refused (notes 139 A1).' })
+  @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
   itg_name!: string;
 
-  @ApiPropertyOptional({ maxLength: 100 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  itg_alias?: string;
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(100)
+  itg_alias?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 50 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  itg_short?: string;
+  @ApiPropertyOptional({ maxLength: 50, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(50)
+  itg_short?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(250)
-  itg_description?: string;
+  @ApiPropertyOptional({ maxLength: 250, nullable: true, description: 'Blank is stored as NULL.' })
+  @NullableString(250)
+  itg_description?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()

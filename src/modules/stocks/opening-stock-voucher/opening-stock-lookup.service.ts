@@ -100,6 +100,12 @@ export class OpeningStockLookupService {
     // so a null binds cleanly instead of turning `= NULL` into no rows.
     const companyId = args.companyId ?? null;
     const branchId = args.branchId ?? null;
+    const godownId = args.godownId ?? null;
+    const bucket = args.bucket ?? null;
+    // The April–March year onDate falls in — the partition the preflight's
+    // "already opened" reads.
+    const [year, month] = args.onDate.split('-').map(Number);
+    const accYear = month >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
     const [row] = await this.prisma.$queryRaw<LookupRow[]>`
       SELECT i.item_id                                         AS "itemId",
              i.item_code                                       AS "itemCode",
@@ -131,10 +137,18 @@ export class OpeningStockLookupService {
              -- definition of "still counts" across the badge, the preflight
              -- and the post, so the screen cannot call a holding opened that
              -- the post would let through, or the reverse.
+             --
+             -- Notes 143 #8: and the preflight's grain as far as it is known
+             -- here — the year onDate falls in, and the godown / bucket when
+             -- sent. Across every year and godown it warned about openings the
+             -- post allows (another year, godown or bucket is another holding).
              EXISTS (SELECT 1
                        FROM stock.stock_ledger sml
                       WHERE (${companyId}::uuid IS NULL OR sml.sml_company_id = ${companyId}::uuid)
                         AND (${branchId}::uuid  IS NULL OR sml.sml_branch_id  = ${branchId}::uuid)
+                        AND sml.sml_acc_year = ${accYear}::bpchar
+                        AND (${godownId}::uuid IS NULL OR sml.sml_godown_id = ${godownId}::uuid)
+                        AND (${bucket}::text   IS NULL OR sml.sml_bucket    = ${bucket}::text)
                         AND sml.sml_item_id  = i.item_id
                         AND sml.sml_txn_type = 'OPENING'
                         AND ${unreversedLedgerRow()})          AS "alreadyOpened"

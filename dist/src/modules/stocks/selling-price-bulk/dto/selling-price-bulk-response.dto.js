@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SellingPriceSaveSuccessDto = exports.SellingPriceSaveDataDto = exports.SellingPriceNoStockRowDto = exports.SellingPriceProblemDto = exports.SellingPriceBucketsSuccessDto = exports.SellingPriceListSuccessDto = exports.SellingPriceListDataDto = exports.SellingPriceListMetaDto = exports.SellingPriceRowDto = exports.SellingPriceLevelDto = exports.SellingPriceErrorResponseDto = exports.SellingPriceErrorFieldDto = void 0;
+exports.SellingPriceScheduleCancelSuccessDto = exports.SellingPriceScheduleCancelDataDto = exports.SellingPriceScheduleSuccessDto = exports.SellingPriceScheduleRowDto = exports.SellingPriceSchedulePreviousDto = exports.SellingPriceSaveSuccessDto = exports.SellingPriceSaveDataDto = exports.SellingPriceSavedRowDto = exports.SellingPriceNoStockRowDto = exports.SellingPriceProblemDto = exports.SellingPriceBucketsSuccessDto = exports.SellingPriceListSuccessDto = exports.SellingPriceListDataDto = exports.SellingPriceListMetaDto = exports.SellingPriceRowDto = exports.SellingPriceLevelDto = exports.SellingPriceErrorResponseDto = exports.SellingPriceErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const selling_price_bulk_types_1 = require("../types/selling-price-bulk.types");
 class SellingPriceErrorFieldDto {
@@ -396,8 +396,44 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     __metadata("design:type", Object)
 ], SellingPriceNoStockRowDto.prototype, "salePrice", void 0);
+class SellingPriceSavedRowDto {
+    lineNo;
+    bucketId;
+    scheduled;
+    effectiveFrom;
+    effectiveTo;
+}
+exports.SellingPriceSavedRowDto = SellingPriceSavedRowDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 3 }),
+    __metadata("design:type", Number)
+], SellingPriceSavedRowDto.prototype, "lineNo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'The item_price_master row written — for a split, the NEW row.',
+    }),
+    __metadata("design:type", String)
+], SellingPriceSavedRowDto.prototype, "bucketId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: true,
+        description: 'True when the row starts after today: scheduled, not yet on the shelf.',
+    }),
+    __metadata("design:type", Boolean)
+], SellingPriceSavedRowDto.prototype, "scheduled", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '2026-10-23' }),
+    __metadata("design:type", String)
+], SellingPriceSavedRowDto.prototype, "effectiveFrom", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '9999-12-31' }),
+    __metadata("design:type", String)
+], SellingPriceSavedRowDto.prototype, "effectiveTo", void 0);
 class SellingPriceSaveDataDto {
     saved;
+    effectiveFrom;
+    rows;
     masterRowsSaved;
     noStock;
     needsConfirm;
@@ -412,6 +448,22 @@ __decorate([
     }),
     __metadata("design:type", Number)
 ], SellingPriceSaveDataDto.prototype, "saved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'date',
+        example: '2026-10-23',
+        description: "Notes 140 A — the day the prices start: the body's effectiveFrom, else today.",
+    }),
+    __metadata("design:type", String)
+], SellingPriceSaveDataDto.prototype, "effectiveFrom", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: SellingPriceSavedRowDto,
+        isArray: true,
+        description: 'Notes 140 A — per row written, in the order sent. Empty on needsConfirm.',
+    }),
+    __metadata("design:type", Array)
+], SellingPriceSaveDataDto.prototype, "rows", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: 0,
@@ -462,4 +514,109 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: SellingPriceSaveDataDto }),
     __metadata("design:type", SellingPriceSaveDataDto)
 ], SellingPriceSaveSuccessDto.prototype, "data", void 0);
+class SellingPriceSchedulePreviousDto {
+    bucketId;
+    priceScope;
+    levels;
+}
+exports.SellingPriceSchedulePreviousDto = SellingPriceSchedulePreviousDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        description: 'The row of the same key ending the day before, else the row that priced the bucket ' +
+            'at this branch that day.',
+    }),
+    __metadata("design:type", Object)
+], SellingPriceSchedulePreviousDto.prototype, "bucketId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: selling_price_bulk_types_1.PRICE_SCOPES, nullable: true }),
+    __metadata("design:type", Object)
+], SellingPriceSchedulePreviousDto.prototype, "priceScope", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: SellingPriceLevelDto, isArray: true }),
+    __metadata("design:type", Array)
+], SellingPriceSchedulePreviousDto.prototype, "levels", void 0);
+class SellingPriceScheduleRowDto extends SellingPriceRowDto {
+    effectiveFrom;
+    effectiveTo;
+    previous;
+}
+exports.SellingPriceScheduleRowDto = SellingPriceScheduleRowDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '2026-10-23' }),
+    __metadata("design:type", String)
+], SellingPriceScheduleRowDto.prototype, "effectiveFrom", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date', example: '9999-12-31' }),
+    __metadata("design:type", String)
+], SellingPriceScheduleRowDto.prototype, "effectiveTo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: SellingPriceSchedulePreviousDto,
+        nullable: true,
+        description: 'Null when nothing priced the bucket the day before.',
+    }),
+    __metadata("design:type", Object)
+], SellingPriceScheduleRowDto.prototype, "previous", void 0);
+class SellingPriceScheduleSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.SellingPriceScheduleSuccessDto = SellingPriceScheduleSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], SellingPriceScheduleSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2 scheduled prices found' }),
+    __metadata("design:type", String)
+], SellingPriceScheduleSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: SellingPriceScheduleRowDto, isArray: true }),
+    __metadata("design:type", Array)
+], SellingPriceScheduleSuccessDto.prototype, "data", void 0);
+class SellingPriceScheduleCancelDataDto {
+    bucketId;
+    restoredId;
+    restoredTo;
+}
+exports.SellingPriceScheduleCancelDataDto = SellingPriceScheduleCancelDataDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The scheduled row, now deleted.' }),
+    __metadata("design:type", String)
+], SellingPriceScheduleCancelDataDto.prototype, "bucketId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        description: "The row before it, now running to the cancelled row's end.",
+    }),
+    __metadata("design:type", Object)
+], SellingPriceScheduleCancelDataDto.prototype, "restoredId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'date', nullable: true, example: '9999-12-31' }),
+    __metadata("design:type", Object)
+], SellingPriceScheduleCancelDataDto.prototype, "restoredTo", void 0);
+class SellingPriceScheduleCancelSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.SellingPriceScheduleCancelSuccessDto = SellingPriceScheduleCancelSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], SellingPriceScheduleCancelSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Scheduled price cancelled' }),
+    __metadata("design:type", String)
+], SellingPriceScheduleCancelSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: SellingPriceScheduleCancelDataDto }),
+    __metadata("design:type", SellingPriceScheduleCancelDataDto)
+], SellingPriceScheduleCancelSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=selling-price-bulk-response.dto.js.map

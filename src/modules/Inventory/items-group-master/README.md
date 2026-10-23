@@ -80,8 +80,13 @@ path in `itgPathIdsCache` (`itg_path_ids_cache`, a UUID array):
 - **A group cannot be its own parent** — `itg_parent_id === itg_id` on update raises a `400`.
 - **The parent must exist and be active** — `ensureParentExists` validates `itg_parent_id`,
   otherwise `400`.
-- **`itg_name` uniqueness** is enforced by the DB unique index `uq_itg_name`; a duplicate is
-  mapped to a conflict error via `throwOnUniqueConstraintError` (`handleWriteError`).
+- **`itg_name`** is trimmed and a blank one refused (notes 139 A1). It is unique among **live**
+  groups ignoring case — `uq_itg_name` on `lower(itg_name)` `WHERE NOT itg_is_deleted` — so a
+  deleted group's name is free again; a clash, a restore included, is a 409 `ITEM_GROUP_NAME_TAKEN`
+  (notes 139 A2/B6). A blank alias, short name or description is stored as NULL (B7).
+- **`itg_track_preset_id`** must name a live stock tracking preset: 400
+  `ITEM_GROUP_TRACK_PRESET_NOT_FOUND`, not a 500 (notes 139 A3). A preset the group already holds is
+  not re-checked.
 - `GET /get` returns only non-deleted groups and enriches the payload with `itg_parent_name`
   (resolved from the parent row).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /

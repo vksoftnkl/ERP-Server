@@ -75,7 +75,11 @@ __decorate([
     __metadata("design:type", String)
 ], SaveItemQtyPriceDto.prototype, "iqp_item_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: "A live item_unit_conversion row (iuc_id) OF iqp_item_id; another item's unit is a 400 " +
+            'ITEM_QTY_PRICE_UNIT_NOT_OF_ITEM.',
+    }),
     (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)
 ], SaveItemQtyPriceDto.prototype, "iqp_item_unit_id", void 0);
@@ -97,15 +101,17 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 1,
         default: 'P',
-        description: 'P = by % | R = by qty (flat off) | F = fixed price',
+        description: "P = by % | R = by qty (flat off) | F = fixed price. The mode's own figure is required " +
+            '(P: iqp_disc_pct, R: iqp_flat_off, F: iqp_price), else 400 ITEM_QTY_PRICE_VALUE_REQUIRED.',
     }),
     (0, dtoDecorators_1.OptionalUpperString)(1),
     (0, class_validator_1.Matches)(/^[PRF]$/, { message: 'iqp_price_mode must be one of P, R, F' }),
     __metadata("design:type", String)
 ], SaveItemQtyPriceDto.prototype, "iqp_price_mode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: 0, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ example: 0, nullable: true, minimum: 0, maximum: 100 }),
     (0, dtoDecorators_1.NullableNumber)(0),
+    (0, class_validator_1.Max)(100),
     __metadata("design:type", Object)
 ], SaveItemQtyPriceDto.prototype, "iqp_disc_pct", void 0);
 __decorate([

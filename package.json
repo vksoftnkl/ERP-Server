@@ -27,6 +27,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:modules": "bash scripts/test-modules.sh",
     "perf:load": "node scripts/perf/load-test.js",
     "perf:smoke": "node scripts/perf/load-test.js --scenario smoke",
     "perf:baseline": "node scripts/perf/load-test.js --scenario baseline",
@@ -176,13 +177,23 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "isolatedModules": true
+          }
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
+    "setupFilesAfterEnv": [
+      "<rootDir>/../test/unit-logger.setup.ts"
+    ],
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/$1"
     }
