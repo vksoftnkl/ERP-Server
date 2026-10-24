@@ -84,6 +84,7 @@ const REASONS: ReasonRow[] = [
 
 interface LotRow {
   slt_id: string;
+  slt_company_id: string;
   slt_item_id: string;
   slt_expiry_date: Date | null;
   slt_base_uom_id: string;
@@ -92,6 +93,7 @@ interface LotRow {
 
 const lotRow = (overrides: Partial<LotRow> = {}): LotRow => ({
   slt_id: LOT_A,
+  slt_company_id: COMPANY_ID,
   slt_item_id: ITEM_ID,
   slt_expiry_date: null,
   slt_base_uom_id: UOM_ID,
@@ -274,7 +276,15 @@ describe('StockAdjustmentService', () => {
       save: jest.fn().mockResolvedValue({ svhId: SVH_ID }),
       getById: jest.fn().mockResolvedValue({ header: { svhId: SVH_ID }, lines: [] }),
       validate: jest.fn().mockResolvedValue([]),
-      post: jest.fn().mockResolvedValue({ svhId: SVH_ID, rowsPosted: 2 }),
+      // The shared post as the service sees it (notes 151 #5): the row is
+      // locked, then beforePost runs over the stored rows on the transaction
+      // client — the fake database here — before the preflight and the engine.
+      // afterPost is left to the tests that want it.
+      post: jest.fn(async (...args: unknown[]) => {
+        const hooks = args[6] as { beforePost?: (tx: unknown, id: string) => Promise<void> } | undefined;
+        await hooks?.beforePost?.(prisma, SVH_ID);
+        return { svhId: SVH_ID, rowsPosted: 2 };
+      }),
       cancel: jest.fn().mockResolvedValue({ svhId: SVH_ID, rowsReversed: 2 }),
       softDelete: jest.fn().mockResolvedValue({ svhId: SVH_ID, deleted: true }),
     };
@@ -1062,7 +1072,14 @@ describe('StockAdjustmentService', () => {
         userId: USER_ID,
       };
 
-      it('posts a clean document through the shared post, with no extra hook', async () => {
+      /** The hooks the service handed the shared post on its first call. */
+      const hooksOf = () =>
+        vouchers.post.mock.calls[0][6] as {
+          beforePost: (tx: unknown, id: string) => Promise<void>;
+          afterPost: (tx: unknown, rowsPosted: number, id: string) => Promise<void>;
+        };
+
+      it('posts a clean document through the shared post, with the two in-transaction hooks (notes 151 #5)', async () => {
         db.lines = [storedLine()];
 
         await expect(service.post(postArgs)).resolves.toEqual({ svhId: SVH_ID, rowsPosted: 2 });
@@ -1073,11 +1090,19 @@ describe('StockAdjustmentService', () => {
           COMPANY_ID,
           BRANCH_ID,
           USER_ID,
-          undefined,
+          { beforePost: expect.any(Function), afterPost: expect.any(Function) },
         );
+        // The kind is read before the transaction (to pin the rules) and AGAIN
+        // inside it; the lines and reasons only inside it, under the lock.
+        expect(queriesMatching('AS is_move')).toHaveLength(2);
+        expect(queriesMatching('svi.svi_line_no, svi.svi_item_id')).toHaveLength(1);
+        // Not a re-lot: afterPost has nothing to check and reads nothing.
+        const tx = { $queryRaw: jest.fn() };
+        await expect(hooksOf().afterPost(tx, 2, SVH_ID)).resolves.toBeUndefined();
+        expect(tx.$queryRaw).not.toHaveBeenCalled();
       });
 
-      it('refuses a stored line that breaks a rule, naming its item', async () => {
+      it('refuses a stored line that breaks a rule, naming its item — from inside the shared post', async () => {
         db.lines = [storedLine({ svi_reason_id: null })];
 
         const refusal = await refusalOf(service.post(postArgs));
@@ -1094,7 +1119,26 @@ describe('StockAdjustmentService', () => {
             },
           ],
         });
-        expect(vouchers.post).not.toHaveBeenCalled();
+        // The refusal came out of beforePost, i.e. under the shared post's lock.
+        expect(vouchers.post).toHaveBeenCalledTimes(1);
+      });
+
+      it('409 ADJ_KIND_CHANGED when the document became a move while the post waited for its lock', async () => {
+        db.lines = [storedLine()];
+        vouchers.post.mockImplementationOnce(async (...args: unknown[]) => {
+          // A concurrent save replaced the lines with move lines between the
+          // pre-transaction read and the lock: the re-read inside sees a move.
+          db.header = headerRow({ is_move: true });
+          const hooks = args[6] as { beforePost: (tx: unknown, id: string) => Promise<void> };
+          await hooks.beforePost(prisma, SVH_ID);
+          return { svhId: SVH_ID, rowsPosted: 2 };
+        });
+
+        const refusal = await refusalOf(service.post(postArgs));
+
+        expect(refusal.status).toBe(409);
+        expect(codesOf(refusal)).toEqual([`svhId:${StockErrorCode.ADJ_KIND_CHANGED}`]);
+        expect(refusal.body.errors[0].message).toContain('saved as a stock move while the post waited');
       });
 
       it('refuses a stored BOTH line that carries no direction', async () => {
@@ -1156,16 +1200,16 @@ describe('StockAdjustmentService', () => {
           ]);
         });
 
-        it('hands the post a hook that refuses a pair the engine landed on one lot', async () => {
+        it('hands the post an afterPost hook that refuses a pair the engine landed on one lot', async () => {
           await service.post(postArgs);
-          const hook = vouchers.post.mock.calls[0][6] as (tx: unknown) => Promise<void>;
+          const hook = hooksOf().afterPost;
           const tx = {
             $queryRaw: jest
               .fn()
               .mockResolvedValue([{ in_line_no: 2, out_line_no: 1, item_name: 'Soap 100g' }]),
           };
 
-          const refusal = await refusalOf(hook(tx));
+          const refusal = await refusalOf(hook(tx, 2, SVH_ID));
 
           expect(refusal.body).toEqual({
             success: false,
@@ -1190,13 +1234,95 @@ describe('StockAdjustmentService', () => {
 
         it('lets the hook pass when the engine landed the halves on different lots', async () => {
           await service.post(postArgs);
-          const hook = vouchers.post.mock.calls[0][6] as (tx: unknown) => Promise<void>;
+          const hook = hooksOf().afterPost;
 
           await expect(
-            hook({ $queryRaw: jest.fn().mockResolvedValue([]) }),
+            hook({ $queryRaw: jest.fn().mockResolvedValue([]) }, 2, SVH_ID),
           ).resolves.toBeUndefined();
         });
+
+        it('decides "is this a re-lot" from the re-read under the lock, not from the first look', async () => {
+          // Pinned as a plain adjustment before the transaction; saved as a
+          // re-lot while waiting. afterPost then guards it all the same.
+          db.header = headerRow({ is_relot: false });
+          vouchers.post.mockImplementationOnce(async (...args: unknown[]) => {
+            db.header = headerRow({ is_relot: true });
+            const hooks = args[6] as { beforePost: (tx: unknown, id: string) => Promise<void> };
+            await hooks.beforePost(prisma, SVH_ID);
+            return { svhId: SVH_ID, rowsPosted: 2 };
+          });
+          await service.post(postArgs);
+
+          const tx = { $queryRaw: jest.fn().mockResolvedValue([{ in_line_no: 2, out_line_no: 1, item_name: 'Soap 100g' }]) };
+          await expect(hooksOf().afterPost(tx, 2, SVH_ID)).rejects.toMatchObject({ status: 422 });
+        });
       });
+
+      it('notes 151 #7 — refuses a stored line naming a lot of another company', async () => {
+        db.lots = [lotRow({ slt_company_id: '019c6f6c-be87-7a11-8905-36092c46b999' })];
+        db.lines = [storedLine({ svi_reason_id: R_OUT, svi_lot_id: LOT_A, svi_direction: -1 })];
+
+        const refusal = await refusalOf(service.post(postArgs));
+
+        expect(codesOf(refusal)).toEqual([`lines.0:${StockErrorCode.LOT_OTHER_COMPANY}`]);
+        expect(refusal.body.errors[0].message).toContain('names a lot that belongs to another company');
+      });
+    });
+  });
+
+  // ── notes 151 — the rules added by the stock adjustment review ────────────
+  describe('notes 151 rules at save', () => {
+    it('#6 — a re-lot whose IN half sits in another bucket is a bucket move in disguise: refused', async () => {
+      db.inward = [inwardRow(1, null, { track_batch: true })];
+      const refusal = await refusalOf(
+        service.save(
+          dtoOf({}, [
+            line({ reasonId: R_RELOT_OUT, lotId: LOT_A, remarks: 'relabel' }),
+            line({ lineNo: 2, reasonId: R_RELOT_IN, batchNo: 'B-NEW', bucket: 'QUARANTINE', remarks: 'relabel' }),
+          ]),
+        ),
+      );
+
+      expect(codesOf(refusal)).toEqual([`lines.1:${StockErrorCode.ADJ_RELOT_BUCKET_MISMATCH}`]);
+      expect(refusal.body.errors[0].message).toContain(
+        'brings the stock into the QUARANTINE bucket, but the OUT half takes it from SALEABLE',
+      );
+      expect(vouchers.save).not.toHaveBeenCalled();
+    });
+
+    it('#6 — the same bucket on both halves saves', async () => {
+      db.inward = [inwardRow(1, null, { track_batch: true })];
+      await service.save(
+        dtoOf({}, [
+          line({ reasonId: R_RELOT_OUT, lotId: LOT_A, remarks: 'relabel' }),
+          line({ lineNo: 2, reasonId: R_RELOT_IN, batchNo: 'B-NEW', remarks: 'relabel' }),
+        ]),
+      );
+      expect(vouchers.save).toHaveBeenCalledTimes(1);
+    });
+
+    it("#7 — a line naming another company's lot is refused before the shared save", async () => {
+      db.lots = [lotRow({ slt_company_id: '019c6f6c-be87-7a11-8905-36092c46b999' })];
+
+      const refusal = await refusalOf(
+        service.save(dtoOf({}, [line({ reasonId: R_OUT, lotId: LOT_A })])),
+      );
+
+      expect(codesOf(refusal)).toEqual([`lines.0:${StockErrorCode.LOT_OTHER_COMPANY}`]);
+      expect(vouchers.save).not.toHaveBeenCalled();
+    });
+
+    it('#5 — every save hands the shared save the in-transaction hooks, for the save-and-post path', async () => {
+      await service.save(dtoOf({ status: 'POSTED' }));
+
+      const hooks = vouchers.save.mock.calls[0][2] as {
+        beforePost: (tx: unknown, id: string) => Promise<void>;
+        afterPost: (tx: unknown, n: number, id: string) => Promise<void>;
+      };
+      expect(hooks).toEqual({ beforePost: expect.any(Function), afterPost: expect.any(Function) });
+      // beforePost re-reads the stored document under the lock and checks it.
+      db.lines = [storedLine({ svi_reason_id: null })];
+      await expect(hooks.beforePost(prisma, SVH_ID)).rejects.toMatchObject({ status: 422 });
     });
   });
 
@@ -1228,6 +1354,11 @@ describe('StockAdjustmentService', () => {
           sbl_avg_cost_rate: new Prisma.Decimal('31.25'),
           sbl_stock_value: new Prisma.Decimal('375'),
           sbl_first_in_date: new Date('2026-02-01T00:00:00.000Z'),
+          sbd_size_id: 'size-xl',
+          size_name: 'XL',
+          sbd_colour_id: 'colour-maroon',
+          colour_name: 'Maroon',
+          sbd_model: 'Slim fit',
         },
         {
           sbl_id: 'sbl-2',
@@ -1253,6 +1384,11 @@ describe('StockAdjustmentService', () => {
           sbl_avg_cost_rate: new Prisma.Decimal(0),
           sbl_stock_value: new Prisma.Decimal(0),
           sbl_first_in_date: null,
+          sbd_size_id: null,
+          size_name: null,
+          sbd_colour_id: null,
+          colour_name: null,
+          sbd_model: null,
         },
       ];
 
@@ -1286,6 +1422,12 @@ describe('StockAdjustmentService', () => {
         avgCostRate: 31.25,
         stockValue: 375,
         firstInDate: '2026-02-01',
+        // Notes 151 #8 — the batch's detail rides on the row.
+        sizeId: 'size-xl',
+        sizeName: 'XL',
+        colourId: 'colour-maroon',
+        colourName: 'Maroon',
+        model: 'Slim fit',
       });
       expect(rows[1]).toMatchObject({
         mfgDate: null,
@@ -1295,6 +1437,9 @@ describe('StockAdjustmentService', () => {
         onHandQty: 0,
         availableQty: 0,
         firstInDate: null,
+        sizeName: null,
+        colourName: null,
+        model: null,
       });
     });
 
@@ -1302,7 +1447,7 @@ describe('StockAdjustmentService', () => {
       await service.pickStock({ companyId: COMPANY_ID, branchId: BRANCH_ID, godownId: GODOWN_ID });
 
       const [[, ...values]] = queriesMatching('sbl_first_in_date');
-      expect(values.slice(0, 7)).toEqual([
+      expect(values.slice(0, 9)).toEqual([
         COMPANY_ID,
         BRANCH_ID,
         GODOWN_ID,
@@ -1310,8 +1455,25 @@ describe('StockAdjustmentService', () => {
         null,
         null,
         null,
+        // Notes 151 #9 — no exact batch either.
+        null,
+        null,
       ]);
       expect(values.at(-1)).toBe(200);
+    });
+
+    it('notes 151 #9 — batchNo is an exact match on the folded lot key, beside the loose search', async () => {
+      await service.pickStock({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        godownId: GODOWN_ID,
+        batchNo: ' cbe26-00001 ',
+      });
+
+      const [[strings, ...values]] = queriesMatching('sbl_first_in_date');
+      expect(values.slice(7, 9)).toEqual([' cbe26-00001 ', ' cbe26-00001 ']);
+      expect((strings as TemplateStringsArray).join('?')).toContain('slt.slt_key_batch = upper(btrim(?::text))');
+      expect((strings as TemplateStringsArray).join('?')).toContain('sbd.sbd_batch_no   = slt.slt_key_batch');
     });
 
     it('narrows to the item, bucket and limit asked for', async () => {

@@ -219,7 +219,9 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
   let settledUpTo = 0;
   afterEach(async () => {
     if (!engine?.ready || !fixture) return;
-    for (const svhId of createdVoucherIds.slice(settledUpTo)) {
+    // Newest first: notes 150 #8 refuses to cancel an older count while a
+    // later one on the same holding still stands.
+    for (const svhId of [...createdVoucherIds.slice(settledUpTo)].reverse()) {
       const [row] = await prisma.$queryRaw<Array<{ svh_status: string; svh_voucher_type: string }>>`
         SELECT svh_status, svh_voucher_type FROM stock.stock_voucher WHERE svh_id = ${svhId}::uuid
       `;
@@ -942,5 +944,166 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
     // The document keeps all three lines: the evidence that they were counted.
     expect(posted.lines).toHaveLength(3);
     expect(posted.lines.every((line) => line.diffQty === 0)).toBe(true);
+  });
+
+  // ── notes 150 — the physical stock review (2026-10-24) ───────────────────
+
+  it('150 #1: two lines of one holding are refused at save (422 STOCK_COUNT_HOLDING_DUPLICATE)', async () => {
+    if (!requireEngine()) return;
+    const salt = (await sheet()).items.find((row) => row.itemName === 'PhyE2E Salt 1kg')!;
+    const twice = service.save(PHYSICAL_RULES, {
+      header: {
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchId,
+        deviceId: fixture.deviceId,
+        docDate: COUNT_DATE,
+        toGodownId: fixture.godownId,
+        userId: fixture.userId,
+      },
+      lines: [1, 2].map((lineNo) => ({
+        lineNo,
+        itemId: salt.itemId,
+        godownId: salt.godownId,
+        bucket: salt.bucket,
+        lotId: salt.lotId,
+        countedQty: 3,
+      })),
+    } as never);
+    await expect(twice).rejects.toMatchObject({
+      status: 422,
+      response: { errors: [expect.objectContaining({ code: 'STOCK_COUNT_HOLDING_DUPLICATE' })] },
+    });
+  });
+
+  it('150 #2: a second open freeze on the godown is refused at save (409 STOCK_FREEZE_GODOWN_HELD)', async () => {
+    if (!requireEngine()) return;
+    const now = Date.now();
+    const window = {
+      freezeStock: true,
+      freezeFrom: new Date(now - 60_000).toISOString(),
+      freezeTo: new Date(now + 3 * 3600_000).toISOString(),
+    };
+    const first = await saveCount(COUNTS, window);
+
+    await expect(saveCount(COUNTS, window)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        errors: [
+          expect.objectContaining({
+            code: 'STOCK_FREEZE_GODOWN_HELD',
+            message: expect.stringContaining(first.header.refno),
+          }),
+        ],
+      },
+    });
+    // A window that does not touch the first is not the same shelf-time.
+    const later = await saveCount(COUNTS, {
+      freezeStock: true,
+      freezeFrom: new Date(now + 4 * 3600_000).toISOString(),
+      freezeTo: new Date(now + 5 * 3600_000).toISOString(),
+    });
+    for (const svhId of [first.header.svhId, later.header.svhId]) {
+      await service.cancel(PHYSICAL_RULES, svhId, ACC_YEAR, 'e2e 150 #2', fixture.companyId, fixture.branchId, fixture.userId);
+    }
+  });
+
+  it('150 #3: a backdated docDatetime without syncDate is refused; with one it is kept', async () => {
+    if (!requireEngine()) return;
+    const threeHoursAgo = new Date(Date.now() - 3 * 3600_000).toISOString();
+    await expect(saveCount(COUNTS, { docDatetime: threeHoursAgo })).rejects.toMatchObject({
+      status: 422,
+      response: { errors: [expect.objectContaining({ code: 'STOCK_DOC_DATETIME_OUT_OF_RANGE' })] },
+    });
+    const offline = await saveCount(COUNTS, {
+      docDatetime: threeHoursAgo,
+      syncDate: new Date().toISOString(),
+    });
+    expect(offline.header.docDatetime).toBe(new Date(threeHoursAgo).toISOString());
+    await service.cancel(PHYSICAL_RULES, offline.header.svhId, ACC_YEAR, 'e2e 150 #3', fixture.companyId, fixture.branchId, fixture.userId);
+  });
+
+  it('150 #4 / #5: a re-save names the lines whose book moved, and the header carries the net variance', async () => {
+    if (!requireEngine()) return;
+    // A draft drawn while Sugar's book is 60.
+    const draft = await saveCount({ 'PhyE2E Sugar 1kg': 60 });
+    expect(draft.bookChanges).toEqual([]);
+    expect(draft.lines[0]).toMatchObject({ bookChanged: false, previousBookQty: null });
+    expect(draft.header.lineCount).toBe(1);
+    expect(draft.header.totalQty).toBe(0);
+
+    // Stock moves: another count finds 61 and posts (+1).
+    const moved = await saveCount({ 'PhyE2E Sugar 1kg': 61 });
+    await postCount(moved.header.svhId);
+
+    // Re-saving the draft re-bases its book figure, and says so.
+    const resaved = await service.save(PHYSICAL_RULES, {
+      header: {
+        svhId: draft.header.svhId,
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchId,
+        deviceId: fixture.deviceId,
+        docDate: COUNT_DATE,
+        toGodownId: fixture.godownId,
+        userId: fixture.userId,
+      },
+      lines: draft.lines.map((line) => ({
+        sviId: line.sviId,
+        lineNo: line.lineNo,
+        itemId: line.itemId,
+        godownId: line.godownId,
+        bucket: line.bucket,
+        lotId: line.lotId,
+        countedQty: 60,
+      })),
+    } as never);
+    expect(resaved.bookChanges).toEqual([
+      { sviId: draft.lines[0].sviId, lineNo: 1, previousBookQty: 60, bookQty: 61 },
+    ]);
+    expect(resaved.lines[0]).toMatchObject({ bookChanged: true, previousBookQty: 60, bookQty: 61 });
+    // Net variance 60 − 61 = −1, valued at Sugar's average (42.00) — the server's figures.
+    expect(resaved.header.lineCount).toBe(1);
+    expect(resaved.header.totalQty).toBe(-1);
+    expect(resaved.header.totalValue).toBe(-42);
+
+    await service.cancel(PHYSICAL_RULES, draft.header.svhId, ACC_YEAR, 'e2e 150 #4', fixture.companyId, fixture.branchId, fixture.userId);
+  });
+
+  it('150 #8: an older count cannot be cancelled under a newer one on the same holding (409)', async () => {
+    if (!requireEngine()) return;
+    const older = await saveCount({ 'PhyE2E Sugar 1kg': 61 });
+    await postCount(older.header.svhId);
+    const newer = await saveCount({ 'PhyE2E Sugar 1kg': 62 });
+    await postCount(newer.header.svhId);
+
+    const cancelOlder = () =>
+      service.cancel(PHYSICAL_RULES, older.header.svhId, ACC_YEAR, 'e2e 150 #8', fixture.companyId, fixture.branchId, fixture.userId);
+    await expect(cancelOlder()).rejects.toMatchObject({
+      status: 409,
+      response: {
+        errors: [
+          expect.objectContaining({
+            code: 'STOCK_COUNT_SUPERSEDED',
+            message: expect.stringContaining(newer.header.refno),
+          }),
+        ],
+      },
+    });
+    // Newest first, as the afterEach settles them.
+    await service.cancel(PHYSICAL_RULES, newer.header.svhId, ACC_YEAR, 'e2e 150 #8', fixture.companyId, fixture.branchId, fixture.userId);
+    await expect(cancelOlder()).resolves.toMatchObject({ status: 'CANCELLED' });
+  });
+
+  it('150 #9: the count sheet carries sizeName / colourName / model (null without a batch detail)', async () => {
+    if (!requireEngine()) return;
+    const [row] = (await sheet()).items;
+    expect(row).toMatchObject({
+      sizeId: null,
+      sizeName: null,
+      colourId: null,
+      colourName: null,
+      model: null,
+    });
   });
 });

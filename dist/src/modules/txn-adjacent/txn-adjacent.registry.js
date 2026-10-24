@@ -58,7 +58,7 @@ function stockVoucher(label, types, menu, where) {
         branch: 'svh_branch_id',
         year: 'svh_acc_year',
         date: 'svh_doc_date',
-        slno: 'svh_slno',
+        serial: null,
         createdOn: 'svh_created_on',
         status: 'svh_status',
         deleted: 'svh_is_deleted',
@@ -67,11 +67,10 @@ function stockVoucher(label, types, menu, where) {
         types,
         where,
         statuses: STOCK_STATUSES,
-        draftSlno: null,
         menu,
     };
 }
-function salesDoc(label, table, p, own, statuses, menu, draftSlno = null) {
+function salesDoc(label, table, p, own, statuses, menu) {
     return {
         label,
         table,
@@ -80,14 +79,13 @@ function salesDoc(label, table, p, own, statuses, menu, draftSlno = null) {
         branch: `${p}_branch_id`,
         year: `${p}_acc_year`,
         date: own.date,
-        slno: own.slno,
+        serial: own.slno === null ? null : { column: own.slno, draft: null },
         createdOn: `${p}_created_on`,
         status: `${p}_status`,
         deleted: `${p}_is_deleted`,
         refno: own.refno,
         type: `h.${p}_doc_type`,
         statuses,
-        draftSlno,
         menu,
     };
 }
@@ -99,7 +97,6 @@ const VOUCHER_COLUMNS = {
     branch: 'avh_branch_id',
     year: 'avh_acc_year',
     date: 'avh_voucher_date',
-    slno: 'avh_voucher_slno',
     createdOn: 'avh_created_on',
     status: 'avh_voucher_status',
     deleted: 'avh_is_deleted',
@@ -107,13 +104,14 @@ const VOUCHER_COLUMNS = {
     type: 'vt.vchr_type_code',
     statuses: VOUCHER_STATUSES,
 };
+const VOUCHER_SERIAL = 'avh_voucher_slno';
 function moduleVoucher(label, typeCode, menu) {
     return {
         ...VOUCHER_COLUMNS,
         label,
         types: [typeCode],
         where: 'h.avh_against_voucher_id IS NULL',
-        draftSlno: 'HIGH',
+        serial: { column: VOUCHER_SERIAL, draft: 'HIGH' },
         menu,
     };
 }
@@ -123,7 +121,7 @@ exports.TXN_DOC_REGISTRY = {
     PHYSICAL_STOCK: stockVoucher('physical stock voucher', ['PHYSICAL'], STOCK_MENU_ID.PHYSICAL),
     STOCK_TRANSFER: stockVoucher('stock transfer', ['TRANSFER_OUT'], STOCK_MENU_ID.TRANSFER),
     STOCK_TRANSFER_RECEIPT: stockVoucher('transfer receipt', ['TRANSFER_IN'], STOCK_MENU_ID.TRANSFER),
-    SALE_BILL: salesDoc('sale bill', 'sales.sale_bill', 'sb', { date: 'sb_bill_date', slno: 'sb_bill_slno', refno: 'sb_bill_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, 'HIGH'),
+    SALE_BILL: salesDoc('sale bill', 'sales.sale_bill', 'sb', { date: 'sb_bill_date', slno: null, refno: 'sb_bill_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL),
     QUOTATION: salesDoc('quotation', 'sales.sale_quotation', 'sq', { date: 'sq_quote_date', slno: 'sq_quote_slno', refno: 'sq_quote_refno' }, QUOTATION_STATUSES, QUOTATION_MENU_ID),
     SALE_ORDER: salesDoc('sales order', 'sales.sale_order', 'so', { date: 'so_order_date', slno: 'so_order_slno', refno: 'so_order_refno' }, ORDER_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER),
     DELIVERY_CHALLAN: salesDoc('delivery challan', 'sales.sale_dc', 'sdc', { date: 'sdc_dc_date', slno: 'sdc_dc_slno', refno: 'sdc_dc_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DELIVERY_CHALLAN),
@@ -135,7 +133,7 @@ exports.TXN_DOC_REGISTRY = {
         ...VOUCHER_COLUMNS,
         label: 'voucher',
         where: 'vt.vchr_in_register = true',
-        draftSlno: 'LOW',
+        serial: { column: VOUCHER_SERIAL, draft: 'LOW' },
         menu: 'VOUCHER_TYPE',
     },
 };

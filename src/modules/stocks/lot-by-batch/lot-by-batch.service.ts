@@ -9,13 +9,17 @@ import type {
 } from '../stock-voucher/types/stock-voucher.types';
 import type { LotByBatchQueryDto } from './dto/lot-by-batch-query.dto';
 
-/** One godown's saleable holding of the lot at the branch. */
+/** One godown's holding of the lot at the branch, in the bucket asked for. */
 export interface LotByBatchGodown {
   godownId: string;
   godownName: string | null;
+  /** Notes 150 #10 — which bucket this holding is in (one row per godown × bucket under bucket=ALL). */
+  bucket: string;
   onHandQty: number;
   /** On hand less what is reserved. */
   availableQty: number;
+  /** Notes 151 #10 — this holding's average cost (`sbl_avg_cost_rate`): what an adjustment line relieves or carries. */
+  avgCostRate: number;
 }
 
 /** One lot carrying the scanned batch, as the sale line is filled from it. */
@@ -39,23 +43,31 @@ export interface LotByBatchRow {
   colourId: string | null;
   colourName: string | null;
   model: string | null;
-  /** Saleable on hand at the branch, every godown. */
+  /** On hand at the branch in the bucket(s) asked for, every godown. */
   onHandQty: number;
+  /**
+   * Notes 151 #10 — the lot's cost at the branch: the holdings' value ÷ their
+   * quantity over the godowns listed, else the lot's own `slt_cost_rate`.
+   */
+  avgCostRate: number;
   godowns: LotByBatchGodown[];
 }
 
 /**
  * Textile plan D5 — the batch scan. The lots of the company whose batch is the
  * label, matched the way the lot key folds it (`slt_key_batch`, upper(btrim()))
- * on ix_slt_key_batch, each with its SALEABLE stock per godown at the branch:
- * the bucket a sale takes from. A lot with nothing saleable there is left out
- * unless `includeEmpty` — a re-lot's old lot (D7) leaves the list that way.
+ * on ix_slt_key_batch, each with its stock per godown at the branch in the
+ * bucket asked for — SALEABLE by default, the bucket a sale takes from; the
+ * count screen asks for ALL and may narrow to one godown (notes 150 #10). A lot
+ * with nothing there is left out unless `includeEmpty` — a re-lot's old lot
+ * (D7) leaves the list that way.
  */
 @Injectable()
 export class LotByBatchService {
   constructor(private readonly prisma: PrismaService) {}
 
   async find(q: LotByBatchQueryDto): Promise<LotByBatchRow[]> {
+    const bucket = q.bucket ?? 'SALEABLE';
     const rows = await this.prisma.$queryRaw<LotByBatchRow[]>`
       SELECT slt.slt_id::text                      AS "lotId",
              slt.slt_item_id::text                 AS "itemId",
@@ -73,6 +85,10 @@ export class LotByBatchService {
              icl.icl_name                          AS "colourName",
              sbd.sbd_model                         AS model,
              COALESCE(held.on_hand, 0)::float8     AS "onHandQty",
+             -- Notes 151 #10: the branch's cost of the lot — value over quantity
+             -- of the holdings listed, else the lot's own rate.
+             COALESCE(CASE WHEN held.on_hand > 0 THEN held.stock_value / held.on_hand END,
+                      slt.slt_cost_rate, 0)::float8 AS "avgCostRate",
              COALESCE(held.godowns, '[]'::jsonb)   AS godowns
         FROM stock.stock_lot slt
         JOIN inventory.item_master itm
@@ -89,17 +105,22 @@ export class LotByBatchService {
         LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         LEFT JOIN LATERAL (
           SELECT sum(sbl.sbl_on_hand_qty) AS on_hand,
+                 sum(sbl.sbl_stock_value)  AS stock_value,
                  jsonb_agg(jsonb_build_object(
                    'godownId',     sbl.sbl_godown_id,
                    'godownName',   gdl.gdl_name,
+                   'bucket',       sbl.sbl_bucket,
                    'onHandQty',    sbl.sbl_on_hand_qty,
-                   'availableQty', sbl.sbl_available_qty) ORDER BY gdl.gdl_name) AS godowns
+                   'availableQty', sbl.sbl_available_qty,
+                   'avgCostRate',  sbl.sbl_avg_cost_rate) ORDER BY gdl.gdl_name, sbl.sbl_bucket) AS godowns
             FROM stock.stock_balance sbl
             LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = sbl.sbl_godown_id
            WHERE sbl.sbl_company_id = slt.slt_company_id
              AND sbl.sbl_branch_id  = ${q.branchId}::uuid
              AND sbl.sbl_lot_id     = slt.slt_id
-             AND sbl.sbl_bucket     = 'SALEABLE'
+             -- Notes 150 #10: one bucket (SALEABLE unless asked), or every bucket.
+             AND (${bucket}::text = 'ALL' OR sbl.sbl_bucket = ${bucket}::text)
+             AND (${q.godownId ?? null}::uuid IS NULL OR sbl.sbl_godown_id = ${q.godownId ?? null}::uuid)
              AND sbl.sbl_is_deleted = false
              AND sbl.sbl_on_hand_qty <> 0
         ) held ON true

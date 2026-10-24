@@ -20,7 +20,10 @@ export declare class PhysicalStockVarianceQueryDto extends PhysicalStockVoucherR
     limit?: number;
     offset?: number;
 }
-export declare class GenerateCountSheetQueryDto extends PhysicalStockVoucherScopeQueryDto {
+export declare class GenerateCountSheetQueryDto {
+    companyId: string;
+    branchId: string;
+    accYear?: string;
     godownId: string;
     bucket?: StockBucket;
     itemGroupId?: string;

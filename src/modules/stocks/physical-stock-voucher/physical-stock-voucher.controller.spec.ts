@@ -1,5 +1,7 @@
 import { PhysicalStockVoucherController } from './physical-stock-voucher.controller';
 import type { StockVoucherService } from '../stock-voucher/stock-voucher.service';
+import type { PrismaService } from 'src/database/prisma/prisma.service';
+import type { RequestContextService } from 'src/common/request-context/request-context.service';
 import type {
   StockVoucherCancelResult,
   StockVoucherLinePayload,
@@ -11,6 +13,22 @@ const SVH_ID = '019c6f6c-be87-7a11-8905-36092c46fe10';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fe01';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46fe02';
 const ACC_YEAR = '2026-2027';
+const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fe99';
+
+/** tester's `user_menus` row for menu 45 — every flag granted unless a test revokes one. */
+const allRights = () => ({
+  um_can_view: true,
+  um_can_create: true,
+  um_can_edit: true,
+  um_can_delete: true,
+  um_can_print: true,
+  um_can_export: true,
+  um_can_post: true,
+  um_can_cancel: true,
+  um_can_amend: true,
+  um_can_override: true,
+  um_can_retender: true,
+});
 
 const line = (lineNo: number, diffQty: number | null): StockVoucherLinePayload =>
   ({ lineNo, diffQty }) as StockVoucherLinePayload;
@@ -45,8 +63,12 @@ describe('PhysicalStockVoucherController', () => {
     validate: jest.Mock;
   };
   let controller: PhysicalStockVoucherController;
+  let rightsRow: Record<string, boolean> | null;
+  let rightsRead: jest.Mock;
 
   beforeEach(() => {
+    rightsRow = allRights();
+    rightsRead = jest.fn(async () => (rightsRow ? [rightsRow] : []));
     service = {
       post: jest.fn(),
       cancel: jest.fn(),
@@ -57,7 +79,54 @@ describe('PhysicalStockVoucherController', () => {
       list: jest.fn(),
       validate: jest.fn(),
     };
-    controller = new PhysicalStockVoucherController(service as unknown as StockVoucherService);
+    controller = new PhysicalStockVoucherController(
+      service as unknown as StockVoucherService,
+      { $queryRaw: rightsRead } as unknown as PrismaService,
+      { getUserId: () => USER_ID } as unknown as RequestContextService,
+    );
+  });
+
+  // ── notes 150 #6 — every route is judged on the caller's menu-45 row ──────
+  describe('menu 45 rights', () => {
+    it("reads the caller's user_menus row for menu 45 before a post", async () => {
+      service.post.mockResolvedValue(postResult([line(1, 0)], 0));
+
+      await controller.post({ ...REF, userId: USER_ID } as never);
+
+      const [strings, ...values] = rightsRead.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toContain('FROM public.user_menus');
+      expect(values).toEqual([USER_ID, 45]);
+    });
+
+    it('refuses a caller whose row lacks the right, naming the column (403 PHY_RIGHT_POST)', async () => {
+      rightsRow = { ...allRights(), um_can_post: false };
+
+      await expect(controller.post({ ...REF, userId: USER_ID } as never)).rejects.toMatchObject({
+        status: 403,
+        response: {
+          errors: [expect.objectContaining({ code: 'PHY_RIGHT_POST', field: 'userId' })],
+        },
+      });
+      expect(service.post).not.toHaveBeenCalled();
+    });
+
+    it('a caller with no row at all has no rights — even to read', async () => {
+      rightsRow = null;
+
+      await expect(controller.countSheet({} as never)).rejects.toMatchObject({ status: 403 });
+      expect(service.countSheet).not.toHaveBeenCalled();
+    });
+
+    it('a save that also posts needs the post right as well as create', async () => {
+      rightsRow = { ...allRights(), um_can_post: false };
+
+      await expect(
+        controller.save({ header: { post: true }, lines: [] } as never),
+      ).rejects.toMatchObject({
+        response: { errors: [expect.objectContaining({ code: 'PHY_RIGHT_POST' })] },
+      });
+      expect(service.save).not.toHaveBeenCalled();
+    });
   });
 
   const REF = { svhId: SVH_ID, accYear: ACC_YEAR, companyId: COMPANY_ID, branchId: BRANCH_ID };

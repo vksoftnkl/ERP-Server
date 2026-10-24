@@ -3,6 +3,12 @@ import '../src/env.preload';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import {
+  grantMenuRights,
+  PHYSICAL_STOCK_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
 import * as request from 'supertest';
 import { appendFileSync } from 'fs';
 
@@ -33,6 +39,9 @@ const SCOPE = {
 };
 const ACTOR = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d';
 const prisma = new PrismaClient();
+// Notes 150 #6 — every /stock/physical/* route is judged on menu 45; tester1
+// holds no row, so the suite grants one for the run and puts it back after.
+let menuRights: MenuRightsMemo | null = null;
 
 /** Statement → the object it touches and what it does to it. */
 function classify(sql: string): { verb: string; target: string } {
@@ -58,6 +67,7 @@ describe('DEBUG POST /stock/physical/create', () => {
   let capture: Array<{ verb: string; target: string; sql: string }> | null = null;
 
   beforeAll(async () => {
+    menuRights = await grantMenuRights(prisma, [PHYSICAL_STOCK_MENU]);
     const claims: AccessTokenPayload = {
       sub: ACTOR,
       user_name: 'tester1',
@@ -105,6 +115,7 @@ describe('DEBUG POST /stock/physical/create', () => {
   }, 120_000);
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, menuRights);
     await app?.close();
     await prisma.$disconnect();
   }, 60_000);

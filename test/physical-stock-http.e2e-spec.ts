@@ -5,6 +5,12 @@ import '../src/env.preload';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import {
+  grantMenuRights,
+  PHYSICAL_STOCK_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -39,6 +45,9 @@ const SCOPE = {
 const ACTOR = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d'; // tester1
 
 const prisma = new PrismaClient();
+// Notes 150 #6 — every /stock/physical/* route is judged on menu 45; tester1
+// holds no row, so the suite grants one for the run and puts it back after.
+let menuRights: MenuRightsMemo | null = null;
 
 interface CountRow {
   lineNo: number;
@@ -55,6 +64,7 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
   let http: ReturnType<typeof request>;
 
   beforeAll(async () => {
+    menuRights = await grantMenuRights(prisma, [PHYSICAL_STOCK_MENU]);
     const claims: AccessTokenPayload = {
       sub: ACTOR,
       user_name: 'tester1',
@@ -94,6 +104,7 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, menuRights);
     await app?.close();
     await prisma.$disconnect();
   });
@@ -240,7 +251,7 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
     });
     // eslint-disable-next-line no-console
     console.log(
-      `\n[physical e2e] post HTTP ${res.status} — ${JSON.stringify(res.body?.message)}\n`,
+      `\n[physical e2e] post HTTP ${res.status} — ${JSON.stringify(res.body?.message)} ${JSON.stringify(res.body?.errors ?? '')}\n`,
     );
     expect(res.status).toBe(201);
     expect(res.body?.success).toBe(true);

@@ -1581,13 +1581,17 @@ async function rebuildLotCosts(tx, lots) {
              COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                AS qty,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                 AS value,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                             AS value_wot,
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate_wot
+             -- Notes 151 #2 — the latest LIVE row, as rebuildItemCosts takes it.
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                               AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                               AS last_rate_wot
         FROM lot l
         LEFT JOIN stock.stock_ledger sml
                ON sml.sml_company_id = l.company_id AND sml.sml_branch_id = l.branch_id
               AND sml.sml_item_id    = l.item_id    AND sml.sml_lot_id    = l.lot_id
               AND sml.sml_is_deleted = false
+        ${reversalJoin('sml', 'rev')}
        GROUP BY 1, 2, 3, 4
     ),
     rated AS (
@@ -1628,8 +1632,14 @@ async function rebuildItemCosts(tx, items, actor, on) {
              COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                  AS qty,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                   AS value,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                               AS value_wot,
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate_wot,
+             -- Notes 151 #2 — the latest LIVE row: forward, not reversed. A
+             -- cancelled document and its mirror are not the last thing that
+             -- happened to the item, and an IN of 10 @60 that was cancelled
+             -- used to leave an emptied item's average at 60.
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                                 AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                                 AS last_rate_wot,
              -- The stamps: live, unreversed, forward INWARD rows, bucket moves aside.
              COALESCE(MAX(sml.sml_cost_rate) FILTER (
                WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL

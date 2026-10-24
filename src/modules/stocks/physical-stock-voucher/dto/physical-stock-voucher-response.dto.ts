@@ -309,6 +309,20 @@ export class PhysicalStockLineDto {
   })
   diffQty!: number | null;
 
+  // ── Notes 150 #4 — on the SAVE response only ─────────────────────────────
+  @ApiPropertyOptional({
+    description:
+      "Save response only. True when this save replaced the line's stored book figure with a different one — stock moved since the sheet was drawn. Absent on /get.",
+  })
+  bookChanged?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Save response only. The book figure the line held before this save, when it changed.',
+  })
+  previousBookQty?: number | null;
+
   @ApiProperty({ description: '0 for the whole document — a count states no quantity to move.' })
   qty!: number;
 
@@ -372,12 +386,31 @@ export class PhysicalStockLineDto {
   trackSignature!: string;
 }
 
+export class StockBookChangeDto {
+  @ApiProperty({ format: 'uuid' })
+  sviId!: string;
+  @ApiProperty()
+  lineNo!: number;
+  @ApiProperty({ description: 'The book figure before this save.' })
+  previousBookQty!: number;
+  @ApiProperty({ description: 'The book figure now, read from stock_balance.' })
+  bookQty!: number;
+}
+
 export class PhysicalStockDocumentDto {
   @ApiProperty({ type: PhysicalStockHeaderDto })
   header!: PhysicalStockHeaderDto;
 
   @ApiProperty({ type: PhysicalStockLineDto, isArray: true })
   lines!: PhysicalStockLineDto[];
+
+  @ApiPropertyOptional({
+    type: StockBookChangeDto,
+    isArray: true,
+    description:
+      'Save response only (notes 150 #4): the lines whose book figure this save re-based. Empty on a create and when nothing moved.',
+  })
+  bookChanges?: StockBookChangeDto[];
 }
 
 export class PhysicalStockListItemDto {
@@ -587,6 +620,21 @@ export class CountSheetRowDto {
     description: 'Always null — this is the one column the screen fills.',
   })
   countedQty!: null;
+
+  // ── Notes 150 #9 — the batch's size / colour / model, as /get carries them ─
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  sizeId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Shown after the item name: "Shirt · XL · Maroon · Slim fit".',
+  })
+  sizeName!: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  colourId!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  colourName!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  model!: string | null;
 }
 
 export class CountSheetDto {

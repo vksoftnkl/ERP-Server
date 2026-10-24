@@ -101,7 +101,29 @@ export class PhysicalStockVarianceQueryDto extends PhysicalStockVoucherRefQueryD
  * `godownId` is required and singular: a count is per godown, because
  * stock_balance is keyed per godown and the freeze (§11) is applied to one.
  */
-export class GenerateCountSheetQueryDto extends PhysicalStockVoucherScopeQueryDto {
+export class GenerateCountSheetQueryDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  branchId!: string;
+
+  /**
+   * Notes 150 (minor) — OPTIONAL here, unlike every other read on the screen:
+   * the sheet is drawn from stock_balance, which is not partitioned by year,
+   * so the service never reads it. Accepted so an older client is not refused.
+   */
+  @ApiPropertyOptional({
+    example: '2026-2027',
+    description:
+      "Not used — the sheet is a live balance, not a year's documents. Accepted for compatibility.",
+  })
+  @IsOptional()
+  @Matches(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' })
+  accYear?: string;
+
   @ApiProperty({
     format: 'uuid',
     description: 'inventory.godown_locations.gdl_id — the shelf being counted.',

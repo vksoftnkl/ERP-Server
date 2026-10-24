@@ -242,7 +242,7 @@ __decorate([
         type: 'string',
         format: 'date-time',
         nullable: true,
-        description: 'When the count was actually taken. Defaults to now() at the server. A handheld that numbered its own sheet offline should send the moment it was keyed, not the moment it synced.',
+        description: 'When the count was actually taken. Defaults to now() at the server. A handheld that numbered its own sheet offline should send the moment it was keyed, not the moment it synced — WITH syncDate. Notes 150 #3: without syncDate it may differ from the server clock by 15 minutes at most; with it, by up to 7 days and never later than the sync (422 STOCK_DOC_DATETIME_OUT_OF_RANGE).',
     }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
@@ -295,7 +295,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         minimum: 0,
         default: 0,
-        description: 'How many lines the sheet has, as the screen counted them — including the ones that agreed with the book. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+        description: 'IGNORED since notes 150 #5 — the server counts the lines it writes. Accepted so an older client is not refused.',
     }),
     (0, dtoDecorators_1.OptionalInteger)(0),
     __metadata("design:type", Number)
@@ -303,7 +303,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         default: 0,
-        description: 'The sheet total quantity, as the screen summed it. MAY BE NEGATIVE — on a count this column is read back as the net variance, and a shortage is negative. numeric(18,6), NOT NULL DEFAULT 0.',
+        description: 'IGNORED since notes 150 #5 — the server sums the net variance, Σ(counted − book), which may be negative. Accepted so an older client is not refused.',
     }),
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
@@ -311,7 +311,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         default: 0,
-        description: 'The sheet total value, inclusive of tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+        description: "IGNORED since notes 150 #5 — the server values the net variance at each holding's moving average. Accepted so an older client is not refused.",
     }),
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
@@ -319,7 +319,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         default: 0,
-        description: 'The sheet total value excluding tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+        description: 'IGNORED since notes 150 #5 — as totalValue, at the ex-tax average. Accepted so an older client is not refused.',
     }),
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Number)
@@ -373,7 +373,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 100,
         nullable: true,
-        description: 'Who created the sheet — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+        description: 'IGNORED under a login since notes 150 #5: the authenticated user is the author (svh_created_by, on a CREATE only). Read only when no user is in the request context.',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
@@ -382,7 +382,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 100,
         nullable: true,
-        description: 'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+        description: 'IGNORED under a login since notes 150 #5: the authenticated user is the modifier (svh_modified_by, on an UPDATE only; created_by is never rewritten). Read only when no user is in the request context.',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)

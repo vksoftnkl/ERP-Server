@@ -21,6 +21,7 @@ let LotByBatchService = class LotByBatchService {
         this.prisma = prisma;
     }
     async find(q) {
+        const bucket = q.bucket ?? 'SALEABLE';
         const rows = await this.prisma.$queryRaw `
       SELECT slt.slt_id::text                      AS "lotId",
              slt.slt_item_id::text                 AS "itemId",
@@ -38,6 +39,10 @@ let LotByBatchService = class LotByBatchService {
              icl.icl_name                          AS "colourName",
              sbd.sbd_model                         AS model,
              COALESCE(held.on_hand, 0)::float8     AS "onHandQty",
+             -- Notes 151 #10: the branch's cost of the lot — value over quantity
+             -- of the holdings listed, else the lot's own rate.
+             COALESCE(CASE WHEN held.on_hand > 0 THEN held.stock_value / held.on_hand END,
+                      slt.slt_cost_rate, 0)::float8 AS "avgCostRate",
              COALESCE(held.godowns, '[]'::jsonb)   AS godowns
         FROM stock.stock_lot slt
         JOIN inventory.item_master itm
@@ -54,17 +59,22 @@ let LotByBatchService = class LotByBatchService {
         LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         LEFT JOIN LATERAL (
           SELECT sum(sbl.sbl_on_hand_qty) AS on_hand,
+                 sum(sbl.sbl_stock_value)  AS stock_value,
                  jsonb_agg(jsonb_build_object(
                    'godownId',     sbl.sbl_godown_id,
                    'godownName',   gdl.gdl_name,
+                   'bucket',       sbl.sbl_bucket,
                    'onHandQty',    sbl.sbl_on_hand_qty,
-                   'availableQty', sbl.sbl_available_qty) ORDER BY gdl.gdl_name) AS godowns
+                   'availableQty', sbl.sbl_available_qty,
+                   'avgCostRate',  sbl.sbl_avg_cost_rate) ORDER BY gdl.gdl_name, sbl.sbl_bucket) AS godowns
             FROM stock.stock_balance sbl
             LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = sbl.sbl_godown_id
            WHERE sbl.sbl_company_id = slt.slt_company_id
              AND sbl.sbl_branch_id  = ${q.branchId}::uuid
              AND sbl.sbl_lot_id     = slt.slt_id
-             AND sbl.sbl_bucket     = 'SALEABLE'
+             -- Notes 150 #10: one bucket (SALEABLE unless asked), or every bucket.
+             AND (${bucket}::text = 'ALL' OR sbl.sbl_bucket = ${bucket}::text)
+             AND (${q.godownId ?? null}::uuid IS NULL OR sbl.sbl_godown_id = ${q.godownId ?? null}::uuid)
              AND sbl.sbl_is_deleted = false
              AND sbl.sbl_on_hand_qty <> 0
         ) held ON true

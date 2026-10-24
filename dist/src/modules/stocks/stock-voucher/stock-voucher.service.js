@@ -17,6 +17,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const ist_clock_util_1 = require("../../../common/utils/ist-clock.util");
 const stock_voucher_numbering_helper_1 = require("./stock-voucher-numbering.helper");
 const stock_voucher_import_helper_1 = require("./stock-voucher-import.helper");
 const stock_voucher_batch_numbering_helper_1 = require("./stock-voucher-batch-numbering.helper");
@@ -33,6 +34,8 @@ const DEFAULT_REPORT_LIMIT = 200;
 const MAX_REPORT_LIMIT = 1000;
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
+const DOC_DATETIME_ONLINE_SKEW_MS = 15 * 60_000;
+const DOC_DATETIME_OFFLINE_MAX_MS = 7 * 24 * 3_600_000;
 let StockVoucherService = class StockVoucherService {
     prisma;
     auditLogService;
@@ -44,17 +47,20 @@ let StockVoucherService = class StockVoucherService {
         this.requestContextService = requestContextService;
         this.stockPosting = stockPosting;
     }
-    async save(rules, dto) {
+    async save(rules, dto, hooks) {
         const { header } = dto;
         const actor = this.actorOf(header.userId);
         this.assertPayloadRules(rules, dto);
         await this.assertReasons(rules, dto);
         const postAfterSave = header.status === 'POSTED' || header.post === true;
         const postedOn = new Date();
-        const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+        const { svhId, rowsPosted, bookChanges } = await this.prisma.$transaction(async (tx) => {
             if (header.svhId) {
                 const existing = await this.loadForWrite(tx, rules, header.svhId, header.accYear, header.companyId, header.branchId);
                 this.assertDraft(rules, existing);
+            }
+            if (rules.allowsCount && header.freezeStock && header.freezeFrom && header.freezeTo) {
+                await this.assertFreezeNotHeld(tx, header);
             }
             const before = header.svhId
                 ? await this.getById(rules, header.svhId, header.accYear, header.companyId, header.branchId, tx)
@@ -69,7 +75,7 @@ let StockVoucherService = class StockVoucherService {
                 }, dto.lines)
                 : null;
             const saved = batches ? { ...dto, lines: batches.lines } : dto;
-            const id = header.svhId
+            const { svhId: id, bookChanges } = header.svhId
                 ? await this.updateDraft(tx, rules, saved, actor, postedOn)
                 : await this.createDraft(tx, rules, saved, actor, postedOn);
             if (batches) {
@@ -83,9 +89,10 @@ let StockVoucherService = class StockVoucherService {
             }
             if (!postAfterSave) {
                 await this.logRevision(tx, rules, id, header, before, actor, false);
-                return { svhId: id, rowsPosted: null };
+                return { svhId: id, rowsPosted: null, bookChanges };
             }
             await this.lockForPreflight(tx, rules, id, header.accYear);
+            await hooks?.beforePost?.(tx, id);
             await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
             const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({
                 svhId: id,
@@ -94,6 +101,7 @@ let StockVoucherService = class StockVoucherService {
                 branchId: header.branchId,
                 rules,
             }), { actor, postedOn });
+            await hooks?.afterPost?.(tx, posted.rowsPosted, id);
             await this.logStatusChange(tx, {
                 rules,
                 svhId: id,
@@ -111,10 +119,20 @@ let StockVoucherService = class StockVoucherService {
                 sessionId: header.sessionId ?? null,
             });
             await this.logRevision(tx, rules, id, header, before, actor, true);
-            return { svhId: id, rowsPosted: posted.rowsPosted };
+            return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges };
         });
         const document = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
-        return { ...document, rowsPosted };
+        const rebased = new Map(bookChanges.map((change) => [change.sviId, change]));
+        return {
+            ...document,
+            lines: document.lines.map((line) => ({
+                ...line,
+                bookChanged: rebased.has(line.sviId),
+                previousBookQty: rebased.get(line.sviId)?.previousBookQty ?? null,
+            })),
+            rowsPosted,
+            bookChanges,
+        };
     }
     async logRevision(tx, rules, svhId, header, before, actor, posted) {
         const after = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId, tx);
@@ -269,6 +287,34 @@ let StockVoucherService = class StockVoucherService {
                 message: 'A stock freeze needs a window: send freezeFrom and freezeTo as instants with an offset. The guard compares them to now(), not to the document date.',
             });
         }
+        const docDatetime = this.toInstant(header.docDatetime);
+        if (docDatetime !== null) {
+            const now = Date.now();
+            const syncedAt = this.toInstant(header.syncDate);
+            const skewMinutes = DOC_DATETIME_ONLINE_SKEW_MS / 60_000;
+            if (syncedAt === null) {
+                if (Math.abs(docDatetime - now) > DOC_DATETIME_ONLINE_SKEW_MS) {
+                    errors.push({
+                        field: 'docDatetime',
+                        code: stock_error_codes_1.StockErrorCode.DOC_DATETIME_OUT_OF_RANGE,
+                        message: `docDatetime ${(0, ist_clock_util_1.istClockText)(docDatetime)} is more than ${skewMinutes} minutes from the ` +
+                            `server clock (${(0, ist_clock_util_1.istClockText)(now)}). Leave it out to take the server's time; a device ` +
+                            'that keyed the document offline sends syncDate with it.',
+                    });
+                }
+            }
+            else if (docDatetime > syncedAt + DOC_DATETIME_ONLINE_SKEW_MS ||
+                syncedAt > now + DOC_DATETIME_ONLINE_SKEW_MS ||
+                syncedAt - docDatetime > DOC_DATETIME_OFFLINE_MAX_MS) {
+                errors.push({
+                    field: 'docDatetime',
+                    code: stock_error_codes_1.StockErrorCode.DOC_DATETIME_OUT_OF_RANGE,
+                    message: `An offline document is keyed before it syncs, syncs no later than now, and trails its ` +
+                        `sync by at most 7 days: docDatetime ${(0, ist_clock_util_1.istClockText)(docDatetime)}, syncDate ` +
+                        `${(0, ist_clock_util_1.istClockText)(syncedAt)}, server clock ${(0, ist_clock_util_1.istClockText)(now)}.`,
+                });
+            }
+        }
         const freezeFrom = this.toInstant(header.freezeFrom);
         const freezeTo = this.toInstant(header.freezeTo);
         if (freezeFrom !== null && freezeTo !== null && freezeTo <= freezeFrom) {
@@ -280,6 +326,7 @@ let StockVoucherService = class StockVoucherService {
             header.rateSource !== undefined &&
             stock_voucher_types_1.DERIVABLE_RATE_SOURCES.includes(header.rateSource);
         const seen = new Map();
+        const holdingSeen = new Map();
         lines.forEach((line, index) => {
             const field = `lines.${index}`;
             const splitNo = line.splitNo ?? 1;
@@ -393,6 +440,20 @@ let StockVoucherService = class StockVoucherService {
                         code: stock_error_codes_1.StockErrorCode.COUNT_GODOWN_MISMATCH,
                         message: `Line ${line.lineNo} is in a different godown than the one this count names. A count is per godown.`,
                     });
+                }
+                if (line.lotId) {
+                    const holding = this.holdingKey(line.lotId, line.godownId, line.bucket);
+                    const firstHoldingAt = holdingSeen.get(holding);
+                    if (firstHoldingAt !== undefined) {
+                        errors.push({
+                            field,
+                            code: stock_error_codes_1.StockErrorCode.COUNT_HOLDING_DUPLICATE,
+                            message: `Line ${line.lineNo} counts the same holding (lot, godown and bucket) as row ${firstHoldingAt + 1}. A holding is one line on a count sheet — put the whole count on that line.`,
+                        });
+                    }
+                    else {
+                        holdingSeen.set(holding, index);
+                    }
                 }
             }
             if (rules.requiresLot) {
@@ -583,8 +644,8 @@ let StockVoucherService = class StockVoucherService {
             },
             select: { svhId: true, svhAccYear: true, svhRefno: true },
         });
-        await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
-        await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
+        const written = await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
+        await this.writeHeaderTotals(tx, rules, created.svhId, header.accYear, written);
         await this.logStatusChange(tx, {
             rules,
             svhId: created.svhId,
@@ -601,25 +662,135 @@ let StockVoucherService = class StockVoucherService {
             deviceId: header.deviceId,
             sessionId: header.sessionId ?? null,
         });
-        return created.svhId;
+        return { svhId: created.svhId, bookChanges: written.bookChanges };
     }
-    async writeHeaderTotals(tx, svhId, header, lineCount) {
-        const data = {
-            svhLineCount: header.lineCount ?? lineCount,
-        };
-        if (header.totalQty !== undefined) {
-            data.svhTotalQty = this.toDecimalColumn(header.totalQty);
-        }
-        if (header.totalValue !== undefined) {
-            data.svhTotalValue = this.toDecimalColumn(header.totalValue);
-        }
-        if (header.totalValueWot !== undefined) {
-            data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
-        }
+    async writeHeaderTotals(tx, rules, svhId, accYear, written) {
+        const totals = this.documentTotals(rules, written);
         await tx.stockVoucher.update({
-            where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
-            data,
+            where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+            data: {
+                svhLineCount: totals.lineCount,
+                svhTotalQty: totals.totalQty,
+                svhTotalValue: totals.totalValue,
+                svhTotalValueWot: totals.totalValueWot,
+            },
         });
+    }
+    documentTotals(rules, written) {
+        const isCount = rules.quantityMode === 'COUNT';
+        const netted = rules.lineDirection === 'REASON' && rules.postShape !== 'BUCKET_MOVE';
+        let totalQty = new client_1.Prisma.Decimal(0);
+        let totalValue = new client_1.Prisma.Decimal(0);
+        let totalValueWot = new client_1.Prisma.Decimal(0);
+        for (const row of written.rows) {
+            if (isCount) {
+                const holding = written.holdings?.get(this.holdingKey(row.sviLotId, row.sviGodownId, row.sviBucket));
+                const diff = new client_1.Prisma.Decimal(row.sviCountedQty ?? 0).minus(row.sviBookQty ?? 0);
+                totalQty = totalQty.plus(diff);
+                totalValue = totalValue.plus(diff.mul(holding?.avgCostRate ?? 0).toDecimalPlaces(2));
+                totalValueWot = totalValueWot.plus(diff.mul(holding?.avgCostRateWot ?? 0).toDecimalPlaces(2));
+                continue;
+            }
+            const sign = netted && row.sviDirection === -1 ? -1 : 1;
+            const base = new client_1.Prisma.Decimal(row.sviBaseQty).plus(row.sviFreeBaseQty ?? 0);
+            totalQty = totalQty.plus(base.mul(sign));
+            totalValue = totalValue.plus(base.mul(row.sviCostRate).toDecimalPlaces(2).mul(sign));
+            totalValueWot = totalValueWot.plus(base.mul(row.sviCostRateWot).toDecimalPlaces(2).mul(sign));
+        }
+        return { lineCount: written.rows.length, totalQty, totalValue, totalValueWot };
+    }
+    async assertFreezeNotHeld(tx, header) {
+        const godownId = header.toGodownId ?? header.fromGodownId ?? null;
+        if (!godownId) {
+            return;
+        }
+        const [held] = await tx.$queryRaw `
+      SELECT svh.svh_refno, svh.svh_freeze_from, svh.svh_freeze_to
+        FROM stock.stock_voucher svh
+       WHERE svh.svh_company_id   = ${header.companyId}::uuid
+         AND svh.svh_branch_id    = ${header.branchId}::uuid
+         -- ix_svh_freeze_open covers these four.
+         AND svh.svh_voucher_type = 'PHYSICAL'
+         AND svh.svh_freeze_stock = true
+         AND svh.svh_status       = 'DRAFT'
+         AND svh.svh_is_deleted   = false
+         AND COALESCE(svh.svh_from_godown_id, svh.svh_to_godown_id) = ${godownId}::uuid
+         -- Windows that touch: the other's start is before this end, and its
+         -- end after this start.
+         AND svh.svh_freeze_from <= ${header.freezeTo}::timestamptz
+         AND svh.svh_freeze_to   >= ${header.freezeFrom}::timestamptz
+         AND (${header.svhId ?? null}::uuid IS NULL OR svh.svh_id <> ${header.svhId ?? null}::uuid)
+       ORDER BY svh.svh_freeze_from
+       LIMIT 1`;
+        if (!held) {
+            return;
+        }
+        (0, module_service_utils_1.throwStockConflict)(`Godown already frozen for physical count ${held.svh_refno}`, [
+            {
+                field: 'freezeStock',
+                code: stock_error_codes_1.StockErrorCode.FREEZE_GODOWN_HELD,
+                message: `This godown is already frozen for physical count ${held.svh_refno} from ` +
+                    `${(0, ist_clock_util_1.istClockText)(held.svh_freeze_from)} to ${(0, ist_clock_util_1.istClockText)(held.svh_freeze_to)}. ` +
+                    'Two open freezes would refuse each other\'s post for good — count on that sheet, ' +
+                    'or post or cancel it first.',
+            },
+        ]);
+    }
+    async assertCountNotSuperseded(tx, svhId, accYear, refno) {
+        const [later] = await tx.$queryRaw `
+      SELECT later.svh_refno   AS later_refno,
+             mine.svi_line_no  AS line_no,
+             lp.tsl_changed_on AS later_posted_on
+        FROM stock.stock_voucher_item mine
+        JOIN LATERAL (
+          SELECT t.tsl_changed_on
+            FROM public.txn_status_log t
+           WHERE t.tsl_src_doc_id = mine.svi_voucher_id
+             AND t.tsl_to_status  = 'POSTED'
+             AND t.tsl_is_deleted = false
+           ORDER BY t.tsl_changed_on DESC
+           LIMIT 1
+        ) mp ON true
+        JOIN stock.stock_voucher_item other
+          ON other.svi_lot_id     = mine.svi_lot_id
+         AND other.svi_godown_id  = mine.svi_godown_id
+         AND other.svi_bucket     = mine.svi_bucket
+         AND other.svi_voucher_id <> mine.svi_voucher_id
+         AND other.svi_is_deleted = false
+        JOIN stock.stock_voucher later
+          ON later.svh_id           = other.svi_voucher_id
+         AND later.svh_acc_year     = other.svi_acc_year
+         AND later.svh_voucher_type = 'PHYSICAL'
+         AND later.svh_status       = 'POSTED'
+         AND later.svh_is_deleted   = false
+        JOIN LATERAL (
+          SELECT t.tsl_changed_on
+            FROM public.txn_status_log t
+           WHERE t.tsl_src_doc_id = later.svh_id
+             AND t.tsl_to_status  = 'POSTED'
+             AND t.tsl_is_deleted = false
+           ORDER BY t.tsl_changed_on DESC
+           LIMIT 1
+        ) lp ON true
+       WHERE mine.svi_voucher_id = ${svhId}::uuid
+         AND mine.svi_acc_year   = ${accYear}::bpchar
+         AND mine.svi_is_deleted = false
+         AND mine.svi_lot_id IS NOT NULL
+         AND lp.tsl_changed_on > mp.tsl_changed_on
+       ORDER BY mine.svi_line_no
+       LIMIT 1`;
+        if (!later) {
+            return;
+        }
+        (0, module_service_utils_1.throwStockConflict)(`${refno} has been counted again by ${later.later_refno}`, [
+            {
+                field: 'svhId',
+                code: stock_error_codes_1.StockErrorCode.COUNT_SUPERSEDED,
+                message: `Line ${later.line_no} of ${refno} was counted again by ${later.later_refno}, posted ` +
+                    `${(0, ist_clock_util_1.istClockText)(later.later_posted_on)}. Cancelling ${refno} would undo an old variance ` +
+                    `under a newer count. Count the holding again instead.`,
+            },
+        ]);
     }
     async updateDraft(tx, rules, dto, actor, now) {
         const { header } = dto;
@@ -649,9 +820,9 @@ let StockVoucherService = class StockVoucherService {
                 svhModifiedBy: this.actorFor(header.modifiedBy, actor),
             },
         });
-        await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
-        await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
-        return svhId;
+        const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
+        await this.writeHeaderTotals(tx, rules, svhId, header.accYear, written);
+        return { svhId, bookChanges: written.bookChanges };
     }
     async replaceLines(tx, rules, dto, svhId, actor, author, now) {
         const { header, lines } = dto;
@@ -669,7 +840,7 @@ let StockVoucherService = class StockVoucherService {
             });
         }
         if (!lines.length) {
-            return;
+            return { rows: [], holdings: null, bookChanges: [] };
         }
         const isCount = rules.quantityMode === 'COUNT';
         const zeroCost = isCount || rules.zeroesLineCost === true;
@@ -736,10 +907,28 @@ let StockVoucherService = class StockVoucherService {
                 sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
                 sviRemarks: line.remarks ?? null,
                 sviCreatedBy: this.actorFor(line.createdBy ?? author, actor),
-                ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy),
+                ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy, actor),
             };
         });
         const storedById = new Map((stored ?? []).map((row) => [row.sviId, row]));
+        const bookChanges = [];
+        if (isCount) {
+            lines.forEach((line, index) => {
+                const row = line.sviId ? storedById.get(line.sviId) : undefined;
+                const next = data[index].sviBookQty;
+                if (!row || row.sviBookQty === null || next === null) {
+                    return;
+                }
+                if (!new client_1.Prisma.Decimal(row.sviBookQty).equals(next)) {
+                    bookChanges.push({
+                        sviId: row.sviId,
+                        lineNo: line.lineNo,
+                        previousBookQty: (0, module_service_utils_1.toNumber)(row.sviBookQty),
+                        bookQty: (0, module_service_utils_1.toNumber)(next),
+                    });
+                }
+            });
+        }
         const changed = [];
         const moving = [];
         lines.forEach((line, index) => {
@@ -775,6 +964,7 @@ let StockVoucherService = class StockVoucherService {
         if (inserted.length) {
             await tx.stockVoucherItem.createMany({ data: inserted });
         }
+        return { rows: data, holdings, bookChanges };
     }
     assertLineIds(rules, lines, stored) {
         const errors = [];
@@ -841,6 +1031,8 @@ let StockVoucherService = class StockVoucherService {
                  sbl.sbl_bucket,
                  sbl.sbl_base_uom_id,
                  sbl.sbl_on_hand_qty,
+                 sbl.sbl_avg_cost_rate,
+                 sbl.sbl_avg_cost_rate_wot,
                  sbl.sbl_batch_no,
                  sbl.sbl_expiry_date,
                  sbl.sbl_mrp,
@@ -864,6 +1056,8 @@ let StockVoucherService = class StockVoucherService {
                 itemId: row.sbl_item_id,
                 baseUomId: row.sbl_base_uom_id,
                 bookQty: new client_1.Prisma.Decimal(row.sbl_on_hand_qty ?? 0),
+                avgCostRate: new client_1.Prisma.Decimal(row.sbl_avg_cost_rate ?? 0),
+                avgCostRateWot: new client_1.Prisma.Decimal(row.sbl_avg_cost_rate_wot ?? 0),
                 batchNo: row.sbl_batch_no,
                 mfgDate: row.slt_mfg_date,
                 expiryDate: row.sbl_expiry_date,
@@ -1113,7 +1307,13 @@ let StockVoucherService = class StockVoucherService {
              -- lookup per distinct item after every load (notes 66).
              COALESCE(stp.stp_track_signature, 'N') AS track_signature,
              -- Addendum 2 E2: the size / colour / model this line's auto
-             -- batch carries, by the row the line wrote.
+             -- batch carries, by the row the line wrote — retired rows too,
+             -- matched on the batch the line still holds, so a cancelled
+             -- draft (notes 149 #3) still reads what was keyed while a line
+             -- whose batch was typed over since shows nothing. Notes 151 #8:
+             -- a line that wrote no row (an adjustment, a count, an issue
+             -- naming a batch an opening numbered) reads the batch's LIVE
+             -- row by company + item + folded batch instead.
              sbd.sbd_size_id,
              isz.isz_name AS size_name,
              sbd.sbd_colour_id,
@@ -1126,8 +1326,18 @@ let StockVoucherService = class StockVoucherService {
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
         LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
-        LEFT JOIN stock.stock_batch_detail sbd
-               ON sbd.sbd_src_line_id = svi.svi_id AND sbd.sbd_is_deleted = false
+        LEFT JOIN LATERAL (
+          SELECT d.sbd_size_id, d.sbd_colour_id, d.sbd_model
+            FROM stock.stock_batch_detail d
+           WHERE d.sbd_batch_no = upper(btrim(svi.svi_batch_no))
+             AND (d.sbd_src_line_id = svi.svi_id
+                  OR (d.sbd_company_id = ${companyId}::uuid
+                      AND d.sbd_item_id = svi.svi_item_id
+                      AND d.sbd_is_deleted = false))
+           -- The line's own row first (retired or not), else the live one.
+           ORDER BY (d.sbd_src_line_id = svi.svi_id) DESC NULLS LAST, d.sbd_is_deleted
+           LIMIT 1
+        ) sbd ON true
         LEFT JOIN inventory.item_size_master isz   ON isz.isz_id = sbd.sbd_size_id
         LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         ${(0, stock_voucher_posting_helper_1.effectivePolicyLateral)({
@@ -1375,6 +1585,18 @@ let StockVoucherService = class StockVoucherService {
                WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
                     AND NOT COALESCE(gdl.gdl_is_active, true)
                  THEN 'this godown is inactive'
+               -- Notes 151 #7 — a line that NAMES its lot names one that exists,
+               -- of this company and of this item. A valid lot of another
+               -- company's (shared) item used to resolve straight through the
+               -- engine's l.slt_id = svi_lot_id join; the adjustment screen checks
+               -- the same three, and every type that posts a named lot gets
+               -- them here.
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_id IS NULL
+                 THEN 'this line names a lot that does not exist'
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_company_id <> keyed.svh_company_id
+                 THEN 'this line names a lot that belongs to another company'
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_item_id <> keyed.svi_item_id
+                 THEN 'this line names a lot that belongs to a different item'
 
                -- OPENING-ONLY, AND IT INVERTS UNDER COUNT. A count sends
                -- svi_qty 0 on every line, always; ungated this branch reports a
@@ -1459,7 +1681,7 @@ let StockVoucherService = class StockVoucherService {
                  THEN 'this holding already has an opening in this year'
                WHEN frozen.frozen_by IS NOT NULL
                  THEN 'this godown is frozen for physical count ' || frozen.frozen_by
-                      || ' until ' || to_char(frozen.frozen_until, 'YYYY-MM-DD HH24:MI')
+                      || ' until ' || to_char(frozen.frozen_until, ${ist_clock_util_1.IST_CLOCK_SQL_FORMAT})
                ELSE NULL
              END                                      AS "problem"
         FROM keyed
@@ -1471,6 +1693,9 @@ let StockVoucherService = class StockVoucherService {
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = keyed.svi_uom_id
         LEFT JOIN inventory.item_unit_conversion bu  ON bu.iuc_id  = keyed.svi_base_uom_id
         LEFT JOIN inventory.godown_locations gdl     ON gdl.gdl_id = keyed.svi_godown_id
+        -- The lot a line names (notes 151 #7); a deleted lot reads as none.
+        LEFT JOIN stock.stock_lot nl
+               ON nl.slt_id = keyed.svi_lot_id AND nl.slt_is_deleted = false
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = keyed.svh_company_id
               AND sic.sic_branch_id  = keyed.svh_branch_id
@@ -1489,7 +1714,8 @@ let StockVoucherService = class StockVoucherService {
             })));
         }
     }
-    async post(rules, svhId, accYear, companyId, branchId, userId, afterPost) {
+    async post(rules, svhId, accYear, companyId, branchId, userId, hooks) {
+        const { beforePost, afterPost } = typeof hooks === 'function' ? { afterPost: hooks } : (hooks ?? {});
         const actor = this.actorOf(userId);
         const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
         this.assertDraft(rules, existing);
@@ -1499,9 +1725,10 @@ let StockVoucherService = class StockVoucherService {
             this.assertDraft(rules, locked);
             this.assertDocDateInYear(rules, locked.docDate, accYear);
             await this.lockForPreflight(tx, rules, svhId, accYear);
+            await beforePost?.(tx, svhId);
             await this.assertPostable(rules, svhId, accYear, companyId, branchId, tx);
             const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, postedOn });
-            await afterPost?.(tx, posted.rowsPosted);
+            await afterPost?.(tx, posted.rowsPosted, svhId);
             await this.logStatusChange(tx, {
                 rules,
                 svhId,
@@ -1604,8 +1831,12 @@ let StockVoucherService = class StockVoucherService {
                     reason: trimmedReason,
                     cancelledOn,
                 });
+                await (0, batch_detail_helper_1.softDeleteBatchDetailsOf)(tx, svhId, this.auditActor(actor));
             }
             else {
+                if (rules.quantityMode === 'COUNT') {
+                    await this.assertCountNotSuperseded(tx, svhId, accYear, existing.svhRefno);
+                }
                 reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn, refuseNegative: true });
             }
             await this.logStatusChange(tx, {
@@ -1932,13 +2163,27 @@ let StockVoucherService = class StockVoucherService {
              sbl.sbl_supplier_id,
              sbl.sbl_on_hand_qty,
              sbl.sbl_avg_cost_rate,
-             sbl.sbl_stock_value
+             sbl.sbl_stock_value,
+             -- Notes 150 #9: the batch's size / colour / model, by company +
+             -- item + folded batch, as every other reader of the table.
+             sbd.sbd_size_id,
+             isz.isz_name AS size_name,
+             sbd.sbd_colour_id,
+             icl.icl_name AS colour_name,
+             sbd.sbd_model
         FROM stock.stock_balance sbl
         JOIN stock.stock_lot slt                   ON slt.slt_id = sbl.sbl_lot_id
         JOIN inventory.item_master itm             ON itm.item_id = sbl.sbl_item_id
         LEFT JOIN inventory.godown_locations gdl   ON gdl.gdl_id = sbl.sbl_godown_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = sbl.sbl_base_uom_id
         LEFT JOIN inventory.item_unit_master unt   ON unt.unit_id = iuc.iuc_unit_id
+        LEFT JOIN stock.stock_batch_detail sbd
+               ON sbd.sbd_company_id = sbl.sbl_company_id
+              AND sbd.sbd_item_id    = sbl.sbl_item_id
+              AND sbd.sbd_batch_no   = upper(btrim(sbl.sbl_batch_no))
+              AND sbd.sbd_is_deleted = false
+        LEFT JOIN inventory.item_size_master   isz ON isz.isz_id = sbd.sbd_size_id
+        LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
        WHERE sbl.sbl_company_id = ${query.companyId}::uuid
          AND sbl.sbl_branch_id  = ${query.branchId}::uuid
          AND sbl.sbl_godown_id  = ${query.godownId}::uuid
@@ -1973,6 +2218,11 @@ let StockVoucherService = class StockVoucherService {
                 avgCostRate: (0, module_service_utils_1.toNumber)(row.sbl_avg_cost_rate),
                 stockValue: (0, module_service_utils_1.toNumber)(row.sbl_stock_value),
                 countedQty: null,
+                sizeId: row.sbd_size_id,
+                sizeName: row.size_name,
+                colourId: row.sbd_colour_id,
+                colourName: row.colour_name,
+                model: row.sbd_model,
             })),
             meta: { limit: take, offset: skip, count: rows.length },
         };
@@ -2262,10 +2512,16 @@ let StockVoucherService = class StockVoucherService {
         return actor === module_service_utils_1.DEFAULT_ACTOR ? null : actor;
     }
     actorFor(supplied, actor) {
+        if (actor !== module_service_utils_1.DEFAULT_ACTOR) {
+            return actor;
+        }
         const trimmed = supplied?.trim();
-        return trimmed ? trimmed : this.auditActor(actor);
+        return trimmed ? trimmed : null;
     }
-    lineModifiedByData(supplied) {
+    lineModifiedByData(supplied, actor) {
+        if (actor !== module_service_utils_1.DEFAULT_ACTOR) {
+            return {};
+        }
         const trimmed = supplied?.trim();
         return trimmed ? { sviModifiedBy: trimmed } : {};
     }

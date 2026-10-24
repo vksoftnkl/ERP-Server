@@ -1,4 +1,11 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { istClockText } from 'src/common/utils/ist-clock.util';
+import { throwStockConflict } from 'src/common/utils/module-service.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
+import type {
+  StockErrorDetail,
+  StockErrorResponse,
+} from '../stock-voucher/types/stock-voucher.types';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
@@ -212,12 +219,16 @@ export class StockPostingService {
 
     if (blocking.length > 0) {
       const b = blocking[0];
-      throw new ConflictException(
+      // Notes 150 (minor) — times as a person reads them, and a code the
+      // client can word its box by (notes 119) rather than a bare 409.
+      const message =
         `Godown ${b.godown_id} is frozen for physical count ${b.svh_refno ?? b.svh_id} ` +
-          `from ${b.svh_freeze_from.toISOString()} to ${b.svh_freeze_to.toISOString()}, ` +
-          `and this movement is timed ${movedAt.toISOString()}, inside that window. ` +
-          `Post or cancel the count first.`,
-      );
+        `from ${istClockText(b.svh_freeze_from)} to ${istClockText(b.svh_freeze_to)}, ` +
+        `and this movement is timed ${istClockText(movedAt)}, inside that window. ` +
+        `Post or cancel the count first.`;
+      throwStockConflict<StockErrorDetail, StockErrorResponse>(message, [
+        { field: 'docDatetime', code: StockErrorCode.GODOWN_FROZEN, message },
+      ]);
     }
   }
 }

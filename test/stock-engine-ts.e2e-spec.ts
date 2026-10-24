@@ -873,11 +873,26 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     // reconcile, even though it arrives while the freeze is on
     // (offline-sync-invariants.md §7b). Undone afterwards so the tea holding
     // does not leak into case 10.
+    //
+    // Notes 150 #3 — the movement DECLARES the offline sync that explains its
+    // time (syncDate, four hours after it was keyed): a backdated docDatetime
+    // with no sync declared is refused at save, so an online screen cannot
+    // key "three hours ago" and step round the freeze.
     await undone(async () => {
+      await expect(
+        opening(
+          fixture.godownA,
+          [{ itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 1, costRate: 10 }],
+          { docDatetime: `${DOC_DATE}T10:00:00.000Z` },
+        ),
+      ).rejects.toMatchObject({
+        status: 422,
+        response: { errors: [expect.objectContaining({ code: 'STOCK_DOC_DATETIME_OUT_OF_RANGE' })] },
+      });
       const earlier = await opening(
         fixture.godownA,
         [{ itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 1, costRate: 10 }],
-        { docDatetime: `${DOC_DATE}T10:00:00.000Z` },
+        { docDatetime: `${DOC_DATE}T10:00:00.000Z`, syncDate: `${DOC_DATE}T14:00:00.000Z` },
       );
       expect(
         (await validate(OPENING_RULES, earlier.header.svhId)).every((row) => row.problem === null),

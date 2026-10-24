@@ -24,5 +24,6 @@ export declare class PickStockQueryDto {
     itemId?: string;
     bucket?: StockBucket;
     search?: string;
+    batchNo?: string;
     limit?: number;
 }

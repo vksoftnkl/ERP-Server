@@ -365,6 +365,47 @@ describe('Textile batch detail, addendum 2 (e2e — one rolled-back transaction)
     );
   });
 
+  // Notes 149 #2 — the Qt grid re-saves a draft with the server's number on
+  // the line and without line ids, so every stored line gets a fresh svi_id.
+  it('a re-save without line ids that hands the number back is not a typed batch', async () => {
+    // First pass leaves colour out: a key left out is none.
+    const cleared = await vouchers.save(
+      OPENING_RULES,
+      payload([line(1, autoBatch, { sizeId: sizeXl, model: 'Regular' }), line(2, 'typed-7')], {
+        svhId,
+      }),
+    );
+    expect(cleared.lines[0]).toMatchObject({
+      batchNo: autoBatch,
+      sizeName: `ZXL-${RUN}`,
+      colourId: null,
+      model: 'Regular',
+    });
+
+    // Second pass puts the colour back, again under new line ids.
+    const restored = await vouchers.save(
+      OPENING_RULES,
+      payload(
+        [
+          line(1, autoBatch, { sizeId: sizeXl, colourId: colourMaroon, model: 'Regular' }),
+          line(2, 'typed-7'),
+        ],
+        { svhId },
+      ),
+    );
+    expect(restored.lines[0]).toMatchObject({
+      batchNo: autoBatch,
+      sizeName: `ZXL-${RUN}`,
+      colourName: `ZMaroon-${RUN}`,
+      model: 'Regular',
+    });
+    expect(restored.lines[0].sviId).not.toBe(cleared.lines[0].sviId);
+    const rows = await liveDetails();
+    expect(rows.filter((r) => !r.sbd_is_deleted)).toEqual([
+      expect.objectContaining({ sbd_batch_no: autoBatch, sbd_model: 'Regular' }),
+    ]);
+  });
+
   it('suggests the models used for the item', async () => {
     await expect(
       details.models({ companyId: fixture.companyId, itemId: fixture.itemId }),
@@ -459,6 +500,50 @@ describe('Textile batch detail, addendum 2 (e2e — one rolled-back transaction)
     expect(typed).toMatchObject({
       status: 422,
       body: { errors: [{ field: 'lines.0', code: 'STOCK_BATCH_DETAIL_NEEDS_AUTO_BATCH' }] },
+    });
+  });
+
+  // Notes 149 #3 — for a draft, cancel is the delete.
+  it('cancelling a draft retires its rows; its /get still shows what was keyed', async () => {
+    const draft = await vouchers.save(
+      OPENING_RULES,
+      payload([line(1, null, { sizeId: sizeL, model: 'Abandoned run' })]),
+    );
+    const batch = draft.lines[0].batchNo!;
+    expect(batch).toMatch(/^ZTX26-\d{5}$/);
+
+    await vouchers.cancel(
+      OPENING_RULES,
+      draft.header.svhId,
+      ACC_YEAR,
+      'abandoned before post',
+      fixture.companyId,
+      fixture.branchId,
+      fixture.userId,
+    );
+
+    const rows = await tx.$queryRaw<{ sbd_is_deleted: boolean }[]>`
+      SELECT sbd_is_deleted FROM stock.stock_batch_detail
+       WHERE sbd_src_doc_id = ${draft.header.svhId}::uuid`;
+    expect(rows).toEqual([{ sbd_is_deleted: true }]);
+    // The scans read nothing off it any more...
+    const found = await batchDetailsFor(tx, fixture.companyId, [
+      { itemId: fixture.itemId, batchNo: batch },
+    ]);
+    expect(found.size).toBe(0);
+    // ...while the cancelled document still reads its own line.
+    const got = await vouchers.getById(
+      OPENING_RULES,
+      draft.header.svhId,
+      ACC_YEAR,
+      fixture.companyId,
+      fixture.branchId,
+    );
+    expect(got.header.status).toBe('CANCELLED');
+    expect(got.lines[0]).toMatchObject({
+      batchNo: batch,
+      sizeName: `ZL-${RUN}`,
+      model: 'Abandoned run',
     });
   });
 

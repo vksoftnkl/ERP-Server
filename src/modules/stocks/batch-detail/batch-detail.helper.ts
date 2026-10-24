@@ -61,12 +61,13 @@ export interface BatchDetailSource {
 /**
  * E2's write rule, inside the save's transaction, after its lines are written.
  *
- * A line that HAS an auto batch — numbered by this save, or already owning a
- * detail row under the batch it still carries — gets its row written (or
- * revived) with the size, colour and model it sent. Rows of this document
- * whose line is gone, or whose line now carries a typed batch, are
- * soft-deleted. Size, colour or model on a line without an auto batch is
- * refused: the row is keyed by a batch number only the server makes unique.
+ * A line that HAS an auto batch — numbered by this save, or carrying a number
+ * this document was given on an earlier save — gets its row written (or
+ * revived) with the size, colour and model it sent; a key left out is none.
+ * Rows of this document whose line is gone, or whose line now carries a typed
+ * batch, are soft-deleted. Size, colour or model on a line without an auto
+ * batch is refused: the row is keyed by a batch number only the server makes
+ * unique.
  *
  * `numbered` holds the indexes of `lines` that assignAutoBatchNumbers numbered.
  */
@@ -91,11 +92,17 @@ export async function syncBatchDetails(
        AND svi_acc_year   = ${source.accYear}::bpchar
        AND svi_is_deleted = false`;
   const storedByKey = new Map(stored.map((row) => [`${row.svi_line_no}|${row.svi_split_no}`, row]));
-  const owned = await tx.$queryRaw<{ sbd_src_line_id: string; sbd_batch_no: string }[]>`
-    SELECT sbd_src_line_id, sbd_batch_no
+  // Notes 149 #2 — the numbers THIS DOCUMENT was given, live or retired. A
+  // re-save hands the server's number back on the line, and a grid that does
+  // not send line ids gives the line a fresh svi_id, so ownership is by
+  // document and batch, not by line id. The counter never re-issues a number
+  // and a typed batch never writes a row here, so a row naming this document
+  // as its source can only hold one of the document's own numbers.
+  const owned = await tx.$queryRaw<{ sbd_batch_no: string }[]>`
+    SELECT sbd_batch_no
       FROM stock.stock_batch_detail
-     WHERE sbd_src_doc_id = ${source.srcDocId}::uuid AND sbd_is_deleted = false`;
-  const ownedBatchByLine = new Map(owned.map((row) => [row.sbd_src_line_id, row.sbd_batch_no]));
+     WHERE sbd_src_doc_id = ${source.srcDocId}::uuid`;
+  const ownedBatches = new Set(owned.map((row) => row.sbd_batch_no));
 
   const errors: StockErrorDetail[] = [];
   const rows: {
@@ -110,8 +117,7 @@ export async function syncBatchDetails(
     if (!row) return;
     const batchNo = row.svi_batch_no?.trim() ? foldBatchNo(row.svi_batch_no) : null;
     const model = line.model?.trim() || null;
-    const auto =
-      batchNo !== null && (numbered.has(index) || ownedBatchByLine.get(row.svi_id) === batchNo);
+    const auto = batchNo !== null && (numbered.has(index) || ownedBatches.has(batchNo));
     if (auto) {
       rows.push({ sviId: row.svi_id, itemId: row.svi_item_id, batchNo, line, model });
     } else if (line.sizeId || line.colourId || model) {
@@ -176,7 +182,12 @@ export async function syncBatchDetails(
        AND sbd_id <> ALL(${keptIds}::uuid[])`;
 }
 
-/** A deleted draft takes its batch details with it. */
+/**
+ * A deleted — or cancelled (notes 149 #3) — draft takes its batch details with
+ * it: its numbers never became lots, and a scan must not read size and colour
+ * off a batch that holds no stock. A POSTED cancel keeps them, because the lot
+ * exists and the rows describe it.
+ */
 export async function softDeleteBatchDetailsOf(
   tx: Prisma.TransactionClient,
   srcDocId: string,

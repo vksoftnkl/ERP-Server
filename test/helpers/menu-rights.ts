@@ -21,6 +21,8 @@ export const TESTER1 = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d';
 export const ISSUED_CHEQUES_MENU = 52;
 export const RECEIPT_MENU = 99;
 export const PAYMENT_MENU = 100;
+/** Physical Stock Update — every /stock/physical/* route since notes 150 #6. */
+export const PHYSICAL_STOCK_MENU = 45;
 
 const FLAGS = [
   'um_can_view',

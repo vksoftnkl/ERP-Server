@@ -174,10 +174,12 @@ function ownRowsSql(spec) {
 }
 function walkKey(spec, alias) {
     const col = (column) => client_1.Prisma.raw(`${alias}.${column}`);
-    const slno = spec.draftSlno === null
-        ? col(spec.slno)
-        : client_1.Prisma.sql `COALESCE(${col(spec.slno)}, ${DRAFT_SLNO_SQL[spec.draftSlno]})`;
-    return [col(spec.date), slno, col(spec.createdOn), col(spec.id)];
+    const serial = spec.serial
+        ? spec.serial.draft === null
+            ? col(spec.serial.column)
+            : client_1.Prisma.sql `COALESCE(${col(spec.serial.column)}, ${DRAFT_SLNO_SQL[spec.serial.draft]})`
+        : null;
+    return [col(spec.date), ...(serial ? [serial] : []), col(spec.createdOn), col(spec.id)];
 }
 function refuse(message, field, code) {
     (0, module_shared_utils_1.throwBadRequest)(message, [{ field, message, code }]);

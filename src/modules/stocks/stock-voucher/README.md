@@ -8,6 +8,25 @@ module, which supplies a `StockVoucherTypeRules` record and imports this service
 `OpeningStockVoucherModule` is the first caller. RECEIPT, ISSUE, ADJUSTMENT,
 PHYSICAL and the rest are the same shape.
 
+## In-transaction hooks and the named-lot preflight (notes 151)
+
+`post()` and the save-and-post path of `save()` take a `StockPostHooks` object
+(`types/stock-voucher.types.ts`): `beforePost(tx, svhId)` runs after the header row and the item
+locks are taken and BEFORE the shared preflight — the type's own rules over the rows that are
+about to post — and `afterPost(tx, rowsPosted, svhId)` after the engine and before the commit (the
+transfer's lorry columns, the re-lot guard). `post()` still accepts the older bare `afterPost`
+function. The adjustment family is the first user of `beforePost` (notes 151 #5).
+
+The shared preflight (`validate`) refuses a line that NAMES a lot which does not exist, belongs
+to another company or belongs to a different item (notes 151 #7), for every voucher type. `/get`
+lines read the batch's size / colour / model from the line's own `stock_batch_detail` row when it
+wrote one, else from the batch's live row by company + item + folded batch (notes 151 #8).
+
+The cost rebuilds (`rebuildItemCosts`, `rebuildLotCosts`) take the zero-quantity fallback rate
+from the latest LIVE ledger row — forward, not reversed — so a cancelled document leaves no trace
+on the average, and an item whose every movement was cancelled reads 0 (not stated) rather than
+the cancelled document's cost (notes 151 #2).
+
 ## The two things this module writes
 
 `stock.stock_voucher` and `stock.stock_voucher_item`. Nothing else.
@@ -119,9 +138,14 @@ and `svi_diff_qty` are `GENERATED ALWAYS ... STORED` and Postgres rejects any
 write — including a write of the value it would itself compute.
 
 The four header totals (`svh_line_count`, `svh_total_qty`, `svh_total_value`,
-`svh_total_value_wot`) are *not* generated, and are no longer off limits: they
-are taken from the header payload and written verbatim. The screen sums its own
-grid; this service counts nothing.
+`svh_total_value_wot`) are *not* generated — and since notes 150 #5 (2026-10-24)
+they are **the server's**: every save sums the lines it just wrote (a count: the
+net variance Σ(counted − book) at each holding's moving average; the adjustment
+family: signed by the reason's direction; everything else: a magnitude, value as
+`svi_value` is generated). The four fields on the payload are accepted for older
+clients and ignored. `createdBy` / `modifiedBy` likewise: under a login the
+authenticated user is the author; the payload's text stands only for a caller
+with no user in the request context.
 
 They are written as **their own `UPDATE`, after the lines** — see
 `writeHeaderTotals`. A DRAFT's figures are provisional. The engine's

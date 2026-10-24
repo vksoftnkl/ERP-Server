@@ -10,7 +10,7 @@ export interface TxnDocSpec {
     branch: string;
     year: string;
     date: string;
-    slno: string;
+    serial: TxnDocSerial | null;
     createdOn: string;
     status: string;
     deleted: string;
@@ -19,7 +19,10 @@ export interface TxnDocSpec {
     types?: readonly string[];
     where?: string;
     statuses: readonly string[];
-    draftSlno: 'LOW' | 'HIGH' | null;
     menu: TxnDocMenu;
+}
+export interface TxnDocSerial {
+    column: string;
+    draft: 'LOW' | 'HIGH' | null;
 }
 export declare const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>>;

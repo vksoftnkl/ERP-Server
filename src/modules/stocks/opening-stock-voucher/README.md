@@ -107,13 +107,12 @@ sent, or a keyed unit whose base unit has no conversion row.
 
 ## What the screen must not do
 
-* **Sum its own grid, and send the totals.** `lineCount`, `totalQty`,
-  `totalValue` and `totalValueWot` are taken from the payload and written
-  verbatim — the server counts no lines and sums nothing. All four are optional
-  (`NOT NULL DEFAULT 0`); omitting one on a create takes the column default and
-  omitting it on an update leaves the stored value alone. Note that where the
-  engine DDL is installed, `fn_svh_recompute` still re-derives all four **at
-  post**, so a posted document carries the engine's figures.
+* **Trust its own totals.** Since notes 150 #5 `lineCount`, `totalQty`,
+  `totalValue` and `totalValueWot` are summed by the server from the lines it
+  writes (value as `svi_value` is generated: round((base + free) × costRate, 2));
+  what the payload sends in those four is accepted and ignored — read them back
+  from the save response. `createdBy` / `modifiedBy` likewise: under a login the
+  authenticated user is the author.
 * **Never send a lot id.** `lotId` is NULL while DRAFT and filled by the post.
   That is not missing data — it is the tick that says the line reached the
   ledger.
@@ -300,7 +299,9 @@ advisory lock — `stock-voucher-batch-numbering.helper.ts`, switched on by the
 
 Addendum 2: a line may also send `sizeId`, `colourId` and `model`. They are kept
 against the line's auto batch in `stock.stock_batch_detail` (`../batch-detail`), come
-back on `/get`, and are refused on a typed batch.
+back on `/get`, and are refused on a typed batch. Notes 149: a re-save may hand the
+server's number back on the line (not a typed batch); a key left out clears the value;
+cancelling or deleting the draft retires its rows.
 
 The textile items take the shared preset `TEXTILE_BATCH` (batch + MRP + selling
 price, LOT_ACTUAL, FIFO, negative ALLOW) on their item group. The sale finds the

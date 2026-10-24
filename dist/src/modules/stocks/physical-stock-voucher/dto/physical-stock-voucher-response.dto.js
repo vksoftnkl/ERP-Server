@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockVarianceSuccessDto = exports.CountSheetSuccessDto = exports.PhysicalStockCancelSuccessDto = exports.PhysicalStockPostSuccessDto = exports.PhysicalStockValidateSuccessDto = exports.PhysicalStockListSuccessDto = exports.PhysicalStockDocumentSuccessDto = exports.StockVarianceDto = exports.StockVarianceRowDto = exports.CountSheetDto = exports.CountSheetRowDto = exports.PhysicalStockCancelResultDto = exports.PhysicalStockPostResultDto = exports.PhysicalStockLineProblemDto = exports.PhysicalStockListDto = exports.PagedMetaDto = exports.PhysicalStockListItemDto = exports.PhysicalStockDocumentDto = exports.PhysicalStockLineDto = exports.PhysicalStockHeaderDto = exports.PhysicalStockErrorResponseDto = exports.PhysicalStockErrorFieldDto = void 0;
+exports.StockVarianceSuccessDto = exports.CountSheetSuccessDto = exports.PhysicalStockCancelSuccessDto = exports.PhysicalStockPostSuccessDto = exports.PhysicalStockValidateSuccessDto = exports.PhysicalStockListSuccessDto = exports.PhysicalStockDocumentSuccessDto = exports.StockVarianceDto = exports.StockVarianceRowDto = exports.CountSheetDto = exports.CountSheetRowDto = exports.PhysicalStockCancelResultDto = exports.PhysicalStockPostResultDto = exports.PhysicalStockLineProblemDto = exports.PhysicalStockListDto = exports.PagedMetaDto = exports.PhysicalStockListItemDto = exports.PhysicalStockDocumentDto = exports.StockBookChangeDto = exports.PhysicalStockLineDto = exports.PhysicalStockHeaderDto = exports.PhysicalStockErrorResponseDto = exports.PhysicalStockErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class PhysicalStockErrorFieldDto {
@@ -349,6 +349,8 @@ class PhysicalStockLineDto {
     bookQty;
     countedQty;
     diffQty;
+    bookChanged;
+    previousBookQty;
     qty;
     baseQty;
     freeQty;
@@ -486,6 +488,19 @@ __decorate([
     __metadata("design:type", Object)
 ], PhysicalStockLineDto.prototype, "diffQty", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: "Save response only. True when this save replaced the line's stored book figure with a different one — stock moved since the sheet was drawn. Absent on /get.",
+    }),
+    __metadata("design:type", Boolean)
+], PhysicalStockLineDto.prototype, "bookChanged", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Save response only. The book figure the line held before this save, when it changed.',
+    }),
+    __metadata("design:type", Object)
+], PhysicalStockLineDto.prototype, "previousBookQty", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: '0 for the whole document — a count states no quantity to move.' }),
     __metadata("design:type", Number)
 ], PhysicalStockLineDto.prototype, "qty", void 0);
@@ -561,9 +576,33 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], PhysicalStockLineDto.prototype, "trackSignature", void 0);
+class StockBookChangeDto {
+    sviId;
+    lineNo;
+    previousBookQty;
+    bookQty;
+}
+exports.StockBookChangeDto = StockBookChangeDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], StockBookChangeDto.prototype, "sviId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Number)
+], StockBookChangeDto.prototype, "lineNo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The book figure before this save.' }),
+    __metadata("design:type", Number)
+], StockBookChangeDto.prototype, "previousBookQty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The book figure now, read from stock_balance.' }),
+    __metadata("design:type", Number)
+], StockBookChangeDto.prototype, "bookQty", void 0);
 class PhysicalStockDocumentDto {
     header;
     lines;
+    bookChanges;
 }
 exports.PhysicalStockDocumentDto = PhysicalStockDocumentDto;
 __decorate([
@@ -574,6 +613,14 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: PhysicalStockLineDto, isArray: true }),
     __metadata("design:type", Array)
 ], PhysicalStockDocumentDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: StockBookChangeDto,
+        isArray: true,
+        description: 'Save response only (notes 150 #4): the lines whose book figure this save re-based. Empty on a create and when nothing moved.',
+    }),
+    __metadata("design:type", Array)
+], PhysicalStockDocumentDto.prototype, "bookChanges", void 0);
 class PhysicalStockListItemDto {
     svhId;
     accYear;
@@ -790,6 +837,11 @@ class CountSheetRowDto {
     avgCostRate;
     stockValue;
     countedQty;
+    sizeId;
+    sizeName;
+    colourId;
+    colourName;
+    model;
 }
 exports.CountSheetRowDto = CountSheetRowDto;
 __decorate([
@@ -889,6 +941,29 @@ __decorate([
     }),
     __metadata("design:type", void 0)
 ], CountSheetRowDto.prototype, "countedQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], CountSheetRowDto.prototype, "sizeId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Shown after the item name: "Shirt · XL · Maroon · Slim fit".',
+    }),
+    __metadata("design:type", Object)
+], CountSheetRowDto.prototype, "sizeName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], CountSheetRowDto.prototype, "colourId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], CountSheetRowDto.prototype, "colourName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], CountSheetRowDto.prototype, "model", void 0);
 class CountSheetDto {
     items;
     meta;

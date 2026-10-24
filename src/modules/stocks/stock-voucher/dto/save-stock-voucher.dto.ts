@@ -245,7 +245,7 @@ export class SaveStockVoucherHeaderDto {
     minimum: 0,
     default: 0,
     description:
-      'How many lines the document has, as the screen counted them. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+      'IGNORED since notes 150 #5 — the server counts the lines it writes. Accepted so an older client is not refused.',
   })
   @OptionalInteger(0)
   lineCount?: number;
@@ -254,7 +254,7 @@ export class SaveStockVoucherHeaderDto {
     minimum: 0,
     default: 0,
     description:
-      'The document total quantity, as the screen summed it. numeric(18,6), NOT NULL DEFAULT 0 — omit to take the default.',
+      'IGNORED since notes 150 #5 — the server sums Σ(baseQty + freeBaseQty) over the lines it writes. Accepted so an older client is not refused.',
   })
   @OptionalNumber(0)
   totalQty?: number;
@@ -263,7 +263,7 @@ export class SaveStockVoucherHeaderDto {
     minimum: 0,
     default: 0,
     description:
-      'The document total value, inclusive of tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+      'IGNORED since notes 150 #5 — the server sums the lines\' svi_value, round((base + free) × costRate, 2). Accepted so an older client is not refused.',
   })
   @OptionalNumber(0)
   totalValue?: number;
@@ -272,7 +272,7 @@ export class SaveStockVoucherHeaderDto {
     minimum: 0,
     default: 0,
     description:
-      'The document total value excluding tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+      'IGNORED since notes 150 #5 — as totalValue, at costRateWot. Accepted so an older client is not refused.',
   })
   @OptionalNumber(0)
   totalValueWot?: number;
@@ -407,7 +407,7 @@ export class SaveStockVoucherHeaderDto {
     maxLength: 100,
     nullable: true,
     description:
-      'Who created the document — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+      'IGNORED under a login since notes 150 #5: the authenticated user is the author (written on a CREATE only). Read only when no user is in the request context.',
   })
   @NullableStringStrict(100)
   createdBy?: string | null;
@@ -416,7 +416,7 @@ export class SaveStockVoucherHeaderDto {
     maxLength: 100,
     nullable: true,
     description:
-      'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+      'IGNORED under a login since notes 150 #5: the authenticated user is the modifier (written on an UPDATE only; created_by is never rewritten). Read only when no user is in the request context.',
   })
   @NullableStringStrict(100)
   modifiedBy?: string | null;

@@ -104,20 +104,22 @@ describe('TxnAdjacentService', () => {
       });
     });
 
-    it('next is > and ASC on (date, slno, created_on, id), bounded by the doc on screen', async () => {
+    // Notes 152: svh_slno is counted per device, so two PCs' documents would
+    // interleave by their own counters; created_on follows the branch refno.
+    it('next is > and ASC on (date, created_on, id) — no per-device serial — bounded by the doc on screen', async () => {
       queryRaw.mockResolvedValueOnce([VIEW_ROW]).mockResolvedValueOnce(FOUND);
 
       await service.adjacent(query({ docId: DOC_ID }));
 
       const walk = squash(queryOf(queryRaw, 2));
       expect(walk).toContain(
-        'AND (h.svh_doc_date,h.svh_slno,h.svh_created_on,h.svh_id) > ' +
-          '(SELECT c.svh_doc_date,c.svh_slno,c.svh_created_on,c.svh_id FROM stock.stock_voucher c',
+        'AND (h.svh_doc_date,h.svh_created_on,h.svh_id) > ' +
+          '(SELECT c.svh_doc_date,c.svh_created_on,c.svh_id FROM stock.stock_voucher c',
       );
       expect(walk).toContain(
-        'ORDER BY h.svh_doc_date ASC,h.svh_slno ASC,h.svh_created_on ASC,h.svh_id ASC LIMIT 1',
+        'ORDER BY h.svh_doc_date ASC,h.svh_created_on ASC,h.svh_id ASC LIMIT 1',
       );
-      // The serial is NOT NULL here: nothing to coalesce.
+      expect(walk).not.toContain('svh_slno');
       expect(walk).not.toContain('COALESCE');
     });
 
@@ -244,14 +246,19 @@ describe('TxnAdjacentService', () => {
   });
 
   describe('SALE_BILL', () => {
-    it('sorts a numberless draft at the NEW end of its date, as grid 86 draws it', async () => {
+    // Notes 152: a POS bill is numbered on the device's own series, a
+    // wholesale bill on the branch's, so the serial cannot order a date's bills.
+    it('walks by (date, created_on, id): the bill serial is not branch-wide', async () => {
       queryRaw.mockResolvedValueOnce([VIEW_ROW]).mockResolvedValueOnce(FOUND);
 
       await service.adjacent(query({ docType: 'SALE_BILL', docId: DOC_ID }));
 
       const walk = squash(queryOf(queryRaw, 2));
-      expect(walk).toContain('COALESCE(h.sb_bill_slno, 9223372036854775807)');
-      expect(walk).toContain('COALESCE(c.sb_bill_slno, 9223372036854775807)');
+      expect(walk).toContain(
+        'AND (h.sb_bill_date,h.sb_created_on,h.sb_id) > ' +
+          '(SELECT c.sb_bill_date,c.sb_created_on,c.sb_id FROM sales.sale_bill c',
+      );
+      expect(walk).not.toContain('sb_bill_slno');
       // Every row of sale_bill is a bill: no type set to filter on.
       expect(walk).not.toContain('h.sb_doc_type IN');
     });
@@ -282,8 +289,27 @@ describe('TxnAdjacentService', () => {
         'AND vt.vchr_type_code IN ($4) AND h.avh_against_voucher_id IS NULL',
       );
       expect(walk.values[3]).toBe('Pmt');
-      expect(squash(walk)).toContain('COALESCE(h.avh_voucher_slno, 9223372036854775807)');
+      // The company-wide voucher serial stays in the key, a draft at the NEW end.
+      expect(squash(walk)).toContain(
+        'ORDER BY h.avh_voucher_date ASC,COALESCE(h.avh_voucher_slno, 9223372036854775807) ASC,' +
+          'h.avh_created_on ASC,h.avh_voucher_id ASC LIMIT 1',
+      );
       expect(squash(walk)).not.toContain('user_menus');
+    });
+  });
+
+  describe('a branch-wide sales serial', () => {
+    it('stays in the key between the date and created_on (sales order)', async () => {
+      queryRaw.mockResolvedValueOnce([VIEW_ROW]).mockResolvedValueOnce(FOUND);
+
+      await service.adjacent(query({ docType: 'SALE_ORDER', docId: DOC_ID, direction: 'prev' }));
+
+      const walk = squash(queryOf(queryRaw, 2));
+      expect(walk).toContain(
+        'AND (h.so_order_date,h.so_order_slno,h.so_created_on,h.so_id) < ' +
+          '(SELECT c.so_order_date,c.so_order_slno,c.so_created_on,c.so_id FROM sales.sale_order c',
+      );
+      expect(walk).not.toContain('COALESCE');
     });
   });
 

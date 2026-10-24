@@ -97,6 +97,7 @@ class PickStockQueryDto {
     itemId;
     bucket;
     search;
+    batchNo;
     limit;
 }
 exports.PickStockQueryDto = PickStockQueryDto;
@@ -134,6 +135,14 @@ __decorate([
     (0, dtoDecorators_1.OptionalTrimmedString)(100),
     __metadata("design:type", String)
 ], PickStockQueryDto.prototype, "search", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        description: 'Notes 151 #9 — EXACTLY this batch, matched as the lot key folds it (trimmed, upper-cased): the batch-label scan. One row back means the holding can be taken straight away; with `bucket` absent, one row per bucket the batch sits in.',
+    }),
+    (0, dtoDecorators_1.OptionalTrimmedString)(100),
+    __metadata("design:type", String)
+], PickStockQueryDto.prototype, "batchNo", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: 200, maximum: 1000 }),
     (0, dtoDecorators_1.OptionalInteger)(1, 1000),

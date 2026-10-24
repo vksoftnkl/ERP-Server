@@ -9,14 +9,15 @@ import { PrismaClient } from '@prisma/client';
  *
  * A failure here means a migration added or dropped a table without touching
  * the seed file: add the table's row there (a free id in its module's block),
- * or delete the row of a dropped table, and re-run the seed.
+ * or delete the row of a dropped table, and re-run the seed. SYNC_COLUMN means
+ * the row's sync_col is not the table's sync-date column any more.
  *
  *     npm run test:e2e -- db-table-master
  */
 const prisma = new PrismaClient();
 
 interface DriftRow {
-  drift: 'UNREGISTERED' | 'MISSING' | 'PARTITION';
+  drift: 'UNREGISTERED' | 'MISSING' | 'PARTITION' | 'SYNC_COLUMN';
   drift_schema: string;
   drift_table: string;
 }

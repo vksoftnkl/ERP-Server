@@ -13,6 +13,7 @@ import {
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { IST_CLOCK_SQL_FORMAT, istClockText } from 'src/common/utils/ist-clock.util';
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import { SaveStockVoucherItemDto } from './dto/save-stock-voucher-item.dto';
 import {
@@ -50,6 +51,7 @@ import {
   type OpeningReconcileRow,
   type PagedResult,
   type PendingOpeningItem,
+  type StockBookChange,
   type StockBucket,
   type StockCountSheetRow,
   type StockErrorDetail,
@@ -69,6 +71,7 @@ import {
   type StockVoucherStatus,
   type StockVoucherTypeRules,
   type StockVarianceRow,
+  type StockPostHooks,
 } from './types/stock-voucher.types';
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
 /**
@@ -114,6 +117,11 @@ interface CountSheetRow {
   sbl_on_hand_qty: Prisma.Decimal | null;
   sbl_avg_cost_rate: Prisma.Decimal;
   sbl_stock_value: Prisma.Decimal;
+  sbd_size_id: string | null;
+  size_name: string | null;
+  sbd_colour_id: string | null;
+  colour_name: string | null;
+  sbd_model: string | null;
 }
 /** §12 — one raw ledger row of the variance report. */
 interface VarianceRow {
@@ -136,7 +144,11 @@ interface VarianceRow {
 export interface CountSheetQuery {
   companyId: string;
   branchId: string;
-  accYear: string;
+  /**
+   * Accepted for compatibility and never read (notes 150, minor): the sheet is
+   * drawn from stock_balance, which is not partitioned by year.
+   */
+  accYear?: string;
   godownId: string;
   bucket?: StockBucket;
   itemGroupId?: string;
@@ -149,6 +161,41 @@ export interface CountSheetQuery {
   offset?: number;
 }
 /** What stock_balance answers for one holding a count line names — §3.4. */
+/**
+ * Notes 150 #3 — HOW FAR A DOCUMENT MAY DATE ITSELF FROM THE SERVER CLOCK.
+ *
+ * The freeze (§11) and the till's day cut-off trust svh_doc_datetime, the
+ * movement's OWN time, so that an offline device's documents land at the moment
+ * they were keyed rather than the moment they synced. Trusted without a bound,
+ * an online screen can key "three hours ago" and step round a freeze that was
+ * on. The server keeps no record of which device was offline, so the bound is
+ * this: a document that declares no offline sync (no syncDate) may differ from
+ * now() by clock skew only; one that declares one may trail ITS SYNC by up to a
+ * week (a device offline for longer re-syncs in parts) and never postdate it,
+ * and the sync itself is no later than now. Both fields are the client's — but
+ * the claim is now explicit, stored on the row, and bounded.
+ */
+const DOC_DATETIME_ONLINE_SKEW_MS = 15 * 60_000;
+const DOC_DATETIME_OFFLINE_MAX_MS = 7 * 24 * 3_600_000;
+/** The lines a save wrote, as writeHeaderTotals sums them and save() reports them. */
+interface WrittenLines {
+  rows: TotalsLine[];
+  holdings: Map<string, CountHolding> | null;
+  bookChanges: StockBookChange[];
+}
+/** The columns of a written line that the header totals are summed from. */
+interface TotalsLine {
+  sviLotId: string | null;
+  sviGodownId: string;
+  sviBucket: string;
+  sviBaseQty: Prisma.Decimal;
+  sviFreeBaseQty?: Prisma.Decimal;
+  sviCostRate: Prisma.Decimal;
+  sviCostRateWot: Prisma.Decimal;
+  sviDirection: 1 | -1 | null;
+  sviBookQty: Prisma.Decimal | null;
+  sviCountedQty: Prisma.Decimal | null;
+}
 interface CountHoldingRow {
   sbl_lot_id: string;
   sbl_item_id: string;
@@ -156,6 +203,8 @@ interface CountHoldingRow {
   sbl_bucket: string;
   sbl_base_uom_id: string;
   sbl_on_hand_qty: Prisma.Decimal | null;
+  sbl_avg_cost_rate: Prisma.Decimal | null;
+  sbl_avg_cost_rate_wot: Prisma.Decimal | null;
   sbl_batch_no: string | null;
   sbl_expiry_date: Date | null;
   sbl_mrp: Prisma.Decimal | null;
@@ -169,6 +218,9 @@ interface CountHolding {
   itemId: string;
   baseUomId: string;
   bookQty: Prisma.Decimal;
+  /** The holding's moving average, for a draft count's provisional net-variance value. */
+  avgCostRate: Prisma.Decimal;
+  avgCostRateWot: Prisma.Decimal;
   batchNo: string | null;
   mfgDate: Date | null;
   expiryDate: Date | null;
@@ -335,6 +387,8 @@ export class StockVoucherService {
   async save(
     rules: StockVoucherTypeRules,
     dto: SaveStockVoucherDto,
+    /** Notes 151 #5 — run inside the save-and-post transaction, as post() runs them. */
+    hooks?: StockPostHooks,
   ): Promise<StockVoucherSaveResult> {
     const { header } = dto;
     const actor = this.actorOf(header.userId);
@@ -361,7 +415,7 @@ export class StockVoucherService {
     // CREATED row stamped LATER — and a day-end query ordering by time then
     // called every posted opening a draft. Both rows take this one.
     const postedOn = new Date();
-    const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+    const { svhId, rowsPosted, bookChanges } = await this.prisma.$transaction(async (tx) => {
       // Notes 143 #1 — THE ROW LOCK FIRST, and the DRAFT check under it. Read
       // without a lock, a save could pass its check, wait on a /post that held
       // the row, and then rewrite the lines and totals of a document that had
@@ -376,6 +430,14 @@ export class StockVoucherService {
           header.branchId,
         );
         this.assertDraft(rules, existing);
+      }
+      // Notes 150 #2 — ONE FREEZE PER GODOWN AT A TIME, refused at save. The
+      // preflight and the posting guard each exclude only the document being
+      // posted, so two frozen drafts on one godown refuse each other's post
+      // for good, until someone cancels one. Checked under the row lock, in
+      // this transaction, so two saves racing for the same godown serialise.
+      if (rules.allowsCount && header.freezeStock && header.freezeFrom && header.freezeTo) {
+        await this.assertFreezeNotHeld(tx, header);
       }
       // Notes 89 — the document BEFORE this save, read before anything is
       // touched and in the shape /get returns; null on a create.
@@ -406,7 +468,7 @@ export class StockVoucherService {
           )
         : null;
       const saved: SaveStockVoucherDto = batches ? { ...dto, lines: batches.lines } : dto;
-      const id = header.svhId
+      const { svhId: id, bookChanges } = header.svhId
         ? await this.updateDraft(tx, rules, saved, actor, postedOn)
         : await this.createDraft(tx, rules, saved, actor, postedOn);
       // Addendum 2 E2 — each auto-numbered line's size / colour / model, once
@@ -427,7 +489,7 @@ export class StockVoucherService {
       }
       if (!postAfterSave) {
         await this.logRevision(tx, rules, id, header, before, actor, false);
-        return { svhId: id, rowsPosted: null as number | null };
+        return { svhId: id, rowsPosted: null as number | null, bookChanges };
       }
       // IN THE SAME TRANSACTION AS THE SAVE, and that is the whole point of
       // doing it here rather than calling post() afterwards: a document that
@@ -441,6 +503,9 @@ export class StockVoucherService {
       // Notes 143 #2 — and under the item locks, as post() does: see
       // lockForPreflight.
       await this.lockForPreflight(tx, rules, id, header.accYear);
+      // Notes 151 #5 — the type's own rules, under the locks and over the
+      // rows this save just wrote; the same hook post() runs.
+      await hooks?.beforePost?.(tx, id);
       await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
       const posted = await this.stockPosting.post(
         tx,
@@ -453,6 +518,7 @@ export class StockVoucherService {
         }),
         { actor, postedOn },
       );
+      await hooks?.afterPost?.(tx, posted.rowsPosted, id);
       await this.logStatusChange(tx, {
         rules,
         svhId: id,
@@ -475,7 +541,7 @@ export class StockVoucherService {
       // After the post, so the revision records the document this request left
       // behind — posted, with the engine's totals.
       await this.logRevision(tx, rules, id, header, before, actor, true);
-      return { svhId: id, rowsPosted: posted.rowsPosted };
+      return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges };
     });
     const document = await this.getById(
       rules,
@@ -484,7 +550,20 @@ export class StockVoucherService {
       header.companyId,
       header.branchId,
     );
-    return { ...document, rowsPosted };
+    // Notes 150 #4 — each line says whether THIS save re-based its book figure,
+    // so the screen's "stock moved since these lines were drawn" warning rests
+    // on what the server did, not on what the client remembers.
+    const rebased = new Map(bookChanges.map((change) => [change.sviId, change]));
+    return {
+      ...document,
+      lines: document.lines.map((line) => ({
+        ...line,
+        bookChanged: rebased.has(line.sviId),
+        previousBookQty: rebased.get(line.sviId)?.previousBookQty ?? null,
+      })),
+      rowsPosted,
+      bookChanges,
+    };
   }
   /**
    * Notes 89 — the ONE audit row of a save: the document after it, read inside
@@ -715,6 +794,41 @@ export class StockVoucherService {
           'A stock freeze needs a window: send freezeFrom and freezeTo as instants with an offset. The guard compares them to now(), not to the document date.',
       });
     }
+    // Notes 150 #3 — see DOC_DATETIME_ONLINE_SKEW_MS. A movement's own time is
+    // what the freeze and the day cut-off trust, so it may not wander from the
+    // server clock unless the document declares the offline sync that explains
+    // it, and then only within a week and never past the sync itself.
+    const docDatetime = this.toInstant(header.docDatetime);
+    if (docDatetime !== null) {
+      const now = Date.now();
+      const syncedAt = this.toInstant(header.syncDate);
+      const skewMinutes = DOC_DATETIME_ONLINE_SKEW_MS / 60_000;
+      if (syncedAt === null) {
+        if (Math.abs(docDatetime - now) > DOC_DATETIME_ONLINE_SKEW_MS) {
+          errors.push({
+            field: 'docDatetime',
+            code: StockErrorCode.DOC_DATETIME_OUT_OF_RANGE,
+            message:
+              `docDatetime ${istClockText(docDatetime)} is more than ${skewMinutes} minutes from the ` +
+              `server clock (${istClockText(now)}). Leave it out to take the server's time; a device ` +
+              'that keyed the document offline sends syncDate with it.',
+          });
+        }
+      } else if (
+        docDatetime > syncedAt + DOC_DATETIME_ONLINE_SKEW_MS ||
+        syncedAt > now + DOC_DATETIME_ONLINE_SKEW_MS ||
+        syncedAt - docDatetime > DOC_DATETIME_OFFLINE_MAX_MS
+      ) {
+        errors.push({
+          field: 'docDatetime',
+          code: StockErrorCode.DOC_DATETIME_OUT_OF_RANGE,
+          message:
+            `An offline document is keyed before it syncs, syncs no later than now, and trails its ` +
+            `sync by at most 7 days: docDatetime ${istClockText(docDatetime)}, syncDate ` +
+            `${istClockText(syncedAt)}, server clock ${istClockText(now)}.`,
+        });
+      }
+    }
     // Compared as INSTANTS, not as strings: '…T20:00+05:30' sorts after
     // '…T23:00Z' lexically and before it in fact.
     const freezeFrom = this.toInstant(header.freezeFrom);
@@ -734,6 +848,7 @@ export class StockVoucherService {
       header.rateSource !== undefined &&
       (DERIVABLE_RATE_SOURCES as readonly string[]).includes(header.rateSource);
     const seen = new Map<string, number>();
+    const holdingSeen = new Map<string, number>();
     lines.forEach((line, index) => {
       const field = `lines.${index}`;
       const splitNo = line.splitNo ?? 1;
@@ -882,6 +997,23 @@ export class StockVoucherService {
             code: StockErrorCode.COUNT_GODOWN_MISMATCH,
             message: `Line ${line.lineNo} is in a different godown than the one this count names. A count is per godown.`,
           });
+        }
+        // Notes 150 #1 — ONE LINE PER HOLDING. stock_balance's grain is godown
+        // × lot × bucket, and two lines counting one holding post two variances
+        // against one shelf: 3 and 3 against book 0 put +6 on a shelf holding
+        // 3. ux_svi_line knows only line numbers, so this is the only guard.
+        if (line.lotId) {
+          const holding = this.holdingKey(line.lotId, line.godownId, line.bucket);
+          const firstHoldingAt = holdingSeen.get(holding);
+          if (firstHoldingAt !== undefined) {
+            errors.push({
+              field,
+              code: StockErrorCode.COUNT_HOLDING_DUPLICATE,
+              message: `Line ${line.lineNo} counts the same holding (lot, godown and bucket) as row ${firstHoldingAt + 1}. A holding is one line on a count sheet — put the whole count on that line.`,
+            });
+          } else {
+            holdingSeen.set(holding, index);
+          }
         }
       }
       // THE SAME COLUMN, REFUSED ON ONE TYPE AND REQUIRED ON THE NEXT.
@@ -1128,7 +1260,7 @@ export class StockVoucherService {
     actor: string,
     /** The request's one instant — see save(). */
     now: Date,
-  ): Promise<string> {
+  ): Promise<{ svhId: string; bookChanges: StockBookChange[] }> {
     const { header } = dto;
     const scope: StockVoucherNumberScope = {
       companyId: header.companyId,
@@ -1191,8 +1323,8 @@ export class StockVoucherService {
       },
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
-    await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
-    await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
+    const written = await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
+    await this.writeHeaderTotals(tx, rules, created.svhId, header.accYear, written);
     // The audit row is save()'s: one revision holding the whole document.
     // The first row of the voucher's trail. fromStatus NULL says the document
     // did not exist before this step; tslToStatus says what it was born as.
@@ -1212,51 +1344,212 @@ export class StockVoucherService {
       deviceId: header.deviceId,
       sessionId: header.sessionId ?? null,
     });
-    return created.svhId;
+    return { svhId: created.svhId, bookChanges: written.bookChanges };
   }
   /**
-   * THE TOTALS ARE THE SCREEN'S. Nothing here counts the lines or sums the grid.
+   * THE TOTALS ARE THE SERVER'S (notes 150 #5; notes 143 asked first). Until
+   * now svh_line_count / svh_total_qty / svh_total_value / svh_total_value_wot
+   * were written verbatim from the header payload — a draft could claim 77
+   * lines over 2 and a total of 999999 — and only a post corrected them. Every
+   * save now sums the lines it just wrote, the way the post sums the ledger
+   * (recomputeHeaderTotals), and the four header fields on the payload are
+   * accepted for older clients and ignored.
    *
-   * svh_line_count / svh_total_qty / svh_total_value / svh_total_value_wot are
-   * ordinary writable columns and are taken verbatim from the header payload.
-   * A property the payload OMITS is left out of the update entirely rather than
-   * defaulted to 0 — on a create that lets the column's own DEFAULT 0 stand, on
-   * an update it leaves the stored value alone, and in neither case does a
-   * server-side fallback hide a grid that forgot to fill it. When nothing at
-   * all is sent, no statement is issued.
-   *
-   * A DRAFT'S FIGURES ARE PROVISIONAL. Nothing has been valued yet, so the
-   * grid's own sums are stored as it sent them. A POST RECOMPUTES ALL FOUR from
-   * the ledger rows it wrote (`recomputeHeaderTotals` in the posting helper,
-   * the former `fn_svh_recompute`): a posted document carries the engine's
-   * figures, a cancelled one re-totals to 0, and a count carries its NET
-   * variance. Nothing in this service ever writes them after a post.
+   * A DRAFT'S FIGURES ARE STILL PROVISIONAL — nothing has been valued by the
+   * engine yet — but they are now the document's own:
+   *   COUNT                 the NET variance: Σ (counted − book), valued at each
+   *                         holding's moving average. May be negative.
+   *   adjustment family     signed per line by the reason's direction.
+   *   everything else       every line as a magnitude; value as svi_value is
+   *                         GENERATED: round((base + free) × rate, 2).
+   * A POST then overwrites all four from the ledger rows it wrote.
    */
   private async writeHeaderTotals(
     tx: Prisma.TransactionClient,
+    rules: StockVoucherTypeRules,
     svhId: string,
-    header: SaveStockVoucherDto['header'],
-    /** How many lines this save wrote — the one figure that is not a valuation. */
-    lineCount: number,
+    accYear: string,
+    written: WrittenLines,
   ): Promise<void> {
-    const data: Prisma.StockVoucherUncheckedUpdateInput = {
-      // A line COUNT is the number of rows just written, not a grid's sum; it
-      // is always true and is stated whether or not the payload repeated it.
-      svhLineCount: header.lineCount ?? lineCount,
-    };
-    if (header.totalQty !== undefined) {
-      data.svhTotalQty = this.toDecimalColumn(header.totalQty);
-    }
-    if (header.totalValue !== undefined) {
-      data.svhTotalValue = this.toDecimalColumn(header.totalValue);
-    }
-    if (header.totalValueWot !== undefined) {
-      data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
-    }
+    const totals = this.documentTotals(rules, written);
     await tx.stockVoucher.update({
-      where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
-      data,
+      where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+      data: {
+        svhLineCount: totals.lineCount,
+        svhTotalQty: totals.totalQty,
+        svhTotalValue: totals.totalValue,
+        svhTotalValueWot: totals.totalValueWot,
+      },
     });
+  }
+  /** The four header figures, summed from the lines a save wrote — see writeHeaderTotals. */
+  private documentTotals(
+    rules: StockVoucherTypeRules,
+    written: WrittenLines,
+  ): {
+    lineCount: number;
+    totalQty: Prisma.Decimal;
+    totalValue: Prisma.Decimal;
+    totalValueWot: Prisma.Decimal;
+  } {
+    const isCount = rules.quantityMode === 'COUNT';
+    // As recomputeHeaderTotals nets them: a count and the per-line-reason
+    // adjustment family carry a signed net; a move (BUCKET_MOVE) and every
+    // other type carry a magnitude.
+    const netted = rules.lineDirection === 'REASON' && rules.postShape !== 'BUCKET_MOVE';
+    let totalQty = new Prisma.Decimal(0);
+    let totalValue = new Prisma.Decimal(0);
+    let totalValueWot = new Prisma.Decimal(0);
+    for (const row of written.rows) {
+      if (isCount) {
+        const holding = written.holdings?.get(
+          this.holdingKey(row.sviLotId, row.sviGodownId, row.sviBucket),
+        );
+        const diff = new Prisma.Decimal(row.sviCountedQty ?? 0).minus(row.sviBookQty ?? 0);
+        totalQty = totalQty.plus(diff);
+        totalValue = totalValue.plus(diff.mul(holding?.avgCostRate ?? 0).toDecimalPlaces(2));
+        totalValueWot = totalValueWot.plus(
+          diff.mul(holding?.avgCostRateWot ?? 0).toDecimalPlaces(2),
+        );
+        continue;
+      }
+      const sign = netted && row.sviDirection === -1 ? -1 : 1;
+      const base = new Prisma.Decimal(row.sviBaseQty).plus(row.sviFreeBaseQty ?? 0);
+      totalQty = totalQty.plus(base.mul(sign));
+      totalValue = totalValue.plus(base.mul(row.sviCostRate).toDecimalPlaces(2).mul(sign));
+      totalValueWot = totalValueWot.plus(
+        base.mul(row.sviCostRateWot).toDecimalPlaces(2).mul(sign),
+      );
+    }
+    return { lineCount: written.rows.length, totalQty, totalValue, totalValueWot };
+  }
+  /**
+   * Notes 150 #2 — refuses a freeze on a godown another DRAFT count already
+   * holds frozen over an overlapping window. Two open freezes block each
+   * other's post for good: the preflight and StockPostingService.assertNotFrozen
+   * each exclude only the document being posted.
+   */
+  private async assertFreezeNotHeld(
+    tx: Prisma.TransactionClient,
+    header: SaveStockVoucherDto['header'],
+  ): Promise<void> {
+    const godownId = header.toGodownId ?? header.fromGodownId ?? null;
+    if (!godownId) {
+      return;
+    }
+    const [held] = await tx.$queryRaw<
+      { svh_refno: string; svh_freeze_from: Date; svh_freeze_to: Date }[]
+    >`
+      SELECT svh.svh_refno, svh.svh_freeze_from, svh.svh_freeze_to
+        FROM stock.stock_voucher svh
+       WHERE svh.svh_company_id   = ${header.companyId}::uuid
+         AND svh.svh_branch_id    = ${header.branchId}::uuid
+         -- ix_svh_freeze_open covers these four.
+         AND svh.svh_voucher_type = 'PHYSICAL'
+         AND svh.svh_freeze_stock = true
+         AND svh.svh_status       = 'DRAFT'
+         AND svh.svh_is_deleted   = false
+         AND COALESCE(svh.svh_from_godown_id, svh.svh_to_godown_id) = ${godownId}::uuid
+         -- Windows that touch: the other's start is before this end, and its
+         -- end after this start.
+         AND svh.svh_freeze_from <= ${header.freezeTo}::timestamptz
+         AND svh.svh_freeze_to   >= ${header.freezeFrom}::timestamptz
+         AND (${header.svhId ?? null}::uuid IS NULL OR svh.svh_id <> ${header.svhId ?? null}::uuid)
+       ORDER BY svh.svh_freeze_from
+       LIMIT 1`;
+    if (!held) {
+      return;
+    }
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(
+      `Godown already frozen for physical count ${held.svh_refno}`,
+      [
+        {
+          field: 'freezeStock',
+          code: StockErrorCode.FREEZE_GODOWN_HELD,
+          message:
+            `This godown is already frozen for physical count ${held.svh_refno} from ` +
+            `${istClockText(held.svh_freeze_from)} to ${istClockText(held.svh_freeze_to)}. ` +
+            'Two open freezes would refuse each other\'s post for good — count on that sheet, ' +
+            'or post or cancel it first.',
+        },
+      ],
+    );
+  }
+  /**
+   * Notes 150 #8 — a POSTED count may not be cancelled once a LATER count has
+   * posted on any of its holdings: the later count measured a book figure that
+   * included this variance, and reversing it now would leave the shelf
+   * disagreeing with the newer count. The answer is another count. A later
+   * count that merely agreed with the book counts too — it posted no ledger
+   * row, but it confirmed the figure this cancel would change — so the test
+   * is on the documents' lines and their POSTED steps, not on the ledger.
+   */
+  private async assertCountNotSuperseded(
+    tx: Prisma.TransactionClient,
+    svhId: string,
+    accYear: string,
+    refno: string,
+  ): Promise<void> {
+    const [later] = await tx.$queryRaw<
+      { later_refno: string; line_no: number; later_posted_on: Date }[]
+    >`
+      SELECT later.svh_refno   AS later_refno,
+             mine.svi_line_no  AS line_no,
+             lp.tsl_changed_on AS later_posted_on
+        FROM stock.stock_voucher_item mine
+        JOIN LATERAL (
+          SELECT t.tsl_changed_on
+            FROM public.txn_status_log t
+           WHERE t.tsl_src_doc_id = mine.svi_voucher_id
+             AND t.tsl_to_status  = 'POSTED'
+             AND t.tsl_is_deleted = false
+           ORDER BY t.tsl_changed_on DESC
+           LIMIT 1
+        ) mp ON true
+        JOIN stock.stock_voucher_item other
+          ON other.svi_lot_id     = mine.svi_lot_id
+         AND other.svi_godown_id  = mine.svi_godown_id
+         AND other.svi_bucket     = mine.svi_bucket
+         AND other.svi_voucher_id <> mine.svi_voucher_id
+         AND other.svi_is_deleted = false
+        JOIN stock.stock_voucher later
+          ON later.svh_id           = other.svi_voucher_id
+         AND later.svh_acc_year     = other.svi_acc_year
+         AND later.svh_voucher_type = 'PHYSICAL'
+         AND later.svh_status       = 'POSTED'
+         AND later.svh_is_deleted   = false
+        JOIN LATERAL (
+          SELECT t.tsl_changed_on
+            FROM public.txn_status_log t
+           WHERE t.tsl_src_doc_id = later.svh_id
+             AND t.tsl_to_status  = 'POSTED'
+             AND t.tsl_is_deleted = false
+           ORDER BY t.tsl_changed_on DESC
+           LIMIT 1
+        ) lp ON true
+       WHERE mine.svi_voucher_id = ${svhId}::uuid
+         AND mine.svi_acc_year   = ${accYear}::bpchar
+         AND mine.svi_is_deleted = false
+         AND mine.svi_lot_id IS NOT NULL
+         AND lp.tsl_changed_on > mp.tsl_changed_on
+       ORDER BY mine.svi_line_no
+       LIMIT 1`;
+    if (!later) {
+      return;
+    }
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(
+      `${refno} has been counted again by ${later.later_refno}`,
+      [
+        {
+          field: 'svhId',
+          code: StockErrorCode.COUNT_SUPERSEDED,
+          message:
+            `Line ${later.line_no} of ${refno} was counted again by ${later.later_refno}, posted ` +
+            `${istClockText(later.later_posted_on)}. Cancelling ${refno} would undo an old variance ` +
+            `under a newer count. Count the holding again instead.`,
+        },
+      ],
+    );
   }
   private async updateDraft(
     tx: Prisma.TransactionClient,
@@ -1265,7 +1558,7 @@ export class StockVoucherService {
     actor: string,
     /** The request's one instant — see save(). */
     now: Date,
-  ): Promise<string> {
+  ): Promise<{ svhId: string; bookChanges: StockBookChange[] }> {
     const { header } = dto;
     const svhId = header.svhId as string;
     // Lines are written only while the header is DRAFT (the service discipline
@@ -1300,10 +1593,10 @@ export class StockVoucherService {
         svhModifiedBy: this.actorFor(header.modifiedBy, actor),
       },
     });
-    await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
-    await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
+    const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
+    await this.writeHeaderTotals(tx, rules, svhId, header.accYear, written);
     // The audit row is save()'s: one revision holding the whole document.
-    return svhId;
+    return { svhId, bookChanges: written.bookChanges };
   }
   /**
    * Writes the lines BY ID (notes 89; see save()): a line with `sviId` updates
@@ -1339,7 +1632,7 @@ export class StockVoucherService {
     author: string | null | undefined,
     /** The request's one instant — see save(). Stamps svi_modified_on on an updated line. */
     now: Date,
-  ): Promise<void> {
+  ): Promise<WrittenLines> {
     const { header, lines } = dto;
     const stored = header.svhId
       ? await tx.stockVoucherItem.findMany({
@@ -1355,7 +1648,7 @@ export class StockVoucherService {
       });
     }
     if (!lines.length) {
-      return;
+      return { rows: [], holdings: null, bookChanges: [] };
     }
     const isCount = rules.quantityMode === 'COUNT';
     const zeroCost = isCount || rules.zeroesLineCost === true;
@@ -1486,13 +1779,33 @@ export class StockVoucherService {
         // Only when something actually supplies one — a line inserted by this
         // save that carried a modified_by would claim an edit that never
         // happened.
-        ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy),
+        ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy, actor),
         // svi_value, svi_value_wot and svi_diff_qty are GENERATED ALWAYS ...
         // STORED and are absent from this object on purpose — Postgres rejects
         // any write to them, including a write of the value it would compute.
       };
     });
     const storedById = new Map((stored ?? []).map((row) => [row.sviId, row]));
+    // Notes 150 #4 — a re-saved count line re-reads its book figure; when the
+    // figure moved, say which line and from what, so the screen can warn.
+    const bookChanges: StockBookChange[] = [];
+    if (isCount) {
+      lines.forEach((line, index) => {
+        const row = line.sviId ? storedById.get(line.sviId) : undefined;
+        const next = data[index].sviBookQty;
+        if (!row || row.sviBookQty === null || next === null) {
+          return;
+        }
+        if (!new Prisma.Decimal(row.sviBookQty).equals(next)) {
+          bookChanges.push({
+            sviId: row.sviId,
+            lineNo: line.lineNo,
+            previousBookQty: toNumber(row.sviBookQty),
+            bookQty: toNumber(next),
+          });
+        }
+      });
+    }
     const changed: Array<{
       sviId: string;
       next: (typeof data)[number];
@@ -1533,6 +1846,7 @@ export class StockVoucherService {
     if (inserted.length) {
       await tx.stockVoucherItem.createMany({ data: inserted });
     }
+    return { rows: data, holdings, bookChanges };
   }
   /**
    * Notes 89 — a line id must name a live line of THIS document, once. A create
@@ -1638,6 +1952,8 @@ export class StockVoucherService {
                  sbl.sbl_bucket,
                  sbl.sbl_base_uom_id,
                  sbl.sbl_on_hand_qty,
+                 sbl.sbl_avg_cost_rate,
+                 sbl.sbl_avg_cost_rate_wot,
                  sbl.sbl_batch_no,
                  sbl.sbl_expiry_date,
                  sbl.sbl_mrp,
@@ -1663,6 +1979,8 @@ export class StockVoucherService {
         // sbl_on_hand_qty is GENERATED (in − out), so it is never null on a
         // live row; the coalesce is for the type, not for the data.
         bookQty: new Prisma.Decimal(row.sbl_on_hand_qty ?? 0),
+        avgCostRate: new Prisma.Decimal(row.sbl_avg_cost_rate ?? 0),
+        avgCostRateWot: new Prisma.Decimal(row.sbl_avg_cost_rate_wot ?? 0),
         batchNo: row.sbl_batch_no,
         mfgDate: row.slt_mfg_date,
         expiryDate: row.sbl_expiry_date,
@@ -1974,7 +2292,13 @@ export class StockVoucherService {
              -- lookup per distinct item after every load (notes 66).
              COALESCE(stp.stp_track_signature, 'N') AS track_signature,
              -- Addendum 2 E2: the size / colour / model this line's auto
-             -- batch carries, by the row the line wrote.
+             -- batch carries, by the row the line wrote — retired rows too,
+             -- matched on the batch the line still holds, so a cancelled
+             -- draft (notes 149 #3) still reads what was keyed while a line
+             -- whose batch was typed over since shows nothing. Notes 151 #8:
+             -- a line that wrote no row (an adjustment, a count, an issue
+             -- naming a batch an opening numbered) reads the batch's LIVE
+             -- row by company + item + folded batch instead.
              sbd.sbd_size_id,
              isz.isz_name AS size_name,
              sbd.sbd_colour_id,
@@ -1987,8 +2311,18 @@ export class StockVoucherService {
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
         LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
-        LEFT JOIN stock.stock_batch_detail sbd
-               ON sbd.sbd_src_line_id = svi.svi_id AND sbd.sbd_is_deleted = false
+        LEFT JOIN LATERAL (
+          SELECT d.sbd_size_id, d.sbd_colour_id, d.sbd_model
+            FROM stock.stock_batch_detail d
+           WHERE d.sbd_batch_no = upper(btrim(svi.svi_batch_no))
+             AND (d.sbd_src_line_id = svi.svi_id
+                  OR (d.sbd_company_id = ${companyId}::uuid
+                      AND d.sbd_item_id = svi.svi_item_id
+                      AND d.sbd_is_deleted = false))
+           -- The line's own row first (retired or not), else the live one.
+           ORDER BY (d.sbd_src_line_id = svi.svi_id) DESC NULLS LAST, d.sbd_is_deleted
+           LIMIT 1
+        ) sbd ON true
         LEFT JOIN inventory.item_size_master isz   ON isz.isz_id = sbd.sbd_size_id
         LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
         ${effectivePolicyLateral({
@@ -2268,6 +2602,18 @@ export class StockVoucherService {
                WHEN ${rules.postShape === 'SIMPLE'}::boolean AND keyed.line_direction > 0
                     AND NOT COALESCE(gdl.gdl_is_active, true)
                  THEN 'this godown is inactive'
+               -- Notes 151 #7 — a line that NAMES its lot names one that exists,
+               -- of this company and of this item. A valid lot of another
+               -- company's (shared) item used to resolve straight through the
+               -- engine's l.slt_id = svi_lot_id join; the adjustment screen checks
+               -- the same three, and every type that posts a named lot gets
+               -- them here.
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_id IS NULL
+                 THEN 'this line names a lot that does not exist'
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_company_id <> keyed.svh_company_id
+                 THEN 'this line names a lot that belongs to another company'
+               WHEN keyed.svi_lot_id IS NOT NULL AND nl.slt_item_id <> keyed.svi_item_id
+                 THEN 'this line names a lot that belongs to a different item'
 
                -- OPENING-ONLY, AND IT INVERTS UNDER COUNT. A count sends
                -- svi_qty 0 on every line, always; ungated this branch reports a
@@ -2352,7 +2698,7 @@ export class StockVoucherService {
                  THEN 'this holding already has an opening in this year'
                WHEN frozen.frozen_by IS NOT NULL
                  THEN 'this godown is frozen for physical count ' || frozen.frozen_by
-                      || ' until ' || to_char(frozen.frozen_until, 'YYYY-MM-DD HH24:MI')
+                      || ' until ' || to_char(frozen.frozen_until, ${IST_CLOCK_SQL_FORMAT})
                ELSE NULL
              END                                      AS "problem"
         FROM keyed
@@ -2364,6 +2710,9 @@ export class StockVoucherService {
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = keyed.svi_uom_id
         LEFT JOIN inventory.item_unit_conversion bu  ON bu.iuc_id  = keyed.svi_base_uom_id
         LEFT JOIN inventory.godown_locations gdl     ON gdl.gdl_id = keyed.svi_godown_id
+        -- The lot a line names (notes 151 #7); a deleted lot reads as none.
+        LEFT JOIN stock.stock_lot nl
+               ON nl.slt_id = keyed.svi_lot_id AND nl.slt_is_deleted = false
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = keyed.svh_company_id
               AND sic.sic_branch_id  = keyed.svh_branch_id
@@ -2429,9 +2778,14 @@ export class StockVoucherService {
      * Deliberately narrow: it gets the transaction client and the row count,
      * and nothing here inspects what it does. It must not be used to write
      * svh_status — the engine owns that column.
+     *
+     * Notes 151 #5 — or a `StockPostHooks` object, whose `beforePost` runs
+     * under the locks and before the preflight: the adjustment family's rules
+     * over the rows that are about to post, not over rows read before the lock.
      */
-    afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>,
+    hooks?: StockPostHooks | ((tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>),
   ): Promise<StockVoucherPostResult> {
+    const { beforePost, afterPost } = typeof hooks === 'function' ? { afterPost: hooks } : (hooks ?? {});
     const actor = this.actorOf(userId);
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     this.assertDraft(rules, existing);
@@ -2449,6 +2803,8 @@ export class StockVoucherService {
       this.assertDraft(rules, locked);
       this.assertDocDateInYear(rules, locked.docDate, accYear);
       await this.lockForPreflight(tx, rules, svhId, accYear);
+      // Notes 151 #5 — the type's own rules first, over the LOCKED rows.
+      await beforePost?.(tx, svhId);
       // Q3 first, and refuse without calling the engine when any row has a
       // problem. Post is the button a user presses forty lines in; letting the
       // engine raise on the first bad one and roll back the rest hands them one
@@ -2465,7 +2821,7 @@ export class StockVoucherService {
       );
       // Inside the transaction on purpose — if this throws, the post rolls back
       // with it rather than leaving a committed despatch missing its lorry.
-      await afterPost?.(tx, posted.rowsPosted);
+      await afterPost?.(tx, posted.rowsPosted, svhId);
       await this.logStatusChange(tx, {
         rules,
         svhId,
@@ -2637,7 +2993,17 @@ export class StockVoucherService {
           reason: trimmedReason,
           cancelledOn,
         });
+        // Notes 149 #3 — for a draft, cancel is the delete: its auto batches
+        // never became lots, so their size / colour / model rows retire with
+        // it, or the next scan reads a batch that holds no stock. /get still
+        // shows them against the line (its join takes retired rows by batch).
+        // A POSTED cancel keeps them: the lot exists, and the rows describe it.
+        await softDeleteBatchDetailsOf(tx, svhId, this.auditActor(actor));
       } else {
+        // Notes 150 #8 — an older count under a newer one stays.
+        if (rules.quantityMode === 'COUNT') {
+          await this.assertCountNotSuperseded(tx, svhId, accYear, existing.svhRefno);
+        }
         reversed = await this.stockPosting.cancel(
           tx,
           new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
@@ -3124,13 +3490,27 @@ export class StockVoucherService {
              sbl.sbl_supplier_id,
              sbl.sbl_on_hand_qty,
              sbl.sbl_avg_cost_rate,
-             sbl.sbl_stock_value
+             sbl.sbl_stock_value,
+             -- Notes 150 #9: the batch's size / colour / model, by company +
+             -- item + folded batch, as every other reader of the table.
+             sbd.sbd_size_id,
+             isz.isz_name AS size_name,
+             sbd.sbd_colour_id,
+             icl.icl_name AS colour_name,
+             sbd.sbd_model
         FROM stock.stock_balance sbl
         JOIN stock.stock_lot slt                   ON slt.slt_id = sbl.sbl_lot_id
         JOIN inventory.item_master itm             ON itm.item_id = sbl.sbl_item_id
         LEFT JOIN inventory.godown_locations gdl   ON gdl.gdl_id = sbl.sbl_godown_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = sbl.sbl_base_uom_id
         LEFT JOIN inventory.item_unit_master unt   ON unt.unit_id = iuc.iuc_unit_id
+        LEFT JOIN stock.stock_batch_detail sbd
+               ON sbd.sbd_company_id = sbl.sbl_company_id
+              AND sbd.sbd_item_id    = sbl.sbl_item_id
+              AND sbd.sbd_batch_no   = upper(btrim(sbl.sbl_batch_no))
+              AND sbd.sbd_is_deleted = false
+        LEFT JOIN inventory.item_size_master   isz ON isz.isz_id = sbd.sbd_size_id
+        LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
        WHERE sbl.sbl_company_id = ${query.companyId}::uuid
          AND sbl.sbl_branch_id  = ${query.branchId}::uuid
          AND sbl.sbl_godown_id  = ${query.godownId}::uuid
@@ -3169,6 +3549,11 @@ export class StockVoucherService {
         stockValue: toNumber(row.sbl_stock_value),
         // The column the screen fills, and the only one it may.
         countedQty: null,
+        sizeId: row.sbd_size_id,
+        sizeName: row.size_name,
+        colourId: row.sbd_colour_id,
+        colourName: row.colour_name,
+        model: row.sbd_model,
       })),
       meta: { limit: take, offset: skip, count: rows.length },
     };
@@ -3669,14 +4054,33 @@ export class StockVoucherService {
    * attributing the row to the nil uuid.
    */
   private actorFor(supplied: string | null | undefined, actor: string): string | null {
+    // Notes 150 #5 — THE LOGIN IS THE AUTHOR. svh_created_by and its three
+    // siblings are free text with no foreign key, and a logged-in client could
+    // name anyone ("ZT-SPOOFED-AUTHOR" was stored as sent). With a user in the
+    // request context the columns take that user, whatever the payload says;
+    // the payload's text stands only for a caller with no login at all — an
+    // import job run from a script, a service-level caller — where it is the
+    // only answer there is.
+    if (actor !== DEFAULT_ACTOR) {
+      return actor;
+    }
     const trimmed = supplied?.trim();
-    return trimmed ? trimmed : this.auditActor(actor);
+    return trimmed ? trimmed : null;
   }
   /**
-   * svi_modified_by is OMITTED rather than nulled when nothing supplies one, so
-   * a create leaves the column alone. Mirrors docDatetimeData.
+   * svi_modified_by is OMITTED rather than nulled on a line this save inserts:
+   * a fresh line has not been modified, and a modified_by on it would claim an
+   * edit that never happened. Under a login nothing the payload names is
+   * written (notes 150 #5); without one the payload's text stands. Mirrors
+   * docDatetimeData.
    */
-  private lineModifiedByData(supplied: string | null | undefined): { sviModifiedBy?: string } {
+  private lineModifiedByData(
+    supplied: string | null | undefined,
+    actor: string,
+  ): { sviModifiedBy?: string } {
+    if (actor !== DEFAULT_ACTOR) {
+      return {};
+    }
     const trimmed = supplied?.trim();
     return trimmed ? { sviModifiedBy: trimmed } : {};
   }

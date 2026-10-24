@@ -95,38 +95,80 @@ overage added at it. A count finds a *quantity* error, not a price error;
 correcting a price is something this engine cannot express at all — there is no
 REVALUE.
 
+## Rights (notes 150 #6)
+
+Every route is judged on the caller's `public.user_menus` row for **menu 45**
+(Physical Stock Update), as receipts and payments are: `count-sheet`, `/get`,
+`validate` and `variance` need `um_can_view`; `/create` needs `um_can_create` for a
+new sheet, `um_can_edit` for a draft, and `um_can_post` as well when it posts;
+`post` and `cancel` their own flag. A missing right is 403 `PHY_RIGHT_<RIGHT>`
+naming the column. No row, no rights — SUPER ADMIN included. The e2e suites grant
+tester1 the row for the run (`test/helpers/menu-rights.ts`, `PHYSICAL_STOCK_MENU`).
+
+## One line per holding (notes 150 #1)
+
+Two lines naming one holding (lot × godown × bucket) are refused at save with 422
+`STOCK_COUNT_HOLDING_DUPLICATE`: each would post its own variance against one
+shelf. The same lot in two buckets is two holdings and is allowed.
+
+`count-sheet` also returns `sizeId` / `sizeName`, `colourId` / `colourName` and
+`model` from `stock.stock_batch_detail` (notes 150 #9), and no longer needs
+`accYear` — the sheet is a live balance.
+
+## A re-save says when the book moved (notes 150 #4)
+
+A re-save re-reads every `svi_book_qty` from `stock_balance`. The save response
+carries `bookChanges[]` (`sviId`, `lineNo`, `previousBookQty`, `bookQty`) and each
+line `bookChanged` / `previousBookQty`, so the screen's "stock moved since these
+lines were drawn" warning rests on what the server did. `/get` carries neither.
+
 ## The freeze (§11)
 
 *A count that does not freeze the stock it is counting is counting a moving
 target.* `freezeStock` requires both `freezeFrom` and `freezeTo` — the API answers
-422 before `ck_svh_freeze` fires — and the window is **wall clock, not document
-date**: `tr_sml_freeze_guard` compares it to `now()`, because a back-dated entry
-still changes today's shelf. Send instants with an offset.
+422 before `ck_svh_freeze` fires. The window is tested against the **movement's
+own time** (`svh_doc_datetime`), not the wall clock, so an offline till's sale
+made before the count began is let through for the count to reconcile
+(`StockPostingService.assertNotFrozen`, 409 `STOCK_GODOWN_FROZEN`). Send instants
+with an offset.
+
+Two guards sit beside it since notes 150 (2026-10-24):
+
+* **One freeze per godown at a time (#2).** A second DRAFT count freezing the same
+  godown over an overlapping window is refused at save with 409
+  `STOCK_FREEZE_GODOWN_HELD`, naming the count that holds it and its window. Two
+  open freezes would refuse each other's post for good.
+* **A document may not date itself round the freeze (#3).** A `docDatetime` more
+  than 15 minutes from the server clock is refused (422
+  `STOCK_DOC_DATETIME_OUT_OF_RANGE`) unless the document declares the offline sync
+  that explains it: `syncDate`, no later than now, with `docDatetime` no later
+  than it and at most 7 days before it. The server keeps no record of which
+  device was offline, so the claim is explicit and stored, not implicit.
 
 The guard refuses movements touching **the counted godown only**; other godowns
 keep trading, and posting or cancelling the sheet lifts it without waiting for
 `freezeTo`. Default the window on the screen —
 `now()` to `now() + 3h` — rather than making the operator type it.
 
-**A refused movement surfaces in *other* modules** (sales, transfers), not this
-one. Their exception filters need the SQLSTATE the guard raises with; until it is
-confirmed against the deployed function, a blocked sale during a count is an
-unexplained 500. That is [open item 2](#open-items).
+**A refused movement surfaces in *other* modules** (sales, transfers) as the same
+409 `STOCK_GODOWN_FROZEN`, with the count's refno and both times on the shop's
+clock (`DD-MM-YYYY hh:mm AM`, notes 150 minor 2).
 
-## Header totals are the screen's, and they mean the net variance
+## Header totals are the server's, and they mean the net variance
 
-`header.lineCount`, `totalQty`, `totalValue` and `totalValueWot` are **sent on
-the save and written verbatim**, after the lines. Each is optional against a
-`NOT NULL DEFAULT 0` column: omit one on a create and the column default stands,
-omit it on an update and the stored value is left alone. Nothing server-side
-counts the lines or sums the grid.
+Since notes 150 #5 (2026-10-24) `lineCount`, `totalQty`, `totalValue` and
+`totalValueWot` are **summed by the server from the lines it writes**, on every
+save: the line count, and the **net variance** Σ(counted − book), valued at each
+holding's moving average (`sbl_avg_cost_rate` / `_wot`). The four fields on the
+payload are accepted for older clients and ignored; read them back from the
+response. A post then overwrites all four from the ledger rows it wrote
+(`recomputeHeaderTotals`). `createdBy` / `modifiedBy` are likewise the
+authenticated user's, whatever the payload names.
 
-**They may be negative here, unlike on an opening.** The intended reading on a
-count is the **net variance** — qty +1, value 86.00 for the captured run, under
-three lines totalling 236 counted units — and a shortage nets below zero.
+**They may be negative here, unlike on an opening.** A shortage nets below zero;
 `svh_total_qty` has no `>= 0` constraint. Label the field **Net variance**, or do
 not show it: a column headed "Total" reading 1 under 236 counted units is worse
-than no column. `lineCount` is still floored at 0.
+than no column.
 
 > These four were **absent from this route until 2026-09-09**, on the theory
 > that a count's header is the engine's to fill. Neither `tr_svi_refresh_header`
@@ -197,6 +239,13 @@ godown until `freezeTo` passes. Offer Cancel on a draft sheet, with the reason
 box — this screen exposes **no delete route**, so until now an abandoned sheet
 had no way out at all and its freeze ran to `freezeTo` whatever anyone did.
 
+**A POSTED count under a newer one stays (notes 150 #8).** Once a later count has
+posted on any of its holdings — even one that merely agreed with the book — the
+older count is refused with 409 `STOCK_COUNT_SUPERSEDED`, naming the line and the
+later count: reversing it would undo an old variance under a newer measurement.
+Count the holding again instead. (A posted count with no later count on its
+holdings cancels as before, subject to the never-negative rule.)
+
 ## Not built here
 
 - **The engine.** `fn_svh_post`, `fn_svh_cancel`, `fn_svh_txn_map`,
@@ -215,13 +264,14 @@ had no way out at all and its freeze ran to `freezeTo` whatever anyone did.
    `PHYSICAL_RULES` assumes `svh_to_godown_id`, and the service enforces that
    every line's `svi_godown_id` equals it — so whichever side the function reads,
    the two agree. Confirm before the DTO is frozen.
-2. **The freeze guard's SQLSTATE and message**, for other modules' filters.
+2. ~~**The freeze guard's SQLSTATE and message**, for other modules' filters.~~
+   The guard is TypeScript now and answers 409 `STOCK_GODOWN_FROZEN` (notes 150).
 3. **Which §0.1 build is deployed** — it decides whether the header shows totals
    at all. The e2e prints what it found.
 4. **`ADJUSTMENT` is the missing neighbour**: stock found for an item with no
    balance row cannot be a count line, and there is no adjustment screen yet.
-5. **Re-generating a sheet in place.** A re-save replaces the lines wholesale and
-   silently refreshes `svi_book_qty` — right for a sheet being filled in, worth a
-   confirmation on one being re-counted after a partial post.
+5. ~~**Re-generating a sheet in place.** A re-save replaces the lines wholesale and
+   silently refreshes `svi_book_qty`.~~ Notes 150 #4: the save response now names
+   every line whose book figure moved (`bookChanges[]`), so the screen can confirm.
 6. **Revaluation remains a gap.** Say so before someone tries to fix a costing
    error by counting.

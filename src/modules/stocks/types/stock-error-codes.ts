@@ -64,6 +64,10 @@ export enum StockErrorCode {
   FREEZE_WINDOW_ORDER = 'STOCK_FREEZE_WINDOW_ORDER',
   /** A godown is frozen for a physical count over the movement's time — post or cancel the count first. */
   GODOWN_FROZEN = 'STOCK_GODOWN_FROZEN',
+  /** Notes 150 #2 — another DRAFT count already holds a freeze on this godown over an overlapping window. */
+  FREEZE_GODOWN_HELD = 'STOCK_FREEZE_GODOWN_HELD',
+  /** Notes 150 #3 — docDatetime is too far from the server clock for a document that declares no offline sync. */
+  DOC_DATETIME_OUT_OF_RANGE = 'STOCK_DOC_DATETIME_OUT_OF_RANGE',
   /** The device the document is raised on has no device_master row. */
   DEVICE_NOT_FOUND = 'STOCK_DEVICE_NOT_FOUND',
   /** The device the document is raised on is blocked or inactive. */
@@ -167,6 +171,10 @@ export enum StockErrorCode {
   COUNT_HOLDING_OTHER_ITEM = 'STOCK_COUNT_HOLDING_OTHER_ITEM',
   /** A count sheet asked for on a document type that is not a physical count. */
   COUNT_SHEET_WRONG_TYPE = 'STOCK_COUNT_SHEET_WRONG_TYPE',
+  /** Notes 150 #1 — two lines of one count name the same holding (lot × godown × bucket). */
+  COUNT_HOLDING_DUPLICATE = 'STOCK_COUNT_HOLDING_DUPLICATE',
+  /** Notes 150 #8 — a later POSTED count covers one of this count's holdings, so this one cannot be cancelled. */
+  COUNT_SUPERSEDED = 'STOCK_COUNT_SUPERSEDED',
 
   // ── stock reasons ─────────────────────────────────────────────────────────
   /** No stock reason with that id visible to this company. */
@@ -231,6 +239,10 @@ export enum StockErrorCode {
   ADJ_RELOT_SAME_LOT = 'STOCK_ADJ_RELOT_SAME_LOT',
   /** The halves of a re-lot are keyed in different base units. */
   ADJ_RELOT_UNIT_MISMATCH = 'STOCK_ADJ_RELOT_UNIT_MISMATCH',
+  /** A re-lot whose IN half sits in a different bucket from its OUT half — a bucket change is a Move stock (notes 151 #6). */
+  ADJ_RELOT_BUCKET_MISMATCH = 'STOCK_ADJ_RELOT_BUCKET_MISMATCH',
+  /** The document was saved as a different kind (a move, a re-lot) while this post waited for its lock — reload (notes 151 #5). */
+  ADJ_KIND_CHANGED = 'STOCK_ADJ_KIND_CHANGED',
 
   // ── transfers (despatch, receipt, short-settle) ───────────────────────────
   /** A within-branch transfer whose source and destination godowns are the same. */

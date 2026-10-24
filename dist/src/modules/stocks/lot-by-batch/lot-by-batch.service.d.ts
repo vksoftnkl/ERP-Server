@@ -3,8 +3,10 @@ import type { LotByBatchQueryDto } from './dto/lot-by-batch-query.dto';
 export interface LotByBatchGodown {
     godownId: string;
     godownName: string | null;
+    bucket: string;
     onHandQty: number;
     availableQty: number;
+    avgCostRate: number;
 }
 export interface LotByBatchRow {
     lotId: string;
@@ -23,6 +25,7 @@ export interface LotByBatchRow {
     colourName: string | null;
     model: string | null;
     onHandQty: number;
+    avgCostRate: number;
     godowns: LotByBatchGodown[];
 }
 export declare class LotByBatchService {

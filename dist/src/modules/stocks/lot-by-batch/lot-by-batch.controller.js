@@ -39,9 +39,11 @@ __decorate([
         description: 'Textile plan D5 (2026-10-23) — the sale bill scans a batch label. The company’s lots whose ' +
             'batch, trimmed and upper-cased as the lot key folds it, is batchNo. Per lot: lotId, item ' +
             'id / code / name, base unit, batchNo, mrp, salePrice, status, the batch’s sizeId / ' +
-            'sizeName, colourId / colourName and model (addendum 2), and the SALEABLE stock at ' +
-            'branchId, in total and per godown (onHandQty, availableQty). A lot with none is left out ' +
-            'unless includeEmpty=true. One row: fill the line from it; several: pick.',
+            'sizeName, colourId / colourName and model (addendum 2), and the stock at branchId in the ' +
+            'bucket asked for (SALEABLE unless bucket says otherwise, ALL for every bucket), in total ' +
+            'and per godown (onHandQty, availableQty, bucket, and avgCostRate — notes 151 #10 — the ' +
+            'holding\'s cost an adjustment line carries; the lot row carries the branch average). A lot ' +
+            'with none is left out unless includeEmpty=true. One row: fill the line from it; several: pick.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: 'data: LotByBatchRow[]' }),
     (0, swagger_1.ApiBadRequestResponse)({ description: 'VALIDATION_*' }),

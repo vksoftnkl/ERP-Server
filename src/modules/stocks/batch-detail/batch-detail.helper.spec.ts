@@ -37,7 +37,8 @@ interface World {
     svi_item_id: string;
     svi_batch_no: string | null;
   }[];
-  owned?: { sbd_src_line_id: string; sbd_batch_no: string }[];
+  /** The numbers this document was given, live or retired — see syncBatchDetails. */
+  owned?: { sbd_batch_no: string }[];
   live?: string[];
 }
 
@@ -125,12 +126,46 @@ describe('syncBatchDetails (addendum 2 E2)', () => {
           svi_batch_no: 'CBE26-00007',
         },
       ],
-      owned: [{ sbd_src_line_id: LINE_1, sbd_batch_no: 'CBE26-00007' }],
+      owned: [{ sbd_batch_no: 'CBE26-00007' }],
     });
 
     await syncBatchDetails(tx, SOURCE, [{ lineNo: 1, model: 'Regular' }], new Set());
 
     expect(sqlOf(executeRaw.mock.calls[0]).values).toContain('Regular');
+  });
+
+  // Notes 149 #2 — a re-save hands the server's number back on the line, and a
+  // grid that sends no line ids gives the stored line a fresh svi_id. Neither
+  // makes it a typed batch: the number is the document's own.
+  it('a line re-sent under a new id, carrying the number this document gave it, keeps its row', async () => {
+    const { tx, executeRaw } = txFor({
+      stored: [
+        {
+          svi_id: LINE_2,
+          svi_line_no: 1,
+          svi_split_no: 1,
+          svi_item_id: SHIRT,
+          svi_batch_no: 'cbe26-00007',
+        },
+      ],
+      owned: [{ sbd_batch_no: 'CBE26-00007' }],
+      live: [SIZE_XL],
+    });
+
+    await syncBatchDetails(tx, SOURCE, [{ lineNo: 1, sizeId: SIZE_XL }], new Set());
+
+    const owned = (tx.$queryRaw as jest.Mock).mock.calls.find((call: unknown[]) =>
+      sqlOf(call).text.includes('FROM stock.stock_batch_detail'),
+    );
+    // Live or retired: ownership is the document's, not the row's state.
+    expect(sqlOf(owned!).text).not.toContain('sbd_is_deleted');
+    const upsert = sqlOf(executeRaw.mock.calls[0]);
+    expect(upsert.text).toContain('INSERT INTO stock.stock_batch_detail');
+    expect(upsert.values).toEqual(
+      expect.arrayContaining([batchDetailId(COMPANY_ID, 'CBE26-00007'), LINE_2, SIZE_XL]),
+    );
+    // A key left out is none: colour and model go in as null.
+    expect(upsert.values.filter((v) => v === null)).toHaveLength(2);
   });
 
   it('refuses size / colour / model on a typed batch, and on no batch at all', async () => {
@@ -208,7 +243,7 @@ describe('syncBatchDetails (addendum 2 E2)', () => {
           svi_batch_no: 'my-typed',
         },
       ],
-      owned: [{ sbd_src_line_id: LINE_1, sbd_batch_no: 'CBE26-00007' }],
+      owned: [{ sbd_batch_no: 'CBE26-00007' }],
     });
 
     await syncBatchDetails(tx, SOURCE, [{ lineNo: 1 }], new Set());

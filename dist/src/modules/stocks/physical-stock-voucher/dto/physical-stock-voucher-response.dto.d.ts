@@ -83,6 +83,8 @@ export declare class PhysicalStockLineDto {
     bookQty: number | null;
     countedQty: number | null;
     diffQty: number | null;
+    bookChanged?: boolean;
+    previousBookQty?: number | null;
     qty: number;
     baseQty: number;
     freeQty: number;
@@ -101,9 +103,16 @@ export declare class PhysicalStockLineDto {
     remarks: string | null;
     trackSignature: string;
 }
+export declare class StockBookChangeDto {
+    sviId: string;
+    lineNo: number;
+    previousBookQty: number;
+    bookQty: number;
+}
 export declare class PhysicalStockDocumentDto {
     header: PhysicalStockHeaderDto;
     lines: PhysicalStockLineDto[];
+    bookChanges?: StockBookChangeDto[];
 }
 export declare class PhysicalStockListItemDto {
     svhId: string;
@@ -173,6 +182,11 @@ export declare class CountSheetRowDto {
     avgCostRate: number;
     stockValue: number;
     countedQty: null;
+    sizeId: string | null;
+    sizeName: string | null;
+    colourId: string | null;
+    colourName: string | null;
+    model: string | null;
 }
 export declare class CountSheetDto {
     items: CountSheetRowDto[];

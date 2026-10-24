@@ -6952,7 +6952,8 @@ model CompanyGroupMaster {
 ///
 /// DB-only, invisible to Prisma: the views public.v_db_table_master (the
 /// registry plus partitioning, row estimate and size from pg_catalog) and
-/// public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION), and
+/// public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION /
+/// SYNC_COLUMN), and
 /// the partial sync index ix_sync_pending_db_table_master (where the sync
 /// functions exist).
 model DbTableMaster {
@@ -6987,6 +6988,13 @@ model DbTableMaster {
   dtmModifiedOn    DateTime? @updatedAt @db.Timestamptz(6) @map("dtm_modified_on")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   dtmSyncDate      DateTime? @db.Timestamptz(6) @map("dtm_sync_date")
+  /// The table's sync-date column: the timestamp the offline -> cloud push
+  /// stamps, NULL in it = changed since the last push. Names are not uniform
+  /// ('item_sync_date', 'saa_synced_on', 'price_lvl_SyncDate'), hence the
+  /// registry. NULL = the table has none (acc_cheque_book, _prisma_migrations,
+  /// _erp_seed_history). From the seed like every other column; the drift view
+  /// reports SYNC_COLUMN where the catalogue disagrees (migration 20261024100000).
+  dtmSyncCol       String?   @db.VarChar(63) @map("dtm_sync_col")
 
   @@unique([dtmSchema, dtmTable], map: "uq_dtm_table")
   @@index([dtmParentId], map: "ix_dtm_parent")

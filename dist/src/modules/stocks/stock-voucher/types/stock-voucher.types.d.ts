@@ -1,5 +1,10 @@
+import type { Prisma } from '@prisma/client';
 import type { StockErrorDetail, StockErrorResponse } from "../../../../common/utils/module-service.utils";
 import type { TxnStatusDocType } from "../../../../common/txn-status-log/txn-status-log.helper";
+export interface StockPostHooks {
+    beforePost?: (tx: Prisma.TransactionClient, svhId: string) => Promise<void>;
+    afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number, svhId: string) => Promise<void>;
+}
 export type { StockErrorDetail, StockErrorResponse };
 export declare const STOCK_VOUCHER_TYPES: readonly ["OPENING", "RECEIPT", "ISSUE", "ADJUSTMENT", "TRANSFER_OUT", "TRANSFER_IN", "DAMAGE", "EXPIRY_WRITEOFF", "PHYSICAL", "REPACK_IN", "REPACK_OUT"];
 export type StockVoucherType = (typeof STOCK_VOUCHER_TYPES)[number];
@@ -188,7 +193,19 @@ export interface StockVoucherListResult {
     };
 }
 export interface StockVoucherSaveResult extends StockVoucherPayload {
+    lines: StockVoucherSavedLine[];
     rowsPosted: number | null;
+    bookChanges: StockBookChange[];
+}
+export interface StockVoucherSavedLine extends StockVoucherLinePayload {
+    bookChanged: boolean;
+    previousBookQty: number | null;
+}
+export interface StockBookChange {
+    sviId: string;
+    lineNo: number;
+    previousBookQty: number;
+    bookQty: number;
 }
 export interface StockVoucherPostResult extends StockVoucherPayload {
     rowsPosted: number;
@@ -258,6 +275,11 @@ export interface StockCountSheetRow {
     avgCostRate: number;
     stockValue: number;
     countedQty: null;
+    sizeId: string | null;
+    sizeName: string | null;
+    colourId: string | null;
+    colourName: string | null;
+    model: string | null;
 }
 export interface StockVarianceRow {
     lineNo: number;

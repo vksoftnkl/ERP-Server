@@ -7,6 +7,7 @@ import { AppSettingValueService } from '../src/modules/settings/appSettings/app-
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
 import { StockAdjustmentService } from '../src/modules/stocks/stock-adjustment/stock-adjustment.service';
 import { StockReasonsService } from '../src/modules/stocks/stock-adjustment/stock-reasons.service';
+import { LotByBatchService } from '../src/modules/stocks/lot-by-batch/lot-by-batch.service';
 import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { STOCK_ADJUSTMENT_RULES, type StockAdjustmentSaveKind } from '../src/modules/stocks/stock-adjustment/stock-adjustment.rules';
@@ -17,7 +18,10 @@ import { buildStockPosting } from './helpers/stock-posting.factory';
  * one rolled-back transaction like `stock-engine-ts.e2e-spec.ts`. Cases 10–14
  * are "Move stock" (notes 60): the bucket pair, the refusals, the cancel.
  * Cases 15–18 are the notes 65 fixes: a same-lot re-lot, signed header totals,
- * the every-bucket picker and the sales shadow vouchers.
+ * the every-bucket picker and the sales shadow vouchers. Cases 19–23 are the
+ * notes 151 review: a re-lot that changes the bucket, another company's lot, a
+ * cancel that must leave the average alone, the picker's batch scan with the
+ * batch's size / colour / model, and the by-batch scan's cost.
  *
  *     npm run test:e2e -- stock-adjustment
  */
@@ -61,6 +65,8 @@ interface Fixture {
   milk: Item;
   /** Batch + supplier tracked: the lot names the supplier a damaged carton goes back to. */
   soap: Item;
+  /** Untracked, untouched until case 21: its whole history is cancelled documents. */
+  pepper: Item;
   supplierId: string;
 }
 type Reasons = Record<
@@ -211,12 +217,13 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       });
       return { itemId: item.itemId, iuc: iuc.iucId };
     };
-    const [salt, sugar, tea, milk, soap] = await Promise.all([
+    const [salt, sugar, tea, milk, soap, pepper] = await Promise.all([
       createItem('E2E-ADJ-SALT', 'AdjE2E Salt'),
       createItem('E2E-ADJ-SUGAR', 'AdjE2E Sugar'),
       createItem('E2E-ADJ-TEA', 'AdjE2E Tea'),
       createItem('E2E-ADJ-MILK', 'AdjE2E Milk'),
       createItem('E2E-ADJ-SOAP', 'AdjE2E Soap'),
+      createItem('E2E-ADJ-PEPPER', 'AdjE2E Pepper'),
     ]);
     // TEA is batch-tracked (FIFO); MILK batch + expiry (FEFO); SOAP batch +
     // supplier (FIFO), so its lot says whom a damaged carton goes back to.
@@ -245,6 +252,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       tea,
       milk,
       soap,
+      pepper,
       supplierId: supplier.sup_id,
     };
   }
@@ -934,7 +942,10 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       totalValue: -40,
       totalValueWot: -40,
     });
-    expect(await header(saved.header.svhId)).toEqual({ status: 'DRAFT', qty: -2, value: -40, lines: 1 });
+    // Notes 150 #5: the totals are the SERVER's sum of the lines, signed by the
+    // reason's direction — the body's −40 is ignored. An outward line carries
+    // no cost until the engine stamps it at post, so the draft's value is 0.
+    expect(await header(saved.header.svhId)).toEqual({ status: 'DRAFT', qty: -2, value: 0, lines: 1 });
     await post(saved.header.svhId);
     const posted = await header(saved.header.svhId);
     expect(posted.status).toBe('POSTED');
@@ -985,5 +996,197 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       linkSrcDocId: svhId,
     }).then(() => 'saved', refusal);
     expect(linked).toMatch(/linkSrcModule may be STOCK or empty, not SALES/);
+  });
+
+  // ── notes 151 — the stock adjustment server review ─────────────────────────
+
+  it('19. notes 151 #6 — a re-lot that changes the bucket is refused at save, at validate and inside the post', async () => {
+    // TEA lot RIGHT holds 5 SALEABLE at 10 (case 6; case 15 posted nothing).
+    const right = (await lots(fixture.tea)).find((l) => l.batch_no === 'RIGHT');
+    expect(right).toBeDefined();
+    const outHalf: AdjLine = { item: fixture.tea, qty: 2, reasonId: reasons.RELOT_OUT, lotId: right!.slt_id, remarks: 'relabel' };
+
+    // RELOT_OUT from SALEABLE, RELOT_IN into QUARANTINE: a bucket move under a
+    // re-lot reason — no move reason, no accounts entry either way. Refused.
+    const crossed = await adjustment('ADJUSTMENT', [
+      outHalf,
+      { item: fixture.tea, qty: 2, reasonId: reasons.RELOT_IN, batchNo: 'RIGHT-Q', remarks: 'relabel', bucket: 'QUARANTINE' },
+    ]).then(() => 'saved', refusal);
+    expect(crossed).toMatch(/STOCK_ADJ_RELOT_BUCKET_MISMATCH/);
+    expect(crossed).toMatch(/brings the stock into the QUARANTINE bucket, but the OUT half takes it from SALEABLE/);
+
+    // The same bucket on both halves saves; a bucket changed underneath is
+    // caught on the stored rows — at validate, and inside the post.
+    const saved = await adjustment('ADJUSTMENT', [
+      outHalf,
+      { item: fixture.tea, qty: 2, reasonId: reasons.RELOT_IN, batchNo: 'RIGHT-Q', remarks: 'relabel' },
+    ]);
+    const svhId = saved.header.svhId;
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_bucket = 'QUARANTINE'
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar AND svi_line_no = 2
+    `;
+    const problems = await service.validate(svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(problems.find((p) => p.lineNo === 2)?.problem).toMatch(/brings the stock into the QUARANTINE bucket/);
+    expect(await post(svhId).then(() => 'posted', refusal)).toMatch(/STOCK_ADJ_RELOT_BUCKET_MISMATCH/);
+    expect((await header(svhId)).status).toBe('DRAFT');
+    expect(await ledger(svhId)).toHaveLength(0);
+    expect(await balancesAgree(fixture.tea)).toBe(0);
+  });
+
+  it("20. notes 151 #7 — a line naming another company's lot is refused by the adjustment rules and by the shared preflight", async () => {
+    const [other] = await tx.$queryRaw<Array<{ comp_id: string }>>`
+      SELECT comp_id FROM public.companys
+       WHERE comp_id <> ${fixture.companyId}::uuid AND comp_is_deleted = false
+       ORDER BY comp_name LIMIT 1
+    `;
+    expect(other).toBeDefined();
+    // The same (shared) item, a lot of ANOTHER company: before notes 151 it
+    // resolved straight through the engine's l.slt_id = svi_lot_id join.
+    const [foreign] = await tx.$queryRaw<Array<{ slt_id: string }>>`
+      INSERT INTO stock.stock_lot (slt_company_id, slt_item_id, slt_base_uom_id, slt_batch_no, slt_cost_rate, slt_cost_rate_wot)
+      VALUES (${other.comp_id}::uuid, ${fixture.tea.itemId}::uuid, ${fixture.tea.iuc}::uuid, 'FOREIGN', 7, 7)
+      RETURNING slt_id
+    `;
+
+    const refused = await adjustment('ADJUSTMENT', [
+      { item: fixture.tea, qty: 1, reasonId: reasons.INTERNAL, lotId: foreign.slt_id },
+    ]).then(() => 'saved', refusal);
+    expect(refused).toMatch(/STOCK_LOT_OTHER_COMPANY/);
+    expect(refused).toMatch(/names a lot that belongs to another company/);
+
+    // A clean draft whose lot is swapped underneath: the shared preflight —
+    // every type's — names it, the adjustment's validate names it, the post refuses.
+    const right = (await lots(fixture.tea)).find((l) => l.batch_no === 'RIGHT');
+    const saved = await adjustment('ADJUSTMENT', [
+      { item: fixture.tea, qty: 1, reasonId: reasons.INTERNAL, lotId: right!.slt_id },
+    ]);
+    const svhId = saved.header.svhId;
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_lot_id = ${foreign.slt_id}::uuid
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar
+    `;
+    const shared = await voucherService.validate(STOCK_ADJUSTMENT_RULES.ADJUSTMENT, svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(shared[0].problem).toBe('this line names a lot that belongs to another company');
+    const own = await service.validate(svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(own[0].problem).toMatch(/names a lot that belongs to another company/);
+    expect(await post(svhId).then(() => 'posted', refusal)).toMatch(/STOCK_LOT_OTHER_COMPANY/);
+    expect(await ledger(svhId)).toHaveLength(0);
+
+    // And the other two sentences of the same family, on the stored row.
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_item_id = ${fixture.salt.itemId}::uuid
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar
+    `;
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_lot_id = ${right!.slt_id}::uuid
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar
+    `;
+    const otherItem = await voucherService.validate(STOCK_ADJUSTMENT_RULES.ADJUSTMENT, svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(otherItem[0].problem).toMatch(/names a lot that belongs to a different item|unit/);
+  });
+
+  it('21. notes 151 #2 — cancelling an IN leaves the average where it was; an item whose every movement was cancelled reads 0, not the cancelled cost', async () => {
+    // (a) The review's case with a LIVE history: PEPPER opened 4 @50.
+    const openingId = await open([{ item: fixture.pepper, qty: 4, costRate: 50 }]);
+    expect(await itemCost(fixture.pepper)).toEqual({ qty: 4, value: 200, avg: 50 });
+    const inward = await adjustment(
+      'ADJUSTMENT',
+      [{ item: fixture.pepper, qty: 10, reasonId: reasons.FOUND, remarks: 'found', costRate: 60 }],
+      { rateSource: 'MANUAL' },
+    );
+    await post(inward.header.svhId);
+    const moved = await itemCost(fixture.pepper);
+    expect(moved?.qty).toBeCloseTo(14, 6);
+    expect(moved?.avg).toBeCloseTo(800 / 14, 5);
+
+    await attempt(() =>
+      service.cancel({ svhId: inward.header.svhId, accYear: ACC_YEAR, companyId: fixture.companyId, branchId: fixture.branchId, reason: 'keyed twice', userId: fixture.userId }),
+    );
+    // Back to the opening's figures — NOT 60, the cancelled document's cost,
+    // which the latest-row fallback used to read off the reversal.
+    expect(await itemCost(fixture.pepper)).toEqual({ qty: 4, value: 200, avg: 50 });
+    const holding = (await holdings(fixture.pepper, 'SALEABLE'))[0];
+    expect(holding.avgCostRate).toBeCloseTo(50, 6);
+
+    // (b) Every movement cancelled: nothing live is left to carry a cost, so
+    // the average is NOT STATED (0) and the next inward is a fresh start.
+    await attempt(() =>
+      voucherService.cancel(OPENING_RULES, openingId, ACC_YEAR, 'e2e reversal', fixture.companyId, fixture.branchId, fixture.userId),
+    );
+    expect(await itemCost(fixture.pepper)).toEqual({ qty: 0, value: 0, avg: 0 });
+    const again = await adjustment(
+      'ADJUSTMENT',
+      [{ item: fixture.pepper, qty: 10, reasonId: reasons.FOUND, remarks: 'found', costRate: 60 }],
+      { rateSource: 'MANUAL' },
+    );
+    await post(again.header.svhId);
+    expect((await itemCost(fixture.pepper))?.avg).toBeCloseTo(60, 6);
+    await attempt(() =>
+      service.cancel({ svhId: again.header.svhId, accYear: ACC_YEAR, companyId: fixture.companyId, branchId: fixture.branchId, reason: 'keyed twice', userId: fixture.userId }),
+    );
+    expect(await itemCost(fixture.pepper)).toEqual({ qty: 0, value: 0, avg: 0 });
+    expect(await balancesAgree(fixture.pepper)).toBe(0);
+  });
+
+  let rightLotId: string;
+
+  it("22. notes 151 #8 / #9 — pick-stock takes an exact batch label and carries the batch's size / colour / model; so does /get", async () => {
+    const right = (await lots(fixture.tea)).find((l) => l.batch_no === 'RIGHT');
+    rightLotId = right!.slt_id;
+    const [size] = await tx.$queryRaw<Array<{ isz_id: string; isz_name: string }>>`
+      SELECT isz_id, isz_name FROM inventory.item_size_master WHERE isz_is_deleted = false ORDER BY isz_name LIMIT 1
+    `;
+    const [colour] = await tx.$queryRaw<Array<{ icl_id: string; icl_name: string }>>`
+      SELECT icl_id, icl_name FROM inventory.item_colour_master WHERE icl_is_deleted = false ORDER BY icl_name LIMIT 1
+    `;
+    // The batch's detail row, as an opening's auto-numbering writes it
+    // (stored folded; ux_sbd_batch is company + batch among live rows).
+    await tx.$executeRaw`
+      INSERT INTO stock.stock_batch_detail (sbd_id, sbd_company_id, sbd_batch_no, sbd_item_id, sbd_size_id, sbd_colour_id, sbd_model)
+      VALUES (uuidv7(), ${fixture.companyId}::uuid, 'RIGHT', ${fixture.tea.itemId}::uuid,
+              ${size?.isz_id ?? null}::uuid, ${colour?.icl_id ?? null}::uuid, 'Slim fit')
+    `;
+
+    // The scan: folded like the lot key, every bucket when none is named.
+    const scanned = await service.pickStock({
+      companyId: fixture.companyId,
+      branchId: fixture.branchId,
+      godownId: fixture.godownA,
+      batchNo: ' right ',
+    });
+    expect(scanned.length).toBeGreaterThan(0);
+    expect(scanned.every((r) => r.lotId === rightLotId)).toBe(true);
+    expect(scanned[0]).toMatchObject({
+      batchNo: 'RIGHT',
+      model: 'Slim fit',
+      sizeId: size?.isz_id ?? null,
+      sizeName: size?.isz_name ?? null,
+      colourId: colour?.icl_id ?? null,
+      colourName: colour?.icl_name ?? null,
+    });
+    // A label nobody has is no rows, not an error; the loose search still works beside it.
+    expect(await service.pickStock({ companyId: fixture.companyId, branchId: fixture.branchId, godownId: fixture.godownA, batchNo: 'NO-SUCH' })).toEqual([]);
+    const loose = await service.pickStock({ companyId: fixture.companyId, branchId: fixture.branchId, godownId: fixture.godownA, search: 'rig' });
+    expect(loose.some((r) => r.lotId === rightLotId)).toBe(true);
+
+    // /get on a line that only NAMES the batch (it wrote no detail row).
+    const draft = await adjustment('ADJUSTMENT', [
+      { item: fixture.tea, qty: 1, reasonId: reasons.INTERNAL, lotId: rightLotId, batchNo: 'RIGHT' },
+    ]);
+    const loaded = await service.getOne(draft.header.svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(loaded.lines[0]).toMatchObject({ model: 'Slim fit', sizeName: size?.isz_name ?? null, colourName: colour?.icl_name ?? null });
+  });
+
+  it('23. notes 151 #10 — /stock/lots/by-batch carries the cost of each holding and of the lot', async () => {
+    const byBatch = new LotByBatchService(transactional(tx));
+    const [row] = await byBatch.find({ companyId: fixture.companyId, branchId: fixture.branchId, batchNo: 'right', bucket: 'ALL' });
+    expect(row.lotId).toBe(rightLotId);
+    // TEA is LOT_ACTUAL: the lot carries the 10 the re-lot of case 6 brought across.
+    expect(row.avgCostRate).toBeCloseTo(10, 6);
+    expect(row.godowns.length).toBeGreaterThan(0);
+    expect(row.godowns[0]).toMatchObject({ godownId: fixture.godownA, bucket: 'SALEABLE' });
+    expect(row.godowns[0].avgCostRate).toBeCloseTo(10, 6);
+    expect(row.model).toBe('Slim fit');
   });
 });

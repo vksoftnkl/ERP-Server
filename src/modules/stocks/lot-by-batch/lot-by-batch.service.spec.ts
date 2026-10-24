@@ -26,9 +26,43 @@ describe('LotByBatchService', () => {
     await service.find({ companyId: COMPANY_ID, branchId: BRANCH_ID, batchNo: 'cbe26-00001' });
 
     const sql = statementOf(queryRaw);
-    expect(squash(sql)).toContain('slt.slt_key_batch = upper(btrim($3))');
-    expect(squash(sql)).toContain("sbl.sbl_bucket = 'SALEABLE'");
-    expect(sql.values).toEqual([BRANCH_ID, COMPANY_ID, 'cbe26-00001']);
+    expect(squash(sql)).toContain('slt.slt_key_batch = upper(btrim($7))');
+    // Notes 150 #10 — the bucket is a parameter now, SALEABLE unless asked.
+    expect(squash(sql)).toContain("($2::text = 'ALL' OR sbl.sbl_bucket = $3::text)");
+    expect(sql.values).toEqual([
+      BRANCH_ID,
+      'SALEABLE',
+      'SALEABLE',
+      null,
+      null,
+      COMPANY_ID,
+      'cbe26-00001',
+    ]);
+  });
+
+  it('notes 150 #10: counts every bucket under bucket=ALL, in one godown when asked', async () => {
+    const GODOWN_ID = '01000000-0000-7000-8000-0000000000d1';
+    await service.find({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      batchNo: 'CBE26-00001',
+      bucket: 'ALL',
+      godownId: GODOWN_ID,
+      includeEmpty: true,
+    });
+
+    const sql = statementOf(queryRaw);
+    expect(squash(sql)).toContain("'bucket', sbl.sbl_bucket");
+    expect(squash(sql)).toContain('OR sbl.sbl_godown_id = $5::uuid');
+    expect(sql.values).toEqual([
+      BRANCH_ID,
+      'ALL',
+      'ALL',
+      GODOWN_ID,
+      GODOWN_ID,
+      COMPANY_ID,
+      'CBE26-00001',
+    ]);
   });
 
   it("carries the batch's size, colour and model (addendum 2 E3.1)", async () => {

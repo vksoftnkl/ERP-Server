@@ -14,6 +14,9 @@ import {
 } from '@nestjs/swagger';
 import { API_VERSION } from 'src/common/constants/api-version';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
+import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockVoucherExceptionFilter } from '../stock-voucher/stock-voucher-exception.filter';
 import type { SaveStockVoucherDto } from '../stock-voucher/dto/save-stock-voucher.dto';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
@@ -87,6 +90,14 @@ import {
  * Seeded by migration 20260909110000_physical_stock_refno_prefix_phy.
  */
 const PHYSICAL_VCHR_TYPE_ID = 6;
+/**
+ * Notes 150 #6 — fixed.menu_master 45, "Physical Stock Update". Every route is
+ * judged on the caller's `user_menus` row for it, as receipts (99) and payments
+ * (100) are since notes 62: reads need view, a new sheet create, a draft change
+ * edit, and post / cancel their own right. No row, no rights — SUPER ADMIN
+ * included.
+ */
+export const PHYSICAL_MENU_ID = 45;
 const PHYSICAL_RULES: StockVoucherTypeRules = {
   voucherType: 'PHYSICAL',
   typeCode: 'PHY',
@@ -123,7 +134,11 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
 @Controller('stock/physical')
 @UseFilters(StockVoucherExceptionFilter)
 export class PhysicalStockVoucherController {
-  constructor(private readonly stockVoucherService: StockVoucherService) {}
+  constructor(
+    private readonly stockVoucherService: StockVoucherService,
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
   @Get('count-sheet')
   @Version(API_VERSION)
   @ApiOperation({
@@ -138,6 +153,7 @@ export class PhysicalStockVoucherController {
   async countSheet(
     @Query() query: GenerateCountSheetQueryDto,
   ): Promise<StockVoucherSuccessResponse<PagedResult<StockCountSheetRow>>> {
+    await this.requireRight('view', 'generate a count sheet');
     const data = await this.stockVoucherService.countSheet(PHYSICAL_RULES, query);
     return {
       success: true,
@@ -152,7 +168,9 @@ export class PhysicalStockVoucherController {
     description:
       "Update is a full replace of the lines. Saves a DRAFT unless header.status is 'POSTED' (or header.post is true), which saves and posts in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save too and leaves no document behind (notes 94 B / 106). rowsPosted on the response is null for a draft.\n\n" +
       'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
-      'THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.',
+      "THE HEADER TOTALS ARE THE SERVER'S (notes 150 #5): lineCount, totalQty, totalValue and totalValueWot are summed from the lines just written — on a count the NET variance, Σ(counted − book), valued at each holding's moving average, so they may be NEGATIVE. The four fields on the payload are accepted for older clients and ignored. createdBy / modifiedBy likewise: the logged-in user is the author.\n\n" +
+      'A re-save re-reads every book figure from stock_balance. Lines whose book figure moved since the last save come back with bookChanged: true and previousBookQty, and the document carries bookChanges[] (notes 150 #4) — warn before posting a sheet that no longer measures what it was drawn against.\n\n' +
+      'REFUSED AT SAVE: two lines naming one holding (lot × godown × bucket) — 422 STOCK_COUNT_HOLDING_DUPLICATE (notes 150 #1); a freeze on a godown another DRAFT count already holds frozen over an overlapping window — 409 STOCK_FREEZE_GODOWN_HELD (notes 150 #2); a docDatetime more than 15 minutes from the server clock unless the document declares an offline sync (syncDate) — 422 STOCK_DOC_DATETIME_OUT_OF_RANGE (notes 150 #3).',
   })
   @ApiCreatedResponse({ type: PhysicalStockDocumentSuccessDto })
   @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
@@ -169,6 +187,10 @@ export class PhysicalStockVoucherController {
     // The service reads all three off the holding on the COUNT branch and never
     // touches these properties, so the cast is sound — the same one
     // StockTransferService.saveReceive makes for the same reason.
+    await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a count sheet');
+    if (dto.header.post === true || dto.header.status === 'POSTED') {
+      await this.requireRight('post', 'post a physical count');
+    }
     const data = await this.stockVoucherService.save(
       PHYSICAL_RULES,
       dto as unknown as SaveStockVoucherDto,
@@ -196,6 +218,7 @@ export class PhysicalStockVoucherController {
   async listOrLoad(
     @Query() query: GetPhysicalStockVoucherQueryDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherPayload | StockVoucherListResult>> {
+    await this.requireRight('view', 'view physical counts');
     if (query.svhId) {
       const data = await this.stockVoucherService.getById(
         PHYSICAL_RULES,
@@ -223,6 +246,7 @@ export class PhysicalStockVoucherController {
   async validate(
     @Query() query: PhysicalStockVoucherRefQueryDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherLineProblem[]>> {
+    await this.requireRight('view', 'validate a physical count');
     const data = await this.stockVoucherService.validate(
       PHYSICAL_RULES,
       query.svhId,
@@ -255,6 +279,7 @@ export class PhysicalStockVoucherController {
   async post(
     @Body() dto: PostPhysicalStockVoucherDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherPostResult>> {
+    await this.requireRight('post', 'post a physical count');
     const data = await this.stockVoucherService.post(
       PHYSICAL_RULES,
       dto.svhId,
@@ -288,6 +313,7 @@ export class PhysicalStockVoucherController {
   async cancel(
     @Body() dto: CancelPhysicalStockVoucherDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherCancelResult>> {
+    await this.requireRight('cancel', 'cancel a physical count');
     const data = await this.stockVoucherService.cancel(
       PHYSICAL_RULES,
       dto.svhId,
@@ -319,6 +345,7 @@ export class PhysicalStockVoucherController {
   async variance(
     @Query() query: PhysicalStockVarianceQueryDto,
   ): Promise<StockVoucherSuccessResponse<PagedResult<StockVarianceRow>>> {
+    await this.requireRight('view', 'read the variance report');
     const data = await this.stockVoucherService.variance(
       PHYSICAL_RULES,
       query.svhId,
@@ -351,5 +378,16 @@ export class PhysicalStockVoucherController {
     return varied
       ? `Physical stock count posted — ${varied} of ${total} lines had a variance`
       : `Physical stock count posted — all ${total} lines agreed with the book`;
+  }
+
+  /** Notes 150 #6 — the caller's `user_menus` row for menu 45, one right per route. 403 PHY_RIGHT_<RIGHT>. */
+  private async requireRight(right: MenuRight, action: string): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: PHYSICAL_MENU_ID,
+      right,
+      codePrefix: 'PHY',
+      action,
+    });
   }
 }

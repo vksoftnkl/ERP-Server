@@ -2526,13 +2526,17 @@ async function rebuildLotCosts(tx: Prisma.TransactionClient, lots: Prisma.Sql): 
              COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                AS qty,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                 AS value,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                             AS value_wot,
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate_wot
+             -- Notes 151 #2 — the latest LIVE row, as rebuildItemCosts takes it.
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                               AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                               AS last_rate_wot
         FROM lot l
         LEFT JOIN stock.stock_ledger sml
                ON sml.sml_company_id = l.company_id AND sml.sml_branch_id = l.branch_id
               AND sml.sml_item_id    = l.item_id    AND sml.sml_lot_id    = l.lot_id
               AND sml.sml_is_deleted = false
+        ${reversalJoin('sml', 'rev')}
        GROUP BY 1, 2, 3, 4
     ),
     rated AS (
@@ -2574,10 +2578,13 @@ async function rebuildLotCosts(tx: Prisma.TransactionClient, lots: Prisma.Sql): 
  * item-level reports and the fallback for a lot new to the branch.
  *
  * THE AVERAGE IS STORED, and survives quantity reaching zero: while qty > 0 it
- * is value ÷ qty; at or below zero it is the latest row's `sml_cost_rate` —
- * the average the item was relieved at when it emptied (the next inward of an
- * item that went to nil is not a fresh start) or, for a branch whose first
- * movement was an outward, that outward's own cost.
+ * is value ÷ qty; at or below zero it is the latest LIVE row's `sml_cost_rate`
+ * — the average the item was relieved at when it emptied (the next inward of
+ * an item that went to nil is not a fresh start) or, for a branch whose first
+ * movement was an outward, that outward's own cost. Live means forward and
+ * not reversed (notes 151 #2): a cancelled document leaves no trace on the
+ * average, and an item whose every movement was cancelled reads 0 — not
+ * stated — rather than the cancelled document's cost.
  *
  * THE STAMPS are the latest qualifying row by (`sml_doc_datetime`, `sml_id`),
  * not "this document's last line": `sic_last_purchase_*` from the latest
@@ -2623,8 +2630,14 @@ async function rebuildItemCosts(
              COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                  AS qty,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                   AS value,
              COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                               AS value_wot,
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate_wot,
+             -- Notes 151 #2 — the latest LIVE row: forward, not reversed. A
+             -- cancelled document and its mirror are not the last thing that
+             -- happened to the item, and an IN of 10 @60 that was cancelled
+             -- used to leave an emptied item's average at 60.
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                                 AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE NOT sml.sml_is_reversal AND rev.sml_id IS NULL))[1]                                 AS last_rate_wot,
              -- The stamps: live, unreversed, forward INWARD rows, bucket moves aside.
              COALESCE(MAX(sml.sml_cost_rate) FILTER (
                WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL

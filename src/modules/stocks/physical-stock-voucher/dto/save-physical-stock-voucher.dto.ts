@@ -273,7 +273,7 @@ export class SavePhysicalStockVoucherHeaderDto {
     format: 'date-time',
     nullable: true,
     description:
-      'When the count was actually taken. Defaults to now() at the server. A handheld that numbered its own sheet offline should send the moment it was keyed, not the moment it synced.',
+      'When the count was actually taken. Defaults to now() at the server. A handheld that numbered its own sheet offline should send the moment it was keyed, not the moment it synced — WITH syncDate. Notes 150 #3: without syncDate it may differ from the server clock by 15 minutes at most; with it, by up to 7 days and never later than the sync (422 STOCK_DOC_DATETIME_OUT_OF_RANGE).',
   })
   @NullableDateString()
   docDatetime?: string | null;
@@ -324,57 +324,42 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @NullableDateString()
   syncDate?: string | null;
-  // THE TOTALS ARE THE SCREEN'S, on this route as on every other: nothing
-  // server-side counts the lines or sums the grid. All four are written
-  // verbatim from this payload, AFTER the lines, and each is optional because
-  // its column is NOT NULL DEFAULT 0 — omitting one on a create takes that
-  // default, omitting it on an update leaves the stored value alone.
+  // THE TOTALS ARE THE SERVER'S (notes 150 #5). Until 2026-10-24 all four were
+  // written verbatim from this payload — lineCount 77 over 2 lines, totalQty
+  // 999999 — and only a post corrected them. Every save now sums the lines it
+  // wrote: on a count the NET VARIANCE, Σ (counted − book), valued at each
+  // holding's moving average, so a shortage nets below zero and the response
+  // DTO labels the columns "the net variance". A post then overwrites them
+  // from the ledger rows it wrote (recomputeHeaderTotals).
   //
-  // WHAT THEY MEAN ON A COUNT IS THE SCREEN'S DECISION, and it is not the
-  // decision an opening makes. A count sheet has two defensible totals — the
-  // COUNTED figures (236 units on the shelf) and the NET VARIANCE (+1 against
-  // the book) — and they are not the same number. The response DTO labels
-  // these columns "the net variance", so send the variance if the screen shows
-  // one figure; a screen that shows counted totals should say so in its own
-  // heading rather than quietly redefining the column.
-  //
-  // WHICH IS WHY totalQty / totalValue / totalValueWot TAKE A NEGATIVE HERE and
-  // the opening's do not: a shortage is a real net variance and the column has
-  // no >= 0 constraint. lineCount is still floored at 0 — a sheet cannot have
-  // fewer than no lines.
-  //
-  // NOTE FOR ANY ENVIRONMENT CARRYING THE ENGINE DDL, which this deployment
-  // does NOT: stock.tr_svi_refresh_header re-sums these on every line write —
-  // the API writes them after the lines, so the payload still wins at save
-  // time — and the engine's recomputeHeaderTotals overwrites them at post with the figures
-  // read off the ledger. Here, nothing does either, so what is sent is what a
-  // posted count keeps.
+  // The four properties stay on the DTO so an older screen that still sends
+  // them is not refused by forbidNonWhitelisted; what it sends is ignored.
   @ApiPropertyOptional({
     minimum: 0,
     default: 0,
     description:
-      'How many lines the sheet has, as the screen counted them — including the ones that agreed with the book. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+      'IGNORED since notes 150 #5 — the server counts the lines it writes. Accepted so an older client is not refused.',
   })
   @OptionalInteger(0)
   lineCount?: number;
   @ApiPropertyOptional({
     default: 0,
     description:
-      'The sheet total quantity, as the screen summed it. MAY BE NEGATIVE — on a count this column is read back as the net variance, and a shortage is negative. numeric(18,6), NOT NULL DEFAULT 0.',
+      'IGNORED since notes 150 #5 — the server sums the net variance, Σ(counted − book), which may be negative. Accepted so an older client is not refused.',
   })
   @OptionalNumber()
   totalQty?: number;
   @ApiPropertyOptional({
     default: 0,
     description:
-      'The sheet total value, inclusive of tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+      "IGNORED since notes 150 #5 — the server values the net variance at each holding's moving average. Accepted so an older client is not refused.",
   })
   @OptionalNumber()
   totalValue?: number;
   @ApiPropertyOptional({
     default: 0,
     description:
-      'The sheet total value excluding tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+      'IGNORED since notes 150 #5 — as totalValue, at the ex-tax average. Accepted so an older client is not refused.',
   })
   @OptionalNumber()
   totalValueWot?: number;
@@ -428,7 +413,7 @@ export class SavePhysicalStockVoucherHeaderDto {
     maxLength: 100,
     nullable: true,
     description:
-      'Who created the sheet — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+      'IGNORED under a login since notes 150 #5: the authenticated user is the author (svh_created_by, on a CREATE only). Read only when no user is in the request context.',
   })
   @NullableStringStrict(100)
   createdBy?: string | null;
@@ -436,7 +421,7 @@ export class SavePhysicalStockVoucherHeaderDto {
     maxLength: 100,
     nullable: true,
     description:
-      'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+      'IGNORED under a login since notes 150 #5: the authenticated user is the modifier (svh_modified_by, on an UPDATE only; created_by is never rewritten). Read only when no user is in the request context.',
   })
   @NullableStringStrict(100)
   modifiedBy?: string | null;

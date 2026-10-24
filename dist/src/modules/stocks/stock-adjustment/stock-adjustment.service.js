@@ -100,7 +100,37 @@ let StockAdjustmentService = class StockAdjustmentService {
             },
             lines: dto.lines.map((line, index) => this.toSharedLine(kind, line, lines[index], reasons)),
         };
-        return this.stockVoucherService.save(rules, mapped);
+        return this.stockVoucherService.save(rules, mapped, this.postHooks(rules, header.companyId, header.branchId, dto.header.accYear, relot));
+    }
+    postHooks(rules, companyId, branchId, accYear, relotAtFirstSight) {
+        let relot = relotAtFirstSight;
+        return {
+            beforePost: async (tx, svhId) => {
+                relot = (await this.assertRulesHold(tx, rules, svhId, accYear, companyId, branchId)) === 'RELOT';
+            },
+            afterPost: async (tx, _rowsPosted, svhId) => {
+                if (relot) {
+                    await this.assertRelotLandsElsewhere(tx, rules, svhId, accYear);
+                }
+            },
+        };
+    }
+    async assertRulesHold(tx, pinned, svhId, accYear, companyId, branchId) {
+        const fresh = await this.kindOf(svhId, accYear, companyId, branchId, tx);
+        if (fresh.rules !== pinned) {
+            (0, module_service_utils_1.throwStockConflict)(`This ${pinned.displayName.toLowerCase()} cannot be posted`, [
+                {
+                    field: 'svhId',
+                    code: stock_error_codes_1.StockErrorCode.ADJ_KIND_CHANGED,
+                    message: `This document was saved as a ${fresh.rules.displayName.toLowerCase()} while the post waited for it. Reload it and post again.`,
+                },
+            ]);
+        }
+        const lines = await this.loadLines(svhId, accYear, fresh.header, tx);
+        const reasons = await this.loadReasons(companyId, lines, tx);
+        const verdict = await this.check(fresh.header, lines, reasons, tx);
+        this.refuse(pinned, `This ${pinned.displayName.toLowerCase()} cannot be posted`, verdict, lines);
+        return fresh.docKind;
     }
     toSharedLine(kind, line, view, reasons) {
         const direction = this.directionOf(view, reasons);
@@ -154,12 +184,8 @@ let StockAdjustmentService = class StockAdjustmentService {
         return shared.map((row) => ({ ...row, problem: byLineNo.get(row.lineNo) ?? row.problem }));
     }
     async post(args) {
-        const { rules, header, docKind } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
-        const lines = await this.loadLines(args.svhId, args.accYear, header);
-        const reasons = await this.loadReasons(args.companyId, lines);
-        const verdict = await this.check(header, lines, reasons);
-        this.refuse(rules, `This ${rules.displayName.toLowerCase()} cannot be posted`, verdict, lines);
-        return this.stockVoucherService.post(rules, args.svhId, args.accYear, args.companyId, args.branchId, args.userId, docKind === 'RELOT' ? (tx) => this.assertRelotLandsElsewhere(tx, rules, args.svhId, args.accYear) : undefined);
+        const { rules, docKind } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
+        return this.stockVoucherService.post(rules, args.svhId, args.accYear, args.companyId, args.branchId, args.userId, this.postHooks(rules, args.companyId, args.branchId, args.accYear, docKind === 'RELOT'));
     }
     async cancel(args) {
         const { rules } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
@@ -177,13 +203,25 @@ let StockAdjustmentService = class StockAdjustmentService {
              slt.slt_supplier_id, sup.sup_name,
              b.sbl_base_uom_id, unt.unit_name,
              b.sbl_on_hand_qty, b.sbl_reserved_qty, b.sbl_available_qty,
-             b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date
+             b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date,
+             sbd.sbd_size_id, isz.isz_name AS size_name,
+             sbd.sbd_colour_id, icl.icl_name AS colour_name,
+             sbd.sbd_model
         FROM stock.stock_balance b
         JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
         JOIN inventory.item_master itm ON itm.item_id = b.sbl_item_id
         LEFT JOIN purchase.suppliers sup ON sup.sup_id = slt.slt_supplier_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = b.sbl_base_uom_id
         LEFT JOIN inventory.item_unit_master unt ON unt.unit_id = iuc.iuc_unit_id
+        -- Notes 151 #8: the batch's size / colour / model, by company + item +
+        -- folded batch (ux_sbd_batch), as every other reader of the table.
+        LEFT JOIN stock.stock_batch_detail sbd
+               ON sbd.sbd_company_id = b.sbl_company_id
+              AND sbd.sbd_item_id    = b.sbl_item_id
+              AND sbd.sbd_batch_no   = slt.slt_key_batch
+              AND sbd.sbd_is_deleted = false
+        LEFT JOIN inventory.item_size_master   isz ON isz.isz_id = sbd.sbd_size_id
+        LEFT JOIN inventory.item_colour_master icl ON icl.icl_id = sbd.sbd_colour_id
        WHERE b.sbl_company_id = ${query.companyId}::uuid
          AND b.sbl_branch_id  = ${query.branchId}::uuid
          AND b.sbl_godown_id  = ${query.godownId}::uuid
@@ -191,6 +229,8 @@ let StockAdjustmentService = class StockAdjustmentService {
          AND b.sbl_available_qty > 0
          AND (${query.itemId ?? null}::uuid IS NULL OR b.sbl_item_id = ${query.itemId ?? null}::uuid)
          AND (${query.bucket ?? null}::text IS NULL OR b.sbl_bucket = ${query.bucket ?? null}::text)
+         -- Notes 151 #9: the scanned label, exactly, as the lot key folds it.
+         AND (${query.batchNo ?? null}::text IS NULL OR slt.slt_key_batch = upper(btrim(${query.batchNo ?? null}::text)))
          AND ${(0, loose_search_1.looseSearchSql)(['itm.item_name_en', 'itm.item_code', 'slt.slt_batch_no'], query.search)}
        ORDER BY itm.item_name_en, slt.slt_expiry_date NULLS LAST, b.sbl_first_in_date NULLS LAST, slt.slt_batch_no,
                 b.sbl_bucket
@@ -220,9 +260,14 @@ let StockAdjustmentService = class StockAdjustmentService {
             avgCostRate: Number(r.sbl_avg_cost_rate),
             stockValue: Number(r.sbl_stock_value),
             firstInDate: isoDate(r.sbl_first_in_date),
+            sizeId: r.sbd_size_id,
+            sizeName: r.size_name,
+            colourId: r.sbd_colour_id,
+            colourName: r.colour_name,
+            model: r.sbd_model,
         }));
     }
-    async check(header, lines, reasons) {
+    async check(header, lines, reasons, db = this.prisma) {
         const out = new Map();
         const say = (line, code, message) => {
             if (!out.has(line.index)) {
@@ -308,7 +353,7 @@ let StockAdjustmentService = class StockAdjustmentService {
             }
         }
         const lotIds = [...new Set(lines.map((l) => l.lotId).filter((id) => !!id))];
-        const lots = await this.loadLots(lotIds);
+        const lots = await this.loadLots(lotIds, db);
         const wanted = new Map();
         for (const line of lines) {
             if (line.lotId && this.directionOf(line, reasons) < 0) {
@@ -316,7 +361,7 @@ let StockAdjustmentService = class StockAdjustmentService {
                 wanted.set(key, (wanted.get(key) ?? 0) + line.baseQty);
             }
         }
-        const available = await this.loadAvailable(header.companyId, header.branchId, [...wanted.keys()]);
+        const available = await this.loadAvailable(header.companyId, header.branchId, [...wanted.keys()], db);
         const graceDays = kind === 'EXPIRY_WRITEOFF' ? await this.expiryGraceDays(header.companyId, header.branchId) : 0;
         const cutoff = addDays(header.docDate, graceDays);
         const shortReported = new Set();
@@ -335,6 +380,10 @@ let StockAdjustmentService = class StockAdjustmentService {
             const lot = lots.get(line.lotId);
             if (!lot) {
                 say(line, stock_error_codes_1.StockErrorCode.LOT_NOT_FOUND, 'names a lot that does not exist. Pick the holding from the balance.');
+                continue;
+            }
+            if (lot.slt_company_id !== header.companyId) {
+                say(line, stock_error_codes_1.StockErrorCode.LOT_OTHER_COMPANY, 'names a lot that belongs to another company. Pick the holding from the balance.');
                 continue;
             }
             if (lot.slt_item_id !== line.itemId) {
@@ -368,24 +417,40 @@ let StockAdjustmentService = class StockAdjustmentService {
                 const perItem = new Map();
                 for (const line of relotLines) {
                     const code = reasons.get(line.reasonId)?.srm_code;
-                    const bucket = perItem.get(line.itemId) ?? { out: 0, in: 0, outLots: new Set(), inLots: new Set(), uoms: new Set(), first: line };
-                    bucket.uoms.add(line.baseUomId);
+                    const pair = perItem.get(line.itemId) ?? {
+                        out: 0,
+                        in: 0,
+                        outLots: new Set(),
+                        inLots: new Set(),
+                        uoms: new Set(),
+                        outBuckets: new Set(),
+                        strayIn: null,
+                        first: line,
+                    };
+                    pair.uoms.add(line.baseUomId);
                     if (code === stock_adjustment_rules_1.RELOT_OUT_CODE) {
-                        bucket.out += line.baseQty;
+                        pair.out += line.baseQty;
+                        pair.outBuckets.add(line.bucket);
                         if (!line.lotId) {
                             say(line, stock_error_codes_1.StockErrorCode.ADJ_RELOT_OUT_LOT_REQUIRED, 'is the OUT half of a re-lot and must name the lot it leaves.');
                         }
                         else {
-                            bucket.outLots.add(line.lotId);
+                            pair.outLots.add(line.lotId);
                         }
                     }
                     else {
-                        bucket.in += line.baseQty;
+                        pair.in += line.baseQty;
                         if (line.lotId) {
-                            bucket.inLots.add(line.lotId);
+                            pair.inLots.add(line.lotId);
                         }
                     }
-                    perItem.set(line.itemId, bucket);
+                    perItem.set(line.itemId, pair);
+                }
+                for (const line of relotLines) {
+                    const pair = perItem.get(line.itemId);
+                    if (reasons.get(line.reasonId)?.srm_code === stock_adjustment_rules_1.RELOT_IN_CODE && !pair.outBuckets.has(line.bucket) && !pair.strayIn) {
+                        pair.strayIn = line;
+                    }
                 }
                 for (const [, pair] of perItem) {
                     const line = pair.first;
@@ -398,9 +463,12 @@ let StockAdjustmentService = class StockAdjustmentService {
                     else if (pair.uoms.size > 1) {
                         say(line, stock_error_codes_1.StockErrorCode.ADJ_RELOT_UNIT_MISMATCH, 're-lot halves are keyed in different base units.');
                     }
+                    else if (pair.strayIn) {
+                        say(pair.strayIn, stock_error_codes_1.StockErrorCode.ADJ_RELOT_BUCKET_MISMATCH, `re-lot brings the stock into the ${pair.strayIn.bucket} bucket, but the OUT half takes it from ${[...pair.outBuckets].join(' / ')}. A re-lot changes the lot's identity, not its bucket: state the same bucket on both halves, and key a Move stock to change the bucket.`);
+                    }
                 }
                 const lotlessIn = relotLines.filter((l) => !l.lotId && !out.has(l.index) && reasons.get(l.reasonId)?.srm_code === stock_adjustment_rules_1.RELOT_IN_CODE);
-                const resolved = await this.resolveInwardLots(header, lotlessIn);
+                const resolved = await this.resolveInwardLots(header, lotlessIn, db);
                 for (const line of lotlessIn) {
                     const landsOn = resolved.get(line.index)?.lotId;
                     if (!landsOn || !perItem.get(line.itemId)?.outLots.has(landsOn)) {
@@ -415,7 +483,7 @@ let StockAdjustmentService = class StockAdjustmentService {
         }
         return out;
     }
-    async resolveInwardLots(header, lines) {
+    async resolveInwardLots(header, lines, db = this.prisma) {
         if (lines.length === 0) {
             return new Map();
         }
@@ -429,7 +497,7 @@ let StockAdjustmentService = class StockAdjustmentService {
             serial_no: l.identity.serialNo,
             supplier_id: l.identity.supplierId,
         })));
-        const rows = await this.prisma.$queryRaw `
+        const rows = await db.$queryRaw `
       WITH line AS (
         SELECT u.idx                         AS svi_id,
                u.item_id                     AS svi_item_id,
@@ -573,8 +641,8 @@ let StockAdjustmentService = class StockAdjustmentService {
             .sort(([a], [b]) => a - b)
             .map(([index, { code, message }]) => ({ field: `lines.${index}`, code, message: `${message}${lines[index].itemName ? ` (${lines[index].itemName})` : ''}` })));
     }
-    async kindOf(svhId, accYear, companyId, branchId) {
-        const [row] = await this.prisma.$queryRaw `
+    async kindOf(svhId, accYear, companyId, branchId, db = this.prisma) {
+        const [row] = await db.$queryRaw `
       SELECT h.svh_voucher_type, h.svh_doc_date, h.svh_from_godown_id, h.svh_to_godown_id, h.svh_reason_id, h.svh_remarks,
              h.svh_refno, h.svh_link_src_module, h.svh_link_src_doc_type,
              (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
@@ -613,8 +681,8 @@ let StockAdjustmentService = class StockAdjustmentService {
             },
         };
     }
-    async loadLines(svhId, accYear, header) {
-        const rows = await this.prisma.$queryRaw `
+    async loadLines(svhId, accYear, header, db = this.prisma) {
+        const rows = await db.$queryRaw `
       SELECT svi.svi_id, svi.svi_line_no, svi.svi_item_id, itm.item_name_en AS item_name,
              svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_to_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
              svi.svi_direction, svi.svi_reason_id, svi.svi_remarks, svi.svi_base_uom_id,
@@ -652,12 +720,12 @@ let StockAdjustmentService = class StockAdjustmentService {
             },
         }));
     }
-    async loadReasons(companyId, lines) {
+    async loadReasons(companyId, lines, db = this.prisma) {
         const ids = [...new Set(lines.map((l) => l.reasonId).filter((id) => !!id))];
         if (ids.length === 0) {
             return new Map();
         }
-        const rows = await this.prisma.$queryRaw `
+        const rows = await db.$queryRaw `
       SELECT srm_id, srm_code, srm_name, srm_direction, srm_allowed_txn_types, srm_is_active, srm_require_remarks
         FROM stock.stock_reason_master
        WHERE srm_id = ANY(${ids}::uuid[])
@@ -666,22 +734,22 @@ let StockAdjustmentService = class StockAdjustmentService {
     `;
         return new Map(rows.map((r) => [r.srm_id, r]));
     }
-    async loadLots(lotIds) {
+    async loadLots(lotIds, db = this.prisma) {
         if (lotIds.length === 0) {
             return new Map();
         }
-        const rows = await this.prisma.$queryRaw `
-      SELECT slt_id, slt_item_id, slt_expiry_date, slt_base_uom_id, slt_batch_no
+        const rows = await db.$queryRaw `
+      SELECT slt_id, slt_company_id, slt_item_id, slt_expiry_date, slt_base_uom_id, slt_batch_no
         FROM stock.stock_lot WHERE slt_id = ANY(${lotIds}::uuid[]) AND slt_is_deleted = false
     `;
         return new Map(rows.map((r) => [r.slt_id, r]));
     }
-    async loadAvailable(companyId, branchId, keys) {
+    async loadAvailable(companyId, branchId, keys, db = this.prisma) {
         if (keys.length === 0) {
             return new Map();
         }
         const lotIds = [...new Set(keys.map((k) => k.split('|')[0]))];
-        const rows = await this.prisma.$queryRaw `
+        const rows = await db.$queryRaw `
       SELECT sbl_lot_id, sbl_godown_id, sbl_bucket, sbl_available_qty
         FROM stock.stock_balance
        WHERE sbl_company_id = ${companyId}::uuid AND sbl_branch_id = ${branchId}::uuid

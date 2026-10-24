@@ -112,7 +112,10 @@ __decorate([
     (0, dtoDecorators_1.OptionalQueryInt)(0),
     __metadata("design:type", Number)
 ], PhysicalStockVarianceQueryDto.prototype, "offset", void 0);
-class GenerateCountSheetQueryDto extends PhysicalStockVoucherScopeQueryDto {
+class GenerateCountSheetQueryDto {
+    companyId;
+    branchId;
+    accYear;
     godownId;
     bucket;
     itemGroupId;
@@ -121,6 +124,25 @@ class GenerateCountSheetQueryDto extends PhysicalStockVoucherScopeQueryDto {
     offset;
 }
 exports.GenerateCountSheetQueryDto = GenerateCountSheetQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: '2026-2027',
+        description: "Not used — the sheet is a live balance, not a year's documents. Accepted for compatibility.",
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' }),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "accYear", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         format: 'uuid',

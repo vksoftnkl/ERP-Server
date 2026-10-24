@@ -218,7 +218,8 @@ describe('StockPostingService', () => {
       });
 
       await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).rejects.toThrow(
-        `frozen for physical count ${COUNT_ID} from 2026-09-21T09:00:00.000Z to 2026-09-21T12:00:00.000Z`,
+        // Notes 150 (minor): the shop's clock, 12-hour — 09:00Z is 02:30 PM IST.
+        `frozen for physical count ${COUNT_ID} from 21-09-2026 02:30 PM to 21-09-2026 05:30 PM`,
       );
     });
 

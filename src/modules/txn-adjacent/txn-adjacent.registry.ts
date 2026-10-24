@@ -23,7 +23,7 @@ import { STOCK_ADJUSTMENT_KINDS } from '../stocks/stock-adjustment/stock-adjustm
  * flag and `created_on`. They differ only in names, in which rows of a SHARED
  * table belong to the screen (`stock_voucher` holds eleven voucher types,
  * `acc_voucher_header` every voucher), in the menu whose rights read them, and
- * in where a document with no serial yet sorts.
+ * in whether the serial can order a date's documents at all (notes 152).
  */
 export const TXN_DOC_TYPES = [
   'OPENING_STOCK',
@@ -67,7 +67,18 @@ export interface TxnDocSpec {
   branch: string;
   year: string;
   date: string;
-  slno: string;
+  /**
+   * The serial in the walk key, between the date and `created_on` — or null
+   * (notes 152). A serial counted per DEVICE or per counter cannot order a
+   * date's documents: two PCs on one branch each count 1, 2, 3 …, so their
+   * documents interleave by each PC's own counter, and Ctrl+PgDn from the
+   * user's newest entry lands on another PC's old one. Such a docType walks by
+   * `(date, created_on, id)`, which is branch-wide and follows entry order —
+   * the order the refno is counted in, since both are given at the first save.
+   * Only a serial counted branch-wide (or company-wide) and drawn by the
+   * screen's list goes in; checked per table in the registry below.
+   */
+  serial: TxnDocSerial | null;
   createdOn: string;
   status: string;
   deleted: string;
@@ -84,15 +95,20 @@ export interface TxnDocSpec {
   where?: string;
   /** The values `status` may filter on: the table's CHECK. */
   statuses: readonly string[];
-  /**
-   * Where a document with no serial yet (a draft bill, a draft voucher)
-   * sorts within its date — copied from the screen's own list so the walk
-   * steps through the rows in the order they are drawn. `LOW` = the old end
-   * (coalesced to 0), `HIGH` = the new end (to the bigint maximum). null:
-   * the serial is NOT NULL.
-   */
-  draftSlno: 'LOW' | 'HIGH' | null;
   menu: TxnDocMenu;
+}
+
+/** A serial that orders a date's documents: the column, and where a row without one sorts. */
+export interface TxnDocSerial {
+  /** Bare column name; the service qualifies it. */
+  column: string;
+  /**
+   * Where a document with no serial yet (a draft voucher) sorts within its
+   * date — copied from the screen's own list so the walk steps through the
+   * rows in the order they are drawn. `LOW` = the old end (coalesced to 0),
+   * `HIGH` = the new end (to the bigint maximum). null: the serial is NOT NULL.
+   */
+  draft: 'LOW' | 'HIGH' | null;
 }
 
 // ck_svh_status, ck_sb_status / ck_sdc_status / ck_sdr_status / ck_sr_status,
@@ -143,7 +159,11 @@ function stockVoucher(
     branch: 'svh_branch_id',
     year: 'svh_acc_year',
     date: 'svh_doc_date',
-    slno: 'svh_slno',
+    // svh_slno is counted per DEVICE (ux_svh_slno: company, branch, year,
+    // type, device — the numbering helper's "the device is the counter"), so
+    // it never goes in the key. The refno is counted per branch at the first
+    // save, as created_on is stamped: `(date, created_on, id)` follows it.
+    serial: null,
     createdOn: 'svh_created_on',
     status: 'svh_status',
     deleted: 'svh_is_deleted',
@@ -152,21 +172,25 @@ function stockVoucher(
     types,
     where,
     statuses: STOCK_STATUSES,
-    // ck_svh_slno: a stock voucher is numbered on its first save.
-    draftSlno: null,
     menu,
   };
 }
 
-/** A sales header: `<p>_id`, `<p>_company_id` … `<p>_doc_type`; the date, serial and refno are named per table. */
+/**
+ * A sales header: `<p>_id`, `<p>_company_id` … `<p>_doc_type`; the date, serial
+ * and refno are named per table. The serial and the refno are one number from
+ * `allocateVoucherNumber` at the first save; `own.slno` names it when that
+ * number comes from the branch's shared 'MAIN' series (the order, quotation,
+ * DC, DC return and sales return pass no deviceCode), so it is branch-wide,
+ * NOT NULL and in entry order. null where a device series can own it.
+ */
 function salesDoc(
   label: string,
   table: string,
   p: string,
-  own: { date: string; slno: string; refno: string },
+  own: { date: string; slno: string | null; refno: string },
   statuses: readonly string[],
   menu: number,
-  draftSlno: TxnDocSpec['draftSlno'] = null,
 ): TxnDocSpec {
   return {
     label,
@@ -176,14 +200,13 @@ function salesDoc(
     branch: `${p}_branch_id`,
     year: `${p}_acc_year`,
     date: own.date,
-    slno: own.slno,
+    serial: own.slno === null ? null : { column: own.slno, draft: null },
     createdOn: `${p}_created_on`,
     status: `${p}_status`,
     deleted: `${p}_is_deleted`,
     refno: own.refno,
     type: `h.${p}_doc_type`,
     statuses,
-    draftSlno,
     menu,
   };
 }
@@ -196,7 +219,6 @@ const VOUCHER_COLUMNS = {
   branch: 'avh_branch_id',
   year: 'avh_acc_year',
   date: 'avh_voucher_date',
-  slno: 'avh_voucher_slno',
   createdOn: 'avh_created_on',
   status: 'avh_voucher_status',
   deleted: 'avh_is_deleted',
@@ -204,6 +226,13 @@ const VOUCHER_COLUMNS = {
   type: 'vt.vchr_type_code',
   statuses: VOUCHER_STATUSES,
 } as const;
+/**
+ * The COMPANY-wide running serial, given at post (ux_avh_voucher_slno:
+ * company, year, among non-drafts): one series for every device, and the
+ * order the registers draw. It goes in the key; each voucher docType says
+ * where its drafts sort.
+ */
+const VOUCHER_SERIAL = 'avh_voucher_slno';
 
 /**
  * A module voucher (Receipt, Payment): the rules of its own `/adjacent` —
@@ -217,7 +246,7 @@ function moduleVoucher(label: string, typeCode: string, menu: number): TxnDocSpe
     label,
     types: [typeCode],
     where: 'h.avh_against_voucher_id IS NULL',
-    draftSlno: 'HIGH',
+    serial: { column: VOUCHER_SERIAL, draft: 'HIGH' },
     menu,
   };
 }
@@ -239,16 +268,18 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
   STOCK_TRANSFER: stockVoucher('stock transfer', ['TRANSFER_OUT'], STOCK_MENU_ID.TRANSFER),
   STOCK_TRANSFER_RECEIPT: stockVoucher('transfer receipt', ['TRANSFER_IN'], STOCK_MENU_ID.TRANSFER),
 
-  // A draft bill has no number yet; grid 86 sorts `sb_bill_slno DESC`, which
-  // puts NULL first, so a day's drafts are drawn at its NEW end.
+  // A POS bill's number comes from the DEVICE's own series when the branch
+  // sets posSeriesPerDevice (bill.service createBillInTx), a wholesale bill's
+  // from the branch 'MAIN' series: one table, two scopes, so sb_bill_slno
+  // cannot order a date's bills (notes 152). Entry order it is — a draft
+  // bill, with or without a number, sits where it was raised.
   SALE_BILL: salesDoc(
     'sale bill',
     'sales.sale_bill',
     'sb',
-    { date: 'sb_bill_date', slno: 'sb_bill_slno', refno: 'sb_bill_refno' },
+    { date: 'sb_bill_date', slno: null, refno: 'sb_bill_refno' },
     POSTING_STATUSES,
     SALES_MENU_ID.SALE_BILL,
-    'HIGH',
   ),
   QUOTATION: salesDoc(
     'quotation',
@@ -300,7 +331,7 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     ...VOUCHER_COLUMNS,
     label: 'voucher',
     where: 'vt.vchr_in_register = true',
-    draftSlno: 'LOW',
+    serial: { column: VOUCHER_SERIAL, draft: 'LOW' },
     menu: 'VOUCHER_TYPE',
   },
 };

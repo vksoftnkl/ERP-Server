@@ -44,6 +44,17 @@ A keyed inward `costRate` is **per base unit**, as on the opening: the line valu
 `(base_qty + free_base_qty) × cost_rate` (`svi_value` is generated that way), so a rate keyed per
 document unit is divided by `toBaseFactor` before it is sent.
 
+## Rights (notes 151 #1)
+
+Every `/stock/adjustment/*` route is judged on the caller's `public.user_menus` row for menu
+264, as the physical count (45, notes 150 #6) and receipts / payments (99 / 100, notes 62) are:
+reads and `pick-stock` need view, a new document create, a draft change edit, post / cancel /
+delete their own right, and a save that also posts needs post as well. No row, no rights —
+SUPER ADMIN included; 403 `ADJ_RIGHT_<RIGHT>`. The company and branch on a request are NOT
+compared with the token's: the token carries the login's home company and the device's branch,
+and users post across companies by design (notes 150 #7). The reason master routes
+(`stock-reasons.controller.ts`) are unchanged.
+
 ## The checks (`StockAdjustmentService.check`, at save and again at validate / post)
 
 1. every line moves under a reason; inactive or invisible reasons refused; `srm_require_remarks`
@@ -60,11 +71,28 @@ document unit is divided by `toBaseFactor` before it is sent.
    (`resolveInwardLots`: the same policy CTE and identity-key fragment as `attachLotsToLines`, so
    `' right '` is lot `RIGHT` and an untracked item has one lot per bucket and nothing to re-lot);
    and once more inside the post, over the lots the engine stamped (`assertRelotLandsElsewhere`,
-   the `afterPost` hook), so a same-lot pair rolls the post back (notes 65 §1);
+   the `afterPost` hook), so a same-lot pair rolls the post back (notes 65 §1). Both halves sit in
+   ONE bucket (notes 151 #6): RELOT_OUT from SALEABLE with RELOT_IN into QUARANTINE is a bucket
+   move under a re-lot reason — no move reason, no accounts entry either way — and is refused
+   `ADJ_RELOT_BUCKET_MISMATCH`; a bucket change is a Move stock;
 6. a move: every line names its lot, `bucket ≠ toBucket`, a positive quantity, a move reason
    (one whose allowed types name `BUCKET_OUT` / `BUCKET_IN`), and the from-holding covers it
    (BLOCK); a document is all moves or none, both ways round; a move reason on any other kind is
-   refused.
+   refused;
+7. a named lot exists, is this company's and is this item's (`LOT_NOT_FOUND` /
+   `LOT_OTHER_COMPANY` / `LOT_OTHER_ITEM`). Notes 151 #7: the company was never checked — a shared
+   item's lot of another company resolved straight through the engine's `l.slt_id = svi_lot_id`
+   join. The shared preflight (`StockVoucherService.validate`) now makes the same three checks for
+   every voucher type that names a lot.
+
+**Where the checks run (notes 151 #5).** At save, over the payload. At validate, over the stored
+rows. At post — and on a save with `status: POSTED` / `post: true` — INSIDE the shared post's
+transaction, through `StockPostHooks`: `beforePost` re-reads the kind under the row lock (a draft
+saved as a move or a re-lot while the post waited is a different document: 409 `ADJ_KIND_CHANGED`,
+reload), then runs `check` over the locked rows before the shared preflight; `afterPost` is the
+re-lot guard, decided from that re-read. Before notes 151 the rules ran before the lock, so a
+draft save landing in between could post lines that never passed them, and the one-call post
+skipped the re-lot guard altogether.
 
 ## Move stock (D-A3)
 
@@ -99,12 +127,17 @@ the other way (role `STOCK_EXCESS`); netted per ledger. A re-lot pair and a move
 
 ## Tests
 
-`test/stock-adjustment.e2e-spec.ts` — eighteen cases in one rolled-back transaction, including
-the §5.1 balance assertion after each. Cases 10–14 are Move stock: the pair at one cost with the
-average and the purchase stamps untouched and no voucher, an over-move, a lotless move and the
-other refusals, the cancel, the move picker and a move back to SALEABLE. Cases 15–18 are notes 65:
-a same-lot re-lot (tracked and untracked, at save, validate and the in-post guard), negative
-header totals on a draft, the every-bucket picker, and a sales shadow voucher refused.
+`test/stock-adjustment.e2e-spec.ts` — twenty-three cases in one rolled-back transaction,
+including the §5.1 balance assertion after each. Cases 10–14 are Move stock: the pair at one cost
+with the average and the purchase stamps untouched and no voucher, an over-move, a lotless move
+and the other refusals, the cancel, the move picker and a move back to SALEABLE. Cases 15–18 are
+notes 65: a same-lot re-lot (tracked and untracked, at save, validate and the in-post guard),
+negative header totals on a draft (server-summed since notes 150 #5), the every-bucket picker, and
+a sales shadow voucher refused. Cases 19–23 are notes 151: a re-lot that changes the bucket,
+another company's lot (adjustment rules and shared preflight), a cancel that leaves the average
+where it was and an all-cancelled item reading 0, the picker's exact batch scan with the batch's
+size / colour / model (and `/get` reading them), and the by-batch scan's `avgCostRate`.
+The controller spec covers the menu-264 rights; the service spec the in-transaction hooks.
 `dto/save-stock-adjustment.dto.spec.ts` runs the ValidationPipe over the signed totals and the
 optional buckets.
 
@@ -119,6 +152,16 @@ a save with another module's `linkSrcModule` is refused. Its
 `kind_code` column is ADJUSTMENT, RELOT, BUCKET_MOVE, ISSUE, DAMAGE or EXPIRY_WRITEOFF — the same
 test `kindOf` makes. Params (bare tokens, send every one, `''` = no bound): `icompany_id`,
 `ibranch_id`, `iacc_year`, `ifrom_date`, `ito_date`, `ikind`, `istatus`.
+
+## The pickers for the textile screen (notes 151 #8–#10)
+
+`pick-stock` rows carry the batch's `sizeId` / `sizeName`, `colourId` / `colourName` and `model`
+(`stock.stock_batch_detail` by company + item + folded batch), and take `batchNo` — the exact
+batch-label scan, folded as the lot key folds it — beside the loose `search`; one row back means
+the holding can be taken straight away, and with no `bucket` one row per bucket the batch sits in.
+`/get` lines read the same detail for a batch they only NAME (an opening numbered it). The sale
+bill's `/stock/lots/by-batch` serves an adjustment too since notes 150 #10 (`bucket=ALL`,
+`godownId`) and now carries `avgCostRate` per godown row and per lot (see `../lot-by-batch`).
 
 ## Sales and the DAMAGED bucket
 

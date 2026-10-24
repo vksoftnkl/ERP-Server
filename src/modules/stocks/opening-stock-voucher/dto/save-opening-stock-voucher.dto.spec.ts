@@ -203,6 +203,53 @@ describe('SaveOpeningStockVoucherDto', () => {
     });
   });
 
+  // Notes 149 #1 — the three textile cells were first added to the shared
+  // transfer line only, and this DTO answered them with VALIDATION_WHITELIST.
+  it('accepts sizeId, colourId and model on a line (notes 149 #1)', async () => {
+    const result = await transform({}, [
+      {
+        lineNo: 1,
+        itemId: ITEM_ID,
+        uomId: UOM_ID,
+        baseUomId: BASE_UOM_ID,
+        toBaseFactor: 1,
+        baseQty: 4,
+        godownId: GODOWN_ID,
+        qty: 4,
+        costRate: 300,
+        sizeId: '019c6f6c-be87-7a11-8905-36092c46fe0c',
+        colourId: '019c6f6c-be87-7a11-8905-36092c46fe0d',
+        model: 'Slim fit',
+      },
+    ]);
+
+    expect(result.lines[0]).toMatchObject({
+      sizeId: '019c6f6c-be87-7a11-8905-36092c46fe0c',
+      colourId: '019c6f6c-be87-7a11-8905-36092c46fe0d',
+      model: 'Slim fit',
+    });
+  });
+
+  it('refuses a sizeId that is not a uuid, and a model over 100 characters', async () => {
+    const line = {
+      lineNo: 1,
+      itemId: ITEM_ID,
+      uomId: UOM_ID,
+      baseUomId: BASE_UOM_ID,
+      toBaseFactor: 1,
+      baseQty: 4,
+      godownId: GODOWN_ID,
+      qty: 4,
+      costRate: 300,
+    };
+    await expect(transform({}, [{ ...line, sizeId: 'XL' }])).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(transform({}, [{ ...line, model: 'x'.repeat(101) }])).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
   // THE LINE NOW CHOOSES ITS OWN CONVERSION, and this used to be the test that
   // refused it. The server no longer reads item_unit_conversion on the save
   // path: the screen sends the factor and the base quantities it priced the

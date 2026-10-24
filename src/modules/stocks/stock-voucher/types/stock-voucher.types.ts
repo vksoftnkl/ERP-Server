@@ -1,5 +1,29 @@
+import type { Prisma } from '@prisma/client';
 import type { StockErrorDetail, StockErrorResponse } from 'src/common/utils/module-service.utils';
 import type { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
+
+/**
+ * Notes 151 #5 — what a type-specific service runs INSIDE the shared post
+ * transaction, on `StockVoucherService.post` and on the save-and-post path of
+ * `StockVoucherService.save` alike, so the two cannot disagree. Both hooks get
+ * the transaction client; neither may write `svh_status` (the engine's column).
+ */
+export interface StockPostHooks {
+  /**
+   * After the header row and the item locks are taken and BEFORE the shared
+   * preflight: the type's own rules, over the rows the engine is about to
+   * post. Before this hook the adjustment family checked its rules outside
+   * the transaction, so a draft save landing in between could post lines
+   * that never passed them.
+   */
+  beforePost?: (tx: Prisma.TransactionClient, svhId: string) => Promise<void>;
+  /**
+   * After the engine and before the commit: the transfer's lorry columns, the
+   * re-lot's check against the lots the engine actually stamped. Throwing
+   * rolls the post back.
+   */
+  afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number, svhId: string) => Promise<void>;
+}
 
 export type { StockErrorDetail, StockErrorResponse };
 
@@ -573,7 +597,31 @@ export interface StockVoucherListResult {
  * and postedOn either way.
  */
 export interface StockVoucherSaveResult extends StockVoucherPayload {
+  lines: StockVoucherSavedLine[];
   rowsPosted: number | null;
+  /**
+   * Notes 150 #4 — the count lines whose BOOK figure this save re-based. A
+   * re-save of a draft count re-reads svi_book_qty from stock_balance; when
+   * stock moved since the sheet was drawn, the line now measures against a
+   * different book figure, and the screen must say so rather than remember.
+   * Empty on every other document type and on a create.
+   */
+  bookChanges: StockBookChange[];
+}
+
+/** A save-response line: the /get line plus what this save did to its book figure. */
+export interface StockVoucherSavedLine extends StockVoucherLinePayload {
+  /** True when this save replaced the line's stored book figure with a different one. */
+  bookChanged: boolean;
+  /** The book figure the line held before this save, when it changed; null otherwise. */
+  previousBookQty: number | null;
+}
+
+export interface StockBookChange {
+  sviId: string;
+  lineNo: number;
+  previousBookQty: number;
+  bookQty: number;
 }
 
 export interface StockVoucherPostResult extends StockVoucherPayload {
@@ -673,6 +721,13 @@ export interface StockCountSheetRow {
   stockValue: number;
   /** Always null — this is the column the screen fills. */
   countedQty: null;
+  // ── Notes 150 #9 — the batch's size / colour / model (stock_batch_detail), ──
+  // ── null when the batch has none. Shown after the item name on the sheet. ──
+  sizeId: string | null;
+  sizeName: string | null;
+  colourId: string | null;
+  colourName: string | null;
+  model: string | null;
 }
 
 /** §12 — the count as the LEDGER recorded it, which is not the document. */

@@ -12,12 +12,15 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PhysicalStockVoucherController = void 0;
+exports.PhysicalStockVoucherController = exports.PHYSICAL_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const swagger_1 = require("@nestjs/swagger");
 const api_version_1 = require("../../../common/constants/api-version");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
+const rights_1 = require("../../../common/posting/rights");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_exception_filter_1 = require("../stock-voucher/stock-voucher-exception.filter");
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
 const stock_voucher_types_1 = require("../stock-voucher/types/stock-voucher.types");
@@ -26,6 +29,7 @@ const list_physical_stock_voucher_query_dto_1 = require("./dto/list-physical-sto
 const post_physical_stock_voucher_dto_1 = require("./dto/post-physical-stock-voucher.dto");
 const physical_stock_voucher_response_dto_1 = require("./dto/physical-stock-voucher-response.dto");
 const PHYSICAL_VCHR_TYPE_ID = 6;
+exports.PHYSICAL_MENU_ID = 45;
 const PHYSICAL_RULES = {
     voucherType: 'PHYSICAL',
     typeCode: 'PHY',
@@ -47,10 +51,15 @@ const PHYSICAL_RULES = {
 };
 let PhysicalStockVoucherController = class PhysicalStockVoucherController {
     stockVoucherService;
-    constructor(stockVoucherService) {
+    prisma;
+    requestContext;
+    constructor(stockVoucherService, prisma, requestContext) {
         this.stockVoucherService = stockVoucherService;
+        this.prisma = prisma;
+        this.requestContext = requestContext;
     }
     async countSheet(query) {
+        await this.requireRight('view', 'generate a count sheet');
         const data = await this.stockVoucherService.countSheet(PHYSICAL_RULES, query);
         return {
             success: true,
@@ -59,6 +68,10 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         };
     }
     async save(dto) {
+        await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a count sheet');
+        if (dto.header.post === true || dto.header.status === 'POSTED') {
+            await this.requireRight('post', 'post a physical count');
+        }
         const data = await this.stockVoucherService.save(PHYSICAL_RULES, dto);
         const saved = dto.header.svhId ? 'updated' : 'created';
         return {
@@ -70,6 +83,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         };
     }
     async listOrLoad(query) {
+        await this.requireRight('view', 'view physical counts');
         if (query.svhId) {
             const data = await this.stockVoucherService.getById(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
             return { success: true, message: 'Physical stock count fetched successfully', data };
@@ -78,6 +92,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         return { success: true, message: 'Physical stock count list fetched successfully', data };
     }
     async validate(query) {
+        await this.requireRight('view', 'validate a physical count');
         const data = await this.stockVoucherService.validate(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
         const failing = data.filter((row) => row.problem !== null).length;
         return {
@@ -89,6 +104,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         };
     }
     async post(dto) {
+        await this.requireRight('post', 'post a physical count');
         const data = await this.stockVoucherService.post(PHYSICAL_RULES, dto.svhId, dto.accYear, dto.companyId, dto.branchId, dto.userId);
         return {
             success: true,
@@ -97,6 +113,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         };
     }
     async cancel(dto) {
+        await this.requireRight('cancel', 'cancel a physical count');
         const data = await this.stockVoucherService.cancel(PHYSICAL_RULES, dto.svhId, dto.accYear, dto.reason, dto.companyId, dto.branchId, dto.userId);
         return {
             success: true,
@@ -107,6 +124,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         };
     }
     async variance(query) {
+        await this.requireRight('view', 'read the variance report');
         const data = await this.stockVoucherService.variance(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId, query.limit, query.offset);
         return {
             success: true,
@@ -122,6 +140,15 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         return varied
             ? `Physical stock count posted — ${varied} of ${total} lines had a variance`
             : `Physical stock count posted — all ${total} lines agreed with the book`;
+    }
+    async requireRight(right, action) {
+        await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId: this.requestContext.getUserId(),
+            menuId: exports.PHYSICAL_MENU_ID,
+            right,
+            codePrefix: 'PHY',
+            action,
+        });
     }
 };
 exports.PhysicalStockVoucherController = PhysicalStockVoucherController;
@@ -148,7 +175,9 @@ __decorate([
         summary: 'Create or update a physical count draft (by header.svhId presence)',
         description: "Update is a full replace of the lines. Saves a DRAFT unless header.status is 'POSTED' (or header.post is true), which saves and posts in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save too and leaves no document behind (notes 94 B / 106). rowsPosted on the response is null for a draft.\n\n" +
             'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
-            'THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.',
+            "THE HEADER TOTALS ARE THE SERVER'S (notes 150 #5): lineCount, totalQty, totalValue and totalValueWot are summed from the lines just written — on a count the NET variance, Σ(counted − book), valued at each holding's moving average, so they may be NEGATIVE. The four fields on the payload are accepted for older clients and ignored. createdBy / modifiedBy likewise: the logged-in user is the author.\n\n" +
+            'A re-save re-reads every book figure from stock_balance. Lines whose book figure moved since the last save come back with bookChanged: true and previousBookQty, and the document carries bookChanges[] (notes 150 #4) — warn before posting a sheet that no longer measures what it was drawn against.\n\n' +
+            'REFUSED AT SAVE: two lines naming one holding (lot × godown × bucket) — 422 STOCK_COUNT_HOLDING_DUPLICATE (notes 150 #1); a freeze on a godown another DRAFT count already holds frozen over an overlapping window — 409 STOCK_FREEZE_GODOWN_HELD (notes 150 #2); a docDatetime more than 15 minutes from the server clock unless the document declares an offline sync (syncDate) — 422 STOCK_DOC_DATETIME_OUT_OF_RANGE (notes 150 #3).',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockDocumentSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockErrorResponseDto }),
@@ -245,6 +274,8 @@ exports.PhysicalStockVoucherController = PhysicalStockVoucherController = __deco
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, common_1.Controller)('stock/physical'),
     (0, common_1.UseFilters)(stock_voucher_exception_filter_1.StockVoucherExceptionFilter),
-    __metadata("design:paramtypes", [stock_voucher_service_1.StockVoucherService])
+    __metadata("design:paramtypes", [stock_voucher_service_1.StockVoucherService,
+        prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService])
 ], PhysicalStockVoucherController);
 //# sourceMappingURL=physical-stock-voucher.controller.js.map

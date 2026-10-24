@@ -30,6 +30,11 @@ export interface PickStockRow {
     avgCostRate: number;
     stockValue: number;
     firstInDate: string | null;
+    sizeId: string | null;
+    sizeName: string | null;
+    colourId: string | null;
+    colourName: string | null;
+    model: string | null;
 }
 export type StockAdjustmentPayload = StockVoucherPayload & {
     kind: StockAdjustmentDocKind;
@@ -41,6 +46,8 @@ export declare class StockAdjustmentService {
     private readonly appSettings;
     constructor(prisma: PrismaService, stockVoucherService: StockVoucherService, requestContextService: RequestContextService, appSettings: AppSettingValueService);
     save(dto: SaveStockAdjustmentDto): Promise<StockVoucherSaveResult>;
+    private postHooks;
+    private assertRulesHold;
     private toSharedLine;
     getOne(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockAdjustmentPayload>;
     validate(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherLineProblem[]>;

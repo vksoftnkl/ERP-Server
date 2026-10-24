@@ -234,7 +234,10 @@ describe('StockVoucherService', () => {
           sql.includes('line_cost_rate = 0') ||
           sql.includes('sbl_on_hand_qty < 0') ||
           sql.includes('lotless') ||
-          sql.includes('keyed.line_direction < 0')
+          sql.includes('keyed.line_direction < 0') ||
+          // Notes 150 #2 / #8 — no other freeze on the godown, no later count.
+          sql.includes('svh_freeze_stock = true') ||
+          sql.includes('later.svh_refno')
         ) {
           return Promise.resolve([]);
         }
@@ -402,7 +405,10 @@ describe('StockVoucherService', () => {
       expect(client.itemUnitConversion.findMany).not.toHaveBeenCalled();
     });
 
-    it('writes createdBy from the payload, on the header and on every line', async () => {
+    // Notes 150 #5 — the LOGIN is the author. "ZT-SPOOFED-AUTHOR" was stored
+    // as sent until 2026-10-24; the payload's text now stands only for a caller
+    // with no user in the request context.
+    it('files the LOGIN as createdBy on the header and every line, whatever the payload names', async () => {
       await service.save(
         OPENING_RULES,
         payload({
@@ -411,21 +417,28 @@ describe('StockVoucherService', () => {
         }),
       );
 
-      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBe(
-        'TILL-01 operator',
-      );
-      expect(createdLine().sviCreatedBy).toBe('row author');
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBe(USER_ID);
+      expect(createdLine().sviCreatedBy).toBe(USER_ID);
     });
 
-    it('falls back to the header author, then the actor, when a line names none', async () => {
-      await service.save(OPENING_RULES, payload({ header: { createdBy: 'import job' } as never }));
+    it('takes the payload\'s author only when nobody is logged in', async () => {
+      (service as unknown as { requestContextService: RequestContextService }).requestContextService =
+        { getUserId: () => null } as unknown as RequestContextService;
+
+      // No login AND no userId in the body: resolveActor falls to DEFAULT_ACTOR.
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { createdBy: 'import job', userId: undefined } as never }),
+      );
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBe('import job');
       expect(createdLine().sviCreatedBy).toBe('import job');
 
+      client.stockVoucher.create.mockClear();
       client.stockVoucherItem.createMany.mockClear();
-      await service.save(OPENING_RULES, payload());
-      // Neither level named one, so the resolved actor stands — exactly what
-      // every caller got before these fields existed.
-      expect(createdLine().sviCreatedBy).toBe(USER_ID);
+      await service.save(OPENING_RULES, payload({ header: { userId: undefined } as never }));
+      // Nobody logged in and nothing named: NULL, never the nil uuid.
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBeNull();
+      expect(createdLine().sviCreatedBy).toBeNull();
     });
 
     it('does not stamp the original author on lines an UPDATE rewrites', async () => {
@@ -451,10 +464,11 @@ describe('StockVoucherService', () => {
         }),
       );
 
-      // A save REPLACES the lines, so this row was inserted by the EDITOR. The
+      // A save REPLACES the lines, so this row was inserted by the EDITOR — the
+      // login, not the name the payload gives either party (notes 150 #5). The
       // header keeps its own created_by; the lines must not quietly re-credit
       // the original author for an edit somebody else made.
-      expect(createdLine().sviCreatedBy).toBe('the editor');
+      expect(createdLine().sviCreatedBy).toBe(USER_ID);
     });
 
     it('never writes modified_by on a line the save is inserting fresh', async () => {
@@ -485,7 +499,8 @@ describe('StockVoucherService', () => {
       );
 
       const data = client.stockVoucher.update.mock.calls[0][0].data;
-      expect(data.svhModifiedBy).toBe('the editor');
+      // The login, not 'the editor' the payload names (notes 150 #5).
+      expect(data.svhModifiedBy).toBe(USER_ID);
       // Who raised the document is not something a later edit gets to change.
       expect(data).not.toHaveProperty('svhCreatedBy');
     });
@@ -638,13 +653,15 @@ describe('StockVoucherService', () => {
       expect(line).not.toHaveProperty('sviDiffQty');
     });
 
-    it('writes the four header totals from the payload, and sums nothing itself', async () => {
+    // Notes 150 #5 — the totals are the server's: summed from the lines just
+    // written, the way svi_value is GENERATED, and the payload's four ignored.
+    it('sums the four header totals from the lines it writes and ignores the payload\'s', async () => {
       await service.save(
         OPENING_RULES,
         payload({
           header: {
-            lineCount: 3,
-            totalQty: 120,
+            lineCount: 77,
+            totalQty: 999999,
             totalValue: 2400.5,
             totalValueWot: 2286.19,
           } as SaveStockVoucherDto['header'],
@@ -657,25 +674,23 @@ describe('StockVoucherService', () => {
       const created = client.stockVoucher.create.mock.calls[0][0].data;
       expect(created).not.toHaveProperty('svhLineCount');
 
+      // One line: baseQty 120 at costRate 20, costRateWot not sent (0).
       const totals = client.stockVoucher.update.mock.calls.at(-1)[0].data;
-      expect(totals.svhLineCount).toBe(3);
+      expect(totals.svhLineCount).toBe(1);
       expect(Number(totals.svhTotalQty)).toBe(120);
-      expect(Number(totals.svhTotalValue)).toBe(2400.5);
-      expect(Number(totals.svhTotalValueWot)).toBe(2286.19);
-      // One line in the payload, lineCount 3 in the header: the service does
-      // not count the grid, so it does not correct it either.
-      expect(client.stockVoucherItem.createMany.mock.calls[0][0].data).toHaveLength(1);
+      expect(Number(totals.svhTotalValue)).toBe(2400);
+      expect(Number(totals.svhTotalValueWot)).toBe(0);
     });
 
-    it('writes only the line COUNT when the payload sends no totals', async () => {
+    it('writes all four totals even when the payload sends none', async () => {
       await service.save(OPENING_RULES, payload());
 
-      // The valuation columns keep their NOT NULL DEFAULT 0 on a create — not
-      // a server-side zero standing in for a missing value. The line count is
-      // the number of rows just written and is always stated.
       expect(client.stockVoucher.update).toHaveBeenCalledTimes(1);
       const [[totals]] = client.stockVoucher.update.mock.calls;
-      expect(totals.data).toEqual({ svhLineCount: 1 });
+      expect(totals.data.svhLineCount).toBe(1);
+      expect(Number(totals.data.svhTotalQty)).toBe(120);
+      expect(Number(totals.data.svhTotalValue)).toBe(2400);
+      expect(Number(totals.data.svhTotalValueWot)).toBe(0);
     });
 
     it('always saves DRAFT and never a lot id', async () => {
@@ -1342,9 +1357,59 @@ describe('StockVoucherService', () => {
 
       const hook = jest.fn().mockResolvedValue(undefined);
       await service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, hook);
-      // The transaction client, and the row count the engine returned — the
-      // ledger INSERT's mocked count.
-      expect(hook).toHaveBeenCalledWith(client, 2);
+      // The transaction client, the row count the engine returned — the
+      // ledger INSERT's mocked count — and (notes 151 #5) the document id.
+      expect(hook).toHaveBeenCalledWith(client, 2, SVH_ID);
+    });
+
+    it('notes 151 #5 — a hooks object: beforePost under the locks before the preflight, afterPost after the engine', async () => {
+      const validate = jest.spyOn(service, 'validate').mockResolvedValue([]);
+      jest.spyOn(service, 'getById').mockResolvedValue({
+        header: { svhId: SVH_ID, refno: 'OPN/x', status: 'POSTED', postedOn: null } as never,
+        lines: [],
+      });
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhRefno: 'OPN/x',
+        svhStatus: 'DRAFT',
+        svhIsDeleted: false,
+        svhVoucherType: 'OPENING',
+        svhCompanyId: COMPANY_ID,
+        svhBranchId: BRANCH_ID,
+      });
+      const beforePost = jest.fn().mockResolvedValue(undefined);
+      const afterPost = jest.fn().mockResolvedValue(undefined);
+
+      await service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, { beforePost, afterPost });
+
+      expect(beforePost).toHaveBeenCalledWith(client, SVH_ID);
+      expect(afterPost).toHaveBeenCalledWith(client, 2, SVH_ID);
+      // The type's rules run over the locked rows BEFORE the shared preflight,
+      // and the after-hook only once the engine has posted.
+      expect(beforePost.mock.invocationCallOrder[0]).toBeLessThan(validate.mock.invocationCallOrder[0]);
+      expect(validate.mock.invocationCallOrder[0]).toBeLessThan(afterPost.mock.invocationCallOrder[0]);
+    });
+
+    it('notes 151 #5 — a beforePost refusal stops the post before the preflight and the engine', async () => {
+      const validate = jest.spyOn(service, 'validate').mockResolvedValue([]);
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhRefno: 'OPN/x',
+        svhStatus: 'DRAFT',
+        svhIsDeleted: false,
+        svhVoucherType: 'OPENING',
+        svhCompanyId: COMPANY_ID,
+        svhBranchId: BRANCH_ID,
+      });
+
+      await expect(
+        service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, {
+          beforePost: async () => {
+            throw new Error('line 2 breaks a rule');
+          },
+        }),
+      ).rejects.toThrow('line 2 breaks a rule');
+      expect(validate).not.toHaveBeenCalled();
     });
 
     it('rolls the post back when the afterPost hook throws', async () => {
@@ -1940,8 +2005,14 @@ describe('StockVoucherService', () => {
       );
 
       // Nothing was written to stock_ledger, so nothing may be reversed: the
-      // five set-based statements of a posted cancellation must not run.
-      expect(client.$executeRaw).not.toHaveBeenCalled();
+      // five set-based statements of a posted cancellation must not run. The
+      // ONE raw statement a draft cancel runs retires the draft's size /
+      // colour / model rows (notes 149 #3): for a draft, cancel is the delete.
+      const rawSql = (client.$executeRaw as jest.Mock).mock.calls.map((call: unknown[]) =>
+        (call[0] as TemplateStringsArray).join('?'),
+      );
+      expect(rawSql).toEqual([expect.stringContaining('UPDATE stock.stock_batch_detail')]);
+      expect(rawSql[0]).not.toContain('stock_ledger');
       expect(result.rowsReversed).toBe(0);
       const [[headerUpdate]] = client.stockVoucher.update.mock.calls;
       expect(headerUpdate.data).toEqual(
@@ -2121,7 +2192,9 @@ describe('StockVoucherService', () => {
         Promise.resolve(
           strings.join(' ').includes('stock_balance')
             ? rows
-            : [{ locked: 1, next_slno: BigInt(1) }],
+            : strings.join(' ').includes('svh_freeze_stock = true')
+              ? [] // notes 150 #2 — no other freeze holds the godown
+              : [{ locked: 1, next_slno: BigInt(1) }],
         ),
       );
     };
@@ -2402,6 +2475,275 @@ describe('StockVoucherService', () => {
         }),
         'freezeTo must be after freezeFrom',
       );
+    });
+
+    // ── notes 150 — the physical stock review ───────────────────────────────
+    it('#1 refuses two lines that count the same holding (lot × godown × bucket)', async () => {
+      await expect(
+        service.save(
+          PHYSICAL_RULES,
+          countPayload({
+            lines: [
+              { lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, countedQty: 3 },
+              { lineNo: 2, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, countedQty: 3 },
+            ] as never,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        status: 422,
+        response: {
+          errors: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'lines.1',
+              code: StockErrorCode.COUNT_HOLDING_DUPLICATE,
+              message: expect.stringContaining('as row 1'),
+            }),
+          ]),
+        },
+      });
+      expect(client.stockVoucher.create).not.toHaveBeenCalled();
+    });
+
+    it('#1 still allows the same lot in two buckets — those are two holdings', async () => {
+      stubBalance([balanceRow(), balanceRow({ sbl_bucket: 'DAMAGED' })]);
+      await service.save(
+        PHYSICAL_RULES,
+        countPayload({
+          lines: [
+            { lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, countedQty: 3 },
+            {
+              lineNo: 2,
+              itemId: ITEM_ID,
+              godownId: GODOWN_ID,
+              lotId: LOT_ID,
+              bucket: 'DAMAGED',
+              countedQty: 1,
+            },
+          ] as never,
+        }),
+      );
+      expect(client.stockVoucherItem.createMany.mock.calls[0][0].data).toHaveLength(2);
+    });
+
+    it('#2 refuses a freeze on a godown another DRAFT count holds frozen over the window (409)', async () => {
+      client.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join(' ');
+        if (sql.includes('svh_freeze_stock = true')) {
+          return Promise.resolve([
+            {
+              svh_refno: 'PHY0004',
+              svh_freeze_from: new Date('2026-06-30T13:00:00+05:30'),
+              svh_freeze_to: new Date('2026-06-30T16:30:00+05:30'),
+            },
+          ]);
+        }
+        return Promise.resolve(
+          sql.includes('stock_balance') ? [balanceRow()] : [{ locked: 1, next_slno: BigInt(1) }],
+        );
+      });
+
+      await expect(
+        service.save(
+          PHYSICAL_RULES,
+          countPayload({
+            header: {
+              freezeStock: true,
+              freezeFrom: '2026-06-30T15:00:00+05:30',
+              freezeTo: '2026-06-30T18:00:00+05:30',
+            } as never,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: {
+          errors: [
+            expect.objectContaining({
+              field: 'freezeStock',
+              code: StockErrorCode.FREEZE_GODOWN_HELD,
+              // The other count, and its window on the shop's clock, 12-hour.
+              message: expect.stringContaining('PHY0004 from 30-06-2026 01:00 PM to 30-06-2026 04:30 PM'),
+            }),
+          ],
+        },
+      });
+      expect(client.stockVoucher.create).not.toHaveBeenCalled();
+    });
+
+    it('#3 refuses a docDatetime more than 15 minutes from the server clock with no syncDate', async () => {
+      const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000).toISOString();
+      await expect(
+        service.save(PHYSICAL_RULES, countPayload({ header: { docDatetime: threeHoursAgo } as never })),
+      ).rejects.toMatchObject({
+        status: 422,
+        response: {
+          errors: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'docDatetime',
+              code: StockErrorCode.DOC_DATETIME_OUT_OF_RANGE,
+            }),
+          ]),
+        },
+      });
+    });
+
+    it('#3 accepts a backdated docDatetime that declares its offline sync, within a week', async () => {
+      const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000).toISOString();
+      await service.save(
+        PHYSICAL_RULES,
+        countPayload({
+          header: { docDatetime: threeHoursAgo, syncDate: new Date().toISOString() } as never,
+        }),
+      );
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhDocDatetime).toEqual(
+        new Date(threeHoursAgo),
+      );
+
+      // ...but not one that claims to have been keyed AFTER it synced, nor one
+      // that trails by more than seven days.
+      await expectCountRefusal(
+        countPayload({
+          header: {
+            docDatetime: new Date().toISOString(),
+            syncDate: threeHoursAgo,
+          } as never,
+        }),
+        'keyed before it syncs',
+      );
+      await expectCountRefusal(
+        countPayload({
+          header: {
+            docDatetime: new Date(Date.now() - 8 * 24 * 3_600_000).toISOString(),
+            syncDate: new Date().toISOString(),
+          } as never,
+        }),
+        'at most 7 days',
+      );
+    });
+
+    it('#4 reports the lines whose BOOK figure a re-save re-based, with the old figure', async () => {
+      const LINE_ID = '01000000-0000-7000-8000-0000000000e1';
+      // An UPDATE: the row lock must find a live PHYSICAL draft of this scope.
+      client.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join(' ');
+        if (sql.includes('FOR UPDATE')) {
+          return Promise.resolve([
+            {
+              status: 'DRAFT',
+              refno: 'PHY0001',
+              locked: 1,
+              ...lockedHeader({ svh_refno: 'PHY0001', svh_voucher_type: 'PHYSICAL', doc_date: '2026-06-30' }),
+            },
+          ]);
+        }
+        if (sql.includes('stock_balance')) return Promise.resolve([balanceRow()]);
+        if (sql.includes('svh_freeze_stock = true')) return Promise.resolve([]);
+        return Promise.resolve([{ locked: 1, next_slno: BigInt(1) }]);
+      });
+      client.stockVoucherItem.findMany.mockResolvedValue([
+        {
+          sviId: LINE_ID,
+          sviLineNo: 1,
+          sviSplitNo: 1,
+          sviItemId: ITEM_ID,
+          sviGodownId: GODOWN_ID,
+          sviLotId: LOT_ID,
+          sviBucket: 'SALEABLE',
+          // Drawn when the shelf held 100; stock_balance now says 120.
+          sviBookQty: new Prisma.Decimal(100),
+          sviCountedQty: new Prisma.Decimal(118),
+        },
+      ]);
+
+      const result = await service.save(
+        PHYSICAL_RULES,
+        countPayload({
+          header: { svhId: SVH_ID } as never,
+          lines: [
+            {
+              sviId: LINE_ID,
+              lineNo: 1,
+              itemId: ITEM_ID,
+              godownId: GODOWN_ID,
+              lotId: LOT_ID,
+              countedQty: 118,
+            },
+          ] as never,
+        }),
+      );
+
+      expect(result.bookChanges).toEqual([
+        { sviId: LINE_ID, lineNo: 1, previousBookQty: 100, bookQty: 120 },
+      ]);
+      // The header totals follow the NEW book: net variance 118 − 120 = −2.
+      const totals = client.stockVoucher.update.mock.calls.at(-1)[0].data;
+      expect(Number(totals.svhTotalQty)).toBe(-2);
+    });
+
+    it('#5 values a draft count\'s header as the net variance at the holding\'s average', async () => {
+      stubBalance([
+        balanceRow({
+          sbl_avg_cost_rate: new Prisma.Decimal(20),
+          sbl_avg_cost_rate_wot: new Prisma.Decimal(19.047619),
+        }),
+      ]);
+      await service.save(
+        PHYSICAL_RULES,
+        countPayload({ header: { totalQty: 999999, lineCount: 77 } as never }),
+      );
+
+      // counted 118 against book 120: −2 × 20.00 = −40.00; −2 × 19.047619 → −38.10.
+      const totals = client.stockVoucher.update.mock.calls.at(-1)[0].data;
+      expect(totals.svhLineCount).toBe(1);
+      expect(Number(totals.svhTotalQty)).toBe(-2);
+      expect(Number(totals.svhTotalValue)).toBe(-40);
+      expect(Number(totals.svhTotalValueWot)).toBe(-38.1);
+    });
+
+    it('#8 refuses to cancel a POSTED count once a later count has posted on one of its holdings', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhRefno: 'PHY0005',
+        svhStatus: 'POSTED',
+        svhIsDeleted: false,
+        svhVoucherType: 'PHYSICAL',
+        svhCompanyId: COMPANY_ID,
+        svhBranchId: BRANCH_ID,
+      });
+      client.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join(' ');
+        if (sql.includes('later.svh_refno')) {
+          return Promise.resolve([
+            {
+              later_refno: 'PHY0006',
+              line_no: 2,
+              later_posted_on: new Date('2026-10-24T11:05:00+05:30'),
+            },
+          ]);
+        }
+        return Promise.resolve([{ status: 'POSTED', refno: 'PHY0005', locked: 1 }]);
+      });
+      const engineCancel = jest.spyOn(
+        (service as unknown as { stockPosting: StockPostingService }).stockPosting,
+        'cancel',
+      );
+
+      await expect(
+        service.cancel(PHYSICAL_RULES, SVH_ID, ACC_YEAR, 'miscounted', COMPANY_ID, BRANCH_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: {
+          errors: [
+            expect.objectContaining({
+              code: StockErrorCode.COUNT_SUPERSEDED,
+              message: expect.stringContaining(
+                'Line 2 of PHY0005 was counted again by PHY0006, posted 24-10-2026 11:05 AM',
+              ),
+            }),
+          ],
+        },
+      });
+      expect(engineCancel).not.toHaveBeenCalled();
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
     });
 
     // ── §5.3 — the reason, and the ledger's vocabulary ────────────────────
@@ -2765,30 +3107,34 @@ describe('StockVoucherService', () => {
     const totalsWrite = () =>
       client.stockVoucher.update.mock.calls.find(([args]) => 'svhLineCount' in args.data)![0].data;
 
-    it('keeps a total past float64 exactly, and writes 0 for a null or unreadable one', async () => {
+    it('sums a quantity past float64 exactly, in Decimal (notes 150 #5)', async () => {
       await service.save(
         OPENING_RULES,
         payload({
-          header: {
-            // 18 significant digits — numeric(18,6) holds them; float64 cannot.
-            totalQty: '123456789012.123456',
-            totalValue: null,
-            totalValueWot: 'not a number',
-          } as never,
+          lines: [
+            {
+              ...payload().lines[0],
+              // 18 significant digits — numeric(18,6) holds them; float64 cannot.
+              qty: '123456789012.123456',
+              toBaseFactor: 1,
+              baseQty: '123456789012.123456',
+              costRate: 1,
+            },
+          ] as never,
         }),
       );
 
       const data = totalsWrite();
-      expect(data.svhTotalQty).toEqual(new Prisma.Decimal('123456789012.123456'));
       expect(data.svhTotalQty.toFixed(6)).toBe('123456789012.123456');
-      expect(data.svhTotalValue).toEqual(new Prisma.Decimal(0));
+      // round((base + free) × rate, 2), as svi_value is GENERATED.
+      expect(data.svhTotalValue.toFixed(2)).toBe('123456789012.12');
       expect(data.svhTotalValueWot).toEqual(new Prisma.Decimal(0));
     });
 
-    it('takes a stated line count over the number of rows written', async () => {
+    it('counts the rows it writes, whatever lineCount the payload states (notes 150 #5)', async () => {
       await service.save(OPENING_RULES, payload({ header: { lineCount: 7 } as never }));
 
-      expect(totalsWrite().svhLineCount).toBe(7);
+      expect(totalsWrite().svhLineCount).toBe(1);
     });
   });
 

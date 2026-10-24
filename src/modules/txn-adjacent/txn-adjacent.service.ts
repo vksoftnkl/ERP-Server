@@ -52,9 +52,12 @@ const DRAFT_SLNO_SQL = {
  * the caller may VIEW. Cancelled documents are stops: the lists show them.
  * `typeCode` / `status` / `fromDate` / `toDate` are the list's own filters.
  *
- * Order: `(date, slno, created_on, id)` — total, so the walk never stalls on
- * a tie; prev is `<` and DESC, next `>` and ASC. A document with no serial
- * yet sorts where its list draws it (TxnDocSpec.draftSlno).
+ * Order: `(date, serial, created_on, id)` where the docType's serial is
+ * counted branch-wide, `(date, created_on, id)` where it is counted per device
+ * or per counter and so cannot order a date's documents (notes 152;
+ * TxnDocSpec.serial). Total either way, so the walk never stalls on a tie;
+ * prev is `<` and DESC, next `>` and ASC. A document with no serial yet sorts
+ * where its list draws it (TxnDocSerial.draft).
  */
 @Injectable()
 export class TxnAdjacentService {
@@ -253,14 +256,18 @@ function ownRowsSql(spec: TxnDocSpec): Prisma.Sql {
   return parts.length > 0 ? Prisma.join(parts, ' ') : Prisma.empty;
 }
 
-/** `(date, slno, created_on, id)` on one alias, the serial coalesced where drafts have none. */
+/**
+ * `(date, serial, created_on, id)` on one alias — the serial only where the
+ * registry keeps one, coalesced where drafts have none (notes 152).
+ */
 function walkKey(spec: TxnDocSpec, alias: 'h' | 'c'): Prisma.Sql[] {
   const col = (column: string) => Prisma.raw(`${alias}.${column}`);
-  const slno =
-    spec.draftSlno === null
-      ? col(spec.slno)
-      : Prisma.sql`COALESCE(${col(spec.slno)}, ${DRAFT_SLNO_SQL[spec.draftSlno]})`;
-  return [col(spec.date), slno, col(spec.createdOn), col(spec.id)];
+  const serial = spec.serial
+    ? spec.serial.draft === null
+      ? col(spec.serial.column)
+      : Prisma.sql`COALESCE(${col(spec.serial.column)}, ${DRAFT_SLNO_SQL[spec.serial.draft]})`
+    : null;
+  return [col(spec.date), ...(serial ? [serial] : []), col(spec.createdOn), col(spec.id)];
 }
 
 /** 400 — the request names something this docType does not have. */

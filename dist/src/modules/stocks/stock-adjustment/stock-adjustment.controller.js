@@ -12,21 +12,33 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockAdjustmentController = void 0;
+exports.StockAdjustmentController = exports.STOCK_ADJUSTMENT_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const api_version_1 = require("../../../common/constants/api-version");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
+const rights_1 = require("../../../common/posting/rights");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_exception_filter_1 = require("../stock-voucher/stock-voucher-exception.filter");
 const save_stock_adjustment_dto_1 = require("./dto/save-stock-adjustment.dto");
 const stock_adjustment_query_dto_1 = require("./dto/stock-adjustment-query.dto");
 const stock_adjustment_service_1 = require("./stock-adjustment.service");
+exports.STOCK_ADJUSTMENT_MENU_ID = 264;
 let StockAdjustmentController = class StockAdjustmentController {
     service;
-    constructor(service) {
+    prisma;
+    requestContext;
+    constructor(service, prisma, requestContext) {
         this.service = service;
+        this.prisma = prisma;
+        this.requestContext = requestContext;
     }
     async save(dto) {
+        await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a stock adjustment');
+        if (dto.header.post === true || dto.header.status === 'POSTED') {
+            await this.requireRight('post', 'post a stock adjustment');
+        }
         const data = await this.service.save(dto);
         return {
             success: true,
@@ -35,10 +47,12 @@ let StockAdjustmentController = class StockAdjustmentController {
         };
     }
     async load(query) {
+        await this.requireRight('view', 'view stock adjustments');
         const data = await this.service.getOne(query.svhId, query.accYear, query.companyId, query.branchId);
         return { success: true, message: 'Stock adjustment fetched successfully', data };
     }
     async validate(query) {
+        await this.requireRight('view', 'view stock adjustments');
         const data = await this.service.validate(query.svhId, query.accYear, query.companyId, query.branchId);
         const failing = data.filter((row) => row.problem !== null).length;
         return {
@@ -48,20 +62,33 @@ let StockAdjustmentController = class StockAdjustmentController {
         };
     }
     async post(dto) {
+        await this.requireRight('post', 'post a stock adjustment');
         const data = await this.service.post(dto);
         return { success: true, message: `Stock adjustment posted — ${data.rowsPosted} ledger rows`, data };
     }
     async cancel(dto) {
+        await this.requireRight('cancel', 'cancel a stock adjustment');
         const data = await this.service.cancel(dto);
         return { success: true, message: `Stock adjustment cancelled — ${data.rowsReversed} reversal rows`, data };
     }
     async remove(query) {
+        await this.requireRight('delete', 'delete a stock adjustment draft');
         const data = await this.service.remove(query.svhId, query.accYear, query.companyId, query.branchId);
         return { success: true, message: 'Stock adjustment deleted successfully', data };
     }
     async pickStock(query) {
+        await this.requireRight('view', 'pick stock for an adjustment');
         const data = await this.service.pickStock(query);
         return { success: true, message: `${data.length} holdings`, data };
+    }
+    async requireRight(right, action) {
+        await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId: this.requestContext.getUserId(),
+            menuId: exports.STOCK_ADJUSTMENT_MENU_ID,
+            right,
+            codePrefix: 'ADJ',
+            action,
+        });
     }
 };
 exports.StockAdjustmentController = StockAdjustmentController;
@@ -156,7 +183,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Pick stock from the balance — the holdings an outward line is chosen from',
-        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. Live, never cached.',
+        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available, the average cost and (notes 151 #8) the batch\'s sizeId / sizeName, colourId / colourName and model. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. `batchNo` (notes 151 #9) is the exact batch-label scan, folded as the lot key folds it; `search` stays a loose match on name, code and batch. Live, never cached.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: 'The holdings.' }),
     __param(0, (0, common_1.Query)()),
@@ -170,6 +197,8 @@ exports.StockAdjustmentController = StockAdjustmentController = __decorate([
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, common_1.Controller)('stock/adjustment'),
     (0, common_1.UseFilters)(stock_voucher_exception_filter_1.StockVoucherExceptionFilter),
-    __metadata("design:paramtypes", [stock_adjustment_service_1.StockAdjustmentService])
+    __metadata("design:paramtypes", [stock_adjustment_service_1.StockAdjustmentService,
+        prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService])
 ], StockAdjustmentController);
 //# sourceMappingURL=stock-adjustment.controller.js.map

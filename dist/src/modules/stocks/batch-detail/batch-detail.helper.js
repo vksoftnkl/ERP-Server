@@ -36,10 +36,10 @@ async function syncBatchDetails(tx, source, lines, numbered) {
        AND svi_is_deleted = false`;
     const storedByKey = new Map(stored.map((row) => [`${row.svi_line_no}|${row.svi_split_no}`, row]));
     const owned = await tx.$queryRaw `
-    SELECT sbd_src_line_id, sbd_batch_no
+    SELECT sbd_batch_no
       FROM stock.stock_batch_detail
-     WHERE sbd_src_doc_id = ${source.srcDocId}::uuid AND sbd_is_deleted = false`;
-    const ownedBatchByLine = new Map(owned.map((row) => [row.sbd_src_line_id, row.sbd_batch_no]));
+     WHERE sbd_src_doc_id = ${source.srcDocId}::uuid`;
+    const ownedBatches = new Set(owned.map((row) => row.sbd_batch_no));
     const errors = [];
     const rows = [];
     lines.forEach((line, index) => {
@@ -48,7 +48,7 @@ async function syncBatchDetails(tx, source, lines, numbered) {
             return;
         const batchNo = row.svi_batch_no?.trim() ? foldBatchNo(row.svi_batch_no) : null;
         const model = line.model?.trim() || null;
-        const auto = batchNo !== null && (numbered.has(index) || ownedBatchByLine.get(row.svi_id) === batchNo);
+        const auto = batchNo !== null && (numbered.has(index) || ownedBatches.has(batchNo));
         if (auto) {
             rows.push({ sviId: row.svi_id, itemId: row.svi_item_id, batchNo, line, model });
         }

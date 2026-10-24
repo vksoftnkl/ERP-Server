@@ -4,7 +4,7 @@ import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import { StockPostingService } from '../posting/stock-posting.service';
-import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow } from './types/stock-voucher.types';
+import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow, type StockPostHooks } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
     branchId: string;
@@ -19,7 +19,7 @@ interface ListStockVouchersQuery {
 export interface CountSheetQuery {
     companyId: string;
     branchId: string;
-    accYear: string;
+    accYear?: string;
     godownId: string;
     bucket?: StockBucket;
     itemGroupId?: string;
@@ -33,13 +33,16 @@ export declare class StockVoucherService {
     private readonly requestContextService;
     private readonly stockPosting;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, stockPosting: StockPostingService);
-    save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherSaveResult>;
+    save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto, hooks?: StockPostHooks): Promise<StockVoucherSaveResult>;
     private logRevision;
     private loadRefno;
     private assertPayloadRules;
     private assertReasons;
     private createDraft;
     private writeHeaderTotals;
+    private documentTotals;
+    private assertFreezeNotHeld;
+    private assertCountNotSuperseded;
     private updateDraft;
     private replaceLines;
     private assertLineIds;
@@ -51,7 +54,7 @@ export declare class StockVoucherService {
     getById(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, client?: Prisma.TransactionClient | PrismaService): Promise<StockVoucherPayload>;
     validate(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, tx?: Prisma.TransactionClient): Promise<StockVoucherLineProblem[]>;
     private assertPostable;
-    post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>): Promise<StockVoucherPostResult>;
+    post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, hooks?: StockPostHooks | ((tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>)): Promise<StockVoucherPostResult>;
     cancel(rules: StockVoucherTypeRules, svhId: string, accYear: string, reason: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherCancelResult>;
     softDelete(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherDeleteResult>;
     importLines(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, csvText: string, userId?: string): Promise<StockVoucherImportResult>;

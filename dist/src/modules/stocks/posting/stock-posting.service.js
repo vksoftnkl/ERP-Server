@@ -11,6 +11,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockPostingService = void 0;
 const common_1 = require("@nestjs/common");
+const ist_clock_util_1 = require("../../../common/utils/ist-clock.util");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const stock_error_codes_1 = require("../types/stock-error-codes");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
 const stock_accounts_posting_service_1 = require("./stock-accounts-posting.service");
@@ -99,10 +102,13 @@ let StockPostingService = class StockPostingService {
        LIMIT 1`;
         if (blocking.length > 0) {
             const b = blocking[0];
-            throw new common_1.ConflictException(`Godown ${b.godown_id} is frozen for physical count ${b.svh_refno ?? b.svh_id} ` +
-                `from ${b.svh_freeze_from.toISOString()} to ${b.svh_freeze_to.toISOString()}, ` +
-                `and this movement is timed ${movedAt.toISOString()}, inside that window. ` +
-                `Post or cancel the count first.`);
+            const message = `Godown ${b.godown_id} is frozen for physical count ${b.svh_refno ?? b.svh_id} ` +
+                `from ${(0, ist_clock_util_1.istClockText)(b.svh_freeze_from)} to ${(0, ist_clock_util_1.istClockText)(b.svh_freeze_to)}, ` +
+                `and this movement is timed ${(0, ist_clock_util_1.istClockText)(movedAt)}, inside that window. ` +
+                `Post or cancel the count first.`;
+            (0, module_service_utils_1.throwStockConflict)(message, [
+                { field: 'docDatetime', code: stock_error_codes_1.StockErrorCode.GODOWN_FROZEN, message },
+            ]);
         }
     }
 };

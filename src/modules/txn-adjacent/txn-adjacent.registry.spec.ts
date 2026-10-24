@@ -22,7 +22,7 @@ describe('TXN_DOC_REGISTRY', () => {
       spec.branch,
       spec.year,
       spec.date,
-      spec.slno,
+      ...(spec.serial ? [spec.serial.column] : []),
       spec.createdOn,
       spec.status,
       spec.deleted,
@@ -55,9 +55,34 @@ describe('TXN_DOC_REGISTRY', () => {
   });
 
   it('puts drafts where each list draws them', () => {
-    expect(TXN_DOC_REGISTRY.SALE_BILL.draftSlno).toBe('HIGH');
-    expect(TXN_DOC_REGISTRY.RECEIPT.draftSlno).toBe('HIGH');
-    expect(TXN_DOC_REGISTRY.PAYMENT.draftSlno).toBe('HIGH');
-    expect(TXN_DOC_REGISTRY.VOUCHER.draftSlno).toBe('LOW');
+    expect(TXN_DOC_REGISTRY.RECEIPT.serial).toEqual({ column: 'avh_voucher_slno', draft: 'HIGH' });
+    expect(TXN_DOC_REGISTRY.PAYMENT.serial).toEqual({ column: 'avh_voucher_slno', draft: 'HIGH' });
+    expect(TXN_DOC_REGISTRY.VOUCHER.serial).toEqual({ column: 'avh_voucher_slno', draft: 'LOW' });
+  });
+
+  // Notes 152: ux_svh_slno counts svh_slno per device, and a POS bill's
+  // sb_bill_slno comes from the device's own series. Neither can order a
+  // date's documents across devices, so neither is in the walk key.
+  it('leaves a per-device serial out of the key', () => {
+    const stock = TXN_DOC_TYPES.filter((t) => TXN_DOC_REGISTRY[t].table === 'stock.stock_voucher');
+    expect(stock).toHaveLength(5);
+    for (const docType of stock) {
+      expect(TXN_DOC_REGISTRY[docType].serial).toBeNull();
+    }
+    expect(TXN_DOC_REGISTRY.SALE_BILL.serial).toBeNull();
+  });
+
+  it('keeps a branch-wide sales serial, NOT NULL, in the key', () => {
+    for (const docType of [
+      'QUOTATION',
+      'SALE_ORDER',
+      'DELIVERY_CHALLAN',
+      'DC_RETURN',
+      'SALE_RETURN',
+    ] as const) {
+      const serial = TXN_DOC_REGISTRY[docType].serial;
+      expect(serial).not.toBeNull();
+      expect(serial?.draft).toBeNull();
+    }
   });
 });
