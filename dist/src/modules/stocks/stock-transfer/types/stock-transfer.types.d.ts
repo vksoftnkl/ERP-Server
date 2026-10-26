@@ -46,11 +46,31 @@ export interface StockTransferPrefill {
         docDate: string;
         status: StockVoucherStatus;
         fromBranchId: string;
+        fromBranchName: string | null;
         fromGodownId: string | null;
+        fromGodownName: string | null;
         toBranchId: string | null;
         toGodownId: string | null;
+        toGodownName: string | null;
     };
     rows: StockTransferPrefillRow[];
+}
+export interface StockTransferInboundRow extends StockTransitRow {
+    outVoucherId: string;
+    outAccYear: string;
+    outRefno: string | null;
+    fromBranchId: string;
+    fromBranchName: string | null;
+    fromGodownName: string | null;
+    daysInFlight: number;
+}
+export interface StockTransferReceiptPayload extends StockVoucherPayload {
+    header: StockVoucherPayload['header'] & {
+        linkSrcRefno: string | null;
+        fromBranchId: string | null;
+        fromBranchName: string | null;
+    };
+    transit: StockTransitRow[];
 }
 export interface StockTransferReceiveResult {
     inVoucher: StockVoucherPayload & {

@@ -1,8 +1,14 @@
+import type { PrismaService } from 'src/database/prisma/prisma.service';
+import type { RequestContextService } from 'src/common/request-context/request-context.service';
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import type { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { StockVoucherTypeRules } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
-import { StockTransferController, TRANSFER_OUT_RULES } from './stock-transfer.controller';
+import {
+  STOCK_TRANSFER_MENU_ID,
+  StockTransferController,
+  TRANSFER_OUT_RULES,
+} from './stock-transfer.controller';
 import type { StockTransferService } from './stock-transfer.service';
 
 const SVH_ID = '01000000-0000-7000-8000-0000000000f1';
@@ -13,18 +19,104 @@ const ACC_YEAR = '2026-2027';
 
 const REF = { svhId: SVH_ID, accYear: ACC_YEAR, companyId: COMPANY_ID, branchId: BRANCH_ID };
 
+/** The caller's `user_menus` row for menu 41 — every flag granted unless a test revokes one. */
+const allRights = () => ({
+  um_can_view: true,
+  um_can_create: true,
+  um_can_edit: true,
+  um_can_delete: true,
+  um_can_print: true,
+  um_can_export: true,
+  um_can_post: true,
+  um_can_cancel: true,
+  um_can_amend: true,
+  um_can_override: true,
+  um_can_retender: true,
+});
+
 describe('StockTransferController', () => {
   let transfers: { save: jest.Mock; getOne: jest.Mock; despatch: jest.Mock };
   let vouchers: { list: jest.Mock; validate: jest.Mock; cancel: jest.Mock; softDelete: jest.Mock };
   let controller: StockTransferController;
+  let rightsRow: Record<string, boolean> | null;
+  let rightsRead: jest.Mock;
 
   beforeEach(() => {
+    rightsRow = allRights();
+    rightsRead = jest.fn(async () => (rightsRow ? [rightsRow] : []));
     transfers = { save: jest.fn(), getOne: jest.fn(), despatch: jest.fn() };
     vouchers = { list: jest.fn(), validate: jest.fn(), cancel: jest.fn(), softDelete: jest.fn() };
     controller = new StockTransferController(
       transfers as unknown as StockTransferService,
       vouchers as unknown as StockVoucherService,
+      { $queryRaw: rightsRead } as unknown as PrismaService,
+      { getUserId: () => USER_ID } as unknown as RequestContextService,
     );
+  });
+
+  // ── notes 153 E3 — every route is judged on the caller's menu-41 row ───────
+  describe('menu 41 rights', () => {
+    const body = (header: Record<string, unknown>) =>
+      ({ header, lines: [] }) as unknown as SaveStockTransferDto;
+
+    it("reads the caller's user_menus row for menu 41 before a despatch", async () => {
+      transfers.despatch.mockResolvedValue({ sameBranch: true, ledgerRows: 2, transitRows: 0 });
+      await controller.despatch({ ...REF } as never);
+
+      const [strings, ...values] = rightsRead.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toContain('FROM public.user_menus');
+      expect(values).toEqual([USER_ID, STOCK_TRANSFER_MENU_ID]);
+      expect(STOCK_TRANSFER_MENU_ID).toBe(41);
+    });
+
+    it.each([
+      ['despatch', 'um_can_post', 'TRF_RIGHT_POST', () => controller.despatch({ ...REF } as never)],
+      ['cancel', 'um_can_cancel', 'TRF_RIGHT_CANCEL', () => controller.cancel({ ...REF, reason: 'Keyed twice' } as never)],
+      ['delete', 'um_can_delete', 'TRF_RIGHT_DELETE', () => controller.remove(REF as never)],
+      ['load', 'um_can_view', 'TRF_RIGHT_VIEW', () => controller.listOrLoad(REF as never)],
+      ['list', 'um_can_view', 'TRF_RIGHT_VIEW', () => controller.listOrLoad({ companyId: COMPANY_ID, branchId: BRANCH_ID, accYear: ACC_YEAR } as never)],
+      ['validate', 'um_can_view', 'TRF_RIGHT_VIEW', () => controller.validate(REF as never)],
+      ['create', 'um_can_create', 'TRF_RIGHT_CREATE', () => controller.save(body({}))],
+      ['edit', 'um_can_edit', 'TRF_RIGHT_EDIT', () => controller.save(body({ svhId: SVH_ID }))],
+    ])('%s: 403 naming the column when the row lacks the right (%s → %s)', async (_route, column, code, call) => {
+      rightsRow = { ...allRights(), [column]: false };
+
+      await expect(call()).rejects.toMatchObject({
+        status: 403,
+        response: { errors: [expect.objectContaining({ code, field: 'userId' })] },
+      });
+      for (const fn of [...Object.values(transfers), ...Object.values(vouchers)]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+    });
+
+    it('a save that also despatches needs the post right as well as create', async () => {
+      rightsRow = { ...allRights(), um_can_post: false };
+
+      await expect(controller.save(body({ post: true }))).rejects.toMatchObject({
+        response: { errors: [expect.objectContaining({ code: 'TRF_RIGHT_POST' })] },
+      });
+      await expect(controller.save(body({ status: 'POSTED' }))).rejects.toMatchObject({
+        response: { errors: [expect.objectContaining({ code: 'TRF_RIGHT_POST' })] },
+      });
+      expect(transfers.save).not.toHaveBeenCalled();
+    });
+
+    it('a caller with no row, or no login, has no rights', async () => {
+      rightsRow = null;
+      await expect(controller.listOrLoad(REF as never)).rejects.toMatchObject({ status: 403 });
+
+      const anonymous = new StockTransferController(
+        transfers as unknown as StockTransferService,
+        vouchers as unknown as StockVoucherService,
+        { $queryRaw: rightsRead } as unknown as PrismaService,
+        { getUserId: () => null } as unknown as RequestContextService,
+      );
+      rightsRow = allRights();
+      await expect(anonymous.validate(REF as never)).rejects.toMatchObject({ status: 403 });
+      expect(transfers.getOne).not.toHaveBeenCalled();
+      expect(vouchers.validate).not.toHaveBeenCalled();
+    });
   });
 
   // ── the rule record ───────────────────────────────────────────────────────
@@ -37,6 +129,7 @@ describe('StockTransferController', () => {
       defaultRateSource: 'AVG_COST',
       allowsRepeatHolding: true,
       allowsCount: false,
+      allowsLoading: true,
       statusDocType: TxnStatusDocType.STOCK_TRANSFER,
       refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
     });

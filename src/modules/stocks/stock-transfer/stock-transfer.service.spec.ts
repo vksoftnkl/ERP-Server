@@ -501,6 +501,129 @@ describe('StockTransferService', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────
+  // Notes 153 — which half of a transfer carries which box
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('notes 153 — loading and unloading by half', () => {
+    const LOADMAN = '01000000-0000-7000-8000-0000000001a1';
+    const codesOf = async (run: Promise<unknown>) => {
+      try {
+        await run;
+      } catch (error) {
+        const body = (error as { response?: { errors?: Array<{ field: string; code: string }> } })
+          .response;
+        return (body?.errors ?? []).map((row) => [row.field, row.code]);
+      }
+      throw new Error('expected the call to be refused, and it was not');
+    };
+    const rated = (over: Record<string, unknown>) => [
+      { lineNo: 1, itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, qty: 20, ...over },
+    ];
+
+    it('lets a godown transfer carry both boxes and both charges — the shared service sums them', async () => {
+      stockReads();
+      await service.save(
+        TRANSFER_OUT_RULES,
+        outPayload({
+          header: { loadEnabled: true, loadmanIds: [LOADMAN], unloadEnabled: true, unloadmanIds: [LOADMAN] },
+          lines: rated({ loadRate: 2, unloadRate: 1.5 }),
+        }),
+      );
+      expect(voucherService.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses the unloading box on a branch despatch — the receipt records it', async () => {
+      await expect(
+        codesOf(
+          service.save(
+            TRANSFER_OUT_RULES,
+            outPayload({ header: { toBranchId: BRANCH_B, unloadmanIds: [LOADMAN] } }),
+          ),
+        ),
+      ).resolves.toEqual([['unloadmanIds', StockErrorCode.LOADING_WRONG_HALF]]);
+      await expect(
+        codesOf(
+          service.save(
+            TRANSFER_OUT_RULES,
+            outPayload({ header: { toBranchId: BRANCH_B }, lines: rated({ unloadRate: 1 }) }),
+          ),
+        ),
+      ).resolves.toEqual([['lines.0.unloadRate', StockErrorCode.LOADING_WRONG_HALF]]);
+      expect(voucherService.save).not.toHaveBeenCalled();
+    });
+
+    it("notes 156 — a branch despatch carries its loading box and its loading CHARGE (it posts at despatch)", async () => {
+      stockReads();
+      await service.save(
+        TRANSFER_OUT_RULES,
+        outPayload({
+          header: { toBranchId: BRANCH_B, loadEnabled: true, loadmanIds: [LOADMAN], driverId: LOADMAN },
+          lines: rated({ loadRate: 2 }),
+        }),
+      );
+      expect(voucherService.save).toHaveBeenCalledTimes(1);
+      expect(savedPayload(voucherService.save).lines[0]).toMatchObject({ loadRate: 2 });
+    });
+
+    it('E4: a transfer cites a BOTH reason — TRANSIT_LOSS (OUT) is the short-settlement\'s, refused on the header and a line', async () => {
+      const LOSS = '01000000-0000-7000-8000-0000000002a1';
+      const REPLENISH = '01000000-0000-7000-8000-0000000002a2';
+      stockReads();
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { srm_id: LOSS, srm_code: 'TRANSIT_LOSS', srm_direction: 'OUT' },
+        { srm_id: REPLENISH, srm_code: 'REPLENISH', srm_direction: 'BOTH' },
+      ]);
+      await expect(
+        codesOf(
+          service.save(
+            TRANSFER_OUT_RULES,
+            outPayload({ header: { reasonId: LOSS }, lines: rated({ reasonId: REPLENISH }) }),
+          ),
+        ),
+      ).resolves.toEqual([['reasonId', StockErrorCode.REASON_WRONG_DIRECTION]]);
+      expect(voucherService.save).not.toHaveBeenCalled();
+
+      stockReads();
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { srm_id: REPLENISH, srm_code: 'REPLENISH', srm_direction: 'BOTH' },
+      ]);
+      await service.save(TRANSFER_OUT_RULES, outPayload({ header: { reasonId: REPLENISH } }));
+      expect(voucherService.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses the loading box on a receipt, and keeps its unloading box and rates (they post with the receipt); driver and vehicle stand', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([outVoucherRow()])
+        .mockResolvedValueOnce([transitDbRow()]);
+      await expect(
+        codesOf(
+          service.saveReceive(
+            TRANSFER_IN_RULES,
+            receivePayload({ header: { loadmanIds: [LOADMAN], unloadEnabled: true }, lines: [
+              { lineNo: 1, itemId: MILK, uomId: UOM_ID, godownId: GD_STORE, lotId: LOT_MILK, qty: 25, unloadRate: 1 },
+            ] }),
+          ),
+        ),
+      ).resolves.toEqual([['loadmanIds', StockErrorCode.LOADING_WRONG_HALF]]);
+
+      prisma.$queryRaw
+        .mockResolvedValueOnce([outVoucherRow()])
+        .mockResolvedValueOnce([transitDbRow()]);
+      await service.saveReceive(
+        TRANSFER_IN_RULES,
+        receivePayload({
+          header: { unloadEnabled: true, unloadmanIds: [LOADMAN], driverId: LOADMAN, vehicleNo: 'TN 28 AB 1234' },
+          lines: [
+            { lineNo: 1, itemId: MILK, uomId: UOM_ID, godownId: GD_STORE, lotId: LOT_MILK, qty: 25, unloadRate: 0.5 },
+          ],
+        }),
+      );
+      expect(voucherService.save).toHaveBeenCalledTimes(1);
+      expect(savedPayload(voucherService.save).lines[0]).toMatchObject({ unloadRate: 0.5 });
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
   // §4 — despatch
   // ────────────────────────────────────────────────────────────────────────
 
@@ -663,6 +786,23 @@ describe('StockTransferService', () => {
       expect(data.rows[0].remainingQty).toBe(2);
       expect(data.rows[0].sentQty).toBe(30);
       expect(data.rows[0].lineNo).toBe(1);
+    });
+
+    it('notes 154 #3 — names the sending branch and both godowns on outVoucher', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([
+          outVoucherRow({ from_branch_name: 'Coimbatore', from_godown_name: 'MAIN', to_godown_name: 'STORE' }),
+        ])
+        .mockResolvedValueOnce([transitDbRow()]);
+      const data = await service.prefill(COMPANY_ID, BRANCH_B, OUT_ID, ACC_YEAR);
+      expect(data.outVoucher).toMatchObject({
+        fromBranchId: BRANCH_A,
+        fromBranchName: 'Coimbatore',
+        fromGodownId: GD_MAIN,
+        fromGodownName: 'MAIN',
+        toGodownId: GD_STORE,
+        toGodownName: 'STORE',
+      });
     });
 
     it('refuses a despatch addressed to another branch', async () => {
@@ -1113,12 +1253,61 @@ describe('StockTransferService', () => {
     });
   });
 
+  // Notes 154 #1 — a receipt read back under its OWN rules.
+  describe('getReceipt', () => {
+    it("loads under the TRANSFER_IN rules, names the despatch and its branch, and adds the despatch's transit rows", async () => {
+      voucherService.getById.mockResolvedValue({
+        header: { svhId: IN_ID, linkSrcDocId: OUT_ID, linkSrcAccYear: ACC_YEAR },
+        lines: [],
+      });
+      prisma.$queryRaw
+        .mockResolvedValueOnce([
+          { svh_refno: 'TRF/2026-2027/TILL-01/2', svh_branch_id: BRANCH_A, branch_name: 'Coimbatore' },
+        ])
+        .mockResolvedValueOnce([transitDbRow({ stt_status: 'PARTIAL' })]);
+
+      const result = await service.getReceipt(TRANSFER_IN_RULES, IN_ID, ACC_YEAR, COMPANY_ID, BRANCH_B);
+
+      expect(voucherService.getById).toHaveBeenCalledWith(TRANSFER_IN_RULES, IN_ID, ACC_YEAR, COMPANY_ID, BRANCH_B);
+      // The despatch by its link and company only — it is the other branch's document.
+      expect(boundValues(0)).toEqual([OUT_ID, ACC_YEAR, COMPANY_ID]);
+      expect(boundValues(1)).toEqual([OUT_ID, ACC_YEAR, false]);
+      expect(result.header).toEqual({
+        svhId: IN_ID,
+        linkSrcDocId: OUT_ID,
+        linkSrcAccYear: ACC_YEAR,
+        linkSrcRefno: 'TRF/2026-2027/TILL-01/2',
+        fromBranchId: BRANCH_A,
+        fromBranchName: 'Coimbatore',
+      });
+      expect(result.transit).toEqual([expect.objectContaining({ status: 'PARTIAL' })]);
+    });
+
+    it('answers nulls and no transit for a receipt that links nothing, without reading', async () => {
+      voucherService.getById.mockResolvedValue({
+        header: { svhId: IN_ID, linkSrcDocId: null, linkSrcAccYear: null },
+        lines: [],
+      });
+
+      const result = await service.getReceipt(TRANSFER_IN_RULES, IN_ID, ACC_YEAR, COMPANY_ID, BRANCH_B);
+
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(result.header).toMatchObject({ linkSrcRefno: null, fromBranchId: null, fromBranchName: null });
+      expect(result.transit).toEqual([]);
+    });
+  });
+
   describe('inbound', () => {
     const inboundRow = (overrides: Record<string, unknown> = {}) => ({
       ...transitDbRow(),
       stt_cost_rate_wot: new Prisma.Decimal(25),
+      stt_out_voucher_id: OUT_ID,
+      // character(9), as the driver hands back a padded bpchar.
+      stt_out_acc_year: ACC_YEAR,
       stt_out_refno: 'TRF/2026-2027/TILL-01/2',
       stt_from_branch_id: BRANCH_A,
+      from_branch_name: 'Coimbatore',
+      from_godown_name: 'MAIN',
       days_in_flight: 9,
       total_count: BigInt(3),
       ...overrides,
@@ -1168,13 +1357,21 @@ describe('StockTransferService', () => {
             expectedOn: '2026-04-05',
             sentOn: '2026-04-02T06:00:00.000Z',
             receivedOn: '2026-04-06T08:00:00.000Z',
+            // Notes 154 #2 — enough to open the prefill, and who sent it.
+            outVoucherId: OUT_ID,
+            outAccYear: ACC_YEAR,
             outRefno: 'TRF/2026-2027/TILL-01/2',
             fromBranchId: BRANCH_A,
+            fromBranchName: 'Coimbatore',
+            fromGodownName: 'MAIN',
             daysInFlight: 9,
           },
         ],
         meta: { limit: 25, offset: 50, count: 3 },
       });
+      const sql = (prisma.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toContain('LEFT JOIN public.branch_master fb ON fb.br_id = t.stt_from_branch_id');
+      expect(sql).toContain('LEFT JOIN inventory.godown_locations fg ON fg.gdl_id = t.stt_from_godown_id');
     });
 
     it('pages 100 from the start by default, and reads a missing day count and dates as empty', async () => {

@@ -5,7 +5,7 @@ import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { StockVoucherPayload, StockVoucherTypeRules } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
 import type { SaveStockTransferReceiveDto } from './dto/save-stock-transfer-receive.dto';
-import type { StockTransferDespatchResult, StockTransferPrefill, StockTransferReceiveResult, StockTransferSettleShortResult, StockTransitRow } from './types/stock-transfer.types';
+import type { StockTransferDespatchResult, StockTransferInboundRow, StockTransferPrefill, StockTransferReceiptPayload, StockTransferReceiveResult, StockTransferSettleShortResult, StockTransitRow } from './types/stock-transfer.types';
 export declare class StockTransferService {
     private readonly prisma;
     private readonly stockVoucherService;
@@ -13,6 +13,7 @@ export declare class StockTransferService {
     private readonly stockAccounts;
     constructor(prisma: PrismaService, stockVoucherService: StockVoucherService, requestContextService: RequestContextService, stockAccounts: StockAccountsPostingService);
     save(rules: StockVoucherTypeRules, dto: SaveStockTransferDto): Promise<StockVoucherPayload>;
+    private assertTransferReasons;
     private assertTransferOutRules;
     private assertLotsAndStock;
     despatch(rules: StockVoucherTypeRules, args: {
@@ -28,12 +29,9 @@ export declare class StockTransferService {
     getOne(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload & {
         transit: StockTransitRow[];
     }>;
+    getReceipt(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockTransferReceiptPayload>;
     inbound(companyId: string, branchId: string, limit?: number, offset?: number): Promise<{
-        items: Array<StockTransitRow & {
-            outRefno: string | null;
-            fromBranchId: string;
-            daysInFlight: number;
-        }>;
+        items: StockTransferInboundRow[];
         meta: {
             limit: number;
             offset: number;
@@ -45,6 +43,7 @@ export declare class StockTransferService {
     saveReceive(rules: StockVoucherTypeRules, dto: SaveStockTransferReceiveDto): Promise<StockVoucherPayload>;
     private assertReceiveLines;
     private lineQty;
+    private loadingHalfErrors;
     receive(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockTransferReceiveResult>;
     settleShort(args: {
         outVoucherId: string;

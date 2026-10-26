@@ -34,7 +34,36 @@ let StockTransferService = class StockTransferService {
     }
     async save(rules, dto) {
         await this.assertTransferOutRules(dto);
+        await this.assertTransferReasons(dto, 'This transfer cannot be saved');
         return this.stockVoucherService.save(rules, dto);
+    }
+    async assertTransferReasons(dto, title) {
+        const cited = [
+            ...(dto.header.reasonId ? [{ field: 'reasonId', reasonId: dto.header.reasonId }] : []),
+            ...dto.lines.flatMap((line, index) => line.reasonId ? [{ field: `lines.${index}.reasonId`, reasonId: line.reasonId }] : []),
+        ];
+        if (!cited.length) {
+            return;
+        }
+        const rows = await this.prisma.$queryRaw `
+      SELECT srm_id, srm_code, srm_direction FROM stock.stock_reason_master
+       WHERE srm_id = ANY(${[...new Set(cited.map((c) => c.reasonId))]}::uuid[])`;
+        const byId = new Map(rows.map((row) => [row.srm_id, row]));
+        const errors = cited.flatMap(({ field, reasonId }) => {
+            const reason = byId.get(reasonId);
+            return reason && reason.srm_direction !== 'BOTH'
+                ? [
+                    {
+                        field,
+                        code: stock_error_codes_1.StockErrorCode.REASON_WRONG_DIRECTION,
+                        message: `Stock reason ${reason.srm_code} moves stock one way (${reason.srm_direction}); a transfer moves it from one godown into another and cites a BOTH reason, such as REPLENISH.`,
+                    },
+                ]
+                : [];
+        });
+        if (errors.length) {
+            (0, module_service_utils_1.throwStockUnprocessable)(title, errors);
+        }
     }
     async assertTransferOutRules(dto) {
         const { header, lines } = dto;
@@ -88,6 +117,9 @@ let StockTransferService = class StockTransferService {
                     });
                 }
             });
+        }
+        if (!sameBranch) {
+            errors.push(...this.loadingHalfErrors(dto, 'LOAD'));
         }
         if (errors.length) {
             (0, module_service_utils_1.throwStockUnprocessable)('This transfer cannot be saved', errors);
@@ -214,6 +246,31 @@ let StockTransferService = class StockTransferService {
         const document = await this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
         return { ...document, transit: await this.loadTransitRows(svhId, accYear) };
     }
+    async getReceipt(rules, svhId, accYear, companyId, branchId) {
+        const document = await this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
+        const outId = document.header.linkSrcDocId;
+        const outAccYear = document.header.linkSrcAccYear;
+        const [out] = outId && outAccYear
+            ? await this.prisma.$queryRaw `
+            SELECT svh.svh_refno, svh.svh_branch_id, br.br_name AS branch_name
+              FROM stock.stock_voucher svh
+              LEFT JOIN public.branch_master br ON br.br_id = svh.svh_branch_id
+             WHERE svh.svh_id = ${outId}::uuid
+               AND svh.svh_acc_year = ${outAccYear}::bpchar
+               AND svh.svh_company_id = ${companyId}::uuid
+               AND svh.svh_voucher_type = 'TRANSFER_OUT'`
+            : [];
+        return {
+            ...document,
+            header: {
+                ...document.header,
+                linkSrcRefno: out?.svh_refno ?? null,
+                fromBranchId: out?.svh_branch_id ?? null,
+                fromBranchName: out?.branch_name ?? null,
+            },
+            transit: outId && outAccYear ? await this.loadTransitRows(outId, outAccYear) : [],
+        };
+    }
     async inbound(companyId, branchId, limit = 100, offset = 0) {
         const rows = await this.prisma.$queryRaw `
       SELECT t.stt_id, t.stt_status, t.stt_item_id, t.stt_lot_id, t.stt_to_godown_id,
@@ -222,7 +279,10 @@ let StockTransferService = class StockTransferService {
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
              t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
+             -- Notes 154 #2 — the despatch (what prefill takes) and who sent it.
+             t.stt_out_voucher_id, t.stt_out_acc_year,
              t.stt_out_refno, t.stt_from_branch_id,
+             fb.br_name AS from_branch_name, fg.gdl_name AS from_godown_name,
              EXTRACT(DAY FROM now() - t.stt_sent_on)::int AS days_in_flight,
              i.item_code, i.item_name_en AS item_name,
              l.slt_batch_no AS batch_no, l.slt_expiry_date AS expiry_date,
@@ -233,6 +293,8 @@ let StockTransferService = class StockTransferService {
         JOIN inventory.item_master i ON i.item_id = t.stt_item_id
         LEFT JOIN stock.stock_lot l ON l.slt_id = t.stt_lot_id
         LEFT JOIN inventory.godown_locations g ON g.gdl_id = t.stt_to_godown_id
+        LEFT JOIN inventory.godown_locations fg ON fg.gdl_id = t.stt_from_godown_id
+        LEFT JOIN public.branch_master fb ON fb.br_id = t.stt_from_branch_id
         LEFT JOIN inventory.item_unit_conversion c ON c.iuc_id = t.stt_base_uom_id
         LEFT JOIN inventory.item_unit_master u ON u.unit_id = c.iuc_unit_id
        WHERE t.stt_company_id = ${companyId}::uuid
@@ -245,8 +307,12 @@ let StockTransferService = class StockTransferService {
         return {
             items: rows.map((row) => ({
                 ...this.toTransitRow(row),
+                outVoucherId: row.stt_out_voucher_id,
+                outAccYear: row.stt_out_acc_year.trim(),
                 outRefno: row.stt_out_refno,
                 fromBranchId: row.stt_from_branch_id,
+                fromBranchName: row.from_branch_name,
+                fromGodownName: row.from_godown_name,
                 daysInFlight: Number(row.days_in_flight ?? 0),
             })),
             meta: { limit, offset, count: Number(rows[0]?.total_count ?? 0) },
@@ -254,13 +320,20 @@ let StockTransferService = class StockTransferService {
     }
     async prefill(companyId, branchId, outVoucherId, accYear) {
         const [out] = await this.prisma.$queryRaw `
-      SELECT svh_id, svh_acc_year, svh_refno, svh_doc_date, svh_status, svh_branch_id,
-             svh_from_godown_id, svh_to_branch_id, svh_to_godown_id, svh_is_deleted
-        FROM stock.stock_voucher
-       WHERE svh_id = ${outVoucherId}::uuid
-         AND svh_acc_year = ${accYear}::bpchar
-         AND svh_company_id = ${companyId}::uuid
-         AND svh_voucher_type = 'TRANSFER_OUT'
+      SELECT svh.svh_id, svh.svh_acc_year, svh.svh_refno, svh.svh_doc_date, svh.svh_status,
+             svh.svh_branch_id, svh.svh_from_godown_id, svh.svh_to_branch_id, svh.svh_to_godown_id,
+             svh.svh_is_deleted,
+             -- Notes 154 #3 — the names the receipt screen would otherwise look up.
+             fb.br_name AS from_branch_name, fg.gdl_name AS from_godown_name,
+             tg.gdl_name AS to_godown_name
+        FROM stock.stock_voucher svh
+        LEFT JOIN public.branch_master fb ON fb.br_id = svh.svh_branch_id
+        LEFT JOIN inventory.godown_locations fg ON fg.gdl_id = svh.svh_from_godown_id
+        LEFT JOIN inventory.godown_locations tg ON tg.gdl_id = svh.svh_to_godown_id
+       WHERE svh.svh_id = ${outVoucherId}::uuid
+         AND svh.svh_acc_year = ${accYear}::bpchar
+         AND svh.svh_company_id = ${companyId}::uuid
+         AND svh.svh_voucher_type = 'TRANSFER_OUT'
     `;
         if (!out) {
             (0, module_service_utils_1.throwStockNotFound)('Transfer not found', 'outVoucherId', `No TRANSFER_OUT ${outVoucherId} in ${accYear} for this company.`, stock_error_codes_1.StockErrorCode.TRANSFER_NOT_FOUND);
@@ -275,9 +348,12 @@ let StockTransferService = class StockTransferService {
                 docDate: this.toIsoDate(out.svh_doc_date),
                 status: out.svh_status,
                 fromBranchId: out.svh_branch_id,
+                fromBranchName: out.from_branch_name,
                 fromGodownId: out.svh_from_godown_id,
+                fromGodownName: out.from_godown_name,
                 toBranchId: out.svh_to_branch_id,
                 toGodownId: out.svh_to_godown_id,
+                toGodownName: out.to_godown_name,
             },
             rows: rows.map((row, index) => ({ ...row, lineNo: index + 1 })),
         };
@@ -332,6 +408,11 @@ let StockTransferService = class StockTransferService {
             openOnly: true,
         });
         this.assertReceiveLines(dto, transit);
+        const halfErrors = this.loadingHalfErrors(dto, 'UNLOAD');
+        if (halfErrors.length) {
+            (0, module_service_utils_1.throwStockUnprocessable)('This receipt cannot be saved', halfErrors);
+        }
+        await this.assertTransferReasons(dto, 'This receipt cannot be saved');
         const payload = {
             ...dto,
             header: {
@@ -414,6 +495,36 @@ let StockTransferService = class StockTransferService {
     }
     lineQty(line) {
         return Number(line.qty ?? 0) + Number(line.freeQty ?? 0);
+    }
+    loadingHalfErrors(dto, half) {
+        const { header, lines } = dto;
+        const errors = [];
+        const otherBox = half === 'LOAD'
+            ? {
+                unloadEnabled: header.unloadEnabled === true,
+                unloadDatetime: !!header.unloadDatetime,
+                unloadmanIds: (header.unloadmanIds?.length ?? 0) > 0,
+                unloadSupervisorId: !!header.unloadSupervisorId,
+            }
+            : {
+                loadEnabled: header.loadEnabled === true,
+                loadDatetime: !!header.loadDatetime,
+                loadmanIds: (header.loadmanIds?.length ?? 0) > 0,
+                supervisorId: !!header.supervisorId,
+            };
+        const otherRate = half === 'LOAD' ? 'unloadRate' : 'loadRate';
+        const sent = Object.entries(otherBox).find(([, given]) => given)?.[0];
+        const rated = lines.findIndex((line) => Number(line[otherRate] ?? 0) !== 0);
+        if (sent || rated >= 0) {
+            errors.push({
+                field: sent ?? `lines.${rated}.${otherRate}`,
+                code: stock_error_codes_1.StockErrorCode.LOADING_WRONG_HALF,
+                message: half === 'LOAD'
+                    ? 'A branch transfer is unloaded at the receiving branch: record the unloading on the receipt, not on the despatch.'
+                    : 'A branch transfer is loaded at the sending branch, on the despatch: the receipt records the unloading only.',
+            });
+        }
+        return errors;
     }
     async receive(rules, svhId, accYear, companyId, branchId, userId) {
         const draft = await this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);

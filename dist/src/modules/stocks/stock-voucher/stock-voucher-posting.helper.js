@@ -1910,6 +1910,7 @@ async function recomputeHeaderTotals(tx, params) {
         : rules.postShape === 'BUCKET_MOVE'
             ? 'BUCKET_OUT'
             : null;
+    const keepPosted = rules.postShape === 'TRANSFER_OUT';
     await tx.$executeRaw `
     WITH led AS (
       SELECT sml.sml_line_no, sml.sml_is_reversal,
@@ -1922,6 +1923,7 @@ async function recomputeHeaderTotals(tx, params) {
          AND sml.sml_acc_year   = ${accYear}::bpchar
          AND sml.sml_is_deleted = false
          AND (${outTxnType}::text IS NULL OR sml.sml_txn_type = ${outTxnType}::text)
+         AND (${keepPosted}::boolean = false OR sml.sml_is_reversal = false)
     ),
     totals AS (
       SELECT (SELECT count(*) FROM stock.stock_voucher_item svi

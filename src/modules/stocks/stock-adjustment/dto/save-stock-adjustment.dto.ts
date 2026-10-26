@@ -38,11 +38,25 @@ const MAX_LINES = 2000;
  * with the base's up the prototype chain, so `minimum: 0` would stay in
  * /api/docs. OmitType copies every other property's validators, transforms
  * and docs, and leaves these three to this class.
+ *
+ * The transfer's loading / unloading box (notes 153) is omitted too, so an
+ * adjustment that sends it is a 400 naming the property — the shared service
+ * refuses it as well, for a caller that builds its own payload.
  */
 export class SaveStockAdjustmentHeaderDto extends OmitType(SaveStockVoucherHeaderDto, [
   'totalQty',
   'totalValue',
   'totalValueWot',
+  'loadEnabled',
+  'loadDatetime',
+  'loadmanIds',
+  'driverId',
+  'supervisorId',
+  'vehicleId',
+  'unloadEnabled',
+  'unloadDatetime',
+  'unloadmanIds',
+  'unloadSupervisorId',
 ] as const) {
   @ApiProperty({
     enum: STOCK_ADJUSTMENT_SAVE_KINDS,

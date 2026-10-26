@@ -1,7 +1,7 @@
 import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
 import { type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
 import { type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
-declare const SaveStockAdjustmentHeaderDto_base: import("@nestjs/common").Type<Omit<SaveStockVoucherHeaderDto, "totalQty" | "totalValue" | "totalValueWot">>;
+declare const SaveStockAdjustmentHeaderDto_base: import("@nestjs/common").Type<Omit<SaveStockVoucherHeaderDto, "supervisorId" | "loadEnabled" | "loadDatetime" | "loadmanIds" | "driverId" | "vehicleId" | "unloadEnabled" | "unloadDatetime" | "unloadmanIds" | "unloadSupervisorId" | "totalQty" | "totalValue" | "totalValueWot">>;
 export declare class SaveStockAdjustmentHeaderDto extends SaveStockAdjustmentHeaderDto_base {
     voucherType: StockAdjustmentSaveKind;
     totalQty?: number;

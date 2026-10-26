@@ -3030,6 +3030,10 @@ async function rebuildLotTotals(
  * `svh_line_count` is the document's live line count: a count sheet that
  * varied on two of three lines still counted three.
  *
+ * EXCEPT A TRANSFER (notes 153 E1): its cancel keeps the figures it posted —
+ * reversal rows are left out of the sum — so the list shows what was moved
+ * and the status chip says CANCELLED. The other types still re-total to 0.
+ *
  * A DRAFT keeps the payload's figures, flagged provisional: nothing has been
  * valued yet, and the grid is the only thing that has an opinion.
  */
@@ -3050,6 +3054,8 @@ async function recomputeHeaderTotals(
       : rules.postShape === 'BUCKET_MOVE'
         ? 'BUCKET_OUT'
         : null;
+  // Notes 153 E1 — a cancelled transfer keeps what it moved (see above).
+  const keepPosted = rules.postShape === 'TRANSFER_OUT';
   await tx.$executeRaw`
     WITH led AS (
       SELECT sml.sml_line_no, sml.sml_is_reversal,
@@ -3062,6 +3068,7 @@ async function recomputeHeaderTotals(
          AND sml.sml_acc_year   = ${accYear}::bpchar
          AND sml.sml_is_deleted = false
          AND (${outTxnType}::text IS NULL OR sml.sml_txn_type = ${outTxnType}::text)
+         AND (${keepPosted}::boolean = false OR sml.sml_is_reversal = false)
     ),
     totals AS (
       SELECT (SELECT count(*) FROM stock.stock_voucher_item svi

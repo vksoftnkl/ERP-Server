@@ -1,4 +1,4 @@
--- Seed: stock.stock_reason_master -- why stock moved outside a trade document (19 rows).
+-- Seed: stock.stock_reason_master -- why stock moved outside a trade document (22 rows).
 --
 -- This is not decoration. fn_svh_txn_map REFUSES to post an ADJUSTMENT that does
 -- not cite a reason, and refuses one whose reason is direction BOTH, because a
@@ -142,7 +142,24 @@ SELECT v.company, v.code, v.name, v.direction,
      'Out of SALEABLE into DAMAGED, still ours: pick-stock with bucket=DAMAGED then lists what goes back to which supplier (the lot names it). A purchase return sends it back, or a DAMAGE write-off clears it.'),
     (NULL, 'MOVE_SALEABLE', 'Back to saleable',          'BOTH',
      ARRAY['BUCKET_OUT','BUCKET_IN']::text[],             false, 180,
-     'The reverse move: the supplier would not take it back, or it was fine after all. Same lot, same cost.')
+     'The reverse move: the supplier would not take it back, or it was fine after all. Same lot, same cost.'),
+
+    -- ── transfers: why stock went from one godown to another (notes 153) ──
+    -- The Godown Transfer header's Reason. BOTH because a transfer moves the
+    -- stock out of one godown and into another; the picker
+    -- (/stock/reasons?voucherType=TRANSFER_OUT) lists only BOTH reasons naming
+    -- a transfer type, so TRANSIT_LOSS above -- the short-settlement's write-off
+    -- -- is not offered on a transfer. Migration 20261026110000 inserts the same
+    -- three on a database that already has the table.
+    (NULL, 'REPLENISH',     'Replenish godown',          'BOTH',
+     ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 190,
+     'Topping up a godown or a cold room from stock held elsewhere.'),
+    (NULL, 'REARRANGE',     'Re-arrange stock',          'BOTH',
+     ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 200,
+     'Moving stock to where it is better kept or picked from. Nothing is gained or lost.'),
+    (NULL, 'RETURN_STORE',  'Back to main store',        'BOTH',
+     ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 210,
+     'Unsold or surplus stock sent back to the main store.')
   ) AS v(company, code, name, direction, allowed, require_remarks, sort_order, note)
  WHERE NOT EXISTS (
         SELECT 1

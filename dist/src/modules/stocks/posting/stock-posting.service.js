@@ -48,6 +48,21 @@ let StockPostingService = class StockPostingService {
             });
             accountsVoucherId = posted?.voucherId ?? null;
         }
+        if (!opts.ledgerSource &&
+            source.rules.allowsLoading &&
+            (result.status === 'POSTED' || result.status === 'IN_TRANSIT')) {
+            const charges = await this.accounts.postTransferCharges(tx, {
+                svhId: source.svhId,
+                accYear: source.accYear,
+                companyId: source.companyId,
+                branchId: source.branchId,
+                voucherType: source.rules.voucherType,
+                displayName: source.rules.displayName,
+                actor: opts.actor,
+                postedOn: opts.postedOn,
+            });
+            accountsVoucherId = charges?.voucherId ?? accountsVoucherId;
+        }
         return { ...result, accountsVoucherId };
     }
     async cancel(tx, source, opts) {
@@ -61,7 +76,9 @@ let StockPostingService = class StockPostingService {
             cancelledOn: opts.cancelledOn,
             refuseNegative: opts.refuseNegative,
         });
-        if (!opts.ledgerSource && stock_accounts_posting_service_1.StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
+        if (!opts.ledgerSource &&
+            (stock_accounts_posting_service_1.StockAccountsPostingService.postsAccounts(source.rules.voucherType) ||
+                source.rules.allowsLoading)) {
             await this.accounts.reverseForVoucher(tx, {
                 svhId: source.svhId,
                 accYear: source.accYear,

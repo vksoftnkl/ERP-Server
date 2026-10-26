@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockTransferDeleteSuccessDto = exports.StockTransferCancelSuccessDto = exports.StockTransferReceiveSuccessDto = exports.StockTransferPrefillSuccessDto = exports.StockTransferInboundSuccessDto = exports.StockTransferDespatchSuccessDto = exports.StockTransferValidateSuccessDto = exports.StockTransferListSuccessDto = exports.StockTransferLoadSuccessDto = exports.StockTransferDocumentSuccessDto = exports.StockTransferDeleteDataDto = exports.StockTransferCancelDataDto = exports.StockTransferReceiveDataDto = exports.StockTransferReceiveOutDto = exports.StockTransferReceiveInDto = exports.StockTransferPrefillDto = exports.StockTransferPrefillRowDto = exports.StockTransferPrefillOutDto = exports.StockTransferDespatchDataDto = exports.StockTransferLineProblemDto = exports.StockTransferInboundDto = exports.StockTransferInboundRowDto = exports.StockTransferListDto = exports.StockTransferListMetaDto = exports.StockTransferListItemDto = exports.StockTransferDocumentWithTransitDto = exports.StockTransitRowDto = exports.StockTransferDocumentDto = exports.StockTransferLineDto = exports.StockTransferHeaderDto = exports.StockTransferErrorResponseDto = exports.StockTransferErrorFieldDto = void 0;
+exports.StockTransferDeleteSuccessDto = exports.StockTransferCancelSuccessDto = exports.StockTransferReceiveSuccessDto = exports.StockTransferPrefillSuccessDto = exports.StockTransferInboundSuccessDto = exports.StockTransferDespatchSuccessDto = exports.StockTransferValidateSuccessDto = exports.StockTransferListSuccessDto = exports.StockTransferReceiptLoadSuccessDto = exports.StockTransferLoadSuccessDto = exports.StockTransferDocumentSuccessDto = exports.StockTransferDeleteDataDto = exports.StockTransferCancelDataDto = exports.StockTransferReceiveDataDto = exports.StockTransferReceiveOutDto = exports.StockTransferReceiveInDto = exports.StockTransferReceiptDocumentDto = exports.StockTransferReceiptHeaderDto = exports.StockTransferPrefillDto = exports.StockTransferPrefillRowDto = exports.StockTransferPrefillOutDto = exports.StockTransferDespatchDataDto = exports.StockTransferLineProblemDto = exports.StockTransferInboundDto = exports.StockTransferInboundRowDto = exports.StockTransferListDto = exports.StockTransferListMetaDto = exports.StockTransferListItemDto = exports.StockTransferDocumentWithTransitDto = exports.StockTransitRowDto = exports.StockTransferDocumentDto = exports.StockTransferLineDto = exports.StockTransferHeaderDto = exports.StockTransferErrorResponseDto = exports.StockTransferErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class StockTransferErrorFieldDto {
@@ -66,6 +66,7 @@ class StockTransferHeaderDto {
     supplierId;
     supplierName;
     toBranchId;
+    toBranchName;
     partyRef;
     reasonId;
     reasonName;
@@ -94,6 +95,24 @@ class StockTransferHeaderDto {
     rateSource;
     remarks;
     isDeleted;
+    loadEnabled;
+    loadDatetime;
+    loadmanIds;
+    loadmanNames;
+    driverId;
+    driverName;
+    supervisorId;
+    supervisorName;
+    vehicleId;
+    vehicleNo;
+    loadingCharge;
+    unloadEnabled;
+    unloadDatetime;
+    unloadmanIds;
+    unloadmanNames;
+    unloadSupervisorId;
+    unloadSupervisorName;
+    unloadingCharge;
 }
 exports.StockTransferHeaderDto = StockTransferHeaderDto;
 __decorate([
@@ -197,6 +216,10 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], StockTransferHeaderDto.prototype, "toBranchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Notes 154 #4 — branch_master.br_name of toBranchId.' }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "toBranchName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
@@ -332,6 +355,82 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], StockTransferHeaderDto.prototype, "isDeleted", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The Loading tick.' }),
+    __metadata("design:type", Boolean)
+], StockTransferHeaderDto.prototype, "loadEnabled", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'date-time', nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "loadDatetime", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, isArray: true, format: 'uuid' }),
+    __metadata("design:type", Array)
+], StockTransferHeaderDto.prototype, "loadmanIds", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, isArray: true, nullable: true, description: 'emp_name per loadmanIds entry.' }),
+    __metadata("design:type", Array)
+], StockTransferHeaderDto.prototype, "loadmanNames", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "driverId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "driverName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'The loading supervisor.' }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "supervisorId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "supervisorName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "vehicleId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'svh_vehicle_no, as typed.' }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "vehicleNo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'svh_loading_charge — round(Σ (qty + freeQty) × loadRate, 2) while loadEnabled, else 0. SUMMED BY THE SERVER on every save, never sent. Posts DR Loading & unloading charges / CR Loading charges payable at despatch (with unloadingCharge on a godown transfer; alone, at the sending branch, on a branch despatch — notes 156).',
+    }),
+    __metadata("design:type", Number)
+], StockTransferHeaderDto.prototype, "loadingCharge", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The Unloading tick.' }),
+    __metadata("design:type", Boolean)
+], StockTransferHeaderDto.prototype, "unloadEnabled", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'date-time', nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "unloadDatetime", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, isArray: true, format: 'uuid' }),
+    __metadata("design:type", Array)
+], StockTransferHeaderDto.prototype, "unloadmanIds", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, isArray: true, nullable: true, description: 'emp_name per unloadmanIds entry.' }),
+    __metadata("design:type", Array)
+], StockTransferHeaderDto.prototype, "unloadmanNames", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "unloadSupervisorId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferHeaderDto.prototype, "unloadSupervisorName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'svh_unloading_charge — as loadingCharge, from unloadRate while unloadEnabled. On a branch receipt (TRANSFER_IN) it posts when the receipt posts, at the receiving branch, DAMAGED lines included (notes 156).',
+    }),
+    __metadata("design:type", Number)
+], StockTransferHeaderDto.prototype, "unloadingCharge", void 0);
 class StockTransferLineDto {
     sviId;
     lineNo;
@@ -375,6 +474,8 @@ class StockTransferLineDto {
     reasonName;
     remarks;
     trackSignature;
+    loadRate;
+    unloadRate;
 }
 exports.StockTransferLineDto = StockTransferLineDto;
 __decorate([
@@ -440,7 +541,10 @@ __decorate([
     __metadata("design:type", Object)
 ], StockTransferLineDto.prototype, "barcode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: "Notes 153 E5 — the LOT's batch (stock_lot.slt_batch_no): a transfer line names the lot it moves and keys no identity, so batchNo, mfgDate, expiryDate, mrp, salePrice and serialNo are all read from that lot.",
+    }),
     __metadata("design:type", Object)
 ], StockTransferLineDto.prototype, "batchNo", void 0);
 __decorate([
@@ -562,6 +666,16 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], StockTransferLineDto.prototype, "trackSignature", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: "Notes 153 — loading charge per unit of the line's unit, as stored. The amount is (qty + freeQty) × loadRate and is not stored.",
+    }),
+    __metadata("design:type", Number)
+], StockTransferLineDto.prototype, "loadRate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Notes 153 — unloading charge per unit of the line\'s unit, as stored.' }),
+    __metadata("design:type", Number)
+], StockTransferLineDto.prototype, "unloadRate", void 0);
 class StockTransferDocumentDto {
     header;
     lines;
@@ -838,11 +952,29 @@ __decorate([
     __metadata("design:type", StockTransferListMetaDto)
 ], StockTransferListDto.prototype, "meta", void 0);
 class StockTransferInboundRowDto extends StockTransitRowDto {
+    outVoucherId;
+    outAccYear;
     outRefno;
     fromBranchId;
+    fromBranchName;
+    fromGodownName;
     daysInFlight;
 }
 exports.StockTransferInboundRowDto = StockTransferInboundRowDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'Notes 154 #2 — the despatch (TRANSFER_OUT). With outAccYear, what GET /receive/prefill takes.',
+    }),
+    __metadata("design:type", String)
+], StockTransferInboundRowDto.prototype, "outVoucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: '2026-2027',
+        description: "The DESPATCH's year — prefill's accYear. Not always the receiving branch's year.",
+    }),
+    __metadata("design:type", String)
+], StockTransferInboundRowDto.prototype, "outAccYear", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'TRF/2026-2027/TILL-01/2' }),
     __metadata("design:type", Object)
@@ -851,6 +983,14 @@ __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid' }),
     __metadata("design:type", String)
 ], StockTransferInboundRowDto.prototype, "fromBranchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'branch_master.br_name of fromBranchId.' }),
+    __metadata("design:type", Object)
+], StockTransferInboundRowDto.prototype, "fromBranchName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'The godown at the sending branch the stock left.' }),
+    __metadata("design:type", Object)
+], StockTransferInboundRowDto.prototype, "fromGodownName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: 8,
@@ -950,9 +1090,12 @@ class StockTransferPrefillOutDto {
     docDate;
     status;
     fromBranchId;
+    fromBranchName;
     fromGodownId;
+    fromGodownName;
     toBranchId;
     toGodownId;
+    toGodownName;
 }
 exports.StockTransferPrefillOutDto = StockTransferPrefillOutDto;
 __decorate([
@@ -980,9 +1123,17 @@ __decorate([
     __metadata("design:type", String)
 ], StockTransferPrefillOutDto.prototype, "fromBranchId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Notes 154 #3.' }),
+    __metadata("design:type", Object)
+], StockTransferPrefillOutDto.prototype, "fromBranchName", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], StockTransferPrefillOutDto.prototype, "fromGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Notes 154 #3.' }),
+    __metadata("design:type", Object)
+], StockTransferPrefillOutDto.prototype, "fromGodownName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
@@ -991,6 +1142,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], StockTransferPrefillOutDto.prototype, "toGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Notes 154 #3.' }),
+    __metadata("design:type", Object)
+], StockTransferPrefillOutDto.prototype, "toGodownName", void 0);
 class StockTransferPrefillRowDto extends StockTransitRowDto {
     lineNo;
 }
@@ -1018,6 +1173,50 @@ __decorate([
     }),
     __metadata("design:type", Array)
 ], StockTransferPrefillDto.prototype, "rows", void 0);
+class StockTransferReceiptHeaderDto extends StockTransferHeaderDto {
+    linkSrcRefno;
+    fromBranchId;
+    fromBranchName;
+}
+exports.StockTransferReceiptHeaderDto = StockTransferReceiptHeaderDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'TRF/2026-2027/TILL-01/2',
+        description: "The despatch's printed number — the svh_refno of linkSrcDocId (in linkSrcAccYear).",
+    }),
+    __metadata("design:type", Object)
+], StockTransferReceiptHeaderDto.prototype, "linkSrcRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: "The despatch's branch: where the stock came from." }),
+    __metadata("design:type", Object)
+], StockTransferReceiptHeaderDto.prototype, "fromBranchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], StockTransferReceiptHeaderDto.prototype, "fromBranchName", void 0);
+class StockTransferReceiptDocumentDto {
+    header;
+    lines;
+    transit;
+}
+exports.StockTransferReceiptDocumentDto = StockTransferReceiptDocumentDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: StockTransferReceiptHeaderDto }),
+    __metadata("design:type", StockTransferReceiptHeaderDto)
+], StockTransferReceiptDocumentDto.prototype, "header", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: StockTransferLineDto, isArray: true }),
+    __metadata("design:type", Array)
+], StockTransferReceiptDocumentDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: StockTransitRowDto,
+        isArray: true,
+        description: "The DESPATCH's transit rows — sent, received, damaged and remaining — so a reopened draft receipt sees what is still owed.",
+    }),
+    __metadata("design:type", Array)
+], StockTransferReceiptDocumentDto.prototype, "transit", void 0);
 class StockTransferReceiveInDto extends StockTransferDocumentDto {
     ledgerRows;
     status;
@@ -1156,6 +1355,24 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: StockTransferDocumentWithTransitDto }),
     __metadata("design:type", StockTransferDocumentWithTransitDto)
 ], StockTransferLoadSuccessDto.prototype, "data", void 0);
+class StockTransferReceiptLoadSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.StockTransferReceiptLoadSuccessDto = StockTransferReceiptLoadSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], StockTransferReceiptLoadSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Transfer receipt fetched successfully' }),
+    __metadata("design:type", String)
+], StockTransferReceiptLoadSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: StockTransferReceiptDocumentDto }),
+    __metadata("design:type", StockTransferReceiptDocumentDto)
+], StockTransferReceiptLoadSuccessDto.prototype, "data", void 0);
 class StockTransferListSuccessDto {
     success;
     message;

@@ -13,6 +13,8 @@ export interface OpeningStockItemLookup {
     trackSignature: string;
     mrp: number;
     salePrice: number;
+    loadRate: number;
+    unloadRate: number;
     alreadyOpened: boolean;
 }
 export interface OpeningStockItemLookupArgs {

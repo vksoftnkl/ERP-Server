@@ -595,6 +595,19 @@ export class OpeningStockItemLookupDto {
   salePrice!: number;
 
   @ApiProperty({
+    example: 0,
+    description:
+      "Notes 153 — the Godown Transfer line's default loading rate, per unit of THIS unit: item_unit_master.unit_loading when the item has item_allow_loading, else 0. The screen pre-fills it and the user may change it.",
+  })
+  loadRate!: number;
+
+  @ApiProperty({
+    example: 0,
+    description: 'As loadRate, from unit_unloading.',
+  })
+  unloadRate!: number;
+
+  @ApiProperty({
     description:
       'A warning, not a refusal: this item has an OPENING ledger row somewhere in this branch. The preflight is the real check.',
   })

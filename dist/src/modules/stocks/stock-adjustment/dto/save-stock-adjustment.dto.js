@@ -22,6 +22,16 @@ class SaveStockAdjustmentHeaderDto extends (0, swagger_1.OmitType)(save_stock_vo
     'totalQty',
     'totalValue',
     'totalValueWot',
+    'loadEnabled',
+    'loadDatetime',
+    'loadmanIds',
+    'driverId',
+    'supervisorId',
+    'vehicleId',
+    'unloadEnabled',
+    'unloadDatetime',
+    'unloadmanIds',
+    'unloadSupervisorId',
 ]) {
     voucherType;
     totalQty;

@@ -19,6 +19,7 @@ const REF = { svhId: IN_ID, accYear: ACC_YEAR, companyId: COMPANY_ID, branchId: 
 
 describe('StockTransferReceiveController', () => {
   let transfers: {
+    getReceipt: jest.Mock;
     inbound: jest.Mock;
     prefill: jest.Mock;
     saveReceive: jest.Mock;
@@ -30,6 +31,7 @@ describe('StockTransferReceiveController', () => {
 
   beforeEach(() => {
     transfers = {
+      getReceipt: jest.fn(),
       inbound: jest.fn(),
       prefill: jest.fn(),
       saveReceive: jest.fn(),
@@ -175,6 +177,18 @@ describe('StockTransferReceiveController', () => {
   });
 
   // ── delete ────────────────────────────────────────────────────────────────
+  it('notes 154 #1 — loads a receipt under the TRANSFER_IN rules, not the despatch\'s', async () => {
+    const doc = { header: { svhId: IN_ID, linkSrcRefno: 'TRF/2026-2027/TILL-01/2' }, lines: [], transit: [] };
+    transfers.getReceipt.mockResolvedValue(doc);
+
+    await expect(controller.load(REF)).resolves.toEqual({
+      success: true,
+      message: 'Transfer receipt fetched successfully',
+      data: doc,
+    });
+    expect(transfers.getReceipt).toHaveBeenCalledWith(TRANSFER_IN_RULES, IN_ID, ACC_YEAR, COMPANY_ID, BRANCH_B);
+  });
+
   it('deletes a receipt draft — never cancels it', async () => {
     vouchers.softDelete.mockResolvedValue({ svhId: IN_ID, deleted: true });
 

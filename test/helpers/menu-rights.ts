@@ -23,6 +23,8 @@ export const RECEIPT_MENU = 99;
 export const PAYMENT_MENU = 100;
 /** Physical Stock Update — every /stock/physical/* route since notes 150 #6. */
 export const PHYSICAL_STOCK_MENU = 45;
+/** Stock Transfer ("Godown Transfer") — every /stock/transfer route (not /receive) since notes 153 E3. */
+export const STOCK_TRANSFER_MENU = 41;
 
 const FLAGS = [
   'um_can_view',

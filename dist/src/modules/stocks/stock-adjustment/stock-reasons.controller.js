@@ -60,7 +60,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'The reason picker for one document kind',
-        description: 'Shared and company rows merged — a company row hides the shared one with the same code — filtered by the txn types the kind posts and, optionally, by direction (BOTH always qualifies).',
+        description: 'Shared and company rows merged — a company row hides the shared one with the same code — filtered by the txn types the kind posts and, optionally, by direction (BOTH always qualifies). voucherType=TRANSFER_OUT / TRANSFER_IN (notes 153) lists the BOTH reasons that name the transfer type only, so TRANSIT_LOSS (the short-settlement\'s) is not offered.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: 'The reasons.' }),
     __param(0, (0, common_1.Query)()),

@@ -59,6 +59,15 @@ export interface OpeningStockItemLookup {
   salePrice: number;
 
   /**
+   * Notes 153 — the Godown Transfer line's default rates, per unit of THIS
+   * unit (uomId): item_unit_master.unit_loading / unit_unloading when the item
+   * has item_allow_loading, else 0. A seed the screen pre-fills and the user
+   * may change; the line stores what was left. Meaningless on an opening.
+   */
+  loadRate: number;
+  unloadRate: number;
+
+  /**
    * A WARNING, not a refusal. The engine's rule is per HOLDING (godown, lot and
    * bucket) per YEAR. This sees the year (onDate's) and, when sent, the godown
    * and bucket — not the lot, which is not keyed yet — so true means "this

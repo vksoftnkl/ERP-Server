@@ -42,6 +42,8 @@ model VehicleMaster {
   // CHECK constraints (DB-only): ck_veh_type, ck_veh_no
 
   saleBills         SaleBill[]         @relation("SaleBillVehicle")
+  /// Notes 153 — a godown transfer's loading vehicle (svh_vehicle_id).
+  stockVouchers     StockVoucher[]     @relation("StockVoucherVehicle")
 
   ewayBills         AccVoucherDocEwaybill[] @relation("EwayBillVehicle")
 

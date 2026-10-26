@@ -146,6 +146,14 @@ model StockVoucherItem {
   sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
   sviModifiedBy        String?   @db.Text                            @map("svi_modified_by")
 
+  // ── Loading / unloading rates — TRANSFER_OUT / TRANSFER_IN only (notes 153)
+  /// Per unit of THIS line's unit (sviUomId), defaulted on the screen from
+  /// item_unit_master.unit_loading / unit_unloading. Stored, so a later change
+  /// to the unit's rate cannot move an old transfer's charge. The amount is
+  /// (sviQty + sviFreeQty) × rate and is not stored. ck_svi_load_rates: never negative.
+  sviLoadRate          Decimal   @default(0) @db.Decimal(18, 4)      @map("svi_load_rate")
+  sviUnloadRate        Decimal   @default(0) @db.Decimal(18, 4)      @map("svi_unload_rate")
+
   // ── Relations ───────────────────────────────────────────────────────────
   // sviCompanyId / sviBranchId carry no FK of their own here — the voucher
   // owns that scope — and sviCreatedBy / sviModifiedBy have none either.

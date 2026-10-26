@@ -31,7 +31,8 @@ describe('stock reason DTOs', () => {
         type: 'query',
       });
 
-    it.each(['ADJUSTMENT', 'ISSUE', 'DAMAGE', 'EXPIRY_WRITEOFF', 'BUCKET_MOVE'])(
+    // Notes 153 E4 — the two transfer halves pick reasons too.
+    it.each(['ADJUSTMENT', 'ISSUE', 'DAMAGE', 'EXPIRY_WRITEOFF', 'BUCKET_MOVE', 'TRANSFER_OUT', 'TRANSFER_IN'])(
       'takes %s as the kind',
       async (voucherType) => {
         await expect(refusedFields(pick({ voucherType }))).resolves.toEqual([]);

@@ -25,8 +25,12 @@ let StockReasonsService = class StockReasonsService {
         this.requestContextService = requestContextService;
     }
     async pick(query) {
-        const kindTypes = stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[query.voucherType].ledgerTxnTypes;
-        const strict = query.voucherType === stock_adjustment_rules_1.BUCKET_MOVE_KIND;
+        const kind = query.voucherType;
+        const transfer = kind === 'TRANSFER_OUT' || kind === 'TRANSFER_IN';
+        const kindTypes = transfer
+            ? [kind]
+            : stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[kind].ledgerTxnTypes;
+        const strict = transfer || kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND;
         const rows = await this.prisma.$queryRaw `
       SELECT r.srm_id, r.srm_company_id, r.srm_code, r.srm_name, r.srm_direction, r.srm_allowed_txn_types,
              r.srm_require_remarks, r.srm_gl_ledger_id, l.led_name, r.srm_sort_order, r.srm_remarks, r.srm_is_active
@@ -40,6 +44,7 @@ let StockReasonsService = class StockReasonsService {
                        AND o.srm_is_deleted = false)))
          AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
               OR r.srm_allowed_txn_types && ${kindTypes}::text[])
+         AND (NOT ${transfer}::boolean OR r.srm_direction = 'BOTH')
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

@@ -56,6 +56,12 @@ let OpeningStockLookupService = class OpeningStockLookupService {
              -- matches at all is not a fallback, it is the rule: track nothing.
              COALESCE(stp.stp_track_signature, 'N')            AS "trackSignature",
 
+             -- Notes 153 — a transfer line's default loading / unloading rates,
+             -- per unit of THIS keyed unit: the unit's own, for an item that
+             -- pays loading at all (item_allow_loading, 3.0's add_cooly).
+             CASE WHEN i.item_allow_loading THEN COALESCE(um.unit_loading, 0)   ELSE 0 END AS "loadRate",
+             CASE WHEN i.item_allow_loading THEN COALESCE(um.unit_unloading, 0) ELSE 0 END AS "unloadRate",
+
              -- Scoped to whatever of company / branch was given; with
              -- neither it means "opened anywhere".
              -- Aliased sml because unreversedLedgerRow expects that name
@@ -182,6 +188,8 @@ let OpeningStockLookupService = class OpeningStockLookupService {
             trackSignature: row.trackSignature,
             mrp: seed?.mrp ?? 0,
             salePrice: seed?.salePrice ?? 0,
+            loadRate: (0, module_service_utils_1.toNumber)(row.loadRate),
+            unloadRate: (0, module_service_utils_1.toNumber)(row.unloadRate),
             alreadyOpened: row.alreadyOpened,
         };
     }

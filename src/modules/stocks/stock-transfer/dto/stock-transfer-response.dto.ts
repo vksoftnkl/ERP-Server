@@ -124,6 +124,9 @@ export class StockTransferHeaderDto {
   })
   toBranchId!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Notes 154 #4 — branch_master.br_name of toBranchId.' })
+  toBranchName!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   partyRef!: string | null;
 
@@ -234,6 +237,71 @@ export class StockTransferHeaderDto {
 
   @ApiProperty()
   isDeleted!: boolean;
+
+  // ── Loading / unloading (notes 153) ───────────────────────────────────────
+  // A godown transfer carries both boxes; a branch despatch the loading, its
+  // receipt the unloading. The names are read with the document, in the order
+  // of the ids; an employee gone since reads null in its place.
+
+  @ApiProperty({ description: 'The Loading tick.' })
+  loadEnabled!: boolean;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  loadDatetime!: string | null;
+
+  @ApiProperty({ type: String, isArray: true, format: 'uuid' })
+  loadmanIds!: string[];
+
+  @ApiProperty({ type: String, isArray: true, nullable: true, description: 'emp_name per loadmanIds entry.' })
+  loadmanNames!: (string | null)[];
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  driverId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  driverName!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'The loading supervisor.' })
+  supervisorId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  supervisorName!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  vehicleId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'svh_vehicle_no, as typed.' })
+  vehicleNo!: string | null;
+
+  @ApiProperty({
+    description:
+      'svh_loading_charge — round(Σ (qty + freeQty) × loadRate, 2) while loadEnabled, else 0. SUMMED BY THE SERVER on every save, never sent. Posts DR Loading & unloading charges / CR Loading charges payable at despatch (with unloadingCharge on a godown transfer; alone, at the sending branch, on a branch despatch — notes 156).',
+  })
+  loadingCharge!: number;
+
+  @ApiProperty({ description: 'The Unloading tick.' })
+  unloadEnabled!: boolean;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  unloadDatetime!: string | null;
+
+  @ApiProperty({ type: String, isArray: true, format: 'uuid' })
+  unloadmanIds!: string[];
+
+  @ApiProperty({ type: String, isArray: true, nullable: true, description: 'emp_name per unloadmanIds entry.' })
+  unloadmanNames!: (string | null)[];
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  unloadSupervisorId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  unloadSupervisorName!: string | null;
+
+  @ApiProperty({
+    description:
+      'svh_unloading_charge — as loadingCharge, from unloadRate while unloadEnabled. On a branch receipt (TRANSFER_IN) it posts when the receipt posts, at the receiving branch, DAMAGED lines included (notes 156).',
+  })
+  unloadingCharge!: number;
 }
 
 export class StockTransferLineDto {
@@ -287,7 +355,11 @@ export class StockTransferLineDto {
   @ApiPropertyOptional({ nullable: true })
   barcode!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      "Notes 153 E5 — the LOT's batch (stock_lot.slt_batch_no): a transfer line names the lot it moves and keys no identity, so batchNo, mfgDate, expiryDate, mrp, salePrice and serialNo are all read from that lot.",
+  })
   batchNo!: string | null;
 
   @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
@@ -384,6 +456,15 @@ export class StockTransferLineDto {
       "Which identity columns the line may carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches. The effective policy on the document's date.",
   })
   trackSignature!: string;
+
+  @ApiProperty({
+    description:
+      "Notes 153 — loading charge per unit of the line's unit, as stored. The amount is (qty + freeQty) × loadRate and is not stored.",
+  })
+  loadRate!: number;
+
+  @ApiProperty({ description: 'Notes 153 — unloading charge per unit of the line\'s unit, as stored.' })
+  unloadRate!: number;
 }
 
 export class StockTransferDocumentDto {
@@ -574,11 +655,29 @@ export class StockTransferListDto {
 
 /** One row of the inbound worklist — a transit row plus who sent it and when. */
 export class StockTransferInboundRowDto extends StockTransitRowDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Notes 154 #2 — the despatch (TRANSFER_OUT). With outAccYear, what GET /receive/prefill takes.',
+  })
+  outVoucherId!: string;
+
+  @ApiProperty({
+    example: '2026-2027',
+    description: "The DESPATCH's year — prefill's accYear. Not always the receiving branch's year.",
+  })
+  outAccYear!: string;
+
   @ApiPropertyOptional({ nullable: true, example: 'TRF/2026-2027/TILL-01/2' })
   outRefno!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   fromBranchId!: string;
+
+  @ApiPropertyOptional({ nullable: true, description: 'branch_master.br_name of fromBranchId.' })
+  fromBranchName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'The godown at the sending branch the stock left.' })
+  fromGodownName!: string | null;
 
   @ApiProperty({
     example: 8,
@@ -665,14 +764,23 @@ export class StockTransferPrefillOutDto {
   @ApiProperty({ format: 'uuid' })
   fromBranchId!: string;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Notes 154 #3.' })
+  fromBranchName!: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   fromGodownId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Notes 154 #3.' })
+  fromGodownName!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   toBranchId!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   toGodownId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Notes 154 #3.' })
+  toGodownName!: string | null;
 }
 
 export class StockTransferPrefillRowDto extends StockTransitRowDto {
@@ -694,6 +802,38 @@ export class StockTransferPrefillDto {
       "Only rows with something still owed. Read from stock_transit, NOT from the despatch's lines — a posted document does not change, so prefilling from the lines is what lets a clerk receive the same 30 twice.",
   })
   rows!: StockTransferPrefillRowDto[];
+}
+
+/** Notes 154 #1 — a receipt's header names the despatch it answers and the branch that sent it. */
+export class StockTransferReceiptHeaderDto extends StockTransferHeaderDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'TRF/2026-2027/TILL-01/2',
+    description: "The despatch's printed number — the svh_refno of linkSrcDocId (in linkSrcAccYear).",
+  })
+  linkSrcRefno!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: "The despatch's branch: where the stock came from." })
+  fromBranchId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  fromBranchName!: string | null;
+}
+
+export class StockTransferReceiptDocumentDto {
+  @ApiProperty({ type: StockTransferReceiptHeaderDto })
+  header!: StockTransferReceiptHeaderDto;
+
+  @ApiProperty({ type: StockTransferLineDto, isArray: true })
+  lines!: StockTransferLineDto[];
+
+  @ApiProperty({
+    type: StockTransitRowDto,
+    isArray: true,
+    description:
+      "The DESPATCH's transit rows — sent, received, damaged and remaining — so a reopened draft receipt sees what is still owed.",
+  })
+  transit!: StockTransitRowDto[];
 }
 
 export class StockTransferReceiveInDto extends StockTransferDocumentDto {
@@ -785,6 +925,17 @@ export class StockTransferLoadSuccessDto {
 
   @ApiProperty({ type: StockTransferDocumentWithTransitDto })
   data!: StockTransferDocumentWithTransitDto;
+}
+
+export class StockTransferReceiptLoadSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Transfer receipt fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: StockTransferReceiptDocumentDto })
+  data!: StockTransferReceiptDocumentDto;
 }
 
 export class StockTransferListSuccessDto {

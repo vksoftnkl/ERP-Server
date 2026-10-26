@@ -38,8 +38,10 @@ export declare class StockVoucherService {
     private loadRefno;
     private assertPayloadRules;
     private assertReasons;
+    private assertCrew;
     private createDraft;
     private writeHeaderTotals;
+    private loadingCharges;
     private documentTotals;
     private assertFreezeNotHeld;
     private assertCountNotSuperseded;
@@ -72,6 +74,7 @@ export declare class StockVoucherService {
     private loadHeaderOrThrow;
     private assertDraft;
     private toHeaderPayload;
+    private toLoadingPayload;
     private toLinePayload;
     private auditActor;
     private actorFor;
@@ -79,6 +82,7 @@ export declare class StockVoucherService {
     private docDatetimeData;
     private linkSourceData;
     private freezeData;
+    private loadingData;
     private resolveRateSource;
     private toIsoDate;
     private toDecimalNumber;

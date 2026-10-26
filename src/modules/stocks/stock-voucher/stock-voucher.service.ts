@@ -62,6 +62,7 @@ import {
   type StockVoucherHeaderPayload,
   type StockVoucherLinePayload,
   type StockVoucherLineProblem,
+  type StockVoucherLoadingPayload,
   type StockVoucherListItem,
   type StockVoucherListResult,
   type StockVoucherPayload,
@@ -195,6 +196,11 @@ interface TotalsLine {
   sviDirection: 1 | -1 | null;
   sviBookQty: Prisma.Decimal | null;
   sviCountedQty: Prisma.Decimal | null;
+  /** Notes 153 — the loading charges are Σ (sviQty + sviFreeQty) × rate (loadingCharges). */
+  sviQty: Prisma.Decimal;
+  sviFreeQty: Prisma.Decimal;
+  sviLoadRate: Prisma.Decimal;
+  sviUnloadRate: Prisma.Decimal;
 }
 interface CountHoldingRow {
   sbl_lot_id: string;
@@ -250,6 +256,7 @@ interface HeaderRow {
   svh_supplier_id: string | null;
   supplier_name: string | null;
   svh_to_branch_id: string | null;
+  to_branch_name: string | null;
   svh_party_ref: string | null;
   svh_reason_id: string | null;
   reason_name: string | null;
@@ -280,6 +287,25 @@ interface HeaderRow {
   svh_rate_source: string | null;
   svh_remarks: string | null;
   svh_is_deleted: boolean;
+  // Notes 153 — read on every type, mapped on a transfer only.
+  svh_load_enabled: boolean;
+  svh_load_datetime: Date | null;
+  svh_loadman_id: string[] | null;
+  loadman_names: (string | null)[] | null;
+  svh_driver_id: string | null;
+  driver_name: string | null;
+  svh_supervisor_id: string | null;
+  supervisor_name: string | null;
+  svh_vehicle_id: string | null;
+  svh_vehicle_no: string | null;
+  svh_loading_charge: Prisma.Decimal;
+  svh_unload_enabled: boolean;
+  svh_unload_datetime: Date | null;
+  svh_unloadman_id: string[] | null;
+  unloadman_names: (string | null)[] | null;
+  svh_unload_supervisor_id: string | null;
+  unload_supervisor_name: string | null;
+  svh_unloading_charge: Prisma.Decimal;
 }
 interface LineRow {
   svi_id: string;
@@ -325,6 +351,8 @@ interface LineRow {
   svi_value_wot: Prisma.Decimal | null;
   svi_lot_id: string | null;
   svi_remarks: string | null;
+  svi_load_rate: Prisma.Decimal;
+  svi_unload_rate: Prisma.Decimal;
   track_signature: string;
   sbd_size_id: string | null;
   size_name: string | null;
@@ -394,6 +422,7 @@ export class StockVoucherService {
     const actor = this.actorOf(header.userId);
     this.assertPayloadRules(rules, dto);
     await this.assertReasons(rules, dto);
+    await this.assertCrew(rules, dto);
     // NOTHING HERE READS inventory.item_unit_conversion ANY MORE. uomId,
     // baseUomId and toBaseFactor arrive on the line and are written verbatim,
     // so there is no factor to look up and no base unit to resolve. The base
@@ -747,6 +776,47 @@ export class StockVoucherService {
           'A freeze needs both freezeFrom and freezeTo — without a window the count measures a moving target.',
       });
     }
+    // Notes 153 — the Loading / Unloading boxes belong to a transfer. On any
+    // other type they are a crew nothing moved and a charge nothing posts.
+    if (!rules.allowsLoading) {
+      const sent = loadingFieldSent(header);
+      if (sent) {
+        errors.push({
+          field: sent,
+          code: StockErrorCode.LOADING_NOT_ALLOWED,
+          message: `Only a transfer records loading and unloading; a ${rules.displayName.toLowerCase()} names no crew, vehicle or loading charge.`,
+        });
+      }
+      const rated = lines.findIndex(
+        (line) =>
+          this.toDecimalNumber(line.loadRate ?? 0) !== 0 ||
+          this.toDecimalNumber(line.unloadRate ?? 0) !== 0,
+      );
+      if (rated >= 0) {
+        errors.push({
+          field: `lines.${rated}.loadRate`,
+          code: StockErrorCode.LOADING_NOT_ALLOWED,
+          message: `Line ${lines[rated].lineNo}: loading and unloading rates belong to a transfer line.`,
+        });
+      }
+    } else {
+      // "Not earlier than the doc date": the instant against the start of
+      // that day on the shop's clock, so 00:30 IST on the doc date passes.
+      const dayStart = Date.parse(`${header.docDate}T00:00:00+05:30`);
+      for (const [field, value] of [
+        ['loadDatetime', header.loadDatetime],
+        ['unloadDatetime', header.unloadDatetime],
+      ] as const) {
+        const at = this.toInstant(value);
+        if (at !== null && !Number.isNaN(dayStart) && at < dayStart) {
+          errors.push({
+            field,
+            code: StockErrorCode.LOADING_BEFORE_DOC_DATE,
+            message: `${field} ${istClockText(at)} is before the document date ${header.docDate}. Goods are loaded and unloaded on or after the day the transfer is dated.`,
+          });
+        }
+      }
+    }
     // ck_svh_link is all-or-nothing across the four source columns.
     const linkParts = [
       header.linkSrcModule,
@@ -1046,6 +1116,19 @@ export class StockVoucherService {
           message: `Line ${line.lineNo}: weight is a magnitude and cannot be negative.`,
         });
       }
+      // Notes 153 — ck_svi_load_rates, refused here per field so the grid can
+      // mark the cell rather than read a constraint name.
+      if (rules.allowsLoading) {
+        for (const rate of ['loadRate', 'unloadRate'] as const) {
+          if (this.toDecimalNumber(line[rate] ?? 0) < 0) {
+            errors.push({
+              field: `${field}.${rate}`,
+              code: StockErrorCode.LOADING_RATE_NEGATIVE,
+              message: `Line ${line.lineNo}: ${rate} ${line[rate]} is negative. A rate is what the crew is paid per unit, 0 or more.`,
+            });
+          }
+        }
+      }
       if (splitNo > 1 && !line.batchNo?.trim()) {
         // ck_svi_batch_split — a split only means anything when the line is
         // split BY BATCH.
@@ -1253,6 +1336,83 @@ export class StockVoucherService {
       );
     }
   }
+  /**
+   * Notes 153 — every crew member and the vehicle a transfer names is a live
+   * row of the DOCUMENT's company, the check the sales documents make of their
+   * crew (assertSalesmen). One read per table for the whole header, and each
+   * refusal names its field. A crew list names a person once.
+   */
+  private async assertCrew(
+    rules: StockVoucherTypeRules,
+    dto: SaveStockVoucherDto,
+  ): Promise<void> {
+    if (!rules.allowsLoading) {
+      return;
+    }
+    const { header } = dto;
+    const one = (id: string | null | undefined) => (id ? [id] : []);
+    const crew: Array<{ field: string; ids: string[] }> = [
+      { field: 'loadmanIds', ids: header.loadmanIds ?? [] },
+      { field: 'driverId', ids: one(header.driverId) },
+      { field: 'supervisorId', ids: one(header.supervisorId) },
+      { field: 'unloadmanIds', ids: header.unloadmanIds ?? [] },
+      { field: 'unloadSupervisorId', ids: one(header.unloadSupervisorId) },
+    ];
+    const errors: StockErrorDetail[] = [];
+    for (const { field, ids } of crew) {
+      const twice = ids.find((id, at) => ids.indexOf(id) !== at);
+      if (twice) {
+        errors.push({
+          field,
+          code: StockErrorCode.LOADING_EMPLOYEE_INVALID,
+          message: `${field} names ${twice} twice — one person is one member of a crew.`,
+        });
+      }
+    }
+    const named = [...new Set(crew.flatMap((entry) => entry.ids))];
+    if (named.length) {
+      const found = await this.prisma.$queryRaw<{ emp_id: string }[]>`
+        SELECT emp_id
+          FROM public.employee_master
+         WHERE emp_id         = ANY(${named}::uuid[])
+           AND emp_is_deleted = false
+           AND emp_company_id = ${header.companyId}::uuid`;
+      const live = new Set(found.map((row) => row.emp_id));
+      for (const { field, ids } of crew) {
+        const bad = ids.filter((id) => !live.has(id));
+        if (bad.length) {
+          errors.push({
+            field,
+            code: StockErrorCode.LOADING_EMPLOYEE_INVALID,
+            message:
+              `${field} names ${bad.length === 1 ? 'an employee' : 'employees'} that do not exist, ` +
+              `are deleted, or belong to another company: ${bad.join(', ')}`,
+          });
+        }
+      }
+    }
+    if (header.vehicleId) {
+      const [vehicle] = await this.prisma.$queryRaw<{ veh_id: string }[]>`
+        SELECT veh_id
+          FROM public.vehicle_master
+         WHERE veh_id         = ${header.vehicleId}::uuid
+           AND veh_is_deleted = false
+           AND veh_company_id = ${header.companyId}::uuid`;
+      if (!vehicle) {
+        errors.push({
+          field: 'vehicleId',
+          code: StockErrorCode.LOADING_VEHICLE_INVALID,
+          message: `vehicleId ${header.vehicleId} is not a vehicle of this company (missing, deleted, or another company's).`,
+        });
+      }
+    }
+    if (errors.length) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+        `This ${rules.displayName.toLowerCase()} names a crew or vehicle it may not`,
+        errors,
+      );
+    }
+  }
   private async createDraft(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
@@ -1304,6 +1464,7 @@ export class StockVoucherService {
         ...this.docDatetimeData(header),
         ...this.linkSourceData(header),
         ...this.freezeData(header),
+        ...this.loadingData(rules, header),
         svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
         // THE PAYLOAD'S header.status IS NOT IGNORED — it is applied one step
         // later. Every document is INSERTED as a draft; when the caller asked
@@ -1324,7 +1485,7 @@ export class StockVoucherService {
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
     const written = await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
-    await this.writeHeaderTotals(tx, rules, created.svhId, header.accYear, written);
+    await this.writeHeaderTotals(tx, rules, created.svhId, header, written);
     // The audit row is save()'s: one revision holding the whole document.
     // The first row of the voucher's trail. fromStatus NULL says the document
     // did not exist before this step; tslToStatus says what it was born as.
@@ -1363,24 +1524,52 @@ export class StockVoucherService {
    *   everything else       every line as a magnitude; value as svi_value is
    *                         GENERATED: round((base + free) × rate, 2).
    * A POST then overwrites all four from the ledger rows it wrote.
+   *
+   * Notes 153 — a transfer's two loading charges are written here too, from
+   * the same lines (loadingCharges). Unlike the four totals a post leaves
+   * them alone: what posts to accounts is what the saved document says.
    */
   private async writeHeaderTotals(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
     svhId: string,
-    accYear: string,
+    header: SaveStockVoucherDto['header'],
     written: WrittenLines,
   ): Promise<void> {
     const totals = this.documentTotals(rules, written);
     await tx.stockVoucher.update({
-      where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+      where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
       data: {
         svhLineCount: totals.lineCount,
         svhTotalQty: totals.totalQty,
         svhTotalValue: totals.totalValue,
         svhTotalValueWot: totals.totalValueWot,
+        ...(rules.allowsLoading ? this.loadingCharges(header, written) : {}),
       },
     });
+  }
+  /**
+   * Notes 153 — svh_loading_charge / svh_unloading_charge, NEVER from the
+   * body: round(Σ (qty + freeQty) × the line's rate, 2) while the box is
+   * ticked, else 0. The labour is paid on what was CARRIED, so a free unit
+   * counts; both quantities are in the line's own unit, as the rate is.
+   * Rounded once, on the sum.
+   */
+  private loadingCharges(
+    header: SaveStockVoucherDto['header'],
+    written: WrittenLines,
+  ): { svhLoadingCharge: Prisma.Decimal; svhUnloadingCharge: Prisma.Decimal } {
+    const carried = (row: TotalsLine) => new Prisma.Decimal(row.sviQty).plus(row.sviFreeQty);
+    const charge = (enabled: boolean | undefined, rate: 'sviLoadRate' | 'sviUnloadRate') =>
+      enabled
+        ? written.rows
+            .reduce((sum, row) => sum.plus(carried(row).mul(row[rate])), new Prisma.Decimal(0))
+            .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+        : new Prisma.Decimal(0);
+    return {
+      svhLoadingCharge: charge(header.loadEnabled, 'sviLoadRate'),
+      svhUnloadingCharge: charge(header.unloadEnabled, 'sviUnloadRate'),
+    };
   }
   /** The four header figures, summed from the lines a save wrote — see writeHeaderTotals. */
   private documentTotals(
@@ -1585,6 +1774,7 @@ export class StockVoucherService {
         ...this.docDatetimeData(header),
         ...this.linkSourceData(header),
         ...this.freezeData(header),
+        ...this.loadingData(rules, header),
         svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
         svhVersionNo: { increment: 1 },
         svhModifiedOn: now,
@@ -1594,7 +1784,7 @@ export class StockVoucherService {
       },
     });
     const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
-    await this.writeHeaderTotals(tx, rules, svhId, header.accYear, written);
+    await this.writeHeaderTotals(tx, rules, svhId, header, written);
     // The audit row is save()'s: one revision holding the whole document.
     return { svhId, bookChanges: written.bookChanges };
   }
@@ -1768,6 +1958,16 @@ export class StockVoucherService {
           ? new Prisma.Decimal(0)
           : this.toDecimalColumn(line.landedRate ?? 0),
         sviTaxPerc: zeroCost ? new Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
+        // Notes 153 — a transfer line's per-unit rates, as the user left them;
+        // 0 on every other type, where assertPayloadRules refuses them. At the
+        // column's numeric(18,4) here, so the charge is summed from the rate
+        // the line will actually hold.
+        sviLoadRate: rules.allowsLoading
+          ? this.toDecimalColumn(line.loadRate ?? 0).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+          : new Prisma.Decimal(0),
+        sviUnloadRate: rules.allowsLoading
+          ? this.toDecimalColumn(line.unloadRate ?? 0).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+          : new Prisma.Decimal(0),
         sviReasonId: line.reasonId ?? null,
         // The line's OWN sign, only where the rule record lets the reason
         // decide per line (the adjustment family); assertPayloadRules refuses
@@ -2165,6 +2365,7 @@ export class StockVoucherService {
              svh.svh_supplier_id,
              sup.sup_name AS supplier_name,
              svh.svh_to_branch_id,
+             tbr.br_name AS to_branch_name,
              svh.svh_party_ref,
              svh.svh_reason_id,
              srm.srm_name AS reason_name,
@@ -2192,11 +2393,40 @@ export class StockVoucherService {
              svh.svh_modified_on,
              svh.svh_rate_source,
              svh.svh_remarks,
-             svh.svh_is_deleted
+             svh.svh_is_deleted,
+             -- Notes 153 — the Loading / Unloading boxes, with the names behind
+             -- the ids. A crew keeps its order; an employee gone since reads NULL
+             -- in its place rather than shortening the list.
+             svh.svh_load_enabled,
+             svh.svh_load_datetime,
+             svh.svh_loadman_id,
+             ARRAY(SELECT e.emp_name
+                     FROM unnest(svh.svh_loadman_id) WITH ORDINALITY AS crew(id, ord)
+                     LEFT JOIN public.employee_master e ON e.emp_id = crew.id
+                    ORDER BY crew.ord) AS loadman_names,
+             svh.svh_driver_id,
+             drv.emp_name AS driver_name,
+             svh.svh_supervisor_id,
+             lsv.emp_name AS supervisor_name,
+             svh.svh_vehicle_id,
+             svh.svh_vehicle_no,
+             svh.svh_loading_charge,
+             svh.svh_unload_enabled,
+             svh.svh_unload_datetime,
+             svh.svh_unloadman_id,
+             ARRAY(SELECT e.emp_name
+                     FROM unnest(svh.svh_unloadman_id) WITH ORDINALITY AS crew(id, ord)
+                     LEFT JOIN public.employee_master e ON e.emp_id = crew.id
+                    ORDER BY crew.ord) AS unloadman_names,
+             svh.svh_unload_supervisor_id,
+             usv.emp_name AS unload_supervisor_name,
+             svh.svh_unloading_charge
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations fgd ON fgd.gdl_id = svh.svh_from_godown_id
         LEFT JOIN inventory.godown_locations tgd ON tgd.gdl_id = svh.svh_to_godown_id
         LEFT JOIN purchase.suppliers sup ON sup.sup_id = svh.svh_supplier_id
+        -- Notes 154 #4 — the branch a transfer goes to, by name.
+        LEFT JOIN public.branch_master tbr ON tbr.br_id = svh.svh_to_branch_id
         -- Who posted or cancelled this, when, and why: public.txn_status_log is
         -- the only record of it — the header carries svh_status alone. Both
         -- laterals take the LATEST matching step, so a voucher posted, cancelled
@@ -2228,6 +2458,9 @@ export class StockVoucherService {
         -- match is on text: a value that is not a uuid finds no user, not a 500.
         LEFT JOIN public.user_master cusr        ON cusr.usr_id::text = svh.svh_created_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
+        LEFT JOIN public.employee_master drv     ON drv.emp_id = svh.svh_driver_id
+        LEFT JOIN public.employee_master lsv     ON lsv.emp_id = svh.svh_supervisor_id
+        LEFT JOIN public.employee_master usv     ON usv.emp_id = svh.svh_unload_supervisor_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
          AND svh.svh_company_id  = ${companyId}::uuid
@@ -2242,6 +2475,11 @@ export class StockVoucherService {
         StockErrorCode.VOUCHER_NOT_FOUND,
       );
     }
+    // Notes 153 E5 — a transfer line names the LOT it moves and keys no
+    // identity of its own, so its batch / dates / MRP / serial are read from
+    // that lot (the lot first, as the engine attaches a picked lot), and a
+    // reopened transfer shows which batch moved. Other types read the line.
+    const identityFromLot = rules.requiresLot === true;
     const lines = await client.$queryRaw<LineRow[]>`
       SELECT svi.svi_id,
              svi.svi_line_no,
@@ -2258,12 +2496,12 @@ export class StockVoucherService {
              svi.svi_bucket,
              svi.svi_to_bucket,
              svi.svi_barcode,
-             svi.svi_batch_no,
-             svi.svi_mfg_date,
-             svi.svi_expiry_date,
-             svi.svi_mrp,
-             svi.svi_sale_price,
-             svi.svi_serial_no,
+             COALESCE(lot.slt_batch_no, svi.svi_batch_no)       AS svi_batch_no,
+             COALESCE(lot.slt_mfg_date, svi.svi_mfg_date)       AS svi_mfg_date,
+             COALESCE(lot.slt_expiry_date, svi.svi_expiry_date) AS svi_expiry_date,
+             COALESCE(lot.slt_mrp, svi.svi_mrp)                 AS svi_mrp,
+             COALESCE(lot.slt_sale_price, svi.svi_sale_price)   AS svi_sale_price,
+             COALESCE(lot.slt_serial_no, svi.svi_serial_no)     AS svi_serial_no,
              svi.svi_supplier_id,
              sup.sup_name AS line_supplier_name,
              svi.svi_qty,
@@ -2286,6 +2524,8 @@ export class StockVoucherService {
              svi.svi_value_wot,
              svi.svi_lot_id,
              svi.svi_remarks,
+             svi.svi_load_rate,
+             svi.svi_unload_rate,
              -- Which identity cells the line may open, as /stock/opening/item-lookup
              -- answers it: the effective policy on the DOCUMENT's date, the one
              -- the preflight and the post key the lot by. Saves the screen a
@@ -2306,6 +2546,9 @@ export class StockVoucherService {
              sbd.sbd_model
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm            ON itm.item_id = svi.svi_item_id
+        -- Joined on a transfer only (E5 above); elsewhere every lot.* is NULL.
+        LEFT JOIN stock.stock_lot lot             ON ${identityFromLot}::boolean
+                                                 AND lot.slt_id = svi.svi_lot_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = svi.svi_uom_id
         LEFT JOIN inventory.item_unit_master unt  ON unt.unit_id = iuc.iuc_unit_id
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
@@ -2314,7 +2557,7 @@ export class StockVoucherService {
         LEFT JOIN LATERAL (
           SELECT d.sbd_size_id, d.sbd_colour_id, d.sbd_model
             FROM stock.stock_batch_detail d
-           WHERE d.sbd_batch_no = upper(btrim(svi.svi_batch_no))
+           WHERE d.sbd_batch_no = upper(btrim(COALESCE(lot.slt_batch_no, svi.svi_batch_no)))
              AND (d.sbd_src_line_id = svi.svi_id
                   OR (d.sbd_company_id = ${companyId}::uuid
                       AND d.sbd_item_id = svi.svi_item_id
@@ -2338,8 +2581,8 @@ export class StockVoucherService {
        ORDER BY svi.svi_line_no, svi.svi_split_no
     `;
     return {
-      header: this.toHeaderPayload(header),
-      lines: lines.map((row) => this.toLinePayload(row)),
+      header: this.toHeaderPayload(header, rules),
+      lines: lines.map((row) => this.toLinePayload(row, rules)),
     };
   }
   // ──────────────────────────────────────────────────────────────────────────
@@ -3921,8 +4164,9 @@ export class StockVoucherService {
       );
     }
   }
-  private toHeaderPayload(row: HeaderRow): StockVoucherHeaderPayload {
+  private toHeaderPayload(row: HeaderRow, rules: StockVoucherTypeRules): StockVoucherHeaderPayload {
     return {
+      ...(rules.allowsLoading ? this.toLoadingPayload(row) : {}),
       svhId: row.svh_id,
       accYear: row.svh_acc_year.trim(),
       companyId: row.svh_company_id,
@@ -3945,6 +4189,7 @@ export class StockVoucherService {
       supplierId: row.svh_supplier_id,
       supplierName: row.supplier_name,
       toBranchId: row.svh_to_branch_id,
+      toBranchName: row.to_branch_name ?? null,
       partyRef: row.svh_party_ref,
       reasonId: row.svh_reason_id,
       reasonName: row.reason_name,
@@ -3975,8 +4220,34 @@ export class StockVoucherService {
       isDeleted: row.svh_is_deleted,
     };
   }
-  private toLinePayload(row: LineRow): StockVoucherLinePayload {
+  /** Notes 153 — the Loading / Unloading boxes, on a transfer's header only. */
+  private toLoadingPayload(row: HeaderRow): StockVoucherLoadingPayload {
     return {
+      loadEnabled: row.svh_load_enabled,
+      loadDatetime: row.svh_load_datetime?.toISOString() ?? null,
+      loadmanIds: row.svh_loadman_id ?? [],
+      loadmanNames: row.loadman_names ?? [],
+      driverId: row.svh_driver_id,
+      driverName: row.driver_name,
+      supervisorId: row.svh_supervisor_id,
+      supervisorName: row.supervisor_name,
+      vehicleId: row.svh_vehicle_id,
+      vehicleNo: row.svh_vehicle_no,
+      loadingCharge: toNumber(row.svh_loading_charge),
+      unloadEnabled: row.svh_unload_enabled,
+      unloadDatetime: row.svh_unload_datetime?.toISOString() ?? null,
+      unloadmanIds: row.svh_unloadman_id ?? [],
+      unloadmanNames: row.unloadman_names ?? [],
+      unloadSupervisorId: row.svh_unload_supervisor_id,
+      unloadSupervisorName: row.unload_supervisor_name,
+      unloadingCharge: toNumber(row.svh_unloading_charge),
+    };
+  }
+  private toLinePayload(row: LineRow, rules: StockVoucherTypeRules): StockVoucherLinePayload {
+    return {
+      ...(rules.allowsLoading
+        ? { loadRate: toNumber(row.svi_load_rate), unloadRate: toNumber(row.svi_unload_rate) }
+        : {}),
       sviId: row.svi_id,
       lineNo: row.svi_line_no,
       splitNo: row.svi_split_no,
@@ -4121,6 +4392,33 @@ export class StockVoucherService {
       svhFreezeTo: header.freezeTo ? new Date(header.freezeTo) : null,
     };
   }
+  /**
+   * Notes 153 — a transfer's Loading / Unloading boxes, a full replace like
+   * every other header field. Nothing on any other type: assertPayloadRules
+   * has refused the fields there, so the columns keep their defaults. The two
+   * charges are writeHeaderTotals', summed after the lines exist.
+   */
+  private loadingData(
+    rules: StockVoucherTypeRules,
+    header: SaveStockVoucherDto['header'],
+  ): Partial<Prisma.StockVoucherUncheckedCreateInput> {
+    if (!rules.allowsLoading) {
+      return {};
+    }
+    return {
+      svhLoadEnabled: header.loadEnabled ?? false,
+      svhLoadDatetime: header.loadDatetime ? new Date(header.loadDatetime) : null,
+      svhLoadmanId: header.loadmanIds ?? [],
+      svhDriverId: header.driverId ?? null,
+      svhSupervisorId: header.supervisorId ?? null,
+      svhVehicleId: header.vehicleId ?? null,
+      svhVehicleNo: header.vehicleNo ?? null,
+      svhUnloadEnabled: header.unloadEnabled ?? false,
+      svhUnloadDatetime: header.unloadDatetime ? new Date(header.unloadDatetime) : null,
+      svhUnloadmanId: header.unloadmanIds ?? [],
+      svhUnloadSupervisorId: header.unloadSupervisorId ?? null,
+    };
+  }
   /** `yyyy-MM-dd` — NexJson::date on the Qt side reads the first ten characters. */
   /**
    * §3.3 — the type's default rate source, applied HERE and not in the DTO.
@@ -4229,4 +4527,25 @@ function accYearOfDate(date: string): string {
   const [year, month] = date.split('-').map(Number);
   const start = month >= 4 ? year : year - 1;
   return `${start}-${start + 1}`;
+}
+/**
+ * Notes 153 — the first Loading / Unloading header field a payload actually
+ * fills, or null. "Fills" is a value that would be stored: a tick set, a
+ * non-empty crew, an id or a vehicle number. false, null and [] say nothing.
+ */
+function loadingFieldSent(header: SaveStockVoucherDto['header']): string | null {
+  const filled: Array<[string, boolean]> = [
+    ['loadEnabled', header.loadEnabled === true],
+    ['loadDatetime', !!header.loadDatetime],
+    ['loadmanIds', (header.loadmanIds?.length ?? 0) > 0],
+    ['driverId', !!header.driverId],
+    ['supervisorId', !!header.supervisorId],
+    ['vehicleId', !!header.vehicleId],
+    ['vehicleNo', !!header.vehicleNo?.trim()],
+    ['unloadEnabled', header.unloadEnabled === true],
+    ['unloadDatetime', !!header.unloadDatetime],
+    ['unloadmanIds', (header.unloadmanIds?.length ?? 0) > 0],
+    ['unloadSupervisorId', !!header.unloadSupervisorId],
+  ];
+  return filled.find(([, given]) => given)?.[0] ?? null;
 }

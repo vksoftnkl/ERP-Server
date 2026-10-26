@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 import { DEFAULT_ACTOR, throwStockUnprocessable } from 'src/common/utils/module-service.utils';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import type { VoucherLeg } from '../../../common/posting/voucher-leg.types';
+import {
+  resolveRoleLedgers,
+  roleLedgerKey,
+  type RoleLedgerRequest,
+} from '../../accountsModule/ledgerRole/ledger-map.helper';
 import type { SettledShortRow } from '../stock-voucher/stock-voucher-posting.helper';
 import type {
   StockErrorDetail,
@@ -63,12 +68,31 @@ const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'];
 /** The voucher type a transit short-settlement is numbered in — a Journal. */
 const SHORT_SETTLE_VOUCHER_TYPE_CODE = 'Jrl';
 
+/**
+ * Notes 156 — the settlement's own `avh_src_doc_type`. A despatch carries its
+ * loading-charges voucher under (STOCK, TRANSFER_OUT, out id), and ux_avh_src
+ * allows ONE live voucher per (module, doc type, doc id, year): the write-off
+ * of what never arrived is a second event on the same despatch, so it files
+ * under a type of its own — as SALE_BILL_RETENDER beside SALE_BILL.
+ */
+export const SHORT_SETTLE_SRC_DOC_TYPE = 'TRANSFER_SHORT';
+
+/**
+ * Notes 153 — the voucher a godown transfer's loading / unloading charges post
+ * as, "Stock Transfer" (migration 20261026100000), by code like StkAdj.
+ */
+const TRANSFER_CHARGES_VOUCHER_TYPE_CODE = 'TRF';
+
 /** The ledger roles a stock document posts to (seeded by migration 20260928100000). */
 export const STOCK_LEDGER_ROLES = {
   INVENTORY: 'INVENTORY',
   OPENING_DIFFERENCE: 'OPENING_DIFFERENCE',
   STOCK_SHORTAGE: 'STOCK_SHORTAGE',
   STOCK_EXCESS: 'STOCK_EXCESS',
+  /** Notes 153 (20261026100000) — a transfer's loading + unloading labour, a direct expense. */
+  LOADING_CHARGES: 'LOADING_CHARGES',
+  /** …owed to the crew until a Payment (menu 100) against this ledger settles it. */
+  LOADING_PAYABLE: 'LOADING_PAYABLE',
 } as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -119,8 +143,12 @@ interface StockHeaderRow {
  *   ADJUSTMENT / ISSUE / DAMAGE / EXPIRY_WRITEOFF   the same, on the 'StkAdj'
  *              Stock Journal type; a RELOT_OUT / RELOT_IN pair and a
  *              BUCKET_OUT / BUCKET_IN move post nothing
- *   TRANSFER   none within one company: one company-level Stock-in-Hand ledger
- *   settle-short   DR reason ledger / CR INVENTORY for short × stt_cost_rate
+ *   TRANSFER   no stock leg within one company: one company-level Stock-in-Hand
+ *              ledger. The labour posts DR LOADING_CHARGES / CR LOADING_PAYABLE
+ *              (notes 153 / 156, postTransferCharges) — under PERIODIC too: a
+ *              despatch's loading at despatch, a receipt's unloading at its post
+ *   settle-short   DR reason ledger / CR INVENTORY for short × stt_cost_rate,
+ *              filed as (STOCK, TRANSFER_SHORT, out id)
  *   ISSUE / RECEIPT behind a sales document   none — the sales document posts
  *              its own COGS pair, and posting here too would count it twice
  *
@@ -265,7 +293,9 @@ export class StockAccountsPostingService {
    * DR the reason's ledger / CR INVENTORY for what left branch A and never
    * arrived at B: without this entry the Stock-in-Hand ledger keeps a value no
    * stock stands behind (§1.1 settle-short). Numbered as a Journal, linked to
-   * the OUT through `avh_src_*`.
+   * the OUT through `avh_src_*` as (STOCK, TRANSFER_SHORT, out id) — beside,
+   * never instead of, the despatch's loading voucher (notes 156): the labour
+   * was done whether or not the goods arrived.
    */
   async postShortSettlement(
     tx: Prisma.TransactionClient,
@@ -334,7 +364,7 @@ export class StockAccountsPostingService {
         voucherTypeId: journal.vchr_type_id,
         voucherDate: isoDate(input.settledOn),
         srcModule: STOCK_ACCOUNTS_SRC_MODULE,
-        srcDocType: 'TRANSFER_OUT',
+        srcDocType: SHORT_SETTLE_SRC_DOC_TYPE,
         srcDocId: input.outId,
         docLabel: 'Stock transfer short settlement',
         docRefno: input.refno,
@@ -355,6 +385,155 @@ export class StockAccountsPostingService {
       amount,
       legCount: posted.legCount,
     };
+  }
+
+  /**
+   * Notes 153 / 156 — DR LOADING_CHARGES / CR LOADING_PAYABLE for the labour a
+   * transfer document carries, ONE voucher per document, linked like every
+   * stock voucher: (STOCK, svh_voucher_type, svh_id), at the document's own
+   * branch, so the roles resolve as mapped for that branch:
+   *
+   *   godown transfer   on despatch (ends POSTED): loading + unloading
+   *   branch despatch   on despatch (ends IN_TRANSIT), at the SENDING branch:
+   *                     loading — its unloading box is refused (WRONG_HALF)
+   *   branch receipt    when the TRANSFER_IN posts, at the RECEIVING branch:
+   *                     unloading of what it received, a DAMAGED line too
+   *
+   * A despatch is never cancelled and a posted receipt cannot be, so only the
+   * godown transfer's voucher is ever reversed. A short-settle leaves the
+   * despatch's alone and files under TRANSFER_SHORT.
+   *
+   * INDEPENDENT OF cogs_mode. This is labour — an expense and a liability,
+   * not a stock value — so it posts under PERIODIC as well, unlike the
+   * inventory legs of postForVoucher.
+   *
+   * The amount is what the save summed onto the document (svh_loading_charge
+   * + svh_unloading_charge), never the payload. Null when both are 0.
+   *
+   * An unmapped role is a 422 naming it, never a skipped entry: a transfer that
+   * posted without its payable is crew wages the books do not owe. The crew is
+   * paid later by an ordinary Payment against LOADING_PAYABLE, which is why the
+   * credit is a payable and not cash.
+   */
+  async postTransferCharges(
+    tx: Prisma.TransactionClient,
+    input: StockAccountsPostInput,
+  ): Promise<StockAccountsPostResult | null> {
+    const [row] = await tx.$queryRaw<
+      (Omit<StockHeaderRow, 'svh_reason_id' | 'reason_ledger_id'> & {
+        svh_loading_charge: Prisma.Decimal;
+        svh_unloading_charge: Prisma.Decimal;
+      })[]
+    >`
+      SELECT svh_refno, svh_doc_date, svh_tenant_id, svh_device_id, svh_session_id, svh_created_by,
+             svh_loading_charge, svh_unloading_charge
+        FROM stock.stock_voucher
+       WHERE svh_id = ${input.svhId}::uuid AND svh_acc_year = ${input.accYear}::bpchar`;
+    if (!row) {
+      throw new Error(`Stock voucher ${input.svhId} (${input.accYear}) not found for accounts posting`);
+    }
+    const loading = new Prisma.Decimal(row.svh_loading_charge);
+    const unloading = new Prisma.Decimal(row.svh_unloading_charge);
+    const total = loading.plus(unloading);
+    if (total.lte(0)) {
+      return null;
+    }
+    await this.assertLoadingRolesMapped(tx, input);
+    const amount = total.toNumber();
+    const parts = [
+      ...(loading.gt(0) ? [`loading ${loading.toFixed(2)}`] : []),
+      ...(unloading.gt(0) ? [`unloading ${unloading.toFixed(2)}`] : []),
+    ];
+    const what = `Labour on ${row.svh_refno}: ${parts.join(' + ')}`;
+    const legs: VoucherLeg[] = [
+      {
+        role: STOCK_LEDGER_ROLES.LOADING_CHARGES,
+        roleTag: STOCK_LEDGER_ROLES.LOADING_CHARGES,
+        drCr: 'DR',
+        amount,
+        remarks: what,
+        field: 'loadingCharge',
+      },
+      {
+        role: STOCK_LEDGER_ROLES.LOADING_PAYABLE,
+        roleTag: STOCK_LEDGER_ROLES.LOADING_PAYABLE,
+        drCr: 'CR',
+        amount,
+        remarks: what,
+        field: 'loadingCharge',
+      },
+    ];
+    const posted = await this.voucherPosting.postLegs(tx, {
+      header: {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        tenantId: row.svh_tenant_id,
+        accYear: input.accYear,
+        voucherTypeId: await this.voucherTypeIdByCode(tx, TRANSFER_CHARGES_VOUCHER_TYPE_CODE),
+        voucherDate: isoDate(row.svh_doc_date),
+        srcModule: STOCK_ACCOUNTS_SRC_MODULE,
+        srcDocType: input.voucherType,
+        srcDocId: input.svhId,
+        docLabel: `${input.displayName} loading charges`,
+        docRefno: row.svh_refno,
+        docDate: isoDate(row.svh_doc_date),
+        docAmount: amount,
+        partyId: null,
+        userId: this.userFor(input.actor, row.svh_created_by, `${input.displayName} loading charges`),
+        sessionId: row.svh_session_id,
+        deviceId: row.svh_device_id,
+        remarks: what,
+        // As postForVoucher: the transfer's own number when it fits.
+        presetRefno: row.svh_refno.length <= VOUCHER_REFNO_MAX ? row.svh_refno : undefined,
+        createdBy: input.actor === DEFAULT_ACTOR ? 'SYSTEM' : input.actor,
+      },
+      legs,
+    });
+    this.logger.log(
+      `${input.displayName} ${row.svh_refno}: loading charges voucher ${posted.voucherRefno} — ${amount}`,
+    );
+    return {
+      voucherId: posted.voucherId,
+      voucherRefno: posted.voucherRefno,
+      amount,
+      legCount: posted.legCount,
+    };
+  }
+
+  /**
+   * Notes 153 — both roles must answer before the voucher is written, and the
+   * refusal says which one and where to fix it. The shared poster would refuse
+   * too, but as a 400 phrased for a sales bill.
+   */
+  private async assertLoadingRolesMapped(
+    tx: Prisma.TransactionClient,
+    input: StockAccountsPostInput,
+  ): Promise<void> {
+    const requests: RoleLedgerRequest[] = [
+      { role: STOCK_LEDGER_ROLES.LOADING_CHARGES, field: 'loadingCharge' },
+      { role: STOCK_LEDGER_ROLES.LOADING_PAYABLE, field: 'loadingCharge' },
+    ];
+    const resolved = await resolveRoleLedgers(tx, requests, {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      where: input.voucherType,
+    });
+    const missing = requests.filter((request) => !resolved.get(roleLedgerKey(request)));
+    if (missing.length === 0) {
+      return;
+    }
+    const labels = await tx.$queryRaw<{ alr_role: string; alr_label: string }[]>`
+      SELECT alr_role, alr_label FROM accounts.acc_ledger_role
+       WHERE alr_role = ANY(${missing.map((request) => request.role)}::text[])`;
+    const labelOf = new Map(labels.map((label) => [label.alr_role, label.alr_label]));
+    throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+      `${input.displayName} charges cannot be posted to accounts`,
+      missing.map((request) => ({
+        field: 'loadingCharge',
+        code: StockErrorCode.LOADING_ROLE_UNMAPPED,
+        message: `No ledger is mapped to "${labelOf.get(request.role) ?? request.role}" (${request.role}) for this company — map it in Ledger Map, then despatch again. A loading charge is never posted without its ledger.`,
+      })),
+    );
   }
 
   /** DR INVENTORY / CR OPENING_DIFFERENCE, Σ of the document's forward rows. */

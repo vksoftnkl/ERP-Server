@@ -206,7 +206,11 @@ let StockAdjustmentService = class StockAdjustmentService {
              b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date,
              sbd.sbd_size_id, isz.isz_name AS size_name,
              sbd.sbd_colour_id, icl.icl_name AS colour_name,
-             sbd.sbd_model
+             sbd.sbd_model,
+             -- Notes 153 — a Godown Transfer line's default rates, per unit of
+             -- the holding's (base) unit, for an item that pays loading at all.
+             CASE WHEN itm.item_allow_loading THEN COALESCE(unt.unit_loading, 0)   ELSE 0 END AS load_rate,
+             CASE WHEN itm.item_allow_loading THEN COALESCE(unt.unit_unloading, 0) ELSE 0 END AS unload_rate
         FROM stock.stock_balance b
         JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
         JOIN inventory.item_master itm ON itm.item_id = b.sbl_item_id
@@ -265,6 +269,8 @@ let StockAdjustmentService = class StockAdjustmentService {
             colourId: r.sbd_colour_id,
             colourName: r.colour_name,
             model: r.sbd_model,
+            loadRate: Number(r.load_rate),
+            unloadRate: Number(r.unload_rate),
         }));
     }
     async check(header, lines, reasons, db = this.prisma) {

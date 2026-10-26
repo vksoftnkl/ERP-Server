@@ -1,6 +1,15 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, Matches, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsUUID,
+  Matches,
+  ValidateNested,
+} from 'class-validator';
 import {
   NullableDateString,
   NullableStringStrict,
@@ -38,6 +47,42 @@ const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
  * lock — open across ten thousand lines.
  */
 const MAX_LINES = 2000;
+
+/** Notes 153 — a loading or unloading crew larger than this is a typo, not a crew. */
+const MAX_CREW = 50;
+
+/**
+ * A crew list, as the sales documents take theirs (save-bill.dto.ts): absent
+ * stays absent, null or '' becomes [], a comma string is split. svh_loadman_id
+ * and svh_unloadman_id are uuid[] — a Prisma scalar list, which has no
+ * nullable form — so "nobody" is an empty array.
+ */
+const toUuidArray = (value: unknown): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === '') {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)));
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  return value as string[];
+};
+const NullableUuidArray = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }: { value: unknown }) => toUuidArray(value)),
+    IsArray(),
+    ArrayMaxSize(MAX_CREW),
+    IsUUID('all', { each: true }),
+  );
 
 /**
  * The shared save payload. One per document type extends it and pins the type
@@ -365,7 +410,8 @@ export class SaveStockVoucherHeaderDto {
   @ApiPropertyOptional({
     maxLength: 30,
     nullable: true,
-    description: 'Vehicle number. Goes to stock_transit. Inter-branch despatch only.',
+    description:
+      'Vehicle number, typed as on the bill. Since notes 153 it is stored on the DOCUMENT (svh_vehicle_no) on a transfer and refused on every other type. The despatch route\'s own vehicleNo still goes to stock_transit.',
   })
   @NullableStringStrict(30)
   vehicleNo?: string | null;
@@ -381,6 +427,106 @@ export class SaveStockVoucherHeaderDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'expectedOn must be yyyy-MM-dd' })
   expectedOn?: string | null;
+
+  // ── Loading / unloading — TRANSFER_OUT / TRANSFER_IN only (notes 153) ────
+  //
+  // 3.0's Loading and Unloading boxes, stored ON THE DOCUMENT as the sales
+  // documents store their crew (sb_driver_id, sb_loadman_id). Every one is
+  // refused on another voucher type (StockVoucherTypeRules.allowsLoading), and
+  // the transfer service says which half carries which box: a godown transfer
+  // both, a branch despatch the loading, its receipt the unloading.
+  //
+  // THE CHARGES ARE NOT HERE. svh_loading_charge / svh_unloading_charge are
+  // summed by the server on every save — round(Σ (qty + freeQty) × rate, 2) while the
+  // box is ticked, else 0 — and come back on the GET as loadingCharge /
+  // unloadingCharge. The rates are on the lines (loadRate / unloadRate).
+  //
+  // Like every other header field these are a FULL REPLACE on update: a field
+  // left out of an update is cleared.
+
+  @ApiPropertyOptional({
+    default: false,
+    description: "The Loading tick. Unticked, the loading charge is 0 whatever the lines' loadRate say.",
+  })
+  @OptionalBoolean()
+  loadEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description: 'When the goods were loaded, with an offset. Not before docDate (422).',
+  })
+  @NullableDateString()
+  loadDatetime?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    isArray: true,
+    format: 'uuid',
+    nullable: true,
+    maxItems: MAX_CREW,
+    description:
+      "The loading crew: employee_master ids of the document's company, each once. null or [] = nobody.",
+  })
+  @NullableUuidArray()
+  loadmanIds?: string[];
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'employee_master, this company.' })
+  @NullableUuid()
+  driverId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The loading supervisor — employee_master, this company.',
+  })
+  @NullableUuid()
+  supervisorId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'vehicle_master, this company. Optional — vehicleNo is typed either way.',
+  })
+  @NullableUuid()
+  vehicleId?: string | null;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: "The Unloading tick. Unticked, the unloading charge is 0 whatever the lines' unloadRate say.",
+  })
+  @OptionalBoolean()
+  unloadEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description: 'When the goods were unloaded, with an offset. Not before docDate (422).',
+  })
+  @NullableDateString()
+  unloadDatetime?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    isArray: true,
+    format: 'uuid',
+    nullable: true,
+    maxItems: MAX_CREW,
+    description:
+      "The unloading crew: employee_master ids of the document's company, each once. null or [] = nobody.",
+  })
+  @NullableUuidArray()
+  unloadmanIds?: string[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The unloading supervisor — employee_master, this company.',
+  })
+  @NullableUuid()
+  unloadSupervisorId?: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

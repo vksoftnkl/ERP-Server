@@ -35,6 +35,8 @@ export interface PickStockRow {
     colourId: string | null;
     colourName: string | null;
     model: string | null;
+    loadRate: number;
+    unloadRate: number;
 }
 export type StockAdjustmentPayload = StockVoucherPayload & {
     kind: StockAdjustmentDocKind;

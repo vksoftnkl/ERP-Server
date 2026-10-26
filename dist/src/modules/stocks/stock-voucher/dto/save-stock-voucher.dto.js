@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaveStockVoucherDto = exports.SaveStockVoucherHeaderDto = void 0;
+const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -18,6 +19,26 @@ const stock_voucher_types_1 = require("../types/stock-voucher.types");
 const save_stock_voucher_item_dto_1 = require("./save-stock-voucher-item.dto");
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 const MAX_LINES = 2000;
+const MAX_CREW = 50;
+const toUuidArray = (value) => {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === null || value === '') {
+        return [];
+    }
+    if (Array.isArray(value)) {
+        return value.map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)));
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+    }
+    return value;
+};
+const NullableUuidArray = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => toUuidArray(value)), (0, class_validator_1.IsArray)(), (0, class_validator_1.ArrayMaxSize)(MAX_CREW), (0, class_validator_1.IsUUID)('all', { each: true }));
 class SaveStockVoucherHeaderDto {
     svhId;
     accYear;
@@ -56,6 +77,16 @@ class SaveStockVoucherHeaderDto {
     lrNo;
     vehicleNo;
     expectedOn;
+    loadEnabled;
+    loadDatetime;
+    loadmanIds;
+    driverId;
+    supervisorId;
+    vehicleId;
+    unloadEnabled;
+    unloadDatetime;
+    unloadmanIds;
+    unloadSupervisorId;
     userId;
     createdBy;
     modifiedBy;
@@ -329,7 +360,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 30,
         nullable: true,
-        description: 'Vehicle number. Goes to stock_transit. Inter-branch despatch only.',
+        description: 'Vehicle number, typed as on the bill. Since notes 153 it is stored on the DOCUMENT (svh_vehicle_no) on a transfer and refused on every other type. The despatch route\'s own vehicleNo still goes to stock_transit.',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(30),
     __metadata("design:type", Object)
@@ -346,6 +377,98 @@ __decorate([
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'expectedOn must be yyyy-MM-dd' }),
     __metadata("design:type", Object)
 ], SaveStockVoucherHeaderDto.prototype, "expectedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "The Loading tick. Unticked, the loading charge is 0 whatever the lines' loadRate say.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveStockVoucherHeaderDto.prototype, "loadEnabled", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'When the goods were loaded, with an offset. Not before docDate (422).',
+    }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "loadDatetime", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        isArray: true,
+        format: 'uuid',
+        nullable: true,
+        maxItems: MAX_CREW,
+        description: "The loading crew: employee_master ids of the document's company, each once. null or [] = nobody.",
+    }),
+    NullableUuidArray(),
+    __metadata("design:type", Array)
+], SaveStockVoucherHeaderDto.prototype, "loadmanIds", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'employee_master, this company.' }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "driverId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The loading supervisor — employee_master, this company.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "supervisorId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'vehicle_master, this company. Optional — vehicleNo is typed either way.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "vehicleId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "The Unloading tick. Unticked, the unloading charge is 0 whatever the lines' unloadRate say.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveStockVoucherHeaderDto.prototype, "unloadEnabled", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'When the goods were unloaded, with an offset. Not before docDate (422).',
+    }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "unloadDatetime", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        isArray: true,
+        format: 'uuid',
+        nullable: true,
+        maxItems: MAX_CREW,
+        description: "The unloading crew: employee_master ids of the document's company, each once. null or [] = nobody.",
+    }),
+    NullableUuidArray(),
+    __metadata("design:type", Array)
+], SaveStockVoucherHeaderDto.prototype, "unloadmanIds", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The unloading supervisor — employee_master, this company.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "unloadSupervisorId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

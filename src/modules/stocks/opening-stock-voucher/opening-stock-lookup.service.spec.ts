@@ -27,6 +27,8 @@ const saltRow = (overrides: Record<string, unknown> = {}) => ({
   cessPerc: new Prisma.Decimal(0),
   cessUnit: new Prisma.Decimal('0.0000'),
   trackSignature: 'BME',
+  loadRate: new Prisma.Decimal('2.5'),
+  unloadRate: new Prisma.Decimal(0),
   alreadyOpened: false,
   ...overrides,
 });
@@ -82,6 +84,8 @@ describe('OpeningStockLookupService', () => {
       trackSignature: 'BME',
       mrp: 0,
       salePrice: 0,
+      loadRate: 2.5,
+      unloadRate: 0,
       alreadyOpened: false,
     });
     expect(queryRaw).toHaveBeenCalledTimes(1);
@@ -140,6 +144,17 @@ describe('OpeningStockLookupService', () => {
     expect(sql).toContain('COALESCE(t.tax_cess_per_unit, 0)');
     // Named in a comment only — the retired table holds none of the ids.
     expect(sql).not.toContain('JOIN inventory.item_tax_master');
+  });
+
+  it("notes 153 — the transfer line's default rates are the KEYED unit's, only when the item pays loading", async () => {
+    queryRaw.mockResolvedValueOnce([saltRow()]);
+
+    await service.lookupItem(args());
+
+    const sql = assemble(queryRaw.mock.calls[0] as unknown[]).sql;
+    // um is the keyed unit (u.iuc_unit_id), not the base row b.
+    expect(sql).toContain('CASE WHEN i.item_allow_loading THEN COALESCE(um.unit_loading, 0)   ELSE 0 END AS "loadRate"');
+    expect(sql).toContain('CASE WHEN i.item_allow_loading THEN COALESCE(um.unit_unloading, 0) ELSE 0 END AS "unloadRate"');
   });
 
   it.each([

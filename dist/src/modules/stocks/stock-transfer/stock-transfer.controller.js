@@ -12,12 +12,15 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TRANSFER_OUT_RULES = exports.StockTransferController = void 0;
+exports.TRANSFER_OUT_RULES = exports.StockTransferController = exports.STOCK_TRANSFER_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const swagger_1 = require("@nestjs/swagger");
 const api_version_1 = require("../../../common/constants/api-version");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
+const rights_1 = require("../../../common/posting/rights");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_exception_filter_1 = require("../stock-voucher/stock-voucher-exception.filter");
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
 const stock_transfer_service_1 = require("./stock-transfer.service");
@@ -40,20 +43,30 @@ const TRANSFER_OUT_RULES = {
     allowsRepeatHolding: true,
     allowsCount: false,
     allowsToBranch: true,
+    allowsLoading: true,
     postShape: 'TRANSFER_OUT',
     auditScreenName: 'Stock Transfer',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_TRANSFER,
     refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
 };
 exports.TRANSFER_OUT_RULES = TRANSFER_OUT_RULES;
+exports.STOCK_TRANSFER_MENU_ID = 41;
 let StockTransferController = class StockTransferController {
     stockTransferService;
     stockVoucherService;
-    constructor(stockTransferService, stockVoucherService) {
+    prisma;
+    requestContext;
+    constructor(stockTransferService, stockVoucherService, prisma, requestContext) {
         this.stockTransferService = stockTransferService;
         this.stockVoucherService = stockVoucherService;
+        this.prisma = prisma;
+        this.requestContext = requestContext;
     }
     async save(dto) {
+        await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a stock transfer');
+        if (dto.header.post === true || dto.header.status === 'POSTED') {
+            await this.requireRight('post', 'despatch a stock transfer');
+        }
         const data = await this.stockTransferService.save(TRANSFER_OUT_RULES, dto);
         return {
             success: true,
@@ -64,6 +77,7 @@ let StockTransferController = class StockTransferController {
         };
     }
     async listOrLoad(query) {
+        await this.requireRight('view', 'view stock transfers');
         if (query.svhId) {
             const data = await this.stockTransferService.getOne(TRANSFER_OUT_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
             return { success: true, message: 'Stock transfer fetched successfully', data };
@@ -72,6 +86,7 @@ let StockTransferController = class StockTransferController {
         return { success: true, message: 'Stock transfer list fetched successfully', data };
     }
     async validate(query) {
+        await this.requireRight('view', 'validate a stock transfer');
         const data = await this.stockVoucherService.validate(TRANSFER_OUT_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
         const failing = data.filter((row) => row.problem !== null).length;
         return {
@@ -83,6 +98,7 @@ let StockTransferController = class StockTransferController {
         };
     }
     async despatch(dto) {
+        await this.requireRight('post', 'despatch a stock transfer');
         const data = await this.stockTransferService.despatch(TRANSFER_OUT_RULES, dto);
         return {
             success: true,
@@ -93,6 +109,7 @@ let StockTransferController = class StockTransferController {
         };
     }
     async cancel(dto) {
+        await this.requireRight('cancel', 'cancel a stock transfer');
         const data = await this.stockVoucherService.cancel(TRANSFER_OUT_RULES, dto.svhId, dto.accYear, dto.reason, dto.companyId, dto.branchId, dto.userId);
         return {
             success: true,
@@ -101,8 +118,18 @@ let StockTransferController = class StockTransferController {
         };
     }
     async remove(query) {
+        await this.requireRight('delete', 'delete a stock transfer draft');
         const data = await this.stockVoucherService.softDelete(TRANSFER_OUT_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
         return { success: true, message: 'Stock transfer deleted successfully', data };
+    }
+    async requireRight(right, action) {
+        await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId: this.requestContext.getUserId(),
+            menuId: exports.STOCK_TRANSFER_MENU_ID,
+            right,
+            codePrefix: 'TRF',
+            action,
+        });
     }
 };
 exports.StockTransferController = StockTransferController;
@@ -205,6 +232,8 @@ exports.StockTransferController = StockTransferController = __decorate([
     (0, common_1.Controller)('stock/transfer'),
     (0, common_1.UseFilters)(stock_voucher_exception_filter_1.StockVoucherExceptionFilter),
     __metadata("design:paramtypes", [stock_transfer_service_1.StockTransferService,
-        stock_voucher_service_1.StockVoucherService])
+        stock_voucher_service_1.StockVoucherService,
+        prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService])
 ], StockTransferController);
 //# sourceMappingURL=stock-transfer.controller.js.map

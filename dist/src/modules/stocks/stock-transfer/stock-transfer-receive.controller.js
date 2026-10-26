@@ -39,6 +39,7 @@ const TRANSFER_IN_RULES = {
     allowsRepeatHolding: true,
     allowsCount: false,
     allowsToBranch: false,
+    allowsLoading: true,
     postShape: 'TRANSFER_IN',
     auditScreenName: 'Stock Transfer Receipt',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_TRANSFER,
@@ -59,6 +60,10 @@ let StockTransferReceiveController = class StockTransferReceiveController {
             message: `${data.meta.count} consignments in transit to this branch`,
             data,
         };
+    }
+    async load(query) {
+        const data = await this.stockTransferService.getReceipt(TRANSFER_IN_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
+        return { success: true, message: 'Transfer receipt fetched successfully', data };
     }
     async prefill(query) {
         const data = await this.stockTransferService.prefill(query.companyId, query.branchId, query.outVoucherId, query.accYear);
@@ -115,6 +120,20 @@ __decorate([
     __metadata("design:paramtypes", [list_stock_transfer_query_dto_1.StockTransferInboundQueryDto]),
     __metadata("design:returntype", Promise)
 ], StockTransferReceiveController.prototype, "inbound", null);
+__decorate([
+    (0, common_1.Get)(),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Load one receipt (TRANSFER_IN), with its despatch and what is still owed',
+        description: 'Notes 154 #1 — the transfer GET reads under the despatch rules and 404s a receipt. Same shape as GET /stock/transfer?svhId: header + lines + transit. The header also names the despatch (linkSrcDocId, linkSrcAccYear, linkSrcRefno) and the branch that sent it (fromBranchId / fromBranchName); transit is the DESPATCH\'s rows — sent, received, damaged, remaining — so a reopened draft sees the remainder.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: stock_transfer_response_dto_1.StockTransferReceiptLoadSuccessDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [list_stock_transfer_query_dto_1.StockTransferRefQueryDto]),
+    __metadata("design:returntype", Promise)
+], StockTransferReceiveController.prototype, "load", null);
 __decorate([
     (0, common_1.Get)('prefill'),
     (0, common_1.Version)(api_version_1.API_VERSION),

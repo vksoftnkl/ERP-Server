@@ -282,6 +282,15 @@ export interface StockVoucherTypeRules {
   allowsToBranch: boolean;
 
   /**
+   * Notes 153 — whether this type carries the Loading / Unloading boxes: the
+   * crew, the vehicle, the per-line loadRate / unloadRate and the two charges
+   * summed from them. TRANSFER_OUT and TRANSFER_IN only. Gated rather than
+   * absent from the DTO for the reason `allowsCount` is: the DTO is shared,
+   * and on any other type the fields would be a charge nothing posts.
+   */
+  allowsLoading?: boolean;
+
+  /**
    * How `post()` lays the document into the ledger — see StockPostShape.
    *
    * NOT derivable from `voucherType`, and pinning it here rather than branching
@@ -402,7 +411,36 @@ export interface StockVoucherLineProblem {
   problem: string | null;
 }
 
-export interface StockVoucherHeaderPayload {
+/**
+ * Notes 153 — the Loading / Unloading boxes as /get returns them. On the
+ * header of a TRANSFER_OUT / TRANSFER_IN only (rules.allowsLoading); absent
+ * on every other type. The names are read with the document, in the order of
+ * the ids; an id whose employee is gone reads null in its place.
+ */
+export interface StockVoucherLoadingPayload {
+  loadEnabled: boolean;
+  loadDatetime: string | null;
+  loadmanIds: string[];
+  loadmanNames: (string | null)[];
+  driverId: string | null;
+  driverName: string | null;
+  supervisorId: string | null;
+  supervisorName: string | null;
+  vehicleId: string | null;
+  vehicleNo: string | null;
+  /** svh_loading_charge — summed by the server, never sent. */
+  loadingCharge: number;
+  unloadEnabled: boolean;
+  unloadDatetime: string | null;
+  unloadmanIds: string[];
+  unloadmanNames: (string | null)[];
+  unloadSupervisorId: string | null;
+  unloadSupervisorName: string | null;
+  /** svh_unloading_charge — summed by the server, never sent. */
+  unloadingCharge: number;
+}
+
+export interface StockVoucherHeaderPayload extends Partial<StockVoucherLoadingPayload> {
   svhId: string;
   accYear: string;
   companyId: string;
@@ -424,6 +462,8 @@ export interface StockVoucherHeaderPayload {
   /** purchase.suppliers.sup_name for supplierId — null when unset or deleted. */
   supplierName: string | null;
   toBranchId: string | null;
+  /** public.branch_master.br_name for toBranchId — notes 154 #4; null when there is none. */
+  toBranchName: string | null;
   partyRef: string | null;
   linkSrcModule: string | null;
   linkSrcDocType: string | null;
@@ -561,6 +601,12 @@ export interface StockVoucherLinePayload {
   colourId: string | null;
   colourName: string | null;
   model: string | null;
+  /**
+   * Notes 153 — per unit of the line's unit; on a transfer line only
+   * (rules.allowsLoading). The amount is (qty + freeQty) × rate and is not stored.
+   */
+  loadRate?: number;
+  unloadRate?: number;
 }
 
 export interface StockVoucherPayload {

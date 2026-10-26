@@ -1359,6 +1359,8 @@ describe('StockAdjustmentService', () => {
           sbd_colour_id: 'colour-maroon',
           colour_name: 'Maroon',
           sbd_model: 'Slim fit',
+          load_rate: new Prisma.Decimal('3.5000'),
+          unload_rate: new Prisma.Decimal('2'),
         },
         {
           sbl_id: 'sbl-2',
@@ -1389,6 +1391,8 @@ describe('StockAdjustmentService', () => {
           sbd_colour_id: null,
           colour_name: null,
           sbd_model: null,
+          load_rate: new Prisma.Decimal(0),
+          unload_rate: new Prisma.Decimal(0),
         },
       ];
 
@@ -1428,6 +1432,9 @@ describe('StockAdjustmentService', () => {
         colourId: 'colour-maroon',
         colourName: 'Maroon',
         model: 'Slim fit',
+        // Notes 153 — the Godown Transfer line's default rates.
+        loadRate: 3.5,
+        unloadRate: 2,
       });
       expect(rows[1]).toMatchObject({
         mfgDate: null,
@@ -1440,7 +1447,18 @@ describe('StockAdjustmentService', () => {
         sizeName: null,
         colourName: null,
         model: null,
+        loadRate: 0,
+        unloadRate: 0,
       });
+    });
+
+    it("notes 153 — the default rates are the holding unit's, only for an item that pays loading", async () => {
+      await service.pickStock({ companyId: COMPANY_ID, branchId: BRANCH_ID, godownId: GODOWN_ID });
+
+      const [[strings]] = queriesMatching('sbl_first_in_date');
+      const sql = (strings as unknown as string[]).join('?');
+      expect(sql).toContain('CASE WHEN itm.item_allow_loading THEN COALESCE(unt.unit_loading, 0)   ELSE 0 END AS load_rate');
+      expect(sql).toContain('CASE WHEN itm.item_allow_loading THEN COALESCE(unt.unit_unloading, 0) ELSE 0 END AS unload_rate');
     });
 
     it('asks for every item and bucket, 200 rows, when the query narrows nothing', async () => {

@@ -34,7 +34,8 @@ and the drift lands in the ledger.
 | `POST /stock/transfer/despatch` | the engine (shape `TRANSFER_OUT`), plus the lorry |
 | `POST /stock/transfer/cancel` | **same-branch POSTED only** — reversal rows |
 | `DELETE /stock/transfer` | soft delete, DRAFT only |
-| `GET /stock/transfer/receive/inbound` | what is on its way to me, oldest first |
+| `GET /stock/transfer/receive` | load one receipt (notes 154 #1): header + lines + the **despatch's** transit rows; the header adds `linkSrcRefno`, `fromBranchId`, `fromBranchName` |
+| `GET /stock/transfer/receive/inbound` | what is on its way to me, oldest first; each row names its despatch (`outVoucherId`, `outAccYear` — what prefill takes) and sender (`fromBranchName`, `fromGodownName`) |
 | `GET /stock/transfer/receive/prefill` | open a receipt **at the remainder** |
 | `POST /stock/transfer/receive` | save a TRANSFER_IN draft |
 | `POST /stock/transfer/receive/post` | the engine (shape `TRANSFER_IN`) |
@@ -82,6 +83,76 @@ cached inbound worklist tells a branch stock is coming that it already has.
 9. **`stt_lr_no`, `stt_vehicle_no` and `stt_expected_on` are written by this
    module**, inside the post's own transaction via the `afterPost` hook. Nothing
    in the engine writes them.
+
+## Loading and unloading (notes 153, 2026-10-26)
+
+3.0's Loading and Unloading boxes, on the **document** (migration
+`20261026100000_transfer_loading_charges_notes_153`):
+
+- **Header** — `loadEnabled`, `loadDatetime`, `loadmanIds[]`, `driverId`,
+  `supervisorId`, `vehicleId`, `vehicleNo`, `unloadEnabled`, `unloadDatetime`,
+  `unloadmanIds[]`, `unloadSupervisorId` → `svh_load_*` / `svh_unload_*`. The GET
+  adds `loadmanNames[]`, `driverName`, `supervisorName`, `unloadmanNames[]`,
+  `unloadSupervisorName`, `loadingCharge`, `unloadingCharge`.
+- **Line** — `loadRate`, `unloadRate` (per unit of the LINE's unit, numeric(18,4)),
+  stored so a later change to the unit's rate cannot move an old charge. The
+  amount ((qty + freeQty) × rate) is not stored.
+- **The charges are the server's**: `svh_loading_charge = round2(Σ (svi_qty +
+  svi_free_qty) × svi_load_rate)` — the labour is paid on what was carried —
+  while `loadEnabled`, else 0 (same for unloading), on every save. A body total
+  is a 400 (no such DTO field).
+- **Refused (422, per field)** — a negative rate (`STOCK_LOADING_RATE_NEGATIVE`),
+  an employee that is missing, deleted, another company's or named twice
+  (`STOCK_LOADING_EMPLOYEE_INVALID`), another company's vehicle
+  (`STOCK_LOADING_VEHICLE_INVALID`), a load / unload instant before the doc date
+  on the IST clock (`STOCK_LOADING_BEFORE_DOC_DATE`). Every other stock voucher
+  type refuses all of it (`allowsLoading`; opening / physical / adjustment are a
+  400 at the DTO, the shared service a 422 `STOCK_LOADING_NOT_ALLOWED`).
+- **Which half carries which box** — a godown transfer both. A branch despatch
+  the loading box, its receipt the unloading box (`STOCK_LOADING_WRONG_HALF`);
+  driver and vehicle are the lorry's and stand on either.
+- **Posting** — ONE voucher per document that carries labour, type `TRF` "Stock
+  Transfer" (menu 41, not a register type): DR `LOADING_CHARGES` / CR
+  `LOADING_PAYABLE`, linked (STOCK, svh_voucher_type, svh_id), at the document's
+  own branch (roles resolve as mapped for it). **Whatever `accounts.cogs_mode`
+  says.**
+  - godown transfer: on despatch (ends POSTED), loading + unloading; a cancel
+    reverses it (`reverseForVoucher`);
+  - branch despatch (notes 156): on despatch (ends IN_TRANSIT), its loading, at
+    the SENDING branch — never reversed, a despatch is never cancelled;
+  - branch receipt (notes 156): when the TRANSFER_IN posts, its unloading of what
+    it received (a DAMAGED line too), at the RECEIVING branch.
+
+  An unmapped role is a 422 `STOCK_LOADING_ROLE_UNMAPPED` naming it and Ledger
+  Map, and nothing moves (the receipt stays DRAFT). A short-settle leaves the
+  despatch's voucher alone and files its own write-off as (STOCK,
+  **TRANSFER_SHORT**, out id) — ux_avh_src allows one live voucher per link. The
+  crew is paid by a Payment (menu 100) against the payable.
+- **Default rates** — `/stock/opening/item-lookup` (the keyed unit) and
+  `/stock/adjustment/pick-stock` (the holding's unit) answer `loadRate` /
+  `unloadRate` = `unit_loading` / `unit_unloading` when `item_allow_loading`, else 0.
+- **Rights (E3)** — every `/stock/transfer` route (not `/receive`) is judged on
+  menu 41: 403 `TRF_RIGHT_<RIGHT>`; save+post needs post too.
+- **A cancelled transfer keeps its figures (E1)** — the cancel's re-total leaves
+  the reversal rows out on this shape; every other type still re-totals to 0.
+- **Reasons (E4, migration `20261026110000`)** — three shared BOTH reasons for
+  `{TRANSFER_OUT, TRANSFER_IN}`: REPLENISH, REARRANGE, RETURN_STORE.
+  `/stock/reasons?voucherType=TRANSFER_OUT` (or `TRANSFER_IN`) lists only BOTH
+  reasons naming the type, so TRANSIT_LOSS (OUT, the short-settlement's) is not
+  offered; a save citing a one-way reason is a 422 `STOCK_REASON_WRONG_DIRECTION`.
+- **Lot identity on the GET (E5)** — a transfer line names its lot and keys no
+  identity, so `GET /stock/transfer?svhId=` reads batchNo / mfgDate / expiryDate /
+  mrp / salePrice / serialNo (and the batch's size / colour / model) from
+  `stock_lot`. Nothing is written; other voucher types still read the line's own.
+
+## Branch Outward / Inward reads (notes 154, 2026-10-26)
+
+- `GET /stock/transfer?svhId=` of a TRANSFER_IN stays a 404 — it reads under
+  the despatch rules. A receipt is read through `GET /stock/transfer/receive`.
+- The prefill's `outVoucher` names `fromBranchName`, `fromGodownName`,
+  `toGodownName`; every voucher header names `toBranchName` beside `toBranchId`.
+- Not gated by menu rights yet: the `/receive` routes (Branch Inward 193), and
+  the branch form of `/stock/transfer` is judged on menu 41, not Branch Outward 192.
 
 ## Two known engine gaps this module lives with
 

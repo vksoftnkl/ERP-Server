@@ -31,6 +31,14 @@ const RULES = {
 
 const POSTED = { rowsPosted: 3, status: 'POSTED', transitRows: 0, closedOut: null };
 
+/** Notes 153 — a despatch's rule record as far as the door reads it. */
+const TRANSFER_RULES = {
+  voucherType: 'TRANSFER_OUT',
+  displayName: 'Stock transfer',
+  postShape: 'TRANSFER_OUT',
+  allowsLoading: true,
+} as unknown as StockVoucherTypeRules;
+
 const source = () =>
   new StockVoucherSource({
     svhId: SVH_ID,
@@ -84,7 +92,11 @@ const window = { from: new Date('2026-09-21T09:00:00Z'), to: new Date('2026-09-2
 
 describe('StockPostingService', () => {
   let service: StockPostingService;
-  let accounts: { postForVoucher: jest.Mock; reverseForVoucher: jest.Mock };
+  let accounts: {
+    postForVoucher: jest.Mock;
+    postTransferCharges: jest.Mock;
+    reverseForVoucher: jest.Mock;
+  };
   const postedOn = new Date('2026-09-21T14:00:00Z');
 
   beforeEach(() => {
@@ -97,6 +109,9 @@ describe('StockPostingService', () => {
       postForVoucher: jest
         .fn()
         .mockResolvedValue({ voucherId: 'v1', voucherRefno: 'OPN0001', amount: 1, legCount: 2 }),
+      postTransferCharges: jest
+        .fn()
+        .mockResolvedValue({ voucherId: 'trf1', voucherRefno: 'TRF00001', amount: 70, legCount: 2 }),
       reverseForVoucher: jest.fn().mockResolvedValue(null),
     };
     service = new StockPostingService(
@@ -176,6 +191,92 @@ describe('StockPostingService', () => {
       const outcome = await service.post(tx, source(), { actor: ACTOR, postedOn });
       expect(outcome.status).toBe('IN_TRANSIT');
       expect(accounts.postForVoucher).not.toHaveBeenCalled();
+    });
+
+    describe('notes 153 — a transfer posts its loading charges', () => {
+      const transfer = () =>
+        new StockVoucherSource({
+          svhId: SVH_ID,
+          accYear: ACC_YEAR,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          rules: TRANSFER_RULES,
+        });
+
+      it('on a godown transfer that ended POSTED, and reports that voucher', async () => {
+        const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+        accounts.postForVoucher.mockResolvedValue(null);
+
+        await expect(service.post(tx, transfer(), { actor: ACTOR, postedOn })).resolves.toMatchObject({
+          status: 'POSTED',
+          accountsVoucherId: 'trf1',
+        });
+        expect(accounts.postTransferCharges).toHaveBeenCalledWith(tx, {
+          svhId: SVH_ID,
+          accYear: ACC_YEAR,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          voucherType: 'TRANSFER_OUT',
+          displayName: 'Stock transfer',
+          actor: ACTOR,
+          postedOn,
+        });
+      });
+
+      it('notes 156 — on a branch despatch (IN_TRANSIT) too, at the sending branch it was raised at', async () => {
+        (postStockVoucher as jest.Mock).mockResolvedValue({ ...POSTED, status: 'IN_TRANSIT' });
+        const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+
+        await expect(service.post(tx, transfer(), { actor: ACTOR, postedOn })).resolves.toMatchObject({
+          status: 'IN_TRANSIT',
+          accountsVoucherId: 'trf1',
+        });
+        expect(accounts.postTransferCharges).toHaveBeenCalledWith(
+          tx,
+          expect.objectContaining({ voucherType: 'TRANSFER_OUT', branchId: BRANCH_ID }),
+        );
+      });
+
+      it('notes 156 — on a receipt (TRANSFER_IN) when it posts, its unloading at the receiving branch', async () => {
+        const receipt = new StockVoucherSource({
+          svhId: SVH_ID,
+          accYear: ACC_YEAR,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          rules: {
+            voucherType: 'TRANSFER_IN',
+            displayName: 'Transfer receipt',
+            postShape: 'TRANSFER_IN',
+            allowsLoading: true,
+          } as unknown as StockVoucherTypeRules,
+        });
+        const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+
+        await service.post(tx, receipt, { actor: ACTOR, postedOn });
+
+        expect(accounts.postTransferCharges).toHaveBeenCalledWith(
+          tx,
+          expect.objectContaining({ voucherType: 'TRANSFER_IN', displayName: 'Transfer receipt' }),
+        );
+      });
+
+      it('never on a sales shadow', async () => {
+        await service.post(txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] }), transfer(), {
+          actor: ACTOR,
+          postedOn,
+          ledgerSource: { module: 'SALES', docType: 'SALE_BILL' } as never,
+        });
+
+        expect(accounts.postTransferCharges).not.toHaveBeenCalled();
+      });
+
+      it('not on any other document type', async () => {
+        await service.post(txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] }), source(), {
+          actor: ACTOR,
+          postedOn,
+        });
+        expect(accounts.postTransferCharges).not.toHaveBeenCalled();
+      });
     });
 
     it('refuses a movement TIMED inside a freeze window with a 409, before any phase runs', async () => {
@@ -326,6 +427,30 @@ describe('StockPostingService', () => {
 
       expect(cancelStockVoucher).toHaveBeenCalledTimes(2);
       expect(accounts.reverseForVoucher).not.toHaveBeenCalled();
+    });
+
+    it("notes 153 — reverses a godown transfer's loading-charges voucher with it", async () => {
+      const transfer = new StockVoucherSource({
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        rules: TRANSFER_RULES,
+      });
+      await service.cancel(txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] }), transfer, {
+        actor: ACTOR,
+        reason: 'wrong godown',
+        cancelledOn: postedOn,
+      });
+
+      expect(accounts.reverseForVoucher).toHaveBeenCalledWith(expect.anything(), {
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        voucherType: 'TRANSFER_OUT',
+        reason: 'wrong godown',
+        actor: ACTOR,
+      });
     });
 
     it('is held by the same freeze as a post — a reversal moves stock too', async () => {

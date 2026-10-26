@@ -188,6 +188,8 @@ export declare class OpeningStockItemLookupDto {
     trackSignature: string;
     mrp: number;
     salePrice: number;
+    loadRate: number;
+    unloadRate: number;
     alreadyOpened: boolean;
 }
 export declare class OpeningStockDocumentSuccessDto {

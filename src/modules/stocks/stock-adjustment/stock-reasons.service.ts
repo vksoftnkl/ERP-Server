@@ -86,10 +86,18 @@ export class StockReasonsService {
 
   /** Q17 — shared + company rows merged (a company row hides the shared one with the same code), filtered for one kind. */
   async pick(query: StockReasonPickerQueryDto): Promise<StockReasonRow[]> {
-    const kindTypes = STOCK_ADJUSTMENT_RULES[query.voucherType].ledgerTxnTypes as string[];
+    const kind = query.voucherType;
+    const transfer = kind === 'TRANSFER_OUT' || kind === 'TRANSFER_IN';
+    const kindTypes = transfer
+      ? [kind]
+      : (STOCK_ADJUSTMENT_RULES[kind].ledgerTxnTypes as string[]);
     // A move cites a MOVE reason, never an any-movement one: PILFERAGE on a
-    // move would read as a write-off that wrote nothing off.
-    const strict = query.voucherType === BUCKET_MOVE_KIND;
+    // move would read as a write-off that wrote nothing off. A transfer
+    // likewise (notes 153 E4) — and it cites a BOTH reason: the stock leaves
+    // one godown and arrives in another. A one-way reason naming TRANSFER_OUT
+    // is a write-off — TRANSIT_LOSS, the short-settlement's — and is not
+    // offered here.
+    const strict = transfer || kind === BUCKET_MOVE_KIND;
     const rows = await this.prisma.$queryRaw<RawReason[]>`
       SELECT r.srm_id, r.srm_company_id, r.srm_code, r.srm_name, r.srm_direction, r.srm_allowed_txn_types,
              r.srm_require_remarks, r.srm_gl_ledger_id, l.led_name, r.srm_sort_order, r.srm_remarks, r.srm_is_active
@@ -103,6 +111,7 @@ export class StockReasonsService {
                        AND o.srm_is_deleted = false)))
          AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
               OR r.srm_allowed_txn_types && ${kindTypes}::text[])
+         AND (NOT ${transfer}::boolean OR r.srm_direction = 'BOTH')
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

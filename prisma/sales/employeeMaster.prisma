@@ -96,6 +96,10 @@ model EmployeeMaster {
   saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
   saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")
   saleDcReturnsSupervised SaleDcReturn[]          @relation("SaleDcReturnSupervisor")
+  // ── Stock transfer crew (notes 153, 20261026100000) ────────────────────
+  stockVouchersDriven   StockVoucher[]            @relation("StockVoucherDriver")
+  stockVouchersSupervised StockVoucher[]          @relation("StockVoucherSupervisor")
+  stockVouchersUnloadSupervised StockVoucher[]    @relation("StockVoucherUnloadSupervisor")
 
   @@map("employee_master")
   @@schema("public")

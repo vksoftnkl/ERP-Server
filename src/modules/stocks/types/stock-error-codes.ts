@@ -185,7 +185,7 @@ export enum StockErrorCode {
   REASON_NOT_ALLOWED = 'STOCK_REASON_NOT_ALLOWED',
   /** The cited stock reason requires a remark and none was given. */
   REASON_REMARK_REQUIRED = 'STOCK_REASON_REMARK_REQUIRED',
-  /** The cited reason brings stock IN where the stock must go OUT (e.g. a transit short). */
+  /** The cited reason brings stock IN where the stock must go OUT (e.g. a transit short), or moves one way on a transfer, which cites a BOTH reason (notes 153). */
   REASON_WRONG_DIRECTION = 'STOCK_REASON_WRONG_DIRECTION',
   /** Saving a reason with a GL ledger that does not exist. */
   REASON_LEDGER_NOT_FOUND = 'STOCK_REASON_LEDGER_NOT_FOUND',
@@ -273,6 +273,20 @@ export enum StockErrorCode {
   RECEIPT_BUCKET_AMBIGUOUS = 'STOCK_RECEIPT_BUCKET_AMBIGUOUS',
   /** A receipt line received in a different bucket than it was shipped (other than DAMAGED). */
   RECEIPT_BUCKET_CHANGED = 'STOCK_RECEIPT_BUCKET_CHANGED',
+
+  // ── transfer loading / unloading (notes 153) ──────────────────────────────
+  /** Loading / unloading crew, vehicle or rates sent on a stock voucher that is not a transfer. */
+  LOADING_NOT_ALLOWED = 'STOCK_LOADING_NOT_ALLOWED',
+  /** A line's loadRate or unloadRate is negative. */
+  LOADING_RATE_NEGATIVE = 'STOCK_LOADING_RATE_NEGATIVE',
+  /** A load or unload datetime earlier than the document date. */
+  LOADING_BEFORE_DOC_DATE = 'STOCK_LOADING_BEFORE_DOC_DATE',
+  /** A crew member (loadman, driver, supervisor) that does not exist, is deleted, belongs to another company, or is named twice. */
+  LOADING_EMPLOYEE_INVALID = 'STOCK_LOADING_EMPLOYEE_INVALID',
+  /** The vehicle does not exist, is deleted, or belongs to another company. */
+  LOADING_VEHICLE_INVALID = 'STOCK_LOADING_VEHICLE_INVALID',
+  /** Unloading on a branch-to-branch despatch (it belongs on the receipt), or loading on a receipt. */
+  LOADING_WRONG_HALF = 'STOCK_LOADING_WRONG_HALF',
   /** A receipt claims more than is still in transit. */
   RECEIPT_OVER_REMAINING = 'STOCK_RECEIPT_OVER_REMAINING',
   /** Cancel of a posted receipt — un-receiving is a reverse transfer. */
@@ -339,6 +353,8 @@ export enum StockErrorCode {
   // ── accounts posting of a stock voucher ───────────────────────────────────
   /** The accounts voucher needs a user to be posted by and the request carries none. */
   ACCOUNTS_USER_REQUIRED = 'STOCK_ACCOUNTS_USER_REQUIRED',
+  /** A transfer carries a loading / unloading charge and LOADING_CHARGES or LOADING_PAYABLE maps to no ledger (notes 153). */
+  LOADING_ROLE_UNMAPPED = 'STOCK_LOADING_ROLE_UNMAPPED',
 
   // ── selling prices (bulk) ─────────────────────────────────────────────────
   /** A non-HQ user saving prices for all branches (CHAIN scope). */

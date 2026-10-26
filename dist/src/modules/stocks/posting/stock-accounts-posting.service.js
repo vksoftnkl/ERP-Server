@@ -13,11 +13,12 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 var StockAccountsPostingService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.STOCK_COGS_MODE_PROVIDER = exports.StockAccountsPostingService = exports.STOCK_LEDGER_ROLES = exports.STOCK_ACCOUNTS_SRC_MODULE = exports.STOCK_COGS_MODE = void 0;
+exports.STOCK_COGS_MODE_PROVIDER = exports.StockAccountsPostingService = exports.STOCK_LEDGER_ROLES = exports.SHORT_SETTLE_SRC_DOC_TYPE = exports.STOCK_ACCOUNTS_SRC_MODULE = exports.STOCK_COGS_MODE = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
+const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.helper");
 const stock_cogs_mode_service_1 = require("./stock-cogs-mode.service");
 const stock_error_codes_1 = require("../types/stock-error-codes");
 exports.STOCK_COGS_MODE = Symbol('STOCK_COGS_MODE');
@@ -36,11 +37,15 @@ const ADJUSTMENT_FAMILY = new Set([
 const RELOT_REASON_CODES = ['RELOT_OUT', 'RELOT_IN'];
 const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'];
 const SHORT_SETTLE_VOUCHER_TYPE_CODE = 'Jrl';
+exports.SHORT_SETTLE_SRC_DOC_TYPE = 'TRANSFER_SHORT';
+const TRANSFER_CHARGES_VOUCHER_TYPE_CODE = 'TRF';
 exports.STOCK_LEDGER_ROLES = {
     INVENTORY: 'INVENTORY',
     OPENING_DIFFERENCE: 'OPENING_DIFFERENCE',
     STOCK_SHORTAGE: 'STOCK_SHORTAGE',
     STOCK_EXCESS: 'STOCK_EXCESS',
+    LOADING_CHARGES: 'LOADING_CHARGES',
+    LOADING_PAYABLE: 'LOADING_PAYABLE',
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VOUCHER_REFNO_MAX = 50;
@@ -173,7 +178,7 @@ let StockAccountsPostingService = StockAccountsPostingService_1 = class StockAcc
                 voucherTypeId: journal.vchr_type_id,
                 voucherDate: isoDate(input.settledOn),
                 srcModule: exports.STOCK_ACCOUNTS_SRC_MODULE,
-                srcDocType: 'TRANSFER_OUT',
+                srcDocType: exports.SHORT_SETTLE_SRC_DOC_TYPE,
                 srcDocId: input.outId,
                 docLabel: 'Stock transfer short settlement',
                 docRefno: input.refno,
@@ -194,6 +199,103 @@ let StockAccountsPostingService = StockAccountsPostingService_1 = class StockAcc
             amount,
             legCount: posted.legCount,
         };
+    }
+    async postTransferCharges(tx, input) {
+        const [row] = await tx.$queryRaw `
+      SELECT svh_refno, svh_doc_date, svh_tenant_id, svh_device_id, svh_session_id, svh_created_by,
+             svh_loading_charge, svh_unloading_charge
+        FROM stock.stock_voucher
+       WHERE svh_id = ${input.svhId}::uuid AND svh_acc_year = ${input.accYear}::bpchar`;
+        if (!row) {
+            throw new Error(`Stock voucher ${input.svhId} (${input.accYear}) not found for accounts posting`);
+        }
+        const loading = new client_1.Prisma.Decimal(row.svh_loading_charge);
+        const unloading = new client_1.Prisma.Decimal(row.svh_unloading_charge);
+        const total = loading.plus(unloading);
+        if (total.lte(0)) {
+            return null;
+        }
+        await this.assertLoadingRolesMapped(tx, input);
+        const amount = total.toNumber();
+        const parts = [
+            ...(loading.gt(0) ? [`loading ${loading.toFixed(2)}`] : []),
+            ...(unloading.gt(0) ? [`unloading ${unloading.toFixed(2)}`] : []),
+        ];
+        const what = `Labour on ${row.svh_refno}: ${parts.join(' + ')}`;
+        const legs = [
+            {
+                role: exports.STOCK_LEDGER_ROLES.LOADING_CHARGES,
+                roleTag: exports.STOCK_LEDGER_ROLES.LOADING_CHARGES,
+                drCr: 'DR',
+                amount,
+                remarks: what,
+                field: 'loadingCharge',
+            },
+            {
+                role: exports.STOCK_LEDGER_ROLES.LOADING_PAYABLE,
+                roleTag: exports.STOCK_LEDGER_ROLES.LOADING_PAYABLE,
+                drCr: 'CR',
+                amount,
+                remarks: what,
+                field: 'loadingCharge',
+            },
+        ];
+        const posted = await this.voucherPosting.postLegs(tx, {
+            header: {
+                companyId: input.companyId,
+                branchId: input.branchId,
+                tenantId: row.svh_tenant_id,
+                accYear: input.accYear,
+                voucherTypeId: await this.voucherTypeIdByCode(tx, TRANSFER_CHARGES_VOUCHER_TYPE_CODE),
+                voucherDate: isoDate(row.svh_doc_date),
+                srcModule: exports.STOCK_ACCOUNTS_SRC_MODULE,
+                srcDocType: input.voucherType,
+                srcDocId: input.svhId,
+                docLabel: `${input.displayName} loading charges`,
+                docRefno: row.svh_refno,
+                docDate: isoDate(row.svh_doc_date),
+                docAmount: amount,
+                partyId: null,
+                userId: this.userFor(input.actor, row.svh_created_by, `${input.displayName} loading charges`),
+                sessionId: row.svh_session_id,
+                deviceId: row.svh_device_id,
+                remarks: what,
+                presetRefno: row.svh_refno.length <= VOUCHER_REFNO_MAX ? row.svh_refno : undefined,
+                createdBy: input.actor === module_service_utils_1.DEFAULT_ACTOR ? 'SYSTEM' : input.actor,
+            },
+            legs,
+        });
+        this.logger.log(`${input.displayName} ${row.svh_refno}: loading charges voucher ${posted.voucherRefno} — ${amount}`);
+        return {
+            voucherId: posted.voucherId,
+            voucherRefno: posted.voucherRefno,
+            amount,
+            legCount: posted.legCount,
+        };
+    }
+    async assertLoadingRolesMapped(tx, input) {
+        const requests = [
+            { role: exports.STOCK_LEDGER_ROLES.LOADING_CHARGES, field: 'loadingCharge' },
+            { role: exports.STOCK_LEDGER_ROLES.LOADING_PAYABLE, field: 'loadingCharge' },
+        ];
+        const resolved = await (0, ledger_map_helper_1.resolveRoleLedgers)(tx, requests, {
+            companyId: input.companyId,
+            branchId: input.branchId,
+            where: input.voucherType,
+        });
+        const missing = requests.filter((request) => !resolved.get((0, ledger_map_helper_1.roleLedgerKey)(request)));
+        if (missing.length === 0) {
+            return;
+        }
+        const labels = await tx.$queryRaw `
+      SELECT alr_role, alr_label FROM accounts.acc_ledger_role
+       WHERE alr_role = ANY(${missing.map((request) => request.role)}::text[])`;
+        const labelOf = new Map(labels.map((label) => [label.alr_role, label.alr_label]));
+        (0, module_service_utils_1.throwStockUnprocessable)(`${input.displayName} charges cannot be posted to accounts`, missing.map((request) => ({
+            field: 'loadingCharge',
+            code: stock_error_codes_1.StockErrorCode.LOADING_ROLE_UNMAPPED,
+            message: `No ledger is mapped to "${labelOf.get(request.role) ?? request.role}" (${request.role}) for this company — map it in Ledger Map, then despatch again. A loading charge is never posted without its ledger.`,
+        })));
     }
     async openingLegs(tx, input) {
         const [sum] = await tx.$queryRaw `

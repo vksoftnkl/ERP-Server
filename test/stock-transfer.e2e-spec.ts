@@ -1011,7 +1011,9 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
 
       // Under PERPETUAL: DR reason ledger (STOCK_SHORTAGE) / CR INVENTORY, 56.00.
       expect(settled.accountsVoucherId).not.toBeNull();
-      const legs = await accountsVoucherFor('TRANSFER_OUT', shortOut);
+      // Notes 156 — filed as TRANSFER_SHORT: (STOCK, TRANSFER_OUT, out id) is
+      // the despatch's own loading-charges voucher under ux_avh_src.
+      const legs = await accountsVoucherFor('TRANSFER_SHORT', shortOut);
       expect(legs).toHaveLength(2);
       const dr = legs.find((l) => l.av_dr_cr.trim() === 'DR');
       const cr = legs.find((l) => l.av_dr_cr.trim() === 'CR');

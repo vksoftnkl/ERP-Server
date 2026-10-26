@@ -9,12 +9,17 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeactivateStockReasonDto = exports.SaveStockReasonDto = exports.StockReasonRefQueryDto = exports.StockReasonListQueryDto = exports.StockReasonPickerQueryDto = exports.REASON_DIRECTIONS = void 0;
+exports.DeactivateStockReasonDto = exports.SaveStockReasonDto = exports.StockReasonRefQueryDto = exports.StockReasonListQueryDto = exports.StockReasonPickerQueryDto = exports.STOCK_REASON_PICKER_KINDS = exports.TRANSFER_REASON_KINDS = exports.REASON_DIRECTIONS = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const stock_adjustment_rules_1 = require("../stock-adjustment.rules");
 exports.REASON_DIRECTIONS = ['IN', 'OUT', 'BOTH'];
+exports.TRANSFER_REASON_KINDS = ['TRANSFER_OUT', 'TRANSFER_IN'];
+exports.STOCK_REASON_PICKER_KINDS = [
+    ...stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS,
+    ...exports.TRANSFER_REASON_KINDS,
+];
 class StockReasonPickerQueryDto {
     companyId;
     voucherType;
@@ -28,10 +33,10 @@ __decorate([
 ], StockReasonPickerQueryDto.prototype, "companyId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
-        enum: stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS,
-        description: 'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason.',
+        enum: exports.STOCK_REASON_PICKER_KINDS,
+        description: 'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason. TRANSFER_OUT / TRANSFER_IN (notes 153) list only BOTH-direction reasons that name the transfer type (REPLENISH, REARRANGE, RETURN_STORE and a company\'s own) — never an any-movement reason, and never TRANSIT_LOSS, which is the short-settlement\'s.',
     }),
-    (0, class_validator_1.IsIn)(stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS),
+    (0, class_validator_1.IsIn)(exports.STOCK_REASON_PICKER_KINDS),
     __metadata("design:type", String)
 ], StockReasonPickerQueryDto.prototype, "voucherType", void 0);
 __decorate([

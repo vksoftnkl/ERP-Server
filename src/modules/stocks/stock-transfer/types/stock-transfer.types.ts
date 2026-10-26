@@ -87,11 +87,49 @@ export interface StockTransferPrefill {
     docDate: string;
     status: StockVoucherStatus;
     fromBranchId: string;
+    /** Notes 154 #3 — the names, so the receipt screen reads no master for them. */
+    fromBranchName: string | null;
     fromGodownId: string | null;
+    fromGodownName: string | null;
     toBranchId: string | null;
     toGodownId: string | null;
+    toGodownName: string | null;
   };
   rows: StockTransferPrefillRow[];
+}
+
+/**
+ * Notes 154 #1 — one inbound worklist row: a transit row, the despatch it
+ * belongs to (enough to open the prefill: outVoucherId + outAccYear) and who
+ * sent it.
+ */
+export interface StockTransferInboundRow extends StockTransitRow {
+  outVoucherId: string;
+  /** The DESPATCH's year, which prefill takes — not always the receipt's. */
+  outAccYear: string;
+  outRefno: string | null;
+  fromBranchId: string;
+  fromBranchName: string | null;
+  fromGodownName: string | null;
+  daysInFlight: number;
+}
+
+/**
+ * Notes 154 #1 — GET /stock/transfer/receive: a receipt read back, the shape
+ * of the transfer GET (header, lines, transit). The header also names the
+ * despatch it answers — linkSrcDocId / linkSrcAccYear are already on it — and
+ * the branch that sent it; `transit` is that despatch's rows, so a reopened
+ * draft can see what is still owed.
+ */
+export interface StockTransferReceiptPayload extends StockVoucherPayload {
+  header: StockVoucherPayload['header'] & {
+    /** The despatch's printed number (svh_refno of linkSrcDocId). */
+    linkSrcRefno: string | null;
+    /** The despatch's own branch — where the stock came from. */
+    fromBranchId: string | null;
+    fromBranchName: string | null;
+  };
+  transit: StockTransitRow[];
 }
 
 /**

@@ -42,6 +42,7 @@ export interface StockVoucherTypeRules {
     allowsRepeatHolding?: boolean;
     allowsCount: boolean;
     allowsToBranch: boolean;
+    allowsLoading?: boolean;
     postShape: StockPostShape;
     lineDirection?: 'DOCUMENT' | 'REASON';
     allowsLot?: boolean;
@@ -62,7 +63,27 @@ export interface StockVoucherLineProblem {
     itemName: string;
     problem: string | null;
 }
-export interface StockVoucherHeaderPayload {
+export interface StockVoucherLoadingPayload {
+    loadEnabled: boolean;
+    loadDatetime: string | null;
+    loadmanIds: string[];
+    loadmanNames: (string | null)[];
+    driverId: string | null;
+    driverName: string | null;
+    supervisorId: string | null;
+    supervisorName: string | null;
+    vehicleId: string | null;
+    vehicleNo: string | null;
+    loadingCharge: number;
+    unloadEnabled: boolean;
+    unloadDatetime: string | null;
+    unloadmanIds: string[];
+    unloadmanNames: (string | null)[];
+    unloadSupervisorId: string | null;
+    unloadSupervisorName: string | null;
+    unloadingCharge: number;
+}
+export interface StockVoucherHeaderPayload extends Partial<StockVoucherLoadingPayload> {
     svhId: string;
     accYear: string;
     companyId: string;
@@ -83,6 +104,7 @@ export interface StockVoucherHeaderPayload {
     supplierId: string | null;
     supplierName: string | null;
     toBranchId: string | null;
+    toBranchName: string | null;
     partyRef: string | null;
     linkSrcModule: string | null;
     linkSrcDocType: string | null;
@@ -162,6 +184,8 @@ export interface StockVoucherLinePayload {
     colourId: string | null;
     colourName: string | null;
     model: string | null;
+    loadRate?: number;
+    unloadRate?: number;
 }
 export interface StockVoucherPayload {
     header: StockVoucherHeaderPayload;

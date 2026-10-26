@@ -183,7 +183,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Pick stock from the balance — the holdings an outward line is chosen from',
-        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available, the average cost and (notes 151 #8) the batch\'s sizeId / sizeName, colourId / colourName and model. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. `batchNo` (notes 151 #9) is the exact batch-label scan, folded as the lot key folds it; `search` stays a loose match on name, code and batch. Live, never cached.',
+        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available, the average cost and (notes 151 #8) the batch\'s sizeId / sizeName, colourId / colourName and model. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. `batchNo` (notes 151 #9) is the exact batch-label scan, folded as the lot key folds it; `search` stays a loose match on name, code and batch. Notes 153: each row also carries `loadRate` / `unloadRate`, the Godown Transfer line\'s default rates per unit of the holding\'s unit (unit_loading / unit_unloading when the item has item_allow_loading, else 0). Live, never cached.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: 'The holdings.' }),
     __param(0, (0, common_1.Query)()),

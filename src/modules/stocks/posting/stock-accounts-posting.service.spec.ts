@@ -13,6 +13,14 @@ import {
   type StockAccountsPostInput,
 } from './stock-accounts-posting.service';
 import { StockCogsModeService, type CogsMode } from './stock-cogs-mode.service';
+import { resolveRoleLedgers } from '../../accountsModule/ledgerRole/ledger-map.helper';
+
+// Notes 153 — the loading roles' mapping is the ledger-map helper's (it has its
+// own suite); here only what the poster does with the answer.
+jest.mock('../../accountsModule/ledgerRole/ledger-map.helper', () => ({
+  ...jest.requireActual('../../accountsModule/ledgerRole/ledger-map.helper'),
+  resolveRoleLedgers: jest.fn(),
+}));
 
 const SVH_ID = '11111111-1111-4111-8111-111111111111';
 const COMPANY_ID = '22222222-2222-4222-8222-222222222222';
@@ -68,6 +76,8 @@ interface Answers {
     svh_session_id: string | null;
     svh_created_by: string | null;
   } | null;
+  /** Notes 153 — the transfer's two stored charges. */
+  charges?: { loading: string; unloading: string; refno?: string } | null;
 }
 
 /**
@@ -104,6 +114,26 @@ function txWith(answers: Answers = {}) {
     }
     if (sql.includes('SELECT svh_doc_date, svh_tenant_id')) {
       return Promise.resolve(answers.outHeader ? [answers.outHeader] : []);
+    }
+    if (sql.includes('svh_loading_charge, svh_unloading_charge')) {
+      return Promise.resolve(
+        answers.charges === null
+          ? []
+          : [
+              {
+                ...HEADER,
+                svh_refno: answers.charges?.refno ?? 'TRF/2026-2027/TILL-01/7',
+                svh_loading_charge: new Prisma.Decimal(answers.charges?.loading ?? '0'),
+                svh_unloading_charge: new Prisma.Decimal(answers.charges?.unloading ?? '0'),
+              },
+            ],
+      );
+    }
+    if (sql.includes('FROM accounts.acc_ledger_role')) {
+      return Promise.resolve([
+        { alr_role: 'LOADING_CHARGES', alr_label: 'Loading & unloading charges' },
+        { alr_role: 'LOADING_PAYABLE', alr_label: 'Loading charges payable' },
+      ]);
     }
     throw new Error(`unexpected query: ${sql}`);
   });
@@ -702,7 +732,9 @@ describe('StockAccountsPostingService', () => {
         voucherTypeId: JOURNAL_TYPE_ID,
         voucherDate: '2026-10-21',
         srcModule: STOCK_ACCOUNTS_SRC_MODULE,
-        srcDocType: 'TRANSFER_OUT',
+        // Notes 156 — its own doc type: the despatch's loading voucher holds
+        // (STOCK, TRANSFER_OUT, OUT_ID) under ux_avh_src.
+        srcDocType: 'TRANSFER_SHORT',
         srcDocId: OUT_ID,
         docLabel: 'Stock transfer short settlement',
         docRefno: 'TRO0012',
@@ -788,6 +820,125 @@ describe('StockAccountsPostingService', () => {
       await expect(
         service.postShortSettlement(txWith({ voucherTypes: {} }), settle()),
       ).rejects.toThrow("Voucher type 'Jrl' is missing");
+    });
+  });
+
+  // ── notes 153 — a godown transfer's loading charges ───────────────────────
+  describe('postTransferCharges', () => {
+    const TRF_TYPE_ID = 47;
+    const transfer = (overrides: Partial<StockAccountsPostInput> = {}) =>
+      input({ voucherType: 'TRANSFER_OUT', displayName: 'Stock transfer', ...overrides });
+    const mapped = (...missing: string[]) =>
+      (resolveRoleLedgers as jest.Mock).mockImplementation(
+        async (_client: unknown, requests: Array<{ role: string }>) =>
+          new Map(
+            requests.map((request) => [
+              `${request.role}|*|*`,
+              missing.includes(request.role) ? null : { role: request.role, ledgerId: `led-${request.role}` },
+            ]),
+          ),
+      );
+    const voucherTypes = { StkAdj: STK_ADJ_TYPE_ID, Jrl: JOURNAL_TYPE_ID, TRF: TRF_TYPE_ID };
+
+    beforeEach(() => {
+      (resolveRoleLedgers as jest.Mock).mockClear();
+      mapped();
+    });
+
+    it('writes ONE voucher: DR LOADING_CHARGES / CR LOADING_PAYABLE for loading + unloading, on the TRF type', async () => {
+      const result = await service.postTransferCharges(
+        txWith({ voucherTypes, charges: { loading: '45.50', unloading: '24.50' } }),
+        transfer(),
+      );
+
+      expect(result).toEqual({ voucherId: 'avh-1', voucherRefno: 'OPN0001', amount: 70, legCount: 2 });
+      const { header, legs } = posted();
+      expect(header).toMatchObject({
+        voucherTypeId: TRF_TYPE_ID,
+        srcModule: STOCK_ACCOUNTS_SRC_MODULE,
+        srcDocType: 'TRANSFER_OUT',
+        srcDocId: SVH_ID,
+        docRefno: 'TRF/2026-2027/TILL-01/7',
+        docAmount: 70,
+        voucherDate: '2026-04-01',
+        presetRefno: 'TRF/2026-2027/TILL-01/7',
+        userId: ACTOR,
+      });
+      expect(legs).toEqual([
+        expect.objectContaining({ role: 'LOADING_CHARGES', drCr: 'DR', amount: 70 }),
+        expect.objectContaining({ role: 'LOADING_PAYABLE', drCr: 'CR', amount: 70 }),
+      ]);
+    });
+
+    it("notes 156 — a receipt posts its unloading under (STOCK, TRANSFER_IN, its id), at its own branch", async () => {
+      await service.postTransferCharges(
+        txWith({ voucherTypes, charges: { loading: '0', unloading: '1.50', refno: 'TRI/2026-2027/TILL-02/3' } }),
+        input({ voucherType: 'TRANSFER_IN', displayName: 'Transfer receipt' }),
+      );
+
+      const { header, legs } = posted();
+      expect(header).toMatchObject({
+        voucherTypeId: TRF_TYPE_ID,
+        srcDocType: 'TRANSFER_IN',
+        srcDocId: SVH_ID,
+        branchId: BRANCH_ID,
+        docAmount: 1.5,
+        remarks: 'Labour on TRI/2026-2027/TILL-02/3: unloading 1.50',
+      });
+      expect(legs).toEqual([
+        expect.objectContaining({ role: 'LOADING_CHARGES', drCr: 'DR', amount: 1.5 }),
+        expect.objectContaining({ role: 'LOADING_PAYABLE', drCr: 'CR', amount: 1.5 }),
+      ]);
+    });
+
+    it('posts under PERIODIC too — labour is an expense, not a stock value', async () => {
+      cogs.cogsMode.mockResolvedValue('PERIODIC');
+
+      await service.postTransferCharges(
+        txWith({ voucherTypes, charges: { loading: '10', unloading: '0' } }),
+        transfer(),
+      );
+
+      expect(voucherPosting.postLegs).toHaveBeenCalledTimes(1);
+      expect(cogs.cogsMode).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when both charges are 0', async () => {
+      await expect(
+        service.postTransferCharges(txWith({ voucherTypes, charges: { loading: '0', unloading: '0' } }), transfer()),
+      ).resolves.toBeNull();
+      expect(voucherPosting.postLegs).not.toHaveBeenCalled();
+      expect(resolveRoleLedgers).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a 422 naming each unmapped role and Ledger Map — never a skipped entry', async () => {
+      mapped('LOADING_PAYABLE');
+
+      const { status, body } = await refusalOf(
+        service.postTransferCharges(txWith({ voucherTypes, charges: { loading: '5', unloading: '0' } }), transfer()),
+      );
+
+      expect(status).toBe(422);
+      expect(body).toMatchObject({
+        errors: [
+          {
+            field: 'loadingCharge',
+            code: StockErrorCode.LOADING_ROLE_UNMAPPED,
+            message: expect.stringContaining('"Loading charges payable" (LOADING_PAYABLE)'),
+          },
+        ],
+      });
+      expect((body as { errors: Array<{ message: string }> }).errors[0].message).toContain('Ledger Map');
+      expect(voucherPosting.postLegs).not.toHaveBeenCalled();
+    });
+
+    it('draws its own TRF number when the transfer refno is too long for avh_voucher_refno', async () => {
+      const refno = `TRF/2026-2027/${'0'.repeat(36)}/1`;
+      await service.postTransferCharges(
+        txWith({ voucherTypes, charges: { loading: '1', unloading: '0', refno } }),
+        transfer(),
+      );
+      expect(posted().header).toMatchObject({ docRefno: refno, presetRefno: undefined });
     });
   });
 });

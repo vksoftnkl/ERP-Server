@@ -5,11 +5,14 @@ import type { StockVoucherType } from '../stock-voucher/types/stock-voucher.type
 import { StockCogsModeService, type CogsModeResolver } from './stock-cogs-mode.service';
 export declare const STOCK_COGS_MODE: unique symbol;
 export declare const STOCK_ACCOUNTS_SRC_MODULE = "STOCK";
+export declare const SHORT_SETTLE_SRC_DOC_TYPE = "TRANSFER_SHORT";
 export declare const STOCK_LEDGER_ROLES: {
     readonly INVENTORY: "INVENTORY";
     readonly OPENING_DIFFERENCE: "OPENING_DIFFERENCE";
     readonly STOCK_SHORTAGE: "STOCK_SHORTAGE";
     readonly STOCK_EXCESS: "STOCK_EXCESS";
+    readonly LOADING_CHARGES: "LOADING_CHARGES";
+    readonly LOADING_PAYABLE: "LOADING_PAYABLE";
 };
 export interface StockAccountsPostInput {
     svhId: string;
@@ -57,6 +60,8 @@ export declare class StockAccountsPostingService {
         actor: string;
         settledOn: Date;
     }): Promise<StockAccountsPostResult | null>;
+    postTransferCharges(tx: Prisma.TransactionClient, input: StockAccountsPostInput): Promise<StockAccountsPostResult | null>;
+    private assertLoadingRolesMapped;
     private openingLegs;
     private voucherTypeIdByCode;
     private varianceLegs;

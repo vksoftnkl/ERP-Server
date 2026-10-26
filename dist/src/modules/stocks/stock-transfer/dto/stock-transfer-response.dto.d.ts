@@ -28,6 +28,7 @@ export declare class StockTransferHeaderDto {
     supplierId: string | null;
     supplierName: string | null;
     toBranchId: string | null;
+    toBranchName: string | null;
     partyRef: string | null;
     reasonId: string | null;
     reasonName: string | null;
@@ -56,6 +57,24 @@ export declare class StockTransferHeaderDto {
     rateSource: string | null;
     remarks: string | null;
     isDeleted: boolean;
+    loadEnabled: boolean;
+    loadDatetime: string | null;
+    loadmanIds: string[];
+    loadmanNames: (string | null)[];
+    driverId: string | null;
+    driverName: string | null;
+    supervisorId: string | null;
+    supervisorName: string | null;
+    vehicleId: string | null;
+    vehicleNo: string | null;
+    loadingCharge: number;
+    unloadEnabled: boolean;
+    unloadDatetime: string | null;
+    unloadmanIds: string[];
+    unloadmanNames: (string | null)[];
+    unloadSupervisorId: string | null;
+    unloadSupervisorName: string | null;
+    unloadingCharge: number;
 }
 export declare class StockTransferLineDto {
     sviId: string;
@@ -100,6 +119,8 @@ export declare class StockTransferLineDto {
     reasonName: string | null;
     remarks: string | null;
     trackSignature: string;
+    loadRate: number;
+    unloadRate: number;
 }
 export declare class StockTransferDocumentDto {
     header: StockTransferHeaderDto;
@@ -161,8 +182,12 @@ export declare class StockTransferListDto {
     meta: StockTransferListMetaDto;
 }
 export declare class StockTransferInboundRowDto extends StockTransitRowDto {
+    outVoucherId: string;
+    outAccYear: string;
     outRefno: string | null;
     fromBranchId: string;
+    fromBranchName: string | null;
+    fromGodownName: string | null;
     daysInFlight: number;
 }
 export declare class StockTransferInboundDto {
@@ -192,9 +217,12 @@ export declare class StockTransferPrefillOutDto {
     docDate: string;
     status: string;
     fromBranchId: string;
+    fromBranchName: string | null;
     fromGodownId: string | null;
+    fromGodownName: string | null;
     toBranchId: string | null;
     toGodownId: string | null;
+    toGodownName: string | null;
 }
 export declare class StockTransferPrefillRowDto extends StockTransitRowDto {
     lineNo: number;
@@ -202,6 +230,16 @@ export declare class StockTransferPrefillRowDto extends StockTransitRowDto {
 export declare class StockTransferPrefillDto {
     outVoucher: StockTransferPrefillOutDto;
     rows: StockTransferPrefillRowDto[];
+}
+export declare class StockTransferReceiptHeaderDto extends StockTransferHeaderDto {
+    linkSrcRefno: string | null;
+    fromBranchId: string | null;
+    fromBranchName: string | null;
+}
+export declare class StockTransferReceiptDocumentDto {
+    header: StockTransferReceiptHeaderDto;
+    lines: StockTransferLineDto[];
+    transit: StockTransitRowDto[];
 }
 export declare class StockTransferReceiveInDto extends StockTransferDocumentDto {
     ledgerRows: number;
@@ -238,6 +276,11 @@ export declare class StockTransferLoadSuccessDto {
     success: true;
     message: string;
     data: StockTransferDocumentWithTransitDto;
+}
+export declare class StockTransferReceiptLoadSuccessDto {
+    success: true;
+    message: string;
+    data: StockTransferReceiptDocumentDto;
 }
 export declare class StockTransferListSuccessDto {
     success: true;

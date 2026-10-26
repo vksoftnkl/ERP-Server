@@ -52,6 +52,7 @@ let StockVoucherService = class StockVoucherService {
         const actor = this.actorOf(header.userId);
         this.assertPayloadRules(rules, dto);
         await this.assertReasons(rules, dto);
+        await this.assertCrew(rules, dto);
         const postAfterSave = header.status === 'POSTED' || header.post === true;
         const postedOn = new Date();
         const { svhId, rowsPosted, bookChanges } = await this.prisma.$transaction(async (tx) => {
@@ -254,6 +255,41 @@ let StockVoucherService = class StockVoucherService {
                 code: stock_error_codes_1.StockErrorCode.FREEZE_WINDOW_REQUIRED,
                 message: 'A freeze needs both freezeFrom and freezeTo — without a window the count measures a moving target.',
             });
+        }
+        if (!rules.allowsLoading) {
+            const sent = loadingFieldSent(header);
+            if (sent) {
+                errors.push({
+                    field: sent,
+                    code: stock_error_codes_1.StockErrorCode.LOADING_NOT_ALLOWED,
+                    message: `Only a transfer records loading and unloading; a ${rules.displayName.toLowerCase()} names no crew, vehicle or loading charge.`,
+                });
+            }
+            const rated = lines.findIndex((line) => this.toDecimalNumber(line.loadRate ?? 0) !== 0 ||
+                this.toDecimalNumber(line.unloadRate ?? 0) !== 0);
+            if (rated >= 0) {
+                errors.push({
+                    field: `lines.${rated}.loadRate`,
+                    code: stock_error_codes_1.StockErrorCode.LOADING_NOT_ALLOWED,
+                    message: `Line ${lines[rated].lineNo}: loading and unloading rates belong to a transfer line.`,
+                });
+            }
+        }
+        else {
+            const dayStart = Date.parse(`${header.docDate}T00:00:00+05:30`);
+            for (const [field, value] of [
+                ['loadDatetime', header.loadDatetime],
+                ['unloadDatetime', header.unloadDatetime],
+            ]) {
+                const at = this.toInstant(value);
+                if (at !== null && !Number.isNaN(dayStart) && at < dayStart) {
+                    errors.push({
+                        field,
+                        code: stock_error_codes_1.StockErrorCode.LOADING_BEFORE_DOC_DATE,
+                        message: `${field} ${(0, ist_clock_util_1.istClockText)(at)} is before the document date ${header.docDate}. Goods are loaded and unloaded on or after the day the transfer is dated.`,
+                    });
+                }
+            }
         }
         const linkParts = [
             header.linkSrcModule,
@@ -479,6 +515,17 @@ let StockVoucherService = class StockVoucherService {
                     message: `Line ${line.lineNo}: weight is a magnitude and cannot be negative.`,
                 });
             }
+            if (rules.allowsLoading) {
+                for (const rate of ['loadRate', 'unloadRate']) {
+                    if (this.toDecimalNumber(line[rate] ?? 0) < 0) {
+                        errors.push({
+                            field: `${field}.${rate}`,
+                            code: stock_error_codes_1.StockErrorCode.LOADING_RATE_NEGATIVE,
+                            message: `Line ${line.lineNo}: ${rate} ${line[rate]} is negative. A rate is what the crew is paid per unit, 0 or more.`,
+                        });
+                    }
+                }
+            }
             if (splitNo > 1 && !line.batchNo?.trim()) {
                 errors.push({
                     field,
@@ -604,6 +651,70 @@ let StockVoucherService = class StockVoucherService {
             (0, module_service_utils_1.throwStockUnprocessable)('This document cites a stock reason it may not use', errors);
         }
     }
+    async assertCrew(rules, dto) {
+        if (!rules.allowsLoading) {
+            return;
+        }
+        const { header } = dto;
+        const one = (id) => (id ? [id] : []);
+        const crew = [
+            { field: 'loadmanIds', ids: header.loadmanIds ?? [] },
+            { field: 'driverId', ids: one(header.driverId) },
+            { field: 'supervisorId', ids: one(header.supervisorId) },
+            { field: 'unloadmanIds', ids: header.unloadmanIds ?? [] },
+            { field: 'unloadSupervisorId', ids: one(header.unloadSupervisorId) },
+        ];
+        const errors = [];
+        for (const { field, ids } of crew) {
+            const twice = ids.find((id, at) => ids.indexOf(id) !== at);
+            if (twice) {
+                errors.push({
+                    field,
+                    code: stock_error_codes_1.StockErrorCode.LOADING_EMPLOYEE_INVALID,
+                    message: `${field} names ${twice} twice — one person is one member of a crew.`,
+                });
+            }
+        }
+        const named = [...new Set(crew.flatMap((entry) => entry.ids))];
+        if (named.length) {
+            const found = await this.prisma.$queryRaw `
+        SELECT emp_id
+          FROM public.employee_master
+         WHERE emp_id         = ANY(${named}::uuid[])
+           AND emp_is_deleted = false
+           AND emp_company_id = ${header.companyId}::uuid`;
+            const live = new Set(found.map((row) => row.emp_id));
+            for (const { field, ids } of crew) {
+                const bad = ids.filter((id) => !live.has(id));
+                if (bad.length) {
+                    errors.push({
+                        field,
+                        code: stock_error_codes_1.StockErrorCode.LOADING_EMPLOYEE_INVALID,
+                        message: `${field} names ${bad.length === 1 ? 'an employee' : 'employees'} that do not exist, ` +
+                            `are deleted, or belong to another company: ${bad.join(', ')}`,
+                    });
+                }
+            }
+        }
+        if (header.vehicleId) {
+            const [vehicle] = await this.prisma.$queryRaw `
+        SELECT veh_id
+          FROM public.vehicle_master
+         WHERE veh_id         = ${header.vehicleId}::uuid
+           AND veh_is_deleted = false
+           AND veh_company_id = ${header.companyId}::uuid`;
+            if (!vehicle) {
+                errors.push({
+                    field: 'vehicleId',
+                    code: stock_error_codes_1.StockErrorCode.LOADING_VEHICLE_INVALID,
+                    message: `vehicleId ${header.vehicleId} is not a vehicle of this company (missing, deleted, or another company's).`,
+                });
+            }
+        }
+        if (errors.length) {
+            (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} names a crew or vehicle it may not`, errors);
+        }
+    }
     async createDraft(tx, rules, dto, actor, now) {
         const { header } = dto;
         const scope = {
@@ -638,6 +749,7 @@ let StockVoucherService = class StockVoucherService {
                 ...this.docDatetimeData(header),
                 ...this.linkSourceData(header),
                 ...this.freezeData(header),
+                ...this.loadingData(rules, header),
                 svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
                 svhStatus: 'DRAFT',
                 svhCreatedBy: this.actorFor(header.createdBy, actor),
@@ -645,7 +757,7 @@ let StockVoucherService = class StockVoucherService {
             select: { svhId: true, svhAccYear: true, svhRefno: true },
         });
         const written = await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
-        await this.writeHeaderTotals(tx, rules, created.svhId, header.accYear, written);
+        await this.writeHeaderTotals(tx, rules, created.svhId, header, written);
         await this.logStatusChange(tx, {
             rules,
             svhId: created.svhId,
@@ -664,17 +776,30 @@ let StockVoucherService = class StockVoucherService {
         });
         return { svhId: created.svhId, bookChanges: written.bookChanges };
     }
-    async writeHeaderTotals(tx, rules, svhId, accYear, written) {
+    async writeHeaderTotals(tx, rules, svhId, header, written) {
         const totals = this.documentTotals(rules, written);
         await tx.stockVoucher.update({
-            where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+            where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
             data: {
                 svhLineCount: totals.lineCount,
                 svhTotalQty: totals.totalQty,
                 svhTotalValue: totals.totalValue,
                 svhTotalValueWot: totals.totalValueWot,
+                ...(rules.allowsLoading ? this.loadingCharges(header, written) : {}),
             },
         });
+    }
+    loadingCharges(header, written) {
+        const carried = (row) => new client_1.Prisma.Decimal(row.sviQty).plus(row.sviFreeQty);
+        const charge = (enabled, rate) => enabled
+            ? written.rows
+                .reduce((sum, row) => sum.plus(carried(row).mul(row[rate])), new client_1.Prisma.Decimal(0))
+                .toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP)
+            : new client_1.Prisma.Decimal(0);
+        return {
+            svhLoadingCharge: charge(header.loadEnabled, 'sviLoadRate'),
+            svhUnloadingCharge: charge(header.unloadEnabled, 'sviUnloadRate'),
+        };
     }
     documentTotals(rules, written) {
         const isCount = rules.quantityMode === 'COUNT';
@@ -814,6 +939,7 @@ let StockVoucherService = class StockVoucherService {
                 ...this.docDatetimeData(header),
                 ...this.linkSourceData(header),
                 ...this.freezeData(header),
+                ...this.loadingData(rules, header),
                 svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
                 svhVersionNo: { increment: 1 },
                 svhModifiedOn: now,
@@ -821,7 +947,7 @@ let StockVoucherService = class StockVoucherService {
             },
         });
         const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
-        await this.writeHeaderTotals(tx, rules, svhId, header.accYear, written);
+        await this.writeHeaderTotals(tx, rules, svhId, header, written);
         return { svhId, bookChanges: written.bookChanges };
     }
     async replaceLines(tx, rules, dto, svhId, actor, author, now) {
@@ -902,6 +1028,12 @@ let StockVoucherService = class StockVoucherService {
                     ? new client_1.Prisma.Decimal(0)
                     : this.toDecimalColumn(line.landedRate ?? 0),
                 sviTaxPerc: zeroCost ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
+                sviLoadRate: rules.allowsLoading
+                    ? this.toDecimalColumn(line.loadRate ?? 0).toDecimalPlaces(4, client_1.Prisma.Decimal.ROUND_HALF_UP)
+                    : new client_1.Prisma.Decimal(0),
+                sviUnloadRate: rules.allowsLoading
+                    ? this.toDecimalColumn(line.unloadRate ?? 0).toDecimalPlaces(4, client_1.Prisma.Decimal.ROUND_HALF_UP)
+                    : new client_1.Prisma.Decimal(0),
                 sviReasonId: line.reasonId ?? null,
                 sviDirection: rules.lineDirection === 'REASON' ? (line.direction ?? null) : null,
                 sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
@@ -1185,6 +1317,7 @@ let StockVoucherService = class StockVoucherService {
              svh.svh_supplier_id,
              sup.sup_name AS supplier_name,
              svh.svh_to_branch_id,
+             tbr.br_name AS to_branch_name,
              svh.svh_party_ref,
              svh.svh_reason_id,
              srm.srm_name AS reason_name,
@@ -1212,11 +1345,40 @@ let StockVoucherService = class StockVoucherService {
              svh.svh_modified_on,
              svh.svh_rate_source,
              svh.svh_remarks,
-             svh.svh_is_deleted
+             svh.svh_is_deleted,
+             -- Notes 153 — the Loading / Unloading boxes, with the names behind
+             -- the ids. A crew keeps its order; an employee gone since reads NULL
+             -- in its place rather than shortening the list.
+             svh.svh_load_enabled,
+             svh.svh_load_datetime,
+             svh.svh_loadman_id,
+             ARRAY(SELECT e.emp_name
+                     FROM unnest(svh.svh_loadman_id) WITH ORDINALITY AS crew(id, ord)
+                     LEFT JOIN public.employee_master e ON e.emp_id = crew.id
+                    ORDER BY crew.ord) AS loadman_names,
+             svh.svh_driver_id,
+             drv.emp_name AS driver_name,
+             svh.svh_supervisor_id,
+             lsv.emp_name AS supervisor_name,
+             svh.svh_vehicle_id,
+             svh.svh_vehicle_no,
+             svh.svh_loading_charge,
+             svh.svh_unload_enabled,
+             svh.svh_unload_datetime,
+             svh.svh_unloadman_id,
+             ARRAY(SELECT e.emp_name
+                     FROM unnest(svh.svh_unloadman_id) WITH ORDINALITY AS crew(id, ord)
+                     LEFT JOIN public.employee_master e ON e.emp_id = crew.id
+                    ORDER BY crew.ord) AS unloadman_names,
+             svh.svh_unload_supervisor_id,
+             usv.emp_name AS unload_supervisor_name,
+             svh.svh_unloading_charge
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations fgd ON fgd.gdl_id = svh.svh_from_godown_id
         LEFT JOIN inventory.godown_locations tgd ON tgd.gdl_id = svh.svh_to_godown_id
         LEFT JOIN purchase.suppliers sup ON sup.sup_id = svh.svh_supplier_id
+        -- Notes 154 #4 — the branch a transfer goes to, by name.
+        LEFT JOIN public.branch_master tbr ON tbr.br_id = svh.svh_to_branch_id
         -- Who posted or cancelled this, when, and why: public.txn_status_log is
         -- the only record of it — the header carries svh_status alone. Both
         -- laterals take the LATEST matching step, so a voucher posted, cancelled
@@ -1248,6 +1410,9 @@ let StockVoucherService = class StockVoucherService {
         -- match is on text: a value that is not a uuid finds no user, not a 500.
         LEFT JOIN public.user_master cusr        ON cusr.usr_id::text = svh.svh_created_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
+        LEFT JOIN public.employee_master drv     ON drv.emp_id = svh.svh_driver_id
+        LEFT JOIN public.employee_master lsv     ON lsv.emp_id = svh.svh_supervisor_id
+        LEFT JOIN public.employee_master usv     ON usv.emp_id = svh.svh_unload_supervisor_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
          AND svh.svh_company_id  = ${companyId}::uuid
@@ -1257,6 +1422,7 @@ let StockVoucherService = class StockVoucherService {
         if (!header) {
             (0, module_service_utils_1.throwStockNotFound)(`${rules.displayName} not found`, 'svhId', `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`, stock_error_codes_1.StockErrorCode.VOUCHER_NOT_FOUND);
         }
+        const identityFromLot = rules.requiresLot === true;
         const lines = await client.$queryRaw `
       SELECT svi.svi_id,
              svi.svi_line_no,
@@ -1273,12 +1439,12 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_bucket,
              svi.svi_to_bucket,
              svi.svi_barcode,
-             svi.svi_batch_no,
-             svi.svi_mfg_date,
-             svi.svi_expiry_date,
-             svi.svi_mrp,
-             svi.svi_sale_price,
-             svi.svi_serial_no,
+             COALESCE(lot.slt_batch_no, svi.svi_batch_no)       AS svi_batch_no,
+             COALESCE(lot.slt_mfg_date, svi.svi_mfg_date)       AS svi_mfg_date,
+             COALESCE(lot.slt_expiry_date, svi.svi_expiry_date) AS svi_expiry_date,
+             COALESCE(lot.slt_mrp, svi.svi_mrp)                 AS svi_mrp,
+             COALESCE(lot.slt_sale_price, svi.svi_sale_price)   AS svi_sale_price,
+             COALESCE(lot.slt_serial_no, svi.svi_serial_no)     AS svi_serial_no,
              svi.svi_supplier_id,
              sup.sup_name AS line_supplier_name,
              svi.svi_qty,
@@ -1301,6 +1467,8 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_value_wot,
              svi.svi_lot_id,
              svi.svi_remarks,
+             svi.svi_load_rate,
+             svi.svi_unload_rate,
              -- Which identity cells the line may open, as /stock/opening/item-lookup
              -- answers it: the effective policy on the DOCUMENT's date, the one
              -- the preflight and the post key the lot by. Saves the screen a
@@ -1321,6 +1489,9 @@ let StockVoucherService = class StockVoucherService {
              sbd.sbd_model
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm            ON itm.item_id = svi.svi_item_id
+        -- Joined on a transfer only (E5 above); elsewhere every lot.* is NULL.
+        LEFT JOIN stock.stock_lot lot             ON ${identityFromLot}::boolean
+                                                 AND lot.slt_id = svi.svi_lot_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = svi.svi_uom_id
         LEFT JOIN inventory.item_unit_master unt  ON unt.unit_id = iuc.iuc_unit_id
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
@@ -1329,7 +1500,7 @@ let StockVoucherService = class StockVoucherService {
         LEFT JOIN LATERAL (
           SELECT d.sbd_size_id, d.sbd_colour_id, d.sbd_model
             FROM stock.stock_batch_detail d
-           WHERE d.sbd_batch_no = upper(btrim(svi.svi_batch_no))
+           WHERE d.sbd_batch_no = upper(btrim(COALESCE(lot.slt_batch_no, svi.svi_batch_no)))
              AND (d.sbd_src_line_id = svi.svi_id
                   OR (d.sbd_company_id = ${companyId}::uuid
                       AND d.sbd_item_id = svi.svi_item_id
@@ -1353,8 +1524,8 @@ let StockVoucherService = class StockVoucherService {
        ORDER BY svi.svi_line_no, svi.svi_split_no
     `;
         return {
-            header: this.toHeaderPayload(header),
-            lines: lines.map((row) => this.toLinePayload(row)),
+            header: this.toHeaderPayload(header, rules),
+            lines: lines.map((row) => this.toLinePayload(row, rules)),
         };
     }
     async validate(rules, svhId, accYear, companyId, branchId, tx) {
@@ -2403,8 +2574,9 @@ let StockVoucherService = class StockVoucherService {
             ]);
         }
     }
-    toHeaderPayload(row) {
+    toHeaderPayload(row, rules) {
         return {
+            ...(rules.allowsLoading ? this.toLoadingPayload(row) : {}),
             svhId: row.svh_id,
             accYear: row.svh_acc_year.trim(),
             companyId: row.svh_company_id,
@@ -2425,6 +2597,7 @@ let StockVoucherService = class StockVoucherService {
             supplierId: row.svh_supplier_id,
             supplierName: row.supplier_name,
             toBranchId: row.svh_to_branch_id,
+            toBranchName: row.to_branch_name ?? null,
             partyRef: row.svh_party_ref,
             reasonId: row.svh_reason_id,
             reasonName: row.reason_name,
@@ -2455,8 +2628,33 @@ let StockVoucherService = class StockVoucherService {
             isDeleted: row.svh_is_deleted,
         };
     }
-    toLinePayload(row) {
+    toLoadingPayload(row) {
         return {
+            loadEnabled: row.svh_load_enabled,
+            loadDatetime: row.svh_load_datetime?.toISOString() ?? null,
+            loadmanIds: row.svh_loadman_id ?? [],
+            loadmanNames: row.loadman_names ?? [],
+            driverId: row.svh_driver_id,
+            driverName: row.driver_name,
+            supervisorId: row.svh_supervisor_id,
+            supervisorName: row.supervisor_name,
+            vehicleId: row.svh_vehicle_id,
+            vehicleNo: row.svh_vehicle_no,
+            loadingCharge: (0, module_service_utils_1.toNumber)(row.svh_loading_charge),
+            unloadEnabled: row.svh_unload_enabled,
+            unloadDatetime: row.svh_unload_datetime?.toISOString() ?? null,
+            unloadmanIds: row.svh_unloadman_id ?? [],
+            unloadmanNames: row.unloadman_names ?? [],
+            unloadSupervisorId: row.svh_unload_supervisor_id,
+            unloadSupervisorName: row.unload_supervisor_name,
+            unloadingCharge: (0, module_service_utils_1.toNumber)(row.svh_unloading_charge),
+        };
+    }
+    toLinePayload(row, rules) {
+        return {
+            ...(rules.allowsLoading
+                ? { loadRate: (0, module_service_utils_1.toNumber)(row.svi_load_rate), unloadRate: (0, module_service_utils_1.toNumber)(row.svi_unload_rate) }
+                : {}),
             sviId: row.svi_id,
             lineNo: row.svi_line_no,
             splitNo: row.svi_split_no,
@@ -2543,6 +2741,24 @@ let StockVoucherService = class StockVoucherService {
             svhFreezeTo: header.freezeTo ? new Date(header.freezeTo) : null,
         };
     }
+    loadingData(rules, header) {
+        if (!rules.allowsLoading) {
+            return {};
+        }
+        return {
+            svhLoadEnabled: header.loadEnabled ?? false,
+            svhLoadDatetime: header.loadDatetime ? new Date(header.loadDatetime) : null,
+            svhLoadmanId: header.loadmanIds ?? [],
+            svhDriverId: header.driverId ?? null,
+            svhSupervisorId: header.supervisorId ?? null,
+            svhVehicleId: header.vehicleId ?? null,
+            svhVehicleNo: header.vehicleNo ?? null,
+            svhUnloadEnabled: header.unloadEnabled ?? false,
+            svhUnloadDatetime: header.unloadDatetime ? new Date(header.unloadDatetime) : null,
+            svhUnloadmanId: header.unloadmanIds ?? [],
+            svhUnloadSupervisorId: header.unloadSupervisorId ?? null,
+        };
+    }
     resolveRateSource(rules, header) {
         if (header.rateSource !== undefined) {
             return header.rateSource ?? null;
@@ -2607,5 +2823,21 @@ function accYearOfDate(date) {
     const [year, month] = date.split('-').map(Number);
     const start = month >= 4 ? year : year - 1;
     return `${start}-${start + 1}`;
+}
+function loadingFieldSent(header) {
+    const filled = [
+        ['loadEnabled', header.loadEnabled === true],
+        ['loadDatetime', !!header.loadDatetime],
+        ['loadmanIds', (header.loadmanIds?.length ?? 0) > 0],
+        ['driverId', !!header.driverId],
+        ['supervisorId', !!header.supervisorId],
+        ['vehicleId', !!header.vehicleId],
+        ['vehicleNo', !!header.vehicleNo?.trim()],
+        ['unloadEnabled', header.unloadEnabled === true],
+        ['unloadDatetime', !!header.unloadDatetime],
+        ['unloadmanIds', (header.unloadmanIds?.length ?? 0) > 0],
+        ['unloadSupervisorId', !!header.unloadSupervisorId],
+    ];
+    return filled.find(([, given]) => given)?.[0] ?? null;
 }
 //# sourceMappingURL=stock-voucher.service.js.map

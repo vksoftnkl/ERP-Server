@@ -159,6 +159,8 @@ describe('StockReasonsService', () => {
         COMPANY_ID,
         false,
         ['ADJUST_PLUS', 'ADJUST_MINUS'],
+        // Not a transfer: no BOTH-only rule.
+        false,
         null,
         null,
       ]);
@@ -173,10 +175,24 @@ describe('StockReasonsService', () => {
         COMPANY_ID,
         true,
         ['BUCKET_OUT', 'BUCKET_IN'],
+        false,
         'OUT',
         'OUT',
       ]);
     });
+
+    it.each(['TRANSFER_OUT', 'TRANSFER_IN'])(
+      'notes 153 E4 — %s: only BOTH reasons naming that type, never an any-movement one (so no TRANSIT_LOSS)',
+      async (voucherType) => {
+        await service.pick(pickQuery({ voucherType }));
+
+        const [[strings, ...values]] = queriesMatching('cardinality');
+        expect(values).toEqual([COMPANY_ID, COMPANY_ID, true, [voucherType], true, null, null]);
+        expect((strings as unknown as string[]).join('?')).toContain(
+          "AND (NOT ?::boolean OR r.srm_direction = 'BOTH')",
+        );
+      },
+    );
   });
 
   // ── list / get / usage ────────────────────────────────────────────────────

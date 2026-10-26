@@ -844,6 +844,9 @@ describe('StockVoucherService', () => {
       sviRemarks: null,
       sviCreatedBy: USER_ID,
       sviModifiedBy: null,
+      // Notes 153 — NOT NULL DEFAULT 0, so a stored row always carries them.
+      sviLoadRate: new Prisma.Decimal(0),
+      sviUnloadRate: new Prisma.Decimal(0),
       ...over,
     });
     const line = (over: Record<string, unknown> = {}) => ({
@@ -1430,6 +1433,213 @@ describe('StockVoucherService', () => {
           throw new Error('transit update failed');
         }),
       ).rejects.toThrow('transit update failed');
+    });
+  });
+
+  // ── notes 153 — the Loading / Unloading boxes ─────────────────────────────
+  describe('notes 153 — loading and unloading on a transfer', () => {
+    const LOADING_RULES: StockVoucherTypeRules = {
+      voucherType: 'TRANSFER_OUT',
+      typeCode: 'TRF',
+      displayName: 'Stock transfer',
+      requiresToGodown: true,
+      requiresFromGodown: true,
+      isInward: false,
+      ledgerTxnTypes: ['TRANSFER_OUT'],
+      quantityMode: 'QTY',
+      requiresLot: true,
+      zeroesLineCost: true,
+      allowsCount: false,
+      allowsToBranch: true,
+      allowsLoading: true,
+      postShape: 'TRANSFER_OUT',
+      auditScreenName: 'Stock Transfer',
+      statusDocType: TxnStatusDocType.STOCK_TRANSFER,
+    };
+    const LOADMAN_A = '01000000-0000-7000-8000-0000000001a1';
+    const LOADMAN_B = '01000000-0000-7000-8000-0000000001a2';
+    const STRANGER = '01000000-0000-7000-8000-0000000001ff';
+    const VEHICLE_ID = '01000000-0000-7000-8000-0000000001b1';
+    /** The employees and vehicles of COMPANY_ID, as the crew check reads them. */
+    let liveEmployees: string[];
+    let liveVehicles: string[];
+
+    const transferLine = (over: Record<string, unknown> = {}) => ({
+      lineNo: 1,
+      itemId: ITEM_ID,
+      uomId: UOM_ID,
+      baseUomId: BASE_UOM_ID,
+      toBaseFactor: 12,
+      baseQty: 120,
+      godownId: GODOWN_ID,
+      lotId: LOT_ID,
+      qty: 10,
+      ...over,
+    });
+    const loadingPayload = (header: Record<string, unknown> = {}, lines?: unknown[]) =>
+      payload({
+        header: { fromGodownId: GODOWN_ID, toGodownId: OTHER_GODOWN_ID, ...header } as never,
+        lines: (lines ?? [transferLine()]) as never,
+      });
+    const codesOf = async (promise: Promise<unknown>) => {
+      const error = await promise.then(
+        () => {
+          throw new Error('expected the save to be refused');
+        },
+        (caught: unknown) => caught,
+      );
+      if (!(error instanceof HttpException)) throw error;
+      expect(error.getStatus()).toBe(422);
+      return (error.getResponse() as { errors: Array<{ field: string; code: string; message: string }> })
+        .errors;
+    };
+
+    beforeEach(() => {
+      liveEmployees = [LOADMAN_A, LOADMAN_B];
+      liveVehicles = [VEHICLE_ID];
+      const base = client.$queryRaw.getMockImplementation() as (...args: unknown[]) => unknown;
+      client.$queryRaw.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = Array.isArray(strings) ? strings.join('?') : '';
+        if (sql.includes('FROM public.employee_master')) {
+          const [ids, companyId] = values as [string[], string];
+          return Promise.resolve(
+            companyId === COMPANY_ID
+              ? ids.filter((id) => liveEmployees.includes(id)).map((emp_id) => ({ emp_id }))
+              : [],
+          );
+        }
+        if (sql.includes('FROM public.vehicle_master')) {
+          const [id] = values as [string];
+          return Promise.resolve(liveVehicles.includes(id) ? [{ veh_id: id }] : []);
+        }
+        return base(strings, ...values);
+      });
+    });
+
+    it('refuses every loading field on another voucher type — header and line alike', async () => {
+      for (const header of [{ loadEnabled: true }, { vehicleNo: 'TN 28 AB 1234' }, { unloadmanIds: [LOADMAN_A] }]) {
+        const errors = await codesOf(service.save(OPENING_RULES, payload({ header: header as never })));
+        expect(errors).toEqual([
+          expect.objectContaining({ field: Object.keys(header)[0], code: StockErrorCode.LOADING_NOT_ALLOWED }),
+        ]);
+      }
+      const errors = await codesOf(
+        service.save(
+          OPENING_RULES,
+          payload({ lines: [{ ...payload().lines[0], loadRate: 2 }] }),
+        ),
+      );
+      expect(errors).toEqual([
+        expect.objectContaining({ field: 'lines.0.loadRate', code: StockErrorCode.LOADING_NOT_ALLOWED }),
+      ]);
+    });
+
+    it('lets "nothing" through on another type: false ticks, null ids and empty crews', async () => {
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { loadEnabled: false, loadmanIds: [], driverId: null, vehicleNo: null } as never }),
+      );
+      const created = client.stockVoucher.create.mock.calls[0][0].data;
+      expect(created).not.toHaveProperty('svhLoadEnabled');
+      expect(createdLine()).toMatchObject({ sviLoadRate: new Prisma.Decimal(0), sviUnloadRate: new Prisma.Decimal(0) });
+    });
+
+    it('refuses a negative rate per field, a 422 naming the line', async () => {
+      const errors = await codesOf(
+        service.save(LOADING_RULES, loadingPayload({}, [transferLine({ loadRate: -1, unloadRate: -0.5 })])),
+      );
+      expect(errors).toEqual([
+        expect.objectContaining({ field: 'lines.0.loadRate', code: StockErrorCode.LOADING_RATE_NEGATIVE }),
+        expect.objectContaining({ field: 'lines.0.unloadRate', code: StockErrorCode.LOADING_RATE_NEGATIVE }),
+      ]);
+    });
+
+    it('refuses a load or unload time before the document date, on the shop clock', async () => {
+      const errors = await codesOf(
+        service.save(
+          LOADING_RULES,
+          loadingPayload({
+            loadDatetime: '2026-03-31T23:59:00+05:30',
+            unloadDatetime: '2026-03-31T18:00:00Z', // 23:30 IST on the 31st
+          }),
+        ),
+      );
+      expect(errors.map((error) => [error.field, error.code])).toEqual([
+        ['loadDatetime', StockErrorCode.LOADING_BEFORE_DOC_DATE],
+        ['unloadDatetime', StockErrorCode.LOADING_BEFORE_DOC_DATE],
+      ]);
+
+      // 00:30 IST on the doc date is 19:00 UTC the day before — still the doc date.
+      await expect(
+        service.save(LOADING_RULES, loadingPayload({ loadDatetime: '2026-03-31T19:00:00Z' })),
+      ).resolves.toBeDefined();
+    });
+
+    it("refuses an employee of another company, or one named twice, per field; and another company's vehicle", async () => {
+      const errors = await codesOf(
+        service.save(
+          LOADING_RULES,
+          loadingPayload({
+            loadmanIds: [LOADMAN_A, LOADMAN_A],
+            driverId: STRANGER,
+            unloadSupervisorId: LOADMAN_B,
+            vehicleId: '01000000-0000-7000-8000-0000000001b9',
+          }),
+        ),
+      );
+      expect(errors).toEqual([
+        expect.objectContaining({ field: 'loadmanIds', code: StockErrorCode.LOADING_EMPLOYEE_INVALID, message: expect.stringContaining('twice') }),
+        expect.objectContaining({ field: 'driverId', code: StockErrorCode.LOADING_EMPLOYEE_INVALID, message: expect.stringContaining(STRANGER) }),
+        expect.objectContaining({ field: 'vehicleId', code: StockErrorCode.LOADING_VEHICLE_INVALID }),
+      ]);
+      expect(client.stockVoucher.create).not.toHaveBeenCalled();
+    });
+
+    it('writes the boxes on the document and sums each charge from the lines, never from the body', async () => {
+      await service.save(
+        LOADING_RULES,
+        loadingPayload(
+          {
+            loadEnabled: true,
+            loadDatetime: '2026-04-01T10:00:00+05:30',
+            loadmanIds: [LOADMAN_A, LOADMAN_B],
+            driverId: LOADMAN_A,
+            vehicleId: VEHICLE_ID,
+            vehicleNo: 'TN 28 AB 1234',
+            // Unticked: its rates are kept on the lines and charge nothing.
+            unloadEnabled: false,
+            // A body total is not a column the API reads.
+            loadingCharge: 999,
+          },
+          [
+            // 10 × 2.12345 → the rate is held at numeric(18,4) = 2.1235 → 21.235
+            transferLine({ loadRate: 2.12345, unloadRate: 3 }),
+            // (4 + 1 free) × 1.25 = 6.25 — what was carried, free goods too —
+            // rounded ONCE, on the sum: 27.485 → 27.49
+            transferLine({ lineNo: 2, qty: 4, baseQty: 48, freeQty: 1, freeBaseQty: 12, loadRate: 1.25 }),
+          ],
+        ),
+      );
+
+      expect(client.stockVoucher.create.mock.calls[0][0].data).toMatchObject({
+        svhLoadEnabled: true,
+        svhLoadDatetime: new Date('2026-04-01T04:30:00.000Z'),
+        svhLoadmanId: [LOADMAN_A, LOADMAN_B],
+        svhDriverId: LOADMAN_A,
+        svhSupervisorId: null,
+        svhVehicleId: VEHICLE_ID,
+        svhVehicleNo: 'TN 28 AB 1234',
+        svhUnloadEnabled: false,
+        svhUnloadmanId: [],
+        svhUnloadSupervisorId: null,
+      });
+      expect(createdLine()).toMatchObject({
+        sviLoadRate: new Prisma.Decimal('2.1235'),
+        sviUnloadRate: new Prisma.Decimal(3),
+      });
+      const totals = client.stockVoucher.update.mock.calls.at(-1)[0].data;
+      expect(totals.svhLoadingCharge).toEqual(new Prisma.Decimal('27.49'));
+      expect(totals.svhUnloadingCharge).toEqual(new Prisma.Decimal(0));
     });
   });
 
@@ -3637,6 +3847,56 @@ describe('StockVoucherService', () => {
       const stubDocument = (header: unknown[], lines: unknown[] = []) =>
         client.$queryRaw.mockResolvedValueOnce(header).mockResolvedValueOnce(lines);
 
+      it("notes 153 — a transfer line reads its batch / dates / MRP / serial from its lot; other types the line's own", async () => {
+        const TRANSFER = {
+          ...OPENING_RULES,
+          voucherType: 'TRANSFER_OUT',
+          requiresLot: true,
+          allowsLoading: true,
+        } as StockVoucherTypeRules;
+        const loading = {
+          svh_load_enabled: true,
+          svh_load_datetime: null,
+          svh_loadman_id: null,
+          loadman_names: [],
+          svh_driver_id: null,
+          driver_name: null,
+          svh_supervisor_id: null,
+          supervisor_name: null,
+          svh_vehicle_id: null,
+          svh_vehicle_no: null,
+          svh_loading_charge: new Prisma.Decimal('7.00'),
+          svh_unload_enabled: false,
+          svh_unload_datetime: null,
+          svh_unloadman_id: null,
+          unloadman_names: [],
+          svh_unload_supervisor_id: null,
+          unload_supervisor_name: null,
+          svh_unloading_charge: new Prisma.Decimal(0),
+        };
+        const fromLot = (call: number) => {
+          const [strings, ...values] = client.$queryRaw.mock.calls[call] as [TemplateStringsArray, ...unknown[]];
+          return { sql: strings.join('?'), flags: values.filter((value) => typeof value === 'boolean') };
+        };
+        stubDocument(
+          [headerRow({ svh_voucher_type: 'TRANSFER_OUT', ...loading })],
+          [lineRow({ svi_load_rate: new Prisma.Decimal('3.5'), svi_unload_rate: new Prisma.Decimal(0) })],
+        );
+        const transfer = await service.getById(TRANSFER, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+        expect(fromLot(1).sql).toContain('COALESCE(lot.slt_batch_no, svi.svi_batch_no)       AS svi_batch_no');
+        expect(fromLot(1).sql).toContain('COALESCE(lot.slt_serial_no, svi.svi_serial_no)     AS svi_serial_no');
+        expect(fromLot(1).sql).toContain('LEFT JOIN stock.stock_lot lot             ON ?::boolean');
+        expect(fromLot(1).flags).toEqual([true]);
+        expect(transfer.header).toMatchObject({ loadEnabled: true, loadingCharge: 7, unloadingCharge: 0 });
+        expect(transfer.lines[0]).toMatchObject({ loadRate: 3.5, unloadRate: 0 });
+
+        stubDocument([headerRow()], [lineRow()]);
+        const opening = await service.getById(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID);
+        expect(fromLot(3).flags).toEqual([false]);
+        expect(opening.header).not.toHaveProperty('loadEnabled');
+        expect(opening.lines[0]).not.toHaveProperty('loadRate');
+      });
+
       it('answers 404 for a voucher not in this company, branch, year and type — and reads no lines', async () => {
         stubDocument([]);
 
@@ -3705,6 +3965,8 @@ describe('StockVoucherService', () => {
           supplierId: null,
           supplierName: null,
           toBranchId: null,
+          // Notes 154 #4 — named beside the id; null when there is no to-branch.
+          toBranchName: null,
           partyRef: null,
           reasonId: null,
           reasonName: null,

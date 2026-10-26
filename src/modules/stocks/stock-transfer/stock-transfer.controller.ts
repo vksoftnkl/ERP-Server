@@ -15,6 +15,9 @@ import {
 } from '@nestjs/swagger';
 import { API_VERSION } from 'src/common/constants/api-version';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
+import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockVoucherExceptionFilter } from '../stock-voucher/stock-voucher-exception.filter';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type {
@@ -71,6 +74,8 @@ import {
  *                       AVG_COST). A typed rate is stripped.
  *                       See MUST-FIX 5.
  *   allowsToBranch      the only type that may leave the branch.
+ *   allowsLoading       notes 153 — the Loading / Unloading boxes, and the
+ *                       charges that post on despatch of a godown transfer.
  *   requiresFromGodown  both godowns, both mandatory (ck_svh_transfer_godowns).
  *   + requiresToGodown  svi_godown_id on the LINE is the source; the header's
  *                       to-godown is the destination.
@@ -92,11 +97,24 @@ const TRANSFER_OUT_RULES: StockVoucherTypeRules = {
   allowsRepeatHolding: true,
   allowsCount: false,
   allowsToBranch: true,
+  allowsLoading: true,
   postShape: 'TRANSFER_OUT',
   auditScreenName: 'Stock Transfer',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
   refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
 };
+
+/**
+ * Notes 153 E3 (as notes 151 #1 for menu 264) — every /stock/transfer route
+ * is judged on the caller's public.user_menus row for menu 41 (Stock Transfer,
+ * shown as "Godown Transfer"): 403 TRF_RIGHT_<RIGHT>, no SUPER ADMIN bypass.
+ * The route serves the branch-to-branch form too, which has no screen yet;
+ * when Branch Outward (192) gets one, its form wants its own menu here. The
+ * receipt routes (/stock/transfer/receive) are not gated yet — Branch Inward
+ * (193). Company and branch are not compared with the token's (memory
+ * token-scope-is-home-company-and-device-branch).
+ */
+export const STOCK_TRANSFER_MENU_ID = 41;
 
 /**
  * NO @CacheTTL ANYWHERE. Every read here is a live balance, a live transit row
@@ -112,6 +130,8 @@ export class StockTransferController {
   constructor(
     private readonly stockTransferService: StockTransferService,
     private readonly stockVoucherService: StockVoucherService,
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   @Post()
@@ -129,6 +149,10 @@ export class StockTransferController {
   async save(
     @Body() dto: SaveStockTransferDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherPayload>> {
+    await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a stock transfer');
+    if (dto.header.post === true || dto.header.status === 'POSTED') {
+      await this.requireRight('post', 'despatch a stock transfer');
+    }
     const data = await this.stockTransferService.save(TRANSFER_OUT_RULES, dto);
     return {
       success: true,
@@ -158,6 +182,7 @@ export class StockTransferController {
       (StockVoucherPayload & { transit: StockTransitRow[] }) | StockVoucherListResult
     >
   > {
+    await this.requireRight('view', 'view stock transfers');
     if (query.svhId) {
       const data = await this.stockTransferService.getOne(
         TRANSFER_OUT_RULES,
@@ -184,6 +209,7 @@ export class StockTransferController {
   async validate(
     @Query() query: StockTransferRefQueryDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherLineProblem[]>> {
+    await this.requireRight('view', 'validate a stock transfer');
     const data = await this.stockVoucherService.validate(
       TRANSFER_OUT_RULES,
       query.svhId,
@@ -215,6 +241,7 @@ export class StockTransferController {
   async despatch(
     @Body() dto: DespatchStockTransferDto,
   ): Promise<StockVoucherSuccessResponse<StockTransferDespatchResult>> {
+    await this.requireRight('post', 'despatch a stock transfer');
     const data = await this.stockTransferService.despatch(TRANSFER_OUT_RULES, dto);
     return {
       success: true,
@@ -238,6 +265,7 @@ export class StockTransferController {
   async cancel(
     @Body() dto: CancelStockTransferDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherCancelResult>> {
+    await this.requireRight('cancel', 'cancel a stock transfer');
     const data = await this.stockVoucherService.cancel(
       TRANSFER_OUT_RULES,
       dto.svhId,
@@ -267,6 +295,7 @@ export class StockTransferController {
   async remove(
     @Query() query: StockTransferRefQueryDto,
   ): Promise<StockVoucherSuccessResponse<StockVoucherDeleteResult>> {
+    await this.requireRight('delete', 'delete a stock transfer draft');
     const data = await this.stockVoucherService.softDelete(
       TRANSFER_OUT_RULES,
       query.svhId,
@@ -275,6 +304,17 @@ export class StockTransferController {
       query.branchId,
     );
     return { success: true, message: 'Stock transfer deleted successfully', data };
+  }
+
+  /** Notes 153 E3 — the caller's `user_menus` row for menu 41, one right per route. 403 TRF_RIGHT_<RIGHT>. */
+  private async requireRight(right: MenuRight, action: string): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: STOCK_TRANSFER_MENU_ID,
+      right,
+      codePrefix: 'TRF',
+      action,
+    });
   }
 }
 

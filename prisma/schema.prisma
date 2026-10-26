@@ -9845,6 +9845,8 @@ model VehicleMaster {
   // CHECK constraints (DB-only): ck_veh_type, ck_veh_no
 
   saleBills         SaleBill[]         @relation("SaleBillVehicle")
+  /// Notes 153 — a godown transfer's loading vehicle (svh_vehicle_id).
+  stockVouchers     StockVoucher[]     @relation("StockVoucherVehicle")
 
   ewayBills         AccVoucherDocEwaybill[] @relation("EwayBillVehicle")
 
@@ -10338,6 +10340,10 @@ model EmployeeMaster {
   saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
   saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")
   saleDcReturnsSupervised SaleDcReturn[]          @relation("SaleDcReturnSupervisor")
+  // ── Stock transfer crew (notes 153, 20261026100000) ────────────────────
+  stockVouchersDriven   StockVoucher[]            @relation("StockVoucherDriver")
+  stockVouchersSupervised StockVoucher[]          @relation("StockVoucherSupervisor")
+  stockVouchersUnloadSupervised StockVoucher[]    @relation("StockVoucherUnloadSupervisor")
 
   @@map("employee_master")
   @@schema("public")
@@ -16851,6 +16857,30 @@ model StockVoucher {
   svhModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svh_modified_on")
   svhModifiedBy        String?   @db.Text                            @map("svh_modified_by")
 
+  // ── Loading / unloading — TRANSFER_OUT / TRANSFER_IN only (notes 153) ───
+  // 3.0's Loading and Unloading boxes. Crew and vehicle sit on the DOCUMENT,
+  // as on the sales documents (sb_driver_id, sb_loadman_id). The two charges
+  // are COMPUTED by the API on every save — round(Σ (qty + free) × rate, 2) while
+  // the box is ticked, else 0 (ck_svh_loading_charge) — never taken from a
+  // body, and post DR LOADING_CHARGES / CR LOADING_PAYABLE when a same-branch
+  // transfer is despatched. The API refuses all of them on every other type.
+  svhLoadEnabled        Boolean   @default(false)                     @map("svh_load_enabled")
+  svhLoadDatetime       DateTime? @db.Timestamptz(6)                  @map("svh_load_datetime")
+  /// employee_master ids. A uuid[] cannot carry an FK; the API checks each
+  /// against the document's company.
+  svhLoadmanId          String[]  @db.Uuid                            @map("svh_loadman_id")
+  svhDriverId           String?   @db.Uuid                            @map("svh_driver_id")
+  svhSupervisorId       String?   @db.Uuid                            @map("svh_supervisor_id")
+  svhVehicleId          String?   @db.Uuid                            @map("svh_vehicle_id")
+  /// Typed, as on the bill; svhVehicleId is optional.
+  svhVehicleNo          String?   @db.VarChar(30)                     @map("svh_vehicle_no")
+  svhLoadingCharge      Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_loading_charge")
+  svhUnloadEnabled      Boolean   @default(false)                     @map("svh_unload_enabled")
+  svhUnloadDatetime     DateTime? @db.Timestamptz(6)                  @map("svh_unload_datetime")
+  svhUnloadmanId        String[]  @db.Uuid                            @map("svh_unloadman_id")
+  svhUnloadSupervisorId String?   @db.Uuid                            @map("svh_unload_supervisor_id")
+  svhUnloadingCharge    Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_unloading_charge")
+
   // ── Relations ───────────────────────────────────────────────────────────
   // svhSessionId and the posted/approved/cancelled/created/modified user
   // columns carry NO foreign key in the migration, so they stay scalar.
@@ -16865,6 +16895,12 @@ model StockVoucher {
   toGodown             GodownLocation?    @relation("StockVoucherToGodown",   fields: [svhToGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_to_godown")
   supplier             Supplier?          @relation("StockVoucherSupplier",   fields: [svhSupplierId],  references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_supplier")
   reason               StockReasonMaster? @relation("StockVoucherReason",     fields: [svhReasonId],    references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_reason")
+  // Notes 153 — the crew and vehicle with a single id. The two crew arrays
+  // (svhLoadmanId, svhUnloadmanId) are uuid[] and carry none.
+  driver               EmployeeMaster?    @relation("StockVoucherDriver",           fields: [svhDriverId],           references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_driver")
+  supervisor           EmployeeMaster?    @relation("StockVoucherSupervisor",       fields: [svhSupervisorId],       references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_supervisor")
+  unloadSupervisor     EmployeeMaster?    @relation("StockVoucherUnloadSupervisor", fields: [svhUnloadSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_unload_supervisor")
+  vehicle              VehicleMaster?     @relation("StockVoucherVehicle",          fields: [svhVehicleId],          references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_vehicle")
 
   @@id([svhId, svhAccYear], map: "pk_stock_voucher")
   @@map("stock_voucher")
@@ -17019,6 +17055,14 @@ model StockVoucherItem {
   sviCreatedBy         String?   @db.Text                            @map("svi_created_by")
   sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
   sviModifiedBy        String?   @db.Text                            @map("svi_modified_by")
+
+  // ── Loading / unloading rates — TRANSFER_OUT / TRANSFER_IN only (notes 153)
+  /// Per unit of THIS line's unit (sviUomId), defaulted on the screen from
+  /// item_unit_master.unit_loading / unit_unloading. Stored, so a later change
+  /// to the unit's rate cannot move an old transfer's charge. The amount is
+  /// (sviQty + sviFreeQty) × rate and is not stored. ck_svi_load_rates: never negative.
+  sviLoadRate          Decimal   @default(0) @db.Decimal(18, 4)      @map("svi_load_rate")
+  sviUnloadRate        Decimal   @default(0) @db.Decimal(18, 4)      @map("svi_unload_rate")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sviCompanyId / sviBranchId carry no FK of their own here — the voucher

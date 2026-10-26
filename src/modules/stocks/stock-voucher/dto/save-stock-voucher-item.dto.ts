@@ -308,6 +308,28 @@ export class SaveStockVoucherItemDto {
   @OptionalNumber()
   taxPerc?: string | number;
 
+  // ── Loading / unloading rates — TRANSFER_OUT / TRANSFER_IN only (notes 153)
+  // Per unit of THIS line's unit (uomId). The screen fills them from the
+  // lookup's loadRate / unloadRate and the user may change them; they are
+  // stored on the line so a later change to the unit's rate cannot move an
+  // old transfer's charge. No floor here: a negative rate is a 422 naming the
+  // line, alongside the document's other refusals.
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      "Loading charge per unit of uomId. Transfers only (refused elsewhere); never negative (422). The header's loading charge is round(Σ (qty + freeQty) × loadRate, 2) — what was carried — summed by the server while loadEnabled. numeric(18,4).",
+  })
+  @OptionalNumber()
+  loadRate?: string | number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'Unloading charge per unit of uomId. As loadRate, summed while unloadEnabled. numeric(18,4).',
+  })
+  @OptionalNumber()
+  unloadRate?: string | number;
+
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,

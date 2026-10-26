@@ -63,6 +63,10 @@ export interface StockPostOutcome extends PostStockVoucherResult {
  * (§1.9), in the same transaction, from the ledger rows the post just wrote.
  * A sales document's shadow voucher (`ledgerSource` set) does NOT: the sales
  * document posts its own COGS pair, and posting here too would count it twice.
+ *
+ * A transfer writes no stock leg, but since notes 153 / 156 both halves post
+ * their labour here (postTransferCharges), under PERIODIC too: labour is an
+ * expense, not a stock value.
  */
 @Injectable()
 export class StockPostingService {
@@ -111,6 +115,28 @@ export class StockPostingService {
       });
       accountsVoucherId = posted?.voucherId ?? null;
     }
+    // Notes 153 / 156 — a transfer document posts the labour it carries,
+    // whatever cogs_mode says: a godown transfer (ends POSTED) its loading +
+    // unloading, a branch despatch (ends IN_TRANSIT) its loading at the
+    // sending branch, a receipt (POSTED) its unloading at the receiving
+    // branch. A transfer writes no stock leg, so this is its only voucher.
+    if (
+      !opts.ledgerSource &&
+      source.rules.allowsLoading &&
+      (result.status === 'POSTED' || result.status === 'IN_TRANSIT')
+    ) {
+      const charges = await this.accounts.postTransferCharges(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        branchId: source.branchId,
+        voucherType: source.rules.voucherType,
+        displayName: source.rules.displayName,
+        actor: opts.actor,
+        postedOn: opts.postedOn,
+      });
+      accountsVoucherId = charges?.voucherId ?? accountsVoucherId;
+    }
     return { ...result, accountsVoucherId };
   }
 
@@ -144,7 +170,13 @@ export class StockPostingService {
       cancelledOn: opts.cancelledOn,
       refuseNegative: opts.refuseNegative,
     });
-    if (!opts.ledgerSource && StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
+    // A transfer's loading-charges voucher (notes 153) reverses the same way;
+    // reverseForVoucher is a no-op for a transfer that charged nothing.
+    if (
+      !opts.ledgerSource &&
+      (StockAccountsPostingService.postsAccounts(source.rules.voucherType) ||
+        source.rules.allowsLoading)
+    ) {
       await this.accounts.reverseForVoucher(tx, {
         svhId: source.svhId,
         accYear: source.accYear,

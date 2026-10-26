@@ -4346,6 +4346,12 @@ acc_tender_detail, txn_transport_detail, txn_status_log).']
   dtmCreatedOn DateTime [default: `now()`, not null]
   dtmModifiedOn DateTime
   dtmSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  dtmSyncCol String [note: 'The table\'s sync-date column: the timestamp the offline -> cloud push
+stamps, NULL in it = changed since the last push. Names are not uniform
+(\'item_sync_date\', \'saa_synced_on\', \'price_lvl_SyncDate\'), hence the
+registry. NULL = the table has none (acc_cheque_book, _prisma_migrations,
+_erp_seed_history). From the seed like every other column; the drift view
+reports SYNC_COLUMN where the catalogue disagrees (migration 20261024100000).']
 
   indexes {
     (dtmSchema, dtmTable) [unique]
@@ -4366,7 +4372,8 @@ plus ck_dtm_retention (> 0) and ck_dtm_parent (not itself).
 
 DB-only, invisible to Prisma: the views public.v_db_table_master (the
 registry plus partitioning, row estimate and size from pg_catalog) and
-public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION), and
+public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION /
+SYNC_COLUMN), and
 the partial sync index ix_sync_pending_db_table_master (where the sync
 functions exist).'
 }
@@ -6149,6 +6156,7 @@ Table vehicle_master {
   saleDcs sale_dc [not null]
   saleDcReturns sale_dc_return [not null]
   saleBills sale_bill [not null]
+  stockVouchers stock_voucher [not null, note: 'Notes 153 — a godown transfer\'s loading vehicle (svh_vehicle_id).']
   ewayBills acc_voucher_doc_ewaybill [not null]
 
   Note: 'Vehicle numbers, validated once rather than typed on every document.
@@ -6507,6 +6515,9 @@ Table employee_master {
   saleDcsSupervised sale_dc [not null]
   saleDcReturnsDriven sale_dc_return [not null]
   saleDcReturnsSupervised sale_dc_return [not null]
+  stockVouchersDriven stock_voucher [not null]
+  stockVouchersSupervised stock_voucher [not null]
+  stockVouchersUnloadSupervised stock_voucher [not null]
 }
 
 Table cust_item_rates {
@@ -11197,6 +11208,20 @@ ck_svh_freeze refuses a freeze with no window.']
   svhCreatedBy String
   svhModifiedOn DateTime
   svhModifiedBy String
+  svhLoadEnabled Boolean [not null, default: false]
+  svhLoadDatetime DateTime
+  svhLoadmanId String[] [not null, note: 'employee_master ids. A uuid[] cannot carry an FK; the API checks each
+against the document\'s company.']
+  svhDriverId String
+  svhSupervisorId String
+  svhVehicleId String
+  svhVehicleNo String [note: 'Typed, as on the bill; svhVehicleId is optional.']
+  svhLoadingCharge Decimal [not null, default: 0]
+  svhUnloadEnabled Boolean [not null, default: false]
+  svhUnloadDatetime DateTime
+  svhUnloadmanId String[] [not null]
+  svhUnloadSupervisorId String
+  svhUnloadingCharge Decimal [not null, default: 0]
   items stock_voucher_item [not null]
   company companys [not null]
   branch branch_master [not null]
@@ -11207,6 +11232,10 @@ it can be blocked or deactivated but never unlinked.']
   toGodown godown_locations
   supplier suppliers
   reason stock_reason_master
+  driver employee_master
+  supervisor employee_master
+  unloadSupervisor employee_master
+  vehicle vehicle_master
 
   indexes {
     (svhId, svhAccYear) [pk]
@@ -11344,6 +11373,11 @@ Read-only, never sent.']
   sviCreatedBy String
   sviModifiedOn DateTime
   sviModifiedBy String
+  sviLoadRate Decimal [not null, default: 0, note: 'Per unit of THIS line\'s unit (sviUomId), defaulted on the screen from
+item_unit_master.unit_loading / unit_unloading. Stored, so a later change
+to the unit\'s rate cannot move an old transfer\'s charge. The amount is
+(sviQty + sviFreeQty) × rate and is not stored. ck_svi_load_rates: never negative.']
+  sviUnloadRate Decimal [not null, default: 0]
   voucher stock_voucher [not null]
   item item_master [not null]
   uom item_unit_conversion [not null]
@@ -12631,6 +12665,14 @@ Ref: stock_voucher.svhToGodownId > godown_locations.gdlId [delete: Restrict]
 Ref: stock_voucher.svhSupplierId > suppliers.supId [delete: Restrict]
 
 Ref: stock_voucher.svhReasonId > stock_reason_master.srmId [delete: Restrict]
+
+Ref: stock_voucher.svhDriverId > employee_master.empId [delete: Restrict]
+
+Ref: stock_voucher.svhSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: stock_voucher.svhUnloadSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: stock_voucher.svhVehicleId > vehicle_master.vehId [delete: Restrict]
 
 Ref: stock_voucher_item.(sviVoucherId, sviAccYear) > stock_voucher.(svhId, svhAccYear) [delete: Cascade]
 

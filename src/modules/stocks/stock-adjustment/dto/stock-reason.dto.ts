@@ -15,6 +15,14 @@ import { STOCK_ADJUSTMENT_SAVE_KINDS, type StockAdjustmentSaveKind } from '../st
 export const REASON_DIRECTIONS = ['IN', 'OUT', 'BOTH'] as const;
 export type ReasonDirection = (typeof REASON_DIRECTIONS)[number];
 
+/** Notes 153 E4 — the two transfer halves pick reasons too (the Godown Transfer header's Reason). */
+export const TRANSFER_REASON_KINDS = ['TRANSFER_OUT', 'TRANSFER_IN'] as const;
+export type TransferReasonKind = (typeof TRANSFER_REASON_KINDS)[number];
+export const STOCK_REASON_PICKER_KINDS = [
+  ...STOCK_ADJUSTMENT_SAVE_KINDS,
+  ...TRANSFER_REASON_KINDS,
+] as const;
+
 /** GET /stock/reasons — the picker (16q Q17). */
 export class StockReasonPickerQueryDto {
   @ApiProperty({ format: 'uuid' })
@@ -22,12 +30,12 @@ export class StockReasonPickerQueryDto {
   companyId!: string;
 
   @ApiProperty({
-    enum: STOCK_ADJUSTMENT_SAVE_KINDS,
+    enum: STOCK_REASON_PICKER_KINDS,
     description:
-      'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason.',
+      'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason. TRANSFER_OUT / TRANSFER_IN (notes 153) list only BOTH-direction reasons that name the transfer type (REPLENISH, REARRANGE, RETURN_STORE and a company\'s own) — never an any-movement reason, and never TRANSIT_LOSS, which is the short-settlement\'s.',
   })
-  @IsIn(STOCK_ADJUSTMENT_SAVE_KINDS as readonly string[])
-  voucherType!: StockAdjustmentSaveKind;
+  @IsIn(STOCK_REASON_PICKER_KINDS as readonly string[])
+  voucherType!: StockAdjustmentSaveKind | TransferReasonKind;
 
   @ApiPropertyOptional({ enum: ['IN', 'OUT'], description: 'Only reasons that move this way (BOTH always qualifies).' })
   @IsOptional()

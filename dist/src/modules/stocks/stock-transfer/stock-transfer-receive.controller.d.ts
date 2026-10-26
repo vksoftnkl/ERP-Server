@@ -4,7 +4,7 @@ import { StockTransferService } from './stock-transfer.service';
 import { SaveStockTransferReceiveDto } from './dto/save-stock-transfer-receive.dto';
 import { StockTransferInboundQueryDto, StockTransferPrefillQueryDto, StockTransferRefQueryDto } from './dto/list-stock-transfer-query.dto';
 import { SettleShortStockTransferDto, StockTransferRefDto } from './dto/post-stock-transfer.dto';
-import type { StockTransferPrefill, StockTransferReceiveResult, StockTransferSettleShortResult } from './types/stock-transfer.types';
+import type { StockTransferPrefill, StockTransferReceiptPayload, StockTransferReceiveResult, StockTransferSettleShortResult } from './types/stock-transfer.types';
 declare const TRANSFER_IN_RULES: StockVoucherTypeRules;
 export declare class StockTransferReceiveController {
     private readonly stockTransferService;
@@ -14,11 +14,7 @@ export declare class StockTransferReceiveController {
         success: true;
         message: string;
         data: {
-            items: Array<import("./types/stock-transfer.types").StockTransitRow & {
-                outRefno: string | null;
-                fromBranchId: string;
-                daysInFlight: number;
-            }>;
+            items: import("./types/stock-transfer.types").StockTransferInboundRow[];
             meta: {
                 limit: number;
                 offset: number;
@@ -26,6 +22,7 @@ export declare class StockTransferReceiveController {
             };
         };
     }>;
+    load(query: StockTransferRefQueryDto): Promise<StockVoucherSuccessResponse<StockTransferReceiptPayload>>;
     prefill(query: StockTransferPrefillQueryDto): Promise<StockVoucherSuccessResponse<StockTransferPrefill>>;
     save(dto: SaveStockTransferReceiveDto): Promise<StockVoucherSuccessResponse<StockVoucherPayload>>;
     post(dto: StockTransferRefDto): Promise<StockVoucherSuccessResponse<StockTransferReceiveResult>>;

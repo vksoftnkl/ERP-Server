@@ -42,7 +42,7 @@ export class StockReasonsController {
   @ApiOperation({
     summary: 'The reason picker for one document kind',
     description:
-      'Shared and company rows merged — a company row hides the shared one with the same code — filtered by the txn types the kind posts and, optionally, by direction (BOTH always qualifies).',
+      'Shared and company rows merged — a company row hides the shared one with the same code — filtered by the txn types the kind posts and, optionally, by direction (BOTH always qualifies). voucherType=TRANSFER_OUT / TRANSFER_IN (notes 153) lists the BOTH reasons that name the transfer type only, so TRANSIT_LOSS (the short-settlement\'s) is not offered.',
   })
   @ApiOkResponse({ description: 'The reasons.' })
   async pick(@Query() query: StockReasonPickerQueryDto): Promise<StockVoucherSuccessResponse<StockReasonRow[]>> {

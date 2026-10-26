@@ -32,8 +32,10 @@ import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
 import type { SaveStockTransferReceiveDto } from './dto/save-stock-transfer-receive.dto';
 import type {
   StockTransferDespatchResult,
+  StockTransferInboundRow,
   StockTransferPrefill,
   StockTransferPrefillRow,
+  StockTransferReceiptPayload,
   StockTransferReceiveResult,
   StockTransferSettleShortResult,
   StockTransitRow,
@@ -120,7 +122,53 @@ export class StockTransferService {
     dto: SaveStockTransferDto,
   ): Promise<StockVoucherPayload> {
     await this.assertTransferOutRules(dto);
+    await this.assertTransferReasons(dto, 'This transfer cannot be saved');
     return this.stockVoucherService.save(rules, dto as unknown as SaveStockVoucherDto);
+  }
+
+  /**
+   * Notes 153 E4 — a transfer cites a BOTH reason (REPLENISH, REARRANGE,
+   * RETURN_STORE, a company's own), as /stock/reasons?voucherType=TRANSFER_OUT
+   * lists them: the stock leaves one godown and arrives in another. A one-way
+   * reason is a write-off, and TRANSIT_LOSS — direction OUT, allowed on
+   * TRANSFER_OUT — is the short-settlement's, never a despatch's. Whether the
+   * reason exists and may be cited by a transfer at all is the shared service's
+   * check (assertReasons); only the direction is this one's.
+   */
+  private async assertTransferReasons(
+    dto: SaveStockTransferDto | SaveStockTransferReceiveDto,
+    title: string,
+  ): Promise<void> {
+    const cited = [
+      ...(dto.header.reasonId ? [{ field: 'reasonId', reasonId: dto.header.reasonId }] : []),
+      ...dto.lines.flatMap((line, index) =>
+        line.reasonId ? [{ field: `lines.${index}.reasonId`, reasonId: line.reasonId }] : [],
+      ),
+    ];
+    if (!cited.length) {
+      return;
+    }
+    const rows = await this.prisma.$queryRaw<
+      Array<{ srm_id: string; srm_code: string; srm_direction: string }>
+    >`
+      SELECT srm_id, srm_code, srm_direction FROM stock.stock_reason_master
+       WHERE srm_id = ANY(${[...new Set(cited.map((c) => c.reasonId))]}::uuid[])`;
+    const byId = new Map(rows.map((row) => [row.srm_id, row]));
+    const errors: StockErrorDetail[] = cited.flatMap(({ field, reasonId }) => {
+      const reason = byId.get(reasonId);
+      return reason && reason.srm_direction !== 'BOTH'
+        ? [
+            {
+              field,
+              code: StockErrorCode.REASON_WRONG_DIRECTION,
+              message: `Stock reason ${reason.srm_code} moves stock one way (${reason.srm_direction}); a transfer moves it from one godown into another and cites a BOTH reason, such as REPLENISH.`,
+            },
+          ]
+        : [];
+    });
+    if (errors.length) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(title, errors);
+    }
   }
 
   /**
@@ -207,6 +255,11 @@ export class StockTransferService {
           });
         }
       });
+    }
+
+    // Notes 153 — a branch despatch carries the LOADING box only.
+    if (!sameBranch) {
+      errors.push(...this.loadingHalfErrors(dto, 'LOAD'));
     }
 
     if (errors.length) {
@@ -456,6 +509,58 @@ export class StockTransferService {
   }
 
   /**
+   * Notes 154 #1 — a RECEIPT read back, so a saved draft can be reopened, the
+   * Branch Inward list can open a row and Prev/Next (STOCK_TRANSFER_RECEIPT)
+   * has something to load. The transfer GET cannot serve it: it reads under
+   * the TRANSFER_OUT rules and 404s a TRANSFER_IN.
+   *
+   * The shape of the transfer GET — header, lines, transit — where `transit`
+   * is the DESPATCH's rows, what is still owed against it; the header adds the
+   * despatch's refno and its branch. The despatch is read by its link alone
+   * (id + its own year, this company): it is the other branch's document.
+   */
+  async getReceipt(
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    accYear: string,
+    companyId: string,
+    branchId: string,
+  ): Promise<StockTransferReceiptPayload> {
+    const document = await this.stockVoucherService.getById(
+      rules,
+      svhId,
+      accYear,
+      companyId,
+      branchId,
+    );
+    const outId = document.header.linkSrcDocId;
+    const outAccYear = document.header.linkSrcAccYear;
+    const [out] =
+      outId && outAccYear
+        ? await this.prisma.$queryRaw<
+            Array<{ svh_refno: string; svh_branch_id: string; branch_name: string | null }>
+          >`
+            SELECT svh.svh_refno, svh.svh_branch_id, br.br_name AS branch_name
+              FROM stock.stock_voucher svh
+              LEFT JOIN public.branch_master br ON br.br_id = svh.svh_branch_id
+             WHERE svh.svh_id = ${outId}::uuid
+               AND svh.svh_acc_year = ${outAccYear}::bpchar
+               AND svh.svh_company_id = ${companyId}::uuid
+               AND svh.svh_voucher_type = 'TRANSFER_OUT'`
+        : [];
+    return {
+      ...document,
+      header: {
+        ...document.header,
+        linkSrcRefno: out?.svh_refno ?? null,
+        fromBranchId: out?.svh_branch_id ?? null,
+        fromBranchName: out?.branch_name ?? null,
+      },
+      transit: outId && outAccYear ? await this.loadTransitRows(outId, outAccYear) : [],
+    };
+  }
+
+  /**
    * §5.2 — the inbound worklist, which is Q14's question: what is on its way to
    * me, how long has it been in flight, and what is short.
    *
@@ -471,16 +576,18 @@ export class StockTransferService {
     limit = 100,
     offset = 0,
   ): Promise<{
-    items: Array<
-      StockTransitRow & { outRefno: string | null; fromBranchId: string; daysInFlight: number }
-    >;
+    items: StockTransferInboundRow[];
     meta: { limit: number; offset: number; count: number };
   }> {
     const rows = await this.prisma.$queryRaw<
       Array<
         TransitDbRow & {
+          stt_out_voucher_id: string;
+          stt_out_acc_year: string;
           stt_out_refno: string | null;
           stt_from_branch_id: string;
+          from_branch_name: string | null;
+          from_godown_name: string | null;
           days_in_flight: number;
           total_count: bigint;
         }
@@ -492,7 +599,10 @@ export class StockTransferService {
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
              t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
+             -- Notes 154 #2 — the despatch (what prefill takes) and who sent it.
+             t.stt_out_voucher_id, t.stt_out_acc_year,
              t.stt_out_refno, t.stt_from_branch_id,
+             fb.br_name AS from_branch_name, fg.gdl_name AS from_godown_name,
              EXTRACT(DAY FROM now() - t.stt_sent_on)::int AS days_in_flight,
              i.item_code, i.item_name_en AS item_name,
              l.slt_batch_no AS batch_no, l.slt_expiry_date AS expiry_date,
@@ -503,6 +613,8 @@ export class StockTransferService {
         JOIN inventory.item_master i ON i.item_id = t.stt_item_id
         LEFT JOIN stock.stock_lot l ON l.slt_id = t.stt_lot_id
         LEFT JOIN inventory.godown_locations g ON g.gdl_id = t.stt_to_godown_id
+        LEFT JOIN inventory.godown_locations fg ON fg.gdl_id = t.stt_from_godown_id
+        LEFT JOIN public.branch_master fb ON fb.br_id = t.stt_from_branch_id
         LEFT JOIN inventory.item_unit_conversion c ON c.iuc_id = t.stt_base_uom_id
         LEFT JOIN inventory.item_unit_master u ON u.unit_id = c.iuc_unit_id
        WHERE t.stt_company_id = ${companyId}::uuid
@@ -516,8 +628,12 @@ export class StockTransferService {
     return {
       items: rows.map((row) => ({
         ...this.toTransitRow(row),
+        outVoucherId: row.stt_out_voucher_id,
+        outAccYear: row.stt_out_acc_year.trim(),
         outRefno: row.stt_out_refno,
         fromBranchId: row.stt_from_branch_id,
+        fromBranchName: row.from_branch_name,
+        fromGodownName: row.from_godown_name,
         daysInFlight: Number(row.days_in_flight ?? 0),
       })),
       meta: { limit, offset, count: Number(rows[0]?.total_count ?? 0) },
@@ -554,15 +670,25 @@ export class StockTransferService {
         svh_to_branch_id: string | null;
         svh_to_godown_id: string | null;
         svh_is_deleted: boolean;
+        from_branch_name: string | null;
+        from_godown_name: string | null;
+        to_godown_name: string | null;
       }>
     >`
-      SELECT svh_id, svh_acc_year, svh_refno, svh_doc_date, svh_status, svh_branch_id,
-             svh_from_godown_id, svh_to_branch_id, svh_to_godown_id, svh_is_deleted
-        FROM stock.stock_voucher
-       WHERE svh_id = ${outVoucherId}::uuid
-         AND svh_acc_year = ${accYear}::bpchar
-         AND svh_company_id = ${companyId}::uuid
-         AND svh_voucher_type = 'TRANSFER_OUT'
+      SELECT svh.svh_id, svh.svh_acc_year, svh.svh_refno, svh.svh_doc_date, svh.svh_status,
+             svh.svh_branch_id, svh.svh_from_godown_id, svh.svh_to_branch_id, svh.svh_to_godown_id,
+             svh.svh_is_deleted,
+             -- Notes 154 #3 — the names the receipt screen would otherwise look up.
+             fb.br_name AS from_branch_name, fg.gdl_name AS from_godown_name,
+             tg.gdl_name AS to_godown_name
+        FROM stock.stock_voucher svh
+        LEFT JOIN public.branch_master fb ON fb.br_id = svh.svh_branch_id
+        LEFT JOIN inventory.godown_locations fg ON fg.gdl_id = svh.svh_from_godown_id
+        LEFT JOIN inventory.godown_locations tg ON tg.gdl_id = svh.svh_to_godown_id
+       WHERE svh.svh_id = ${outVoucherId}::uuid
+         AND svh.svh_acc_year = ${accYear}::bpchar
+         AND svh.svh_company_id = ${companyId}::uuid
+         AND svh.svh_voucher_type = 'TRANSFER_OUT'
     `;
 
     if (!out) {
@@ -585,9 +711,12 @@ export class StockTransferService {
         docDate: this.toIsoDate(out.svh_doc_date) as string,
         status: out.svh_status as StockVoucherStatus,
         fromBranchId: out.svh_branch_id,
+        fromBranchName: out.from_branch_name,
         fromGodownId: out.svh_from_godown_id,
+        fromGodownName: out.from_godown_name,
         toBranchId: out.svh_to_branch_id,
         toGodownId: out.svh_to_godown_id,
+        toGodownName: out.to_godown_name,
       },
       // lineNo is assigned HERE rather than by the client so the receipt grid
       // and the transit rows agree from the first render.
@@ -691,6 +820,15 @@ export class StockTransferService {
       openOnly: true,
     });
     this.assertReceiveLines(dto, transit);
+    // Notes 153 — the receipt carries the UNLOADING box only.
+    const halfErrors = this.loadingHalfErrors(dto, 'UNLOAD');
+    if (halfErrors.length) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+        'This receipt cannot be saved',
+        halfErrors,
+      );
+    }
+    await this.assertTransferReasons(dto, 'This receipt cannot be saved');
 
     // §7.1 — the link's module and doc type are STAMPED, not accepted.
     // ck_svh_transfer_in_link checks the id; there is nothing here for a client
@@ -820,6 +958,58 @@ export class StockTransferService {
 
   private lineQty(line: SaveStockVoucherItemDto): number {
     return Number(line.qty ?? 0) + Number(line.freeQty ?? 0);
+  }
+
+  /**
+   * Notes 153 — WHICH HALF CARRIES WHICH BOX. A godown transfer (one branch)
+   * is loaded and unloaded under one document, so it carries both and the
+   * shared service needs nothing from here. A branch transfer is two:
+   *
+   *   LOAD    the despatch, at the sending branch — the loading box; its
+   *           unloading box stays empty, the receipt records that.
+   *   UNLOAD  the receipt, at the receiving branch — the unloading box only.
+   *
+   * The driver and the vehicle are the lorry's, true on either half, and are
+   * not refused on either.
+   *
+   * Each half's charge posts with that half (notes 156): the despatch's
+   * loading at despatch, at the sending branch; the receipt's unloading when
+   * it posts, at the receiving branch — see postTransferCharges.
+   */
+  private loadingHalfErrors(
+    dto: SaveStockTransferDto | SaveStockTransferReceiveDto,
+    half: 'LOAD' | 'UNLOAD',
+  ): StockErrorDetail[] {
+    const { header, lines } = dto;
+    const errors: StockErrorDetail[] = [];
+    const otherBox =
+      half === 'LOAD'
+        ? {
+            unloadEnabled: header.unloadEnabled === true,
+            unloadDatetime: !!header.unloadDatetime,
+            unloadmanIds: (header.unloadmanIds?.length ?? 0) > 0,
+            unloadSupervisorId: !!header.unloadSupervisorId,
+          }
+        : {
+            loadEnabled: header.loadEnabled === true,
+            loadDatetime: !!header.loadDatetime,
+            loadmanIds: (header.loadmanIds?.length ?? 0) > 0,
+            supervisorId: !!header.supervisorId,
+          };
+    const otherRate = half === 'LOAD' ? 'unloadRate' : 'loadRate';
+    const sent = Object.entries(otherBox).find(([, given]) => given)?.[0];
+    const rated = lines.findIndex((line) => Number(line[otherRate] ?? 0) !== 0);
+    if (sent || rated >= 0) {
+      errors.push({
+        field: sent ?? `lines.${rated}.${otherRate}`,
+        code: StockErrorCode.LOADING_WRONG_HALF,
+        message:
+          half === 'LOAD'
+            ? 'A branch transfer is unloaded at the receiving branch: record the unloading on the receipt, not on the despatch.'
+            : 'A branch transfer is loaded at the sending branch, on the despatch: the receipt records the unloading only.',
+      });
+    }
+    return errors;
   }
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -120,6 +120,16 @@ UPDATE accounts.acc_voucher_types
    AND vchr_menu_id IS NULL
    AND EXISTS (SELECT 1 FROM fixed.menu_master WHERE menu_id = 100);
 
+-- 20261026100000_transfer_loading_charges_notes_153: the same for 'TRF', the
+-- voucher a godown transfer's loading / unloading charges post as (menu 41).
+UPDATE accounts.acc_voucher_types
+   SET vchr_menu_id    = 41,
+       vchr_updated_on = now(),
+       vchr_updated_by = 'Acc_Voucher_Types_Register.sql'
+ WHERE vchr_type_code = 'TRF'
+   AND vchr_menu_id IS NULL
+   AND EXISTS (SELECT 1 FROM fixed.menu_master WHERE menu_id = 41);
+
 -- Keep the identity sequence ahead of every id, as Acc_Voucher_Types.sql does.
 SELECT setval(
     pg_get_serial_sequence('accounts.acc_voucher_types', 'vchr_type_id'),

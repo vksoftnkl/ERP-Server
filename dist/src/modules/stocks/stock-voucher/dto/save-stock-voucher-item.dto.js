@@ -48,6 +48,8 @@ class SaveStockVoucherItemDto {
     costRateWot;
     landedRate;
     taxPerc;
+    loadRate;
+    unloadRate;
     reasonId;
     direction;
     syncDate;
@@ -318,6 +320,22 @@ __decorate([
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Object)
 ], SaveStockVoucherItemDto.prototype, "taxPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: "Loading charge per unit of uomId. Transfers only (refused elsewhere); never negative (422). The header's loading charge is round(Σ (qty + freeQty) × loadRate, 2) — what was carried — summed by the server while loadEnabled. numeric(18,4).",
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "loadRate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'Unloading charge per unit of uomId. As loadRate, summed while unloadEnabled. numeric(18,4).',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "unloadRate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

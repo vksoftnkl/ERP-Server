@@ -32,6 +32,7 @@ import {
 import { SettleShortStockTransferDto, StockTransferRefDto } from './dto/post-stock-transfer.dto';
 import type {
   StockTransferPrefill,
+  StockTransferReceiptPayload,
   StockTransferReceiveResult,
   StockTransferSettleShortResult,
 } from './types/stock-transfer.types';
@@ -41,6 +42,7 @@ import {
   StockTransferErrorResponseDto,
   StockTransferInboundSuccessDto,
   StockTransferPrefillSuccessDto,
+  StockTransferReceiptLoadSuccessDto,
   StockTransferReceiveSuccessDto,
 } from './dto/stock-transfer-response.dto';
 
@@ -85,6 +87,9 @@ const TRANSFER_IN_RULES: StockVoucherTypeRules = {
   allowsRepeatHolding: true,
   allowsCount: false,
   allowsToBranch: false,
+  // Notes 153 — the receipt carries the UNLOADING box of a branch transfer;
+  // StockTransferService refuses its loading box.
+  allowsLoading: true,
   postShape: 'TRANSFER_IN',
   auditScreenName: 'Stock Transfer Receipt',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
@@ -122,6 +127,28 @@ export class StockTransferReceiveController {
       message: `${data.meta.count} consignments in transit to this branch`,
       data,
     };
+  }
+
+  @Get()
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Load one receipt (TRANSFER_IN), with its despatch and what is still owed',
+    description:
+      'Notes 154 #1 — the transfer GET reads under the despatch rules and 404s a receipt. Same shape as GET /stock/transfer?svhId: header + lines + transit. The header also names the despatch (linkSrcDocId, linkSrcAccYear, linkSrcRefno) and the branch that sent it (fromBranchId / fromBranchName); transit is the DESPATCH\'s rows — sent, received, damaged, remaining — so a reopened draft sees the remainder.',
+  })
+  @ApiOkResponse({ type: StockTransferReceiptLoadSuccessDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async load(
+    @Query() query: StockTransferRefQueryDto,
+  ): Promise<StockVoucherSuccessResponse<StockTransferReceiptPayload>> {
+    const data = await this.stockTransferService.getReceipt(
+      TRANSFER_IN_RULES,
+      query.svhId,
+      query.accYear,
+      query.companyId,
+      query.branchId,
+    );
+    return { success: true, message: 'Transfer receipt fetched successfully', data };
   }
 
   @Get('prefill')

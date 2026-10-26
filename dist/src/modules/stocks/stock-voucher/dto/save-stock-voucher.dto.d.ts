@@ -38,6 +38,16 @@ export declare class SaveStockVoucherHeaderDto {
     lrNo?: string | null;
     vehicleNo?: string | null;
     expectedOn?: string | null;
+    loadEnabled?: boolean;
+    loadDatetime?: string | null;
+    loadmanIds?: string[];
+    driverId?: string | null;
+    supervisorId?: string | null;
+    vehicleId?: string | null;
+    unloadEnabled?: boolean;
+    unloadDatetime?: string | null;
+    unloadmanIds?: string[];
+    unloadSupervisorId?: string | null;
     userId?: string;
     createdBy?: string | null;
     modifiedBy?: string | null;
