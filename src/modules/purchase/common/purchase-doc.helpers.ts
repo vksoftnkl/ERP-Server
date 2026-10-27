@@ -224,6 +224,15 @@ export async function assertBillsUnsettled(tx: Tx, docType: string, docId: strin
   if (Number(paid.n) > 0) purRefuse(`${refno} is already paid or adjusted — undo that first.`, PUR.EDIT_LOCKED_PAID, 'id', 409);
 }
 
+/** A bill / GRN with a live (draft or posted) return against it cannot be cancelled — cancel the return first. */
+export async function assertNoLiveReturns(tx: Tx, srcDocId: string, refno: string) {
+  const rows = await tx.$queryRaw<{ pr_refno: string }[]>`
+    SELECT DISTINCT pr.pr_refno FROM purchase.pur_return pr
+     WHERE pr.pr_src_doc_id = ${srcDocId}::uuid AND pr.pr_status <> 'CANCELLED' AND NOT pr.pr_is_deleted
+     ORDER BY 1 LIMIT 5`;
+  if (rows.length) purRefuse(`${refno} has return ${rows.map((r) => r.pr_refno).join(', ')} against it — cancel the return first.`, PUR.EDIT_LOCKED_PAID, 'id', 409);
+}
+
 export async function withdrawBillRows(tx: Tx, docType: string, docId: string, actor: string) {
   await tx.accBillBalance.updateMany({
     where: { ablSrcModule: SRC_MODULE, ablSrcDocType: docType, ablSrcDocId: docId, ablIsDeleted: false },
@@ -240,7 +249,6 @@ export async function statusLog(tx: Tx, a: { companyId: string; branchId: string
   });
 }
 
-/** BigInt → string, recursively (JSON cannot carry a BigInt). */
 /** Item name + unit name per unit row (iuc_id) — what a loaded line shows. */
 export async function unitNames(db: { $queryRaw: Tx['$queryRaw'] }, uomIds: string[]) {
   if (!uomIds.length) return new Map<string, { itemName: string; unitName: string }>();
@@ -253,6 +261,7 @@ export async function unitNames(db: { $queryRaw: Tx['$queryRaw'] }, uomIds: stri
   return new Map(rows.map((r) => [r.iuc_id, { itemName: r.item_name, unitName: r.unit_name }]));
 }
 
+/** BigInt → string, recursively (JSON cannot carry a BigInt). */
 export function jsonSafe<T>(v: T): T {
   if (typeof v === 'bigint') return v.toString() as unknown as T;
   if (Array.isArray(v)) return v.map((x) => jsonSafe(x)) as unknown as T;

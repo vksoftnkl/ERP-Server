@@ -16,6 +16,7 @@ import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stoc
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
+import { assertNoLiveReturns } from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 
 /**
@@ -169,6 +170,7 @@ export class PurchaseInvoiceService {
       if (Number(paid.n) > 0) {
         purConflict(`${cur.piRefno} is already paid or adjusted — undo the payment allocation first, or enter a debit note.`, PUR.EDIT_LOCKED_PAID, 'piId');
       }
+      await assertNoLiveReturns(tx, dto.piId, cur.piRefno);
       const rules = this.stockRules();
       const shadows = await tx.$queryRaw<{ svh_id: string }[]>`
         SELECT svh_id FROM stock.stock_voucher
