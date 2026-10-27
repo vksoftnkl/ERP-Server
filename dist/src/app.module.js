@@ -75,6 +75,7 @@ const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
 const supplier_group_module_1 = require("./modules/purchase/supplier-group/supplier-group.module");
 const suppliers_module_1 = require("./modules/purchase/suppliers/suppliers.module");
+const purchase_module_1 = require("./modules/purchase/purchase.module");
 const area_module_1 = require("./modules/sales/area/area.module");
 const sale_freight_charges_module_1 = require("./modules/sales/sale-freight-charges/sale-freight-charges.module");
 const sale_loading_charges_module_1 = require("./modules/sales/sale-loading-charges/sale-loading-charges.module");
@@ -246,6 +247,7 @@ exports.AppModule = AppModule = __decorate([
             ledger_map_module_1.LedgerMapModule,
             supplier_group_module_1.SupplierGroupModule,
             suppliers_module_1.SuppliersModule,
+            purchase_module_1.PurchaseModule,
             state_module_1.StateModule,
             city_module_1.CityModule,
             area_module_1.AreaModule,

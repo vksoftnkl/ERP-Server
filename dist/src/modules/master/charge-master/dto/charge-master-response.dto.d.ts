@@ -38,6 +38,7 @@ export declare class ChargeMasterPayloadDto {
     ledGstRate: number | null;
     chgSepPost: boolean;
     chgManParty: boolean;
+    chgOnBill: boolean;
     chgDispOrder: number | null;
     chgAutoApply: boolean;
     chgIsActive: boolean;

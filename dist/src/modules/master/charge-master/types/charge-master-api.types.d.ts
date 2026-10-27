@@ -125,6 +125,7 @@ export interface ChargeMasterPayload {
     chgTaxName: string | null;
     chgSepPost: boolean;
     chgManParty: boolean;
+    chgOnBill: boolean;
     chgDispOrder: number | null;
     chgAutoApply: boolean;
     chgIsActive: boolean;

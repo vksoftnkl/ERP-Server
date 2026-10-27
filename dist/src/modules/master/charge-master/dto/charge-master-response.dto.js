@@ -74,6 +74,7 @@ class ChargeMasterPayloadDto {
     ledGstRate;
     chgSepPost;
     chgManParty;
+    chgOnBill;
     chgDispOrder;
     chgAutoApply;
     chgIsActive;
@@ -241,6 +242,10 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], ChargeMasterPayloadDto.prototype, "chgManParty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], ChargeMasterPayloadDto.prototype, "chgOnBill", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
     __metadata("design:type", Object)

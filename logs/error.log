@@ -20700,3 +20700,91 @@ Foreign key constraint violated on the constraint: `fk_itg_track_preset`
 2026-10-27T10:25:33.904Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-27T10:25:36.282Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-10-27T10:25:38.597Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-27T11:40:38.589Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1034:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:245:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:68:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:16:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:192:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:56:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-10-27T11:42:22.664Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `42804`. Message: `ERROR: column "cd_voucher_no" is of type bigint but expression is of type text
+HINT: You will need to rewrite or cast the expression.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseInvoiceService.writeDocument (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:497:9)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:109:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:90:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:29:18)
+2026-10-27T11:42:22.789Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `42804`. Message: `ERROR: column "cd_voucher_no" is of type bigint but expression is of type text
+HINT: You will need to rewrite or cast the expression.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseInvoiceService.writeDocument (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:497:9)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:109:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:90:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:29:18)
+2026-10-27T11:42:22.858Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `42804`. Message: `ERROR: column "cd_voucher_no" is of type bigint but expression is of type text
+HINT: You will need to rewrite or cast the expression.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseInvoiceService.writeDocument (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:497:9)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:109:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:90:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:29:18)
+2026-10-27T13:27:23.057Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/claims/settle
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_party_id, avh_voucher_type_id, avh_acc_year, avh_doc_refno)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 01a17d29-8d79-7508-9830-c6017ae17a1a, 52, 2026-2027, PRN/2026-2027/D14/00001/L2) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async out.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:583:22)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseReturnService.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:539:17)
+    at async PurchaseReturnController.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:675:18)
+2026-10-27T13:27:23.106Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/claims/settle
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_party_id, avh_voucher_type_id, avh_acc_year, avh_doc_refno)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 01a17d29-8d79-7508-9830-c6017ae17a1a, 52, 2026-2027, PRN/2026-2027/D14/00001/L2) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async out.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:583:22)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseReturnService.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:539:17)
+    at async PurchaseReturnController.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:675:18)

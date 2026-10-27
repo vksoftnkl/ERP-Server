@@ -32,6 +32,7 @@ class SaveChargeMasterDto {
     chgTaxId;
     chgSepPost;
     chgManParty;
+    chgOnBill;
     chgDispOrder;
     chgAutoApply;
     chgIsActive;
@@ -144,6 +145,11 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveChargeMasterDto.prototype, "chgManParty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ default: true, description: 'Purchase only: true = on the supplier\'s bill (payable); false = our own cost (coolie, own freight): always landing cost, owed to the party on the document row. Migration 20261028100000.' }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveChargeMasterDto.prototype, "chgOnBill", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, default: 0, description: 'Grid ordering' }),
     (0, dtoDecorators_1.NullableInteger)(),
