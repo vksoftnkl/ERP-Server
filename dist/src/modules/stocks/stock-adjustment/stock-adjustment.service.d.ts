@@ -27,6 +27,7 @@ export interface PickStockRow {
     onHandQty: number;
     reservedQty: number;
     availableQty: number;
+    freeAvailableQty: number;
     avgCostRate: number;
     stockValue: number;
     firstInDate: string | null;

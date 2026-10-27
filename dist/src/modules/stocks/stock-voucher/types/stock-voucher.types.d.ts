@@ -241,6 +241,9 @@ export interface StockVoucherCancelResult extends StockVoucherPayload {
     status: StockVoucherStatus;
     cancelledOn: string | null;
 }
+export interface StockTransferRecallResult extends StockVoucherCancelResult {
+    transitRowsClosed: number;
+}
 export interface StockVoucherImportResult extends StockVoucherPayload {
     rowsRead: number;
     linesImported: number;

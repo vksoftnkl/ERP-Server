@@ -24,6 +24,9 @@ export interface StockTrackPresetsPayload {
     spt_sort_order: number;
     spt_remarks: string | null;
     spt_is_company_override: boolean;
+    spt_is_active: boolean;
+    usedByItems: number;
+    usedByGroups: number;
 }
 export interface StockTrackPresetsGetMeta {
     company_id: string | null;

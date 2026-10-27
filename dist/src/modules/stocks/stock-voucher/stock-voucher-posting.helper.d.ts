@@ -135,4 +135,9 @@ export interface CancelStockVoucherParams {
     refuseNegative?: boolean;
 }
 export declare function cancelStockVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;
+export interface RecallTransferOutResult {
+    rowsReversed: number;
+    transitRowsClosed: number;
+}
+export declare function recallTransferOut(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<RecallTransferOutResult>;
 export declare function cancelDraftVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;

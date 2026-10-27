@@ -137,6 +137,17 @@ const savedPayload = (
 ): { header: Record<string, unknown>; lines: unknown[] } =>
   (save.mock.calls[call] as unknown[])[1] as { header: Record<string, unknown>; lines: unknown[] };
 
+/** The status and body of the HttpException a call was refused with. */
+const refusalOf = async (run: Promise<unknown>): Promise<{ status: number; body: unknown }> => {
+  try {
+    await run;
+  } catch (error) {
+    const http = error as { getStatus: () => number; getResponse: () => unknown };
+    return { status: http.getStatus(), body: http.getResponse() };
+  }
+  throw new Error('expected the call to be refused, and it was not');
+};
+
 /** The 422 body the per-line refusals build. */
 const detailsOf = async (run: Promise<unknown>): Promise<string[]> => {
   try {
@@ -163,6 +174,7 @@ describe('StockTransferService', () => {
         sbl_lot_id: LOT_MILK,
         sbl_bucket: 'SALEABLE',
         sbl_on_hand_qty: new Prisma.Decimal(55),
+        free_available_qty: new Prisma.Decimal(0),
       },
     ],
   ) => {
@@ -350,6 +362,7 @@ describe('StockTransferService', () => {
             sbl_lot_id: LOT_MILK,
             sbl_bucket: 'SALEABLE',
             sbl_on_hand_qty: new Prisma.Decimal(55),
+            free_available_qty: new Prisma.Decimal(0),
           },
           {
             sbl_godown_id: GD_MAIN,
@@ -357,6 +370,7 @@ describe('StockTransferService', () => {
             sbl_lot_id: LOT_MILK,
             sbl_bucket: 'DAMAGED',
             sbl_on_hand_qty: new Prisma.Decimal(5),
+            free_available_qty: new Prisma.Decimal(0),
           },
         ],
       );
@@ -416,6 +430,7 @@ describe('StockTransferService', () => {
           sbl_lot_id: LOT_MILK,
           sbl_bucket: 'SALEABLE',
           sbl_on_hand_qty: new Prisma.Decimal(15),
+          free_available_qty: new Prisma.Decimal(0),
         },
       ]);
       const messages = await detailsOf(service.save(TRANSFER_OUT_RULES, outPayload()));
@@ -432,6 +447,7 @@ describe('StockTransferService', () => {
           sbl_lot_id: LOT_MILK,
           sbl_bucket: 'SALEABLE',
           sbl_on_hand_qty: new Prisma.Decimal(20),
+          free_available_qty: new Prisma.Decimal(0),
         },
       ]);
       const messages = await detailsOf(
@@ -470,6 +486,7 @@ describe('StockTransferService', () => {
           sbl_lot_id: LOT_MILK,
           sbl_bucket: 'SALEABLE',
           sbl_on_hand_qty: new Prisma.Decimal(20),
+          free_available_qty: new Prisma.Decimal(0),
         },
       ]);
       const messages = await detailsOf(
@@ -491,6 +508,64 @@ describe('StockTransferService', () => {
         ),
       );
       expect(messages.join(' ')).toMatch(/sends 25 but this godown holds 20/i);
+    });
+
+    // Notes 160 A — Free 1 on a lot that never received free stock saved, and
+    // the holding read free in 0 / free out 2.
+    it('refuses free quantity above the free balance, at lines.<i>.freeQty, on each line that takes it', async () => {
+      stockReads(undefined, [
+        {
+          sbl_godown_id: GD_MAIN,
+          sbl_item_id: MILK,
+          sbl_lot_id: LOT_MILK,
+          sbl_bucket: 'SALEABLE',
+          sbl_on_hand_qty: new Prisma.Decimal(50),
+          free_available_qty: new Prisma.Decimal(2),
+        },
+      ]);
+      const line = { itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, toBaseFactor: 1 };
+      const refusal = await refusalOf(
+        service.save(
+          TRANSFER_OUT_RULES,
+          outPayload({
+            lines: [
+              { ...line, lineNo: 1, qty: 5, freeQty: 2 },
+              { ...line, lineNo: 2, qty: 5 },
+              { ...line, lineNo: 3, qty: 5, freeQty: 1 },
+            ],
+          }),
+        ),
+      );
+      const errors = (refusal.body as { errors: Array<{ field: string; code: string; message: string }> }).errors;
+      expect(refusal.status).toBe(422);
+      expect(errors.map((e) => [e.field, e.code])).toEqual([
+        ['lines.0.freeQty', StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK],
+        ['lines.2.freeQty', StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK],
+      ]);
+      expect(errors[0].message).toMatch(/sends 3 free, but only 2 .* came in free/);
+      expect(voucherService.save).not.toHaveBeenCalled();
+    });
+
+    it('counts free in the base unit: freeQty × the line\'s factor', async () => {
+      stockReads(undefined, [
+        {
+          sbl_godown_id: GD_MAIN,
+          sbl_item_id: MILK,
+          sbl_lot_id: LOT_MILK,
+          sbl_bucket: 'SALEABLE',
+          sbl_on_hand_qty: new Prisma.Decimal(50),
+          free_available_qty: new Prisma.Decimal(10),
+        },
+      ]);
+      await service.save(
+        TRANSFER_OUT_RULES,
+        outPayload({
+          lines: [
+            { lineNo: 1, itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, qty: 1, freeQty: 1, toBaseFactor: 10 },
+          ],
+        }),
+      );
+      expect(voucherService.save).toHaveBeenCalled();
     });
 
     it('treats a holding with no balance row as zero on hand', async () => {
@@ -1200,6 +1275,7 @@ describe('StockTransferService', () => {
           sbl_lot_id: LOT_MILK,
           sbl_bucket: 'SALEABLE',
           sbl_on_hand_qty: new Prisma.Decimal(5),
+          free_available_qty: new Prisma.Decimal(0),
         },
       ]);
       const line = { itemId: MILK, uomId: UOM_ID, godownId: GD_MAIN, lotId: LOT_MILK, qty: 3 };

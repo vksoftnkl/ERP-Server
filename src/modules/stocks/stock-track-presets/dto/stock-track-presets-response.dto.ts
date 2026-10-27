@@ -70,6 +70,16 @@ export class StockTrackPresetsPayloadDto {
     description: 'true when this row overrides a shared preset of the same code',
   })
   spt_is_company_override!: boolean;
+  @ApiProperty({ example: true, description: 'false = deactivated; only a fetch by spt_id returns one.' })
+  spt_is_active!: boolean;
+  @ApiProperty({
+    example: 3,
+    description:
+      'Items (not deleted, active or not) naming this preset. Above 0 the six spt_track_* flags, spt_valuation_method and spt_code are locked (notes 159 §4).',
+  })
+  usedByItems!: number;
+  @ApiProperty({ example: 0, description: 'Item groups (not deleted) naming this preset; locks the same fields.' })
+  usedByGroups!: number;
 }
 export class StockTrackPresetsGetMetaDto {
   @ApiPropertyOptional({ nullable: true })
@@ -90,4 +100,12 @@ export class StockTrackPresetsSuccessGetDto {
   data!: StockTrackPresetsPayloadDto[];
   @ApiProperty({ type: StockTrackPresetsGetMetaDto })
   meta!: StockTrackPresetsGetMetaDto;
+}
+export class StockTrackPresetsSuccessOneDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Stock track preset saved successfully' })
+  message!: string;
+  @ApiProperty({ type: StockTrackPresetsPayloadDto })
+  data!: StockTrackPresetsPayloadDto;
 }

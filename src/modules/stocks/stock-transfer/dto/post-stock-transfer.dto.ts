@@ -85,6 +85,13 @@ export class CancelStockTransferDto extends StockTransferRefDto {
 }
 
 /**
+ * Notes 160 B — recall a branch despatch nobody received: the lorry never left,
+ * or came straight back. Same body as a cancel; allowed only while it is
+ * IN_TRANSIT and no receipt (a draft one included) names it.
+ */
+export class RecallStockTransferDto extends CancelStockTransferDto {}
+
+/**
  * §1.1 — short-settle an IN_TRANSIT despatch whose remainder will never arrive.
  * Allowed only once every row has been received at least in part; the reason
  * is required because the loss has to land on somebody's ledger.

@@ -33,6 +33,7 @@ and the drift lands in the ledger.
 | `GET /stock/transfer/validate` | the preflight, line by line |
 | `POST /stock/transfer/despatch` | the engine (shape `TRANSFER_OUT`), plus the lorry |
 | `POST /stock/transfer/cancel` | **same-branch POSTED only** — reversal rows |
+| `POST /stock/transfer/recall` | notes 160 B — an **untouched** branch despatch (IN_TRANSIT, no receipt at all, nothing received or damaged): OUT reversed, transit rows CANCELLED, loading voucher reversed, despatch CANCELLED. Menu 192 CANCEL |
 | `DELETE /stock/transfer` | soft delete, DRAFT only |
 | `GET /stock/transfer/receive` | load one receipt (notes 154 #1): header + lines + the **despatch's** transit rows; the header adds `linkSrcRefno`, `fromBranchId`, `fromBranchName` |
 | `GET /stock/transfer/receive/inbound` | what is on its way to me, oldest first; each row names its despatch (`outVoucherId`, `outAccYear` — what prefill takes) and sender (`fromBranchName`, `fromGodownName`) |
@@ -153,6 +154,28 @@ cached inbound worklist tells a branch stock is coming that it already has.
   `toGodownName`; every voucher header names `toBranchName` beside `toBranchId`.
 - Not gated by menu rights yet: the `/receive` routes (Branch Inward 193), and
   the branch form of `/stock/transfer` is judged on menu 41, not Branch Outward 192.
+
+## Notes 160 (2026-10-27)
+
+- **A — free goods leave only from free goods that came in.** `pick-stock` answers
+  `freeAvailableQty` (base unit, `sbl_free_in_qty − sbl_free_out_qty`, never below 0). The save
+  refuses a holding's summed `freeQty × toBaseFactor` above it — 422
+  `STOCK_FREE_QTY_EXCEEDS_FREE_STOCK` at `lines.<i>.freeQty`, on every line of that holding that
+  takes free — and the engine refuses the same at post (`assertFreeStock`, after the balances are
+  rebuilt under the item lock) for every stock voucher; a sales shadow's scheme free goods are
+  exempt. `qty + free ≤ on hand` is unchanged. A branch despatch's free still travels as plain
+  quantity (`stt_sent_qty` = base + free), so it arrives as paid stock.
+- **B — recall** (`recallTransferOut` / `StockPostingService.recall` /
+  `StockVoucherService.recall`): refused 409 `STOCK_TRANSFER_RECALL_RECEIVED` ("Counter2 has
+  already keyed a receipt against it (TRI/…, DRAFT)") once the receiving branch touched it; DRAFT /
+  RECEIVED / godown transfer / CANCELLED get the status's own 409. The trail row is CANCELLED with
+  `Recalled: <reason>`. Judged on menu 192 (`BRANCH_OUTWARD_MENU_ID`), CANCEL — added to its
+  `menu_verbs` by migration `20261027110000`; nobody is granted it by the migration.
+- **C — numbers** are `TRF/2026-2027/D1/00016`: the device's `dev_code`, the serial padded to five
+  digits (see the device master's README). OPENING and PHYSICAL draw from the accounts series
+  (`OPN0006`, `PHY…`) and never carried a device. Old documents keep their refno.
+- Proof: `test/transfers-notes-160.e2e-spec.ts` (live DB, API only, value-neutral — the recall
+  undoes its own despatch).
 
 ## Two known engine gaps this module lives with
 

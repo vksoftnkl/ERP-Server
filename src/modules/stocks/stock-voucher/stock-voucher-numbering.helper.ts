@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import { ensureDeviceCode } from 'src/modules/fixed/device-list-master/device-code.helper';
 import { throwStockConflict, throwStockNotFound } from 'src/common/utils/module-service.utils';
 import { StockErrorCode } from '../types/stock-error-codes';
 import type {
@@ -16,7 +17,7 @@ import type {
  * no column pointing at an accounting document.
  *
  * svh_refno has two sources. A type with no `refnoVchrTypeId` in its rules
- * builds `{typeCode}/{accYear}/{deviceCode}/{slno}` here. A type that names
+ * builds `{typeCode}/{accYear}/{deviceCode}/{slno:00000}` here. A type that names
  * one — OPENING names accounts.acc_voucher_types row 1, "Opening Stock" —
  * draws the printed number from accounts.acc_voucher_seq under that row's
  * prefix / suffix / width / reset frequency, exactly as a sale bill does. That
@@ -45,9 +46,12 @@ export interface AllocatedStockVoucherNumber {
   refno: string;
 }
 /**
- * Reads the device's printable code. `device_master` has no `dev_code`: the
- * uid is what the tills are labelled with (`TILL-01`), and the name is the
- * fallback for a device registered without one.
+ * Reads the device's printable code: `dev_code` (notes 160 C) — `D1`, never
+ * the machine id. Until then this returned `dev_device_uid`, so the office PC
+ * printed `TRF/2026-2027/44c01ccc-a162-8314-34b0-1dbf2f5c7bab/16`. A device
+ * with no code yet (registered before notes 160, or inserted by something
+ * other than the device master) is given the next one here, in the caller's
+ * transaction — see device-code.helper.
  *
  * Also the point at which a blocked or deleted device is refused. svh_device_id
  * is NOT NULL and the FK is RESTRICT, so a bad id would otherwise surface as a
@@ -61,8 +65,7 @@ export async function resolveDeviceCode(
   const device = await tx.deviceMaster.findFirst({
     where: { devId: deviceId, devIsDeleted: false },
     select: {
-      devDeviceUid: true,
-      devDeviceName: true,
+      devCode: true,
       devIsActive: true,
       devIsBlocked: true,
       devBlockReason: true,
@@ -86,8 +89,7 @@ export async function resolveDeviceCode(
       StockErrorCode.DEVICE_BLOCKED,
     );
   }
-  const code = device.devDeviceUid?.trim() || device.devDeviceName?.trim();
-  return code || deviceId;
+  return device.devCode?.trim() || ((await ensureDeviceCode(tx, deviceId)) as string);
 }
 /**
  * Takes the transaction-scoped advisory lock that serialises two devices — or
@@ -148,8 +150,14 @@ export async function nextStockVoucherSlno(
   `;
   return rows[0]?.next_slno ?? BigInt(1);
 }
+/** Notes 160 C — the serial is printed zero-padded to this many digits (more when it outgrows them). */
+const REFNO_SLNO_DIGITS = 5;
 /**
- * `{typeCode}/{accYear}/{deviceCode}/{slno}` — `OPN/2026-2027/TILL-01/1`.
+ * `{typeCode}/{accYear}/{deviceCode}/{slno:00000}` — `TRF/2026-2027/D1/00016`.
+ *
+ * Notes 160 C: the serial is zero-padded to five digits. A number already on a
+ * document keeps its old form — only new ones are built this way, because a
+ * renumber would break printed slips and links.
  *
  * The device code is in the printed number on purpose: svh_refno is unique per
  * (company, branch, acc_year) on its own — ux_svh_refno — while the serial is
@@ -162,7 +170,12 @@ export function buildStockVoucherRefno(
   deviceCode: string,
   slno: bigint,
 ): string {
-  const refno = [typeCode, accYear.trim(), deviceCode, slno.toString()].join('/');
+  const refno = [
+    typeCode,
+    accYear.trim(),
+    deviceCode,
+    slno.toString().padStart(REFNO_SLNO_DIGITS, '0'),
+  ].join('/');
   if (refno.length > REFNO_MAX_LENGTH) {
     // Truncating would produce a number that has already been issued to some
     // other device, so this fails loudly instead.

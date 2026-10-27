@@ -22,6 +22,7 @@ class SaveDeviceListMasterDto {
     devUserId;
     devDeviceUid;
     devDeviceName;
+    devCode;
     devDeviceType;
     devPlatform;
     devMacAddress;
@@ -70,6 +71,19 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(120),
     __metadata("design:type", Object)
 ], SaveDeviceListMasterDto.prototype, "devDeviceName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 10,
+        nullable: true,
+        example: 'D1',
+        description: 'Notes 160 C — the short code stock voucher numbers carry (TRF/2026-2027/D1/00016). Letters, digits, - and _, stored upper-case; unique across every device, deleted ones included (409 DEVICE_CODE_DUPLICATE). Blank on a new device: the next D1, D2, … is given. Blank or omitted on an update keeps the current code — a device always has one.',
+    }),
+    (0, dtoDecorators_1.NullableString)(10),
+    (0, class_validator_1.Matches)(/^[A-Za-z0-9_-]{1,10}$/, {
+        message: 'devCode may hold only letters, digits, - and _ (at most 10)',
+    }),
+    __metadata("design:type", Object)
+], SaveDeviceListMasterDto.prototype, "devCode", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ enum: device_list_master_enum_1.DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 }),
     (0, dtoDecorators_1.OptionalTrimmedString)(30),

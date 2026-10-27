@@ -5,6 +5,7 @@ exports.nextStockVoucherSlno = nextStockVoucherSlno;
 exports.buildStockVoucherRefno = buildStockVoucherRefno;
 exports.allocateStockVoucherNumber = allocateStockVoucherNumber;
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
+const device_code_helper_1 = require("../../fixed/device-list-master/device-code.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_error_codes_1 = require("../types/stock-error-codes");
 const SLNO_LOCK_NAMESPACE = 'stock.stock_voucher.slno';
@@ -13,8 +14,7 @@ async function resolveDeviceCode(tx, deviceId) {
     const device = await tx.deviceMaster.findFirst({
         where: { devId: deviceId, devIsDeleted: false },
         select: {
-            devDeviceUid: true,
-            devDeviceName: true,
+            devCode: true,
             devIsActive: true,
             devIsBlocked: true,
             devBlockReason: true,
@@ -28,8 +28,7 @@ async function resolveDeviceCode(tx, deviceId) {
             ? `Device ${deviceId} is blocked: ${device.devBlockReason.trim()}`
             : `Device ${deviceId} is blocked or inactive.`, stock_error_codes_1.StockErrorCode.DEVICE_BLOCKED);
     }
-    const code = device.devDeviceUid?.trim() || device.devDeviceName?.trim();
-    return code || deviceId;
+    return device.devCode?.trim() || (await (0, device_code_helper_1.ensureDeviceCode)(tx, deviceId));
 }
 async function lockSlnoScope(tx, scope) {
     const lockKey = [
@@ -59,8 +58,14 @@ async function nextStockVoucherSlno(tx, scope) {
   `;
     return rows[0]?.next_slno ?? BigInt(1);
 }
+const REFNO_SLNO_DIGITS = 5;
 function buildStockVoucherRefno(typeCode, accYear, deviceCode, slno) {
-    const refno = [typeCode, accYear.trim(), deviceCode, slno.toString()].join('/');
+    const refno = [
+        typeCode,
+        accYear.trim(),
+        deviceCode,
+        slno.toString().padStart(REFNO_SLNO_DIGITS, '0'),
+    ].join('/');
     if (refno.length > REFNO_MAX_LENGTH) {
         throw new Error(`Generated stock voucher reference "${refno}" exceeds ${REFNO_MAX_LENGTH} characters. Shorten the device code on device_master.`);
     }

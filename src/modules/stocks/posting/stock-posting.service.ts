@@ -11,9 +11,11 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   cancelStockVoucher,
   postStockVoucher,
+  recallTransferOut,
 } from '../stock-voucher/stock-voucher-posting.helper';
 import type {
   PostStockVoucherResult,
+  RecallTransferOutResult,
   StockLedgerSourceLabel,
 } from '../stock-voucher/stock-voucher-posting.helper';
 import { StockAccountsPostingService } from './stock-accounts-posting.service';
@@ -187,6 +189,40 @@ export class StockPostingService {
       });
     }
     return reversed;
+  }
+
+  /**
+   * Notes 160 B — recall an untouched branch despatch (see
+   * `recallTransferOut`): the OUT rows reversed, the transit rows closed, the
+   * header CANCELLED, and the despatch's loading voucher (notes 156) given its
+   * `Rev` mirror — the one place a despatch's labour is reversed, because the
+   * goods never went. Same freeze guard as a cancel: the mirrors land in the
+   * From godown.
+   */
+  async recall(
+    tx: Prisma.TransactionClient,
+    source: StockVoucherSource,
+    opts: { actor: string; reason: string; cancelledOn: Date },
+  ): Promise<RecallTransferOutResult> {
+    await this.assertNotFrozen(tx, source);
+    const result = await recallTransferOut(tx, {
+      rules: source.rules,
+      svhId: source.svhId,
+      accYear: source.accYear,
+      actor: opts.actor,
+      reason: opts.reason,
+      cancelledOn: opts.cancelledOn,
+      refuseNegative: true,
+    });
+    await this.accounts.reverseForVoucher(tx, {
+      svhId: source.svhId,
+      accYear: source.accYear,
+      companyId: source.companyId,
+      voucherType: source.rules.voucherType,
+      reason: opts.reason,
+      actor: opts.actor,
+    });
+    return result;
   }
 
   /**

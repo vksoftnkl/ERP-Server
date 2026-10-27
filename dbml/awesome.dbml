@@ -2672,6 +2672,11 @@ Table device_master {
   devCreatedBy String
   devModifiedOn DateTime
   devModifiedBy String
+  devCode String [note: 'Notes 160 C — the short code stock voucher numbers carry (TRF/2026-2027/D1/00016).
+Unique among live devices, any case (ux_dev_code — partial, so DB-only, not
+declared here); D1, D2, … assigned on registration when left blank. Last
+because ADD COLUMN puts it last; device_master is referenced too widely to
+rebuild for column order.']
   txnStatusLogs txn_status_log [not null]
   saleOrders sale_order [not null]
   stockVouchers stock_voucher [not null]

@@ -6,6 +6,7 @@ export declare class SaveDeviceListMasterDto {
     devUserId?: string | null;
     devDeviceUid?: string;
     devDeviceName?: string | null;
+    devCode?: string | null;
     devDeviceType?: DeviceType;
     devPlatform?: DevicePlatform | null;
     devMacAddress?: string | null;

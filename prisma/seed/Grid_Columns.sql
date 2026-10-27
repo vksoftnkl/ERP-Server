@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (1579 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (1580 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -257,6 +257,7 @@ SELECT v.* FROM (VALUES
     -- ============ DESKTOP - DEVICE MASTER LIST (id 31) ============
     ,('01a038f8-b25b-7650-a9ca-64387f2492e4', 31 , 1 , '#'                  , 'dev_id'                    , 'Text'          , 0.00  , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a038f8-b25b-7c82-8d82-a69b53c30fdc', 31 , 2 , 'Device'             , 'dev_device_name'           , 'Text'          , 13.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a17baf-2aeb-74ac-bb31-f055e53cb471', 31 , 13, 'Code'               , 'dev_code'                  , 'Text'          , 5.00  , 2.50 , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a038f8-b25b-7ca9-b7a9-9e491be8dbd3', 31 , 3 , 'Type'               , 'dev_device_type'           , 'Text'          , 7.00  , 3.00 , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a038f8-b25b-7cbf-b371-12db9b252921', 31 , 4 , 'Platform'           , 'dev_platform'              , 'Text'          , 7.00  , 4.00 , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a038f8-b25b-7cd3-978f-4b0773d080bd', 31 , 5 , 'Company'            , 'dev_company_name'          , 'Text'          , 11.00 , 5.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')

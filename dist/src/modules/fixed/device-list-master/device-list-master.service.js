@@ -19,6 +19,7 @@ const device_list_master_enum_1 = require("./types/device-list-master-enum");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const device_code_helper_1 = require("./device-code.helper");
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
 const DEVICE_TYPE_VALUES = Object.values(device_list_master_enum_1.DeviceType);
@@ -270,6 +271,7 @@ let DeviceListMasterService = class DeviceListMasterService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, companyId);
+                data.devCode = await this.deviceCodeFor(tx, saveDeviceListMasterDto.devCode, null);
                 const created = await tx.deviceMaster.create({ data });
                 const payload = this.toPayload(created);
                 await this.auditLogService.logEntityChange({
@@ -324,6 +326,10 @@ let DeviceListMasterService = class DeviceListMasterService {
                     data.devDeviceUid = normalizedDeviceUid;
                 }
                 (0, module_service_utils_1.applyPresentFields)(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS, DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS);
+                const nextCode = await this.deviceCodeFor(tx, saveDeviceListMasterDto.devCode, existing.devCode, devId);
+                if (nextCode !== existing.devCode) {
+                    data.devCode = nextCode;
+                }
                 const updated = await tx.deviceMaster.update({ where: { devId }, data });
                 const payload = this.toPayload(updated);
                 await this.auditLogService.logEntityChange({
@@ -351,6 +357,26 @@ let DeviceListMasterService = class DeviceListMasterService {
             ]);
             throw error;
         }
+    }
+    async deviceCodeFor(tx, keyed, current, devId) {
+        await (0, device_code_helper_1.lockDeviceCodes)(tx);
+        const code = (0, device_code_helper_1.normalizeDeviceCode)(keyed);
+        if (code === null) {
+            return current ?? (await (0, device_code_helper_1.nextDeviceCode)(tx));
+        }
+        if (code === current) {
+            return current;
+        }
+        if (await (0, device_code_helper_1.deviceCodeTaken)(tx, code, devId)) {
+            (0, module_service_utils_1.throwFixedConflict)('Device code already in use', [
+                {
+                    field: 'devCode',
+                    message: `${code} is, or was, another device's code. Voucher numbers carry it, so it is never given twice.`,
+                    code: device_list_master_enum_1.DeviceListMasterErrorCode.CODE_DUPLICATE,
+                },
+            ]);
+        }
+        return code;
     }
     async ensureDeviceUidIsUnique(tx, deviceUid, companyId, excludeId) {
         const existing = await tx.deviceMaster.findFirst({
@@ -380,6 +406,7 @@ let DeviceListMasterService = class DeviceListMasterService {
             devUserId: record.devUserId,
             devDeviceUid: record.devDeviceUid,
             devDeviceName: record.devDeviceName,
+            devCode: record.devCode,
             devDeviceType: toDeviceType(record.devDeviceType),
             devPlatform: toDevicePlatform(record.devPlatform),
             devMacAddress: record.devMacAddress,

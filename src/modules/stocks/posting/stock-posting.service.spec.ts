@@ -4,6 +4,7 @@ import type { StockVoucherTypeRules } from '../stock-voucher/types/stock-voucher
 import {
   cancelStockVoucher,
   postStockVoucher,
+  recallTransferOut,
 } from '../stock-voucher/stock-voucher-posting.helper';
 import type { StockAccountsPostingService } from './stock-accounts-posting.service';
 import { StockPostingService } from './stock-posting.service';
@@ -14,6 +15,7 @@ import { StockVoucherSource } from './stock-voucher.source';
 jest.mock('../stock-voucher/stock-voucher-posting.helper', () => ({
   postStockVoucher: jest.fn(),
   cancelStockVoucher: jest.fn(),
+  recallTransferOut: jest.fn(),
 }));
 
 const SVH_ID = '11111111-1111-4111-8111-111111111111';
@@ -464,6 +466,59 @@ describe('StockPostingService', () => {
         service.cancel(tx, source(), { actor: ACTOR, reason: 'x', cancelledOn: postedOn }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(cancelStockVoucher).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── notes 160 B ─────────────────────────────────────────────────────────
+  describe('recall', () => {
+    const despatch = () =>
+      new StockVoucherSource({
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        rules: TRANSFER_RULES,
+      });
+
+    it("recalls through the helper and reverses the despatch's loading voucher", async () => {
+      (recallTransferOut as jest.Mock).mockResolvedValue({ rowsReversed: 2, transitRowsClosed: 2 });
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+
+      await expect(
+        service.recall(tx, despatch(), { actor: ACTOR, reason: 'lorry never left', cancelledOn: postedOn }),
+      ).resolves.toEqual({ rowsReversed: 2, transitRowsClosed: 2 });
+
+      expect(recallTransferOut).toHaveBeenCalledWith(tx, {
+        rules: TRANSFER_RULES,
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        actor: ACTOR,
+        reason: 'lorry never left',
+        cancelledOn: postedOn,
+        refuseNegative: true,
+      });
+      expect(accounts.reverseForVoucher).toHaveBeenCalledWith(tx, {
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        voucherType: 'TRANSFER_OUT',
+        reason: 'lorry never left',
+        actor: ACTOR,
+      });
+    });
+
+    it('is held by the freeze guard: the mirrors land in the From godown', async () => {
+      const tx = txWith({
+        docDatetime: new Date('2026-09-21T11:00:00Z'),
+        godowns: [GODOWN_ID],
+        frozenBy: window,
+      });
+
+      await expect(
+        service.recall(tx, despatch(), { actor: ACTOR, reason: 'x', cancelledOn: postedOn }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(recallTransferOut).not.toHaveBeenCalled();
+      expect(accounts.reverseForVoucher).not.toHaveBeenCalled();
     });
   });
 });

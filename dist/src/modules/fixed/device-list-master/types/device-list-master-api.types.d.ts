@@ -13,6 +13,7 @@ export interface DeviceListMasterPayload {
     devUserName?: string | null;
     devDeviceUid: string;
     devDeviceName: string | null;
+    devCode: string | null;
     devDeviceType: DeviceType;
     devPlatform: DevicePlatform | null;
     devMacAddress: string | null;

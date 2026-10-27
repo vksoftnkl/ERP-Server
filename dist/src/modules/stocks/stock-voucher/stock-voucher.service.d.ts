@@ -4,7 +4,7 @@ import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import { StockPostingService } from '../posting/stock-posting.service';
-import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow, type StockPostHooks } from './types/stock-voucher.types';
+import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockTransferRecallResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow, type StockPostHooks } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
     branchId: string;
@@ -23,6 +23,10 @@ export interface CountSheetQuery {
     godownId: string;
     bucket?: StockBucket;
     itemGroupId?: string;
+    itemBrandId?: string;
+    itemCategoryId?: string;
+    itemSectionId?: string;
+    negativeOnly?: boolean;
     includeZero?: boolean;
     limit?: number;
     offset?: number;
@@ -58,6 +62,7 @@ export declare class StockVoucherService {
     private assertPostable;
     post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, hooks?: StockPostHooks | ((tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>)): Promise<StockVoucherPostResult>;
     cancel(rules: StockVoucherTypeRules, svhId: string, accYear: string, reason: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherCancelResult>;
+    recall(rules: StockVoucherTypeRules, svhId: string, accYear: string, reason: string, companyId: string, branchId: string, userId?: string): Promise<StockTransferRecallResult>;
     softDelete(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherDeleteResult>;
     importLines(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, csvText: string, userId?: string): Promise<StockVoucherImportResult>;
     pendingItems(rules: StockVoucherTypeRules, companyId: string, branchId: string, accYear: string, limit?: number, offset?: number): Promise<PagedResult<PendingOpeningItem>>;

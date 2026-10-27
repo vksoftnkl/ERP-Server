@@ -5,6 +5,7 @@ import type { StockVoucherService } from '../stock-voucher/stock-voucher.service
 import type { StockVoucherTypeRules } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
 import {
+  BRANCH_OUTWARD_MENU_ID,
   STOCK_TRANSFER_MENU_ID,
   StockTransferController,
   TRANSFER_OUT_RULES,
@@ -36,7 +37,13 @@ const allRights = () => ({
 
 describe('StockTransferController', () => {
   let transfers: { save: jest.Mock; getOne: jest.Mock; despatch: jest.Mock };
-  let vouchers: { list: jest.Mock; validate: jest.Mock; cancel: jest.Mock; softDelete: jest.Mock };
+  let vouchers: {
+    list: jest.Mock;
+    validate: jest.Mock;
+    cancel: jest.Mock;
+    recall: jest.Mock;
+    softDelete: jest.Mock;
+  };
   let controller: StockTransferController;
   let rightsRow: Record<string, boolean> | null;
   let rightsRead: jest.Mock;
@@ -45,7 +52,13 @@ describe('StockTransferController', () => {
     rightsRow = allRights();
     rightsRead = jest.fn(async () => (rightsRow ? [rightsRow] : []));
     transfers = { save: jest.fn(), getOne: jest.fn(), despatch: jest.fn() };
-    vouchers = { list: jest.fn(), validate: jest.fn(), cancel: jest.fn(), softDelete: jest.fn() };
+    vouchers = {
+      list: jest.fn(),
+      validate: jest.fn(),
+      cancel: jest.fn(),
+      recall: jest.fn(),
+      softDelete: jest.fn(),
+    };
     controller = new StockTransferController(
       transfers as unknown as StockTransferService,
       vouchers as unknown as StockVoucherService,
@@ -243,6 +256,47 @@ describe('StockTransferController', () => {
       BRANCH_ID,
       USER_ID,
     );
+  });
+
+  // ── notes 160 B — recall an untouched branch despatch ─────────────────────
+  describe('recall', () => {
+    it('is judged on menu 192 (Branch Outward), CANCEL — not on menu 41', async () => {
+      vouchers.recall.mockResolvedValue({
+        header: { refno: 'TRF/2026-2027/D1/00017' },
+        rowsReversed: 2,
+        transitRowsClosed: 2,
+      });
+
+      const result = await controller.recall({ ...REF, reason: 'Lorry never left', userId: USER_ID } as never);
+
+      const [, ...values] = rightsRead.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+      expect(values).toEqual([USER_ID, BRANCH_OUTWARD_MENU_ID]);
+      expect(BRANCH_OUTWARD_MENU_ID).toBe(192);
+      expect(vouchers.recall).toHaveBeenCalledWith(
+        TRANSFER_OUT_RULES,
+        SVH_ID,
+        ACC_YEAR,
+        'Lorry never left',
+        COMPANY_ID,
+        BRANCH_ID,
+        USER_ID,
+      );
+      expect(result.message).toBe(
+        'TRF/2026-2027/D1/00017 recalled — 2 reversal rows, 2 transit rows closed',
+      );
+    });
+
+    it('refuses 403 TRF_RIGHT_CANCEL without cancel on menu 192', async () => {
+      rightsRow = { ...allRights(), um_can_cancel: false };
+
+      await expect(
+        controller.recall({ ...REF, reason: 'Lorry never left' } as never),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { errors: [expect.objectContaining({ code: 'TRF_RIGHT_CANCEL' })] },
+      });
+      expect(vouchers.recall).not.toHaveBeenCalled();
+    });
   });
 
   it('deletes a draft rather than cancelling it', async () => {

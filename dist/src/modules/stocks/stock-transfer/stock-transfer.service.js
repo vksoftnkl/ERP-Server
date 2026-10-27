@@ -139,7 +139,8 @@ let StockTransferService = class StockTransferService {
     `;
         const lotById = new Map(lots.map((lot) => [lot.slt_id, lot]));
         const balances = await this.prisma.$queryRaw `
-      SELECT sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket, sbl_on_hand_qty
+      SELECT sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket, sbl_on_hand_qty,
+             GREATEST(sbl_free_in_qty - sbl_free_out_qty, 0) AS free_available_qty
         FROM stock.stock_balance
        WHERE sbl_company_id = ${header.companyId}::uuid
          AND sbl_branch_id  = ${header.branchId}::uuid
@@ -148,6 +149,10 @@ let StockTransferService = class StockTransferService {
         const onHand = new Map(balances.map((row) => [
             this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket),
             Number(row.sbl_on_hand_qty),
+        ]));
+        const freeOnHand = new Map(balances.map((row) => [
+            this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket),
+            new client_1.Prisma.Decimal(row.free_available_qty),
         ]));
         const wanted = new Map();
         lines.forEach((line) => {
@@ -205,6 +210,32 @@ let StockTransferService = class StockTransferService {
                     field,
                     code: stock_error_codes_1.StockErrorCode.INSUFFICIENT_STOCK,
                     message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists, whatever the item's negative-stock policy says.`,
+                });
+            }
+        });
+        const freeWanted = new Map();
+        const freeBaseOf = (line) => new client_1.Prisma.Decimal(line.freeQty ?? 0).mul(line.toBaseFactor ?? 1).toDecimalPlaces(6);
+        lines.forEach((line) => {
+            if (!line.lotId) {
+                return;
+            }
+            const key = this.holdingKey(line.lotId, line.godownId, line.bucket);
+            freeWanted.set(key, (freeWanted.get(key) ?? new client_1.Prisma.Decimal(0)).plus(freeBaseOf(line)));
+        });
+        lines.forEach((line, index) => {
+            if (!line.lotId || !freeBaseOf(line).greaterThan(0)) {
+                return;
+            }
+            const key = this.holdingKey(line.lotId, line.godownId, line.bucket);
+            const free = freeOnHand.get(key) ?? new client_1.Prisma.Decimal(0);
+            const askedFree = freeWanted.get(key) ?? new client_1.Prisma.Decimal(0);
+            if (askedFree.greaterThan(free)) {
+                errors.push({
+                    field: `lines.${index}.freeQty`,
+                    code: stock_error_codes_1.StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK,
+                    message: free.isZero()
+                        ? `Line ${line.lineNo} sends ${askedFree.toString()} free, but this lot has no free stock in this godown's ${line.bucket ?? 'SALEABLE'} bucket. Send it as quantity instead.`
+                        : `Line ${line.lineNo} sends ${askedFree.toString()} free, but only ${free.toString()} of this lot's stock in this godown's ${line.bucket ?? 'SALEABLE'} bucket came in free. Send the rest as quantity.`,
                 });
             }
         });

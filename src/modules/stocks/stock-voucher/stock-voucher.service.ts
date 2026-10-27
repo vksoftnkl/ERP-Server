@@ -58,6 +58,7 @@ import {
   type StockErrorResponse,
   type StockRateSource,
   type StockVoucherCancelResult,
+  type StockTransferRecallResult,
   type StockVoucherDeleteResult,
   type StockVoucherHeaderPayload,
   type StockVoucherLinePayload,
@@ -153,6 +154,12 @@ export interface CountSheetQuery {
   godownId: string;
   bucket?: StockBucket;
   itemGroupId?: string;
+  /** Notes 157 — item_master.item_brand_id / item_category_id / item_section_id; each only when sent. */
+  itemBrandId?: string;
+  itemCategoryId?: string;
+  itemSectionId?: string;
+  /** Notes 157 — only holdings below zero on the book. Default false. */
+  negativeOnly?: boolean;
   /**
    * Default TRUE. A holding the book says is empty is exactly where a count
    * finds something.
@@ -3301,6 +3308,119 @@ export class StockVoucherService {
       cancelledOn: document.header.cancelledOn,
     };
   }
+  /**
+   * Notes 160 B — recall a branch despatch that nobody received.
+   *
+   * `cancel` refuses an IN_TRANSIT despatch, rightly once the other branch has
+   * keyed anything; a lorry that never left, or came straight back, had no way
+   * back. This is that way: allowed only while the despatch is IN_TRANSIT and
+   * untouched (no receipt names it, a draft one included; nothing received or
+   * damaged on any transit row — the engine checks under its locks and 409s
+   * STOCK_TRANSFER_RECALL_RECEIVED). The OUT rows are reversed, the transit
+   * rows closed, the loading voucher reversed and the header CANCELLED, with
+   * the reason on the CANCELLED trail row and the audit, as a cancel.
+   */
+  async recall(
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    accYear: string,
+    reason: string,
+    companyId: string,
+    branchId: string,
+    userId?: string,
+  ): Promise<StockTransferRecallResult> {
+    const actor = this.actorOf(userId);
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Recall needs a reason', [
+        {
+          field: 'reason',
+          code: StockErrorCode.CANCEL_REASON_REQUIRED,
+          message: 'A recalled despatch with no reason is unanswerable three months later.',
+        },
+      ]);
+    }
+    const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
+    if (existing.svhStatus !== 'IN_TRANSIT') {
+      const sameBranch =
+        existing.svhToBranchId === null || existing.svhToBranchId === existing.svhBranchId;
+      throwStockConflict<StockErrorDetail, StockErrorResponse>(
+        `${rules.displayName} is ${existing.svhStatus}`,
+        [
+          {
+            field: 'svhId',
+            code:
+              existing.svhStatus === 'CANCELLED'
+                ? StockErrorCode.VOUCHER_ALREADY_CANCELLED
+                : StockErrorCode.TRANSFER_NOT_IN_TRANSIT,
+            message:
+              existing.svhStatus === 'CANCELLED'
+                ? `${existing.svhRefno} was already cancelled.`
+                : existing.svhStatus === 'DRAFT'
+                  ? `${existing.svhRefno} is DRAFT and has not been despatched. Delete it instead.`
+                  : existing.svhStatus === 'RECEIVED'
+                    ? `${existing.svhRefno} has been received. Transfer it back instead.`
+                    : sameBranch
+                      ? `${existing.svhRefno} is a godown transfer, not a branch despatch. Cancel it instead.`
+                      : `${existing.svhRefno} is ${existing.svhStatus}; only a despatch in transit can be recalled.`,
+          },
+        ],
+      );
+    }
+    const cancelledOn = new Date();
+    const recalled = await this.prisma.$transaction(async (tx) => {
+      const result = await this.stockPosting.recall(
+        tx,
+        new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
+        { actor, reason: trimmedReason, cancelledOn },
+      );
+      // In the recall's own transaction, as a cancel's: a despatch that says
+      // CANCELLED with nothing saying who recalled it or why is the gap this
+      // closes.
+      await this.logStatusChange(tx, {
+        rules,
+        svhId,
+        accYear,
+        companyId,
+        branchId,
+        tenantId: existing.svhTenantId ?? null,
+        refno: existing.svhRefno,
+        fromStatus: existing.svhStatus,
+        toStatus: 'CANCELLED',
+        actor,
+        changedOn: cancelledOn,
+        remarks: `Recalled: ${trimmedReason}`,
+        deviceId: existing.svhDeviceId,
+        sessionId: existing.svhSessionId,
+      });
+      return result;
+    });
+    const document = await this.getById(rules, svhId, accYear, companyId, branchId);
+    await this.auditLogService.logEntityChange({
+      action: 'cancel',
+      tableName: STOCK_VOUCHER_TABLE_NAME,
+      screenName: rules.auditScreenName,
+      screenType: 'transaction',
+      pk: svhId,
+      displayName: document.header.refno,
+      originalRecord: { svhId, svhStatus: existing.svhStatus },
+      modifiedRecord: {
+        svhId,
+        svhStatus: document.header.status,
+        rowsReversed: recalled.rowsReversed,
+        transitRowsClosed: recalled.transitRowsClosed,
+      },
+      userId: actor,
+      notes: `${rules.displayName} recalled: ${trimmedReason}`,
+    });
+    return {
+      ...document,
+      rowsReversed: recalled.rowsReversed,
+      transitRowsClosed: recalled.transitRowsClosed,
+      status: document.header.status,
+      cancelledOn: document.header.cancelledOn,
+    };
+  }
   // ──────────────────────────────────────────────────────────────────────────
   // §9 — soft delete
   // ──────────────────────────────────────────────────────────────────────────
@@ -3714,6 +3834,7 @@ export class StockVoucherService {
     const take = this.clamp(query.limit, DEFAULT_REPORT_LIMIT, MAX_REPORT_LIMIT);
     const skip = Math.max(query.offset ?? 0, 0);
     const includeZero = query.includeZero ?? true;
+    const negativeOnly = query.negativeOnly ?? false;
     const rows = await this.prisma.$queryRaw<CountSheetRow[]>`
       SELECT sbl.sbl_item_id,
              itm.item_code,
@@ -3760,7 +3881,12 @@ export class StockVoucherService {
          AND sbl.sbl_is_deleted = false
          AND (${query.bucket ?? null}::text IS NULL OR sbl.sbl_bucket = ${query.bucket ?? null}::text)
          AND (${query.itemGroupId ?? null}::uuid IS NULL OR itm.item_group_id = ${query.itemGroupId ?? null}::uuid)
+         -- Notes 157 — brand, category, section: each narrows only when sent.
+         AND (${query.itemBrandId ?? null}::uuid IS NULL OR itm.item_brand_id = ${query.itemBrandId ?? null}::uuid)
+         AND (${query.itemCategoryId ?? null}::uuid IS NULL OR itm.item_category_id = ${query.itemCategoryId ?? null}::uuid)
+         AND (${query.itemSectionId ?? null}::uuid IS NULL OR itm.item_section_id = ${query.itemSectionId ?? null}::uuid)
          AND (${includeZero}::boolean OR sbl.sbl_on_hand_qty <> 0)
+         AND (NOT ${negativeOnly}::boolean OR sbl.sbl_on_hand_qty < 0)
        ORDER BY itm.item_name_en, sbl.sbl_batch_no NULLS FIRST, sbl.sbl_expiry_date, sbl.sbl_lot_id
        LIMIT ${take} OFFSET ${skip}
     `;
@@ -4120,6 +4246,8 @@ export class StockVoucherService {
         svhVoucherType: true,
         svhCompanyId: true,
         svhBranchId: true,
+        // Notes 160 B — recall tells a godown transfer from a branch despatch.
+        svhToBranchId: true,
         // For the txn_status_log row every status step writes — see
         // logStatusChange.
         svhTenantId: true,

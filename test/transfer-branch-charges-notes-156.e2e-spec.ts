@@ -22,7 +22,7 @@ import {
  * the despatch's LOADING at despatch, at the sending branch; the receipt's
  * UNLOADING when it posts, at the receiving branch. Live DB, HTTP level.
  *
- * One round trip of (2 + 1 free) of a lot, test branch → Counter2 and back,
+ * One round trip of 3 of a lot, test branch → Counter2 and back,
  * through the API only (never a raw-SQL teardown — memory
  * stale-transfer-http-suites-are-destructive). VALUE-NEUTRAL by choice of item:
  * one with no stock at the receiving branch, so the return carries back the
@@ -234,7 +234,10 @@ describe('Branch transfer labour posts with each half — notes 156 (e2e, live D
     await prisma.$disconnect();
   });
 
-  it('the despatch posts its LOADING at despatch, at the sending branch — (2 + 1 free) × 1.50 = 4.50', async () => {
+  // Sent as 3, not 2 + 1 free: notes 160 A refuses free goods the lot never
+  // received, and no holding of this branch has any. The labour is the same
+  // ((qty + free) × rate).
+  it('the despatch posts its LOADING at despatch, at the sending branch — 3 × 1.50 = 4.50', async () => {
     const saved = await http
       .post(T)
       .set('Authorization', BEARER)
@@ -246,7 +249,7 @@ describe('Branch transfer labour posts with each half — notes 156 (e2e, live D
           loadEnabled: true,
           loadmanIds: crew,
         }),
-        lines: [line(holding.godown_id, 2, { freeQty: 1, freeBaseQty: 1, loadRate: 1.5 })],
+        lines: [line(holding.godown_id, 3, { loadRate: 1.5 })],
       });
     expect({ status: saved.status, body: saved.body }).toMatchObject({ status: 201 });
     ids.out1 = saved.body.data.header.svhId;

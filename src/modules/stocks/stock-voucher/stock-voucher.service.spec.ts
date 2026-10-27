@@ -175,8 +175,8 @@ describe('StockVoucherService', () => {
     client = {
       deviceMaster: {
         findFirst: jest.fn().mockResolvedValue({
-          devDeviceUid: 'TILL-01',
-          devDeviceName: 'Till 1',
+          // Notes 160 C — the device's short code is what the refno carries.
+          devCode: 'TILL-01',
           devIsActive: true,
           devIsBlocked: false,
           devBlockReason: null,
@@ -237,7 +237,9 @@ describe('StockVoucherService', () => {
           sql.includes('keyed.line_direction < 0') ||
           // Notes 150 #2 / #8 — no other freeze on the godown, no later count.
           sql.includes('svh_freeze_stock = true') ||
-          sql.includes('later.svh_refno')
+          sql.includes('later.svh_refno') ||
+          // Notes 160 A — no holding the document took free from is short.
+          sql.includes('sbl_free_out_qty > sbl.sbl_free_in_qty')
         ) {
           return Promise.resolve([]);
         }
@@ -2278,6 +2280,87 @@ describe('StockVoucherService', () => {
     });
   });
 
+  // ── notes 160 B — recall an untouched branch despatch ───────────────────
+  describe('recall', () => {
+    const despatchRules: StockVoucherTypeRules = {
+      ...OPENING_RULES,
+      voucherType: 'TRANSFER_OUT',
+      displayName: 'Stock transfer',
+      postShape: 'TRANSFER_OUT',
+      allowsLoading: true,
+    };
+    const despatch = (overrides: Record<string, unknown> = {}) => ({
+      svhId: SVH_ID,
+      svhRefno: 'TRF/2026-2027/D1/00017',
+      svhStatus: 'IN_TRANSIT',
+      svhIsDeleted: false,
+      svhVoucherType: 'TRANSFER_OUT',
+      svhCompanyId: COMPANY_ID,
+      svhBranchId: BRANCH_ID,
+      svhToBranchId: '01000000-0000-7000-8000-0000000000b2',
+      svhTenantId: null,
+      svhDeviceId: DEVICE_ID,
+      svhSessionId: null,
+      ...overrides,
+    });
+    const recall = (reason = 'Lorry never left') =>
+      service.recall(despatchRules, SVH_ID, ACC_YEAR, reason, COMPANY_ID, BRANCH_ID, USER_ID);
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('recalls through the engine, then writes the CANCELLED step and the audit', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(despatch());
+      const engine = jest
+        .spyOn(StockPostingService.prototype, 'recall')
+        .mockResolvedValue({ rowsReversed: 2, transitRowsClosed: 2 });
+      jest.spyOn(service, 'getById').mockResolvedValue({
+        header: { svhId: SVH_ID, refno: 'TRF/2026-2027/D1/00017', status: 'CANCELLED', cancelledOn: null } as never,
+        lines: [],
+      });
+
+      const result = await recall();
+
+      expect(engine).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({ svhId: SVH_ID, accYear: ACC_YEAR, companyId: COMPANY_ID }),
+        expect.objectContaining({ actor: USER_ID, reason: 'Lorry never left' }),
+      );
+      expect(client.txnStatusLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tslFromStatus: 'IN_TRANSIT',
+          tslToStatus: 'CANCELLED',
+          tslRemarks: 'Recalled: Lorry never left',
+        }),
+      });
+      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'cancel', notes: 'Stock transfer recalled: Lorry never left' }),
+      );
+      expect(result).toMatchObject({ rowsReversed: 2, transitRowsClosed: 2, status: 'CANCELLED' });
+    });
+
+    it.each([
+      ['DRAFT', {}, 'STOCK_TRANSFER_NOT_IN_TRANSIT', 'Delete it instead'],
+      ['RECEIVED', {}, 'STOCK_TRANSFER_NOT_IN_TRANSIT', 'Transfer it back instead'],
+      ['POSTED', { svhToBranchId: null }, 'STOCK_TRANSFER_NOT_IN_TRANSIT', 'Cancel it instead'],
+      ['CANCELLED', {}, 'STOCK_VOUCHER_ALREADY_CANCELLED', 'already cancelled'],
+    ])('refuses a %s document before any transaction opens', async (status, extra, code, words) => {
+      client.stockVoucher.findUnique.mockResolvedValue(despatch({ svhStatus: status, ...extra }));
+
+      await expect(recall()).rejects.toMatchObject({
+        status: 409,
+        response: expect.objectContaining({
+          errors: [expect.objectContaining({ code, message: expect.stringContaining(words) })],
+        }),
+      });
+      expect(client.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a recall with no reason', async () => {
+      await expect(recall('   ')).rejects.toMatchObject({ status: 422 });
+      expect(client.stockVoucher.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('post', () => {
     it('refuses without running the engine when the preflight found a problem', async () => {
       client.stockVoucher.findUnique.mockResolvedValue({
@@ -4304,14 +4387,48 @@ describe('StockVoucherService', () => {
           itemGroupId: OTHER_ITEM_ID,
         });
 
-        expect(valuesOf(0).slice(3, 8)).toEqual([null, null, null, null, true]);
-        expect(valuesOf(1).slice(3, 8)).toEqual([
+        // bucket ×2, group ×2, brand ×2, category ×2, section ×2, includeZero, negativeOnly
+        expect(valuesOf(0).slice(3, 15)).toEqual([null, null, null, null, null, null, null, null, null, null, true, false]);
+        expect(valuesOf(1).slice(3, 15)).toEqual([
           'DAMAGED',
           'DAMAGED',
           OTHER_ITEM_ID,
           OTHER_ITEM_ID,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
           false,
         ]);
+      });
+
+      it('notes 157 — narrows by brand, category and section, each only when sent, and to negative stock', async () => {
+        const BRAND = '01000000-0000-7000-8000-0000000003b1';
+        const CATEGORY = '01000000-0000-7000-8000-0000000003c1';
+        const SECTION = '01000000-0000-7000-8000-0000000003d1';
+        client.$queryRaw.mockResolvedValue([]);
+
+        await service.countSheet(PHYSICAL_RULES, {
+          ...sheetQuery,
+          itemBrandId: BRAND,
+          itemCategoryId: CATEGORY,
+          itemSectionId: SECTION,
+          negativeOnly: true,
+        });
+        await service.countSheet(PHYSICAL_RULES, { ...sheetQuery, itemCategoryId: CATEGORY });
+
+        expect(valuesOf(0).slice(7, 15)).toEqual([BRAND, BRAND, CATEGORY, CATEGORY, SECTION, SECTION, true, true]);
+        // One filter alone leaves the others off.
+        expect(valuesOf(1).slice(7, 13)).toEqual([null, null, CATEGORY, CATEGORY, null, null]);
+        const [strings] = client.$queryRaw.mock.calls[0] as [TemplateStringsArray];
+        const sql = strings.join('?');
+        expect(sql).toContain('OR itm.item_brand_id = ?::uuid');
+        expect(sql).toContain('OR itm.item_category_id = ?::uuid');
+        expect(sql).toContain('OR itm.item_section_id = ?::uuid');
+        expect(sql).toContain('AND (NOT ?::boolean OR sbl.sbl_on_hand_qty < 0)');
       });
     });
 
@@ -4668,9 +4785,9 @@ describe('StockVoucherService', () => {
 });
 
 describe('buildStockVoucherRefno', () => {
-  it('builds the observed format', () => {
-    expect(buildStockVoucherRefno('OPN', ACC_YEAR, 'TILL-01', BigInt(1))).toBe(
-      'OPN/2026-2027/TILL-01/1',
+  it('builds the observed format, the serial padded to five digits (notes 160 C)', () => {
+    expect(buildStockVoucherRefno('TRF', ACC_YEAR, 'D1', BigInt(16))).toBe(
+      'TRF/2026-2027/D1/00016',
     );
   });
 });

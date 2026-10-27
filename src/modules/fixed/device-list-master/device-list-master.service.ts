@@ -35,6 +35,12 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  deviceCodeTaken,
+  lockDeviceCodes,
+  nextDeviceCode,
+  normalizeDeviceCode,
+} from './device-code.helper';
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
 const DEVICE_TYPE_VALUES = Object.values(DeviceType);
@@ -349,6 +355,7 @@ export class DeviceListMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, companyId);
+        data.devCode = await this.deviceCodeFor(tx, saveDeviceListMasterDto.devCode, null);
         const created = await tx.deviceMaster.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
@@ -428,6 +435,15 @@ export class DeviceListMasterService {
           DEVICE_LIST_MASTER_OPTIONAL_FIELDS,
           DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS,
         );
+        const nextCode = await this.deviceCodeFor(
+          tx,
+          saveDeviceListMasterDto.devCode,
+          existing.devCode,
+          devId,
+        );
+        if (nextCode !== existing.devCode) {
+          data.devCode = nextCode;
+        }
         const updated = await tx.deviceMaster.update({ where: { devId }, data });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
@@ -465,6 +481,42 @@ export class DeviceListMasterService {
       throw error;
     }
   }
+  /**
+   * Notes 160 C — the code a save leaves the device with. A keyed code is
+   * upper-cased and must be free across every device, deleted ones included
+   * (409 DEVICE_CODE_DUPLICATE); blank keeps the current one, or gives the next
+   * D1, D2, … when the device has none — a device always has a code, because
+   * its stock voucher numbers are built from it. Under the code lock, so two
+   * registrations cannot draw the same one.
+   */
+  private async deviceCodeFor(
+    tx: Prisma.TransactionClient,
+    keyed: string | null | undefined,
+    current: string | null,
+    devId?: string,
+  ): Promise<string> {
+    await lockDeviceCodes(tx);
+    const code = normalizeDeviceCode(keyed);
+    if (code === null) {
+      return current ?? (await nextDeviceCode(tx));
+    }
+    if (code === current) {
+      return current;
+    }
+    if (await deviceCodeTaken(tx, code, devId)) {
+      throwFixedConflict<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        'Device code already in use',
+        [
+          {
+            field: 'devCode',
+            message: `${code} is, or was, another device's code. Voucher numbers carry it, so it is never given twice.`,
+            code: DeviceListMasterErrorCode.CODE_DUPLICATE,
+          },
+        ],
+      );
+    }
+    return code;
+  }
   private async ensureDeviceUidIsUnique(
     tx: FixedWriteClient,
     deviceUid: string,
@@ -501,6 +553,7 @@ export class DeviceListMasterService {
       devUserId: record.devUserId,
       devDeviceUid: record.devDeviceUid,
       devDeviceName: record.devDeviceName,
+      devCode: record.devCode,
       devDeviceType: toDeviceType(record.devDeviceType),
       devPlatform: toDevicePlatform(record.devPlatform),
       devMacAddress: record.devMacAddress,

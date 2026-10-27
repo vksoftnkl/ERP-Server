@@ -36,6 +36,7 @@ const deviceRow = (overrides: Partial<DeviceMaster> = {}): DeviceMaster => ({
   devCreatedBy: USER_ID,
   devModifiedOn: null,
   devModifiedBy: null,
+  devCode: 'D1',
   ...overrides,
 });
 
@@ -63,6 +64,8 @@ type PrismaMock = {
   branchMaster: { findFirst: jest.Mock };
   userMaster: { findFirst: jest.Mock };
   $transaction: jest.Mock;
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
 };
 
 describe('DeviceListMasterService', () => {
@@ -90,6 +93,14 @@ describe('DeviceListMasterService', () => {
       branchMaster: { findFirst: jest.fn().mockResolvedValue({ brName: 'Main Branch' }) },
       userMaster: { findFirst: jest.fn().mockResolvedValue({ usrDisplayName: 'Cashier One' }) },
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
+      // Notes 160 C — the code lock, the next D<n> (D7 here) and the "taken?" read.
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        if (sql.includes('AS taken')) return Promise.resolve([{ taken: false }]);
+        if (sql.includes('AS n')) return Promise.resolve([{ n: 7 }]);
+        return Promise.resolve([{ locked: 1 }]);
+      }),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     grid = {
@@ -312,6 +323,66 @@ describe('DeviceListMasterService', () => {
         prisma,
       );
       expect(payload.devModifiedOn).toBeNull();
+    });
+  });
+
+  // ── notes 160 C — the device code ───────────────────────────────────────
+  describe('save — devCode', () => {
+    const sqls = () => prisma.$queryRaw.mock.calls.map((c) => (c[0] as string[]).join('?'));
+
+    it('gives a new device left blank the next D<n>, under the code lock', async () => {
+      await service.save({ devDeviceUid: 'DESK-0002', devCode: '  ' });
+
+      expect(createdData()).toMatchObject({ devCode: 'D7' });
+      expect(sqls()[0]).toContain('pg_advisory_xact_lock');
+    });
+
+    it('keeps a keyed code, trimmed and upper-cased', async () => {
+      await service.save({ devDeviceUid: 'DESK-0002', devCode: ' pos1 ' });
+
+      expect(createdData()).toMatchObject({ devCode: 'POS1' });
+    });
+
+    it('refuses a code another device holds — live or deleted — with 409 DEVICE_CODE_DUPLICATE', async () => {
+      prisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(strings.join('?').includes('AS taken') ? [{ taken: true }] : [{ locked: 1 }]),
+      );
+
+      const refusal = await refusalOf(service.save({ devDeviceUid: 'DESK-0002', devCode: 'D1' }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'devCode', code: DeviceListMasterErrorCode.CODE_DUPLICATE }] },
+      });
+      expect(prisma.deviceMaster.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the stored code on an update that sends none or a blank one', async () => {
+      prisma.deviceMaster.findFirst.mockResolvedValueOnce(deviceRow()).mockResolvedValueOnce(null);
+
+      await service.save({ devId: DEVICE_ID, devDeviceUid: 'DESK-0001', devCode: null });
+
+      expect(updatedData()).not.toHaveProperty('devCode');
+    });
+
+    it('changes the code on an update that keys a free one, checked against the others only', async () => {
+      prisma.deviceMaster.findFirst.mockResolvedValueOnce(deviceRow()).mockResolvedValueOnce(null);
+
+      await service.save({ devId: DEVICE_ID, devDeviceUid: 'DESK-0001', devCode: 'pos2' });
+
+      expect(updatedData()).toMatchObject({ devCode: 'POS2' });
+      const taken = prisma.$queryRaw.mock.calls.find((c) => (c[0] as string[]).join('?').includes('AS taken'));
+      expect(taken?.slice(1)).toEqual(['POS2', DEVICE_ID, DEVICE_ID]);
+    });
+
+    it('gives a stored device with no code one on its next update', async () => {
+      prisma.deviceMaster.findFirst
+        .mockResolvedValueOnce(deviceRow({ devCode: null }))
+        .mockResolvedValueOnce(null);
+
+      await service.save({ devId: DEVICE_ID, devDeviceUid: 'DESK-0001' });
+
+      expect(updatedData()).toMatchObject({ devCode: 'D7' });
     });
   });
 

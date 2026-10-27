@@ -90,6 +90,27 @@ let StockPostingService = class StockPostingService {
         }
         return reversed;
     }
+    async recall(tx, source, opts) {
+        await this.assertNotFrozen(tx, source);
+        const result = await (0, stock_voucher_posting_helper_1.recallTransferOut)(tx, {
+            rules: source.rules,
+            svhId: source.svhId,
+            accYear: source.accYear,
+            actor: opts.actor,
+            reason: opts.reason,
+            cancelledOn: opts.cancelledOn,
+            refuseNegative: true,
+        });
+        await this.accounts.reverseForVoucher(tx, {
+            svhId: source.svhId,
+            accYear: source.accYear,
+            companyId: source.companyId,
+            voucherType: source.rules.voucherType,
+            reason: opts.reason,
+            actor: opts.actor,
+        });
+        return result;
+    }
     async assertNotFrozen(tx, source) {
         const movedAt = await source.docDatetime(tx);
         if (!movedAt) {

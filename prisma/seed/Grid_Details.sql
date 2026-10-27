@@ -216,6 +216,7 @@ where lspt_is_deleted=false$seed$)
     ,(31 , 'DESKTOP - DEVICE MASTER LIST', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT
        d.dev_id,
        d.dev_device_name,
+       d.dev_code,
        d.dev_device_type,
        d.dev_platform,
        c.comp_name                      AS dev_company_name,

@@ -1,0 +1,10 @@
+import { Prisma } from '@prisma/client';
+export declare const DEVICE_CODE_MAX_LENGTH = 10;
+export declare const DEVICE_CODE_PATTERN: RegExp;
+type CodeClient = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
+export declare function normalizeDeviceCode(value: string | null | undefined): string | null;
+export declare function lockDeviceCodes(tx: CodeClient): Promise<void>;
+export declare function nextDeviceCode(tx: CodeClient): Promise<string>;
+export declare function deviceCodeTaken(tx: CodeClient, code: string, excludeDevId?: string): Promise<boolean>;
+export declare function ensureDeviceCode(tx: CodeClient, devId: string): Promise<string | null>;
+export {};

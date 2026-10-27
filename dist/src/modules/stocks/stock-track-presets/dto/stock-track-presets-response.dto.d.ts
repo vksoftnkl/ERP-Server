@@ -30,6 +30,9 @@ export declare class StockTrackPresetsPayloadDto {
     spt_sort_order: number;
     spt_remarks: string | null;
     spt_is_company_override: boolean;
+    spt_is_active: boolean;
+    usedByItems: number;
+    usedByGroups: number;
 }
 export declare class StockTrackPresetsGetMetaDto {
     company_id: string | null;
@@ -42,4 +45,9 @@ export declare class StockTrackPresetsSuccessGetDto {
     message: string;
     data: StockTrackPresetsPayloadDto[];
     meta: StockTrackPresetsGetMetaDto;
+}
+export declare class StockTrackPresetsSuccessOneDto {
+    success: true;
+    message: string;
+    data: StockTrackPresetsPayloadDto;
 }

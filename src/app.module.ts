@@ -94,6 +94,7 @@ import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-ma
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { StockTrackPresetsModule } from './modules/stocks/stock-track-presets/stock-track-presets.module';
+import { AgeingSlabsModule } from './modules/stocks/ageing-slabs/ageing-slabs.module';
 import { StockVoucherModule } from './modules/stocks/stock-voucher/stock-voucher.module';
 import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
 import { PhysicalStockVoucherModule } from './modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
@@ -266,6 +267,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     UserLoginSessionsModule,
     StockAdjReasonsModule,
     StockTrackPresetsModule,
+    AgeingSlabsModule,
     StockVoucherModule,
     OpeningStockVoucherModule,
     PhysicalStockVoucherModule,

@@ -119,6 +119,10 @@ class GenerateCountSheetQueryDto {
     godownId;
     bucket;
     itemGroupId;
+    itemBrandId;
+    itemCategoryId;
+    itemSectionId;
+    negativeOnly;
     includeZero;
     limit;
     offset;
@@ -170,6 +174,38 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], GenerateCountSheetQueryDto.prototype, "itemGroupId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Notes 157 — only items of this brand (item_master.item_brand_id).',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "itemBrandId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Notes 157 — only items of this category (item_master.item_category_id).',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "itemCategoryId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Notes 157 — only items of this section (item_master.item_section_id).',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], GenerateCountSheetQueryDto.prototype, "itemSectionId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: 'Notes 157 — only holdings whose book quantity is below zero, filtered before paging so a big godown is not paged through for a few rows.',
+    }),
+    (0, dtoDecorators_1.OptionalQueryBoolean)(),
+    __metadata("design:type", Boolean)
+], GenerateCountSheetQueryDto.prototype, "negativeOnly", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         default: true,

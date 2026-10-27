@@ -22,6 +22,12 @@ model DeviceMaster {
   devCreatedBy    String?   @map("dev_created_by")   @db.Uuid
   devModifiedOn   DateTime? @map("dev_modified_on")  @db.Timestamptz(6)
   devModifiedBy   String?   @map("dev_modified_by")  @db.Uuid
+  /// Notes 160 C — the short code stock voucher numbers carry (TRF/2026-2027/D1/00016).
+  /// Unique among live devices, any case (ux_dev_code — partial, so DB-only, not
+  /// declared here); D1, D2, … assigned on registration when left blank. Last
+  /// because ADD COLUMN puts it last; device_master is referenced too widely to
+  /// rebuild for column order.
+  devCode         String?   @map("dev_code")         @db.VarChar(10)
 
   txnStatusLogs   TxnStatusLog[]
   saleOrders      SaleOrder[]

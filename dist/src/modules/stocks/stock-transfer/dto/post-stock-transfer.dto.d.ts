@@ -13,6 +13,8 @@ export declare class DespatchStockTransferDto extends StockTransferRefDto {
 export declare class CancelStockTransferDto extends StockTransferRefDto {
     reason: string;
 }
+export declare class RecallStockTransferDto extends CancelStockTransferDto {
+}
 export declare class SettleShortStockTransferDto {
     outVoucherId: string;
     accYear: string;

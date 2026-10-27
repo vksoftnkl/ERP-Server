@@ -892,6 +892,12 @@ export class StockTransferCancelDataDto extends StockTransferDocumentDto {
   cancelledOn!: string | null;
 }
 
+/** Notes 160 B — a recalled despatch: the cancel's answer plus the transit rows it closed. */
+export class StockTransferRecallDataDto extends StockTransferCancelDataDto {
+  @ApiProperty({ example: 2, description: 'stock_transit rows closed (IN_TRANSIT → CANCELLED).' })
+  transitRowsClosed!: number;
+}
+
 export class StockTransferDeleteDataDto {
   @ApiProperty({ format: 'uuid' })
   svhId!: string;
@@ -1016,6 +1022,17 @@ export class StockTransferCancelSuccessDto {
 
   @ApiProperty({ type: StockTransferCancelDataDto })
   data!: StockTransferCancelDataDto;
+}
+
+export class StockTransferRecallSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'TRF/2026-2027/D1/00017 recalled — 2 reversal rows, 2 transit rows closed' })
+  message!: string;
+
+  @ApiProperty({ type: StockTransferRecallDataDto })
+  data!: StockTransferRecallDataDto;
 }
 
 export class StockTransferDeleteSuccessDto {

@@ -36,6 +36,14 @@ export interface StockTrackPresetsPayload {
   spt_remarks: string | null;
   /** true when this row overrides a shared preset of the same code. */
   spt_is_company_override: boolean;
+  spt_is_active: boolean;
+  /**
+   * Items / item groups (not deleted) naming the preset (notes 159 §4). Above
+   * zero the six track flags, the valuation and the code are locked; the
+   * screen shows the counts and greys those fields.
+   */
+  usedByItems: number;
+  usedByGroups: number;
 }
 export interface StockTrackPresetsGetMeta {
   company_id: string | null;

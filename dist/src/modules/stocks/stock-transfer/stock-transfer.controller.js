@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TRANSFER_OUT_RULES = exports.StockTransferController = exports.STOCK_TRANSFER_MENU_ID = void 0;
+exports.TRANSFER_OUT_RULES = exports.StockTransferController = exports.BRANCH_OUTWARD_MENU_ID = exports.STOCK_TRANSFER_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const swagger_1 = require("@nestjs/swagger");
@@ -51,6 +51,7 @@ const TRANSFER_OUT_RULES = {
 };
 exports.TRANSFER_OUT_RULES = TRANSFER_OUT_RULES;
 exports.STOCK_TRANSFER_MENU_ID = 41;
+exports.BRANCH_OUTWARD_MENU_ID = 192;
 let StockTransferController = class StockTransferController {
     stockTransferService;
     stockVoucherService;
@@ -114,6 +115,21 @@ let StockTransferController = class StockTransferController {
         return {
             success: true,
             message: `Stock transfer cancelled — ${data.rowsReversed} reversal rows`,
+            data,
+        };
+    }
+    async recall(dto) {
+        await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId: this.requestContext.getUserId(),
+            menuId: exports.BRANCH_OUTWARD_MENU_ID,
+            right: 'cancel',
+            codePrefix: 'TRF',
+            action: 'recall a branch despatch',
+        });
+        const data = await this.stockVoucherService.recall(TRANSFER_OUT_RULES, dto.svhId, dto.accYear, dto.reason, dto.companyId, dto.branchId, dto.userId);
+        return {
+            success: true,
+            message: `${data.header.refno} recalled — ${data.rowsReversed} reversal rows, ${data.transitRowsClosed} transit rows closed`,
             data,
         };
     }
@@ -210,6 +226,22 @@ __decorate([
     __metadata("design:paramtypes", [post_stock_transfer_dto_1.CancelStockTransferDto]),
     __metadata("design:returntype", Promise)
 ], StockTransferController.prototype, "cancel", null);
+__decorate([
+    (0, common_1.Post)('recall'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Recall a branch despatch that nobody received (notes 160 B)',
+        description: 'For a lorry that never left, or came straight back. Allowed only while the despatch is IN_TRANSIT and untouched: every transit row with nothing received and nothing damaged, and no receipt against it — a DRAFT one included (409 STOCK_TRANSFER_RECALL_RECEIVED otherwise). Reverses the OUT ledger rows (the stock is back in the From godown at the same lot and cost), closes the transit rows (CANCELLED — /stock/transfer/receive/inbound stops listing it at once), reverses the loading voucher, and sets the despatch CANCELLED with the reason on its trail. Rights: menu 192 (Branch Outward), CANCEL.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: stock_transfer_response_dto_1.StockTransferRecallSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [post_stock_transfer_dto_1.RecallStockTransferDto]),
+    __metadata("design:returntype", Promise)
+], StockTransferController.prototype, "recall", null);
 __decorate([
     (0, common_1.Delete)(),
     (0, common_1.Version)(api_version_1.API_VERSION),

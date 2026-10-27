@@ -26,6 +26,7 @@ class DeviceListMasterPayloadDto {
     devUserName;
     devDeviceUid;
     devDeviceName;
+    devCode;
     devDeviceType;
     devPlatform;
     devMacAddress;
@@ -89,6 +90,15 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 120, nullable: true }),
     __metadata("design:type", Object)
 ], DeviceListMasterPayloadDto.prototype, "devDeviceName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 10,
+        nullable: true,
+        example: 'D1',
+        description: 'Notes 160 C — the code stock voucher numbers carry.',
+    }),
+    __metadata("design:type", Object)
+], DeviceListMasterPayloadDto.prototype, "devCode", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ enum: device_list_master_enum_1.DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 }),
     __metadata("design:type", String)

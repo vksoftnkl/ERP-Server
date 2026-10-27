@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (250 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (257 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -24,6 +24,10 @@
 --     the tree; menu_is_active = false retires it without deleting the row.
 --   * menu_icon_location_desktop is an icon *index* ('0', '1', ...) for the legacy
 --     desktop client on most rows; only the newer entries carry real paths.
+--   * names, parents, positions (steps of 10), separators and visibility of the
+--     menus 20261027100000_menu_restructure touches are written here as that
+--     migration leaves them; 249/250/266/269/270 are not in this file and come
+--     only from the migrations that create them.
 --
 -- Idempotent: ON CONFLICT (menu_id) DO NOTHING -- a menu that already exists is
 -- left exactly as it is, because menu labels, positions and visibility are edited
@@ -40,28 +44,28 @@ INSERT INTO fixed.menu_master
      menu_is_active, menu_separator)
 VALUES
     -- ============ &1 Sales (menu 1, 79 rows) ============
-     (   1, NULL, '&1 Sales'                             , NULL                  , true ,   1.00, '0', NULL, NULL, true , true)
-    ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,   1.00, '0', NULL, NULL, true , true)
-    ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,   2.00, NULL, NULL, NULL, true , false)
-    ,(  12,    1, 'Sales Entry'                          , 'CTRL+S'              , true ,   3.00, '0', NULL, NULL, true , false)
-    ,(  13,    1, 'Sales Return'                         , 'CTRL+R'              , true ,   4.00, '0', NULL, NULL, true , false)
-    ,(  14,    1, 'Quotation'                            , 'CTRL+Q'              , true ,   5.00, '0', NULL, NULL, true , false)
+     (   1, NULL, '&1 Sales'                             , NULL                  , true ,  10.00, '0', NULL, NULL, true , false)
+    ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
+    ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,(  12,    1, 'Sales Bill'                           , 'CTRL+S'              , true ,  10.00, '0', NULL, NULL, true , false)
+    ,(  13,    1, 'Sales Return'                         , 'CTRL+R'              , false,   4.00, '0', NULL, NULL, true , false)
+    ,(  14,    1, 'Quotation'                            , 'CTRL+Q'              , true ,  20.00, '0', NULL, NULL, true , false)
     ,(  15,    1, 'Pick List'                            , NULL                  , false,   6.00, '0', NULL, NULL, true , false)
     ,(  16,    1, 'Order - Invoice'                      , 'CTRL+O'              , false,   7.00, '0', NULL, NULL, true , false)
-    ,(  17,    1, 'Master'                               , NULL                  , true ,   8.00, '0', NULL, NULL, true , true)
-    ,(  18,   17, 'State Master'                         , NULL                  , true ,   1.00, '1', NULL, NULL, true , false)
-    ,(  19,   17, 'City Master'                          , NULL                  , true ,   2.00, '2', NULL, NULL, true , false)
-    ,(  20,   17, 'Area Master'                          , NULL                  , true ,   3.00, '3', NULL, NULL, true , false)
-    ,(  21,   17, 'Customer Type Master'                 , NULL                  , true ,   4.00, '4', NULL, NULL, true , false)
-    ,(  66,    1, 'Offer & Schemes'                      , NULL                  , true ,  12.00, NULL, NULL, NULL, true , true)
-    ,(  67,   75, 'Loyalty Programs'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  75,    1, 'Loyalty Schemes'                      , NULL                  , true ,  10.00, NULL, NULL, NULL, true , true)
-    ,(  79,   75, 'Loyalty Status'                       , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
+    ,(  17,    1, 'Sales Masters'                        , NULL                  , true , 100.00, '0', NULL, NULL, true , false)
+    ,(  18,   17, 'States'                               , NULL                  , true ,  10.00, '1', NULL, NULL, true , false)
+    ,(  19,   17, 'Cities'                               , NULL                  , true ,  20.00, '2', NULL, NULL, true , false)
+    ,(  20,   17, 'Areas'                                , NULL                  , true ,  30.00, '3', NULL, NULL, true , false)
+    ,(  21,   17, 'Customer Types'                       , NULL                  , true ,  40.00, '4', NULL, NULL, true , true)
+    ,(  66,    1, 'Offers'                               , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
+    ,(  67,   75, 'Loyalty Programs'                     , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  75,    1, 'Loyalty'                              , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
+    ,(  79,   75, 'Loyalty Status'                       , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,(  80,   75, 'Loyalty Redemption'                   , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  81,    1, 'Salesman Schemes'                     , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
     ,(  82,   81, 'Salesman Target Schemes'              , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,(  83,   81, 'Salesman Target Status'               , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
-    ,(  95,   17, 'Tender Master'                        , NULL                  , true ,   5.00, NULL, NULL, NULL, true , false)
+    ,(  95,   17, 'Tender Types'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
     ,( 105,    1, 'SO Check Sheet'                       , NULL                  , false,  13.00, NULL, NULL, NULL, true , true)
     ,( 110,    1, 'Customer Reminders'                   , NULL                  , false,  14.00, NULL, NULL, NULL, true , false)
     ,( 111,    1, 'Mobile Orders'                        , NULL                  , false,   7.00, NULL, NULL, NULL, true , true)
@@ -70,7 +74,7 @@ VALUES
     ,( 122,    1, 'Third Party Bills'                    , NULL                  , false,  17.00, NULL, NULL, NULL, true , false)
     ,( 125,   17, 'Vehicle Master'                       , NULL                  , false,   4.00, NULL, NULL, NULL, true , true)
     ,( 129,   17, 'Sales Categories'                     , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    ,( 130,   17, 'Vehicle Freight Charges'              , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
+    ,( 130,   17, 'Freight Charges'                      , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
     ,( 131,    1, 'Cashier Screen'                       , NULL                  , false,  18.00, NULL, NULL, NULL, true , false)
     ,( 141,    1, 'Dispatch Detail'                      , NULL                  , false,  19.00, NULL, NULL, NULL, true , false)
     ,( 142,    1, 'Contract'                             , NULL                  , false,   6.00, NULL, NULL, NULL, true , true)
@@ -81,7 +85,7 @@ VALUES
     ,( 153,    1, 'e-Way Bill'                           , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
     ,( 162,   17, 'Agent Master'                         , NULL                  , false,   9.00, NULL, NULL, NULL, true , false)
     ,( 172,    1, 'SO Management'                        , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    ,( 177,   17, 'Loading Charges'                      , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
+    ,( 177,   17, 'Loading Charges'                      , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
     ,( 182,    1, 'Deliver Note'                         , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 189,    1, 'Optical Prescription'                 , NULL                  , true ,   1.10, NULL, NULL, NULL, true , false)
     ,( 198,    1, 'Session Control'                      , NULL                  , false,  22.00, NULL, NULL, NULL, true , false)
@@ -98,14 +102,14 @@ VALUES
     ,( 218,    1, 'Data Import'                          , NULL                  , false,  23.00, NULL, NULL, NULL, true , false)
     ,( 219,  218, 'Import Customers'                     , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 220,  218, 'Import Invoices'                      , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
-    ,( 226,    1, 'Bill Delivery Update'                 , 'true'                , true ,   6.10, NULL, NULL, NULL, true , false)
+    ,( 226,    1, 'Delivery Status'                      , 'true'                , true ,  40.00, NULL, NULL, NULL, true , false)
     ,( 228,   17, 'Customer Discount Master'             , NULL                  , false,   6.10, NULL, NULL, NULL, true , true)
     ,( 229,    1, 'Sale Entry (Bulk)'                    , NULL                  , false,   3.10, NULL, NULL, NULL, true , false)
     ,( 233,    1, 'Sales Bill - Loadman'                 , 'false'               , false,  24.00, NULL, NULL, NULL, true , false)
     ,( 235,   75, 'Loyalty Redemption (Item)'            , 'false'               , false,   4.00, NULL, NULL, NULL, true , true)
     ,( 236,   75, 'Loyalty Redemption Report (Item-wise)', 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
-    ,( 247,   66, 'Promotion Scheme'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,   6.20, NULL, NULL, NULL, true , false)
+    ,( 247,   66, 'Promotion Schemes'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , true)
     -- Till (271-276, migration 20261008140000 / src/modules/till): hidden until the
     -- client screens ship; rights work on a hidden menu. Verbs are set below.
     -- 275 was "Till Masters" until notes 101 split it into four screens:
@@ -121,31 +125,31 @@ VALUES
     -- (notes 133, 20261017110000_till_reports_menu_notes_133). 289 Cash Position is
     -- head office's every-branch screen over grids 170-174, CREATE = add an HO review
     -- (notes 134, 20261017120000_till_cash_position_notes_134).
-    ,( 271,    1, 'Till'                                 , NULL                  , false,  18.10, NULL, NULL, NULL, true , true)
-    ,( 272,  271, 'Open Till'                            , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
-    ,( 273,  271, 'Till Sessions'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
-    ,( 288,  271, 'Till Reports'                         , NULL                  , false,   2.50, NULL, NULL, NULL, true , false)
-    ,( 289,  271, 'Cash Position'                        , NULL                  , false,   2.60, NULL, NULL, NULL, true , false)
-    ,( 274,  271, 'Business Day'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
+    ,( 271,    1, 'Till'                                 , NULL                  , true ,  90.00, NULL, NULL, NULL, true , true)
+    ,( 272,  271, 'Open Till'                            , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 273,  271, 'Till Sessions'                        , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,( 288,  271, 'Till Reports'                         , NULL                  , true ,  60.00, NULL, NULL, NULL, true , true)
+    ,( 289,  271, 'Cash Position'                        , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
+    ,( 274,  271, 'Business Day'                         , NULL                  , true ,  40.00, NULL, NULL, NULL, true , true)
     ,( 286,  271, 'Cash Office'                          , NULL                  , false,   3.50, NULL, NULL, NULL, false, false)
-    ,( 287,  271, 'Cash Office'                          , NULL                  , false,   3.60, NULL, NULL, NULL, true , false)
-    ,( 283,  271, 'Till Masters'                         , NULL                  , false,   4.00, NULL, NULL, NULL, true , true)
-    ,( 275,  283, 'Till Counters'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , true)
-    ,( 280,  283, 'Till Safes'                           , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
-    ,( 281,  283, 'Till Reasons'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
-    ,( 282,  283, 'Denominations'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
-    ,( 276,  271, 'Till Approval Rules'                  , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
-    ,( 285,  271, 'Till Approval Authority'              , NULL                  , false,   5.10, NULL, NULL, NULL, true , false)
-    ,( 277,    5, 'Expense Voucher'                      , NULL                  , false,  11.50, NULL, NULL, NULL, true , false)
-    ,( 278,    5, 'Settlement Reconciliation'            , NULL                  , false,  11.60, NULL, NULL, NULL, true , false)
+    ,( 287,  271, 'Cash Office'                          , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,( 283,  271, 'Till Setup'                           , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
+    ,( 275,  283, 'Counters'                             , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 280,  283, 'Safes'                                , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,( 281,  283, 'Reasons'                              , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,( 282,  283, 'Denominations'                        , NULL                  , true ,  40.00, NULL, NULL, NULL, true , true)
+    ,( 276,  283, 'Approval Rules'                       , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
+    ,( 285,  283, 'Approval Authority'                   , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
+    ,( 277,    5, 'Expense Voucher'                      , NULL                  , true ,  30.00, NULL, NULL, NULL, true , true)
+    ,( 278,    5, 'Card / UPI Settlement'                , NULL                  , true , 150.00, NULL, NULL, NULL, true , true)
     -- ============ &2 Purchase (menu 2, 18 rows) ============
-    ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,   2.00, '0', NULL, NULL, true , false)
-    ,(  22,    2, 'Suppliers'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , true)
+    ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,  20.00, '0', NULL, NULL, true , false)
+    ,(  22,    2, 'Suppliers'                            , NULL                  , true ,  10.00, NULL, NULL, NULL, true , true)
     ,(  23,    2, 'Purchase Order'                       , 'CTRL+SHIFT+P'        , false,   2.00, NULL, NULL, NULL, true , false)
     ,(  24,    2, 'Purchase Entry'                       , 'CTRL+P'              , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  25,    2, 'Purchase Return'                      , 'CTRL+SHIFT+R'        , false,   4.00, NULL, NULL, NULL, true , true)
-    ,(  26,    2, 'Master'                               , NULL                  , true ,   5.00, NULL, NULL, NULL, true , false)
-    ,(  27,   26, 'Supplier Groups'                      , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,(  26,    2, 'Purchase Masters'                     , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,(  27,   26, 'Supplier Groups'                      , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  28,   26, 'Agents Master'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,( 149,   26, 'Transporters'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 195,    2, 'Shortage Receipt'                     , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
@@ -158,23 +162,25 @@ VALUES
     ,( 214,  208, 'Proc Payment'                         , NULL                  , true ,   4.00, NULL, NULL, NULL, true , true)
     ,( 215,  208, 'Proc Bank Payment'                    , NULL                  , true ,   5.00, NULL, NULL, NULL, true , true)
     -- ============ &3 Inventory (menu 3, 25 rows) ============
-    ,(   3, NULL, '&3 Inventory'                         , NULL                  , true ,   3.00, '0', NULL, NULL, true , false)
-    ,(  29,    3, 'Item Master'                          , 'CTRL+I'              , true ,   1.00, NULL, NULL, NULL, true , true)
-    ,(  30,    3, 'Change Selling'                       , 'CTRL+G'              , false,   2.00, NULL, NULL, NULL, true , false)
+    ,(   3, NULL, '&3 Inventory'                         , NULL                  , true ,  30.00, '0', NULL, NULL, true , false)
+    ,(  29,    3, 'Items'                                , 'CTRL+I'              , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  30,    3, 'Change Selling Price'                 , 'CTRL+G'              , true ,  20.00, NULL, NULL, NULL, true , false)
     ,(  31,    3, 'Change Selling (Purchase)'            , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  32,    3, 'Sticker Printing'                     , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
     ,(  33,    3, 'Product Kits'                         , NULL                  , false,   6.00, NULL, NULL, NULL, true , false)
-    ,(  34,    3, 'Master'                               , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
-    ,(  35,   34, 'Item Group Master'                    , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  36,   34, 'Item Brand Master'                    , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
-    ,(  37,   34, 'Item Section Master'                  , NULL                  , true ,   3.00, NULL, NULL, NULL, true , true)
-    ,(  38,   34, 'Unit Master'                          , NULL                  , true ,   4.00, NULL, NULL, NULL, true , false)
+    ,(  34,    3, 'Item Masters'                         , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
+    ,(  35,   34, 'Item Groups'                          , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  36,   34, 'Brands'                               , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,(  37,   34, 'Sections'                             , NULL                  , true ,  40.00, NULL, NULL, NULL, true , true)
+    ,(  38,   34, 'Units'                                , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
     -- 291 / 292 (notes 147, 20261023170000_textile_size_colour_screens): the textile
     -- size and colour masters (/item-sizes, /item-colours), grids 181 / 182.
-    ,( 291,   34, 'Item Size Master'                     , NULL                  , true ,   4.10, NULL, NULL, NULL, true , false)
-    ,( 292,   34, 'Item Colour Master'                   , NULL                  , true ,   4.20, NULL, NULL, NULL, true , false)
-    ,(  39,   34, 'Godown Master'                        , NULL                  , true ,   5.00, NULL, NULL, NULL, true , false)
-    ,(  40,   34, 'Tax Master'                           , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
+    ,( 291,   34, 'Sizes'                                , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
+    ,( 292,   34, 'Colours'                              , NULL                  , true ,  70.00, NULL, NULL, NULL, true , true)
+    ,( 293,   34, 'Stock Reasons'                        , NULL                  , true , 110.00, NULL, NULL, NULL, true , false)
+    ,( 294,   34, 'Ageing Slabs'                         , NULL                  , true , 120.00, NULL, NULL, NULL, true , false)
+    ,(  39,   34, 'Godowns'                              , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
+    ,(  40,   34, 'GST Rates'                            , NULL                  , true ,  90.00, NULL, NULL, NULL, true , false)
     ,(  46,  164, 'Reorder - Quick'                      , NULL                  , true ,   2.00, NULL, NULL, NULL, true , true)
     ,( 115,    3, 'Item Group wise Discount'             , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 164,    3, 'Reorder'                              , NULL                  , false,   6.00, NULL, NULL, NULL, true , false)
@@ -183,25 +189,25 @@ VALUES
     ,( 216,  164, 'Reorder - Advanced'                   , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,( 217,  164, 'Reorder - Bulk Update'                , NULL                  , true ,   3.00, NULL, NULL, NULL, true , false)
     ,( 238,    3, 'Custom Sticker'                       , NULL                  , false,   5.10, NULL, NULL, NULL, true , false)
-    ,( 240,   34, 'item category master'                 , 'item-category-master', true ,   2.10, NULL, NULL, NULL, true , false)
-    ,( 244,   34, 'Item Qty wise Price'                  , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
+    ,( 240,   34, 'Categories'                           , 'item-category-master', true ,  30.00, NULL, NULL, NULL, true , false)
+    ,( 244,    3, 'Qty-wise Prices'                      , NULL                  , true ,  30.00, NULL, NULL, NULL, true , true)
     -- ============ &4 Stock (menu 4, 20 rows) ============
-    ,(   4, NULL, '&4 Stock'                             , NULL                  , true ,   4.00, '0', NULL, NULL, true , false)
-    ,(  41,    4, 'Stock Transfer'                       , 'CTRL+T'              , false,   1.00, NULL, NULL, NULL, true , true)
+    ,(   4, NULL, '&4 Stock'                             , NULL                  , true ,  40.00, '0', NULL, NULL, true , false)
+    ,(  41,    4, 'Godown Transfer'                      , 'CTRL+T'              , true ,  40.00, NULL, NULL, NULL, true , false)
     ,(  42,    4, 'Split Stock'                          , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,(  43,    4, 'Production'                           , 'CTRL+K'              , false,   3.00, NULL, NULL, NULL, true , true)
-    ,(  44,    4, 'Opening Stock'                        , NULL                  , true ,   4.00, NULL, NULL, NULL, true , false)
-    ,(  45,    4, 'Physical Stock Update'                , 'CTRL+SHIFT+U'        , true ,   5.00, NULL, NULL, NULL, true , false)
+    ,(  44,    4, 'Opening Stock'                        , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  45,    4, 'Physical Stock'                       , 'CTRL+SHIFT+U'        , true ,  20.00, NULL, NULL, NULL, true , false)
     -- 264: notes 60 / 20260928210000_stock_bucket_move -- ONE menu for every adjustment kind
     -- (adjustment, re-lot, move stock, issue, damage, expiry write-off); per-kind rights later.
     ,( 107,    4, 'Stock Transfer (Third Party)'         , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    ,( 264,    4, 'Stock Adjustment'                     , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
+    ,( 264,    4, 'Stock Adjustment'                     , NULL                  , true ,  30.00, NULL, NULL, NULL, true , true)
     ,( 145,    4, 'Stock Exchange'                       , NULL                  , false,   8.00, NULL, NULL, NULL, true , false)
     ,( 170,    4, 'Gate Inward Entry'                    , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
     ,( 171,    4, 'Gate Inward Pending'                  , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
     ,( 173,    4, 'Gate Outward Entry'                   , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
-    ,( 192,    4, 'Branch Outward'                       , NULL                  , false,  12.00, NULL, NULL, NULL, true , false)
-    ,( 193,    4, 'Branch Inward'                        , NULL                  , false,  13.00, NULL, NULL, NULL, true , false)
+    ,( 192,    4, 'Branch Outward'                       , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
+    ,( 193,    4, 'Branch Inward'                        , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
     ,( 197,    4, 'Own Consumption'                      , NULL                  , false,   2.10, NULL, NULL, NULL, true , false)
     ,( 222,    4, 'Meat Shop'                            , NULL                  , false,  14.00, NULL, NULL, NULL, true , false)
     ,( 223,  222, 'Daily Avg.Weigh Loss'                 , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
@@ -215,42 +221,42 @@ VALUES
     -- vouchers 20-28 in Tally's F4-F10 order, retired / unbuilt screens at 90+ and hidden.
     -- Ids are pinned (the client opens screens by id). 100 is visible since the payment
     -- screen was built (20260929090000). 48 is inactive (20260915120000: the one receipt screen is 99).
-    ,(   5, NULL, '&5 Accounts'                          , NULL                  , true ,   5.00, '0', NULL, NULL, true , false)
+    ,(   5, NULL, '&5 Accounts'                          , NULL                  , true ,  50.00, '0', NULL, NULL, true , false)
     ,(  48,    5, 'Bill wise Receipt (old)'              , 'CTRL+B'              , false,  90.00, NULL, NULL, NULL, false, false)
     ,(  49,    5, 'Bill wise Payment (old)'              , 'CTRL+SHIFT+B'        , false,  91.00, NULL, NULL, NULL, true , false)
-    ,(  51,    5, 'Received Cheques'                     , NULL                  , true ,  12.00, NULL, NULL, NULL, true , false)
-    ,(  52,    5, 'Issued Cheques'                       , NULL                  , true ,  13.00, NULL, NULL, NULL, true , false)
-    ,(  53,    5, 'Ledgers'                              , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
-    ,(  54,    5, 'Ledger Groups'                        , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  55,    5, 'Opening Balances'                     , NULL                  , true ,   3.00, NULL, NULL, NULL, true , true)
-    ,(  99,    5, 'Bill-wise Receipt'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
-    ,( 100,    5, 'Bill-wise Payment'                    , NULL                  , true ,  11.00, NULL, NULL, NULL, true , false)
-    ,( 101,    5, 'Debit Note'                           , NULL                  , true ,  27.00, NULL, NULL, NULL, true , true)
-    ,( 102,    5, 'Credit Note'                          , NULL                  , true ,  26.00, NULL, NULL, NULL, true , false)
-    ,( 103,    5, 'Journal'                              , NULL                  , true ,  23.00, NULL, NULL, NULL, true , false)
-    ,( 104,    5, 'Contra'                               , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
-    ,( 163,    5, 'Purchase (Accounting)'                , NULL                  , true ,  25.00, NULL, NULL, NULL, true , false)
+    ,(  51,    5, 'Received Cheques'                     , NULL                  , true , 120.00, NULL, NULL, NULL, true , false)
+    ,(  52,    5, 'Issued Cheques'                       , NULL                  , true , 130.00, NULL, NULL, NULL, true , false)
+    ,(  53,    5, 'Ledgers'                              , NULL                  , true , 170.00, NULL, NULL, NULL, true , false)
+    ,(  54,    5, 'Ledger Groups'                        , NULL                  , true , 180.00, NULL, NULL, NULL, true , false)
+    ,(  55,    5, 'Opening Balances'                     , NULL                  , true , 190.00, NULL, NULL, NULL, true , false)
+    ,(  99,    5, 'Receipt (Bill-wise)'                  , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 100,    5, 'Payment (Bill-wise)'                  , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,( 101,    5, 'Debit Note'                           , NULL                  , true ,  90.00, NULL, NULL, NULL, true , false)
+    ,( 102,    5, 'Credit Note'                          , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
+    ,( 103,    5, 'Journal'                              , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
+    ,( 104,    5, 'Contra'                               , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
+    ,( 163,    5, 'Purchase (Accounting)'                , NULL                  , true , 110.00, NULL, NULL, NULL, true , true)
     ,( 179,    5, 'Claim Management'                     , NULL                  , false,  94.00, NULL, NULL, NULL, true , false)
     ,( 185,    5, 'Third Party Bills'                    , NULL                  , false,  95.00, NULL, NULL, NULL, true , false)
     ,( 187,    5, 'Collection Entry'                     , 'false'               , false,  92.00, NULL, NULL, NULL, true , false)
     ,( 188,    5, 'Collection Approval'                  , 'false'               , false,  93.00, NULL, NULL, NULL, true , false)
-    ,( 259,    5, 'Sales (Accounting)'                   , NULL                  , true ,  24.00, NULL, NULL, NULL, true , false)
-    ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  22.00, NULL, NULL, NULL, true , false)
-    ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  21.00, NULL, NULL, NULL, true , false)
-    ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  28.00, NULL, NULL, NULL, true , false)
-    ,( 263,    5, 'Cheque Books'                         , NULL                  , true ,  14.00, NULL, NULL, NULL, true , true)
+    ,( 259,    5, 'Sales (Accounting)'                   , NULL                  , true , 100.00, NULL, NULL, NULL, true , false)
+    ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
+    ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
+    ,( 262,    5, 'Voucher Register'                     , NULL                  , true , 160.00, NULL, NULL, NULL, true , true)
+    ,( 263,    5, 'Cheque Books'                         , NULL                  , true , 140.00, NULL, NULL, NULL, true , false)
     -- ============ &6 Reports (menu 6, 25 rows) ============
     -- 290 Price Change Log (notes 144, 20261023130000_price_change_log_menu_notes_144):
     -- the report over inventory.item_price_change_log, beside Audit Logs.
-    ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,   6.00, '0', NULL, NULL, true , false)
+    ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,  60.00, '0', NULL, NULL, true , false)
     ,(  74,    6, 'Sales Reports'                        , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  76,   74, 'Sales Bills'                          , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
-    ,( 106,    6, 'Audit Logs'                           , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,( 290,    6, 'Price Change Log'                     , NULL                  , true ,   1.50, NULL, NULL, NULL, true , false)
-    ,( 137,    6, 'Financial Statements'                 , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
-    ,( 279,    6, 'Party Outstanding'                    , NULL                  , true ,   7.50, NULL, NULL, NULL, true , false)
-    ,( 258,  137, 'Ledger Statement'                     , NULL                  , true ,   0.50, NULL, NULL, NULL, true , false)
-    ,( 284,  137, 'Account Day Summary'                  , NULL                  , true ,   0.60, NULL, NULL, NULL, true , false)
+    ,( 106,    6, 'Audit Logs'                           , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
+    ,( 290,    6, 'Price Change Log'                     , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,( 137,    6, 'Accounts Reports'                     , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 279,    6, 'Party Outstanding'                    , NULL                  , false,   7.50, NULL, NULL, NULL, true , false)
+    ,( 258,  137, 'Ledger Statement'                     , NULL                  , false,   0.50, NULL, NULL, NULL, true , false)
+    ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 138,  137, 'Trial Balance'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 139,  137, 'Balance Sheet'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,( 140,  137, 'Profit && Loss'                       , NULL                  , false,   3.00, NULL, NULL, NULL, true , true)
@@ -268,44 +274,44 @@ VALUES
     ,( 232,  183, 'Dash Board'                           , 'true'                , false,   0.01, NULL, NULL, NULL, true , false)
     ,( 234,  183, 'Tender wise Collection'               , 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
     -- ============ &7 Settings (menu 7, 38 rows) ============
-    ,(   7, NULL, '&7 Settings'                          , NULL                  , true ,   7.00, '0', NULL, NULL, true , false)
-    ,(  56,    7, 'Company Master'                       , NULL                  , true ,   0.00, NULL, NULL, NULL, true , false)
-    ,(  57,    7, 'Employee Master'                      , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  58,    7, 'User Administration'                  , NULL                  , true ,   3.00, NULL, NULL, NULL, true , false)
-    ,(  59,    7, 'Module Administration'                , NULL                  , true ,   5.00, NULL, NULL, NULL, true , true)
-    ,(  60,    7, 'Configuration'                        , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
+    ,(   7, NULL, '&7 Settings'                          , NULL                  , true ,  70.00, '0', NULL, NULL, true , false)
+    ,(  56,    7, 'Company'                              , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  57,    7, 'Employees'                            , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,(  58,    7, 'Users & Rights'                       , NULL                  , true ,  40.00, NULL, NULL, NULL, true , true)
+    ,(  59,    7, 'Modules'                              , NULL                  , true ,  50.00, NULL, NULL, NULL, true , true)
+    ,(  60,    7, 'Configuration'                        , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
     ,(  61,   60, 'SMS Configuration'                    , NULL                  , false,   0.00, NULL, NULL, NULL, true , false)
-    ,(  62,   60, 'Printing Configuration'               , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,(  62,   60, 'Print Templates'                      , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
     ,(  63,   60, 'Barcode Configuration'                , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,(  64,    7, 'Financial Year'                       , NULL                  , false,   9.00, NULL, NULL, NULL, true , false)
     ,(  65,    7, 'Reset Sequence'                       , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
-    ,(  69,    7, 'Masters'                              , NULL                  , true ,  11.00, NULL, NULL, NULL, true , false)
-    ,(  70,   69, 'Department Master'                    , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  71,   69, 'Designation Master'                   , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
+    ,(  69,    7, 'Employee Masters'                     , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
+    ,(  70,   69, 'Departments'                          , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,(  71,   69, 'Designations'                         , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,(  72,   69, 'Item User Fields'                     , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
-    ,(  73,   69, 'Grid Settings'                        , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
-    ,(  77,   69, 'Dropdown Settings'                    , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
+    ,(  73,  159, 'Grids'                                , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,(  77,  159, 'Dropdowns'                            , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,(  78,   60, 'Software Configuration'               , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 113,    7, 'Bank Details'                         , NULL                  , false,   2.00, NULL, NULL, NULL, true , true)
     ,( 114,    7, 'Change Password'                      , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 150,   69, 'Contact Book'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
-    ,( 159,    7, 'Templates'                            , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
-    ,( 160,  159, 'Customer Template'                    , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,( 161,  159, 'Item Template'                        , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,( 159,    7, 'System Setup'                         , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
+    ,( 160,  159, 'Customer Template'                    , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
+    ,( 161,  159, 'Item Template'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 165,    7, 'Letter Pad'                           , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
-    ,( 174,   60, 'Price Level Configuration'            , NULL                  , true ,   4.00, NULL, NULL, NULL, true , false)
+    ,( 174,   60, 'Price Levels'                         , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,( 175,    7, 'Export to Tally'                      , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
     ,( 180,   60, 'Bug Information'                      , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 190,   60, 'Software License'                     , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
-    ,( 191,    7, 'Branch Master'                        , NULL                  , true ,   0.10, NULL, NULL, NULL, true , false)
+    ,( 191,    7, 'Branches'                             , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,( 227,   60, 'What''s App Configuration'            , NULL                  , false,   0.50, NULL, NULL, NULL, true , true)
     ,( 231,    7, 'Print Settings'                       , 'false'               , false,   1.10, NULL, NULL, NULL, true , false)
-    ,( 239,   69, 'device list master'                   , 'device-listmaster'   , true ,   4.00, '/icons/desktop/device.png', '/icons/web/device.png', '/icons/mobile/device.png', true , false)
-    ,( 242,   69, 'ui- table-master'                     , NULL                  , true ,   8.10, NULL, NULL, NULL, true , false)
-    ,( 243,   60, 'widget-master'                        , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
-    ,( 245,   60, 'Charge master'                        , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
-    ,( 246,   60, 'app settings'                         , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
-    ,( 248,   60, 'Printing Assignments'                 , NULL                  , true ,   1.20, NULL, NULL, NULL, true , false)
+    ,( 239,  159, 'Devices'                              , 'device-listmaster'   , true ,  10.00, '/icons/desktop/device.png', '/icons/web/device.png', '/icons/mobile/device.png', true , false)
+    ,( 242,  159, 'UI Tables'                            , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
+    ,( 243,  159, 'Widgets'                              , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
+    ,( 245,   60, 'Charges'                              , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    ,( 246,   60, 'App Settings'                         , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 248,   60, 'Print Assignments'                    , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
     -- ============ &8 Transport (menu 8, 9 rows) ============
     ,(   8, NULL, '&8 Transport'                         , NULL                  , false,   8.00, '0', NULL, NULL, true , false)
     ,( 126,    8, 'Tripsheet'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
@@ -368,6 +374,14 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}'
  WHERE menu_id = 264
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Ageing Slabs (294, notes 159 / 20261026130000_stock_small_masters_notes_159):
+-- one ladder per company, saved whole — VIEW reads it, EDIT saves or reverts it.
+-- (293 Stock Reasons keeps the default.) Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,EDIT}'
+ WHERE menu_id = 294
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Cheque Books (263, notes 58 / 20260928190000_cheque_books_menu): a master that
@@ -442,6 +456,14 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,PRINT,EXPORT}'
  WHERE menu_id = 290
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 192 Branch Outward (notes 160 B / 20261027110000_transfers_notes_160): CANCEL is
+-- the recall of a despatch nobody received (POST /stock/transfer/recall). Its other
+-- routes are judged on menu 41. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,CANCEL}'
+ WHERE menu_id = 192
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

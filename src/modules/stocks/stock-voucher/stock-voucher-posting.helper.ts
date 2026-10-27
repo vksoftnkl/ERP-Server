@@ -269,6 +269,9 @@ export async function postStockVoucher(
   }
 
   await applyLedgerRows(tx, { ...params, reversal: false });
+  if (!params.ledgerSource) {
+    await assertFreeStock(tx, { ...params, reversal: false });
+  }
   await recomputeHeaderTotals(tx, params);
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
@@ -2948,6 +2951,90 @@ async function assertNegativeStockPolicy(
   }
 }
 /**
+ * Notes 160 A — free goods leave only from free goods that came in.
+ *
+ * Runs after `applyLedgerRows`, so the balances are already rebuilt from the
+ * ledger UNDER THE ITEM LOCK, and a holding whose free stock another document
+ * took after this one was saved is caught here rather than at the save. A
+ * holding this document took free from whose `sbl_free_out_qty` now exceeds
+ * its `sbl_free_in_qty` is refused: one 422, one detail per line that takes
+ * free from it, at `lines.<i>.freeQty` — `i` the line's position in the
+ * document, as the save's per-line refusals count it. `qty + free ≤ on hand`
+ * is the negative-stock check's, as before.
+ *
+ * Stock vouchers only: the caller skips a sales shadow (`ledgerSource`),
+ * whose free goods are a scheme's, given from the shelf.
+ */
+async function assertFreeStock(tx: Prisma.TransactionClient, params: ApplyParams): Promise<void> {
+  const { rules, svhId, accYear } = params;
+  const short = await tx.$queryRaw<
+    Array<{
+      line_no: number;
+      line_index: number;
+      item_name: string;
+      batch_no: string | null;
+      godown_name: string | null;
+      bucket: string;
+      asked: Prisma.Decimal;
+      had: Prisma.Decimal;
+    }>
+  >`
+    WITH line_index AS (
+      SELECT l.svi_line_no, (dense_rank() OVER (ORDER BY l.svi_line_no) - 1)::int AS line_index
+        FROM (SELECT DISTINCT svi_line_no FROM stock.stock_voucher_item
+               WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${accYear}::bpchar
+                 AND svi_is_deleted = false) l
+    ),
+    taken AS (
+      SELECT sml.sml_line_no, sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+             sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket,
+             SUM(SUM(sml.sml_free_base_qty)) OVER (
+               PARTITION BY sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+                            sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket) AS asked
+        FROM stock.stock_ledger sml
+       WHERE ${ledgerRowsOf(params)}
+         AND sml.sml_direction < 0
+         AND sml.sml_free_base_qty > 0
+       GROUP BY sml.sml_line_no, sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+                sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket
+    )
+    SELECT t.sml_line_no AS line_no, li.line_index,
+           itm.item_name_en AS item_name, slt.slt_batch_no AS batch_no,
+           gdl.gdl_name AS godown_name, t.sml_bucket AS bucket, t.asked,
+           GREATEST(sbl.sbl_free_in_qty - sbl.sbl_free_out_qty + t.asked, 0) AS had
+      FROM taken t
+      JOIN stock.stock_balance sbl
+        ON sbl.sbl_company_id = t.sml_company_id AND sbl.sbl_branch_id = t.sml_branch_id
+       AND sbl.sbl_godown_id  = t.sml_godown_id  AND sbl.sbl_item_id   = t.sml_item_id
+       AND sbl.sbl_lot_id     = t.sml_lot_id     AND sbl.sbl_bucket    = t.sml_bucket
+       AND sbl.sbl_is_deleted = false
+      JOIN line_index li ON li.svi_line_no = t.sml_line_no
+      JOIN inventory.item_master itm ON itm.item_id = t.sml_item_id
+      JOIN stock.stock_lot slt ON slt.slt_id = t.sml_lot_id
+      LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = t.sml_godown_id
+     WHERE sbl.sbl_free_out_qty > sbl.sbl_free_in_qty
+     ORDER BY li.line_index
+  `;
+  if (!short.length) {
+    return;
+  }
+  throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+    `This ${rules.displayName.toLowerCase()} takes more free stock than the godown holds`,
+    short.map((row) => {
+      const asked = new Prisma.Decimal(row.asked).toString();
+      const had = new Prisma.Decimal(row.had);
+      const where = `${row.item_name}${row.batch_no ? ` batch ${row.batch_no}` : ''} in ${row.godown_name ?? 'this godown'} (${row.bucket})`;
+      return {
+        field: `lines.${row.line_index}.freeQty`,
+        code: StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK,
+        message: had.isZero()
+          ? `Line ${row.line_no}: ${asked} free, but ${where} has no free stock. Send it as quantity instead.`
+          : `Line ${row.line_no}: ${asked} free, but only ${had.toString()} of ${where} came in free. Send the rest as quantity.`,
+      };
+    }),
+  );
+}
+/**
  * Phase 7 — `slt_total_on_hand`, the lot's chain-wide total across every branch
  * and godown, and the lot's status with it.
  *
@@ -3188,6 +3275,123 @@ export async function cancelStockVoucher(
   });
   return rowsReversed;
 }
+/** What `recallTransferOut` reports back. */
+export interface RecallTransferOutResult {
+  /** Reversal ledger rows written — one per OUT row of the despatch. */
+  rowsReversed: number;
+  /** `stock_transit` rows moved IN_TRANSIT → CANCELLED. */
+  transitRowsClosed: number;
+}
+/**
+ * Notes 160 B — recall a branch despatch nobody received: the lorry never
+ * left, or came straight back.
+ *
+ * ALLOWED ONLY while the despatch is IN_TRANSIT and the receiving branch has
+ * not touched it: every transit row still IN_TRANSIT with nothing received
+ * and nothing damaged, and no live receipt names it — a DRAFT one included,
+ * because a draft receipt is somebody at the other branch keying what
+ * arrived. Otherwise 409 STOCK_TRANSFER_RECALL_RECEIVED; what did arrive is
+ * received and transferred back, what never will is short-settled.
+ *
+ * WHAT IT DOES, in the caller's transaction, under the header lock and then
+ * the transit rows' locks (a receipt post locks the despatch header first, so
+ * the two serialise on it):
+ *   * every OUT ledger row gets its mirror, and the source holdings, the lot
+ *     cost, the item average and the lot totals are re-applied over them, as a
+ *     cancel does — the stock is back in the From godown at the same lot and
+ *     cost;
+ *   * the transit rows close CANCELLED and the destination holdings'
+ *     `sbl_transit_in_qty` is re-derived, so the receiving branch's inbound
+ *     list and its in-transit figure drop it at once;
+ *   * the header goes CANCELLED. Its figures stay (E1: the re-total leaves a
+ *     transfer's reversal rows out).
+ * The loading voucher (notes 156) is reversed by `StockPostingService.recall`;
+ * the trail row and the audit are the service's.
+ */
+export async function recallTransferOut(
+  tx: Prisma.TransactionClient,
+  params: CancelStockVoucherParams,
+): Promise<RecallTransferOutResult> {
+  const { rules, svhId, accYear, actor, reason, cancelledOn } = params;
+  const author = auditColumnActor(actor);
+  const header = await lockHeaderInStatus(tx, params, 'IN_TRANSIT');
+  if (header.voucherType !== 'TRANSFER_OUT') {
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(`${header.refno} is not a despatch`, [
+      {
+        field: 'svhId',
+        code: StockErrorCode.TRANSFER_NOT_FOUND,
+        message: `${header.refno} is a ${header.voucherType}; only a branch despatch (TRANSFER_OUT) can be recalled.`,
+      },
+    ]);
+  }
+  const [toBranch] = await tx.$queryRaw<Array<{ br_name: string | null }>>`
+    SELECT br_name FROM public.branch_master WHERE br_id = ${header.toBranchId}::uuid
+  `;
+  const receiver = toBranch?.br_name?.trim() || 'The receiving branch';
+  const transit = await tx.$queryRaw<
+    Array<{ stt_status: string; stt_received_qty: Prisma.Decimal; stt_damage_qty: Prisma.Decimal }>
+  >`
+    SELECT stt_status, stt_received_qty, stt_damage_qty
+      FROM stock.stock_transit
+     WHERE stt_out_voucher_id = ${svhId}::uuid AND stt_out_acc_year = ${accYear}::bpchar
+       AND stt_is_deleted = false
+       FOR UPDATE
+  `;
+  const [receipt] = await tx.$queryRaw<Array<{ svh_refno: string; svh_status: string }>>`
+    SELECT svh_refno, svh_status
+      FROM stock.stock_voucher
+     WHERE svh_voucher_type     = 'TRANSFER_IN'
+       AND svh_link_src_doc_id  = ${svhId}::uuid
+       AND COALESCE(svh_link_src_acc_year, svh_acc_year) = ${accYear}::bpchar
+       AND svh_is_deleted = false
+       AND svh_status <> 'CANCELLED'
+     ORDER BY svh_created_on
+     LIMIT 1
+  `;
+  const touched = transit.some(
+    (row) =>
+      row.stt_status !== 'IN_TRANSIT' ||
+      !new Prisma.Decimal(row.stt_received_qty).isZero() ||
+      !new Prisma.Decimal(row.stt_damage_qty).isZero(),
+  );
+  if (receipt || touched) {
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(`${header.refno} cannot be recalled`, [
+      {
+        field: 'svhId',
+        code: StockErrorCode.TRANSFER_RECALL_RECEIVED,
+        message: receipt
+          ? `${receiver} has already keyed a receipt against it (${receipt.svh_refno}, ${receipt.svh_status}). Receive what arrived and transfer it back, or short-settle what never will.`
+          : `${receiver} has already received part of it. Receive the rest and transfer it back, or short-settle what never will.`,
+      },
+    ]);
+  }
+  const rowsReversed = await writeReversalLedger(tx, params);
+  const apply = { rules, svhId, accYear, actor, postedOn: cancelledOn };
+  await applyLedgerRows(tx, { ...apply, reversal: true, refuseNegative: params.refuseNegative });
+  const transitRowsClosed = await tx.$executeRaw`
+    UPDATE stock.stock_transit
+       SET stt_status      = 'CANCELLED',
+           stt_remarks     = left(${`Recalled: ${reason}`}, 250),
+           stt_modified_on = ${cancelledOn},
+           stt_modified_by = ${author}
+     WHERE stt_out_voucher_id = ${svhId}::uuid AND stt_out_acc_year = ${accYear}::bpchar
+       AND stt_is_deleted = false AND stt_status = 'IN_TRANSIT'
+  `;
+  await refreshTransitIn(tx, transitHoldingsOf(svhId, accYear), actor, cancelledOn);
+  await recomputeHeaderTotals(tx, apply);
+  await tx.stockVoucher.update({
+    where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+    data: {
+      // As in cancelStockVoucher: who recalled it, when and why are the
+      // CANCELLED row on txn_status_log.
+      svhStatus: 'CANCELLED',
+      svhVersionNo: { increment: 1 },
+      svhModifiedOn: cancelledOn,
+      svhModifiedBy: author,
+    },
+  });
+  return { rowsReversed, transitRowsClosed };
+}
 /** The transfer guard — see `cancelStockVoucher`. */
 async function assertTransferCancellable(
   tx: Prisma.TransactionClient,
@@ -3283,7 +3487,7 @@ export async function cancelDraftVoucher(
 async function lockHeaderInStatus(
   tx: Prisma.TransactionClient,
   { rules, svhId, accYear }: { rules: StockVoucherTypeRules; svhId: string; accYear: string },
-  expected: 'POSTED' | 'DRAFT',
+  expected: 'POSTED' | 'DRAFT' | 'IN_TRANSIT',
 ): Promise<LockedHeader> {
   const [header] = await tx.$queryRaw<
     Array<{

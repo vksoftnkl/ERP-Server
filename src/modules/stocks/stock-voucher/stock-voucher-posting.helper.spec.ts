@@ -17,6 +17,7 @@ import {
   openReservationHoldings,
   postStockVoucher,
   readBucketTrackFlags,
+  recallTransferOut,
   rebuildStockDerivedFigures,
   refreshReserved,
   refreshTransitIn,
@@ -144,6 +145,10 @@ const QUERY_KINDS: Array<[string, (sql: string) => boolean]> = [
   ['zeroCost', (s) => s.includes('c.line_cost_rate = 0')],
   ['lockItems', (s) => s.includes('pg_advisory_xact_lock(hashtextextended')],
   ['negative', (s) => s.includes('sbl.sbl_on_hand_qty < 0')],
+  ['freeStock', (s) => s.includes('sbl.sbl_free_out_qty > sbl.sbl_free_in_qty')],
+  ['recallReceiver', (s) => s.includes('SELECT br_name FROM public.branch_master')],
+  ['recallTransit', (s) => s.includes('SELECT stt_status, stt_received_qty, stt_damage_qty')],
+  ['recallReceipt', (s) => s.includes("svh_voucher_type = 'TRANSFER_IN'")],
   ['closeOut', (s) => s.includes("o.svh_status = 'IN_TRANSIT'")],
   ['untouched', (s) => s.includes('count(*)::bigint AS n')],
   ['shortRows', (s) => s.includes("t.stt_status = 'PARTIAL'")],
@@ -165,6 +170,7 @@ const EXEC_KINDS: Array<[string, (sql: string) => boolean]> = [
   ['ensureBalances', (s) => s.includes('INSERT INTO stock.stock_balance')],
   ['reserved', (s) => s.includes('SET sbl_reserved_qty')],
   ['transitIn', (s) => s.includes('SET sbl_transit_in_qty')],
+  ['transitCancel', (s) => s.includes("SET stt_status = 'CANCELLED'")],
   ['itemCosts', (s) => s.includes('MERGE INTO stock.stock_item_cost')],
   ['stamp', (s) => s.includes('WITH item AS') && s.includes('UPDATE stock.stock_balance b')],
   ['lotTotals', (s) => s.includes('WITH lot AS') && s.includes('totals AS (')],
@@ -404,6 +410,7 @@ describe('stock-voucher-posting.helper', () => {
         'zeroCost',
         'ledger',
         ...APPLY_PHASES,
+        'freeStock',
         'headerTotals',
       ]);
       expect(db.raw.stockVoucher.update).toHaveBeenCalledWith({
@@ -466,6 +473,44 @@ describe('stock-voucher-posting.helper', () => {
       expect(db.callOf('resolveLots')?.values).toEqual(
         expect.arrayContaining(['SALES', 'BILL', 'bil00042']),
       );
+      // Notes 160 A — a scheme's free goods are given from the shelf.
+      expect(db.kinds()).not.toContain('freeStock');
+    });
+
+    // Notes 160 A — free goods leave only from free goods that came in.
+    it('refuses free stock the holding does not have: one 422, at lines.<i>.freeQty', async () => {
+      const db = makeTx({
+        lockHeader: header(),
+        freeStock: [
+          {
+            line_no: 3,
+            line_index: 2,
+            item_name: 'Texttile Item',
+            batch_no: 'B-7',
+            godown_name: 'Main',
+            bucket: 'SALEABLE',
+            asked: new Prisma.Decimal(1),
+            had: new Prisma.Decimal(0),
+          },
+        ],
+      });
+
+      const refusal = await refusalOf(postStockVoucher(db.tx, postParams(DAMAGE)));
+
+      expect(refusal.status).toBe(422);
+      expect(refusal.body).toMatchObject({
+        errors: [
+          {
+            field: 'lines.2.freeQty',
+            code: StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK,
+            message: expect.stringContaining('has no free stock'),
+          },
+        ],
+      });
+      // Checked over the rebuilt balances, before the header moves.
+      expect(db.kinds().indexOf('freeStock')).toBeGreaterThan(db.kinds().indexOf('balances'));
+      expect(db.raw.stockVoucher.update).not.toHaveBeenCalled();
+      expect(db.callOf('freeStock')?.values.slice(0, 2)).toEqual([SVH_ID, ACC_YEAR]);
     });
 
     it('picks lots for an outward document and skips the zero-cost refusal', async () => {
@@ -939,6 +984,7 @@ describe('stock-voucher-posting.helper', () => {
         'lockItems',
         'transitIn',
         ...APPLY_PHASES,
+        'freeStock',
         'headerTotals',
       ]);
       // Transit is keyed on the despatch itself.
@@ -1193,6 +1239,7 @@ describe('stock-voucher-posting.helper', () => {
         'lockItems',
         'transitIn',
         ...APPLY_PHASES,
+        'freeStock',
         'headerTotals',
       ]);
       // The inbound quantity refreshed is the despatch's, not the receipt's.
@@ -1296,6 +1343,108 @@ describe('stock-voucher-posting.helper', () => {
       await postStockVoucher(db.tx, postParams(OPENING));
 
       expect(db.callOf('negative')?.values.filter((v) => v === true)).toHaveLength(0);
+    });
+  });
+
+  // ── recall (notes 160 B) ──────────────────────────────────────────────────
+  describe('recallTransferOut', () => {
+    const inTransit = () =>
+      header({
+        status: 'IN_TRANSIT',
+        refno: 'TRF/2026-2027/D1/00017',
+        voucher_type: 'TRANSFER_OUT',
+        to_branch_id: OTHER_BRANCH_ID,
+        to_godown_id: TO_GODOWN_ID,
+      });
+    const untouchedRow = () => ({
+      stt_status: 'IN_TRANSIT',
+      stt_received_qty: new Prisma.Decimal(0),
+      stt_damage_qty: new Prisma.Decimal(0),
+    });
+
+    it('reverses the OUT rows, closes the transit rows, refreshes the inbound figure, CANCELLED', async () => {
+      const db = makeTx({
+        lockHeader: inTransit(),
+        recallReceiver: [{ br_name: 'Counter2' }],
+        recallTransit: [untouchedRow(), untouchedRow()],
+        reversal: 2,
+        transitCancel: 2,
+      });
+
+      await expect(recallTransferOut(db.tx, cancelParams(TRANSFER_OUT))).resolves.toEqual({
+        rowsReversed: 2,
+        transitRowsClosed: 2,
+      });
+
+      expect(db.kinds()).toEqual([
+        'lockHeader',
+        'recallReceiver',
+        'recallTransit',
+        'recallReceipt',
+        'reversal',
+        ...APPLY_PHASES,
+        'transitCancel',
+        'lockItems',
+        'transitIn',
+        'headerTotals',
+      ]);
+      // The apply phases run over the mirrors only, as a cancel's.
+      expect(db.callOf('balances')?.values.slice(0, 3)).toEqual([SVH_ID, ACC_YEAR, true]);
+      expect(db.callOf('transitCancel')?.values).toEqual(
+        expect.arrayContaining(['Recalled: Keyed against the wrong godown', SVH_ID, ACC_YEAR]),
+      );
+      expect(db.raw.stockVoucher.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'CANCELLED' }) }),
+      );
+    });
+
+    it('refuses 409 STOCK_TRANSFER_RECALL_RECEIVED when a receipt — a draft one too — names it', async () => {
+      const db = makeTx({
+        lockHeader: inTransit(),
+        recallReceiver: [{ br_name: 'Counter2' }],
+        recallTransit: [untouchedRow()],
+        recallReceipt: [{ svh_refno: 'TRI/2026-2027/D3/00004', svh_status: 'DRAFT' }],
+      });
+
+      const refusal = await refusalOf(recallTransferOut(db.tx, cancelParams(TRANSFER_OUT)));
+
+      expect(refusal.status).toBe(409);
+      expect(refusal.body).toMatchObject({
+        errors: [
+          {
+            code: StockErrorCode.TRANSFER_RECALL_RECEIVED,
+            message: expect.stringContaining('Counter2 has already keyed a receipt against it'),
+          },
+        ],
+      });
+      expect(db.kinds()).not.toContain('reversal');
+      expect(db.raw.stockVoucher.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the same when a transit row has anything received or damaged', async () => {
+      const db = makeTx({
+        lockHeader: inTransit(),
+        recallReceiver: [{ br_name: 'Counter2' }],
+        recallTransit: [
+          untouchedRow(),
+          { ...untouchedRow(), stt_status: 'PARTIAL', stt_damage_qty: new Prisma.Decimal(1) },
+        ],
+      });
+
+      const refusal = await refusalOf(recallTransferOut(db.tx, cancelParams(TRANSFER_OUT)));
+
+      expect(codesOf(refusal)).toEqual([StockErrorCode.TRANSFER_RECALL_RECEIVED]);
+      expect(db.kinds()).not.toContain('reversal');
+    });
+
+    it('re-reads the status under the lock: a despatch received meanwhile is refused', async () => {
+      const db = makeTx({ lockHeader: header({ status: 'RECEIVED', voucher_type: 'TRANSFER_OUT' }) });
+
+      const refusal = await refusalOf(recallTransferOut(db.tx, cancelParams(TRANSFER_OUT)));
+
+      expect(refusal.status).toBe(409);
+      expect(codesOf(refusal)).toEqual([StockErrorCode.VOUCHER_STATUS_CHANGED]);
+      expect(db.kinds()).toEqual(['lockHeader']);
     });
   });
 

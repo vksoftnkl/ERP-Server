@@ -78,6 +78,8 @@ interface BalanceRow {
   sbl_lot_id: string;
   sbl_bucket: string;
   sbl_on_hand_qty: Prisma.Decimal;
+  /** Notes 160 A — sbl_free_in_qty − sbl_free_out_qty, never below 0. */
+  free_available_qty: Prisma.Decimal;
 }
 
 /**
@@ -308,7 +310,8 @@ export class StockTransferService {
 
     // One query for every holding the document touches, not one per line.
     const balances = await this.prisma.$queryRaw<BalanceRow[]>`
-      SELECT sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket, sbl_on_hand_qty
+      SELECT sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket, sbl_on_hand_qty,
+             GREATEST(sbl_free_in_qty - sbl_free_out_qty, 0) AS free_available_qty
         FROM stock.stock_balance
        WHERE sbl_company_id = ${header.companyId}::uuid
          AND sbl_branch_id  = ${header.branchId}::uuid
@@ -318,6 +321,12 @@ export class StockTransferService {
       balances.map((row) => [
         this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket),
         Number(row.sbl_on_hand_qty),
+      ]),
+    );
+    const freeOnHand = new Map(
+      balances.map((row) => [
+        this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket),
+        new Prisma.Decimal(row.free_available_qty),
       ]),
     );
 
@@ -386,6 +395,41 @@ export class StockTransferService {
           field,
           code: StockErrorCode.INSUFFICIENT_STOCK,
           message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists, whatever the item's negative-stock policy says.`,
+        });
+      }
+    });
+
+    // Notes 160 A — free goods leave only from free goods that came in. Free
+    // 1 on a lot that never received any saved, and the holding then read
+    // free in 0 / free out 2. In the BASE unit (freeQty × the line's own
+    // factor, as freeBaseQty is checked to be), summed per holding like the
+    // quantity above, and reported on every line of that holding that takes
+    // free, at its freeQty cell. The engine refuses the same at despatch,
+    // under the item lock, for a balance that moved after this save.
+    const freeWanted = new Map<string, Prisma.Decimal>();
+    const freeBaseOf = (line: (typeof lines)[number]): Prisma.Decimal =>
+      new Prisma.Decimal(line.freeQty ?? 0).mul(line.toBaseFactor ?? 1).toDecimalPlaces(6);
+    lines.forEach((line) => {
+      if (!line.lotId) {
+        return;
+      }
+      const key = this.holdingKey(line.lotId, line.godownId, line.bucket);
+      freeWanted.set(key, (freeWanted.get(key) ?? new Prisma.Decimal(0)).plus(freeBaseOf(line)));
+    });
+    lines.forEach((line, index) => {
+      if (!line.lotId || !freeBaseOf(line).greaterThan(0)) {
+        return;
+      }
+      const key = this.holdingKey(line.lotId, line.godownId, line.bucket);
+      const free = freeOnHand.get(key) ?? new Prisma.Decimal(0);
+      const askedFree = freeWanted.get(key) ?? new Prisma.Decimal(0);
+      if (askedFree.greaterThan(free)) {
+        errors.push({
+          field: `lines.${index}.freeQty`,
+          code: StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK,
+          message: free.isZero()
+            ? `Line ${line.lineNo} sends ${askedFree.toString()} free, but this lot has no free stock in this godown's ${line.bucket ?? 'SALEABLE'} bucket. Send it as quantity instead.`
+            : `Line ${line.lineNo} sends ${askedFree.toString()} free, but only ${free.toString()} of this lot's stock in this godown's ${line.bucket ?? 'SALEABLE'} bucket came in free. Send the rest as quantity.`,
         });
       }
     });

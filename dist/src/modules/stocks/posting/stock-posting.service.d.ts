@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import type { PostStockVoucherResult, StockLedgerSourceLabel } from '../stock-voucher/stock-voucher-posting.helper';
+import type { PostStockVoucherResult, RecallTransferOutResult, StockLedgerSourceLabel } from '../stock-voucher/stock-voucher-posting.helper';
 import { StockAccountsPostingService } from './stock-accounts-posting.service';
 import { StockVoucherSource } from './stock-voucher.source';
 export interface StockPostOutcome extends PostStockVoucherResult {
@@ -22,5 +22,10 @@ export declare class StockPostingService {
         ledgerSource?: StockLedgerSourceLabel;
         refuseNegative?: boolean;
     }): Promise<number>;
+    recall(tx: Prisma.TransactionClient, source: StockVoucherSource, opts: {
+        actor: string;
+        reason: string;
+        cancelledOn: Date;
+    }): Promise<RecallTransferOutResult>;
     private assertNotFrozen;
 }

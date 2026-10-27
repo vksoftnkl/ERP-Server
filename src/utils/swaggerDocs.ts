@@ -68,6 +68,7 @@ import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-m
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { StockTrackPresetsModule } from '../modules/stocks/stock-track-presets/stock-track-presets.module';
+import { AgeingSlabsModule } from '../modules/stocks/ageing-slabs/ageing-slabs.module';
 import { OpeningStockVoucherModule } from '../modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
 import { PhysicalStockVoucherModule } from '../modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
 import { StockTransferModule } from '../modules/stocks/stock-transfer/stock-transfer.module';
@@ -756,8 +757,15 @@ export const swaggerModuleDocuments = [
     path: 'stock-track-presets',
     title: 'Stock Track Presets API',
     description:
-      'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id',
+      'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id, and (notes 159) the company\'s own presets: save / deactivate on menu 249',
     include: [StockTrackPresetsModule],
+  },
+  {
+    path: 'ageing-slabs',
+    title: 'Ageing Slabs API',
+    description:
+      'The ageing ladder from stock.stock_ageing_slab (notes 159, menu 294): the company\'s own slabs or the shared default, saved whole, reverted whole',
+    include: [AgeingSlabsModule],
   },
   {
     path: 'opening-stock',

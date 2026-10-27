@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockTransferDeleteSuccessDto = exports.StockTransferCancelSuccessDto = exports.StockTransferReceiveSuccessDto = exports.StockTransferPrefillSuccessDto = exports.StockTransferInboundSuccessDto = exports.StockTransferDespatchSuccessDto = exports.StockTransferValidateSuccessDto = exports.StockTransferListSuccessDto = exports.StockTransferReceiptLoadSuccessDto = exports.StockTransferLoadSuccessDto = exports.StockTransferDocumentSuccessDto = exports.StockTransferDeleteDataDto = exports.StockTransferCancelDataDto = exports.StockTransferReceiveDataDto = exports.StockTransferReceiveOutDto = exports.StockTransferReceiveInDto = exports.StockTransferReceiptDocumentDto = exports.StockTransferReceiptHeaderDto = exports.StockTransferPrefillDto = exports.StockTransferPrefillRowDto = exports.StockTransferPrefillOutDto = exports.StockTransferDespatchDataDto = exports.StockTransferLineProblemDto = exports.StockTransferInboundDto = exports.StockTransferInboundRowDto = exports.StockTransferListDto = exports.StockTransferListMetaDto = exports.StockTransferListItemDto = exports.StockTransferDocumentWithTransitDto = exports.StockTransitRowDto = exports.StockTransferDocumentDto = exports.StockTransferLineDto = exports.StockTransferHeaderDto = exports.StockTransferErrorResponseDto = exports.StockTransferErrorFieldDto = void 0;
+exports.StockTransferDeleteSuccessDto = exports.StockTransferRecallSuccessDto = exports.StockTransferCancelSuccessDto = exports.StockTransferReceiveSuccessDto = exports.StockTransferPrefillSuccessDto = exports.StockTransferInboundSuccessDto = exports.StockTransferDespatchSuccessDto = exports.StockTransferValidateSuccessDto = exports.StockTransferListSuccessDto = exports.StockTransferReceiptLoadSuccessDto = exports.StockTransferLoadSuccessDto = exports.StockTransferDocumentSuccessDto = exports.StockTransferDeleteDataDto = exports.StockTransferRecallDataDto = exports.StockTransferCancelDataDto = exports.StockTransferReceiveDataDto = exports.StockTransferReceiveOutDto = exports.StockTransferReceiveInDto = exports.StockTransferReceiptDocumentDto = exports.StockTransferReceiptHeaderDto = exports.StockTransferPrefillDto = exports.StockTransferPrefillRowDto = exports.StockTransferPrefillOutDto = exports.StockTransferDespatchDataDto = exports.StockTransferLineProblemDto = exports.StockTransferInboundDto = exports.StockTransferInboundRowDto = exports.StockTransferListDto = exports.StockTransferListMetaDto = exports.StockTransferListItemDto = exports.StockTransferDocumentWithTransitDto = exports.StockTransitRowDto = exports.StockTransferDocumentDto = exports.StockTransferLineDto = exports.StockTransferHeaderDto = exports.StockTransferErrorResponseDto = exports.StockTransferErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class StockTransferErrorFieldDto {
@@ -1301,6 +1301,14 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'date-time', nullable: true }),
     __metadata("design:type", Object)
 ], StockTransferCancelDataDto.prototype, "cancelledOn", void 0);
+class StockTransferRecallDataDto extends StockTransferCancelDataDto {
+    transitRowsClosed;
+}
+exports.StockTransferRecallDataDto = StockTransferRecallDataDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 2, description: 'stock_transit rows closed (IN_TRANSIT → CANCELLED).' }),
+    __metadata("design:type", Number)
+], StockTransferRecallDataDto.prototype, "transitRowsClosed", void 0);
 class StockTransferDeleteDataDto {
     svhId;
     accYear;
@@ -1501,6 +1509,24 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: StockTransferCancelDataDto }),
     __metadata("design:type", StockTransferCancelDataDto)
 ], StockTransferCancelSuccessDto.prototype, "data", void 0);
+class StockTransferRecallSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.StockTransferRecallSuccessDto = StockTransferRecallSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], StockTransferRecallSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'TRF/2026-2027/D1/00017 recalled — 2 reversal rows, 2 transit rows closed' }),
+    __metadata("design:type", String)
+], StockTransferRecallSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: StockTransferRecallDataDto }),
+    __metadata("design:type", StockTransferRecallDataDto)
+], StockTransferRecallSuccessDto.prototype, "data", void 0);
 class StockTransferDeleteSuccessDto {
     success;
     message;

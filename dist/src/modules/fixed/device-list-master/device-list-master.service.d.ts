@@ -21,6 +21,7 @@ export declare class DeviceListMasterService {
     }>;
     private createDevice;
     private updateDevice;
+    private deviceCodeFor;
     private ensureDeviceUidIsUnique;
     private toPayload;
 }

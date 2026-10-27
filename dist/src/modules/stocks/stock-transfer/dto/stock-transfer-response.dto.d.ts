@@ -262,6 +262,9 @@ export declare class StockTransferCancelDataDto extends StockTransferDocumentDto
     status: string;
     cancelledOn: string | null;
 }
+export declare class StockTransferRecallDataDto extends StockTransferCancelDataDto {
+    transitRowsClosed: number;
+}
 export declare class StockTransferDeleteDataDto {
     svhId: string;
     accYear: string;
@@ -316,6 +319,11 @@ export declare class StockTransferCancelSuccessDto {
     success: true;
     message: string;
     data: StockTransferCancelDataDto;
+}
+export declare class StockTransferRecallSuccessDto {
+    success: true;
+    message: string;
+    data: StockTransferRecallDataDto;
 }
 export declare class StockTransferDeleteSuccessDto {
     success: true;

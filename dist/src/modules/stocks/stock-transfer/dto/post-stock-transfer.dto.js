@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SettleShortStockTransferDto = exports.CancelStockTransferDto = exports.DespatchStockTransferDto = exports.StockTransferRefDto = void 0;
+exports.SettleShortStockTransferDto = exports.RecallStockTransferDto = exports.CancelStockTransferDto = exports.DespatchStockTransferDto = exports.StockTransferRefDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -87,6 +87,9 @@ __decorate([
     (0, class_validator_1.MaxLength)(250),
     __metadata("design:type", String)
 ], CancelStockTransferDto.prototype, "reason", void 0);
+class RecallStockTransferDto extends CancelStockTransferDto {
+}
+exports.RecallStockTransferDto = RecallStockTransferDto;
 class SettleShortStockTransferDto {
     outVoucherId;
     accYear;

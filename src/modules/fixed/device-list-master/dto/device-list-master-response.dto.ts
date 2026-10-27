@@ -39,6 +39,13 @@ export class DeviceListMasterPayloadDto {
   devDeviceUid!: string;
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   devDeviceName!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    example: 'D1',
+    description: 'Notes 160 C — the code stock voucher numbers carry.',
+  })
+  devCode!: string | null;
   @ApiProperty({ enum: DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 })
   devDeviceType!: DeviceType;
   @ApiPropertyOptional({

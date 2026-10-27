@@ -71,6 +71,7 @@ const ui_table_master_module_1 = require("../modules/fixed/ui-table-master/ui-ta
 const user_login_sessions_module_1 = require("../modules/fixed/user-login-sessions/user-login-sessions.module");
 const stock_adj_reasons_module_1 = require("../modules/fixed/stock-adj-reasons/stock-adj-reasons.module");
 const stock_track_presets_module_1 = require("../modules/stocks/stock-track-presets/stock-track-presets.module");
+const ageing_slabs_module_1 = require("../modules/stocks/ageing-slabs/ageing-slabs.module");
 const opening_stock_voucher_module_1 = require("../modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
 const physical_stock_voucher_module_1 = require("../modules/stocks/physical-stock-voucher/physical-stock-voucher.module");
 const stock_transfer_module_1 = require("../modules/stocks/stock-transfer/stock-transfer.module");
@@ -731,8 +732,14 @@ exports.swaggerModuleDocuments = [
     {
         path: 'stock-track-presets',
         title: 'Stock Track Presets API',
-        description: 'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id',
+        description: 'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id, and (notes 159) the company\'s own presets: save / deactivate on menu 249',
         include: [stock_track_presets_module_1.StockTrackPresetsModule],
+    },
+    {
+        path: 'ageing-slabs',
+        title: 'Ageing Slabs API',
+        description: 'The ageing ladder from stock.stock_ageing_slab (notes 159, menu 294): the company\'s own slabs or the shared default, saved whole, reverted whole',
+        include: [ageing_slabs_module_1.AgeingSlabsModule],
     },
     {
         path: 'opening-stock',

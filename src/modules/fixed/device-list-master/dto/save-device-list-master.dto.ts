@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, ValidateIf } from 'class-validator';
+import { IsEnum, IsNotEmpty, Matches, ValidateIf } from 'class-validator';
 import {
   NullableString,
   NullableUuid,
@@ -39,6 +39,19 @@ export class SaveDeviceListMasterDto {
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   @NullableString(120)
   devDeviceName?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    example: 'D1',
+    description:
+      'Notes 160 C — the short code stock voucher numbers carry (TRF/2026-2027/D1/00016). Letters, digits, - and _, stored upper-case; unique across every device, deleted ones included (409 DEVICE_CODE_DUPLICATE). Blank on a new device: the next D1, D2, … is given. Blank or omitted on an update keeps the current code — a device always has one.',
+  })
+  @NullableString(10)
+  @Matches(/^[A-Za-z0-9_-]{1,10}$/, {
+    message: 'devCode may hold only letters, digits, - and _ (at most 10)',
+  })
+  devCode?: string | null;
   @ApiPropertyOptional({ enum: DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 })
   @OptionalTrimmedString(30)
   @IsEnum(DeviceType)

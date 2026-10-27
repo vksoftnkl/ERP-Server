@@ -68,6 +68,18 @@ company / branch / user and can be blocked or tied to login sessions.
   resolved from `company`, `branchMaster`, and `userMaster`.
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` / `cancel`),
   capturing original vs. modified records with `devDeviceUid` as the display name.
+- **`devCode` (notes 160 C, `fixed.device_master.dev_code` varchar(10))** is the short code stock
+  voucher numbers carry — `TRF/2026-2027/D1/00016`, never the machine id (`device-code.helper.ts`).
+  - One series across every device, not one per branch: a voucher number is unique per DOCUMENT
+    branch (`ux_svh_refno`) and a device posts wherever it is used — the office PC on .106 has no
+    branch and posts in three — so two devices with one code would print one number twice.
+  - `ux_dev_code` (upper(dev_code), deleted rows included) and the next-code read both count
+    deleted devices: a code is never given twice, or a new device would reprint an old one's numbers.
+  - Create: blank → the next `D<n>`; keyed → trimmed, upper-cased, letters / digits / `-` / `_`
+    (CHECK `ck_dev_code`), 409 `DEVICE_CODE_DUPLICATE` when taken. Update: blank or omitted keeps the
+    code (a device always has one); a device with none gets the next. All under one advisory lock.
+  - Migration `20261027110000_transfers_notes_160` backfilled the live devices, oldest first
+    (NEXERP MACHINE = D1). Grid 31 shows it beside the device name. Old documents keep their refno.
 
 ## Enums (app-layer)
 

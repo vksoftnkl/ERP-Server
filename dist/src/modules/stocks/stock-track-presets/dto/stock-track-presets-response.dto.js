@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockTrackPresetsSuccessGetDto = exports.StockTrackPresetsGetMetaDto = exports.StockTrackPresetsPayloadDto = exports.StockTrackPresetsErrorResponseDto = exports.StockTrackPresetsErrorFieldDto = void 0;
+exports.StockTrackPresetsSuccessOneDto = exports.StockTrackPresetsSuccessGetDto = exports.StockTrackPresetsGetMetaDto = exports.StockTrackPresetsPayloadDto = exports.StockTrackPresetsErrorResponseDto = exports.StockTrackPresetsErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class StockTrackPresetsErrorFieldDto {
     field;
@@ -65,6 +65,9 @@ class StockTrackPresetsPayloadDto {
     spt_sort_order;
     spt_remarks;
     spt_is_company_override;
+    spt_is_active;
+    usedByItems;
+    usedByGroups;
 }
 exports.StockTrackPresetsPayloadDto = StockTrackPresetsPayloadDto;
 __decorate([
@@ -166,6 +169,21 @@ __decorate([
     }),
     __metadata("design:type", Boolean)
 ], StockTrackPresetsPayloadDto.prototype, "spt_is_company_override", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true, description: 'false = deactivated; only a fetch by spt_id returns one.' }),
+    __metadata("design:type", Boolean)
+], StockTrackPresetsPayloadDto.prototype, "spt_is_active", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 3,
+        description: 'Items (not deleted, active or not) naming this preset. Above 0 the six spt_track_* flags, spt_valuation_method and spt_code are locked (notes 159 §4).',
+    }),
+    __metadata("design:type", Number)
+], StockTrackPresetsPayloadDto.prototype, "usedByItems", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0, description: 'Item groups (not deleted) naming this preset; locks the same fields.' }),
+    __metadata("design:type", Number)
+], StockTrackPresetsPayloadDto.prototype, "usedByGroups", void 0);
 class StockTrackPresetsGetMetaDto {
     company_id;
     spt_id;
@@ -212,4 +230,22 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: StockTrackPresetsGetMetaDto }),
     __metadata("design:type", StockTrackPresetsGetMetaDto)
 ], StockTrackPresetsSuccessGetDto.prototype, "meta", void 0);
+class StockTrackPresetsSuccessOneDto {
+    success;
+    message;
+    data;
+}
+exports.StockTrackPresetsSuccessOneDto = StockTrackPresetsSuccessOneDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], StockTrackPresetsSuccessOneDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Stock track preset saved successfully' }),
+    __metadata("design:type", String)
+], StockTrackPresetsSuccessOneDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: StockTrackPresetsPayloadDto }),
+    __metadata("design:type", StockTrackPresetsPayloadDto)
+], StockTrackPresetsSuccessOneDto.prototype, "data", void 0);
 //# sourceMappingURL=stock-track-presets-response.dto.js.map

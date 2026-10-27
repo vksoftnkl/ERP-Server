@@ -2050,6 +2050,86 @@ let StockVoucherService = class StockVoucherService {
             cancelledOn: document.header.cancelledOn,
         };
     }
+    async recall(rules, svhId, accYear, reason, companyId, branchId, userId) {
+        const actor = this.actorOf(userId);
+        const trimmedReason = reason?.trim();
+        if (!trimmedReason) {
+            (0, module_service_utils_1.throwStockUnprocessable)('Recall needs a reason', [
+                {
+                    field: 'reason',
+                    code: stock_error_codes_1.StockErrorCode.CANCEL_REASON_REQUIRED,
+                    message: 'A recalled despatch with no reason is unanswerable three months later.',
+                },
+            ]);
+        }
+        const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
+        if (existing.svhStatus !== 'IN_TRANSIT') {
+            const sameBranch = existing.svhToBranchId === null || existing.svhToBranchId === existing.svhBranchId;
+            (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${existing.svhStatus}`, [
+                {
+                    field: 'svhId',
+                    code: existing.svhStatus === 'CANCELLED'
+                        ? stock_error_codes_1.StockErrorCode.VOUCHER_ALREADY_CANCELLED
+                        : stock_error_codes_1.StockErrorCode.TRANSFER_NOT_IN_TRANSIT,
+                    message: existing.svhStatus === 'CANCELLED'
+                        ? `${existing.svhRefno} was already cancelled.`
+                        : existing.svhStatus === 'DRAFT'
+                            ? `${existing.svhRefno} is DRAFT and has not been despatched. Delete it instead.`
+                            : existing.svhStatus === 'RECEIVED'
+                                ? `${existing.svhRefno} has been received. Transfer it back instead.`
+                                : sameBranch
+                                    ? `${existing.svhRefno} is a godown transfer, not a branch despatch. Cancel it instead.`
+                                    : `${existing.svhRefno} is ${existing.svhStatus}; only a despatch in transit can be recalled.`,
+                },
+            ]);
+        }
+        const cancelledOn = new Date();
+        const recalled = await this.prisma.$transaction(async (tx) => {
+            const result = await this.stockPosting.recall(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn });
+            await this.logStatusChange(tx, {
+                rules,
+                svhId,
+                accYear,
+                companyId,
+                branchId,
+                tenantId: existing.svhTenantId ?? null,
+                refno: existing.svhRefno,
+                fromStatus: existing.svhStatus,
+                toStatus: 'CANCELLED',
+                actor,
+                changedOn: cancelledOn,
+                remarks: `Recalled: ${trimmedReason}`,
+                deviceId: existing.svhDeviceId,
+                sessionId: existing.svhSessionId,
+            });
+            return result;
+        });
+        const document = await this.getById(rules, svhId, accYear, companyId, branchId);
+        await this.auditLogService.logEntityChange({
+            action: 'cancel',
+            tableName: STOCK_VOUCHER_TABLE_NAME,
+            screenName: rules.auditScreenName,
+            screenType: 'transaction',
+            pk: svhId,
+            displayName: document.header.refno,
+            originalRecord: { svhId, svhStatus: existing.svhStatus },
+            modifiedRecord: {
+                svhId,
+                svhStatus: document.header.status,
+                rowsReversed: recalled.rowsReversed,
+                transitRowsClosed: recalled.transitRowsClosed,
+            },
+            userId: actor,
+            notes: `${rules.displayName} recalled: ${trimmedReason}`,
+        });
+        return {
+            ...document,
+            rowsReversed: recalled.rowsReversed,
+            transitRowsClosed: recalled.transitRowsClosed,
+            status: document.header.status,
+            cancelledOn: document.header.cancelledOn,
+        };
+    }
     async softDelete(rules, svhId, accYear, companyId, branchId, userId) {
         const actor = this.actorOf(userId);
         const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
@@ -2315,6 +2395,7 @@ let StockVoucherService = class StockVoucherService {
         const take = this.clamp(query.limit, DEFAULT_REPORT_LIMIT, MAX_REPORT_LIMIT);
         const skip = Math.max(query.offset ?? 0, 0);
         const includeZero = query.includeZero ?? true;
+        const negativeOnly = query.negativeOnly ?? false;
         const rows = await this.prisma.$queryRaw `
       SELECT sbl.sbl_item_id,
              itm.item_code,
@@ -2361,7 +2442,12 @@ let StockVoucherService = class StockVoucherService {
          AND sbl.sbl_is_deleted = false
          AND (${query.bucket ?? null}::text IS NULL OR sbl.sbl_bucket = ${query.bucket ?? null}::text)
          AND (${query.itemGroupId ?? null}::uuid IS NULL OR itm.item_group_id = ${query.itemGroupId ?? null}::uuid)
+         -- Notes 157 — brand, category, section: each narrows only when sent.
+         AND (${query.itemBrandId ?? null}::uuid IS NULL OR itm.item_brand_id = ${query.itemBrandId ?? null}::uuid)
+         AND (${query.itemCategoryId ?? null}::uuid IS NULL OR itm.item_category_id = ${query.itemCategoryId ?? null}::uuid)
+         AND (${query.itemSectionId ?? null}::uuid IS NULL OR itm.item_section_id = ${query.itemSectionId ?? null}::uuid)
          AND (${includeZero}::boolean OR sbl.sbl_on_hand_qty <> 0)
+         AND (NOT ${negativeOnly}::boolean OR sbl.sbl_on_hand_qty < 0)
        ORDER BY itm.item_name_en, sbl.sbl_batch_no NULLS FIRST, sbl.sbl_expiry_date, sbl.sbl_lot_id
        LIMIT ${take} OFFSET ${skip}
     `;
@@ -2545,6 +2631,7 @@ let StockVoucherService = class StockVoucherService {
                 svhVoucherType: true,
                 svhCompanyId: true,
                 svhBranchId: true,
+                svhToBranchId: true,
                 svhTenantId: true,
                 svhDeviceId: true,
                 svhSessionId: true,

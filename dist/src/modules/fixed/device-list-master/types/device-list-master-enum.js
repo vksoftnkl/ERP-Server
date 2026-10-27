@@ -25,5 +25,6 @@ var DeviceListMasterErrorCode;
     DeviceListMasterErrorCode["UID_REQUIRED"] = "DEVICE_UID_REQUIRED";
     DeviceListMasterErrorCode["UID_DUPLICATE"] = "DEVICE_UID_DUPLICATE";
     DeviceListMasterErrorCode["IN_USE"] = "DEVICE_IN_USE";
+    DeviceListMasterErrorCode["CODE_DUPLICATE"] = "DEVICE_CODE_DUPLICATE";
 })(DeviceListMasterErrorCode || (exports.DeviceListMasterErrorCode = DeviceListMasterErrorCode = {}));
 //# sourceMappingURL=device-list-master-enum.js.map

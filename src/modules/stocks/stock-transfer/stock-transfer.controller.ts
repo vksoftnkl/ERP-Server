@@ -21,6 +21,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockVoucherExceptionFilter } from '../stock-voucher/stock-voucher-exception.filter';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type {
+  StockTransferRecallResult,
   StockVoucherCancelResult,
   StockVoucherDeleteResult,
   StockVoucherLineProblem,
@@ -35,7 +36,11 @@ import {
   GetStockTransferQueryDto,
   StockTransferRefQueryDto,
 } from './dto/list-stock-transfer-query.dto';
-import { CancelStockTransferDto, DespatchStockTransferDto } from './dto/post-stock-transfer.dto';
+import {
+  CancelStockTransferDto,
+  DespatchStockTransferDto,
+  RecallStockTransferDto,
+} from './dto/post-stock-transfer.dto';
 import type { StockTransferDespatchResult, StockTransitRow } from './types/stock-transfer.types';
 import {
   StockTransferCancelSuccessDto,
@@ -45,6 +50,7 @@ import {
   StockTransferErrorResponseDto,
   StockTransferListSuccessDto,
   StockTransferLoadSuccessDto,
+  StockTransferRecallSuccessDto,
   StockTransferValidateSuccessDto,
 } from './dto/stock-transfer-response.dto';
 
@@ -115,6 +121,13 @@ const TRANSFER_OUT_RULES: StockVoucherTypeRules = {
  * token-scope-is-home-company-and-device-branch).
  */
 export const STOCK_TRANSFER_MENU_ID = 41;
+
+/**
+ * Notes 160 B — Branch Outward. Only the recall is judged on it (CANCEL, 403
+ * TRF_RIGHT_CANCEL naming menu 192); the despatch's other routes still go by
+ * menu 41, as above.
+ */
+export const BRANCH_OUTWARD_MENU_ID = 192;
 
 /**
  * NO @CacheTTL ANYWHERE. Every read here is a live balance, a live transit row
@@ -278,6 +291,43 @@ export class StockTransferController {
     return {
       success: true,
       message: `Stock transfer cancelled — ${data.rowsReversed} reversal rows`,
+      data,
+    };
+  }
+
+  @Post('recall')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Recall a branch despatch that nobody received (notes 160 B)',
+    description:
+      'For a lorry that never left, or came straight back. Allowed only while the despatch is IN_TRANSIT and untouched: every transit row with nothing received and nothing damaged, and no receipt against it — a DRAFT one included (409 STOCK_TRANSFER_RECALL_RECEIVED otherwise). Reverses the OUT ledger rows (the stock is back in the From godown at the same lot and cost), closes the transit rows (CANCELLED — /stock/transfer/receive/inbound stops listing it at once), reverses the loading voucher, and sets the despatch CANCELLED with the reason on its trail. Rights: menu 192 (Branch Outward), CANCEL.',
+  })
+  @ApiOkResponse({ type: StockTransferRecallSuccessDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
+  async recall(
+    @Body() dto: RecallStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockTransferRecallResult>> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: BRANCH_OUTWARD_MENU_ID,
+      right: 'cancel',
+      codePrefix: 'TRF',
+      action: 'recall a branch despatch',
+    });
+    const data = await this.stockVoucherService.recall(
+      TRANSFER_OUT_RULES,
+      dto.svhId,
+      dto.accYear,
+      dto.reason,
+      dto.companyId,
+      dto.branchId,
+      dto.userId,
+    );
+    return {
+      success: true,
+      message: `${data.header.refno} recalled — ${data.rowsReversed} reversal rows, ${data.transitRowsClosed} transit rows closed`,
       data,
     };
   }

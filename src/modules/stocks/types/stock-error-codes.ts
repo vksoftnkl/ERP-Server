@@ -120,6 +120,12 @@ export enum StockErrorCode {
   LOT_OTHER_ITEM = 'STOCK_LOT_OTHER_ITEM',
   /** A line takes more of a lot than the godown holds in that bucket. */
   INSUFFICIENT_STOCK = 'STOCK_INSUFFICIENT_STOCK',
+  /**
+   * Notes 160 A — an outward line's free quantity is more than the holding's
+   * free balance (sbl_free_in_qty − sbl_free_out_qty): free goods leave only
+   * from free goods that came in.
+   */
+  FREE_QTY_EXCEEDS_FREE_STOCK = 'STOCK_FREE_QTY_EXCEEDS_FREE_STOCK',
   /** The movement would drive a holding negative and the item's policy is BLOCK. */
   NEGATIVE_BLOCKED = 'STOCK_NEGATIVE_BLOCKED',
   /**
@@ -263,6 +269,12 @@ export enum StockErrorCode {
   TRANSFER_NOTHING_RECEIVED = 'STOCK_TRANSFER_NOTHING_RECEIVED',
   /** Cancel of a despatch whose goods have left — receive and transfer back, or short-settle. */
   TRANSFER_NOT_CANCELLABLE = 'STOCK_TRANSFER_NOT_CANCELLABLE',
+  /**
+   * Notes 160 B — recall of a despatch the receiving branch has touched: a
+   * receipt (a draft one included) names it, or a transit row has anything
+   * received or damaged against it.
+   */
+  TRANSFER_RECALL_RECEIVED = 'STOCK_TRANSFER_RECALL_RECEIVED',
   /** A receipt that names no despatch. */
   RECEIPT_NO_TRANSFER = 'STOCK_RECEIPT_NO_TRANSFER',
   /** A receipt with no lines (nothing arrived is not a receipt). */
@@ -397,6 +409,36 @@ export enum StockErrorCode {
   ITEM_PRICE_NOT_FOUND = 'STOCK_ITEM_PRICE_NOT_FOUND',
   /** No stock track preset with that id. */
   PRESET_NOT_FOUND = 'STOCK_PRESET_NOT_FOUND',
+  /** A shared preset (company NULL) is read-only; a company saves its own copy with the same code (notes 159). */
+  PRESET_SHARED_READ_ONLY = 'STOCK_PRESET_SHARED_READ_ONLY',
+  /** The company already has a live preset with that code. */
+  PRESET_CODE_TAKEN = 'STOCK_PRESET_CODE_TAKEN',
+  /** A create without its code or name. */
+  PRESET_FIELD_REQUIRED = 'STOCK_PRESET_FIELD_REQUIRED',
+  /** Expiry is tracked per batch: tracking expiry needs batch tracking (ck_spt_expiry_needs_batch). */
+  PRESET_EXPIRY_NEEDS_BATCH = 'STOCK_PRESET_EXPIRY_NEEDS_BATCH',
+  /** FEFO on a batch-tracked preset needs expiry tracking (ck_spt_fefo_needs_expiry). */
+  PRESET_FEFO_NEEDS_EXPIRY = 'STOCK_PRESET_FEFO_NEEDS_EXPIRY',
+  /** Valuation is LOT_ACTUAL when anything is tracked, else WAVG (ck_spt_valuation_tracks). */
+  PRESET_VALUATION_MISMATCH = 'STOCK_PRESET_VALUATION_MISMATCH',
+  /** The preset is used by items or groups: its tracking flags and valuation are fixed, and it cannot be deactivated. */
+  PRESET_IN_USE = 'STOCK_PRESET_IN_USE',
+
+  // ── ageing slabs (notes 159) ──────────────────────────────────────────────
+  /** A ladder of 0 or more than 20 slabs. */
+  AGEING_SLAB_COUNT = 'STOCK_AGEING_SLAB_COUNT',
+  /** slabNo is not 1..n in order. */
+  AGEING_SLAB_NUMBER = 'STOCK_AGEING_SLAB_NUMBER',
+  /** The first slab does not start at day 0. */
+  AGEING_SLAB_FIRST_NOT_ZERO = 'STOCK_AGEING_SLAB_FIRST_NOT_ZERO',
+  /** A slab does not start the day after the previous one ends — a gap or an overlap. */
+  AGEING_SLAB_NOT_CONTIGUOUS = 'STOCK_AGEING_SLAB_NOT_CONTIGUOUS',
+  /** toDays before fromDays. */
+  AGEING_SLAB_TO_BEFORE_FROM = 'STOCK_AGEING_SLAB_TO_BEFORE_FROM',
+  /** Not exactly one open-ended slab (toDays null), or the open one is not the last. */
+  AGEING_SLAB_OPEN_END = 'STOCK_AGEING_SLAB_OPEN_END',
+  /** A blank label, or one used twice. */
+  AGEING_SLAB_LABEL = 'STOCK_AGEING_SLAB_LABEL',
 
   // ── the database refused (the engine's SQLSTATE, translated by the filters) ─
   /** no_data_found (P0002) — the voucher or year the database looked for is not there. */

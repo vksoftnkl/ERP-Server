@@ -31,4 +31,6 @@ export enum DeviceListMasterErrorCode {
   UID_DUPLICATE = 'DEVICE_UID_DUPLICATE',
   /** Delete refused: login sessions still name the device. */
   IN_USE = 'DEVICE_IN_USE',
+  /** Notes 160 C — another device (live or deleted) already holds this devCode, any case. */
+  CODE_DUPLICATE = 'DEVICE_CODE_DUPLICATE',
 }

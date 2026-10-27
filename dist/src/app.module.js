@@ -102,6 +102,7 @@ const ui_table_master_module_1 = require("./modules/fixed/ui-table-master/ui-tab
 const user_login_sessions_module_1 = require("./modules/fixed/user-login-sessions/user-login-sessions.module");
 const stock_adj_reasons_module_1 = require("./modules/fixed/stock-adj-reasons/stock-adj-reasons.module");
 const stock_track_presets_module_1 = require("./modules/stocks/stock-track-presets/stock-track-presets.module");
+const ageing_slabs_module_1 = require("./modules/stocks/ageing-slabs/ageing-slabs.module");
 const stock_voucher_module_1 = require("./modules/stocks/stock-voucher/stock-voucher.module");
 const opening_stock_voucher_module_1 = require("./modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
 const physical_stock_voucher_module_1 = require("./modules/stocks/physical-stock-voucher/physical-stock-voucher.module");
@@ -272,6 +273,7 @@ exports.AppModule = AppModule = __decorate([
             user_login_sessions_module_1.UserLoginSessionsModule,
             stock_adj_reasons_module_1.StockAdjReasonsModule,
             stock_track_presets_module_1.StockTrackPresetsModule,
+            ageing_slabs_module_1.AgeingSlabsModule,
             stock_voucher_module_1.StockVoucherModule,
             opening_stock_voucher_module_1.OpeningStockVoucherModule,
             physical_stock_voucher_module_1.PhysicalStockVoucherModule,

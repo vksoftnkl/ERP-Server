@@ -154,6 +154,13 @@ export interface PickStockRow {
   onHandQty: number;
   reservedQty: number;
   availableQty: number;
+  /**
+   * Notes 160 A — the free goods this holding can still give, in the base
+   * unit: sbl_free_in_qty − sbl_free_out_qty, never below 0. An outward
+   * line's freeQty (× its factor) may not exceed it; the despatch refuses
+   * the excess (STOCK_FREE_QTY_EXCEEDS_FREE_STOCK).
+   */
+  freeAvailableQty: number;
   avgCostRate: number;
   stockValue: number;
   firstInDate: string | null;
@@ -535,6 +542,7 @@ export class StockAdjustmentService {
         sbl_on_hand_qty: Prisma.Decimal | null;
         sbl_reserved_qty: Prisma.Decimal;
         sbl_available_qty: Prisma.Decimal | null;
+        free_available_qty: Prisma.Decimal;
         sbl_avg_cost_rate: Prisma.Decimal;
         sbl_stock_value: Prisma.Decimal;
         sbl_first_in_date: Date | null;
@@ -553,6 +561,7 @@ export class StockAdjustmentService {
              slt.slt_supplier_id, sup.sup_name,
              b.sbl_base_uom_id, unt.unit_name,
              b.sbl_on_hand_qty, b.sbl_reserved_qty, b.sbl_available_qty,
+             GREATEST(b.sbl_free_in_qty - b.sbl_free_out_qty, 0) AS free_available_qty,
              b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date,
              sbd.sbd_size_id, isz.isz_name AS size_name,
              sbd.sbd_colour_id, icl.icl_name AS colour_name,
@@ -611,6 +620,7 @@ export class StockAdjustmentService {
       onHandQty: Number(r.sbl_on_hand_qty ?? 0),
       reservedQty: Number(r.sbl_reserved_qty),
       availableQty: Number(r.sbl_available_qty ?? 0),
+      freeAvailableQty: Number(r.free_available_qty),
       avgCostRate: Number(r.sbl_avg_cost_rate),
       stockValue: Number(r.sbl_stock_value),
       firstInDate: isoDate(r.sbl_first_in_date),

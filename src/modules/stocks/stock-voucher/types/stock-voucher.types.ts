@@ -682,6 +682,12 @@ export interface StockVoucherCancelResult extends StockVoucherPayload {
   cancelledOn: string | null;
 }
 
+/** Notes 160 B — what a recalled branch despatch answers with. */
+export interface StockTransferRecallResult extends StockVoucherCancelResult {
+  /** stock_transit rows closed (IN_TRANSIT → CANCELLED). */
+  transitRowsClosed: number;
+}
+
 /** §11 — what an import answers with: the reloaded document plus its verdict. */
 export interface StockVoucherImportResult extends StockVoucherPayload {
   /** Data rows found in the file, blank rows excluded. */

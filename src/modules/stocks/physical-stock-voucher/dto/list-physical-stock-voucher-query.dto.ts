@@ -149,6 +149,37 @@ export class GenerateCountSheetQueryDto {
   @OptionalUuid()
   itemGroupId?: string;
 
+  // Notes 157 — narrow the sheet the way a shop counts. Each narrows only when
+  // sent, ANDed with itemGroupId, bucket and the rest.
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Notes 157 — only items of this brand (item_master.item_brand_id).',
+  })
+  @OptionalUuid()
+  itemBrandId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Notes 157 — only items of this category (item_master.item_category_id).',
+  })
+  @OptionalUuid()
+  itemCategoryId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Notes 157 — only items of this section (item_master.item_section_id).',
+  })
+  @OptionalUuid()
+  itemSectionId?: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Notes 157 — only holdings whose book quantity is below zero, filtered before paging so a big godown is not paged through for a few rows.',
+  })
+  @OptionalQueryBoolean()
+  negativeOnly?: boolean;
+
   @ApiPropertyOptional({
     default: true,
     description:

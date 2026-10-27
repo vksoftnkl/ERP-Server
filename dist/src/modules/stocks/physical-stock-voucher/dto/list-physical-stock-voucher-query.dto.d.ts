@@ -27,6 +27,10 @@ export declare class GenerateCountSheetQueryDto {
     godownId: string;
     bucket?: StockBucket;
     itemGroupId?: string;
+    itemBrandId?: string;
+    itemCategoryId?: string;
+    itemSectionId?: string;
+    negativeOnly?: boolean;
     includeZero?: boolean;
     limit?: number;
     offset?: number;

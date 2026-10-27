@@ -13,6 +13,8 @@ export interface DeviceListMasterPayload {
   devUserName?: string | null;
   devDeviceUid: string;
   devDeviceName: string | null;
+  /** Notes 160 C — the code stock voucher numbers carry; null only before one is given. */
+  devCode: string | null;
   devDeviceType: DeviceType;
   devPlatform: DevicePlatform | null;
   devMacAddress: string | null;

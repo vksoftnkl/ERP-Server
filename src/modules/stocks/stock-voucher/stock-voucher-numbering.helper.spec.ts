@@ -31,8 +31,8 @@ const SCOPE: StockVoucherNumberScope = {
 };
 
 const device = (overrides: Record<string, unknown> = {}) => ({
-  devDeviceUid: 'TILL-01',
-  devDeviceName: 'Till 1',
+  // Notes 160 C — the short code; the uid and the name are never printed.
+  devCode: 'TILL-01',
   devIsActive: true,
   devIsBlocked: false,
   devBlockReason: null,
@@ -55,7 +55,7 @@ async function refusalOf(promise: Promise<unknown>): Promise<{ status: number; b
 const sqlOf = (call: unknown[]) => (call[0] as TemplateStringsArray).join('?');
 
 describe('stock-voucher-numbering.helper', () => {
-  let tx: { deviceMaster: { findFirst: jest.Mock }; $queryRaw: jest.Mock };
+  let tx: { deviceMaster: { findFirst: jest.Mock }; $queryRaw: jest.Mock; $executeRaw: jest.Mock };
   const client = () => tx as unknown as Prisma.TransactionClient;
 
   beforeEach(() => {
@@ -72,35 +72,45 @@ describe('stock-voucher-numbering.helper', () => {
           strings.join('?').includes('next_slno') ? [{ next_slno: BigInt(41) }] : [{ locked: 1 }],
         ),
       ),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
   });
 
   // ── resolveDeviceCode ─────────────────────────────────────────────────────
   describe('resolveDeviceCode', () => {
-    it('answers the device uid, trimmed, for a live device', async () => {
-      tx.deviceMaster.findFirst.mockResolvedValue(device({ devDeviceUid: '  TILL-01  ' }));
+    it('answers the device code, trimmed, for a live device', async () => {
+      tx.deviceMaster.findFirst.mockResolvedValue(device({ devCode: '  D1  ' }));
 
-      await expect(resolveDeviceCode(client(), DEVICE_ID)).resolves.toBe('TILL-01');
+      await expect(resolveDeviceCode(client(), DEVICE_ID)).resolves.toBe('D1');
       expect(tx.deviceMaster.findFirst).toHaveBeenCalledWith({
         where: { devId: DEVICE_ID, devIsDeleted: false },
         select: {
-          devDeviceUid: true,
-          devDeviceName: true,
+          devCode: true,
           devIsActive: true,
           devIsBlocked: true,
           devBlockReason: true,
         },
       });
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
     });
 
-    it('falls back to the device name, then to the id itself', async () => {
-      tx.deviceMaster.findFirst.mockResolvedValueOnce(device({ devDeviceUid: '  ' }));
-      tx.deviceMaster.findFirst.mockResolvedValueOnce(
-        device({ devDeviceUid: null, devDeviceName: null }),
-      );
+    // Notes 160 C — the office PC printed TRF/2026-2027/44c01ccc-…/16 because
+    // this answered dev_device_uid. A device with no code is given the next
+    // one, under the code lock; the uid and the uuid are never printed.
+    it('gives a device with no code the next D<n>, never its uid or its id', async () => {
+      tx.deviceMaster.findFirst.mockResolvedValue(device({ devCode: null }));
+      tx.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        if (sql.includes('FOR UPDATE')) return Promise.resolve([{ dev_code: null }]);
+        if (sql.includes('AS n')) return Promise.resolve([{ n: 15 }]);
+        return Promise.resolve([{ locked: 1 }]);
+      });
 
-      await expect(resolveDeviceCode(client(), DEVICE_ID)).resolves.toBe('Till 1');
-      await expect(resolveDeviceCode(client(), DEVICE_ID)).resolves.toBe(DEVICE_ID);
+      await expect(resolveDeviceCode(client(), DEVICE_ID)).resolves.toBe('D15');
+      const sqls = tx.$queryRaw.mock.calls.map(sqlOf);
+      expect(sqls[0]).toContain('pg_advisory_xact_lock');
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(tx.$executeRaw.mock.calls[0].slice(1)).toEqual(['D15', DEVICE_ID]);
     });
 
     it('refuses a device with no live master row as 404 STOCK_DEVICE_NOT_FOUND', async () => {
@@ -194,21 +204,25 @@ describe('stock-voucher-numbering.helper', () => {
 
   // ── buildStockVoucherRefno ────────────────────────────────────────────────
   describe('buildStockVoucherRefno', () => {
-    it('joins type, trimmed year, device and serial with slashes', () => {
-      expect(buildStockVoucherRefno('PHY', ' 2026-2027 ', 'TILL-01', BigInt(12))).toBe(
-        'PHY/2026-2027/TILL-01/12',
+    it('joins type, trimmed year, device and serial with slashes, the serial padded to five digits', () => {
+      expect(buildStockVoucherRefno('PHY', ' 2026-2027 ', 'D1', BigInt(12))).toBe(
+        'PHY/2026-2027/D1/00012',
+      );
+      // Notes 160 C — more digits once it outgrows five, never truncated.
+      expect(buildStockVoucherRefno('TRF', ACC_YEAR, 'D1', BigInt(123456))).toBe(
+        'TRF/2026-2027/D1/123456',
       );
     });
 
     it('accepts a refno of exactly 100 characters', () => {
-      // 'OPN/2026-2027/' (14) + device + '/1' (2) = 100.
-      const deviceCode = 'D'.repeat(84);
+      // 'OPN/2026-2027/' (14) + device + '/00001' (6) = 100.
+      const deviceCode = 'D'.repeat(80);
 
       expect(buildStockVoucherRefno('OPN', ACC_YEAR, deviceCode, BigInt(1))).toHaveLength(100);
     });
 
     it('fails loudly past 100 characters rather than truncate into another device’s number', () => {
-      expect(() => buildStockVoucherRefno('OPN', ACC_YEAR, 'D'.repeat(85), BigInt(1))).toThrow(
+      expect(() => buildStockVoucherRefno('OPN', ACC_YEAR, 'D'.repeat(81), BigInt(1))).toThrow(
         /exceeds 100 characters\. Shorten the device code on device_master\./,
       );
     });
@@ -229,7 +243,7 @@ describe('stock-voucher-numbering.helper', () => {
     it('builds the device refno around a supplied slno', async () => {
       await expect(
         allocateStockVoucherNumber(client(), SCOPE, 'OPN', { slno: BigInt(9) }),
-      ).resolves.toEqual({ slno: BigInt(9), refno: 'OPN/2026-2027/TILL-01/9' });
+      ).resolves.toEqual({ slno: BigInt(9), refno: 'OPN/2026-2027/TILL-01/00009' });
       expect(tx.$queryRaw).not.toHaveBeenCalled();
     });
 
@@ -247,7 +261,7 @@ describe('stock-voucher-numbering.helper', () => {
     ])('allocates both when the client sends %s', async (_label, supplied) => {
       await expect(allocateStockVoucherNumber(client(), SCOPE, 'OPN', supplied)).resolves.toEqual({
         slno: BigInt(41),
-        refno: 'OPN/2026-2027/TILL-01/41',
+        refno: 'OPN/2026-2027/TILL-01/00041',
       });
     });
 

@@ -24,6 +24,7 @@ exports.refreshReserved = refreshReserved;
 exports.refreshTransitIn = refreshTransitIn;
 exports.rebuildStockDerivedFigures = rebuildStockDerivedFigures;
 exports.cancelStockVoucher = cancelStockVoucher;
+exports.recallTransferOut = recallTransferOut;
 exports.cancelDraftVoucher = cancelDraftVoucher;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
@@ -90,6 +91,9 @@ async function postStockVoucher(tx, params) {
         await refreshTransitIn(tx, transitHoldingsOf(transit.outId, transit.outAccYear), actor, postedOn);
     }
     await applyLedgerRows(tx, { ...params, reversal: false });
+    if (!params.ledgerSource) {
+        await assertFreeStock(tx, { ...params, reversal: false });
+    }
     await recomputeHeaderTotals(tx, params);
     await tx.stockVoucher.update({
         where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
@@ -1861,6 +1865,61 @@ async function assertNegativeStockPolicy(tx, params) {
         (0, module_service_utils_1.throwStockConflict)(`This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`, blocked.map((row) => ({ field: 'lines', code: stock_error_codes_1.StockErrorCode.NEGATIVE_BLOCKED, message: `${describe(row)} — policy is BLOCK` })));
     }
 }
+async function assertFreeStock(tx, params) {
+    const { rules, svhId, accYear } = params;
+    const short = await tx.$queryRaw `
+    WITH line_index AS (
+      SELECT l.svi_line_no, (dense_rank() OVER (ORDER BY l.svi_line_no) - 1)::int AS line_index
+        FROM (SELECT DISTINCT svi_line_no FROM stock.stock_voucher_item
+               WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${accYear}::bpchar
+                 AND svi_is_deleted = false) l
+    ),
+    taken AS (
+      SELECT sml.sml_line_no, sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+             sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket,
+             SUM(SUM(sml.sml_free_base_qty)) OVER (
+               PARTITION BY sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+                            sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket) AS asked
+        FROM stock.stock_ledger sml
+       WHERE ${ledgerRowsOf(params)}
+         AND sml.sml_direction < 0
+         AND sml.sml_free_base_qty > 0
+       GROUP BY sml.sml_line_no, sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+                sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket
+    )
+    SELECT t.sml_line_no AS line_no, li.line_index,
+           itm.item_name_en AS item_name, slt.slt_batch_no AS batch_no,
+           gdl.gdl_name AS godown_name, t.sml_bucket AS bucket, t.asked,
+           GREATEST(sbl.sbl_free_in_qty - sbl.sbl_free_out_qty + t.asked, 0) AS had
+      FROM taken t
+      JOIN stock.stock_balance sbl
+        ON sbl.sbl_company_id = t.sml_company_id AND sbl.sbl_branch_id = t.sml_branch_id
+       AND sbl.sbl_godown_id  = t.sml_godown_id  AND sbl.sbl_item_id   = t.sml_item_id
+       AND sbl.sbl_lot_id     = t.sml_lot_id     AND sbl.sbl_bucket    = t.sml_bucket
+       AND sbl.sbl_is_deleted = false
+      JOIN line_index li ON li.svi_line_no = t.sml_line_no
+      JOIN inventory.item_master itm ON itm.item_id = t.sml_item_id
+      JOIN stock.stock_lot slt ON slt.slt_id = t.sml_lot_id
+      LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = t.sml_godown_id
+     WHERE sbl.sbl_free_out_qty > sbl.sbl_free_in_qty
+     ORDER BY li.line_index
+  `;
+    if (!short.length) {
+        return;
+    }
+    (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} takes more free stock than the godown holds`, short.map((row) => {
+        const asked = new client_1.Prisma.Decimal(row.asked).toString();
+        const had = new client_1.Prisma.Decimal(row.had);
+        const where = `${row.item_name}${row.batch_no ? ` batch ${row.batch_no}` : ''} in ${row.godown_name ?? 'this godown'} (${row.bucket})`;
+        return {
+            field: `lines.${row.line_index}.freeQty`,
+            code: stock_error_codes_1.StockErrorCode.FREE_QTY_EXCEEDS_FREE_STOCK,
+            message: had.isZero()
+                ? `Line ${row.line_no}: ${asked} free, but ${where} has no free stock. Send it as quantity instead.`
+                : `Line ${row.line_no}: ${asked} free, but only ${had.toString()} of ${where} came in free. Send the rest as quantity.`,
+        };
+    }));
+}
 async function refreshLotTotals(tx, params) {
     await rebuildLotTotals(tx, client_1.Prisma.sql `
       SELECT DISTINCT sml.sml_lot_id AS lot_id
@@ -1965,6 +2024,80 @@ async function cancelStockVoucher(tx, params) {
         },
     });
     return rowsReversed;
+}
+async function recallTransferOut(tx, params) {
+    const { rules, svhId, accYear, actor, reason, cancelledOn } = params;
+    const author = auditColumnActor(actor);
+    const header = await lockHeaderInStatus(tx, params, 'IN_TRANSIT');
+    if (header.voucherType !== 'TRANSFER_OUT') {
+        (0, module_service_utils_1.throwStockConflict)(`${header.refno} is not a despatch`, [
+            {
+                field: 'svhId',
+                code: stock_error_codes_1.StockErrorCode.TRANSFER_NOT_FOUND,
+                message: `${header.refno} is a ${header.voucherType}; only a branch despatch (TRANSFER_OUT) can be recalled.`,
+            },
+        ]);
+    }
+    const [toBranch] = await tx.$queryRaw `
+    SELECT br_name FROM public.branch_master WHERE br_id = ${header.toBranchId}::uuid
+  `;
+    const receiver = toBranch?.br_name?.trim() || 'The receiving branch';
+    const transit = await tx.$queryRaw `
+    SELECT stt_status, stt_received_qty, stt_damage_qty
+      FROM stock.stock_transit
+     WHERE stt_out_voucher_id = ${svhId}::uuid AND stt_out_acc_year = ${accYear}::bpchar
+       AND stt_is_deleted = false
+       FOR UPDATE
+  `;
+    const [receipt] = await tx.$queryRaw `
+    SELECT svh_refno, svh_status
+      FROM stock.stock_voucher
+     WHERE svh_voucher_type     = 'TRANSFER_IN'
+       AND svh_link_src_doc_id  = ${svhId}::uuid
+       AND COALESCE(svh_link_src_acc_year, svh_acc_year) = ${accYear}::bpchar
+       AND svh_is_deleted = false
+       AND svh_status <> 'CANCELLED'
+     ORDER BY svh_created_on
+     LIMIT 1
+  `;
+    const touched = transit.some((row) => row.stt_status !== 'IN_TRANSIT' ||
+        !new client_1.Prisma.Decimal(row.stt_received_qty).isZero() ||
+        !new client_1.Prisma.Decimal(row.stt_damage_qty).isZero());
+    if (receipt || touched) {
+        (0, module_service_utils_1.throwStockConflict)(`${header.refno} cannot be recalled`, [
+            {
+                field: 'svhId',
+                code: stock_error_codes_1.StockErrorCode.TRANSFER_RECALL_RECEIVED,
+                message: receipt
+                    ? `${receiver} has already keyed a receipt against it (${receipt.svh_refno}, ${receipt.svh_status}). Receive what arrived and transfer it back, or short-settle what never will.`
+                    : `${receiver} has already received part of it. Receive the rest and transfer it back, or short-settle what never will.`,
+            },
+        ]);
+    }
+    const rowsReversed = await writeReversalLedger(tx, params);
+    const apply = { rules, svhId, accYear, actor, postedOn: cancelledOn };
+    await applyLedgerRows(tx, { ...apply, reversal: true, refuseNegative: params.refuseNegative });
+    const transitRowsClosed = await tx.$executeRaw `
+    UPDATE stock.stock_transit
+       SET stt_status      = 'CANCELLED',
+           stt_remarks     = left(${`Recalled: ${reason}`}, 250),
+           stt_modified_on = ${cancelledOn},
+           stt_modified_by = ${author}
+     WHERE stt_out_voucher_id = ${svhId}::uuid AND stt_out_acc_year = ${accYear}::bpchar
+       AND stt_is_deleted = false AND stt_status = 'IN_TRANSIT'
+  `;
+    await refreshTransitIn(tx, transitHoldingsOf(svhId, accYear), actor, cancelledOn);
+    await recomputeHeaderTotals(tx, apply);
+    await tx.stockVoucher.update({
+        where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+        data: {
+            svhStatus: 'CANCELLED',
+            svhVersionNo: { increment: 1 },
+            svhModifiedOn: cancelledOn,
+            svhModifiedBy: author,
+        },
+    });
+    return { rowsReversed, transitRowsClosed };
 }
 async function assertTransferCancellable(tx, { rules, svhId, accYear }) {
     if (!isTransferShape(rules.postShape)) {

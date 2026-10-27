@@ -95,11 +95,10 @@ describe('Godown Transfer loading / unloading — notes 153 (e2e, live DB)', () 
     godownId: holding.godown_id,
     lotId: holding.lot_id,
     bucket: 'SALEABLE',
-    // 2 + 1 free: the labour is paid on the 3 carried.
-    qty: 2,
-    baseQty: 2,
-    freeQty: 1,
-    freeBaseQty: 1,
+    // 3 carried, the labour paid on them. Once 2 + 1 free; notes 160 A refuses
+    // free goods the lot never received, and no holding here has any.
+    qty: 3,
+    baseQty: 3,
     loadRate: 3.5,
     unloadRate: 1.25,
     ...over,
@@ -364,7 +363,7 @@ describe('Godown Transfer loading / unloading — notes 153 (e2e, live DB)', () 
       driverName: nameOf.get(crew[0]),
       vehicleNo: 'TN 28 E2E 153',
       reasonId: reasonIds.REPLENISH,
-      // (2 + 1 free) × 3.5 and × 1.25, summed by the server.
+      // 3 × 3.5 and × 1.25, summed by the server.
       loadingCharge: 10.5,
       unloadEnabled: true,
       unloadmanNames: [nameOf.get(crew[0])],
@@ -457,7 +456,7 @@ describe('Godown Transfer loading / unloading — notes 153 (e2e, live DB)', () 
     });
     expect(list.status).toBe(200);
     expect(list.body.data.items).toEqual([
-      // 2 + 1 free moved, as the list showed it before the cancel.
+      // 3 moved, as the list showed it before the cancel.
       expect.objectContaining({ svhId, status: 'CANCELLED', totalQty: 3, lineCount: 1 }),
     ]);
     // Cleared: the teardown has nothing left to undo.
