@@ -49,7 +49,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Tx = Prisma.TransactionClient;
 
 interface SupplierRow { sup_id: string; sup_name: string; sup_state_code: string | null; sup_gst_type: string | null; sup_gst_no: string | null; sup_credit_days: number | null }
-interface ItemRow { iuc_id: string; iuc_item_id: string; iuc_to_base_factor: Prisma.Decimal; base_iuc_id: string; item_hsn_code: string | null; item_itc_class: string | null; item_shortage_pct: Prisma.Decimal | null; item_name: string | null }
+interface ItemRow { iuc_id: string; iuc_item_id: string; iuc_to_base_factor: Prisma.Decimal; base_iuc_id: string; item_default_tax_id: string | null; item_hsn_code: string | null; item_itc_class: string | null; item_shortage_pct: Prisma.Decimal | null; item_name: string | null }
 interface TaxRow { tax_id: string; tax_rate_perc: Prisma.Decimal; tax_cess_perc: Prisma.Decimal | null; tax_cess_per_unit: Prisma.Decimal | null }
 interface ChargeRow { chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null; chg_before_tax: boolean; chg_tax_apl: boolean; chg_landing_cost: boolean; chg_on_bill: boolean; chg_ledger_code: string; chg_role: string | null; tax_rate_perc: Prisma.Decimal | null; chg_tax_id: string | null }
 
@@ -242,7 +242,7 @@ export class PurchaseInvoiceService {
         await tx.$queryRaw<ItemRow[]>`
         SELECT iuc.iuc_id, iuc.iuc_item_id, iuc.iuc_to_base_factor,
                COALESCE(base.iuc_id, iuc.iuc_id) AS base_iuc_id,
-               im.item_hsn_code, im.item_itc_class, im.item_shortage_pct, im.item_name_en AS item_name
+               im.item_default_tax_id, im.item_hsn_code, im.item_itc_class, im.item_shortage_pct, im.item_name_en AS item_name
           FROM inventory.item_unit_conversion iuc
           JOIN inventory.item_master im ON im.item_id = iuc.iuc_item_id
           LEFT JOIN LATERAL (SELECT b.iuc_id FROM inventory.item_unit_conversion b
@@ -260,6 +260,8 @@ export class PurchaseInvoiceService {
       if (billed.isZero() && D(l.freeQty).isZero()) problems.push({ field: `lines.${i}.billedQty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: no qty` });
       if (recd && recd.plus(dmg).greaterThan(billed)) problems.push({ field: `lines.${i}.receivedQty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: received + damaged is more than billed — enter the excess separately` });
     });
+    // a line without a tax id takes the item's default rate
+    for (const l of dto.lines) if (!l.taxId) l.taxId = items.get(l.uomId)?.item_default_tax_id ?? undefined;
     const taxIds = [...new Set(dto.lines.map((l) => l.taxId).filter((t): t is string => !!t))];
     const taxes = new Map(
       (
