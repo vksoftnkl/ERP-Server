@@ -38,6 +38,9 @@ export enum TxnStatusDocType {
   PURCHASE_ORDER = 'PURCHASE_ORDER',
   PURCHASE_BILL = 'PURCHASE_BILL',
   PURCHASE_RETURN = 'PURCHASE_RETURN',
+  GRN = 'GRN',
+  SHORTAGE_RECEIPT = 'SHORTAGE_RECEIPT',
+  CLAIM_SETTLEMENT = 'CLAIM_SETTLEMENT',
   STOCK_TRANSFER = 'STOCK_TRANSFER',
   // The adjustment family (ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF, re-lot,
   // move). Openings and counts used to file here too, until notes 80 C gave
