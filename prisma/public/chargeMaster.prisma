@@ -18,6 +18,8 @@ model ChargeMaster {
   // DB CHECK ck_chg_tax_id: must be NULL unless chgTaxApl AND NOT chgBeforeTax.
   chgTaxId        String?   @db.Uuid                                                @map("chg_tax_id")
   chgSepPost      Boolean   @default(false)                                         @map("chg_sep_post")     // post to own ledger vs absorb
+  // Purchase only: true = on the supplier's bill (payable); false = our own cost (always landing cost, credited to cd_party_id / the ledger). Migration 20261028100000.
+  chgOnBill       Boolean   @default(true)                                          @map("chg_on_bill")
   chgManParty     Boolean   @default(false)                                         @map("chg_man_party")    // requires a party (e.g. freight vendor)
   chgDispOrder    Int?      @default(0)                                             @map("chg_disp_order")   // grid ordering
   chgAutoApply    Boolean   @default(false)                                         @map("chg_auto_apply")   // auto-load into new entry
