@@ -120,6 +120,8 @@ export class ChargeMasterPayloadDto {
   chgSepPost!: boolean;
   @ApiProperty()
   chgManParty!: boolean;
+  @ApiProperty()
+  chgOnBill!: boolean;
   @ApiPropertyOptional({ nullable: true, type: Number })
   chgDispOrder!: number | null;
   @ApiProperty()

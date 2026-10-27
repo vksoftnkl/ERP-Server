@@ -43,6 +43,7 @@ const makeCharge = (overrides: Partial<ChargeMaster> = {}): ChargeMaster => ({
   chgDefaultRate: new Prisma.Decimal('250.00'),
   chgLandingCost: true,
   chgCostAlloc: 'VALUE',
+  chgOnBill: true,
   chgLedgerCode: LEDGER_ID,
   chgTaxApl: false,
   chgBeforeTax: false,

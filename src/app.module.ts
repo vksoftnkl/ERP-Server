@@ -67,6 +67,7 @@ import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-bal
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
+import { PurchaseModule } from './modules/purchase/purchase.module';
 import { AreaModule } from './modules/sales/area/area.module';
 import { SaleFreightChargeModule } from './modules/sales/sale-freight-charges/sale-freight-charges.module';
 import { SaleLoadingChargeModule } from './modules/sales/sale-loading-charges/sale-loading-charges.module';
@@ -237,6 +238,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     LedgerMapModule,
     SupplierGroupModule,
     SuppliersModule,
+    PurchaseModule,
     StateModule,
     CityModule,
     AreaModule,

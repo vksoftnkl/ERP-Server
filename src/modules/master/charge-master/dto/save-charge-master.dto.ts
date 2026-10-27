@@ -94,6 +94,9 @@ export class SaveChargeMasterDto {
   @ApiPropertyOptional({ default: false, description: 'Requires a party (e.g. freight vendor)' })
   @OptionalBoolean()
   chgManParty?: boolean;
+  @ApiPropertyOptional({ default: true, description: 'Purchase only: true = on the supplier\'s bill (payable); false = our own cost (coolie, own freight): always landing cost, owed to the party on the document row. Migration 20261028100000.' })
+  @OptionalBoolean()
+  chgOnBill?: boolean;
   @ApiPropertyOptional({ nullable: true, default: 0, description: 'Grid ordering' })
   @NullableInteger()
   chgDispOrder?: number | null;
