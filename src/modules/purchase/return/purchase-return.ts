@@ -12,7 +12,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, assertBillsUnsettled, cancelShadowStock, D, dateOf, isoDate, jsonSafe, num2, postShadowStock, r2, raiseBillRow, statusLog,
+  allocateDocNumber, assertBillsUnsettled, assertShortagesUntouched, cancelShadowStock, D, dateOf, isoDate, jsonSafe, num2, postShadowStock, r2, raiseBillRow, statusLog,
   stockRules, TxnStatusDocType, TxnStatusEvent, unitNames, voucherTypeId, withdrawBillRows, ZERO,
 } from '../common/purchase-doc.helpers';
 
@@ -486,6 +486,7 @@ export class PurchaseReturnService {
       if (pr.prStatus === 'CANCELLED') purConflict(`${pr.prRefno} is already cancelled.`, PUR.NOT_POSTED, 'prId');
       if (pr.prStatus === 'POSTED') {
         await assertBillsUnsettled(tx, DOC, dto.prId, pr.prRefno);
+        await assertShortagesUntouched(tx, dto.prId, pr.prRefno);
         const items = await tx.purReturnItem.findMany({ where: { priPrId: dto.prId, priAccYear: dto.accYear, priIsDeleted: false }, select: { priId: true } });
         const settled = await this.settledByItem(tx, items.map((i) => i.priId));
         if ([...settled.values()].some((v) => !v.isZero())) purConflict(`${pr.prRefno}: a claim on it is already settled — undo the settlement first.`, PUR.EDIT_LOCKED_PAID, 'prId');

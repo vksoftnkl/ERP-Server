@@ -13,7 +13,7 @@ import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.se
 import { calcPurchase, type CalcChargeIn } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, assertNoLiveReturns, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, unitNames, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
+  allocateDocNumber, assertNoLiveReturns, assertShortagesUntouched, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, unitNames, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
   supplierRow, TxnStatusDocType, TxnStatusEvent, voucherTypeId, withdrawBillRows, ZERO,
 } from '../common/purchase-doc.helpers';
 import { PurchaseAllocDto, PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
@@ -364,6 +364,7 @@ export class PurchaseGrnService {
            AND (abl_alloc_amount + abl_disc_amount + abl_writeoff_amount) <> 0`;
       if (Number(paid.n) > 0) purConflict(`${g.grnRefno}: the loadmen are already paid — undo that payment first.`, PUR.EDIT_LOCKED_PAID, 'grnId');
       await assertNoLiveReturns(tx, dto.grnId, g.grnRefno);
+      await assertShortagesUntouched(tx, dto.grnId, g.grnRefno);
       await cancelShadowStock(tx, this.stockPosting, DOC, dto.grnId, dto.accYear, g.grnCompanyId, g.grnBranchId, this.rules(), actor, dto.reason);
       if (g.grnPostedVoucherId) await this.vouchers.reverseLegs(tx, g.grnPostedVoucherId, dto.accYear, `GRN ${g.grnRefno} cancelled: ${dto.reason}`, actor);
       await withdrawBillRows(tx, DOC, dto.grnId, actor);
