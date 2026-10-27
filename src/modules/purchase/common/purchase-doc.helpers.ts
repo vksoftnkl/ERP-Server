@@ -241,6 +241,18 @@ export async function statusLog(tx: Tx, a: { companyId: string; branchId: string
 }
 
 /** BigInt → string, recursively (JSON cannot carry a BigInt). */
+/** Item name + unit name per unit row (iuc_id) — what a loaded line shows. */
+export async function unitNames(db: { $queryRaw: Tx['$queryRaw'] }, uomIds: string[]) {
+  if (!uomIds.length) return new Map<string, { itemName: string; unitName: string }>();
+  const rows = await db.$queryRaw<{ iuc_id: string; item_name: string; unit_name: string }[]>`
+    SELECT iuc.iuc_id, im.item_name_en AS item_name, u.unit_name
+      FROM inventory.item_unit_conversion iuc
+      JOIN inventory.item_master im ON im.item_id = iuc.iuc_item_id
+      JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+     WHERE iuc.iuc_id = ANY(${[...new Set(uomIds)]}::uuid[])`;
+  return new Map(rows.map((r) => [r.iuc_id, { itemName: r.item_name, unitName: r.unit_name }]));
+}
+
 export function jsonSafe<T>(v: T): T {
   if (typeof v === 'bigint') return v.toString() as unknown as T;
   if (Array.isArray(v)) return v.map((x) => jsonSafe(x)) as unknown as T;

@@ -13,7 +13,7 @@ import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.se
 import { calcPurchase, type CalcChargeIn } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
+  allocateDocNumber, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, unitNames, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
   supplierRow, TxnStatusDocType, TxnStatusEvent, voucherTypeId, withdrawBillRows, ZERO,
 } from '../common/purchase-doc.helpers';
 import { PurchaseAllocDto, PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
@@ -62,6 +62,8 @@ export class GrnHeaderDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() challanDate?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) supplierInvNo?: string;
   @ApiPropertyOptional({ description: 'Employees who received / unloaded (the coolie payees).' }) @IsOptional() @IsArray() @IsUUID('all', { each: true }) receivedBy?: string[];
+  @ApiPropertyOptional({ description: 'Pay the unloading coolie to receivedBy (default true when no charges are sent): the company\'s off-bill UNLOADING charge, split per loadman, owed to each one\'s staff ledger.' })
+  @IsOptional() @IsBoolean() payCoolie?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsUUID() supervisorId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) vehicleNo?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) driverName?: string;
@@ -111,6 +113,8 @@ export class PurchaseGrnService {
       if (problems.length) purRefuseMany(problems[0].message, problems);
 
       // charges: off-bill only on a GRN (our own labour / freight) — D13
+      if (!dto.charges?.length && h.receivedBy?.length && h.payCoolie !== false) dto.charges = await this.coolieFor(tx, h.receivedBy);
+      for (const c of dto.charges ?? []) if (c.payees?.length) c.payees = await this.payeeLedgers(tx, c.payees);
       const chg = await this.loadCharges(tx, dto.charges ?? []);
       const calc = calcPurchase({
         interState: false, roundOffStep: 0, charges: chg,
@@ -181,6 +185,29 @@ export class PurchaseGrnService {
       return grnId!;
     }, { timeout: 60000, maxWait: 10000 });
     return this.get(id, h.accYear);
+  }
+
+  /** The company's off-bill unloading charge, one payee per loadman. None set up → no coolie. */
+  private async coolieFor(tx: Prisma.TransactionClient, employees: string[]): Promise<PurchaseChargeDto[]> {
+    const [c] = await tx.$queryRaw<{ chg_id: string }[]>`
+      SELECT chg_id FROM public.charge_master
+       WHERE chg_role = 'UNLOADING' AND chg_module IN ('P','B') AND NOT chg_on_bill AND chg_is_active AND NOT chg_is_deleted
+       ORDER BY chg_module, chg_code LIMIT 1`;
+    return c ? [{ chgId: c.chg_id, payees: employees.map((partyId) => ({ partyId })) } as PurchaseChargeDto] : [];
+  }
+
+  /** A payee may be named by employee: the coolie is owed to that employee's staff ledger. */
+  private async payeeLedgers(tx: Prisma.TransactionClient, payees: { partyId: string; amount?: number }[]) {
+    const ids = payees.map((p) => p.partyId);
+    const rows = await tx.$queryRaw<{ emp_id: string; emp_name: string; led: string | null }[]>`
+      SELECT emp_id, emp_name, emp_loan_ledger_id AS led FROM public.employee_master WHERE emp_id = ANY(${ids}::uuid[])`;
+    const by = new Map(rows.map((r) => [r.emp_id, r]));
+    return payees.map((p, i) => {
+      const e = by.get(p.partyId);
+      if (!e) return p;
+      if (!e.led) purRefuse(`${e.emp_name} has no staff ledger — set it on the employee before paying coolie.`, PUR.NOT_FOUND, `header.receivedBy.${i}`);
+      return { ...p, partyId: e.led };
+    });
   }
 
   private async poIdOf(tx: Prisma.TransactionClient, poiId: string) {
@@ -308,9 +335,17 @@ export class PurchaseGrnService {
     const billed = await this.prisma.$queryRaw<{ n: bigint }[]>`
       SELECT count(*) AS n FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
        WHERE pii.pii_src_doc_type = 'GRN' AND pii.pii_src_doc_id = ${grnId}::uuid AND NOT pii.pii_is_deleted AND p.pi_status <> 'CANCELLED' AND NOT p.pi_is_deleted`;
+    const names = await unitNames(this.prisma, lines.map((l) => l.griUomId));
+    const poRefs = await this.prisma.$queryRaw<{ po_id: string; po_refno: string }[]>`
+      SELECT po_id, po_refno FROM purchase.pur_order WHERE po_id = ANY(${[...new Set(lines.map((l) => l.griSrcDocId).filter((x): x is string => !!x))]}::uuid[])`;
+    const poRef = new Map(poRefs.map((r) => [r.po_id, r.po_refno]));
+    const men = header.grnReceivedBy.length ? await this.prisma.$queryRaw<{ id: string; name: string }[]>`
+      SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${header.grnReceivedBy}::uuid[])` : [];
+    const manName = new Map(men.map((m) => [m.id, m.name]));
     return jsonSafe({
-      header: { ...header, supplierName: sup[0]?.sup_name ?? null, billStatus: Number(billed[0]?.n ?? 0) > 0 ? 'BILLED' : 'NOT_BILLED' },
-      lines: lines.map((l) => ({ ...l, allocs: allocs.filter((a) => a.piaLineId === l.griId) })),
+      header: { ...header, supplierName: sup[0]?.sup_name ?? null, receivedBy: header.grnReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })), billStatus: Number(billed[0]?.n ?? 0) > 0 ? 'BILLED' : 'NOT_BILLED' },
+      lines: lines.map((l) => ({ ...l, ...names.get(l.griUomId), poRefno: l.griSrcDocId ? poRef.get(l.griSrcDocId) ?? null : null,
+        allocs: allocs.filter((a) => a.piaLineId === l.griId) })),
     });
   }
 

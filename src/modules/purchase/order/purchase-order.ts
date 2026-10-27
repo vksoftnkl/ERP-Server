@@ -10,7 +10,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { calcPurchase } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, D, isInterState, jsonSafe, loadTaxRates, loadUnits, statusLog, supplierRow, TxnStatusDocType, TxnStatusEvent, ZERO,
+  allocateDocNumber, D, isInterState, jsonSafe, unitNames, loadTaxRates, loadUnits, statusLog, supplierRow, TxnStatusDocType, TxnStatusEvent, ZERO,
 } from '../common/purchase-doc.helpers';
 
 /**
@@ -78,25 +78,41 @@ export class PurchaseOrderService {
     return u;
   }
 
+  /** The money of a PO as the server figures it — the same calc save uses, nothing written. */
+  private async compute(tx: Prisma.TransactionClient | PrismaService, dto: SavePurchaseOrderDto) {
+    const h = dto.header;
+    const sup = await supplierRow(tx as Prisma.TransactionClient, h.supplierId);
+    const inter = await isInterState(tx as Prisma.TransactionClient, h.branchId, sup);
+    const units = await loadUnits(tx as Prisma.TransactionClient, dto.lines.map((l) => l.uomId));
+    const problems = dto.lines.flatMap((l, i) => {
+      const u = units.get(l.uomId);
+      return !u || u.iuc_item_id !== l.itemId ? [{ field: `lines.${i}.uomId`, code: PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit not found for the item` }] : [];
+    });
+    if (problems.length) purRefuseMany(problems[0].message, problems);
+    for (const l of dto.lines) if (!l.taxId) l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
+    const taxes = await loadTaxRates(tx as Prisma.TransactionClient, dto.lines.map((l) => l.taxId));
+    const calc = calcPurchase({
+      interState: inter, roundOffStep: 0,
+      lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
+        gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 })),
+    });
+    return { sup, units, calc };
+  }
+
+  async preview(dto: SavePurchaseOrderDto) {
+    const { calc } = await this.compute(this.prisma, dto);
+    const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
+    return jsonSafe({
+      lines: calc.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.cgst.plus(o.sgst).plus(o.igst).plus(o.cess), total: o.total })),
+      totals: { gross: calc.gross, taxable: calc.taxable, tax, net: calc.taxable.plus(tax) },
+    });
+  }
+
   async save(dto: SavePurchaseOrderDto) {
     const actor = this.actor();
     const h = dto.header;
     const id = await this.prisma.$transaction(async (tx) => {
-      const sup = await supplierRow(tx, h.supplierId);
-      const inter = await isInterState(tx, h.branchId, sup);
-      const units = await loadUnits(tx, dto.lines.map((l) => l.uomId));
-      const problems = dto.lines.flatMap((l, i) => {
-        const u = units.get(l.uomId);
-        return !u || u.iuc_item_id !== l.itemId ? [{ field: `lines.${i}.uomId`, code: PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit not found for the item` }] : [];
-      });
-      if (problems.length) purRefuseMany(problems[0].message, problems);
-      for (const l of dto.lines) if (!l.taxId) l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
-      const taxes = await loadTaxRates(tx, dto.lines.map((l) => l.taxId));
-      const calc = calcPurchase({
-        interState: inter, roundOffStep: 0,
-        lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
-          gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 })),
-      });
+      const { sup, units, calc } = await this.compute(tx, dto);
       let poId = h.poId ?? null;
       let slno: bigint, refno: string, isNew = false;
       if (poId) {
@@ -162,13 +178,14 @@ export class PurchaseOrderService {
     const lines = await this.prisma.purOrderItem.findMany({ where: { poiPoId: poId, poiAccYear: accYear, poiIsDeleted: false }, orderBy: { poiLineNo: 'asc' } });
     const used = await this.usedQty(this.prisma, poId);
     const [sup] = await this.prisma.$queryRaw<{ sup_name: string }[]>`SELECT sup_name FROM purchase.suppliers WHERE sup_id = ${header.poSupplierId}::uuid`;
+    const names = await unitNames(this.prisma, lines.map((l) => l.poiUomId));
     return jsonSafe({
       header: { ...header, supplierName: sup?.sup_name ?? null },
       lines: lines.map((l) => {
         const f = l.poiToBaseFactor.isZero() ? D(1) : l.poiToBaseFactor;
         const received = (used.get(l.poiId) ?? ZERO).dividedBy(f).toDecimalPlaces(6);
         const pending = l.poiQty.minus(received).minus(l.poiShortClosedQty);
-        return { ...l, receivedQty: received.toString(), pendingQty: (pending.isNegative() ? ZERO : pending).toString() };
+        return { ...l, ...names.get(l.poiUomId), receivedQty: received.toString(), pendingQty: (pending.isNegative() ? ZERO : pending).toString() };
       }),
     });
   }
@@ -257,6 +274,11 @@ export class PurchaseOrderController {
     return { success: true, message: `Purchase order ${data.header.poRefno} ${dto.header.post ? 'confirmed' : 'saved'}`, data };
   }
 
+  @Post('validate') @Version(API_VERSION) @ApiOperation({ summary: 'The server\'s figures for a PO being keyed — line taxable / tax / total and the totals. Writes nothing.' })
+  async validate(@Body() dto: SavePurchaseOrderDto) {
+    await this.right('view', 'check a purchase order');
+    return { success: true, message: 'Purchase order calculated', data: await this.service.preview(dto) };
+  }
   @Get('get') @Version(API_VERSION) @ApiOperation({ summary: 'A PO with received / pending per line (derived).' })
   async get(@Query() q: PurchaseOrderRefDto) {
     await this.right('view', 'open a purchase order');
