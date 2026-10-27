@@ -279,8 +279,10 @@ export class PurchaseReturnService {
         const against = claim ? (l.claimAgainst ?? 'SUPPLIER') : null;
         if (claim && against !== 'SUPPLIER' && !l.claimPartyId) problems.push({ field: `lines.${i}.claimPartyId`, code: PUR.NOT_FOUND, message: `Line ${l.lineNo}: name the ${against?.toLowerCase()} the claim is on` });
         const bucket = l.bucket ?? 'SALEABLE';
-        const lot = l.lotId ? lots.find((x) => x.lot_id === l.lotId && x.line_id === l.srcItemId) : lots.find((x) => x.line_id === l.srcItemId && x.bucket === bucket) ?? lots.find((x) => x.line_id === l.srcItemId);
-        if (!lot) problems.push({ field: `lines.${i}.lotId`, code: PUR.NOT_FOUND, message: `Line ${l.lineNo}: no lot of ${src.refno} line ${s.lineNo} to return from` });
+        // one lot can sit in two holdings (saleable + damaged): the row's bucket always decides which
+        const mine = lots.filter((x) => x.line_id === l.srcItemId && x.bucket === bucket);
+        const lot = l.lotId ? mine.find((x) => x.lot_id === l.lotId) : mine[0];
+        if (!lot) problems.push({ field: `lines.${i}.lotId`, code: PUR.NOT_FOUND, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} brought nothing into ${bucket.toLowerCase()} to return from` });
         return { l, s, bucket, lot, against, claimParty: claim ? (against === 'SUPPLIER' ? src.supplierId : l.claimPartyId!) : null };
       });
       for (const [srcItemId, q] of want) {
