@@ -26,6 +26,17 @@ model Supplier {
   // 3) Credit / Discount
   supCreditDays        Int      @default(0) @map("sup_credit_days")
   supCashDiscPerc      Decimal  @default(0) @db.Decimal(7, 3) @map("sup_cash_disc_perc")
+  // Purchase (migration 20261028110000) — MSME due date, licences, defaults.
+  supMsmeCategory      String?   @db.VarChar(10) @map("sup_msme_category")      // MICRO | SMALL | MEDIUM | NONE
+  supMsmeActivity      String?   @db.VarChar(15) @map("sup_msme_activity")      // MANUFACTURER | SERVICE | TRADER
+  supMsmeAgreement     Boolean   @default(false) @map("sup_msme_agreement")     // written agreement → agreed days (max 45), else 15
+  supMsmeAgreedDays    Int?      @db.SmallInt @map("sup_msme_agreed_days")
+  supDrugLicenceExpiry DateTime? @db.Date @map("sup_drug_licence_expiry")
+  supFssaiNo           String?   @db.VarChar(20) @map("sup_fssai_no")
+  supFssaiValidTo      DateTime? @db.Date @map("sup_fssai_valid_to")
+  supDefaultGodownId   String?   @db.Uuid @map("sup_default_godown_id")         // FK fk_sup_default_godown (DB only)
+  supShowNotesOnEntry  Boolean   @default(false) @map("sup_show_notes_on_entry")
+  supIsImport          Boolean   @default(false) @map("sup_is_import")
   // 5) Collection / Schedules
   supCollectionDays    Int[]    @default([]) @map("sup_collection_days")
   // 6) Tax / Compliance

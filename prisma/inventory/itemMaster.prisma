@@ -18,6 +18,12 @@ model ItemMaster {
   itemCompanyCategoryId String? @db.Uuid @map("item_company_category_id")
   itemMfgrId           String?  @db.Uuid @map("item_mfgr_id")
   itemSupplierId       String?  @db.Uuid @map("item_supplier_id")
+  // Purchase (migration 20261028110000)
+  itemPurchaseUomId    String?  @db.Uuid @map("item_purchase_uom_id")               // FK fk_item_purchase_uom (DB only)
+  itemMinShelfLifePct  Decimal? @db.Decimal(5, 2) @map("item_min_shelf_life_pct")
+  itemItcClass         String?  @db.VarChar(15) @map("item_itc_class")             // ELIGIBLE | INELIGIBLE | BLOCKED_17_5
+  itemShortagePct      Decimal? @db.Decimal(5, 2) @map("item_shortage_pct")
+  itemDefaultMarkupPct Decimal? @db.Decimal(7, 3) @map("item_default_markup_pct")
   itemCustGroup        String?  @db.Uuid @map("item_cust_group")
   // Units / Batch / Expiry
   itemBaseUnitId       String?  @db.Uuid @map("item_base_unit_id")
