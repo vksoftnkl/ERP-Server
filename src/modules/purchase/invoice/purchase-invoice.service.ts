@@ -779,9 +779,10 @@ export class PurchaseInvoiceService {
     const facts = (await this.grnFacts(this.prisma as unknown as Tx, ids.map((r) => r.gri_id), q.piId ?? null)).filter((f) => !f.billed_in);
     if (!facts.length) return [];
     const extra = await this.prisma.$queryRaw<{ gri_id: string; gri_provisional_rate: Prisma.Decimal; gri_mrp: Prisma.Decimal | null; gri_sell_a: Prisma.Decimal | null;
+                                                 gri_sell_b: Prisma.Decimal | null; gri_sell_c: Prisma.Decimal | null; gri_sell_d: Prisma.Decimal | null;
                                                  gri_src_doc_refno: string | null; grn_challan_no: string | null; grn_supplier_inv_no: string | null;
                                                  item_name: string; unit_name: string; item_default_tax_id: string | null; poi_disc_pct: Prisma.Decimal | null; poi_rate: Prisma.Decimal | null; poi_tax_id: string | null }[]>`
-      SELECT gri.gri_id, gri.gri_provisional_rate, gri.gri_mrp, gri.gri_sell_a, po.po_refno AS gri_src_doc_refno, g.grn_challan_no, g.grn_supplier_inv_no,
+      SELECT gri.gri_id, gri.gri_provisional_rate, gri.gri_mrp, gri.gri_sell_a, gri.gri_sell_b, gri.gri_sell_c, gri.gri_sell_d, po.po_refno AS gri_src_doc_refno, g.grn_challan_no, g.grn_supplier_inv_no,
              im.item_name_en AS item_name, u.unit_name, im.item_default_tax_id,
              poi.poi_disc_pct, poi.poi_rate, poi.poi_tax_id
         FROM purchase.pur_grn_item gri
@@ -807,7 +808,8 @@ export class PurchaseInvoiceService {
             returnedQty: f.returned_qty, returnedFreeQty: f.returned_free,
             provisionalRate: e?.gri_provisional_rate ?? null, provisionalValue: f.gri_value,
             poRate: e?.poi_rate ?? null, poDiscPct: e?.poi_disc_pct ?? null, taxId: e?.poi_tax_id ?? e?.item_default_tax_id ?? null,
-            mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null, blocked,
+            mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null,
+            sellB: e?.gri_sell_b ?? null, sellC: e?.gri_sell_c ?? null, sellD: e?.gri_sell_d ?? null, blocked,
           };
         }),
     );
