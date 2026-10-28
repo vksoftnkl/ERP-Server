@@ -11,6 +11,7 @@ import { RequestContextService } from 'src/common/request-context/request-contex
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
+import { loadPurchaseSettings } from '../common/purchase-settings';
 import {
   allocateDocNumber, assertBillsUnsettled, assertShortagesUntouched, cancelShadowStock, D, dateOf, isoDate, jsonSafe, num2, postShadowStock, r2, raiseBillRow, statusLog,
   stockRules, TxnStatusDocType, TxnStatusEvent, unitNames, voucherTypeId, withdrawBillRows, ZERO,
@@ -276,6 +277,12 @@ export class PurchaseReturnService {
   }
 
   // ── save / post ───────────────────────────────────────────────────────
+  /** purchase.return_settlement_default: ADJUST / ADVANCE; CASH is settled by a Receipt, so the return itself stays ADJUST. */
+  private async defaultSettlement(tx: Prisma.TransactionClient, companyId: string, branchId: string) {
+    const st = await loadPurchaseSettings(tx, companyId, branchId);
+    return st.returnSettlementDefault === 'ADVANCE' ? 'ADVANCE' : 'ADJUST';
+  }
+
   async save(dto: SaveReturnDto) {
     const actor = this.actor();
     const h = dto.header;
@@ -342,7 +349,7 @@ export class PurchaseReturnService {
       const data = {
         prCompanyId: h.companyId, prBranchId: h.branchId, prAccYear: h.accYear, prDeviceId: h.deviceId, prSlno: slno, prRefno: refno,
         prDocDate: dateOf(h.docDate)!, prKind: h.kind, prSrcDocId: src.id, prSrcAccYear: src.accYear, prSupplierId: src.supplierId,
-        prGodownId: rows[0]?.lot?.godown_id ?? null, prSettlement: h.settlement ?? 'ADJUST',
+        prGodownId: rows[0]?.lot?.godown_id ?? null, prSettlement: h.settlement ?? await this.defaultSettlement(tx, h.companyId, h.branchId),
         prSupplierCnNo: h.supplierCnNo ?? null, prSupplierCnDate: dateOf(h.supplierCnDate), prEwbNo: h.ewbNo ?? null,
         prVehicleNo: h.vehicleNo ?? null, prDriverName: h.driverName ?? null, prOurRef: src.refno,
         prReturnValue: returnValue, prClaimValue: claimValue, prItcReversed: itcReversed, prReplaceQtyBase: replaceBase,
