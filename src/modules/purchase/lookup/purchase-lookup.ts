@@ -162,7 +162,8 @@ export class PurchaseLookupService {
       }
       const [psi] = await this.prisma.$queryRaw<Record<string, unknown>[]>`
         SELECT psi_supplier_item_code AS "code", psi_supplier_barcode AS "barcode", psi_moq AS "moq", psi_lead_days AS "leadDays",
-               psi_is_preferred AS "preferred", psi_pack_qty AS "packQty"
+               psi_is_preferred AS "preferred", psi_pack_qty AS "packQty",
+               psi_scheme_buy_qty AS "schemeBuyQty", psi_scheme_free_qty AS "schemeFreeQty"
           FROM purchase.pur_supplier_item
          WHERE psi_supplier_id = ${q.supplierId}::uuid AND psi_item_id = ${q.itemId}::uuid AND psi_is_active AND NOT psi_is_deleted
            AND (psi_company_id IS NULL OR psi_company_id = ${q.companyId}::uuid)
@@ -214,7 +215,7 @@ export class PurchaseLookupController {
   }
 
   @Get('item-context') @Version(API_VERSION)
-  @ApiOperation({ summary: 'The item strip on an entry screen: last purchases (all suppliers), PO rate, stock, selling prices, supplier code (B9).' })
+  @ApiOperation({ summary: 'The item strip on an entry screen: last purchases (all suppliers), PO rate, stock, selling prices, supplier code and scheme buy N get M (B9, ENT-07).' })
   async itemContext(@Query() q: ItemContextQueryDto) {
     return { success: true, message: 'Item context', data: await this.service.itemContext(q) };
   }

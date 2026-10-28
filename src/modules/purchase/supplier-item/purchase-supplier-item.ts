@@ -59,6 +59,8 @@ export class SaveSupplierItemDto {
   @ApiPropertyOptional({ description: 'Base units in one buy unit (default: the unit\'s factor).' }) @IsOptional() @IsNumber() @Min(0.000001) packQty?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) moq?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(365) leadDays?: number;
+  @ApiPropertyOptional({ description: 'ENT-07 scheme "buy N get M": N, in the line unit. Give both or neither; neither clears the scheme.' }) @IsOptional() @IsNumber() @Min(0.001) schemeBuyQty?: number;
+  @ApiPropertyOptional({ description: 'ENT-07 scheme "buy N get M": M free per N bought. Purchase Entry fills Free = floor(qty / N) × M.' }) @IsOptional() @IsNumber() @Min(0.001) schemeFreeQty?: number;
   @ApiPropertyOptional({ description: 'First in Reorder → PO; one preferred supplier per item.' }) @IsOptional() @IsBoolean() isPreferred?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
 }
@@ -84,6 +86,9 @@ export class PurchaseSupplierItemService {
     const id = supplierItemId(dto.companyId, dto.supplierId, dto.itemId);
     const code = dto.supplierItemCode?.trim() || null;
     const barcode = dto.supplierBarcode?.trim() || null;
+    const schBuy = dto.schemeBuyQty ?? null, schFree = dto.schemeFreeQty ?? null;
+    if ((schBuy === null) !== (schFree === null))
+      purRefuse('A scheme needs both numbers: buy how many, and how many free.', 'PUR_SCHEME_INCOMPLETE', schBuy === null ? 'schemeBuyQty' : 'schemeFreeQty');
     await this.prisma.$transaction(async (tx) => {
       const [sup] = await tx.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM purchase.suppliers WHERE sup_id = ${dto.supplierId}::uuid AND NOT sup_is_deleted`;
       if (!Number(sup.n)) purNotFound(`Supplier ${dto.supplierId} not found`, PUR.SUPPLIER_NOT_FOUND, 'supplierId');
@@ -113,14 +118,15 @@ export class PurchaseSupplierItemService {
       }
       await tx.$executeRaw`
         INSERT INTO purchase.pur_supplier_item (psi_id, psi_company_id, psi_supplier_id, psi_item_id, psi_supplier_item_code, psi_supplier_barcode,
-                    psi_buy_uom_id, psi_pack_qty, psi_moq, psi_lead_days, psi_is_preferred, psi_source, psi_is_active, psi_created_by)
+                    psi_buy_uom_id, psi_pack_qty, psi_moq, psi_lead_days, psi_scheme_buy_qty, psi_scheme_free_qty, psi_is_preferred, psi_source, psi_is_active, psi_created_by)
         VALUES (${id}::uuid, ${dto.companyId}::uuid, ${dto.supplierId}::uuid, ${dto.itemId}::uuid, ${code}, ${barcode},
                 ${dto.buyUomId ?? null}::uuid, ${pack ?? D(1)}::numeric, ${dto.moq ?? null}::numeric, ${dto.leadDays ?? null}::smallint,
-                ${dto.isPreferred ?? false}, 'TYPED', ${dto.isActive ?? true}, ${actor})
+                ${schBuy}::numeric, ${schFree}::numeric, ${dto.isPreferred ?? false}, 'TYPED', ${dto.isActive ?? true}, ${actor})
         ON CONFLICT (psi_id) DO UPDATE SET
           psi_supplier_item_code = EXCLUDED.psi_supplier_item_code, psi_supplier_barcode = EXCLUDED.psi_supplier_barcode,
           psi_buy_uom_id = EXCLUDED.psi_buy_uom_id, psi_pack_qty = EXCLUDED.psi_pack_qty, psi_moq = EXCLUDED.psi_moq,
-          psi_lead_days = EXCLUDED.psi_lead_days, psi_is_preferred = EXCLUDED.psi_is_preferred, psi_source = 'TYPED',
+          psi_lead_days = EXCLUDED.psi_lead_days, psi_scheme_buy_qty = EXCLUDED.psi_scheme_buy_qty, psi_scheme_free_qty = EXCLUDED.psi_scheme_free_qty,
+          psi_is_preferred = EXCLUDED.psi_is_preferred, psi_source = 'TYPED',
           psi_is_active = EXCLUDED.psi_is_active, psi_is_deleted = false, psi_modified_on = now(), psi_modified_by = ${actor}`;
       if (dto.isPreferred) {
         await tx.$executeRaw`
