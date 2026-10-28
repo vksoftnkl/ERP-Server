@@ -136,6 +136,13 @@ export class GrnLinesQueryDto {
   @ApiPropertyOptional({ description: 'The draft being edited — its own GRN lines are listed as free.' }) @IsOptional() @IsUUID() piId?: string;
 }
 
+export class PurchaseInvoiceHoldDto {
+  @ApiProperty() @IsUUID() piId!: string;
+  @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
+  @ApiProperty({ description: 'true = put on payment hold; false = release (needs the Override right on menu 24).' }) @IsBoolean() hold!: boolean;
+  @ApiProperty({ description: 'Why — kept on the bill and in its trail.' }) @IsString() @MaxLength(250) reason!: string;
+}
+
 export class PurchaseSettingsQueryDto {
   @ApiProperty() @IsUUID() companyId!: string;
   @ApiProperty() @IsUUID() branchId!: string;

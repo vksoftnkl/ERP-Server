@@ -1,3 +1,4 @@
+import { assertPaymentHoldCleared } from 'src/modules/purchase/common/purchase-hold';
 import { Injectable } from '@nestjs/common';
 import { coverPostedVoucher } from '../../../common/posting/money-lines';
 import { TenderSrcDocType } from '../tenderDetail/types/tender-detail-api.types';
@@ -396,6 +397,13 @@ export class PaymentPostingService {
         writeoffApprovedBy: row.writeoffApprovedBy ?? null,
       };
     });
+    // Purchase R19 — a purchase bill on payment hold is paid only with the release right (logged on the bill)
+    await assertPaymentHoldCleared(
+      tx,
+      dto.allocations.map((row, index) => ({ billId: row.billId, field: `allocations.${index}.billId` })),
+      actor === DEFAULT_ACTOR ? null : actor,
+      header.avhVoucherRefno ?? header.avhVoucherId,
+    );
     const credits: AllocationCredit[] = dto.creditsApplied.map((row, index) => {
       const bill = assertPayableUsable(locked.get(`${row.billId}|${row.billAccYear}`), {
         billId: row.billId,

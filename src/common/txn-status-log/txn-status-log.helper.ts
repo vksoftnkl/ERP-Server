@@ -106,6 +106,10 @@ export enum TxnStatusEvent {
   PARTIAL = 'PARTIAL',
   SETTLED = 'SETTLED',
   WRITTEN_OFF = 'WRITTEN_OFF',
+  // Purchase R19 — a bill's payment hold: put on, released, paid over it with the right.
+  HOLD = 'HOLD',
+  RELEASED = 'RELEASED',
+  HOLD_OVERRIDE = 'HOLD_OVERRIDE',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

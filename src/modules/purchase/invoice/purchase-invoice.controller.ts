@@ -5,7 +5,7 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 
 /** Menu 24 — Purchase Entry. One right per route (code prefix PUR). plan-purchase-backend.md B6. */
 export const PURCHASE_INVOICE_MENU_ID = 24;
@@ -54,6 +54,16 @@ export class PurchaseInvoiceController {
   async get(@Query() q: GetPurchaseInvoiceQueryDto) {
     await this.right('view', 'open a purchase invoice');
     return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
+  }
+
+  @Post('hold')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Put a posted bill on payment hold (Edit right), or release it (Override right — "Release payment hold"). Payment refuses a held bill unless the payer has that right.' })
+  async hold(@Body() dto: PurchaseInvoiceHoldDto) {
+    if (dto.hold) await this.right('edit', 'put a bill on payment hold');
+    else await this.right('override', 'release a payment hold');
+    const data = await this.service.setHold(dto);
+    return { success: true, message: `Purchase ${data.header.piRefno} ${dto.hold ? 'put on payment hold' : 'released for payment'}`, data };
   }
 
   @Get('settings')

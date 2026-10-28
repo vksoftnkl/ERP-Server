@@ -104,6 +104,9 @@ export class PayableBillDto implements PayableBill {
 
   @ApiProperty({ example: 0, description: 'R16 — what accounts.ppd_slabs suggests. A suggestion.' })
   ppdSuggested!: number;
+
+  @ApiProperty({ nullable: true, description: 'Purchase R19 — the purchase bill is on payment hold { reason }; paying it needs the Override right on menu 24. null = not held.' })
+  paymentHold!: { reason: string | null } | null;
 }
 
 export class PaymentBankDto {

@@ -23,7 +23,7 @@ import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../comm
 import {
   allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
 } from '../common/purchase-doc.helpers';
-import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
+import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto } from './dto/save-purchase-invoice.dto';
 
 /**
  * Purchase Invoice — save (draft), save + post, get, preview, cancel.
@@ -126,6 +126,36 @@ export class PurchaseInvoiceService {
   async preview(dto: SavePurchaseInvoiceDto) {
     const p = await this.prepare(this.prisma as unknown as Tx, dto);
     return this.calcPayload(p, dto);
+  }
+
+  /**
+   * R19 — put a posted bill on payment hold, or release it. Hold: the reason is kept on the bill
+   * and Payment refuses to settle it (unless the payer holds the release right). Release clears
+   * it and records who / when. Both go on the bill's trail. (Rights are the controller's.)
+   */
+  async setHold(dto: PurchaseInvoiceHoldDto) {
+    const actor = this.actor();
+    const reason = dto.reason.trim();
+    if (!reason) purRefuse('Say why.', PUR.QTY_INVALID, 'reason');
+    await this.prisma.$transaction(async (tx) => {
+      const cur = await tx.purInvoice.findFirst({ where: { piId: dto.piId, piAccYear: dto.accYear, piIsDeleted: false } });
+      if (!cur) purNotFound(`Purchase invoice ${dto.piId} not found`);
+      if (cur.piStatus !== 'POSTED') purConflict(`${cur.piRefno} is ${cur.piStatus} — only a posted bill is held or released.`, PUR.NOT_POSTED, 'piId');
+      if (cur.piPaymentHold === dto.hold) purConflict(`${cur.piRefno} is ${dto.hold ? 'already on hold' : 'not on hold'}.`, 'PUR_HOLD_UNCHANGED', 'hold');
+      const now = new Date();
+      await tx.purInvoice.update({
+        where: { piId_piAccYear: { piId: dto.piId, piAccYear: dto.accYear } },
+        data: dto.hold
+          ? { piPaymentHold: true, piHoldReason: reason.slice(0, 250), piHoldReleasedBy: null, piHoldReleasedOn: null, piModifiedBy: actor, piModifiedOn: now }
+          : { piPaymentHold: false, piHoldReleasedBy: actor, piHoldReleasedOn: now, piModifiedBy: actor, piModifiedOn: now },
+      });
+      await appendTxnStatusLog(tx, {
+        companyId: cur.piCompanyId, branchId: cur.piBranchId, accYear: dto.accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
+        srcDocId: dto.piId, srcDocRefno: cur.piRefno, event: dto.hold ? TxnStatusEvent.HOLD : TxnStatusEvent.RELEASED, fromStatus: 'POSTED', toStatus: 'POSTED',
+        changedBy: actor, remarks: reason, deviceId: cur.piDeviceId,
+      });
+    }, { timeout: 30000, maxWait: 10000 });
+    return this.get(dto.piId, dto.accYear);
   }
 
   /** The purchase.* settings in force for a branch — what the screen needs to know (WARN / REFUSE, prices). */
@@ -1042,6 +1072,37 @@ export class PurchaseInvoiceService {
           pshOriginCostRate: l.piiLandedCostWot, pshCreatedBy: actor,
         },
       });
+    }
+
+    // ── 4b2 · R19: a bill rate over the PO rate beyond purchase.rate_tolerance_pct puts the bill on payment hold
+    //    (the PO reaches the bill through its GRN line; base units on both sides)
+    {
+      const settingsNow = await loadPurchaseSettings(tx, pi.piCompanyId, pi.piBranchId);
+      const fromPo = grnLines.length ? await tx.$queryRaw<{ gri_id: string; po_refno: string; po_rate_base: Prisma.Decimal }[]>`
+        SELECT gri.gri_id, po.po_refno,
+               poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+          FROM purchase.pur_grn_item gri
+          JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
+          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+         WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])` : [];
+      const tol = D(settingsNow.rateTolerancePct);
+      const over: string[] = [];
+      for (const r of fromPo) {
+        const l = grnLines.find((x) => x.piiSrcItemId === r.gri_id);
+        if (!l || !r.po_rate_base || D(r.po_rate_base).isZero()) continue;
+        const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
+        const pct = billBase.minus(r.po_rate_base).dividedBy(r.po_rate_base).times(100);
+        if (pct.greaterThan(tol)) over.push(`line ${l.piiLineNo} ${pct.toFixed(1)}% over ${r.po_refno}`);
+      }
+      if (over.length) {
+        const reason = `Rate over PO beyond ${tol.toString()}%: ${over.join('; ')}`.slice(0, 250);
+        await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
+        await appendTxnStatusLog(tx, {
+          companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
+          srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
+        });
+        notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+      }
     }
 
     // ── 4c · B3 / D16: selling prices from the bill, when the bill's own policy says so ──

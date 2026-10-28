@@ -71,6 +71,8 @@ export interface PayableBill {
   pdcHeld: number;
   /** R16 — what `accounts.ppd_slabs` suggests at `onDate`, on what is LEFT. */
   ppdSuggested: number;
+  /** Purchase R19 — the purchase bill is on payment hold (paying it needs the release right); null = not held. */
+  paymentHold: { reason: string | null } | null;
 }
 
 /** The party, as the payment screen's header band shows them. */

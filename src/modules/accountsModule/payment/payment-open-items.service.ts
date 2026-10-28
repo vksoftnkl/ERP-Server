@@ -1,3 +1,4 @@
+import { holdsOfBills } from 'src/modules/purchase/common/purchase-hold';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -178,6 +179,7 @@ export class PaymentOpenItemsService {
       },
     });
     const keys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
+    const holds = await holdsOfBills(this.prisma as unknown as Prisma.TransactionClient, bills.map((bill) => bill.ablId));
     const [pdcByBill, usrRefnoByVoucher] = await Promise.all([
       this.loadPostDatedHeld(keys, onDate),
       this.loadSupplierRefnos(
@@ -208,6 +210,7 @@ export class PaymentOpenItemsService {
             slabs,
           }),
         ),
+        paymentHold: holds.has(bill.ablId) ? { reason: holds.get(bill.ablId)!.reason } : null,
       };
     });
 
