@@ -18,7 +18,7 @@ import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, payeeLedgers, raiseBillRow, statusLog, voucherTypeId, withdrawBillRows,
+  allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
 } from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
 
@@ -779,6 +779,10 @@ export class PurchaseInvoiceService {
           ${stockAllocs.length}::int, ${totalQty}::numeric, 'DRAFT', 'MANUAL', ${`Purchase ${pi.piRefno} · ${pi.piSupplierInvNo}`}, ${postedOn}, ${actor})
         RETURNING svh_id`;
       const lineById = new Map(lines.map((l) => [l.piiId, l]));
+      // textile: a blank batch on a batch-tracked item takes the server's number; its size / colour / model are kept against it
+      const textileRows = stockAllocs.map((a) => ({ itemId: lineById.get(a.piaLineId)!.piiItemId, batchNo: a.piaBatchNo, sizeId: a.piaSizeId, colourId: a.piaColourId, model: a.piaModel }));
+      const textile = await numberTextileBatches(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, docDate }, textileRows);
+      stockAllocs.forEach((a, k) => { a.piaBatchNo = textile.batchNos[k]; textileRows[k].batchNo = textile.batchNos[k]; });
       const values = stockAllocs.map((a, k) => {
         const l = lineById.get(a.piaLineId)!;
         const f = l.piiToBaseFactor;
@@ -800,6 +804,7 @@ export class PurchaseInvoiceService {
           svi_qty, svi_base_qty, svi_free_qty, svi_free_base_qty,
           svi_cost_rate, svi_cost_rate_wot, svi_landed_rate, svi_tax_perc,
           svi_created_on, svi_created_by) VALUES ${Prisma.join(values)}`;
+      await writeTextileDetails(tx, { companyId: pi.piCompanyId, accYear, svhId: hdr.svh_id, actor }, textileRows, textile.numbered);
       await this.stockPosting.post(
         tx,
         new StockVoucherSource({ svhId: hdr.svh_id, accYear, companyId: pi.piCompanyId, branchId: pi.piBranchId, rules }),
@@ -815,7 +820,7 @@ export class PurchaseInvoiceService {
         SELECT svi_line_no, svi_lot_id, svi_id FROM stock.stock_voucher_item WHERE svi_voucher_id = ${hdr.svh_id}::uuid AND svi_acc_year = ${accYear}::bpchar`;
       for (const r of lots) {
         const a = stockAllocs[r.svi_line_no - 1];
-        if (a) await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaLotId: r.svi_lot_id, piaSviId: r.svi_id, piaSviAccYear: accYear } });
+        if (a) await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaLotId: r.svi_lot_id, piaSviId: r.svi_id, piaSviAccYear: accYear, piaBatchNo: a.piaBatchNo } });
       }
     }
 

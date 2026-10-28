@@ -267,11 +267,12 @@ export class PurchaseGrnService {
         const l = byLine.get(a.piaLineId)!;
         return { itemId: l.griItemId, uomId: l.griUomId, baseUomId: l.griBaseUomId, factor: l.griToBaseFactor, godownId: a.piaGodownId, bucket: a.piaBucket,
           batchNo: a.piaBatchNo, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate, mrp: a.piaMrp, salePrice: a.piaSalePrice, serialNo: a.piaSerialNo,
+          sizeId: a.piaSizeId, colourId: a.piaColourId, model: a.piaModel,
           supplierId: g.grnSupplierId, qty: a.piaQty, freeQty: a.piaFreeQty, costRate: cost(l) };
       }),
       actor, postedOn);
     for (let i = 0; i < allocs.length; i++) {
-      if (perRow[i]?.sviId) await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: allocs[i].piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear } });
+      if (perRow[i]?.sviId) await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: allocs[i].piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear, piaBatchNo: perRow[i].batchNo } });
     }
 
     // books: Dr Stock (provisional + own labour) / Cr GRNI / Cr payees

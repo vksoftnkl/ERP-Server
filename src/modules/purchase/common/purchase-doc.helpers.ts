@@ -8,6 +8,8 @@ import {
 import type { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
 import { StockVoucherSource } from 'src/modules/stocks/posting/stock-voucher.source';
 import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stock-voucher/stock-voucher-numbering.helper';
+import { assignAutoBatchNumbers } from 'src/modules/stocks/stock-voucher/stock-voucher-batch-numbering.helper';
+import { syncBatchDetails } from 'src/modules/stocks/batch-detail/batch-detail.helper';
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { PUR, purRefuse } from './purchase.errors';
 
@@ -120,6 +122,7 @@ export interface StockRow {
   godownId: string; bucket: string; lotId?: string | null;
   batchNo?: string | null; mfgDate?: Date | null; expiryDate?: Date | null; mrp?: Prisma.Decimal | null; salePrice?: Prisma.Decimal | null;
   serialNo?: string | null; supplierId?: string | null;
+  sizeId?: string | null; colourId?: string | null; model?: string | null;
   qty: Prisma.Decimal; freeQty: Prisma.Decimal;
   /** per BASE unit, without recoverable GST. 0 on an ISSUE = the engine prices from the lot. */
   costRate: Prisma.Decimal;
@@ -143,8 +146,11 @@ export async function postShadowStock(
   rules: StockVoucherTypeRules, rows: StockRow[], actor: string, postedOn: Date,
 ) {
   const live = rows.filter((r) => r.qty.plus(r.freeQty).greaterThan(0));
-  if (!live.length) return { svhId: null as string | null, perRow: [] as { lotId: string | null; sviId: string; cost: Prisma.Decimal }[] };
+  if (!live.length) return { svhId: null as string | null, perRow: [] as { lotId: string | null; sviId: string; cost: Prisma.Decimal; batchNo: string | null }[] };
   const inward = rules.isInward;
+  // an inward of a batch-tracked item with no batch: the server's number (textile, auto_batch_no)
+  const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live) : null;
+  if (textile) live.forEach((r, k) => { r.batchNo = textile.batchNos[k]; });
   const slno = await nextStockVoucherSlno(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, voucherType: rules.voucherType, deviceId: doc.deviceId });
   const total = live.reduce((s, r) => s.plus(r.qty).plus(r.freeQty), ZERO);
   const godown = live[0].godownId;
@@ -176,6 +182,7 @@ export async function postShadowStock(
       svi_mrp, svi_sale_price, svi_serial_no, svi_supplier_id,
       svi_qty, svi_base_qty, svi_free_qty, svi_free_base_qty,
       svi_cost_rate, svi_cost_rate_wot, svi_landed_rate, svi_tax_perc, svi_created_on, svi_created_by) VALUES ${Prisma.join(values)}`;
+  if (textile) await writeTextileDetails(tx, { companyId: doc.companyId, accYear: doc.accYear, svhId: hdr.svh_id, actor }, live, textile.numbered);
   await stockPosting.post(
     tx,
     new StockVoucherSource({ svhId: hdr.svh_id, accYear: doc.accYear, companyId: doc.companyId, branchId: doc.branchId, rules }),
@@ -193,14 +200,40 @@ export async function postShadowStock(
     throw new Error(`${PUR.STOCK_QTY_MISMATCH}: ${doc.refno} moved ${moved.toString()} against ${total.toString()}`);
   }
   // map back to the caller's rows (zero rows were skipped)
-  const perRow: { lotId: string | null; sviId: string; cost: Prisma.Decimal }[] = [];
+  const perRow: { lotId: string | null; sviId: string; cost: Prisma.Decimal; batchNo: string | null }[] = [];
   let k = 0;
   for (const r of rows) {
-    if (!r.qty.plus(r.freeQty).greaterThan(0)) { perRow.push({ lotId: null, sviId: '', cost: ZERO }); continue; }
+    if (!r.qty.plus(r.freeQty).greaterThan(0)) { perRow.push({ lotId: null, sviId: '', cost: ZERO, batchNo: r.batchNo ?? null }); continue; }
     const b = back[k++];
-    perRow.push({ lotId: b?.svi_lot_id ?? null, sviId: b?.svi_id ?? '', cost: r2(D(b?.cost)) });
+    perRow.push({ lotId: b?.svi_lot_id ?? null, sviId: b?.svi_id ?? '', cost: r2(D(b?.cost)), batchNo: r.batchNo ?? null });
   }
   return { svhId: hdr.svh_id as string | null, perRow };
+}
+
+// ── textile: the batch the server gives, and its size / colour / model (addendum 1 A2, R17) ──
+export interface TextileRow { itemId: string; batchNo?: string | null; sizeId?: string | null; colourId?: string | null; model?: string | null }
+
+/**
+ * Before the shadow voucher's lines are written: a blank batch on a batch-tracked item gets
+ * the next number when stock.auto_batch_no is on (CBE26-00041 …, the Opening Stock helper).
+ * Size / colour / model ride only on such a number — on a typed batch they are refused.
+ * Returns each row's batch (given or typed) and which rows were numbered.
+ */
+export async function numberTextileBatches(tx: Tx, scope: { companyId: string; branchId: string; accYear: string; docDate: string }, rows: TextileRow[]) {
+  rows.forEach((r, i) => {
+    if (r.batchNo?.trim() && (r.sizeId || r.colourId || r.model?.trim())) {
+      purRefuse(`Row ${i + 1}: size, colour and model are kept on a batch number the server gives — leave Batch blank.`, PUR.QTY_INVALID, `allocs.${i}.batchNo`);
+    }
+  });
+  const { lines, numbered } = await assignAutoBatchNumbers(tx, scope, rows.map((r) => ({ itemId: r.itemId, batchNo: r.batchNo ?? null })));
+  return { batchNos: lines.map((l) => l.batchNo ?? null), numbered };
+}
+
+/** After the shadow voucher's lines are written (line k = rows[k-1]): the size / colour / model of every numbered batch. */
+export async function writeTextileDetails(tx: Tx, a: { companyId: string; accYear: string; svhId: string; actor: string }, rows: TextileRow[], numbered: Set<number>) {
+  if (!numbered.size) return;
+  await syncBatchDetails(tx, { companyId: a.companyId, accYear: a.accYear, srcDocType: 'PURCHASE', srcDocId: a.svhId, actor: a.actor },
+    rows.map((r, k) => ({ lineNo: k + 1, splitNo: 1, sizeId: r.sizeId ?? null, colourId: r.colourId ?? null, model: r.model ?? null })), numbered);
 }
 
 export async function cancelShadowStock(tx: Tx, stockPosting: StockPostingService, docType: string, docId: string, accYear: string,
