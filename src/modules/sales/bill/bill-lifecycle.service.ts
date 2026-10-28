@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { assertSaleBillNotPulled } from 'src/modules/purchase/sister/purchase-sister';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -440,6 +441,7 @@ export class BillLifecycleService {
   ): Promise<{ reversalRefno: string | null; reversalVoucherId: string | null }> {
     const action = opts.action ?? 'cancel';
     await this.assertUnwindable(tx, bill, ctx, reason, 'cancel');
+    await assertSaleBillNotPulled(tx, bill.sbId);   // P19: in a sister company purchase
     const items = await tx.saleBillItem.findMany({
       where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
     });
@@ -544,6 +546,7 @@ export class BillLifecycleService {
           'sbId',
         );
       }
+      await assertSaleBillNotPulled(tx, bill.sbId);   // P19: in a sister company purchase
       const ctx = await this.salesContext.resolve(
         { companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId },
         SALES_MENU_ID.SALE_BILL,
