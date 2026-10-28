@@ -17,7 +17,9 @@ import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/typ
 import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
-import { assertNoLiveReturns, assertShortagesUntouched } from '../common/purchase-doc.helpers';
+import {
+  allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, raiseBillRow, statusLog, voucherTypeId, withdrawBillRows,
+} from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
 
 /**
@@ -46,9 +48,21 @@ import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvo
  * landed value split by R2: the share still on hand → INVENTORY (value-only
  * revaluation rows, P13 `revalueOnHand`), the rest → PURCHASE_PRICE_VARIANCE.
  * The GRN's challan-short row is ADOPTED (R3): value + pending GST set on it,
- * never a second row. Slice 1 refuses what is not built yet: a GRN line with a
- * live return against it (R18), a challan short already received / closed,
- * billing less than came in, and off-bill charges on such a bill.
+ * never a second row.
+ *
+ * R18 — a GRN line with goods sent back on a GRN return: KEPT = received +
+ * damaged − returned. The bill must cover what was kept; what it bills beyond
+ * that, up to the returned qty, is REJECTED (pii_rejected_at_grn_qty). Post
+ * then writes the debit note for it in the same transaction: a PURCHASE_RETURN
+ * against this bill, no stock (the goods left on the GRN return), money per
+ * billed unit of the line with its GST — Dr Supplier / Cr GRNI / Cr input GST.
+ * The bill debits GRNI by the same value, so GRNI nets out exactly; only the
+ * kept qty is revalued against the GRN value still open. That debit note is
+ * the bill's: it is recognised by having no allocation rows, and it is
+ * cancelled with the bill, never on its own.
+ *
+ * Still refused: a draft GRN return on the line, a challan short already
+ * received / closed, billing less than was kept, off-bill charges.
  */
 
 const D = (v: Prisma.Decimal.Value | null | undefined) => new Prisma.Decimal(v ?? 0);
@@ -71,7 +85,11 @@ interface GrnFacts {
   gri_received_qty: Prisma.Decimal; gri_damaged_qty: Prisma.Decimal; gri_free_qty: Prisma.Decimal; gri_challan_qty: Prisma.Decimal;
   gri_to_base_factor: Prisma.Decimal; gri_value: Prisma.Decimal; gri_offbill_share: Prisma.Decimal;
   grn_id: string; grn_refno: string; grn_doc_date: Date; grn_status: string; grn_company_id: string; grn_branch_id: string; grn_supplier_id: string;
-  billed_in: string | null; return_refno: string | null; short_touched: bigint;
+  billed_in: string | null; draft_return: string | null; short_touched: bigint;
+  /** posted GRN returns of the line: paid qty, free qty (line unit), and the GRNI value they took off */
+  returned_qty: Prisma.Decimal; returned_free: Prisma.Decimal; returned_value: Prisma.Decimal;
+  /** set by prepare: of the returned qty, how much this bill bills (→ its debit note) */
+  rejected_billed?: Prisma.Decimal;
 }
 
 interface Prepared {
@@ -192,6 +210,7 @@ export class PurchaseInvoiceService {
       if (Number(paid.n) > 0) {
         purConflict(`${cur.piRefno} is already paid or adjusted — undo the payment allocation first, or enter a debit note.`, PUR.EDIT_LOCKED_PAID, 'piId');
       }
+      await this.cancelRejectedDebitNotes(tx, dto.piId, cur.piRefno, dto.reason, actor);   // R18: the bill's own note goes with it
       await assertNoLiveReturns(tx, dto.piId, cur.piRefno);
       await assertShortagesUntouched(tx, dto.piId, cur.piRefno);
       const cancelledOn = new Date();
@@ -464,14 +483,23 @@ export class PurchaseInvoiceService {
       if (g.grn_supplier_id !== h.supplierId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} is another supplier's GRN`);
       if (g.grn_company_id !== h.companyId || g.grn_branch_id !== h.branchId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} was received at another branch — bill it there`);
       if (g.billed_in) return say(PUR.GRN_LINE_BILLED, `${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}`);
-      if (g.return_refno) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no} has return ${g.return_refno} against it — billing it is not built yet; cancel the return, bill the GRN, then return against the bill`);
+      if (g.draft_return) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no} has the draft return ${g.draft_return} — post or cancel it first`);
       if (Number(g.short_touched) > 0) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no}: its challan shortage is already received or closed — cancel that first, bill the GRN, then receive the shortage against the bill`);
       if (l.itemId !== g.gri_item_id || l.uomId !== g.gri_uom_id) return say(PUR.GRN_MISMATCH, `the item and unit must be the GRN line's (${g.grn_refno} line ${g.gri_line_no})`);
-      const came = g.gri_received_qty.plus(g.gri_damaged_qty);
-      if (D(l.billedQty).lessThan(came)) return say(PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()} is less than the ${came.toString()} that came in on ${g.grn_refno} — bill it all (return the excess against the bill)`);
-      l.receivedQty = Number(g.gri_received_qty);
-      l.damagedQty = Number(g.gri_damaged_qty);
-      l.freeQty = Number(g.gri_free_qty);
+      const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
+      if (D(l.billedQty).lessThan(kept)) {
+        return say(PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()} is less than the ${kept.toString()} kept from ${g.grn_refno}${g.returned_qty.isZero() ? '' : ` (${g.returned_qty.toString()} went back on a GRN return)`} — bill it all (return the excess against the bill)`);
+      }
+      // R18: billed beyond what was kept, up to what went back = rejected (its debit note is written at post);
+      // the calculation sees it as having come in, so its GST is claimed here and reversed by that note
+      const rejected = Prisma.Decimal.min(g.returned_qty, D(l.billedQty).minus(kept));
+      g.rejected_billed = rejected;
+      let notBilledBack = g.returned_qty.minus(rejected);
+      const recd = Prisma.Decimal.max(0, g.gri_received_qty.minus(notBilledBack));
+      notBilledBack = notBilledBack.minus(g.gri_received_qty.minus(recd));
+      l.receivedQty = Number(recd);
+      l.damagedQty = Number(g.gri_damaged_qty.minus(notBilledBack));
+      l.freeQty = Number(Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free)));
       l.allocs = undefined;
       out.set(l.lineNo, g);
     });
@@ -492,8 +520,9 @@ export class PurchaseInvoiceService {
              (SELECT pr.pr_refno FROM purchase.pur_return_item ri
                 JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
                WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = gri.gri_id AND NOT ri.pri_is_deleted
-                 AND pr.pr_status <> 'CANCELLED' AND NOT pr.pr_is_deleted
-               LIMIT 1) AS return_refno,
+                 AND pr.pr_status = 'DRAFT' AND NOT pr.pr_is_deleted
+               LIMIT 1) AS draft_return,
+             COALESCE(ret.qty, 0) AS returned_qty, COALESCE(ret.free, 0) AS returned_free, COALESCE(ret.value, 0) AS returned_value,
              (SELECT count(*) FROM purchase.pur_shortage s
                WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND NOT s.psh_is_deleted
                  AND (EXISTS (SELECT 1 FROM purchase.pur_shortage_receipt_item i
@@ -503,6 +532,12 @@ export class PurchaseInvoiceService {
                                  WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched
         FROM purchase.pur_grn_item gri
         JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+        LEFT JOIN LATERAL (
+          SELECT SUM(ri.pri_qty) AS qty, SUM(ri.pri_free_qty) AS free, SUM(ri.pri_taxable_amt) AS value
+            FROM purchase.pur_return_item ri
+            JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
+           WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = gri.gri_id AND NOT ri.pri_is_deleted
+             AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted) ret ON true
        WHERE gri.gri_id = ANY(${griIds}::uuid[]) AND NOT gri.gri_is_deleted AND NOT g.grn_is_deleted`;
   }
 
@@ -538,12 +573,13 @@ export class PurchaseInvoiceService {
         .sort((a, b) => a.grn_doc_date.getTime() - b.grn_doc_date.getTime() || a.grn_refno.localeCompare(b.grn_refno) || a.gri_line_no - b.gri_line_no)
         .map((f) => {
           const e = ex.get(f.gri_id);
-          const blocked = f.return_refno ? `Return ${f.return_refno} against it` : Number(f.short_touched) > 0 ? 'Challan shortage already received / closed' : null;
+          const blocked = f.draft_return ? `Draft return ${f.draft_return} against it` : Number(f.short_touched) > 0 ? 'Challan shortage already received / closed' : null;
           return {
             grnItemId: f.gri_id, grnItemAccYear: f.gri_acc_year, grnId: f.grn_id, grnRefno: f.grn_refno, grnDate: isoDate(f.grn_doc_date), lineNo: f.gri_line_no,
             challanNo: e?.grn_challan_no ?? null, supplierInvNo: e?.grn_supplier_inv_no ?? null, poRefno: e?.gri_src_doc_refno ?? null,
             itemId: f.gri_item_id, itemName: e?.item_name ?? null, uomId: f.gri_uom_id, unitName: e?.unit_name ?? null,
             challanQty: f.gri_challan_qty, receivedQty: f.gri_received_qty, damagedQty: f.gri_damaged_qty, freeQty: f.gri_free_qty,
+            returnedQty: f.returned_qty, returnedFreeQty: f.returned_free,
             provisionalRate: e?.gri_provisional_rate ?? null, provisionalValue: f.gri_value,
             poRate: e?.poi_rate ?? null, poDiscPct: e?.poi_disc_pct ?? null, taxId: e?.poi_tax_id ?? e?.item_default_tax_id ?? null,
             mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null, blocked,
@@ -557,7 +593,7 @@ export class PurchaseInvoiceService {
     return {
       interState: p.interState,
       supplierTaxMode: p.taxMode,
-      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l) })),
+      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString() })),
       charges: c.charges.map((ch, i) => ({ chgId: dto.charges![i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
       totals: decimals({ ...c, lines: undefined, charges: undefined }),
       invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
@@ -638,7 +674,8 @@ export class PurchaseInvoiceService {
       const row = await tx.purInvoiceItem.create({
         data: {
           piiPiId: piId, piiCompanyId: h.companyId, piiBranchId: h.branchId, piiAccYear: h.accYear, piiLineNo: l.lineNo,
-          ...(g ? { piiSrcDocType: 'GRN', piiSrcDocId: g.grn_id, piiSrcDocYear: g.gri_acc_year, piiSrcItemId: g.gri_id, piiSrcDocLineNo: g.gri_line_no, piiSrcDocRefno: g.grn_refno } : {}),
+          ...(g ? { piiSrcDocType: 'GRN', piiSrcDocId: g.grn_id, piiSrcDocYear: g.gri_acc_year, piiSrcItemId: g.gri_id, piiSrcDocLineNo: g.gri_line_no, piiSrcDocRefno: g.grn_refno,
+                    piiRejectedAtGrnQty: g.rejected_billed ?? ZERO } : {}),
           piiItemId: l.itemId, piiUomId: l.uomId, piiBaseUomId: it.base_iuc_id, piiToBaseFactor: it.iuc_to_base_factor,
           piiHsnCode: it.item_hsn_code, piiWeight: l.weight ?? null,
           piiBilledQty: D(l.billedQty), piiReceivedQty: D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
@@ -790,20 +827,47 @@ export class PurchaseInvoiceService {
         const g = grnOf.get(l.piiSrcItemId!);
         if (!g || g.grn_status !== 'POSTED') purConflict(`Line ${l.piiLineNo}: its GRN is no longer posted.`, PUR.NOT_POSTED, 'lines');
         if (g.billed_in) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}.`, PUR.GRN_LINE_BILLED, 'lines');
-        if (g.return_refno) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} has return ${g.return_refno} against it now.`, PUR.GRN_NOT_BUILT, 'lines');
+        if (g.draft_return) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} has the draft return ${g.draft_return} — post or cancel it first.`, PUR.GRN_NOT_BUILT, 'lines');
         if (Number(g.short_touched) > 0) purConflict(`Line ${l.piiLineNo}: the challan shortage of ${g.grn_refno} was received / closed meanwhile.`, PUR.GRN_NOT_BUILT, 'lines');
-        const inBase = g.gri_received_qty.plus(g.gri_damaged_qty).plus(g.gri_free_qty).times(g.gri_to_base_factor);
-        const landed = l.piiLandedCostWot.times(inBase).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-        grniDr = grniDr.plus(g.gri_value);
-        variance = variance.plus(landed.minus(g.gri_value));
-        revLines.push({ lineId: l.piiId, itemId: l.piiItemId, inBaseQty: inBase, delta: landed.minus(g.gri_value), lots: [] });
+        // R18: the rejected qty the draft was saved with must still be what the GRN returns say
+        const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
+        const rejected = Prisma.Decimal.min(g.returned_qty, Prisma.Decimal.max(0, l.piiBilledQty.minus(kept)));
+        if (l.piiBilledQty.lessThan(kept) || !rejected.equals(l.piiRejectedAtGrnQty)) {
+          purConflict(`Line ${l.piiLineNo}: the returns against ${g.grn_refno} changed since this draft was saved — save it again.`, PUR.GRN_NOT_BUILT, 'lines');
+        }
+        const f = g.gri_to_base_factor;
+        const keptBase = kept.plus(Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free))).times(f);
+        const grniOpen = g.gri_value.minus(g.returned_value);
+        const landedKept = l.piiLandedCostWot.times(keptBase).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+        grniDr = grniDr.plus(grniOpen);
+        variance = variance.plus(landedKept.minus(grniOpen));
+        if (rejected.greaterThan(0)) {
+          // billed but rejected: off GRNI at the bill's value (its debit note puts the same back), the landed rest → variance
+          const dn = this.rejectedMoney(l);
+          grniDr = grniDr.plus(dn.taxable);
+          variance = variance.plus(l.piiLandedCostWot.times(rejected.times(f)).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).minus(dn.taxable));
+        }
+        revLines.push({ lineId: l.piiId, itemId: l.piiItemId, inBaseQty: keptBase, delta: landedKept.minus(grniOpen), lots: [] });
       }
       const gAllocs = await tx.purItemAlloc.findMany({ where: { piaDocType: 'GRN', piaLineId: { in: grnLines.map((l) => l.piiSrcItemId!) }, piaIsDeleted: false } });
+      // what each lot gave back on posted GRN returns (base qty), so a lot's share is what it kept
+      const back = await tx.$queryRaw<{ gri_id: string; lot_id: string; qty: Prisma.Decimal }[]>`
+        SELECT ri.pri_src_item_id AS gri_id, a.pia_lot_id AS lot_id, SUM((a.pia_qty + a.pia_free_qty) * ri.pri_to_base_factor) AS qty
+          FROM purchase.pur_return_item ri
+          JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
+          JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'PURCHASE_RETURN' AND a.pia_line_id = ri.pri_id AND a.pia_acc_year = ri.pri_acc_year AND NOT a.pia_is_deleted
+         WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])
+           AND NOT ri.pri_is_deleted AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted
+         GROUP BY 1, 2`;
       for (const r of revLines) {
         const l = grnLines.find((x) => x.piiId === r.lineId)!;
         const g = grnOf.get(l.piiSrcItemId!)!;
-        r.lots = gAllocs.filter((a) => a.piaLineId === g.gri_id && a.piaLotId)
-          .map((a) => ({ lotId: a.piaLotId!, baseQty: a.piaQty.plus(a.piaFreeQty).times(g.gri_to_base_factor) }));
+        const lotIn = new Map<string, Prisma.Decimal>();
+        for (const a of gAllocs.filter((x) => x.piaLineId === g.gri_id && x.piaLotId)) {
+          lotIn.set(a.piaLotId!, (lotIn.get(a.piaLotId!) ?? ZERO).plus(a.piaQty.plus(a.piaFreeQty).times(g.gri_to_base_factor)));
+        }
+        for (const b of back.filter((x) => x.gri_id === g.gri_id)) lotIn.set(b.lot_id, (lotIn.get(b.lot_id) ?? ZERO).minus(D(b.qty)));
+        r.lots = [...lotIn].filter(([, q]) => q.greaterThan(0)).map(([lotId, baseQty]) => ({ lotId, baseQty }));
       }
       const intoStock = await revalueOnHand(tx,
         { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: piId, srcAccYear: accYear,
@@ -941,12 +1005,113 @@ export class PurchaseInvoiceService {
       });
     }
 
+    // ── 4b · R18: the debit note for what the bill charges but the GRN sent back ──
+    const rejectedLines = grnLines.filter((l) => l.piiRejectedAtGrnQty.greaterThan(0));
+    if (rejectedLines.length) await this.writeRejectedDebitNote(tx, pi, rejectedLines, actor, postedOn);
+
     // ── 5 · status ──────────────────────────────────────────────────────
     await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piStatus: 'POSTED', piPostedVoucherId: posted.voucherId, piModifiedBy: actor, piModifiedOn: postedOn } });
     await appendTxnStatusLog(tx, {
       companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
       srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.POSTED, fromStatus: 'DRAFT', toStatus: 'POSTED', changedBy: actor, deviceId: pi.piDeviceId,
     });
+  }
+
+  /** The rejected qty's money: per billed unit of the line, each head rounded, the total their sum (as the return module's money()). */
+  private rejectedMoney(l: { piiBilledQty: Prisma.Decimal; piiRejectedAtGrnQty: Prisma.Decimal; piiTaxableAmt: Prisma.Decimal;
+                             piiCgstAmt: Prisma.Decimal; piiSgstAmt: Prisma.Decimal; piiIgstAmt: Prisma.Decimal; piiCessAmt: Prisma.Decimal }) {
+    const per = (v: Prisma.Decimal) => (l.piiBilledQty.isZero() ? ZERO : v.times(l.piiRejectedAtGrnQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP));
+    const taxable = per(l.piiTaxableAmt), cgst = per(l.piiCgstAmt), sgst = per(l.piiSgstAmt), igst = per(l.piiIgstAmt), cess = per(l.piiCessAmt);
+    return { taxable, cgst, sgst, igst, cess, total: taxable.plus(cgst).plus(sgst).plus(igst).plus(cess) };
+  }
+
+  /**
+   * R18 — one PURCHASE_RETURN against this bill, a RETURN row per rejected line, POSTED at once:
+   * Dr Supplier (bill-wise PURCHASE_RETURN) / Cr GRNI (the value the bill put on GRNI) / Cr input GST.
+   * No stock voucher and no allocation rows — the goods already left on the GRN return.
+   */
+  private async writeRejectedDebitNote(tx: Tx, pi: { piId: string; piAccYear: string; piCompanyId: string; piBranchId: string; piDeviceId: string; piSessionId: string | null;
+                                                      piRefno: string; piSupplierId: string; piDocDate: Date; piIgstAmt: Prisma.Decimal },
+                                       lines: { piiId: string; piiLineNo: number; piiItemId: string; piiUomId: string; piiBaseUomId: string; piiToBaseFactor: Prisma.Decimal;
+                                                piiHsnCode: string | null; piiRate: Prisma.Decimal; piiTaxId: string | null; piiGstPct: Prisma.Decimal; piiBilledQty: Prisma.Decimal;
+                                                piiRejectedAtGrnQty: Prisma.Decimal; piiTaxableAmt: Prisma.Decimal; piiCgstAmt: Prisma.Decimal; piiSgstAmt: Prisma.Decimal;
+                                                piiIgstAmt: Prisma.Decimal; piiCessAmt: Prisma.Decimal; piiSrcDocRefno: string | null }[],
+                                       actor: string, postedOn: Date) {
+    const accYear = pi.piAccYear;
+    const docDate = isoDate(pi.piDocDate);
+    const { slno, refno } = await allocateDocNumber(tx, 'PRN', pi.piCompanyId, pi.piBranchId, accYear, pi.piDeviceId);
+    const money = lines.map((l) => ({ l, m: this.rejectedMoney(l) }));
+    const total = money.reduce((s2, x) => s2.plus(x.m.total), ZERO);
+    const grnRefs = [...new Set(lines.map((l) => l.piiSrcDocRefno).filter((x): x is string => !!x))].join(', ');
+    const pr = await tx.purReturn.create({
+      data: {
+        prCompanyId: pi.piCompanyId, prBranchId: pi.piBranchId, prAccYear: accYear, prDeviceId: pi.piDeviceId, prSessionId: pi.piSessionId, prSlno: slno, prRefno: refno,
+        prDocDate: pi.piDocDate, prKind: 'AGAINST_INVOICE', prSrcDocId: pi.piId, prSrcAccYear: accYear, prSupplierId: pi.piSupplierId,
+        prSettlement: 'ADJUST', prOurRef: pi.piRefno, prReturnValue: total, prStatus: 'DRAFT',
+        prRemarks: `Billed in ${pi.piRefno} but rejected at ${grnRefs} — debit note raised with the bill`, prCreatedBy: actor,
+      },
+      select: { prId: true },
+    });
+    for (const { l, m } of money) {
+      await tx.purReturnItem.create({ data: {
+        priPrId: pr.prId, priCompanyId: pi.piCompanyId, priBranchId: pi.piBranchId, priAccYear: accYear, priLineNo: l.piiLineNo,
+        priItemId: l.piiItemId, priUomId: l.piiUomId, priBaseUomId: l.piiBaseUomId, priToBaseFactor: l.piiToBaseFactor, priHsnCode: l.piiHsnCode,
+        priSrcDocType: DOC_TYPE, priSrcDocId: pi.piId, priSrcDocYear: accYear, priSrcItemId: l.piiId, priSrcDocLineNo: l.piiLineNo, priSrcDocRefno: pi.piRefno,
+        priOutcome: 'RETURN', priQty: l.piiRejectedAtGrnQty, priFreeQty: ZERO, priRate: l.piiRate,
+        priGrossAmt: m.taxable, priTaxableAmt: m.taxable, priTaxId: l.piiTaxId, priGstPct: l.piiGstPct,
+        priCgstAmt: m.cgst, priSgstAmt: m.sgst, priIgstAmt: m.igst, priCessAmt: m.cess, priTotalAmt: m.total,
+        priItcReversedInBooks: true, priSupplierCnStatus: 'PENDING', priRemarks: `Rejected at ${l.piiSrcDocRefno ?? 'GRN'}`, priCreatedBy: actor,
+      } });
+    }
+    const vt = await voucherTypeId(tx, 'PRN');
+    const nature = pi.piIgstAmt.greaterThan(0) ? 'INTER' : 'INTRA';
+    const legs: VoucherLeg[] = [];
+    const add = (leg: VoucherLeg) => { if (leg.amount >= 0.005) legs.push(leg); };
+    add({ ledgerId: pi.piSupplierId, drCr: 'DR', amount: num(total), remarks: `Rejected at GRN, billed in ${pi.piRefno}`, docRefno: refno });
+    add({ role: 'GRNI', drCr: 'CR', amount: num(money.reduce((s2, x) => s2.plus(x.m.taxable), ZERO)), roleTag: 'GRNI', remarks: `Rejected at ${grnRefs} · ${refno}` });
+    const heads = new Map<string, { role: string; taxId: string | null; amt: Prisma.Decimal }>();
+    for (const { l, m } of money) {
+      for (const [role, v] of [['INPUT_CGST', m.cgst], ['INPUT_SGST', m.sgst], ['INPUT_IGST', m.igst], ['INPUT_CESS', m.cess]] as const) {
+        if (v.isZero()) continue;
+        const k = `${role}|${l.piiTaxId ?? ''}`;
+        const cur = heads.get(k) ?? { role, taxId: l.piiTaxId, amt: ZERO };
+        cur.amt = cur.amt.plus(v);
+        heads.set(k, cur);
+      }
+    }
+    for (const v of heads.values()) add({ role: v.role, drCr: 'CR', amount: num(v.amt), taxId: v.taxId, supplyNature: nature as never, roleTag: v.role });
+    const posted = await this.vouchers.postLegs(tx, {
+      header: { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: SRC_MODULE, srcDocType: 'PURCHASE_RETURN', srcDocId: pr.prId,
+        docLabel: 'Purchase Return', docRefno: refno, docDate, usrRefno: null, docAmount: num(total), partyId: pi.piSupplierId,
+        userId: actor, sessionId: pi.piSessionId, deviceId: pi.piDeviceId, remarks: `Rejected at ${grnRefs}, billed in ${pi.piRefno}`, createdBy: actor,
+        presetRefno: refno, presetNo: slno },
+      legs,
+    });
+    await raiseBillRow(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, partyId: pi.piSupplierId, billType: 'PURCHASE_RETURN', drCr: 'DR',
+      amount: total, docType: 'PURCHASE_RETURN', docId: pr.prId, voucherId: posted.voucherId, voucherTypeId: vt, voucherNo: slno, voucherDate: docDate,
+      refno, docDate: pi.piDocDate, narration: `Return ${refno}: rejected at ${grnRefs}, billed in ${pi.piRefno}`, actor });
+    await tx.purReturn.update({ where: { prId_prAccYear: { prId: pr.prId, prAccYear: accYear } }, data: { prStatus: 'POSTED', prPostedVoucherId: posted.voucherId, prModifiedBy: actor, prModifiedOn: postedOn } });
+    await statusLog(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, docType: TxnStatusDocType.PURCHASE_RETURN, docId: pr.prId, refno,
+      event: TxnStatusEvent.POSTED, from: null, to: 'POSTED', actor, deviceId: pi.piDeviceId, remarks: `Debit note of ${pi.piRefno} (rejected at GRN)` });
+  }
+
+  /** A bill's own R18 debit notes (no allocation rows), still POSTED — cancelled with the bill. */
+  private async cancelRejectedDebitNotes(tx: Tx, piId: string, refno: string, reason: string, actor: string) {
+    const notes = await tx.$queryRaw<{ pr_id: string; pr_acc_year: string; pr_refno: string; pr_company_id: string; pr_branch_id: string; pr_posted_voucher_id: string | null }[]>`
+      SELECT pr.pr_id, pr.pr_acc_year, pr.pr_refno, pr.pr_company_id, pr.pr_branch_id, pr.pr_posted_voucher_id
+        FROM purchase.pur_return pr
+       WHERE pr.pr_src_doc_id = ${piId}::uuid AND pr.pr_kind = 'AGAINST_INVOICE' AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted
+         AND NOT EXISTS (SELECT 1 FROM purchase.pur_item_alloc a
+                           JOIN purchase.pur_return_item ri ON ri.pri_id = a.pia_line_id AND ri.pri_acc_year = a.pia_acc_year
+                          WHERE a.pia_doc_type = 'PURCHASE_RETURN' AND ri.pri_pr_id = pr.pr_id AND NOT a.pia_is_deleted)`;
+    for (const n of notes) {
+      await assertBillsUnsettled(tx, 'PURCHASE_RETURN', n.pr_id, n.pr_refno);
+      if (n.pr_posted_voucher_id) await this.vouchers.reverseLegs(tx, n.pr_posted_voucher_id, n.pr_acc_year, `Return ${n.pr_refno} cancelled with ${refno}: ${reason}`, actor);
+      await withdrawBillRows(tx, 'PURCHASE_RETURN', n.pr_id, actor);
+      await tx.purReturn.update({ where: { prId_prAccYear: { prId: n.pr_id, prAccYear: n.pr_acc_year } }, data: { prStatus: 'CANCELLED', prModifiedBy: actor, prModifiedOn: new Date() } });
+      await statusLog(tx, { companyId: n.pr_company_id, branchId: n.pr_branch_id, accYear: n.pr_acc_year, docType: TxnStatusDocType.PURCHASE_RETURN, docId: n.pr_id, refno: n.pr_refno,
+        event: TxnStatusEvent.CANCELLED, from: 'POSTED', to: 'CANCELLED', actor, remarks: `Cancelled with ${refno}: ${reason}` });
+    }
   }
 
   private async log(tx: Tx, dto: SavePurchaseInvoiceDto, id: string, refno: string, event: TxnStatusEvent, from: string | null, to: string, actor: string) {

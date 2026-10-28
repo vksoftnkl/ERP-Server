@@ -506,6 +506,19 @@ export class PurchaseReturnService {
       const pr = await tx.purReturn.findFirst({ where: { prId: dto.prId, prAccYear: dto.accYear, prIsDeleted: false } });
       if (!pr) purNotFound(`Return ${dto.prId} not found`);
       if (pr.prStatus === 'CANCELLED') purConflict(`${pr.prRefno} is already cancelled.`, PUR.NOT_POSTED, 'prId');
+      // R18: a bill's debit note for goods rejected at the GRN (rows with no allocation) lives and dies with that bill
+      const [own] = await tx.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM purchase.pur_return_item ri
+         WHERE ri.pri_pr_id = ${dto.prId}::uuid AND ri.pri_acc_year = ${dto.accYear}::bpchar AND NOT ri.pri_is_deleted
+           AND NOT EXISTS (SELECT 1 FROM purchase.pur_item_alloc a WHERE a.pia_doc_type = ${DOC} AND a.pia_line_id = ri.pri_id AND a.pia_acc_year = ri.pri_acc_year AND NOT a.pia_is_deleted)`;
+      if (Number(own.n) > 0) purConflict(`${pr.prRefno} is the debit note of bill ${pr.prOurRef ?? ''} for goods rejected at the GRN — it is cancelled with that bill.`, PUR.EDIT_LOCKED_PAID, 'prId');
+      if (pr.prKind === 'AGAINST_GRN' && pr.prStatus === 'POSTED') {
+        const billed = await this.billedGrnLines(tx, pr.prSrcDocId);
+        const [hit] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT pri_src_item_id AS id FROM purchase.pur_return_item WHERE pri_pr_id = ${dto.prId}::uuid AND pri_acc_year = ${dto.accYear}::bpchar
+             AND NOT pri_is_deleted AND pri_src_item_id = ANY(${[...billed.keys()]}::uuid[]) LIMIT 1`;
+        if (hit) purConflict(`${pr.prRefno}: its GRN line is billed in ${billed.get(hit.id)} — cancel that bill first.`, PUR.GRN_LINE_BILLED, 'prId');
+      }
       if (pr.prStatus === 'POSTED') {
         await assertBillsUnsettled(tx, DOC, dto.prId, pr.prRefno);
         await assertShortagesUntouched(tx, dto.prId, pr.prRefno);
