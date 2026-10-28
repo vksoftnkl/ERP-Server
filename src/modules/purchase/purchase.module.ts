@@ -8,6 +8,8 @@ import { PurchaseSupplierItemController, PurchaseSupplierItemService } from './s
 import { PurchaseGrnController, PurchaseGrnService, PurchaseLabelsController } from './grn/purchase-grn';
 import { PurchaseInvoiceController } from './invoice/purchase-invoice.controller';
 import { PurchaseLookupController, PurchaseLookupService } from './lookup/purchase-lookup';
+import { PurchaseSisterController, PurchaseSisterService } from './sister/purchase-sister';
+import { PurchaseAttachmentController, PurchaseAttachmentService } from './attachment/purchase-attachment';
 import { PurchaseInvoiceService } from './invoice/purchase-invoice.service';
 import { PurchaseOrderController, PurchaseOrderService } from './order/purchase-order';
 import { PurchaseReorderController, PurchaseReorderService } from './reorder/purchase-reorder';
@@ -23,8 +25,8 @@ import { PurchaseShortageController, PurchaseShortageService } from './shortage/
 @Module({
   imports: [AuditLogModule, CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
   controllers: [PurchaseReorderController, PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseLabelsController, PurchaseReturnController, PurchaseShortageController,
-                PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController],
+                PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController, PurchaseSisterController, PurchaseAttachmentController],
   providers: [PurchaseReorderService, PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,
-              PurchaseAgentService, PurchaseSupplierItemService, PurchaseLookupService],
+              PurchaseAgentService, PurchaseSupplierItemService, PurchaseLookupService, PurchaseSisterService, PurchaseAttachmentService],
 })
 export class PurchaseModule {}

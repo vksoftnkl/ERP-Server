@@ -43,6 +43,9 @@ export class PurchaseInvoiceLineDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) grnItemAccYear?: string;
   @ApiPropertyOptional({ description: 'DOC-04: the PO line this bill line receives (pur_order_item.poi_id) — goods came with the bill; the qty billed (base units) reduces what the PO still has pending and may not exceed it.' })
   @IsOptional() @IsUUID() poItemId?: string;
+  @ApiPropertyOptional({ description: "DOC-08: the sister company sale line this purchase line pulls (sales.sale_bill_item.sbi_id) — see GET /purchase/sister-bills/lines." })
+  @IsOptional() @IsUUID() sisterSaleItemId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) sisterSaleItemAccYear?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) poItemAccYear?: string;
   @ApiPropertyOptional({ description: 'ENT-04: the cost per billed unit INCLUDING GST / cess, as typed — the rate is back-solved from it (after disc % and scheme %); the answer\'s line rate is the result.' })
   @IsOptional() @IsNumber() @Min(0) costIncl?: number;

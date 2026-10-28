@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { applyValueSlabs } from '../common/purchase-value-slab';
+import { assertNoUnregisteredRcm } from '../common/purchase-rcm';
+import { recordSisterPull } from '../sister/purchase-sister';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
@@ -409,6 +412,7 @@ export class PurchaseInvoiceService {
     });
     // a line without a tax id takes the item's default rate
     for (const l of dto.lines) if (!l.taxId) l.taxId = items.get(l.uomId)?.item_default_tax_id ?? undefined;
+    await applyValueSlabs(tx, dto.lines, (u) => items.get(u)?.iuc_to_base_factor);   // ENT-09 / P15: value per piece picks the slab rate
     const taxIds = [...new Set(dto.lines.map((l) => l.taxId).filter((t): t is string => !!t))];
     const taxes = new Map(
       (
@@ -808,7 +812,7 @@ export class PurchaseInvoiceService {
       piSupplierInvNo: h.supplierInvNo.trim(), piSupplierInvDate: new Date(`${h.supplierInvDate}T00:00:00Z`),
       piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`)
         : p.grn.size ? new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime()))) : new Date(`${h.docDate}T00:00:00Z`),
-      piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
+      piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piSisterCompanyId: null, piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
       piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piIsReverseCharge: false,
       piEwbNo: h.ewbNo ?? null, piEwbDate: h.ewbDate ? new Date(`${h.ewbDate}T00:00:00Z`) : null, piIrn: h.irn ?? null, piAckNo: h.ackNo ?? null,
       piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
@@ -899,6 +903,10 @@ export class PurchaseInvoiceService {
             ${r.amount.abs()}::numeric, ${m.chg_on_bill}, ${r.partyId}::uuid, ${actor})`;
       }
     }
+    // R13: notified RCM goods from an unregistered supplier — refused in phase 1 (common/purchase-rcm)
+    await assertNoUnregisteredRcm(tx, { companyId: h.companyId, supplierId: h.supplierId, docDate: h.docDate }, dto.lines);
+    // DOC-08: lines pulled from a sister company sale bill (purchase/sister)
+    await recordSisterPull(tx, { companyId: h.companyId, supplierId: h.supplierId, piId, accYear: h.accYear }, dto.lines);
     return piId;
   }
 
