@@ -94,6 +94,7 @@ export declare class PurchaseReturnService {
     private sourceLines;
     private returnedQty;
     private sourceLots;
+    private billedGrnLines;
     private money;
     sources(q: SourcesQueryDto): Promise<Record<string, unknown>[]>;
     sourceLinesView(q: SourceLinesQueryDto): Promise<{

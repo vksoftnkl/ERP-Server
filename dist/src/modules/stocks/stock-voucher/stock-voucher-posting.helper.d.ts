@@ -141,3 +141,30 @@ export interface RecallTransferOutResult {
 }
 export declare function recallTransferOut(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<RecallTransferOutResult>;
 export declare function cancelDraftVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;
+export interface CostRevaluationLine {
+    lineId: string;
+    itemId: string;
+    inBaseQty: Prisma.Decimal;
+    delta: Prisma.Decimal;
+    lots: {
+        lotId: string;
+        baseQty: Prisma.Decimal;
+    }[];
+}
+export interface CostRevaluationSource {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    srcModule: string;
+    srcDocType: string;
+    srcDocId: string;
+    srcAccYear: string;
+    srcRefno: string | null;
+    docDate: string;
+    narration: string;
+}
+export declare function revalueOnHand(tx: Prisma.TransactionClient, src: CostRevaluationSource, lines: CostRevaluationLine[], actor: string, on: Date): Promise<Map<string, Prisma.Decimal>>;
+export declare function reverseCostRevaluation(tx: Prisma.TransactionClient, src: Omit<CostRevaluationSource, 'srcRefno'>, actor: string, on: Date): Promise<{
+    forward: Prisma.Decimal;
+    reversed: Prisma.Decimal;
+}>;

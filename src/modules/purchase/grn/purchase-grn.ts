@@ -13,7 +13,7 @@ import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.se
 import { calcPurchase, type CalcChargeIn } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, assertNoLiveReturns, assertShortagesUntouched, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, unitNames, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
+  allocateDocNumber, assertNoLiveReturns, payeeLedgers, assertShortagesUntouched, cancelShadowStock, D, dateOf, isoDate, jsonSafe, loadUnits, unitNames, num2, postShadowStock, raiseBillRow, statusLog, stockRules,
   supplierRow, TxnStatusDocType, TxnStatusEvent, voucherTypeId, withdrawBillRows, ZERO,
 } from '../common/purchase-doc.helpers';
 import { PurchaseAllocDto, PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
@@ -114,7 +114,7 @@ export class PurchaseGrnService {
 
       // charges: off-bill only on a GRN (our own labour / freight) — D13
       if (!dto.charges?.length && h.receivedBy?.length && h.payCoolie !== false) dto.charges = await this.coolieFor(tx, h.receivedBy);
-      for (const c of dto.charges ?? []) if (c.payees?.length) c.payees = await this.payeeLedgers(tx, c.payees);
+      for (const c of dto.charges ?? []) if (c.payees?.length) c.payees = await payeeLedgers(tx, c.payees, 'header.receivedBy');
       const chg = await this.loadCharges(tx, dto.charges ?? []);
       const calc = calcPurchase({
         interState: false, roundOffStep: 0, charges: chg,
@@ -194,20 +194,6 @@ export class PurchaseGrnService {
        WHERE chg_role = 'UNLOADING' AND chg_module IN ('P','B') AND NOT chg_on_bill AND chg_is_active AND NOT chg_is_deleted
        ORDER BY chg_module, chg_code LIMIT 1`;
     return c ? [{ chgId: c.chg_id, payees: employees.map((partyId) => ({ partyId })) } as PurchaseChargeDto] : [];
-  }
-
-  /** A payee may be named by employee: the coolie is owed to that employee's staff ledger. */
-  private async payeeLedgers(tx: Prisma.TransactionClient, payees: { partyId: string; amount?: number }[]) {
-    const ids = payees.map((p) => p.partyId);
-    const rows = await tx.$queryRaw<{ emp_id: string; emp_name: string; led: string | null }[]>`
-      SELECT emp_id, emp_name, emp_loan_ledger_id AS led FROM public.employee_master WHERE emp_id = ANY(${ids}::uuid[])`;
-    const by = new Map(rows.map((r) => [r.emp_id, r]));
-    return payees.map((p, i) => {
-      const e = by.get(p.partyId);
-      if (!e) return p;
-      if (!e.led) purRefuse(`${e.emp_name} has no staff ledger — set it on the employee before paying coolie.`, PUR.NOT_FOUND, `header.receivedBy.${i}`);
-      return { ...p, partyId: e.led };
-    });
   }
 
   private async poIdOf(tx: Prisma.TransactionClient, poiId: string) {

@@ -19,6 +19,10 @@ export declare const PUR: {
     readonly VOUCHER_TYPE_MISSING: "PUR_VOUCHER_TYPE_MISSING";
     readonly STOCK_QTY_MISMATCH: "PUR_STOCK_QTY_MISMATCH";
     readonly SERIAL_COUNT: "PUR_SERIAL_COUNT";
+    readonly GRN_MISMATCH: "PUR_GRN_MISMATCH";
+    readonly GRN_LINE_BILLED: "PUR_GRN_LINE_BILLED";
+    readonly GRN_NOT_BUILT: "PUR_GRN_NOT_BUILT";
+    readonly GRN_OFFBILL_REFUSED: "PUR_GRN_OFFBILL_REFUSED";
 };
 export interface PurErrorDetail {
     field: string;

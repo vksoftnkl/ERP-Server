@@ -18,6 +18,8 @@ export declare class PurchaseInvoiceLineDto {
     lineNo: number;
     itemId: string;
     uomId: string;
+    grnItemId?: string;
+    grnItemAccYear?: string;
     billedQty: number;
     receivedQty?: number;
     damagedQty?: number;
@@ -90,4 +92,10 @@ export declare class CancelPurchaseInvoiceDto {
     piId: string;
     accYear: string;
     reason: string;
+}
+export declare class GrnLinesQueryDto {
+    companyId: string;
+    branchId: string;
+    supplierId: string;
+    piId?: string;
 }

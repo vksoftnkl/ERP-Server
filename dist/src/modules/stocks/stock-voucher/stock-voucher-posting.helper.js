@@ -26,6 +26,8 @@ exports.rebuildStockDerivedFigures = rebuildStockDerivedFigures;
 exports.cancelStockVoucher = cancelStockVoucher;
 exports.recallTransferOut = recallTransferOut;
 exports.cancelDraftVoucher = cancelDraftVoucher;
+exports.revalueOnHand = revalueOnHand;
+exports.reverseCostRevaluation = reverseCostRevaluation;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -1598,11 +1600,32 @@ async function rebuildLotCosts(tx, lots) {
         ${reversalJoin('sml', 'rev')}
        GROUP BY 1, 2, 3, 4
     ),
-    rated AS (
-      SELECT led.*,
-             CASE WHEN led.qty > 0 THEN ROUND(led.value     / led.qty, 6) ELSE COALESCE(led.last_rate, 0)     END AS rate,
-             CASE WHEN led.qty > 0 THEN ROUND(led.value_wot / led.qty, 6) ELSE COALESCE(led.last_rate_wot, 0) END AS rate_wot
+    -- P13: value-only rows (a bill priced off its GRN) add to the lot's value
+    reval AS (
+      SELECT l.company_id, l.branch_id, l.item_id, l.lot_id,
+             SUM(scr.scr_value) AS value, SUM(scr.scr_value_wot) AS value_wot
+        FROM lot l
+        JOIN stock.stock_cost_revaluation scr
+          ON scr.scr_company_id = l.company_id AND scr.scr_branch_id = l.branch_id
+         AND scr.scr_item_id    = l.item_id    AND scr.scr_lot_id    = l.lot_id
+         AND scr.scr_is_deleted = false
+       GROUP BY 1, 2, 3, 4
+    ),
+    valued AS (
+      SELECT led.company_id, led.branch_id, led.item_id, led.lot_id, led.qty,
+             led.value     + COALESCE(rv.value, 0)     AS value,
+             led.value_wot + COALESCE(rv.value_wot, 0) AS value_wot,
+             led.last_rate, led.last_rate_wot
         FROM led
+        LEFT JOIN reval rv
+          ON rv.company_id = led.company_id AND rv.branch_id = led.branch_id
+         AND rv.item_id    = led.item_id    AND rv.lot_id    = led.lot_id
+    ),
+    rated AS (
+      SELECT valued.*,
+             CASE WHEN valued.qty > 0 THEN ROUND(valued.value     / valued.qty, 6) ELSE COALESCE(valued.last_rate, 0)     END AS rate,
+             CASE WHEN valued.qty > 0 THEN ROUND(valued.value_wot / valued.qty, 6) ELSE COALESCE(valued.last_rate_wot, 0) END AS rate_wot
+        FROM valued
     )
     UPDATE stock.stock_balance b
        SET sbl_avg_cost_rate     = r.rate,
@@ -1668,11 +1691,31 @@ async function rebuildItemCosts(tx, items, actor, on) {
         ${reversalJoin('sml', 'rev')}
        GROUP BY 1, 2, 3
     ),
-    next AS (
-      SELECT led.*,
-             CASE WHEN led.qty > 0 THEN ROUND(led.value     / led.qty, 6) ELSE COALESCE(led.last_rate, 0)     END AS avg,
-             CASE WHEN led.qty > 0 THEN ROUND(led.value_wot / led.qty, 6) ELSE COALESCE(led.last_rate_wot, 0) END AS avg_wot
+    -- P13: value-only rows add to the item's value (every lot of it)
+    reval AS (
+      SELECT i.company_id, i.branch_id, i.item_id,
+             SUM(scr.scr_value) AS value, SUM(scr.scr_value_wot) AS value_wot
+        FROM item i
+        JOIN stock.stock_cost_revaluation scr
+          ON scr.scr_company_id = i.company_id AND scr.scr_branch_id = i.branch_id
+         AND scr.scr_item_id    = i.item_id    AND scr.scr_is_deleted = false
+       GROUP BY 1, 2, 3
+    ),
+    valued AS (
+      SELECT led.base_uom_id, led.company_id, led.branch_id, led.item_id, led.qty,
+             led.value     + COALESCE(rv.value, 0)     AS value,
+             led.value_wot + COALESCE(rv.value_wot, 0) AS value_wot,
+             led.last_rate, led.last_rate_wot, led.max_in_rate, led.last_in_rate, led.last_in_date,
+             led.last_sale_rate, led.last_sale_date
         FROM led
+        LEFT JOIN reval rv
+          ON rv.company_id = led.company_id AND rv.branch_id = led.branch_id AND rv.item_id = led.item_id
+    ),
+    next AS (
+      SELECT valued.*,
+             CASE WHEN valued.qty > 0 THEN ROUND(valued.value     / valued.qty, 6) ELSE COALESCE(valued.last_rate, 0)     END AS avg,
+             CASE WHEN valued.qty > 0 THEN ROUND(valued.value_wot / valued.qty, 6) ELSE COALESCE(valued.last_rate_wot, 0) END AS avg_wot
+        FROM valued
     )
     MERGE INTO stock.stock_item_cost c
     USING next n
@@ -2228,5 +2271,155 @@ async function writeReversalLedger(tx, { svhId, accYear, actor, reason, cancelle
        AND sml.sml_is_reversal = false
      ORDER BY sml.sml_line_no, sml.sml_split_no
   `;
+}
+const r2dec = (v) => v.toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP);
+async function revaluationBasis(tx, companyId, branchId, onDate, itemIds, lotIds) {
+    const methods = await tx.$queryRaw `
+    SELECT t.item_id, COALESCE(stp.stp_valuation_method, 'WAVG') AS valuation_method
+      FROM (SELECT DISTINCT ${companyId}::uuid AS company_id, ${branchId}::uuid AS branch_id,
+                   x AS item_id, ${onDate}::date AS on_date
+              FROM unnest(${itemIds}::uuid[]) x) t
+      JOIN inventory.item_master itm ON itm.item_id = t.item_id
+      ${effectivePolicyLateral({
+        companyId: client_1.Prisma.raw('t.company_id'),
+        branchId: client_1.Prisma.raw('t.branch_id'),
+        itemId: client_1.Prisma.raw('t.item_id'),
+        itemGroupId: client_1.Prisma.raw('itm.item_group_id'),
+        onDate: client_1.Prisma.raw('t.on_date'),
+    })}
+  `;
+    const items = await tx.$queryRaw `
+    SELECT b.sbl_item_id AS item_id, SUM(b.sbl_on_hand_qty) AS qty
+      FROM stock.stock_balance b
+     WHERE b.sbl_company_id = ${companyId}::uuid AND b.sbl_branch_id = ${branchId}::uuid
+       AND b.sbl_item_id = ANY(${itemIds}::uuid[]) AND b.sbl_is_deleted = false
+     GROUP BY 1
+  `;
+    const lots = lotIds.length
+        ? await tx.$queryRaw `
+        SELECT b.sbl_lot_id AS lot_id, SUM(b.sbl_on_hand_qty) AS qty
+          FROM stock.stock_balance b
+         WHERE b.sbl_company_id = ${companyId}::uuid AND b.sbl_branch_id = ${branchId}::uuid
+           AND b.sbl_lot_id = ANY(${lotIds}::uuid[]) AND b.sbl_is_deleted = false
+         GROUP BY 1
+      `
+        : [];
+    return {
+        method: new Map(methods.map((m) => [m.item_id, m.valuation_method])),
+        itemOnHand: new Map(items.map((r) => [r.item_id, new client_1.Prisma.Decimal(r.qty ?? 0)])),
+        lotOnHand: new Map(lots.map((r) => [r.lot_id, new client_1.Prisma.Decimal(r.qty ?? 0)])),
+    };
+}
+async function rebuildAfterRevaluation(tx, companyId, branchId, method, touched, actor, on) {
+    if (!touched.length)
+        return;
+    const itemIds = [...new Set(touched.map((t) => t.itemId))];
+    const items = client_1.Prisma.sql `
+    SELECT ${companyId}::uuid AS company_id, ${branchId}::uuid AS branch_id, i.item_id, i.valuation_method
+      FROM unnest(${itemIds}::uuid[], ${itemIds.map((id) => method.get(id) ?? 'WAVG')}::text[]) AS i(item_id, valuation_method)
+  `;
+    const lotRows = touched.filter((t) => method.get(t.itemId) === 'LOT_ACTUAL');
+    if (lotRows.length) {
+        await rebuildLotCosts(tx, client_1.Prisma.sql `
+      SELECT DISTINCT ${companyId}::uuid AS company_id, ${branchId}::uuid AS branch_id, l.item_id, l.lot_id
+        FROM unnest(${lotRows.map((t) => t.itemId)}::uuid[], ${lotRows.map((t) => t.lotId)}::uuid[]) AS l(item_id, lot_id)
+    `);
+    }
+    await rebuildItemCosts(tx, items, actor, on);
+    await stampItemAverage(tx, items);
+}
+async function revalueOnHand(tx, src, lines, actor, on) {
+    const out = new Map();
+    const live = lines.filter((l) => !l.delta.isZero() && l.inBaseQty.greaterThan(0) && l.lots.length);
+    for (const l of lines)
+        out.set(l.lineId, new client_1.Prisma.Decimal(0));
+    if (!live.length)
+        return out;
+    const itemIds = [...new Set(live.map((l) => l.itemId))];
+    await lockHoldingItems(tx, client_1.Prisma.sql `
+    SELECT ${src.companyId}::uuid AS company_id, ${src.branchId}::uuid AS branch_id, x AS item_id FROM unnest(${itemIds}::uuid[]) x
+  `);
+    const basis = await revaluationBasis(tx, src.companyId, src.branchId, src.docDate, itemIds, [...new Set(live.flatMap((l) => l.lots.map((x) => x.lotId)))]);
+    const rows = [];
+    const zero = new client_1.Prisma.Decimal(0);
+    for (const l of live) {
+        const groups = basis.method.get(l.itemId) === 'LOT_ACTUAL'
+            ? [...l.lots.reduce((m, x) => m.set(x.lotId, (m.get(x.lotId) ?? zero).plus(x.baseQty)), new Map())]
+                .map(([lotId, inQty]) => ({ lotId, inQty, onHand: basis.lotOnHand.get(lotId) ?? zero }))
+            : [{ lotId: l.lots[0].lotId, inQty: l.inBaseQty, onHand: basis.itemOnHand.get(l.itemId) ?? zero }];
+        for (const g of groups) {
+            if (!g.onHand.greaterThan(0))
+                continue;
+            const share = client_1.Prisma.Decimal.min(g.inQty, g.onHand);
+            const value = r2dec(l.delta.times(share).dividedBy(l.inBaseQty));
+            if (value.isZero())
+                continue;
+            rows.push({ line: l, lotId: g.lotId, value, onHand: g.onHand });
+            out.set(l.lineId, out.get(l.lineId).plus(value));
+        }
+    }
+    if (!rows.length)
+        return out;
+    const values = rows.map((r) => client_1.Prisma.sql `(
+    ${src.accYear}::bpchar, ${src.companyId}::uuid, ${src.branchId}::uuid, ${r.line.itemId}::uuid, ${r.lotId}::uuid,
+    ${r.value}::numeric, ${r.value}::numeric, ${r.onHand}::numeric, ${src.docDate}::date, ${on},
+    ${src.srcModule}, ${src.srcDocType}, ${src.srcDocId}::uuid, ${src.srcAccYear}::bpchar, ${r.line.lineId}::uuid, ${src.srcRefno},
+    ${src.narration}, ${auditColumnActor(actor)})`);
+    await tx.$executeRaw `
+    INSERT INTO stock.stock_cost_revaluation (
+      scr_acc_year, scr_company_id, scr_branch_id, scr_item_id, scr_lot_id,
+      scr_value, scr_value_wot, scr_basis_base_qty, scr_doc_date, scr_doc_datetime,
+      scr_src_module, scr_src_doc_type, scr_src_doc_id, scr_src_acc_year, scr_src_line_id, scr_src_refno,
+      scr_narration, scr_created_by) VALUES ${client_1.Prisma.join(values)}`;
+    await rebuildAfterRevaluation(tx, src.companyId, src.branchId, basis.method, rows.map((r) => ({ itemId: r.line.itemId, lotId: r.lotId })), actor, on);
+    return out;
+}
+async function reverseCostRevaluation(tx, src, actor, on) {
+    const zero = new client_1.Prisma.Decimal(0);
+    const fwd = await tx.$queryRaw `
+    SELECT f.scr_id, f.scr_acc_year, f.scr_item_id, f.scr_lot_id, f.scr_value, f.scr_value_wot, f.scr_basis_base_qty, f.scr_src_line_id, f.scr_src_refno
+      FROM stock.stock_cost_revaluation f
+     WHERE f.scr_src_module = ${src.srcModule} AND f.scr_src_doc_type = ${src.srcDocType}
+       AND f.scr_src_doc_id = ${src.srcDocId}::uuid AND f.scr_src_acc_year = ${src.srcAccYear}::bpchar
+       AND f.scr_company_id = ${src.companyId}::uuid AND f.scr_branch_id = ${src.branchId}::uuid
+       AND f.scr_is_reversal = false AND f.scr_is_deleted = false
+       AND NOT EXISTS (SELECT 1 FROM stock.stock_cost_revaluation r
+                        WHERE r.scr_reverses_id = f.scr_id AND r.scr_is_reversal AND NOT r.scr_is_deleted)`;
+    if (!fwd.length)
+        return { forward: zero, reversed: zero };
+    const itemIds = [...new Set(fwd.map((r) => r.scr_item_id))];
+    await lockHoldingItems(tx, client_1.Prisma.sql `
+    SELECT ${src.companyId}::uuid AS company_id, ${src.branchId}::uuid AS branch_id, x AS item_id FROM unnest(${itemIds}::uuid[]) x
+  `);
+    const basis = await revaluationBasis(tx, src.companyId, src.branchId, src.docDate, itemIds, [...new Set(fwd.map((r) => r.scr_lot_id))]);
+    let forward = zero, reversed = zero;
+    const values = [];
+    const touched = [];
+    for (const r of fwd) {
+        forward = forward.plus(r.scr_value);
+        const onHand = (basis.method.get(r.scr_item_id) === 'LOT_ACTUAL' ? basis.lotOnHand.get(r.scr_lot_id) : basis.itemOnHand.get(r.scr_item_id)) ?? zero;
+        const left = onHand.greaterThan(0) ? client_1.Prisma.Decimal.min(1, onHand.dividedBy(r.scr_basis_base_qty)) : zero;
+        const value = r2dec(new client_1.Prisma.Decimal(r.scr_value).times(left)).negated();
+        const valueWot = r2dec(new client_1.Prisma.Decimal(r.scr_value_wot).times(left)).negated();
+        if (value.isZero() && valueWot.isZero())
+            continue;
+        reversed = reversed.plus(value);
+        touched.push({ itemId: r.scr_item_id, lotId: r.scr_lot_id });
+        values.push(client_1.Prisma.sql `(
+      ${src.accYear}::bpchar, ${src.companyId}::uuid, ${src.branchId}::uuid, ${r.scr_item_id}::uuid, ${r.scr_lot_id}::uuid,
+      ${value}::numeric, ${valueWot}::numeric, ${r.scr_basis_base_qty}::numeric, ${src.docDate}::date, ${on},
+      ${src.srcModule}, ${src.srcDocType}, ${src.srcDocId}::uuid, ${src.srcAccYear}::bpchar, ${r.scr_src_line_id}::uuid, ${r.scr_src_refno},
+      true, ${r.scr_id}::uuid, ${src.narration}, ${auditColumnActor(actor)})`);
+    }
+    if (values.length) {
+        await tx.$executeRaw `
+      INSERT INTO stock.stock_cost_revaluation (
+        scr_acc_year, scr_company_id, scr_branch_id, scr_item_id, scr_lot_id,
+        scr_value, scr_value_wot, scr_basis_base_qty, scr_doc_date, scr_doc_datetime,
+        scr_src_module, scr_src_doc_type, scr_src_doc_id, scr_src_acc_year, scr_src_line_id, scr_src_refno,
+        scr_is_reversal, scr_reverses_id, scr_narration, scr_created_by) VALUES ${client_1.Prisma.join(values)}`;
+        await rebuildAfterRevaluation(tx, src.companyId, src.branchId, basis.method, touched, actor, on);
+    }
+    return { forward, reversed };
 }
 //# sourceMappingURL=stock-voucher-posting.helper.js.map

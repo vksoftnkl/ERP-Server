@@ -18,7 +18,7 @@ import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, raiseBillRow, statusLog, voucherTypeId, withdrawBillRows,
+  allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, payeeLedgers, raiseBillRow, statusLog, voucherTypeId, withdrawBillRows,
 } from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
 
@@ -176,6 +176,7 @@ export class PurchaseInvoiceService {
       this.prisma.purItemAlloc.findMany({ where: { piaDocType: DOC_TYPE, piaDocId: piId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: [{ piaRowNo: 'asc' }] }),
       this.prisma.$queryRaw<Record<string, unknown>[]>`
         SELECT cd.cd_chg_id AS "chgId", cd.cd_chg_name AS "chgName", cd.cd_on_bill AS "onBill", cd.cd_before_tax AS "beforeTax",
+               cd.cd_method AS "method", cd.cd_type AS "type", cd.cd_tax_perc AS "taxPct",
                cd.cd_landing_cost AS "landingCost", cd.cd_rate AS "rate", cd.cd_amount AS "amount", cd.cd_party_id AS "partyId",
                l.led_name AS "partyName", cd.cd_cgst_amt AS "cgst", cd.cd_sgst_amt AS "sgst", cd.cd_igst_amt AS "igst"
           FROM public.txn_charge_detail cd
@@ -362,6 +363,8 @@ export class PurchaseInvoiceService {
            WHERE c.chg_id = ANY(${chgIds}::uuid[]) AND c.chg_is_deleted = false AND c.chg_module IN ('P','B')`
       : [];
     const chgById = new Map(charges.map((c) => [c.chg_id, c]));
+    // loadmen are picked as employees: each is owed on his own staff ledger (as on the GRN)
+    for (const [i, c] of (dto.charges ?? []).entries()) if (c.payees?.length) c.payees = await payeeLedgers(tx, c.payees, `charges.${i}.payees`);
     const calcCharges: CalcChargeIn[] = [];
     const payeeIds = new Set<string>();
     (dto.charges ?? []).forEach((c, i) => {

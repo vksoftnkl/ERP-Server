@@ -3,7 +3,7 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { VoucherPostingService } from "../../../common/posting/voucher-posting.service";
 import { StockPostingService } from "../../stocks/posting/stock-posting.service";
-import type { SavePurchaseInvoiceDto, CancelPurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import type { SavePurchaseInvoiceDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
 export declare class PurchaseInvoiceService {
     private readonly prisma;
     private readonly requestContext;
@@ -14,6 +14,7 @@ export declare class PurchaseInvoiceService {
         interState: boolean;
         supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
         lines: {
+            rejectedQty: string;
             lineNo: number;
         }[];
         charges: {
@@ -741,6 +742,37 @@ export declare class PurchaseInvoiceService {
     }>;
     private actor;
     private prepare;
+    private loadGrnLines;
+    private grnFacts;
+    grnLines(q: GrnLinesQueryDto): Promise<{
+        grnItemId: string;
+        grnItemAccYear: string;
+        grnId: string;
+        grnRefno: string;
+        grnDate: string;
+        lineNo: number;
+        challanNo: string | null;
+        supplierInvNo: string | null;
+        poRefno: string | null;
+        itemId: string;
+        itemName: string | null;
+        uomId: string;
+        unitName: string | null;
+        challanQty: Prisma.Decimal;
+        receivedQty: Prisma.Decimal;
+        damagedQty: Prisma.Decimal;
+        freeQty: Prisma.Decimal;
+        returnedQty: Prisma.Decimal;
+        returnedFreeQty: Prisma.Decimal;
+        provisionalRate: Prisma.Decimal | null;
+        provisionalValue: Prisma.Decimal;
+        poRate: Prisma.Decimal | null;
+        poDiscPct: Prisma.Decimal | null;
+        taxId: string | null;
+        mrp: Prisma.Decimal | null;
+        sellA: Prisma.Decimal | null;
+        blocked: string | null;
+    }[]>;
     private calcPayload;
     private assertNotDuplicate;
     private assertPrintedAmount;
@@ -748,5 +780,8 @@ export declare class PurchaseInvoiceService {
     private writeDocument;
     private stockRules;
     private postInTx;
+    private rejectedMoney;
+    private writeRejectedDebitNote;
+    private cancelRejectedDebitNotes;
     private log;
 }

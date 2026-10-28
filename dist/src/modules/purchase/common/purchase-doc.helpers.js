@@ -208,7 +208,7 @@ async function assertNoLiveReturns(tx, srcDocId, refno) {
 async function assertShortagesUntouched(tx, srcDocId, refno) {
     const [t] = await tx.$queryRaw `
     SELECT count(*) AS n FROM purchase.pur_shortage s
-     WHERE s.psh_src_doc_id = ${srcDocId}::uuid AND NOT s.psh_is_deleted
+     WHERE (s.psh_src_doc_id = ${srcDocId}::uuid OR s.psh_bill_doc_id = ${srcDocId}::uuid) AND NOT s.psh_is_deleted
        AND (EXISTS (SELECT 1 FROM purchase.pur_shortage_receipt_item i JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
                      WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
          OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)`;

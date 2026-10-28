@@ -51,6 +51,10 @@ let PurchaseInvoiceController = class PurchaseInvoiceController {
         await this.right('view', 'open a purchase invoice');
         return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
     }
+    async grnLines(q) {
+        await this.right('view', 'list GRN lines to bill');
+        return { success: true, message: 'GRN lines to bill', data: await this.service.grnLines(q) };
+    }
     async cancel(dto) {
         await this.right('cancel', 'cancel a purchase invoice');
         const data = await this.service.cancel(dto);
@@ -97,6 +101,15 @@ __decorate([
     __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GetPurchaseInvoiceQueryDto]),
     __metadata("design:returntype", Promise)
 ], PurchaseInvoiceController.prototype, "get", null);
+__decorate([
+    (0, common_1.Get)('grn-lines'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: "A supplier's posted GRN lines at the branch not yet billed (R4) — what a bill from GRN picks. `blocked` says why a line cannot be billed yet." }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GrnLinesQueryDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "grnLines", null);
 __decorate([
     (0, common_1.Post)('cancel'),
     (0, common_1.Version)(api_version_1.API_VERSION),

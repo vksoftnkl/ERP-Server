@@ -521,12 +521,29 @@ let PurchaseReturnService = class PurchaseReturnService {
     }
     async sourceLots(db, src) {
         return db.$queryRaw `
-      SELECT pia_line_id AS line_id, pia_lot_id AS lot_id, pia_bucket AS bucket, pia_godown_id AS godown_id, pia_batch_no AS batch_no,
-             pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty
-        FROM purchase.pur_item_alloc
-       WHERE pia_doc_type = ${src.docType} AND pia_doc_id = ${src.id}::uuid AND pia_acc_year = ${src.accYear}::bpchar
-         AND NOT pia_is_deleted AND pia_lot_id IS NOT NULL
-       ORDER BY pia_row_no`;
+      SELECT line_id, lot_id, bucket, godown_id, batch_no, expiry, mrp, qty FROM (
+        SELECT pia_line_id AS line_id, pia_lot_id AS lot_id, pia_bucket AS bucket, pia_godown_id AS godown_id, pia_batch_no AS batch_no,
+               pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty, 0 AS line_no, pia_row_no AS row_no
+          FROM purchase.pur_item_alloc
+         WHERE pia_doc_type = ${src.docType} AND pia_doc_id = ${src.id}::uuid AND pia_acc_year = ${src.accYear}::bpchar
+           AND NOT pia_is_deleted AND pia_lot_id IS NOT NULL
+        UNION ALL
+        SELECT pii.pii_id, a.pia_lot_id, a.pia_bucket, a.pia_godown_id, a.pia_batch_no, a.pia_expiry_date, a.pia_mrp, a.pia_qty + a.pia_free_qty,
+               pii.pii_line_no, a.pia_row_no
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'GRN' AND a.pia_line_id = pii.pii_src_item_id AND a.pia_acc_year = pii.pii_src_doc_year
+         WHERE ${src.docType} = 'PURCHASE_BILL' AND pii.pii_pi_id = ${src.id}::uuid AND pii.pii_acc_year = ${src.accYear}::bpchar
+           AND pii.pii_src_doc_type = 'GRN' AND NOT pii.pii_is_deleted AND NOT a.pia_is_deleted AND a.pia_lot_id IS NOT NULL
+      ) x
+       ORDER BY line_no, row_no`;
+    }
+    async billedGrnLines(db, grnId) {
+        const rows = await db.$queryRaw `
+      SELECT x.pii_src_item_id AS id, p.pi_refno AS refno FROM purchase.pur_invoice_item x
+        JOIN purchase.pur_invoice p ON p.pi_id = x.pii_pi_id AND p.pi_acc_year = x.pii_acc_year
+       WHERE x.pii_src_doc_type = 'GRN' AND x.pii_src_doc_id = ${grnId}::uuid AND NOT x.pii_is_deleted
+         AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'`;
+        return new Map(rows.map((r) => [r.id, r.refno]));
     }
     money(s, qty) {
         const per = (v) => (s.basisQty.isZero() ? purchase_doc_helpers_1.ZERO : (0, purchase_doc_helpers_1.r2)(v.times(qty).dividedBy(s.basisQty)));
@@ -583,6 +600,7 @@ let PurchaseReturnService = class PurchaseReturnService {
             const lines = await this.sourceLines(tx, src);
             const lots = await this.sourceLots(tx, src);
             const returned = await this.returnedQty(tx, src.id, h.prId);
+            const billed = src.docType === 'GRN' ? await this.billedGrnLines(tx, src.id) : new Map();
             const problems = [];
             const want = new Map();
             const resolved = dto.lines.map((l, i) => {
@@ -591,6 +609,8 @@ let PurchaseReturnService = class PurchaseReturnService {
                     problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: that line is not on ${src.refno}` });
                     return null;
                 }
+                if (billed.has(l.srcItemId))
+                    problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.GRN_LINE_BILLED, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} is billed in ${billed.get(l.srcItemId)} — return it against that bill` });
                 const q = (0, purchase_doc_helpers_1.D)(l.qty).plus((0, purchase_doc_helpers_1.D)(l.freeQty));
                 if (!q.greaterThan(0))
                     problems.push({ field: `lines.${i}.qty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing to return` });
@@ -831,6 +851,20 @@ let PurchaseReturnService = class PurchaseReturnService {
                 (0, purchase_errors_1.purNotFound)(`Return ${dto.prId} not found`);
             if (pr.prStatus === 'CANCELLED')
                 (0, purchase_errors_1.purConflict)(`${pr.prRefno} is already cancelled.`, purchase_errors_1.PUR.NOT_POSTED, 'prId');
+            const [own] = await tx.$queryRaw `
+        SELECT count(*) AS n FROM purchase.pur_return_item ri
+         WHERE ri.pri_pr_id = ${dto.prId}::uuid AND ri.pri_acc_year = ${dto.accYear}::bpchar AND NOT ri.pri_is_deleted
+           AND NOT EXISTS (SELECT 1 FROM purchase.pur_item_alloc a WHERE a.pia_doc_type = ${DOC} AND a.pia_line_id = ri.pri_id AND a.pia_acc_year = ri.pri_acc_year AND NOT a.pia_is_deleted)`;
+            if (Number(own.n) > 0)
+                (0, purchase_errors_1.purConflict)(`${pr.prRefno} is the debit note of bill ${pr.prOurRef ?? ''} for goods rejected at the GRN — it is cancelled with that bill.`, purchase_errors_1.PUR.EDIT_LOCKED_PAID, 'prId');
+            if (pr.prKind === 'AGAINST_GRN' && pr.prStatus === 'POSTED') {
+                const billed = await this.billedGrnLines(tx, pr.prSrcDocId);
+                const [hit] = await tx.$queryRaw `
+          SELECT pri_src_item_id AS id FROM purchase.pur_return_item WHERE pri_pr_id = ${dto.prId}::uuid AND pri_acc_year = ${dto.accYear}::bpchar
+             AND NOT pri_is_deleted AND pri_src_item_id = ANY(${[...billed.keys()]}::uuid[]) LIMIT 1`;
+                if (hit)
+                    (0, purchase_errors_1.purConflict)(`${pr.prRefno}: its GRN line is billed in ${billed.get(hit.id)} — cancel that bill first.`, purchase_errors_1.PUR.GRN_LINE_BILLED, 'prId');
+            }
             if (pr.prStatus === 'POSTED') {
                 await (0, purchase_doc_helpers_1.assertBillsUnsettled)(tx, DOC, dto.prId, pr.prRefno);
                 await (0, purchase_doc_helpers_1.assertShortagesUntouched)(tx, dto.prId, pr.prRefno);

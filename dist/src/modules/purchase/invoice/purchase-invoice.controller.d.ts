@@ -1,7 +1,7 @@
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 export declare const PURCHASE_INVOICE_MENU_ID = 24;
 export declare class PurchaseInvoiceController {
     private readonly service;
@@ -197,6 +197,7 @@ export declare class PurchaseInvoiceController {
             interState: boolean;
             supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
             lines: {
+                rejectedQty: string;
                 lineNo: number;
             }[];
             charges: {
@@ -574,6 +575,39 @@ export declare class PurchaseInvoiceController {
             }[];
             charges: Record<string, unknown>[];
         };
+    }>;
+    grnLines(q: GrnLinesQueryDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            grnItemId: string;
+            grnItemAccYear: string;
+            grnId: string;
+            grnRefno: string;
+            grnDate: string;
+            lineNo: number;
+            challanNo: string | null;
+            supplierInvNo: string | null;
+            poRefno: string | null;
+            itemId: string;
+            itemName: string | null;
+            uomId: string;
+            unitName: string | null;
+            challanQty: import("@prisma/client/runtime/library").Decimal;
+            receivedQty: import("@prisma/client/runtime/library").Decimal;
+            damagedQty: import("@prisma/client/runtime/library").Decimal;
+            freeQty: import("@prisma/client/runtime/library").Decimal;
+            returnedQty: import("@prisma/client/runtime/library").Decimal;
+            returnedFreeQty: import("@prisma/client/runtime/library").Decimal;
+            provisionalRate: import("@prisma/client/runtime/library").Decimal | null;
+            provisionalValue: import("@prisma/client/runtime/library").Decimal;
+            poRate: import("@prisma/client/runtime/library").Decimal | null;
+            poDiscPct: import("@prisma/client/runtime/library").Decimal | null;
+            taxId: string | null;
+            mrp: import("@prisma/client/runtime/library").Decimal | null;
+            sellA: import("@prisma/client/runtime/library").Decimal | null;
+            blocked: string | null;
+        }[];
     }>;
     cancel(dto: CancelPurchaseInvoiceDto): Promise<{
         success: boolean;

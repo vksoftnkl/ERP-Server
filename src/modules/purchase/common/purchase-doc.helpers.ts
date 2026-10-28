@@ -84,6 +84,21 @@ export async function supplierRow(tx: Tx, supplierId: string) {
   return s;
 }
 
+/** A payee may be named by EMPLOYEE (loadmen): the charge is owed to that employee's staff ledger. Ids that are not employees pass through as ledgers. */
+export async function payeeLedgers<P extends { partyId: string }>(tx: Tx, payees: P[], field = 'charges'): Promise<P[]> {
+  const ids = payees.map((p) => p.partyId);
+  if (!ids.length) return payees;
+  const rows = await tx.$queryRaw<{ emp_id: string; emp_name: string; led: string | null }[]>`
+    SELECT emp_id, emp_name, emp_loan_ledger_id AS led FROM public.employee_master WHERE emp_id = ANY(${ids}::uuid[])`;
+  const by = new Map(rows.map((r) => [r.emp_id, r]));
+  return payees.map((p, i) => {
+    const e = by.get(p.partyId);
+    if (!e) return p;
+    if (!e.led) purRefuse(`${e.emp_name} has no staff ledger — set it on the employee before paying coolie.`, PUR.NOT_FOUND, `${field}.${i}`);
+    return { ...p, partyId: e.led };
+  });
+}
+
 export async function isInterState(tx: Tx, branchId: string, supplier: { sup_state_code: string | null; sup_gst_no: string | null }) {
   const [b] = await tx.$queryRaw<{ state: string | null }[]>`
     SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state

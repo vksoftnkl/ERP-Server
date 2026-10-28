@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CancelPurchaseInvoiceDto = exports.GetPurchaseInvoiceQueryDto = exports.SavePurchaseInvoiceDto = exports.PurchaseInvoiceHeaderDto = exports.PurchaseChargeDto = exports.PurchaseChargePayeeDto = exports.PurchaseInvoiceLineDto = exports.PurchaseAllocDto = void 0;
+exports.GrnLinesQueryDto = exports.CancelPurchaseInvoiceDto = exports.GetPurchaseInvoiceQueryDto = exports.SavePurchaseInvoiceDto = exports.PurchaseInvoiceHeaderDto = exports.PurchaseChargeDto = exports.PurchaseChargePayeeDto = exports.PurchaseInvoiceLineDto = exports.PurchaseAllocDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -122,6 +122,8 @@ class PurchaseInvoiceLineDto {
     lineNo;
     itemId;
     uomId;
+    grnItemId;
+    grnItemAccYear;
     billedQty;
     receivedQty;
     damagedQty;
@@ -164,6 +166,19 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], PurchaseInvoiceLineDto.prototype, "uomId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The GRN line this bill line bills (pur_grn_item.gri_id), whole. Unit, received / damaged / free and the batches come from it, locked; stock is already in (the bill revalues it — P13).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "grnItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "grnItemAccYear", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     (0, class_validator_1.IsNumber)(),
@@ -584,4 +599,32 @@ __decorate([
     (0, class_validator_1.MaxLength)(250),
     __metadata("design:type", String)
 ], CancelPurchaseInvoiceDto.prototype, "reason", void 0);
+class GrnLinesQueryDto {
+    companyId;
+    branchId;
+    supplierId;
+    piId;
+}
+exports.GrnLinesQueryDto = GrnLinesQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The draft being edited — its own GRN lines are listed as free.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "piId", void 0);
 //# sourceMappingURL=save-purchase-invoice.dto.js.map

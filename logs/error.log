@@ -20788,3 +20788,18 @@ Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_party_id, av
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async PurchaseReturnService.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:539:17)
     at async PurchaseReturnController.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/return/purchase-return.ts:675:18)
+2026-10-28T04:40:42.575Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/cancel
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_branch_id, avh_voucher_type_id, avh_acc_year, avh_voucher_no)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, 53, 2026-2027, 1) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:224:9)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.cancel (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:183:5)
+    at async PurchaseInvoiceController.cancel (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:71:18)
