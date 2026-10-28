@@ -33,6 +33,26 @@ export declare class SellingPriceBulkService {
     listPrices(queryDto: ListSellingPriceQueryDto): Promise<PagedResult<SellingPriceRow>>;
     listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]>;
     saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult>;
+    applyPurchasePrices(tx: Prisma.TransactionClient, args: {
+        companyId: string;
+        branchId: string;
+        actor: string;
+        billRef: string;
+        businessTime: Date;
+        rows: {
+            key: string;
+            itemId: string;
+            uomId: string;
+            mrp: number | null;
+            levels: {
+                level: number;
+                price: number;
+            }[];
+        }[];
+    }): Promise<Map<string, {
+        result: 'UPDATED' | 'KEPT_NEWER' | 'NONE';
+        note: string | null;
+    }>>;
     buildSaveMessage(result: SellingPriceSaveResult): string;
     applyBucketPrice(tx: Prisma.TransactionClient, candidate: BucketPriceCandidate, scope: ScopeResolution, scheduledFrom?: string, origin?: PriceWriteOrigin): Promise<AppliedBucketPrice>;
     listSchedule(queryDto: PriceScheduleQueryDto): Promise<SellingPriceScheduleRow[]>;

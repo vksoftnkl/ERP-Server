@@ -33,13 +33,15 @@ const print_log_service_1 = require("./print-log.service");
 const print_render_controller_1 = require("./print-render.controller");
 const print_render_exception_filter_1 = require("./print-render-exception.filter");
 const print_render_service_1 = require("./print-render.service");
+const print_share_controller_1 = require("./print-share.controller");
+const print_share_service_1 = require("./print-share.service");
 let PrintRenderModule = class PrintRenderModule {
 };
 exports.PrintRenderModule = PrintRenderModule;
 exports.PrintRenderModule = PrintRenderModule = __decorate([
     (0, common_1.Module)({
         imports: [pg_module_1.PgModule, print_template_assignment_module_1.PrintTemplateAssignmentModule, till_module_1.TillModule, party_outstanding_module_1.ReportsPartyOutstandingModule],
-        controllers: [print_render_controller_1.PrintRenderController],
+        controllers: [print_render_controller_1.PrintRenderController, print_share_controller_1.PrintShareController],
         providers: [
             font_registry_1.FontRegistry,
             text_measure_1.TextMeasurer,
@@ -75,6 +77,7 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             print_log_service_1.PrintLogService,
             print_render_service_1.PrintRenderService,
             print_render_exception_filter_1.PrintRenderExceptionFilter,
+            print_share_service_1.PrintShareService,
         ],
         exports: [print_render_service_1.PrintRenderService],
     })

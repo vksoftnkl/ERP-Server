@@ -32,6 +32,9 @@ export interface PayableBill {
     daysOverdue: number;
     pdcHeld: number;
     ppdSuggested: number;
+    paymentHold: {
+        reason: string | null;
+    } | null;
 }
 export interface PaymentOpenItemsParty {
     ledId: string;

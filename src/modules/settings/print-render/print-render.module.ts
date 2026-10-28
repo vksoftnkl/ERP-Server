@@ -31,6 +31,8 @@ import { PrintLogService } from './print-log.service';
 import { PrintRenderController } from './print-render.controller';
 import { PrintRenderExceptionFilter } from './print-render-exception.filter';
 import { PrintRenderService } from './print-render.service';
+import { PrintShareController } from './print-share.controller';
+import { PrintShareService } from './print-share.service';
 
 /**
  * §8 — the renderer, wired.
@@ -53,7 +55,9 @@ import { PrintRenderService } from './print-render.service';
   // ReportsPartyOutstandingModule: the reports.party_outstanding.* providers
   // print the report's own /export rows.
   imports: [PgModule, PrintTemplateAssignmentModule, TillModule, ReportsPartyOutstandingModule],
-  controllers: [PrintRenderController],
+  // PrintShareController: documents handed out as a link (the sale bill's
+  // WhatsApp send) — the module's one public route.
+  controllers: [PrintRenderController, PrintShareController],
   providers: [
     // The engine. Restored intact from the reporting module that was removed on
     // 2026-08-27: the layout pass, both renderer families, the jexl expression
@@ -99,6 +103,7 @@ import { PrintRenderService } from './print-render.service';
     PrintLogService,
     PrintRenderService,
     PrintRenderExceptionFilter,
+    PrintShareService,
   ],
   exports: [PrintRenderService],
 })

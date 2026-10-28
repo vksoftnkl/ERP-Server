@@ -22,6 +22,9 @@ const READ_ONLY_WRITE_SUFFIXES = [
   '/resolve',
   '/format/test',
   '/slip-check',
+  // Writes one print_share_link row, which no cached read and no screen shows;
+  // the WhatsApp dialog asks for one on every open.
+  '/print-share/create',
 ] as const;
 /** Longest a write's response waits on the cache purge. */
 const PURGE_WAIT_MS = 2_000;

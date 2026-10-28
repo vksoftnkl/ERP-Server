@@ -36,7 +36,8 @@ let PurchaseInvoiceController = class PurchaseInvoiceController {
         if (dto.header.post)
             await this.right('post', 'post a purchase invoice');
         const data = await this.service.save(dto);
-        return { success: true, message: dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`, data };
+        const base = dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`;
+        return { success: true, message: data.warnings.length ? `${base} — ${data.warnings.map((w) => w.message).join(' ')}` : base, data };
     }
     async validate(dto) {
         await this.right('view', 'calculate a purchase invoice');
@@ -50,6 +51,18 @@ let PurchaseInvoiceController = class PurchaseInvoiceController {
     async get(q) {
         await this.right('view', 'open a purchase invoice');
         return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
+    }
+    async hold(dto) {
+        if (dto.hold)
+            await this.right('edit', 'put a bill on payment hold');
+        else
+            await this.right('override', 'release a payment hold');
+        const data = await this.service.setHold(dto);
+        return { success: true, message: `Purchase ${data.header.piRefno} ${dto.hold ? 'put on payment hold' : 'released for payment'}`, data };
+    }
+    async settings(q) {
+        await this.right('view', 'read the purchase settings');
+        return { success: true, message: 'Purchase settings', data: await this.service.settings(q.companyId, q.branchId) };
     }
     async grnLines(q) {
         await this.right('view', 'list GRN lines to bill');
@@ -101,6 +114,24 @@ __decorate([
     __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GetPurchaseInvoiceQueryDto]),
     __metadata("design:returntype", Promise)
 ], PurchaseInvoiceController.prototype, "get", null);
+__decorate([
+    (0, common_1.Post)('hold'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Put a posted bill on payment hold (Edit right), or release it (Override right — "Release payment hold"). Payment refuses a held bill unless the payer has that right.' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PurchaseInvoiceHoldDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "hold", null);
+__decorate([
+    (0, common_1.Get)('settings'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'The purchase.* settings in force for a branch (App Settings, module PURCHASE): invoice amount / duplicate checks, price update, …' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PurchaseSettingsQueryDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "settings", null);
 __decorate([
     (0, common_1.Get)('grn-lines'),
     (0, common_1.Version)(api_version_1.API_VERSION),

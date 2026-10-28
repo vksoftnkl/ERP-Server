@@ -17,9 +17,12 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
+const selling_price_bulk_service_1 = require("../../stocks/selling-price-bulk/selling-price-bulk.service");
 const stock_voucher_source_1 = require("../../stocks/posting/stock-voucher.source");
 const stock_voucher_numbering_helper_1 = require("../../stocks/stock-voucher/stock-voucher-numbering.helper");
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
+const purchase_supplier_item_1 = require("../supplier-item/purchase-supplier-item");
+const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_calc_1 = require("../common/purchase-calc");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
@@ -34,24 +37,60 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
     requestContext;
     vouchers;
     stockPosting;
-    constructor(prisma, requestContext, vouchers, stockPosting) {
+    prices;
+    constructor(prisma, requestContext, vouchers, stockPosting, prices) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.vouchers = vouchers;
         this.stockPosting = stockPosting;
+        this.prices = prices;
     }
     async preview(dto) {
         const p = await this.prepare(this.prisma, dto);
         return this.calcPayload(p, dto);
     }
+    async setHold(dto) {
+        const actor = this.actor();
+        const reason = dto.reason.trim();
+        if (!reason)
+            (0, purchase_errors_1.purRefuse)('Say why.', purchase_errors_1.PUR.QTY_INVALID, 'reason');
+        await this.prisma.$transaction(async (tx) => {
+            const cur = await tx.purInvoice.findFirst({ where: { piId: dto.piId, piAccYear: dto.accYear, piIsDeleted: false } });
+            if (!cur)
+                (0, purchase_errors_1.purNotFound)(`Purchase invoice ${dto.piId} not found`);
+            if (cur.piStatus !== 'POSTED')
+                (0, purchase_errors_1.purConflict)(`${cur.piRefno} is ${cur.piStatus} — only a posted bill is held or released.`, purchase_errors_1.PUR.NOT_POSTED, 'piId');
+            if (cur.piPaymentHold === dto.hold)
+                (0, purchase_errors_1.purConflict)(`${cur.piRefno} is ${dto.hold ? 'already on hold' : 'not on hold'}.`, 'PUR_HOLD_UNCHANGED', 'hold');
+            const now = new Date();
+            await tx.purInvoice.update({
+                where: { piId_piAccYear: { piId: dto.piId, piAccYear: dto.accYear } },
+                data: dto.hold
+                    ? { piPaymentHold: true, piHoldReason: reason.slice(0, 250), piHoldReleasedBy: null, piHoldReleasedOn: null, piModifiedBy: actor, piModifiedOn: now }
+                    : { piPaymentHold: false, piHoldReleasedBy: actor, piHoldReleasedOn: now, piModifiedBy: actor, piModifiedOn: now },
+            });
+            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                companyId: cur.piCompanyId, branchId: cur.piBranchId, accYear: dto.accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
+                srcDocId: dto.piId, srcDocRefno: cur.piRefno, event: dto.hold ? txn_status_log_helper_1.TxnStatusEvent.HOLD : txn_status_log_helper_1.TxnStatusEvent.RELEASED, fromStatus: 'POSTED', toStatus: 'POSTED',
+                changedBy: actor, remarks: reason, deviceId: cur.piDeviceId,
+            });
+        }, { timeout: 30000, maxWait: 10000 });
+        return this.get(dto.piId, dto.accYear);
+    }
+    async settings(companyId, branchId) {
+        return (0, purchase_settings_1.loadPurchaseSettings)(this.prisma, companyId, branchId);
+    }
     async save(dto) {
         const actor = this.actor();
         const h = dto.header;
+        const warnings = [];
         const piId = await this.prisma.$transaction(async (tx) => {
             const p = await this.prepare(tx, dto);
-            await this.assertNotDuplicate(tx, dto);
+            const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
+            p.settings = settings;
+            await this.assertNotDuplicate(tx, dto, settings, warnings);
             if (h.post)
-                this.assertPrintedAmount(p, dto);
+                this.assertPrintedAmount(p, dto, settings, warnings);
             let id = h.piId ?? null;
             let slno, refno, fromStatus = null;
             if (id) {
@@ -75,10 +114,11 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 await this.log(tx, dto, id, refno, txn_status_log_helper_1.TxnStatusEvent.CREATED, null, 'DRAFT', actor);
             }
             if (h.post)
-                await this.postInTx(tx, id, h.accYear, actor);
+                for (const note of await this.postInTx(tx, id, h.accYear, actor))
+                    warnings.push(note);
             return id;
         }, { timeout: 60000, maxWait: 10000 });
-        return this.get(piId, h.accYear);
+        return { ...(await this.get(piId, h.accYear)), warnings };
     }
     async post(piId, accYear) {
         const actor = this.actor();
@@ -94,6 +134,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             this.prisma.purItemAlloc.findMany({ where: { piaDocType: DOC_TYPE, piaDocId: piId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: [{ piaRowNo: 'asc' }] }),
             this.prisma.$queryRaw `
         SELECT cd.cd_chg_id AS "chgId", cd.cd_chg_name AS "chgName", cd.cd_on_bill AS "onBill", cd.cd_before_tax AS "beforeTax",
+               cd.cd_method AS "method", cd.cd_type AS "type", cd.cd_tax_perc AS "taxPct",
                cd.cd_landing_cost AS "landingCost", cd.cd_rate AS "rate", cd.cd_amount AS "amount", cd.cd_party_id AS "partyId",
                l.led_name AS "partyName", cd.cd_cgst_amt AS "cgst", cd.cd_sgst_amt AS "sgst", cd.cd_igst_amt AS "igst"
           FROM public.txn_charge_detail cd
@@ -262,6 +303,9 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
            WHERE c.chg_id = ANY(${chgIds}::uuid[]) AND c.chg_is_deleted = false AND c.chg_module IN ('P','B')`
             : [];
         const chgById = new Map(charges.map((c) => [c.chg_id, c]));
+        for (const [i, c] of (dto.charges ?? []).entries())
+            if (c.payees?.length)
+                c.payees = await (0, purchase_doc_helpers_1.payeeLedgers)(tx, c.payees, `charges.${i}.payees`);
         const calcCharges = [];
         const payeeIds = new Set();
         (dto.charges ?? []).forEach((c, i) => {
@@ -504,7 +548,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             difference: D(dto.header.invoiceAmountPrinted).minus(c.netPayable).toFixed(2),
         };
     }
-    async assertNotDuplicate(tx, dto) {
+    async assertNotDuplicate(tx, dto, settings, warnings) {
         const h = dto.header;
         const dup = await tx.$queryRaw `
       SELECT pi.pi_refno, b.br_name AS br FROM purchase.pur_invoice pi
@@ -515,11 +559,20 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
          AND (${h.piId ?? null}::uuid IS NULL OR pi.pi_id <> ${h.piId ?? null}::uuid)
        LIMIT 1`;
         if (dup.length) {
-            (0, purchase_errors_1.purConflict)(`Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`, purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
+            const message = `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`;
+            if (settings.duplicateBillMode === 'WARN')
+                warnings.push({ code: purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
+            else
+                (0, purchase_errors_1.purConflict)(message, purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
         }
     }
-    assertPrintedAmount(p, dto) {
+    assertPrintedAmount(p, dto, settings, warnings) {
         const diff = D(dto.header.invoiceAmountPrinted).minus(p.calc.netPayable);
+        if (!diff.isZero() && settings.invAmountCheck === 'WARN') {
+            warnings.push({ code: purchase_errors_1.PUR.INVOICE_AMOUNT_MISMATCH, field: 'header.invoiceAmountPrinted',
+                message: `Posted at the net payable ${p.calc.netPayable.toFixed(2)}; the bill says ${D(dto.header.invoiceAmountPrinted).toFixed(2)} (difference ${diff.toFixed(2)}).` });
+            return;
+        }
         if (!diff.isZero()) {
             (0, purchase_errors_1.purRefuse)(`Invoice amount ${D(dto.header.invoiceAmountPrinted).toFixed(2)} does not match the net payable ${p.calc.netPayable.toFixed(2)} (difference ${diff.toFixed(2)}). Check the lines, charges and round off.`, purchase_errors_1.PUR.INVOICE_AMOUNT_MISMATCH, 'header.invoiceAmountPrinted');
         }
@@ -552,7 +605,10 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
             piChargesOnBill: c.chargesOnBill, piTcsAmt: c.tcs, piRoundOff: c.roundOff, piNetPayable: c.netPayable, piOffbillCharges: c.offbillCharges,
             piShortValue: c.shortValue, piItcEligibleAmt: c.itcEligible, piItcPendingAmt: c.itcPending, piItcIneligibleAmt: c.itcIneligible,
-            piPolicy: { invAmountCheck: 'REFUSE', roundOffStep: 1, priceUpdate: 'OFF' },
+            piPolicy: {
+                invAmountCheck: p.settings?.invAmountCheck ?? 'REFUSE', duplicateBillMode: p.settings?.duplicateBillMode ?? 'REFUSE', roundOffStep: 1,
+                allowPriceUpdate: p.settings?.allowPriceUpdate ?? false, priceUpdate: p.settings?.allowPriceUpdate ? p.settings.priceUpdate : 'OFF',
+            },
             piRemarks: h.remarks ?? null,
         };
         let piId;
@@ -586,7 +642,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                     piiTotalAmt: o.total, piiItcEligibleAmt: o.itcEligible, piiItcPendingAmt: o.itcPending, piiItcIneligibleAmt: o.itcIneligible,
                     piiItcClass: o.itcClass, piiLandedCostWot: o.landedCostWot, piiMarkupAPct: l.markupAPct ?? null,
                     piiSellA: l.sellA ?? null, piiSellB: l.sellB ?? null, piiSellC: l.sellC ?? null, piiSellD: l.sellD ?? null, piiMrp: l.mrp ?? null,
-                    piiPriceUpdateResult: 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
+                    piiPriceUpdateResult: p.settings?.allowPriceUpdate && p.settings.priceUpdate === 'UPDATE_PRICES' ? 'NONE' : 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
                 },
                 select: { piiId: true },
             });
@@ -638,13 +694,15 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         };
     }
     async postInTx(tx, piId, accYear, actor) {
+        const notes = [];
         const pi = await tx.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
         if (!pi)
             (0, purchase_errors_1.purNotFound)(`Purchase invoice ${piId} not found`);
         if (pi.piStatus !== 'DRAFT')
             (0, purchase_errors_1.purConflict)(`${pi.piRefno} is ${pi.piStatus} — only a draft can be posted.`, purchase_errors_1.PUR.NOT_DRAFT, 'piId');
         const diff = pi.piInvoiceAmountPrinted.minus(pi.piNetPayable);
-        if (!diff.isZero()) {
+        const policy = (pi.piPolicy ?? {});
+        if (!diff.isZero() && policy.invAmountCheck !== 'WARN') {
             (0, purchase_errors_1.purRefuse)(`Invoice amount ${pi.piInvoiceAmountPrinted.toFixed(2)} does not match the net payable ${pi.piNetPayable.toFixed(2)} (difference ${diff.toFixed(2)}).`, purchase_errors_1.PUR.INVOICE_AMOUNT_MISMATCH, 'header.invoiceAmountPrinted');
         }
         const lines = await tx.purInvoiceItem.findMany({ where: { piiPiId: piId, piiAccYear: accYear, piiIsDeleted: false }, orderBy: { piiLineNo: 'asc' } });
@@ -670,6 +728,9 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
           ${stockAllocs.length}::int, ${totalQty}::numeric, 'DRAFT', 'MANUAL', ${`Purchase ${pi.piRefno} · ${pi.piSupplierInvNo}`}, ${postedOn}, ${actor})
         RETURNING svh_id`;
             const lineById = new Map(lines.map((l) => [l.piiId, l]));
+            const textileRows = stockAllocs.map((a) => ({ itemId: lineById.get(a.piaLineId).piiItemId, batchNo: a.piaBatchNo, sizeId: a.piaSizeId, colourId: a.piaColourId, model: a.piaModel }));
+            const textile = await (0, purchase_doc_helpers_1.numberTextileBatches)(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, docDate }, textileRows);
+            stockAllocs.forEach((a, k) => { a.piaBatchNo = textile.batchNos[k]; textileRows[k].batchNo = textile.batchNos[k]; });
             const values = stockAllocs.map((a, k) => {
                 const l = lineById.get(a.piaLineId);
                 const f = l.piiToBaseFactor;
@@ -691,6 +752,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
           svi_qty, svi_base_qty, svi_free_qty, svi_free_base_qty,
           svi_cost_rate, svi_cost_rate_wot, svi_landed_rate, svi_tax_perc,
           svi_created_on, svi_created_by) VALUES ${client_1.Prisma.join(values)}`;
+            await (0, purchase_doc_helpers_1.writeTextileDetails)(tx, { companyId: pi.piCompanyId, accYear, svhId: hdr.svh_id, actor }, textileRows, textile.numbered);
             await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId: hdr.svh_id, accYear, companyId: pi.piCompanyId, branchId: pi.piBranchId, rules }), { actor, postedOn, ledgerSource: { srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcRefno: pi.piRefno, partyId: pi.piSupplierId } });
             const [moved] = await tx.$queryRaw `
         SELECT SUM(sml_qty + sml_free_qty) AS qty FROM stock.stock_ledger
@@ -703,7 +765,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             for (const r of lots) {
                 const a = stockAllocs[r.svi_line_no - 1];
                 if (a)
-                    await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaLotId: r.svi_lot_id, piaSviId: r.svi_id, piaSviAccYear: accYear } });
+                    await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaLotId: r.svi_lot_id, piaSviId: r.svi_id, piaSviAccYear: accYear, piaBatchNo: a.piaBatchNo } });
             }
         }
         const grnLines = lines.filter((l) => l.piiSrcDocType === 'GRN' && l.piiSrcItemId);
@@ -889,6 +951,57 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 },
             });
         }
+        {
+            const settingsNow = await (0, purchase_settings_1.loadPurchaseSettings)(tx, pi.piCompanyId, pi.piBranchId);
+            const fromPo = grnLines.length ? await tx.$queryRaw `
+        SELECT gri.gri_id, po.po_refno,
+               poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+          FROM purchase.pur_grn_item gri
+          JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
+          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+         WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId)}::uuid[])` : [];
+            const tol = D(settingsNow.rateTolerancePct);
+            const over = [];
+            for (const r of fromPo) {
+                const l = grnLines.find((x) => x.piiSrcItemId === r.gri_id);
+                if (!l || !r.po_rate_base || D(r.po_rate_base).isZero())
+                    continue;
+                const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
+                const pct = billBase.minus(r.po_rate_base).dividedBy(r.po_rate_base).times(100);
+                if (pct.greaterThan(tol))
+                    over.push(`line ${l.piiLineNo} ${pct.toFixed(1)}% over ${r.po_refno}`);
+            }
+            if (over.length) {
+                const reason = `Rate over PO beyond ${tol.toString()}%: ${over.join('; ')}`.slice(0, 250);
+                await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
+                await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                    companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
+                    srcDocId: piId, srcDocRefno: pi.piRefno, event: txn_status_log_helper_1.TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
+                });
+                notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+            }
+        }
+        if (policy.allowPriceUpdate && policy.priceUpdate === 'UPDATE_PRICES') {
+            const today = isoDate(postedOn) === docDate;
+            const businessTime = today ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
+            const lv = (v) => (v ? Number(v) : 0);
+            const result = await this.prices.applyPurchasePrices(tx, {
+                companyId: pi.piCompanyId, branchId: pi.piBranchId, actor, billRef: pi.piRefno, businessTime,
+                rows: lines.map((l) => ({
+                    key: l.piiId, itemId: l.piiItemId, uomId: l.piiUomId, mrp: l.piiMrp ? Number(l.piiMrp) : null,
+                    levels: [{ level: 1, price: lv(l.piiSellA) }, { level: 2, price: lv(l.piiSellB) }, { level: 3, price: lv(l.piiSellC) }, { level: 4, price: lv(l.piiSellD) }],
+                })),
+            });
+            for (const l of lines) {
+                const r = result.get(l.piiId);
+                if (!r)
+                    continue;
+                await tx.purInvoiceItem.update({ where: { piiId_piiAccYear: { piiId: l.piiId, piiAccYear: accYear } }, data: { piiPriceUpdateResult: r.result } });
+                if (r.note)
+                    notes.push({ code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', field: `lines.${l.piiLineNo}`, message: `Line ${l.piiLineNo}: ${r.note}` });
+            }
+        }
+        await (0, purchase_supplier_item_1.recordSupplierItems)(tx, pi.piCompanyId, pi.piSupplierId, lines.map((l) => ({ itemId: l.piiItemId, uomId: l.piiUomId, factor: l.piiToBaseFactor })), actor);
         const rejectedLines = grnLines.filter((l) => l.piiRejectedAtGrnQty.greaterThan(0));
         if (rejectedLines.length)
             await this.writeRejectedDebitNote(tx, pi, rejectedLines, actor, postedOn);
@@ -897,6 +1010,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
             srcDocId: piId, srcDocRefno: pi.piRefno, event: txn_status_log_helper_1.TxnStatusEvent.POSTED, fromStatus: 'DRAFT', toStatus: 'POSTED', changedBy: actor, deviceId: pi.piDeviceId,
         });
+        return notes;
     }
     rejectedMoney(l) {
         const per = (v) => (l.piiBilledQty.isZero() ? ZERO : v.times(l.piiRejectedAtGrnQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP));
@@ -996,7 +1110,8 @@ exports.PurchaseInvoiceService = PurchaseInvoiceService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
         voucher_posting_service_1.VoucherPostingService,
-        stock_posting_service_1.StockPostingService])
+        stock_posting_service_1.StockPostingService,
+        selling_price_bulk_service_1.SellingPriceBulkService])
 ], PurchaseInvoiceService);
 function jsonSafe(v) {
     if (typeof v === 'bigint')

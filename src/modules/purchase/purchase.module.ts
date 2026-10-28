@@ -5,11 +5,13 @@ import { AccountLedgerMastersModule } from 'src/modules/accountsModule/accountLe
 import { SellingPriceBulkModule } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { PurchaseAgentController, PurchaseAgentService } from './agent/purchase-agent';
 import { PurchaseSupplierItemController, PurchaseSupplierItemService } from './supplier-item/purchase-supplier-item';
-import { PurchaseGrnController, PurchaseGrnService } from './grn/purchase-grn';
+import { PurchaseGrnController, PurchaseGrnService, PurchaseLabelsController } from './grn/purchase-grn';
 import { PurchaseInvoiceController } from './invoice/purchase-invoice.controller';
 import { PurchaseLookupController, PurchaseLookupService } from './lookup/purchase-lookup';
 import { PurchaseInvoiceService } from './invoice/purchase-invoice.service';
 import { PurchaseOrderController, PurchaseOrderService } from './order/purchase-order';
+import { PurchaseReorderController, PurchaseReorderService } from './reorder/purchase-reorder';
+import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { PurchaseReturnController, PurchaseReturnService } from './return/purchase-return';
 import { PurchaseShortageController, PurchaseShortageService } from './shortage/purchase-shortage';
 
@@ -19,10 +21,10 @@ import { PurchaseShortageController, PurchaseShortageService } from './shortage/
  * Masters: supplier–item map (MST-02, menu 295), agents (MST-05, menu 28). B9 lookups (supplier / item context).
  */
 @Module({
-  imports: [CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
-  controllers: [PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseReturnController, PurchaseShortageController,
+  imports: [AuditLogModule, CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
+  controllers: [PurchaseReorderController, PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseLabelsController, PurchaseReturnController, PurchaseShortageController,
                 PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController],
-  providers: [PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,
+  providers: [PurchaseReorderService, PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,
               PurchaseAgentService, PurchaseSupplierItemService, PurchaseLookupService],
 })
 export class PurchaseModule {}

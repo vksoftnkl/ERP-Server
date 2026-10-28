@@ -511,13 +511,14 @@ export class SuppliersService {
   }
   private async resolveRelatedNames(
     client: SupplierWriteClient,
-    record: Pick<Supplier, 'supCompanyId' | 'supBranchId' | 'supGroupId'>,
+    record: Pick<Supplier, 'supCompanyId' | 'supBranchId' | 'supGroupId'> & Partial<Pick<Supplier, 'supDefaultGodownId'>>,
   ): Promise<{
     supCompanyName: string | null;
     supBranchName: string | null;
     supGroupName: string | null;
+    supDefaultGodownName: string | null;
   }> {
-    const [company, branch, group] = await Promise.all([
+    const [company, branch, group, godown] = await Promise.all([
       record.supCompanyId
         ? client.company.findFirst({
             where: { compId: record.supCompanyId },
@@ -536,11 +537,18 @@ export class SuppliersService {
             select: { spgName: true },
           })
         : null,
+      record.supDefaultGodownId
+        ? client.godownLocation.findFirst({
+            where: { gdlId: record.supDefaultGodownId },
+            select: { gdlName: true },
+          })
+        : null,
     ]);
     return {
       supCompanyName: company?.compName ?? null,
       supBranchName: branch?.brName ?? null,
       supGroupName: group?.spgName ?? null,
+      supDefaultGodownName: godown?.gdlName ?? null,
     };
   }
   // The customer row sharing this ledger, if it is live. Deleted rows don't count: a ledger

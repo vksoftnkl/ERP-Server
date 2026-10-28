@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentOpenItemsService = void 0;
+const purchase_hold_1 = require("../../purchase/common/purchase-hold");
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -116,6 +117,7 @@ let PaymentOpenItemsService = class PaymentOpenItemsService {
             },
         });
         const keys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
+        const holds = await (0, purchase_hold_1.holdsOfBills)(this.prisma, bills.map((bill) => bill.ablId));
         const [pdcByBill, usrRefnoByVoucher] = await Promise.all([
             this.loadPostDatedHeld(keys, onDate),
             this.loadSupplierRefnos(bills.map((bill) => bill.ablVoucherId).filter((id) => !!id)),
@@ -141,6 +143,7 @@ let PaymentOpenItemsService = class PaymentOpenItemsService {
                     pendingAmount: (0, receipt_utils_1.money)(pending),
                     slabs,
                 })),
+                paymentHold: holds.has(bill.ablId) ? { reason: holds.get(bill.ablId).reason } : null,
             };
         });
         const sortKeys = new Map(bills.map((bill) => [

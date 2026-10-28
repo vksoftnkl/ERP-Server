@@ -8323,6 +8323,49 @@ model PrintPurpose {
   @@schema("public")
 }
 
+/// public.print_share_link — a rendered document handed to someone OUTSIDE the
+/// system as a link: the sale bill's WhatsApp send puts one in the message.
+///
+/// The token is the whole of the authorisation. Whoever holds the link may open
+/// that one document, rendered from that one revision, until it expires — and
+/// nothing else. It is rendered on every open rather than stored, so the row is
+/// a few hundred bytes and an amended bill shows as it now stands.
+///
+/// No foreign keys, deliberately: a link is a pointer handed to a customer, and
+/// one whose revision or document has since gone answers "no longer available"
+/// rather than holding either in place.
+model PrintShareLink {
+  pslId        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid    @map("psl_id")
+  /// 128 random bits, base64url — 22 characters. Unique; the lookup key.
+  pslToken     String    @unique(map: "uq_psl_token") @db.VarChar(43)     @map("psl_token")
+
+  // ── What to render, and in which scope — the render context, frozen ──────
+  pslVersionId String    @db.Uuid                                          @map("psl_version_id")
+  pslDocId     String    @db.Uuid                                          @map("psl_doc_id")
+  pslCompanyId String    @db.Uuid                                          @map("psl_company_id")
+  pslBranchId  String?   @db.Uuid                                          @map("psl_branch_id")
+  /// The DOCUMENT's year, fixed at creation: a link opened after the year
+  /// rolls over must still read the partition the document lives in.
+  pslAccYear   String    @db.Char(9)                                       @map("psl_acc_year")
+  pslDeviceId  String?   @db.Uuid                                          @map("psl_device_id")
+  /// File name stem the PDF is served under, without extension.
+  pslFilename  String    @db.VarChar(80)                                   @map("psl_filename")
+
+  pslExpiresOn DateTime  @db.Timestamptz(6)                                @map("psl_expires_on")
+  pslCreatedOn DateTime  @default(now()) @db.Timestamptz(6)                @map("psl_created_on")
+  /// The user who shared it — also the render's :user_id.
+  pslCreatedBy String?   @db.Uuid                                          @map("psl_created_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  /// An offline site's links reach the cloud this way, which is what lets a
+  /// customer open one when the site itself is not on the internet.
+  pslSyncDate  DateTime? @db.Timestamptz(6)                                @map("psl_sync_date")
+
+  @@index([pslDocId], map: "ix_psl_doc")
+  @@index([pslExpiresOn], map: "ix_psl_expires_on")
+  @@map("print_share_link")
+  @@schema("public")
+}
+
 // ----- prisma/public/printTemplate.prisma -----
 /// public.print_template — §2, the design's IDENTITY, and nothing else.
 ///

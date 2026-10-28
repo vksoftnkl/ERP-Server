@@ -23,6 +23,7 @@ const READ_ONLY_WRITE_SUFFIXES = [
     '/resolve',
     '/format/test',
     '/slip-check',
+    '/print-share/create',
 ];
 const PURGE_WAIT_MS = 2_000;
 let HttpCacheInvalidationInterceptor = class HttpCacheInvalidationInterceptor {

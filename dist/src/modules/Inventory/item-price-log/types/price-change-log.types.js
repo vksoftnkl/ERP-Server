@@ -9,12 +9,14 @@ exports.PRICE_CHANGE_SOURCES = [
     'QTY_PRICE',
     'BUCKET_REKEY',
     'IMPORT',
+    'PURCHASE',
 ];
 exports.PRICE_MENU_ID = {
     ITEM_MASTER: 29,
     CHANGE_SELLING_PRICE: 30,
     QTY_PRICE: 244,
     PRICE_CHANGE_LOG: 290,
+    PURCHASE_ENTRY: 24,
 };
 exports.PRICE_ORIGIN = {
     ITEM_CARD: { source: 'ITEM_CARD', menuId: exports.PRICE_MENU_ID.ITEM_MASTER },

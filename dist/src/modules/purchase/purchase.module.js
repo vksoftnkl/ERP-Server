@@ -10,6 +10,10 @@ exports.PurchaseModule = void 0;
 const common_1 = require("@nestjs/common");
 const posting_module_1 = require("../../common/posting/posting.module");
 const stock_posting_module_1 = require("../stocks/posting/stock-posting.module");
+const account_ledger_masters_module_1 = require("../accountsModule/accountLedgerMasters/account-ledger-masters.module");
+const selling_price_bulk_module_1 = require("../stocks/selling-price-bulk/selling-price-bulk.module");
+const purchase_agent_1 = require("./agent/purchase-agent");
+const purchase_supplier_item_1 = require("./supplier-item/purchase-supplier-item");
 const purchase_grn_1 = require("./grn/purchase-grn");
 const purchase_invoice_controller_1 = require("./invoice/purchase-invoice.controller");
 const purchase_invoice_service_1 = require("./invoice/purchase-invoice.service");
@@ -21,9 +25,11 @@ let PurchaseModule = class PurchaseModule {
 exports.PurchaseModule = PurchaseModule;
 exports.PurchaseModule = PurchaseModule = __decorate([
     (0, common_1.Module)({
-        imports: [posting_module_1.CommonPostingModule, stock_posting_module_1.StockPostingModule],
-        controllers: [purchase_invoice_controller_1.PurchaseInvoiceController, purchase_order_1.PurchaseOrderController, purchase_grn_1.PurchaseGrnController, purchase_return_1.PurchaseReturnController, purchase_shortage_1.PurchaseShortageController],
-        providers: [purchase_invoice_service_1.PurchaseInvoiceService, purchase_order_1.PurchaseOrderService, purchase_grn_1.PurchaseGrnService, purchase_return_1.PurchaseReturnService, purchase_shortage_1.PurchaseShortageService],
+        imports: [posting_module_1.CommonPostingModule, stock_posting_module_1.StockPostingModule, account_ledger_masters_module_1.AccountLedgerMastersModule, selling_price_bulk_module_1.SellingPriceBulkModule],
+        controllers: [purchase_invoice_controller_1.PurchaseInvoiceController, purchase_order_1.PurchaseOrderController, purchase_grn_1.PurchaseGrnController, purchase_return_1.PurchaseReturnController, purchase_shortage_1.PurchaseShortageController,
+            purchase_agent_1.PurchaseAgentController, purchase_supplier_item_1.PurchaseSupplierItemController],
+        providers: [purchase_invoice_service_1.PurchaseInvoiceService, purchase_order_1.PurchaseOrderService, purchase_grn_1.PurchaseGrnService, purchase_return_1.PurchaseReturnService, purchase_shortage_1.PurchaseShortageService,
+            purchase_agent_1.PurchaseAgentService, purchase_supplier_item_1.PurchaseSupplierItemService],
     })
 ], PurchaseModule);
 //# sourceMappingURL=purchase.module.js.map

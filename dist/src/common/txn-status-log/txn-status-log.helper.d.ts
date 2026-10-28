@@ -53,7 +53,10 @@ export declare enum TxnStatusEvent {
     STATUS_CHANGED = "STATUS_CHANGED",
     PARTIAL = "PARTIAL",
     SETTLED = "SETTLED",
-    WRITTEN_OFF = "WRITTEN_OFF"
+    WRITTEN_OFF = "WRITTEN_OFF",
+    HOLD = "HOLD",
+    RELEASED = "RELEASED",
+    HOLD_OVERRIDE = "HOLD_OVERRIDE"
 }
 export declare enum TxnStatusNotifyChannel {
     SMS = "SMS",

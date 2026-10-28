@@ -195,7 +195,6 @@ export declare class PurchaseGrnService {
         }[];
     }>;
     private coolieFor;
-    private payeeLedgers;
     private poIdOf;
     private loadCharges;
     private writeCharges;

@@ -62,6 +62,9 @@ var TxnStatusEvent;
     TxnStatusEvent["PARTIAL"] = "PARTIAL";
     TxnStatusEvent["SETTLED"] = "SETTLED";
     TxnStatusEvent["WRITTEN_OFF"] = "WRITTEN_OFF";
+    TxnStatusEvent["HOLD"] = "HOLD";
+    TxnStatusEvent["RELEASED"] = "RELEASED";
+    TxnStatusEvent["HOLD_OVERRIDE"] = "HOLD_OVERRIDE";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

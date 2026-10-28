@@ -188,10 +188,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -242,6 +240,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
     }>;
     post(prId: string, accYear: string): Promise<{
@@ -299,10 +299,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -353,6 +351,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
     }>;
     private postInTx;
@@ -411,10 +411,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -465,6 +463,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
     }>;
     cancel(dto: ReturnCancelDto): Promise<{
@@ -522,10 +522,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -576,6 +574,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
     }>;
     private claimValueOf;
@@ -659,10 +659,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -713,6 +711,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
         };
     }>;
@@ -774,10 +774,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -828,6 +826,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
         };
     }>;
@@ -889,10 +889,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -943,6 +941,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
         };
     }>;
@@ -1004,10 +1004,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -1058,6 +1056,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
         };
     }>;

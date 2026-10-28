@@ -5,10 +5,13 @@ exports.allocateDocNumber = allocateDocNumber;
 exports.loadUnits = loadUnits;
 exports.loadTaxRates = loadTaxRates;
 exports.supplierRow = supplierRow;
+exports.payeeLedgers = payeeLedgers;
 exports.isInterState = isInterState;
 exports.voucherTypeId = voucherTypeId;
 exports.stockRules = stockRules;
 exports.postShadowStock = postShadowStock;
+exports.numberTextileBatches = numberTextileBatches;
+exports.writeTextileDetails = writeTextileDetails;
 exports.cancelShadowStock = cancelShadowStock;
 exports.raiseBillRow = raiseBillRow;
 exports.assertBillsUnsettled = assertBillsUnsettled;
@@ -24,6 +27,8 @@ Object.defineProperty(exports, "TxnStatusDocType", { enumerable: true, get: func
 Object.defineProperty(exports, "TxnStatusEvent", { enumerable: true, get: function () { return txn_status_log_helper_1.TxnStatusEvent; } });
 const stock_voucher_source_1 = require("../../stocks/posting/stock-voucher.source");
 const stock_voucher_numbering_helper_1 = require("../../stocks/stock-voucher/stock-voucher-numbering.helper");
+const stock_voucher_batch_numbering_helper_1 = require("../../stocks/stock-voucher/stock-voucher-batch-numbering.helper");
+const batch_detail_helper_1 = require("../../stocks/batch-detail/batch-detail.helper");
 const purchase_errors_1 = require("./purchase.errors");
 const D = (v) => new client_1.Prisma.Decimal(v ?? 0);
 exports.D = D;
@@ -85,6 +90,22 @@ async function supplierRow(tx, supplierId) {
         (0, purchase_errors_1.purRefuse)(`Supplier ${supplierId} not found`, purchase_errors_1.PUR.SUPPLIER_NOT_FOUND, 'header.supplierId', 404);
     return s;
 }
+async function payeeLedgers(tx, payees, field = 'charges') {
+    const ids = payees.map((p) => p.partyId);
+    if (!ids.length)
+        return payees;
+    const rows = await tx.$queryRaw `
+    SELECT emp_id, emp_name, emp_loan_ledger_id AS led FROM public.employee_master WHERE emp_id = ANY(${ids}::uuid[])`;
+    const by = new Map(rows.map((r) => [r.emp_id, r]));
+    return payees.map((p, i) => {
+        const e = by.get(p.partyId);
+        if (!e)
+            return p;
+        if (!e.led)
+            (0, purchase_errors_1.purRefuse)(`${e.emp_name} has no staff ledger — set it on the employee before paying coolie.`, purchase_errors_1.PUR.NOT_FOUND, `${field}.${i}`);
+        return { ...p, partyId: e.led };
+    });
+}
 async function isInterState(tx, branchId, supplier) {
     const [b] = await tx.$queryRaw `
     SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
@@ -113,6 +134,9 @@ async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, posted
     if (!live.length)
         return { svhId: null, perRow: [] };
     const inward = rules.isInward;
+    const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live) : null;
+    if (textile)
+        live.forEach((r, k) => { r.batchNo = textile.batchNos[k]; });
     const slno = await (0, stock_voucher_numbering_helper_1.nextStockVoucherSlno)(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, voucherType: rules.voucherType, deviceId: doc.deviceId });
     const total = live.reduce((s, r) => s.plus(r.qty).plus(r.freeQty), exports.ZERO);
     const godown = live[0].godownId;
@@ -144,6 +168,8 @@ async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, posted
       svi_mrp, svi_sale_price, svi_serial_no, svi_supplier_id,
       svi_qty, svi_base_qty, svi_free_qty, svi_free_base_qty,
       svi_cost_rate, svi_cost_rate_wot, svi_landed_rate, svi_tax_perc, svi_created_on, svi_created_by) VALUES ${client_1.Prisma.join(values)}`;
+    if (textile)
+        await writeTextileDetails(tx, { companyId: doc.companyId, accYear: doc.accYear, svhId: hdr.svh_id, actor }, live, textile.numbered);
     await stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId: hdr.svh_id, accYear: doc.accYear, companyId: doc.companyId, branchId: doc.branchId, rules }), { actor, postedOn, ledgerSource: { srcModule: exports.SRC_MODULE, srcDocType: doc.docType, srcRefno: doc.refno, partyId: doc.supplierId } });
     const back = await tx.$queryRaw `
     SELECT svi.svi_line_no, svi.svi_lot_id, svi.svi_id, SUM(sml.sml_cost_value) AS cost, SUM(sml.sml_qty + sml.sml_free_qty) AS qty
@@ -160,13 +186,27 @@ async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, posted
     let k = 0;
     for (const r of rows) {
         if (!r.qty.plus(r.freeQty).greaterThan(0)) {
-            perRow.push({ lotId: null, sviId: '', cost: exports.ZERO });
+            perRow.push({ lotId: null, sviId: '', cost: exports.ZERO, batchNo: r.batchNo ?? null });
             continue;
         }
         const b = back[k++];
-        perRow.push({ lotId: b?.svi_lot_id ?? null, sviId: b?.svi_id ?? '', cost: (0, exports.r2)((0, exports.D)(b?.cost)) });
+        perRow.push({ lotId: b?.svi_lot_id ?? null, sviId: b?.svi_id ?? '', cost: (0, exports.r2)((0, exports.D)(b?.cost)), batchNo: r.batchNo ?? null });
     }
     return { svhId: hdr.svh_id, perRow };
+}
+async function numberTextileBatches(tx, scope, rows) {
+    rows.forEach((r, i) => {
+        if (r.batchNo?.trim() && (r.sizeId || r.colourId || r.model?.trim())) {
+            (0, purchase_errors_1.purRefuse)(`Row ${i + 1}: size, colour and model are kept on a batch number the server gives — leave Batch blank.`, purchase_errors_1.PUR.QTY_INVALID, `allocs.${i}.batchNo`);
+        }
+    });
+    const { lines, numbered } = await (0, stock_voucher_batch_numbering_helper_1.assignAutoBatchNumbers)(tx, scope, rows.map((r) => ({ itemId: r.itemId, batchNo: r.batchNo ?? null })));
+    return { batchNos: lines.map((l) => l.batchNo ?? null), numbered };
+}
+async function writeTextileDetails(tx, a, rows, numbered) {
+    if (!numbered.size)
+        return;
+    await (0, batch_detail_helper_1.syncBatchDetails)(tx, { companyId: a.companyId, accYear: a.accYear, srcDocType: 'PURCHASE', srcDocId: a.svhId, actor: a.actor }, rows.map((r, k) => ({ lineNo: k + 1, splitNo: 1, sizeId: r.sizeId ?? null, colourId: r.colourId ?? null, model: r.model ?? null })), numbered);
 }
 async function cancelShadowStock(tx, stockPosting, docType, docId, accYear, companyId, branchId, rules, actor, reason) {
     const shadows = await tx.$queryRaw `

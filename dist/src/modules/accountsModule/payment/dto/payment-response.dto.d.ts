@@ -17,6 +17,9 @@ export declare class PayableBillDto implements PayableBill {
     daysOverdue: number;
     pdcHeld: number;
     ppdSuggested: number;
+    paymentHold: {
+        reason: string | null;
+    } | null;
 }
 export declare class PaymentBankDto {
     name: string;

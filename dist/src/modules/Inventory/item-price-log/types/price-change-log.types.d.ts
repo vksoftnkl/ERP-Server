@@ -3,7 +3,7 @@ export declare const PRICE_TABLES: readonly ["IPM", "IQP"];
 export type PriceTable = (typeof PRICE_TABLES)[number];
 export declare const PRICE_CHANGE_ACTIONS: readonly ["CREATE", "UPDATE", "DELETE", "RESTORE", "REKEY"];
 export type PriceChangeAction = (typeof PRICE_CHANGE_ACTIONS)[number];
-export declare const PRICE_CHANGE_SOURCES: readonly ["ITEM_CARD", "CHANGE_SELLING_PRICE", "QTY_PRICE", "BUCKET_REKEY", "IMPORT"];
+export declare const PRICE_CHANGE_SOURCES: readonly ["ITEM_CARD", "CHANGE_SELLING_PRICE", "QTY_PRICE", "BUCKET_REKEY", "IMPORT", "PURCHASE"];
 export type PriceChangeSource = (typeof PRICE_CHANGE_SOURCES)[number];
 export type PriceChangeApp = 'DESKTOP' | 'WEB' | 'API' | 'SYSTEM';
 export type PriceRowSnapshot = Prisma.JsonObject;
@@ -17,6 +17,7 @@ export declare const PRICE_MENU_ID: {
     readonly CHANGE_SELLING_PRICE: 30;
     readonly QTY_PRICE: 244;
     readonly PRICE_CHANGE_LOG: 290;
+    readonly PURCHASE_ENTRY: 24;
 };
 export declare const PRICE_ORIGIN: {
     readonly ITEM_CARD: {

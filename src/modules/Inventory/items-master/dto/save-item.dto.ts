@@ -1,8 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
   IsArray,
+  IsIn,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
+  Max,
+  Min,
   IsString,
   IsUUID,
   Matches,
@@ -193,6 +197,30 @@ export class SaveItemDto {
   @ApiPropertyOptional({ default: true })
   @OptionalNotNullBoolean()
   item_allow_purchase?: boolean;
+
+  // MST-03 purchase fields (plan-purchase-phase1 §2.5)
+  @ApiPropertyOptional({ nullable: true, description: 'The unit a purchase line opens in (item_unit_conversion.iuc_id of this item).' })
+  @NullableUuid()
+  item_purchase_uom_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 100, description: 'Minimum shelf life left at receipt, % (blank = the company default).' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  item_min_shelf_life_pct?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: ['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5'], description: 'Input tax credit class on purchase (blank = eligible).' })
+  @IsOptional()
+  @IsIn(['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5', null])
+  item_itc_class?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 100, description: 'Normal shortage % (transit loss) accepted without a claim.' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  item_shortage_pct?: number | null;
 
   @ApiPropertyOptional({ default: true })
   @OptionalNotNullBoolean()

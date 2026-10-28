@@ -57,6 +57,9 @@ export declare function supplierRow(tx: Tx, supplierId: string): Promise<{
     sup_gst_no: string | null;
     sup_credit_days: number | null;
 }>;
+export declare function payeeLedgers<P extends {
+    partyId: string;
+}>(tx: Tx, payees: P[], field?: string): Promise<P[]>;
 export declare function isInterState(tx: Tx, branchId: string, supplier: {
     sup_state_code: string | null;
     sup_gst_no: string | null;
@@ -77,6 +80,9 @@ export interface StockRow {
     salePrice?: Prisma.Decimal | null;
     serialNo?: string | null;
     supplierId?: string | null;
+    sizeId?: string | null;
+    colourId?: string | null;
+    model?: string | null;
     qty: Prisma.Decimal;
     freeQty: Prisma.Decimal;
     costRate: Prisma.Decimal;
@@ -102,8 +108,31 @@ export declare function postShadowStock(tx: Tx, stockPosting: StockPostingServic
         lotId: string | null;
         sviId: string;
         cost: Prisma.Decimal;
+        batchNo: string | null;
     }[];
 }>;
+export interface TextileRow {
+    itemId: string;
+    batchNo?: string | null;
+    sizeId?: string | null;
+    colourId?: string | null;
+    model?: string | null;
+}
+export declare function numberTextileBatches(tx: Tx, scope: {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    docDate: string;
+}, rows: TextileRow[]): Promise<{
+    batchNos: (string | null)[];
+    numbered: Set<number>;
+}>;
+export declare function writeTextileDetails(tx: Tx, a: {
+    companyId: string;
+    accYear: string;
+    svhId: string;
+    actor: string;
+}, rows: TextileRow[], numbered: Set<number>): Promise<void>;
 export declare function cancelShadowStock(tx: Tx, stockPosting: StockPostingService, docType: string, docId: string, accYear: string, companyId: string, branchId: string, rules: StockVoucherTypeRules, actor: string, reason: string): Promise<void>;
 export declare function raiseBillRow(tx: Tx, a: {
     companyId: string;

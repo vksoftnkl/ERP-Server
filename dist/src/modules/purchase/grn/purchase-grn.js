@@ -417,7 +417,7 @@ let PurchaseGrnService = class PurchaseGrnService {
                 dto.charges = await this.coolieFor(tx, h.receivedBy);
             for (const c of dto.charges ?? [])
                 if (c.payees?.length)
-                    c.payees = await this.payeeLedgers(tx, c.payees);
+                    c.payees = await (0, purchase_doc_helpers_1.payeeLedgers)(tx, c.payees, 'header.receivedBy');
             const chg = await this.loadCharges(tx, dto.charges ?? []);
             const calc = (0, purchase_calc_1.calcPurchase)({
                 interState: false, roundOffStep: 0, charges: chg,
@@ -503,20 +503,6 @@ let PurchaseGrnService = class PurchaseGrnService {
        ORDER BY chg_module, chg_code LIMIT 1`;
         return c ? [{ chgId: c.chg_id, payees: employees.map((partyId) => ({ partyId })) }] : [];
     }
-    async payeeLedgers(tx, payees) {
-        const ids = payees.map((p) => p.partyId);
-        const rows = await tx.$queryRaw `
-      SELECT emp_id, emp_name, emp_loan_ledger_id AS led FROM public.employee_master WHERE emp_id = ANY(${ids}::uuid[])`;
-        const by = new Map(rows.map((r) => [r.emp_id, r]));
-        return payees.map((p, i) => {
-            const e = by.get(p.partyId);
-            if (!e)
-                return p;
-            if (!e.led)
-                (0, purchase_errors_1.purRefuse)(`${e.emp_name} has no staff ledger — set it on the employee before paying coolie.`, purchase_errors_1.PUR.NOT_FOUND, `header.receivedBy.${i}`);
-            return { ...p, partyId: e.led };
-        });
-    }
     async poIdOf(tx, poiId) {
         const [r] = await tx.$queryRaw `SELECT poi_po_id AS id FROM purchase.pur_order_item WHERE poi_id = ${poiId}::uuid LIMIT 1`;
         if (!r)
@@ -586,11 +572,12 @@ let PurchaseGrnService = class PurchaseGrnService {
             const l = byLine.get(a.piaLineId);
             return { itemId: l.griItemId, uomId: l.griUomId, baseUomId: l.griBaseUomId, factor: l.griToBaseFactor, godownId: a.piaGodownId, bucket: a.piaBucket,
                 batchNo: a.piaBatchNo, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate, mrp: a.piaMrp, salePrice: a.piaSalePrice, serialNo: a.piaSerialNo,
+                sizeId: a.piaSizeId, colourId: a.piaColourId, model: a.piaModel,
                 supplierId: g.grnSupplierId, qty: a.piaQty, freeQty: a.piaFreeQty, costRate: cost(l) };
         }), actor, postedOn);
         for (let i = 0; i < allocs.length; i++) {
             if (perRow[i]?.sviId)
-                await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: allocs[i].piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear } });
+                await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: allocs[i].piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear, piaBatchNo: perRow[i].batchNo } });
         }
         const vt = await (0, purchase_doc_helpers_1.voucherTypeId)(tx, 'GRN');
         const charges = await tx.$queryRaw `

@@ -171,6 +171,56 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             };
         });
     }
+    async applyPurchasePrices(tx, args) {
+        const out = new Map();
+        const live = args.rows.filter((r) => r.levels.some((l) => l.price > 0));
+        for (const r of args.rows)
+            if (!live.includes(r))
+                out.set(r.key, { result: 'NONE', note: null });
+        if (!live.length)
+            return out;
+        const newer = await tx.$queryRaw `
+      SELECT DISTINCT ON (l.ipcl_item_id, l.ipcl_unit_id) l.ipcl_item_id AS item_id, l.ipcl_unit_id AS unit_id, l.ipcl_changed_on AS at,
+             l.ipcl_user_name AS who, l.ipcl_source AS source
+        FROM inventory.item_price_change_log l
+       WHERE l.ipcl_company_id = ${args.companyId}::uuid
+         AND (l.ipcl_branch_id IS NULL OR l.ipcl_branch_id = ${args.branchId}::uuid)
+         AND l.ipcl_price_table = 'IPM'
+         AND l.ipcl_item_id = ANY(${live.map((r) => r.itemId)}::uuid[])
+         AND l.ipcl_changed_on > ${args.businessTime}
+       ORDER BY l.ipcl_item_id, l.ipcl_unit_id, l.ipcl_changed_on DESC`;
+        const newerOf = new Map(newer.map((n) => [`${n.item_id}|${n.unit_id}`, n]));
+        const writable = live.filter((r) => {
+            const n = newerOf.get(`${r.itemId}|${r.uomId}`);
+            if (!n)
+                return true;
+            const when = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                .format(n.at).replace(/\//g, '-').replace(',', '').toUpperCase();
+            out.set(r.key, { result: 'KEPT_NEWER', note: `Price not updated — changed later on ${when} (${n.source}${n.who ? `, ${n.who}` : ''}); the bill keeps its own price as history.` });
+            return false;
+        });
+        if (!writable.length)
+            return out;
+        const rows = writable.map((r, i) => ({
+            lineNo: i + 1, itemId: r.itemId, uomId: r.uomId, mrp: r.mrp, salePrice: null,
+            levels: r.levels.filter((l) => l.price > 0).map((l) => ({ level: l.level, price: l.price })),
+        }));
+        const taxRates = await this.resolveItemTaxRates(tx, rows.map((r) => r.itemId));
+        const costs = await this.gateway.loadRowCosts(tx, rows.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp ?? null, salePrice: null })), args.companyId, args.branchId, undefined);
+        const candidates = rows.map((row, i) => this.toCandidate(row, i, args.companyId, args.actor, taxRates, costs[i]));
+        const problems = this.gateway.validateRows(candidates, costs.map((c) => c.minPrice));
+        const origin = { source: 'PURCHASE', menuId: price_change_log_types_1.PRICE_MENU_ID.PURCHASE_ENTRY, reason: `Purchase ${args.billRef}` };
+        for (let i = 0; i < candidates.length; i += 1) {
+            const mine = problems.filter((p) => p.lineNo === candidates[i].lineNo);
+            if (mine.length) {
+                out.set(writable[i].key, { result: 'NONE', note: `Price not updated — ${mine.map((p) => p.message).join('; ')}` });
+                continue;
+            }
+            await this.applyBucketPrice(tx, candidates[i], (0, selling_price_scope_helper_1.resolveTargetScope)('BRANCH', null, args.branchId), undefined, origin);
+            out.set(writable[i].key, { result: 'UPDATED', note: null });
+        }
+        return out;
+    }
     buildSaveMessage(result) {
         if (result.needsConfirm) {
             return `${result.problems.length} price(s) are below cost. Confirm to save them.`;

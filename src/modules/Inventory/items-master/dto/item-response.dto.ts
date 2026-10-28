@@ -60,6 +60,10 @@ export class ItemPayloadDto {
   item_allow_sales_return!: boolean;
   @ApiProperty()
   item_allow_purchase!: boolean;
+  @ApiPropertyOptional({ nullable: true }) item_purchase_uom_id?: string | null;
+  @ApiPropertyOptional({ nullable: true }) item_min_shelf_life_pct?: number | null;
+  @ApiPropertyOptional({ nullable: true }) item_itc_class?: string | null;
+  @ApiPropertyOptional({ nullable: true }) item_shortage_pct?: number | null;
   @ApiProperty()
   item_allow_po!: boolean;
   @ApiProperty()

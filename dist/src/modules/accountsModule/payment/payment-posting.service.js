@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentPostingService = void 0;
 exports.rethrowAllocationError = rethrowAllocationError;
+const purchase_hold_1 = require("../../purchase/common/purchase-hold");
 const common_1 = require("@nestjs/common");
 const money_lines_1 = require("../../../common/posting/money-lines");
 const tender_detail_api_types_1 = require("../tenderDetail/types/tender-detail-api.types");
@@ -250,6 +251,7 @@ let PaymentPostingService = class PaymentPostingService {
                 writeoffApprovedBy: row.writeoffApprovedBy ?? null,
             };
         });
+        await (0, purchase_hold_1.assertPaymentHoldCleared)(tx, dto.allocations.map((row, index) => ({ billId: row.billId, field: `allocations.${index}.billId` })), actor === module_service_utils_1.DEFAULT_ACTOR ? null : actor, header.avhVoucherRefno ?? header.avhVoucherId);
         const credits = dto.creditsApplied.map((row, index) => {
             const bill = (0, payment_guards_1.assertPayableUsable)(locked.get(`${row.billId}|${row.billAccYear}`), {
                 billId: row.billId,

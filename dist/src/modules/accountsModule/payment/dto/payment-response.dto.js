@@ -32,6 +32,7 @@ class PayableBillDto {
     daysOverdue;
     pdcHeld;
     ppdSuggested;
+    paymentHold;
 }
 exports.PayableBillDto = PayableBillDto;
 __decorate([
@@ -93,6 +94,10 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 0, description: 'R16 — what accounts.ppd_slabs suggests. A suggestion.' }),
     __metadata("design:type", Number)
 ], PayableBillDto.prototype, "ppdSuggested", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, description: 'Purchase R19 — the purchase bill is on payment hold { reason }; paying it needs the Override right on menu 24. null = not held.' }),
+    __metadata("design:type", Object)
+], PayableBillDto.prototype, "paymentHold", void 0);
 class PaymentBankDto {
     name;
     accountNo;

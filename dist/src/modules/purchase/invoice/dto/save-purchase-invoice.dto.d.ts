@@ -99,3 +99,13 @@ export declare class GrnLinesQueryDto {
     supplierId: string;
     piId?: string;
 }
+export declare class PurchaseInvoiceHoldDto {
+    piId: string;
+    accYear: string;
+    hold: boolean;
+    reason: string;
+}
+export declare class PurchaseSettingsQueryDto {
+    companyId: string;
+    branchId: string;
+}

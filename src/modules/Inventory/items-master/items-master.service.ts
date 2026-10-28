@@ -1686,6 +1686,19 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_allow_purchase')) {
       data.itemAllowPurchase = saveItemDto.item_allow_purchase;
     }
+    // MST-03 purchase fields
+    if (hasOwnProperty(saveItemDto, 'item_purchase_uom_id')) {
+      data.itemPurchaseUomId = saveItemDto.item_purchase_uom_id ?? null;
+    }
+    if (hasOwnProperty(saveItemDto, 'item_min_shelf_life_pct')) {
+      data.itemMinShelfLifePct = saveItemDto.item_min_shelf_life_pct ?? null;
+    }
+    if (hasOwnProperty(saveItemDto, 'item_itc_class')) {
+      data.itemItcClass = saveItemDto.item_itc_class ?? null;
+    }
+    if (hasOwnProperty(saveItemDto, 'item_shortage_pct')) {
+      data.itemShortagePct = saveItemDto.item_shortage_pct ?? null;
+    }
     if (hasOwnProperty(saveItemDto, 'item_allow_po')) {
       data.itemAllowPo = saveItemDto.item_allow_po;
     }
@@ -1841,6 +1854,10 @@ export class ItemsMasterService {
       item_allow_sales: record.itemAllowSales,
       item_allow_sales_return: record.itemAllowSalesReturn,
       item_allow_purchase: record.itemAllowPurchase,
+      item_purchase_uom_id: record.itemPurchaseUomId ?? null,
+      item_min_shelf_life_pct: record.itemMinShelfLifePct == null ? null : toNumber(record.itemMinShelfLifePct),
+      item_itc_class: record.itemItcClass ?? null,
+      item_shortage_pct: record.itemShortagePct == null ? null : toNumber(record.itemShortagePct),
       item_allow_po: record.itemAllowPo,
       item_allow_so: record.itemAllowSo,
       item_allow_neg_stock: record.itemAllowNegStock,
