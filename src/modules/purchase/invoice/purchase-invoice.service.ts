@@ -11,11 +11,13 @@ import {
 import { VoucherPostingService } from 'src/common/posting/voucher-posting.service';
 import type { VoucherLeg } from 'src/common/posting/voucher-leg.types';
 import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
+import { SellingPriceBulkService } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.service';
 import { StockVoucherSource } from 'src/modules/stocks/posting/stock-voucher.source';
 import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stock-voucher/stock-voucher-numbering.helper';
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { recordSupplierItems } from '../supplier-item/purchase-supplier-item';
+import { loadPurchaseSettings, type PurchaseSettings } from '../common/purchase-settings';
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
@@ -103,6 +105,8 @@ interface Prepared {
   calc: CalcOut;
   /** lineNo → the GRN line it bills */
   grn: Map<number, GrnFacts>;
+  /** set by save (the purchase.* settings snapshotted on the bill) */
+  settings?: PurchaseSettings;
   allocs: Map<number, { godownId: string; bucket: string; batchNo: string | null; mfgDate: string | null; expiryDate: string | null; mrp: number | null; salePrice: number | null; serialNo: string | null; warrantyTo: string | null; sizeId: string | null; colourId: string | null; model: string | null; qty: Prisma.Decimal; freeQty: Prisma.Decimal }[]>;
 }
 
@@ -113,6 +117,7 @@ export class PurchaseInvoiceService {
     private readonly requestContext: RequestContextService,
     private readonly vouchers: VoucherPostingService,
     private readonly stockPosting: StockPostingService,
+    private readonly prices: SellingPriceBulkService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -123,17 +128,25 @@ export class PurchaseInvoiceService {
     return this.calcPayload(p, dto);
   }
 
+  /** The purchase.* settings in force for a branch — what the screen needs to know (WARN / REFUSE, prices). */
+  async settings(companyId: string, branchId: string) {
+    return loadPurchaseSettings(this.prisma as unknown as Tx, companyId, branchId);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   //  save (draft) / save + post
   // ═══════════════════════════════════════════════════════════════════════
   async save(dto: SavePurchaseInvoiceDto) {
     const actor = this.actor();
     const h = dto.header;
+    const warnings: { code: string; message: string; field: string }[] = [];
     const piId = await this.prisma.$transaction(
       async (tx) => {
         const p = await this.prepare(tx, dto);
-        await this.assertNotDuplicate(tx, dto);
-        if (h.post) this.assertPrintedAmount(p, dto);
+        const settings = await loadPurchaseSettings(tx, h.companyId, h.branchId);
+        p.settings = settings;
+        await this.assertNotDuplicate(tx, dto, settings, warnings);
+        if (h.post) this.assertPrintedAmount(p, dto, settings, warnings);
 
         let id = h.piId ?? null;
         let slno: bigint, refno: string, fromStatus: string | null = null;
@@ -152,12 +165,13 @@ export class PurchaseInvoiceService {
         if (!fromStatus) {
           await this.log(tx, dto, id, refno, TxnStatusEvent.CREATED, null, 'DRAFT', actor);
         }
-        if (h.post) await this.postInTx(tx, id, h.accYear, actor);
+        if (h.post) for (const note of await this.postInTx(tx, id, h.accYear, actor)) warnings.push(note);
         return id;
       },
       { timeout: 60000, maxWait: 10000 },
     );
-    return this.get(piId, h.accYear);
+    // a WARN setting lets the bill through and says so
+    return { ...(await this.get(piId, h.accYear)), warnings };
   }
 
   async post(piId: string, accYear: string) {
@@ -605,7 +619,7 @@ export class PurchaseInvoiceService {
     };
   }
 
-  private async assertNotDuplicate(tx: Tx, dto: SavePurchaseInvoiceDto) {
+  private async assertNotDuplicate(tx: Tx, dto: SavePurchaseInvoiceDto, settings: PurchaseSettings, warnings: { code: string; message: string; field: string }[]) {
     const h = dto.header;
     // R1 / P17: company-wide, every branch; not a unique index (offline branches)
     const dup = await tx.$queryRaw<{ pi_refno: string; br: string | null }[]>`
@@ -617,12 +631,21 @@ export class PurchaseInvoiceService {
          AND (${h.piId ?? null}::uuid IS NULL OR pi.pi_id <> ${h.piId ?? null}::uuid)
        LIMIT 1`;
     if (dup.length) {
-      purConflict(`Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`, PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
+      const message = `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`;
+      // purchase.duplicate_bill_mode — WARN lets it through (a supplier that reuses numbers)
+      if (settings.duplicateBillMode === 'WARN') warnings.push({ code: PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
+      else purConflict(message, PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
     }
   }
 
-  private assertPrintedAmount(p: Prepared, dto: SavePurchaseInvoiceDto) {
+  private assertPrintedAmount(p: Prepared, dto: SavePurchaseInvoiceDto, settings: PurchaseSettings, warnings: { code: string; message: string; field: string }[]) {
     const diff = D(dto.header.invoiceAmountPrinted).minus(p.calc.netPayable);
+    if (!diff.isZero() && settings.invAmountCheck === 'WARN') {
+      // purchase.inv_amount_check WARN: posted on the net payable; the printed figure stays on the bill
+      warnings.push({ code: PUR.INVOICE_AMOUNT_MISMATCH, field: 'header.invoiceAmountPrinted',
+        message: `Posted at the net payable ${p.calc.netPayable.toFixed(2)}; the bill says ${D(dto.header.invoiceAmountPrinted).toFixed(2)} (difference ${diff.toFixed(2)}).` });
+      return;
+    }
     if (!diff.isZero()) {
       purRefuse(`Invoice amount ${D(dto.header.invoiceAmountPrinted).toFixed(2)} does not match the net payable ${p.calc.netPayable.toFixed(2)} (difference ${diff.toFixed(2)}). Check the lines, charges and round off.`,
         PUR.INVOICE_AMOUNT_MISMATCH, 'header.invoiceAmountPrinted');
@@ -658,7 +681,11 @@ export class PurchaseInvoiceService {
       piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
       piChargesOnBill: c.chargesOnBill, piTcsAmt: c.tcs, piRoundOff: c.roundOff, piNetPayable: c.netPayable, piOffbillCharges: c.offbillCharges,
       piShortValue: c.shortValue, piItcEligibleAmt: c.itcEligible, piItcPendingAmt: c.itcPending, piItcIneligibleAmt: c.itcIneligible,
-      piPolicy: { invAmountCheck: 'REFUSE', roundOffStep: 1, priceUpdate: 'OFF' } as Prisma.InputJsonValue,
+      // the rules this bill is made under (an old bill keeps them)
+      piPolicy: {
+        invAmountCheck: p.settings?.invAmountCheck ?? 'REFUSE', duplicateBillMode: p.settings?.duplicateBillMode ?? 'REFUSE', roundOffStep: 1,
+        allowPriceUpdate: p.settings?.allowPriceUpdate ?? false, priceUpdate: p.settings?.allowPriceUpdate ? p.settings.priceUpdate : 'OFF',
+      } as Prisma.InputJsonValue,
       piRemarks: h.remarks ?? null,
     };
     let piId: string;
@@ -692,7 +719,7 @@ export class PurchaseInvoiceService {
           piiTotalAmt: o.total, piiItcEligibleAmt: o.itcEligible, piiItcPendingAmt: o.itcPending, piiItcIneligibleAmt: o.itcIneligible,
           piiItcClass: o.itcClass, piiLandedCostWot: o.landedCostWot, piiMarkupAPct: l.markupAPct ?? null,
           piiSellA: l.sellA ?? null, piiSellB: l.sellB ?? null, piiSellC: l.sellC ?? null, piiSellD: l.sellD ?? null, piiMrp: l.mrp ?? null,
-          piiPriceUpdateResult: 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
+          piiPriceUpdateResult: p.settings?.allowPriceUpdate && p.settings.priceUpdate === 'UPDATE_PRICES' ? 'NONE' : 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
         },
         select: { piiId: true },
       });
@@ -747,12 +774,15 @@ export class PurchaseInvoiceService {
     } as StockVoucherTypeRules;
   }
 
-  private async postInTx(tx: Tx, piId: string, accYear: string, actor: string) {
+  /** Posts the draft; returns what the screen should be told (prices kept / not written). */
+  private async postInTx(tx: Tx, piId: string, accYear: string, actor: string): Promise<{ code: string; message: string; field: string }[]> {
+    const notes: { code: string; message: string; field: string }[] = [];
     const pi = await tx.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
     if (!pi) purNotFound(`Purchase invoice ${piId} not found`);
     if (pi.piStatus !== 'DRAFT') purConflict(`${pi.piRefno} is ${pi.piStatus} — only a draft can be posted.`, PUR.NOT_DRAFT, 'piId');
     const diff = pi.piInvoiceAmountPrinted.minus(pi.piNetPayable);
-    if (!diff.isZero()) {
+    const policy = (pi.piPolicy ?? {}) as { invAmountCheck?: string; allowPriceUpdate?: boolean; priceUpdate?: string };
+    if (!diff.isZero() && policy.invAmountCheck !== 'WARN') {
       purRefuse(`Invoice amount ${pi.piInvoiceAmountPrinted.toFixed(2)} does not match the net payable ${pi.piNetPayable.toFixed(2)} (difference ${diff.toFixed(2)}).`, PUR.INVOICE_AMOUNT_MISMATCH, 'header.invoiceAmountPrinted');
     }
     const lines = await tx.purInvoiceItem.findMany({ where: { piiPiId: piId, piiAccYear: accYear, piiIsDeleted: false }, orderBy: { piiLineNo: 'asc' } });
@@ -1014,6 +1044,27 @@ export class PurchaseInvoiceService {
       });
     }
 
+    // ── 4c · B3 / D16: selling prices from the bill, when the bill's own policy says so ──
+    if (policy.allowPriceUpdate && policy.priceUpdate === 'UPDATE_PRICES') {
+      const today = isoDate(postedOn) === docDate;
+      // business time: the bill's own moment — now for today's bill, the end of its day for a late entry
+      const businessTime = today ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
+      const lv = (v: Prisma.Decimal | null) => (v ? Number(v) : 0);
+      const result = await this.prices.applyPurchasePrices(tx, {
+        companyId: pi.piCompanyId, branchId: pi.piBranchId, actor, billRef: pi.piRefno, businessTime,
+        rows: lines.map((l) => ({
+          key: l.piiId, itemId: l.piiItemId, uomId: l.piiUomId, mrp: l.piiMrp ? Number(l.piiMrp) : null,
+          levels: [{ level: 1, price: lv(l.piiSellA) }, { level: 2, price: lv(l.piiSellB) }, { level: 3, price: lv(l.piiSellC) }, { level: 4, price: lv(l.piiSellD) }],
+        })),
+      });
+      for (const l of lines) {
+        const r = result.get(l.piiId);
+        if (!r) continue;
+        await tx.purInvoiceItem.update({ where: { piiId_piiAccYear: { piiId: l.piiId, piiAccYear: accYear } }, data: { piiPriceUpdateResult: r.result } });
+        if (r.note) notes.push({ code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', field: `lines.${l.piiLineNo}`, message: `Line ${l.piiLineNo}: ${r.note}` });
+      }
+    }
+
     // ── 4a · MST-02: the first bill of a (supplier, item) pair makes its supplier–item row (AUTO); an existing row is kept
     await recordSupplierItems(tx, pi.piCompanyId, pi.piSupplierId, lines.map((l) => ({ itemId: l.piiItemId, uomId: l.piiUomId, factor: l.piiToBaseFactor })), actor);
 
@@ -1027,6 +1078,7 @@ export class PurchaseInvoiceService {
       companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
       srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.POSTED, fromStatus: 'DRAFT', toStatus: 'POSTED', changedBy: actor, deviceId: pi.piDeviceId,
     });
+    return notes;
   }
 
   /** The rejected qty's money: per billed unit of the line, each head rounded, the total their sum (as the return module's money()). */

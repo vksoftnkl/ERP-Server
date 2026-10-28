@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CommonPostingModule } from 'src/common/posting/posting.module';
 import { StockPostingModule } from 'src/modules/stocks/posting/stock-posting.module';
 import { AccountLedgerMastersModule } from 'src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
+import { SellingPriceBulkModule } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { PurchaseAgentController, PurchaseAgentService } from './agent/purchase-agent';
 import { PurchaseSupplierItemController, PurchaseSupplierItemService } from './supplier-item/purchase-supplier-item';
 import { PurchaseGrnController, PurchaseGrnService } from './grn/purchase-grn';
@@ -17,7 +18,7 @@ import { PurchaseShortageController, PurchaseShortageService } from './shortage/
  * Masters: supplier–item map (MST-02, menu 295), agents (MST-05, menu 28).
  */
 @Module({
-  imports: [CommonPostingModule, StockPostingModule, AccountLedgerMastersModule],
+  imports: [CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
   controllers: [PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseReturnController, PurchaseShortageController,
                 PurchaseAgentController, PurchaseSupplierItemController],
   providers: [PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,

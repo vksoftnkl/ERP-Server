@@ -21,6 +21,8 @@ export const PRICE_CHANGE_SOURCES = [
   'QTY_PRICE',
   'BUCKET_REKEY',
   'IMPORT',
+  // a posted purchase bill (purchase.allow_price_update + UPDATE_PRICES); ck_ipcl_source already lists it
+  'PURCHASE',
 ] as const;
 export type PriceChangeSource = (typeof PRICE_CHANGE_SOURCES)[number];
 
@@ -45,6 +47,7 @@ export const PRICE_MENU_ID = {
   QTY_PRICE: 244,
   /** Notes 144 — the Price Change Log report: its VIEW right is the report's access. */
   PRICE_CHANGE_LOG: 290,
+  PURCHASE_ENTRY: 24,
 } as const;
 
 /** The origins every writer call names — one per screen. */

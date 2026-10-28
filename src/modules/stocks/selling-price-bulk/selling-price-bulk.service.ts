@@ -311,6 +311,80 @@ export class SellingPriceBulkService {
   }
 
   /**
+   * Purchase B3 / D16 — a posted bill's selling prices, written in THE BILL'S
+   * transaction (purchase.allow_price_update on, purchase.price_update =
+   * UPDATE_PRICES; the caller decides that). Per row, this branch's price row
+   * for the bill line's unit and MRP bucket, by the same S1 → S2/S3 as the
+   * screen (applyBucketPrice), logged with source PURCHASE.
+   *
+   * D16: a row someone changed LATER than the bill in business time (the
+   * price log's changed_on against the bill's time) is KEPT — the bill keeps
+   * its prices as history. A row the screen would refuse (above MRP, below
+   * the minimum) or that would go below cost is not written either: a bill is
+   * never stopped by its prices. Neither needs the price-change right: the
+   * company opted into purchase writing prices.
+   */
+  async applyPurchasePrices(
+    tx: Prisma.TransactionClient,
+    args: {
+      companyId: string;
+      branchId: string;
+      actor: string;
+      billRef: string;
+      businessTime: Date;
+      rows: { key: string; itemId: string; uomId: string; mrp: number | null; levels: { level: number; price: number }[] }[];
+    },
+  ): Promise<Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>> {
+    const out = new Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>();
+    const live = args.rows.filter((r) => r.levels.some((l) => l.price > 0));
+    for (const r of args.rows) if (!live.includes(r)) out.set(r.key, { result: 'NONE', note: null });
+    if (!live.length) return out;
+    // D16 — a logged change of the row newer than the bill, in business time
+    const newer = await tx.$queryRaw<{ item_id: string; unit_id: string; at: Date; who: string | null; source: string }[]>`
+      SELECT DISTINCT ON (l.ipcl_item_id, l.ipcl_unit_id) l.ipcl_item_id AS item_id, l.ipcl_unit_id AS unit_id, l.ipcl_changed_on AS at,
+             l.ipcl_user_name AS who, l.ipcl_source AS source
+        FROM inventory.item_price_change_log l
+       WHERE l.ipcl_company_id = ${args.companyId}::uuid
+         AND (l.ipcl_branch_id IS NULL OR l.ipcl_branch_id = ${args.branchId}::uuid)
+         AND l.ipcl_price_table = 'IPM'
+         AND l.ipcl_item_id = ANY(${live.map((r) => r.itemId)}::uuid[])
+         AND l.ipcl_changed_on > ${args.businessTime}
+       ORDER BY l.ipcl_item_id, l.ipcl_unit_id, l.ipcl_changed_on DESC`;
+    const newerOf = new Map(newer.map((n) => [`${n.item_id}|${n.unit_id}`, n]));
+    const writable = live.filter((r) => {
+      const n = newerOf.get(`${r.itemId}|${r.uomId}`);
+      if (!n) return true;
+      // shown as the screens show times: dd-MM-yyyy hh:mm AM/PM, India time
+      const when = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+        .format(n.at).replace(/\//g, '-').replace(',', '').toUpperCase();
+      out.set(r.key, { result: 'KEPT_NEWER', note: `Price not updated — changed later on ${when} (${n.source}${n.who ? `, ${n.who}` : ''}); the bill keeps its own price as history.` });
+      return false;
+    });
+    if (!writable.length) return out;
+    const rows = writable.map((r, i) => ({
+      lineNo: i + 1, itemId: r.itemId, uomId: r.uomId, mrp: r.mrp, salePrice: null,
+      levels: r.levels.filter((l) => l.price > 0).map((l) => ({ level: l.level, price: l.price })),
+    })) as unknown as SaveSellingPriceRowDto[];
+    const taxRates = await this.resolveItemTaxRates(tx, rows.map((r) => r.itemId));
+    const costs = await this.gateway.loadRowCosts(
+      tx, rows.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp ?? null, salePrice: null })), args.companyId, args.branchId, undefined,
+    );
+    const candidates = rows.map((row, i) => this.toCandidate(row, i, args.companyId, args.actor, taxRates, costs[i]));
+    const problems = this.gateway.validateRows(candidates, costs.map((c) => c.minPrice));
+    const origin = { source: 'PURCHASE' as const, menuId: PRICE_MENU_ID.PURCHASE_ENTRY, reason: `Purchase ${args.billRef}` };
+    for (let i = 0; i < candidates.length; i += 1) {
+      const mine = problems.filter((p) => p.lineNo === candidates[i].lineNo);
+      if (mine.length) {
+        out.set(writable[i].key, { result: 'NONE', note: `Price not updated — ${mine.map((p) => p.message).join('; ')}` });
+        continue;
+      }
+      await this.applyBucketPrice(tx, candidates[i], resolveTargetScope('BRANCH', null, args.branchId), undefined, origin);
+      out.set(writable[i].key, { result: 'UPDATED', note: null });
+    }
+    return out;
+  }
+
+  /**
    * §5.4's toast, built from the same numbers the client can already see.
    *
    * NEVER a plain "Saved" when `noStock` is non-empty — legacy fault #2 was a

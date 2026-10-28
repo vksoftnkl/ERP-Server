@@ -135,3 +135,8 @@ export class GrnLinesQueryDto {
   @ApiProperty() @IsUUID() supplierId!: string;
   @ApiPropertyOptional({ description: 'The draft being edited — its own GRN lines are listed as free.' }) @IsOptional() @IsUUID() piId?: string;
 }
+
+export class PurchaseSettingsQueryDto {
+  @ApiProperty() @IsUUID() companyId!: string;
+  @ApiProperty() @IsUUID() branchId!: string;
+}

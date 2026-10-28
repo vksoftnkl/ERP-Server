@@ -5,7 +5,7 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 
 /** Menu 24 — Purchase Entry. One right per route (code prefix PUR). plan-purchase-backend.md B6. */
 export const PURCHASE_INVOICE_MENU_ID = 24;
@@ -27,7 +27,8 @@ export class PurchaseInvoiceController {
     await this.right(dto.header.piId ? 'edit' : 'create', 'save a purchase invoice');
     if (dto.header.post) await this.right('post', 'post a purchase invoice');
     const data = await this.service.save(dto);
-    return { success: true, message: dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`, data };
+    const base = dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`;
+    return { success: true, message: data.warnings.length ? `${base} — ${data.warnings.map((w) => w.message).join(' ')}` : base, data };
   }
 
   @Post('validate')
@@ -53,6 +54,14 @@ export class PurchaseInvoiceController {
   async get(@Query() q: GetPurchaseInvoiceQueryDto) {
     await this.right('view', 'open a purchase invoice');
     return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
+  }
+
+  @Get('settings')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'The purchase.* settings in force for a branch (App Settings, module PURCHASE): invoice amount / duplicate checks, price update, …' })
+  async settings(@Query() q: PurchaseSettingsQueryDto) {
+    await this.right('view', 'read the purchase settings');
+    return { success: true, message: 'Purchase settings', data: await this.service.settings(q.companyId, q.branchId) };
   }
 
   @Get('grn-lines')
