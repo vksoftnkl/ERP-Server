@@ -192,15 +192,35 @@ export class PurchaseReturnService {
     return new Map(rows.map((r) => [r.id, D(r.q)]));
   }
 
-  /** The source lines' lots: what the bill / GRN brought in, per allocation row. */
+  /** The source lines' lots: what the bill / GRN brought in, per allocation row. A bill line billed off a GRN line has
+   *  no rows of its own — the goods came in on the GRN, so its lots are the GRN line's (keyed to the bill line). */
   private async sourceLots(db: Tx | PrismaService, src: SourceDoc) {
     return db.$queryRaw<{ line_id: string; lot_id: string; bucket: string; godown_id: string; batch_no: string | null; expiry: Date | null; mrp: Prisma.Decimal | null; qty: Prisma.Decimal }[]>`
-      SELECT pia_line_id AS line_id, pia_lot_id AS lot_id, pia_bucket AS bucket, pia_godown_id AS godown_id, pia_batch_no AS batch_no,
-             pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty
-        FROM purchase.pur_item_alloc
-       WHERE pia_doc_type = ${src.docType} AND pia_doc_id = ${src.id}::uuid AND pia_acc_year = ${src.accYear}::bpchar
-         AND NOT pia_is_deleted AND pia_lot_id IS NOT NULL
-       ORDER BY pia_row_no`;
+      SELECT line_id, lot_id, bucket, godown_id, batch_no, expiry, mrp, qty FROM (
+        SELECT pia_line_id AS line_id, pia_lot_id AS lot_id, pia_bucket AS bucket, pia_godown_id AS godown_id, pia_batch_no AS batch_no,
+               pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty, 0 AS line_no, pia_row_no AS row_no
+          FROM purchase.pur_item_alloc
+         WHERE pia_doc_type = ${src.docType} AND pia_doc_id = ${src.id}::uuid AND pia_acc_year = ${src.accYear}::bpchar
+           AND NOT pia_is_deleted AND pia_lot_id IS NOT NULL
+        UNION ALL
+        SELECT pii.pii_id, a.pia_lot_id, a.pia_bucket, a.pia_godown_id, a.pia_batch_no, a.pia_expiry_date, a.pia_mrp, a.pia_qty + a.pia_free_qty,
+               pii.pii_line_no, a.pia_row_no
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'GRN' AND a.pia_line_id = pii.pii_src_item_id AND a.pia_acc_year = pii.pii_src_doc_year
+         WHERE ${src.docType} = 'PURCHASE_BILL' AND pii.pii_pi_id = ${src.id}::uuid AND pii.pii_acc_year = ${src.accYear}::bpchar
+           AND pii.pii_src_doc_type = 'GRN' AND NOT pii.pii_is_deleted AND NOT a.pia_is_deleted AND a.pia_lot_id IS NOT NULL
+      ) x
+       ORDER BY line_no, row_no`;
+  }
+
+  /** GRN lines already billed (line id → the bill's number): their goods go back against the bill, not the GRN. */
+  private async billedGrnLines(db: Tx | PrismaService, grnId: string) {
+    const rows = await db.$queryRaw<{ id: string; refno: string }[]>`
+      SELECT x.pii_src_item_id AS id, p.pi_refno AS refno FROM purchase.pur_invoice_item x
+        JOIN purchase.pur_invoice p ON p.pi_id = x.pii_pi_id AND p.pi_acc_year = x.pii_acc_year
+       WHERE x.pii_src_doc_type = 'GRN' AND x.pii_src_doc_id = ${grnId}::uuid AND NOT x.pii_is_deleted
+         AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'`;
+    return new Map(rows.map((r) => [r.id, r.refno]));
   }
 
   /** Per-unit money of a source line × qty → the row's figures (rounded per head, total = Σ). */
@@ -265,12 +285,14 @@ export class PurchaseReturnService {
       const lines = await this.sourceLines(tx, src);
       const lots = await this.sourceLots(tx, src);
       const returned = await this.returnedQty(tx, src.id, h.prId);
+      const billed = src.docType === 'GRN' ? await this.billedGrnLines(tx, src.id) : new Map<string, string>();
 
       const problems: { field: string; code: string; message: string }[] = [];
       const want = new Map<string, Prisma.Decimal>();
       const resolved = dto.lines.map((l, i) => {
         const s = lines.get(l.srcItemId);
         if (!s) { problems.push({ field: `lines.${i}.srcItemId`, code: PUR.NOT_FOUND, message: `Line ${l.lineNo}: that line is not on ${src.refno}` }); return null; }
+        if (billed.has(l.srcItemId)) problems.push({ field: `lines.${i}.srcItemId`, code: PUR.GRN_LINE_BILLED, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} is billed in ${billed.get(l.srcItemId)} — return it against that bill` });
         const q = D(l.qty).plus(D(l.freeQty));
         if (!q.greaterThan(0)) problems.push({ field: `lines.${i}.qty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing to return` });
         want.set(l.srcItemId, (want.get(l.srcItemId) ?? ZERO).plus(q));

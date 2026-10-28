@@ -14,10 +14,11 @@ import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.se
 import { StockVoucherSource } from 'src/modules/stocks/posting/stock-voucher.source';
 import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stock-voucher/stock-voucher-numbering.helper';
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
+import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import { assertNoLiveReturns, assertShortagesUntouched } from '../common/purchase-doc.helpers';
-import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto } from './dto/save-purchase-invoice.dto';
 
 /**
  * Purchase Invoice — save (draft), save + post, get, preview, cancel.
@@ -38,6 +39,16 @@ import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvo
  *   3  bills   acc_bill_balance PURCHASE (CR) for the supplier and each payee.
  *   4  short   a pur_shortage row per line with a pending short.
  *   5  log     txn_status_log POSTED.
+ *
+ * A line billed off a GRN line (`grnItemId`, R4 / R5) has no stock voucher —
+ * the goods came in on the GRN at its provisional value. Its books are
+ * Dr GRNI (the GRN line's provisional value) and the difference to the bill's
+ * landed value split by R2: the share still on hand → INVENTORY (value-only
+ * revaluation rows, P13 `revalueOnHand`), the rest → PURCHASE_PRICE_VARIANCE.
+ * The GRN's challan-short row is ADOPTED (R3): value + pending GST set on it,
+ * never a second row. Slice 1 refuses what is not built yet: a GRN line with a
+ * live return against it (R18), a challan short already received / closed,
+ * billing less than came in, and off-bill charges on such a bill.
  */
 
 const D = (v: Prisma.Decimal.Value | null | undefined) => new Prisma.Decimal(v ?? 0);
@@ -54,6 +65,15 @@ interface ItemRow { iuc_id: string; iuc_item_id: string; iuc_to_base_factor: Pri
 interface TaxRow { tax_id: string; tax_rate_perc: Prisma.Decimal; tax_cess_perc: Prisma.Decimal | null; tax_cess_per_unit: Prisma.Decimal | null }
 interface ChargeRow { chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null; chg_before_tax: boolean; chg_tax_apl: boolean; chg_landing_cost: boolean; chg_on_bill: boolean; chg_ledger_code: string; chg_role: string | null; tax_rate_perc: Prisma.Decimal | null; chg_tax_id: string | null }
 
+/** The GRN line a bill line bills — read at save (prepare) and again at post. */
+interface GrnFacts {
+  gri_id: string; gri_acc_year: string; gri_line_no: number; gri_item_id: string; gri_uom_id: string;
+  gri_received_qty: Prisma.Decimal; gri_damaged_qty: Prisma.Decimal; gri_free_qty: Prisma.Decimal; gri_challan_qty: Prisma.Decimal;
+  gri_to_base_factor: Prisma.Decimal; gri_value: Prisma.Decimal; gri_offbill_share: Prisma.Decimal;
+  grn_id: string; grn_refno: string; grn_doc_date: Date; grn_status: string; grn_company_id: string; grn_branch_id: string; grn_supplier_id: string;
+  billed_in: string | null; return_refno: string | null; short_touched: bigint;
+}
+
 interface Prepared {
   supplier: SupplierRow;
   interState: boolean;
@@ -62,6 +82,8 @@ interface Prepared {
   taxes: Map<string, TaxRow>;
   charges: ChargeRow[];
   calc: CalcOut;
+  /** lineNo → the GRN line it bills */
+  grn: Map<number, GrnFacts>;
   allocs: Map<number, { godownId: string; bucket: string; batchNo: string | null; mfgDate: string | null; expiryDate: string | null; mrp: number | null; salePrice: number | null; serialNo: string | null; warrantyTo: string | null; sizeId: string | null; colourId: string | null; model: string | null; qty: Prisma.Decimal; freeQty: Prisma.Decimal }[]>;
 }
 
@@ -172,6 +194,7 @@ export class PurchaseInvoiceService {
       }
       await assertNoLiveReturns(tx, dto.piId, cur.piRefno);
       await assertShortagesUntouched(tx, dto.piId, cur.piRefno);
+      const cancelledOn = new Date();
       const rules = this.stockRules();
       const shadows = await tx.$queryRaw<{ svh_id: string }[]>`
         SELECT svh_id FROM stock.stock_voucher
@@ -188,6 +211,43 @@ export class PurchaseInvoiceService {
       if (cur.piPostedVoucherId) {
         await this.vouchers.reverseLegs(tx, cur.piPostedVoucherId, dto.accYear, `Purchase ${cur.piRefno} cancelled: ${dto.reason}`, actor);
       }
+      // GRN lines: the revaluation comes out of what is still on hand; what already left stock stays a variance
+      const docDate = isoDate(cancelledOn);
+      const { forward, reversed } = await reverseCostRevaluation(tx,
+        { companyId: cur.piCompanyId, branchId: cur.piBranchId, accYear: dto.accYear, srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: dto.piId,
+          srcAccYear: dto.accYear, docDate, narration: `Purchase ${cur.piRefno} cancelled: ${dto.reason}` },
+        actor, cancelledOn);
+      const left = forward.plus(reversed);   // the mirror took `forward` out of INVENTORY; only −`reversed` left stock
+      if (!left.toDecimalPlaces(2).isZero()) {
+        // a journal of its own series — the PUR series is the bills' own numbers (presetNo = pi_slno)
+        const [vt] = await tx.$queryRaw<{ id: number }[]>`SELECT vchr_type_id AS id FROM accounts.acc_voucher_types WHERE vchr_type_code = 'Jrl' AND vchr_is_active LIMIT 1`;
+        if (!vt) purRefuse('Voucher type Jrl (Journal) is missing.', PUR.VOUCHER_TYPE_MISSING);
+        const amt = Math.abs(num(left));
+        await this.vouchers.postLegs(tx, {
+          header: {
+            companyId: cur.piCompanyId, branchId: cur.piBranchId, accYear: dto.accYear, voucherTypeId: vt.id, voucherDate: docDate,
+            srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: dto.piId, docLabel: 'Purchase revaluation', docRefno: `${cur.piRefno}/RV`, docDate,
+            usrRefno: cur.piSupplierInvNo, docAmount: amt, partyId: cur.piSupplierId, userId: actor, sessionId: cur.piSessionId, deviceId: cur.piDeviceId,
+            remarks: `Purchase ${cur.piRefno} cancelled — revaluation of stock already sold stays`, createdBy: actor,
+          },
+          legs: [
+            { role: 'INVENTORY', drCr: left.greaterThan(0) ? 'DR' : 'CR', amount: amt, roleTag: 'INVENTORY', remarks: `Revaluation still in stock · ${cur.piRefno}` },
+            { role: 'PURCHASE_PRICE_VARIANCE', drCr: left.greaterThan(0) ? 'CR' : 'DR', amount: amt, roleTag: 'PURCHASE_PRICE_VARIANCE', remarks: `Bill vs GRN rate on stock already out · ${cur.piRefno}` },
+          ],
+        });
+      }
+      // R3: a GRN challan short this bill adopted goes back to the GRN, qty-only
+      await tx.$executeRaw`
+        UPDATE purchase.pur_shortage s
+           SET psh_reason = 'SHORT_CHALLAN', psh_bill_doc_id = NULL, psh_bill_doc_year = NULL, psh_bill_item_id = NULL,
+               psh_qty_base = (gri.gri_challan_qty - gri.gri_received_qty - gri.gri_damaged_qty) * gri.gri_to_base_factor,
+               psh_value = NULL, psh_gst_pending = NULL,
+               psh_origin_cost_rate = CASE WHEN (gri.gri_received_qty + gri.gri_damaged_qty + gri.gri_free_qty) * gri.gri_to_base_factor = 0 THEN 0
+                 ELSE ROUND((gri.gri_value + gri.gri_offbill_share) / ((gri.gri_received_qty + gri.gri_damaged_qty + gri.gri_free_qty) * gri.gri_to_base_factor), 6) END,
+               psh_is_deleted = false, psh_modified_by = ${actor}, psh_modified_on = ${cancelledOn}
+          FROM purchase.pur_grn_item gri
+         WHERE s.psh_bill_doc_id = ${dto.piId}::uuid AND s.psh_bill_doc_year = ${dto.accYear}::bpchar
+           AND s.psh_src_doc_type = 'GRN' AND gri.gri_id = s.psh_src_item_id AND gri.gri_acc_year = s.psh_src_doc_year`;
       await tx.accBillBalance.updateMany({
         where: { ablSrcModule: SRC_MODULE, ablSrcDocType: DOC_TYPE, ablSrcDocId: dto.piId, ablIsDeleted: false },
         data: { ablIsDeleted: true, ablModifiedBy: actor },
@@ -255,6 +315,7 @@ export class PurchaseInvoiceService {
       ).map((r) => [r.iuc_id, r]),
     );
     const problems: { field: string; code: string; message: string }[] = [];
+    const grn = await this.loadGrnLines(tx, dto, problems);
     dto.lines.forEach((l, i) => {
       const it = items.get(l.uomId);
       if (!it) problems.push({ field: `lines.${i}.uomId`, code: PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit ${l.uomId} not found` });
@@ -287,6 +348,9 @@ export class PurchaseInvoiceService {
     (dto.charges ?? []).forEach((c, i) => {
       const m = chgById.get(c.chgId);
       if (!m) { problems.push({ field: `charges.${i}.chgId`, code: PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }); return; }
+      if (!m.chg_on_bill && grn.size) {
+        problems.push({ field: `charges.${i}.chgId`, code: PUR.GRN_OFFBILL_REFUSED, message: `${m.chg_name}: our own (off-bill) charges stay on the GRN — a bill from a GRN takes only the supplier's charges` });
+      }
       if (!m.chg_on_bill && !(c.payees?.length) && !m.chg_ledger_code) {
         problems.push({ field: `charges.${i}.payees`, code: PUR.OFFBILL_NO_PAYEE, message: `${m.chg_name}: say who is owed (pick the loadmen / party)` });
       }
@@ -340,6 +404,7 @@ export class PurchaseInvoiceService {
     const allocProblems: { field: string; code: string; message: string }[] = [];
     dto.lines.forEach((l, i) => {
       const out = calc.lines[i];
+      if (grn.has(l.lineNo)) { allocs.set(l.lineNo, []); return; }   // stock came in on the GRN
       const recd = l.receivedQty === undefined || l.receivedQty === null ? D(l.billedQty).minus(D(l.damagedQty)) : D(l.receivedQty);
       const dmg = D(l.damagedQty), free = D(l.freeQty);
       if (l.allocs && l.allocs.length) {
@@ -371,7 +436,120 @@ export class PurchaseInvoiceService {
     });
     if (allocProblems.length) purRefuseMany(allocProblems[0].message, allocProblems);
 
-    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs };
+    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn };
+  }
+
+  /**
+   * The GRN lines the bill names, checked and taken over (R4): unit, received,
+   * damaged and free come from the GRN and overwrite what the client sent. A
+   * GRN line is billed whole, by one bill, at the GRN's branch (R2).
+   */
+  private async loadGrnLines(tx: Tx, dto: SavePurchaseInvoiceDto, problems: { field: string; code: string; message: string }[]) {
+    const h = dto.header;
+    const out = new Map<number, GrnFacts>();
+    const named = dto.lines.filter((l) => l.grnItemId);
+    if (!named.length) return out;
+    const rows = await this.grnFacts(tx, named.map((l) => l.grnItemId!), h.piId ?? null);
+    const byId = new Map(rows.map((r) => [r.gri_id, r]));
+    const seen = new Set<string>();
+    dto.lines.forEach((l, i) => {
+      if (!l.grnItemId) return;
+      const g = byId.get(l.grnItemId);
+      const field = `lines.${i}.grnItemId`;
+      const say = (code: string, message: string) => problems.push({ field, code, message: `Line ${l.lineNo}: ${message}` });
+      if (!g) return say(PUR.NOT_FOUND, 'its GRN line was not found');
+      if (seen.has(g.gri_id)) return say(PUR.GRN_LINE_BILLED, `${g.grn_refno} line ${g.gri_line_no} is on this bill twice`);
+      seen.add(g.gri_id);
+      if (g.grn_status !== 'POSTED') return say(PUR.NOT_POSTED, `${g.grn_refno} is ${g.grn_status} — only a posted GRN is billed`);
+      if (g.grn_supplier_id !== h.supplierId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} is another supplier's GRN`);
+      if (g.grn_company_id !== h.companyId || g.grn_branch_id !== h.branchId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} was received at another branch — bill it there`);
+      if (g.billed_in) return say(PUR.GRN_LINE_BILLED, `${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}`);
+      if (g.return_refno) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no} has return ${g.return_refno} against it — billing it is not built yet; cancel the return, bill the GRN, then return against the bill`);
+      if (Number(g.short_touched) > 0) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no}: its challan shortage is already received or closed — cancel that first, bill the GRN, then receive the shortage against the bill`);
+      if (l.itemId !== g.gri_item_id || l.uomId !== g.gri_uom_id) return say(PUR.GRN_MISMATCH, `the item and unit must be the GRN line's (${g.grn_refno} line ${g.gri_line_no})`);
+      const came = g.gri_received_qty.plus(g.gri_damaged_qty);
+      if (D(l.billedQty).lessThan(came)) return say(PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()} is less than the ${came.toString()} that came in on ${g.grn_refno} — bill it all (return the excess against the bill)`);
+      l.receivedQty = Number(g.gri_received_qty);
+      l.damagedQty = Number(g.gri_damaged_qty);
+      l.freeQty = Number(g.gri_free_qty);
+      l.allocs = undefined;
+      out.set(l.lineNo, g);
+    });
+    return out;
+  }
+
+  private async grnFacts(db: Tx, griIds: string[], exceptPiId: string | null) {
+    return db.$queryRaw<GrnFacts[]>`
+      SELECT gri.gri_id, gri.gri_acc_year, gri.gri_line_no, gri.gri_item_id, gri.gri_uom_id,
+             gri.gri_received_qty, gri.gri_damaged_qty, gri.gri_free_qty, gri.gri_challan_qty, gri.gri_to_base_factor, gri.gri_value, gri.gri_offbill_share,
+             g.grn_id, g.grn_refno, g.grn_doc_date, g.grn_status, g.grn_company_id, g.grn_branch_id, g.grn_supplier_id,
+             (SELECT p.pi_refno FROM purchase.pur_invoice_item x
+                JOIN purchase.pur_invoice p ON p.pi_id = x.pii_pi_id AND p.pi_acc_year = x.pii_acc_year
+               WHERE x.pii_src_doc_type = 'GRN' AND x.pii_src_item_id = gri.gri_id AND NOT x.pii_is_deleted
+                 AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'
+                 AND (${exceptPiId}::uuid IS NULL OR p.pi_id <> ${exceptPiId}::uuid)
+               LIMIT 1) AS billed_in,
+             (SELECT pr.pr_refno FROM purchase.pur_return_item ri
+                JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
+               WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = gri.gri_id AND NOT ri.pri_is_deleted
+                 AND pr.pr_status <> 'CANCELLED' AND NOT pr.pr_is_deleted
+               LIMIT 1) AS return_refno,
+             (SELECT count(*) FROM purchase.pur_shortage s
+               WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND NOT s.psh_is_deleted
+                 AND (EXISTS (SELECT 1 FROM purchase.pur_shortage_receipt_item i
+                                JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                               WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
+                   OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c
+                                 WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched
+        FROM purchase.pur_grn_item gri
+        JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+       WHERE gri.gri_id = ANY(${griIds}::uuid[]) AND NOT gri.gri_is_deleted AND NOT g.grn_is_deleted`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  grn-lines — what a supplier's posted GRNs still have to be billed
+  // ═══════════════════════════════════════════════════════════════════════
+  async grnLines(q: GrnLinesQueryDto) {
+    const ids = await this.prisma.$queryRaw<{ gri_id: string }[]>`
+      SELECT gri.gri_id FROM purchase.pur_grn_item gri
+        JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+       WHERE g.grn_company_id = ${q.companyId}::uuid AND g.grn_branch_id = ${q.branchId}::uuid AND g.grn_supplier_id = ${q.supplierId}::uuid
+         AND g.grn_status = 'POSTED' AND NOT g.grn_is_deleted AND NOT gri.gri_is_deleted`;
+    if (!ids.length) return [];
+    const facts = (await this.grnFacts(this.prisma as unknown as Tx, ids.map((r) => r.gri_id), q.piId ?? null)).filter((f) => !f.billed_in);
+    if (!facts.length) return [];
+    const extra = await this.prisma.$queryRaw<{ gri_id: string; gri_provisional_rate: Prisma.Decimal; gri_mrp: Prisma.Decimal | null; gri_sell_a: Prisma.Decimal | null;
+                                                 gri_src_doc_refno: string | null; grn_challan_no: string | null; grn_supplier_inv_no: string | null;
+                                                 item_name: string; unit_name: string; item_default_tax_id: string | null; poi_disc_pct: Prisma.Decimal | null; poi_rate: Prisma.Decimal | null; poi_tax_id: string | null }[]>`
+      SELECT gri.gri_id, gri.gri_provisional_rate, gri.gri_mrp, gri.gri_sell_a, po.po_refno AS gri_src_doc_refno, g.grn_challan_no, g.grn_supplier_inv_no,
+             im.item_name_en AS item_name, u.unit_name, im.item_default_tax_id,
+             poi.poi_disc_pct, poi.poi_rate, poi.poi_tax_id
+        FROM purchase.pur_grn_item gri
+        JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+        JOIN inventory.item_master im ON im.item_id = gri.gri_item_id
+        JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = gri.gri_uom_id
+        JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN purchase.pur_order_item poi ON gri.gri_src_doc_type = 'PURCHASE_ORDER' AND poi.poi_id = gri.gri_src_item_id
+        LEFT JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+       WHERE gri.gri_id = ANY(${facts.map((f) => f.gri_id)}::uuid[])`;
+    const ex = new Map(extra.map((e) => [e.gri_id, e]));
+    return jsonSafe(
+      facts
+        .sort((a, b) => a.grn_doc_date.getTime() - b.grn_doc_date.getTime() || a.grn_refno.localeCompare(b.grn_refno) || a.gri_line_no - b.gri_line_no)
+        .map((f) => {
+          const e = ex.get(f.gri_id);
+          const blocked = f.return_refno ? `Return ${f.return_refno} against it` : Number(f.short_touched) > 0 ? 'Challan shortage already received / closed' : null;
+          return {
+            grnItemId: f.gri_id, grnItemAccYear: f.gri_acc_year, grnId: f.grn_id, grnRefno: f.grn_refno, grnDate: isoDate(f.grn_doc_date), lineNo: f.gri_line_no,
+            challanNo: e?.grn_challan_no ?? null, supplierInvNo: e?.grn_supplier_inv_no ?? null, poRefno: e?.gri_src_doc_refno ?? null,
+            itemId: f.gri_item_id, itemName: e?.item_name ?? null, uomId: f.gri_uom_id, unitName: e?.unit_name ?? null,
+            challanQty: f.gri_challan_qty, receivedQty: f.gri_received_qty, damagedQty: f.gri_damaged_qty, freeQty: f.gri_free_qty,
+            provisionalRate: e?.gri_provisional_rate ?? null, provisionalValue: f.gri_value,
+            poRate: e?.poi_rate ?? null, poDiscPct: e?.poi_disc_pct ?? null, taxId: e?.poi_tax_id ?? e?.item_default_tax_id ?? null,
+            mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null, blocked,
+          };
+        }),
+    );
   }
 
   private calcPayload(p: Prepared, dto: SavePurchaseInvoiceDto) {
@@ -432,8 +610,9 @@ export class PurchaseInvoiceService {
       piSlno: slno, piRefno: refno, piDocDate: new Date(`${h.docDate}T00:00:00Z`), piStatus: 'DRAFT',
       piSupplierId: h.supplierId, piSupplierGstin: p.supplier.sup_gst_no, piSupplierGstType: p.taxMode,
       piSupplierInvNo: h.supplierInvNo.trim(), piSupplierInvDate: new Date(`${h.supplierInvDate}T00:00:00Z`),
-      piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`) : new Date(`${h.docDate}T00:00:00Z`),
-      piSourceKind: 'DIRECT', piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
+      piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`)
+        : p.grn.size ? new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime()))) : new Date(`${h.docDate}T00:00:00Z`),
+      piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
       piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piIsReverseCharge: false,
       piEwbNo: h.ewbNo ?? null, piEwbDate: h.ewbDate ? new Date(`${h.ewbDate}T00:00:00Z`) : null, piIrn: h.irn ?? null, piAckNo: h.ackNo ?? null,
       piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
@@ -455,9 +634,11 @@ export class PurchaseInvoiceService {
       const l: PurchaseInvoiceLineDto = dto.lines[i];
       const o = c.lines[i];
       const it = p.items.get(l.uomId)!;
+      const g = p.grn.get(l.lineNo);
       const row = await tx.purInvoiceItem.create({
         data: {
           piiPiId: piId, piiCompanyId: h.companyId, piiBranchId: h.branchId, piiAccYear: h.accYear, piiLineNo: l.lineNo,
+          ...(g ? { piiSrcDocType: 'GRN', piiSrcDocId: g.grn_id, piiSrcDocYear: g.gri_acc_year, piiSrcItemId: g.gri_id, piiSrcDocLineNo: g.gri_line_no, piiSrcDocRefno: g.grn_refno } : {}),
           piiItemId: l.itemId, piiUomId: l.uomId, piiBaseUomId: it.base_iuc_id, piiToBaseFactor: it.iuc_to_base_factor,
           piiHsnCode: it.item_hsn_code, piiWeight: l.weight ?? null,
           piiBilledQty: D(l.billedQty), piiReceivedQty: D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
@@ -598,6 +779,39 @@ export class PurchaseInvoiceService {
       }
     }
 
+    // ── 1b · lines billed off a GRN: re-check under the post, revalue what is still on hand (R2 / P13) ──
+    const grnLines = lines.filter((l) => l.piiSrcDocType === 'GRN' && l.piiSrcItemId);
+    let grniDr = ZERO, variance = ZERO;
+    const grnOf = new Map<string, GrnFacts>();
+    if (grnLines.length) {
+      for (const g of await this.grnFacts(tx, grnLines.map((l) => l.piiSrcItemId!), piId)) grnOf.set(g.gri_id, g);
+      const revLines: CostRevaluationLine[] = [];
+      for (const l of grnLines) {
+        const g = grnOf.get(l.piiSrcItemId!);
+        if (!g || g.grn_status !== 'POSTED') purConflict(`Line ${l.piiLineNo}: its GRN is no longer posted.`, PUR.NOT_POSTED, 'lines');
+        if (g.billed_in) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}.`, PUR.GRN_LINE_BILLED, 'lines');
+        if (g.return_refno) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} has return ${g.return_refno} against it now.`, PUR.GRN_NOT_BUILT, 'lines');
+        if (Number(g.short_touched) > 0) purConflict(`Line ${l.piiLineNo}: the challan shortage of ${g.grn_refno} was received / closed meanwhile.`, PUR.GRN_NOT_BUILT, 'lines');
+        const inBase = g.gri_received_qty.plus(g.gri_damaged_qty).plus(g.gri_free_qty).times(g.gri_to_base_factor);
+        const landed = l.piiLandedCostWot.times(inBase).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+        grniDr = grniDr.plus(g.gri_value);
+        variance = variance.plus(landed.minus(g.gri_value));
+        revLines.push({ lineId: l.piiId, itemId: l.piiItemId, inBaseQty: inBase, delta: landed.minus(g.gri_value), lots: [] });
+      }
+      const gAllocs = await tx.purItemAlloc.findMany({ where: { piaDocType: 'GRN', piaLineId: { in: grnLines.map((l) => l.piiSrcItemId!) }, piaIsDeleted: false } });
+      for (const r of revLines) {
+        const l = grnLines.find((x) => x.piiId === r.lineId)!;
+        const g = grnOf.get(l.piiSrcItemId!)!;
+        r.lots = gAllocs.filter((a) => a.piaLineId === g.gri_id && a.piaLotId)
+          .map((a) => ({ lotId: a.piaLotId!, baseQty: a.piaQty.plus(a.piaFreeQty).times(g.gri_to_base_factor) }));
+      }
+      const intoStock = await revalueOnHand(tx,
+        { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: piId, srcAccYear: accYear,
+          srcRefno: pi.piRefno, docDate, narration: `Purchase ${pi.piRefno} — bill rate over GRN rate` },
+        revLines, actor, postedOn);
+      for (const v of intoStock.values()) variance = variance.minus(v);
+    }
+
     // ── 2 · books ───────────────────────────────────────────────────────
     const [vt] = await tx.$queryRaw<{ id: number }[]>`SELECT vchr_type_id AS id FROM accounts.acc_voucher_types WHERE vchr_type_code = 'PUR' AND vchr_is_active LIMIT 1`;
     if (!vt) purRefuse('Voucher type PUR is missing (migration 20261028100000).', PUR.VOUCHER_TYPE_MISSING);
@@ -643,15 +857,21 @@ export class PurchaseInvoiceService {
     add({ role: 'TCS_RECEIVABLE', drCr: 'DR', amount: num(pi.piTcsAmt), roleTag: 'TCS_RECEIVABLE' });
     if (!pi.piRoundOff.isZero()) add({ role: 'ROUND_OFF', drCr: pi.piRoundOff.greaterThan(0) ? 'DR' : 'CR', amount: Math.abs(num(pi.piRoundOff)), roleTag: 'ROUND_OFF' });
     add({ ledgerId: pi.piSupplierId, drCr: 'CR', amount: num(pi.piNetPayable), remarks: `Bill ${pi.piSupplierInvNo}`, docRefno: pi.piRefno });
-    // INVENTORY = what balances the voucher: by the calculation it IS Σ landed value of the lines
-    // (taxable + landing charges + off-bill + ineligible GST − short value); taking it as the balance
-    // keeps the voucher exact to the paisa however the line figures rounded.
+    // GRN lines: the GRN's provisional value off GRNI; the part of the difference that left stock → variance
+    add({ role: 'GRNI', drCr: 'DR', amount: num(grniDr), roleTag: 'GRNI', remarks: `GRN billed · ${pi.piRefno}` });
+    if (!variance.isZero()) {
+      add({ role: 'PURCHASE_PRICE_VARIANCE', drCr: variance.greaterThan(0) ? 'DR' : 'CR', amount: Math.abs(num(variance)), roleTag: 'PURCHASE_PRICE_VARIANCE', remarks: `Bill vs GRN rate, stock already out · ${pi.piRefno}` });
+    }
+    // INVENTORY = what balances the voucher: by the calculation it IS Σ landed value of the direct lines
+    // (taxable + landing charges + off-bill + ineligible GST − short value) plus the revaluation of the GRN
+    // lines' stock; taking it as the balance keeps the voucher exact to the paisa however the figures rounded.
+    // A bill cheaper than its GRN can make it a credit.
     const cents = (x: number) => Math.round(x * 100);
     const crTotal = legs.filter((g) => g.drCr === 'CR').reduce((s2, g) => s2 + cents(g.amount), 0);
     const drTotal = legs.filter((g) => g.drCr === 'DR').reduce((s2, g) => s2 + cents(g.amount), 0);
     const inventory = (crTotal - drTotal) / 100;
-    if (inventory < 0) throw new Error(`Purchase ${pi.piRefno}: stock value came out negative (${inventory})`);
-    add({ role: 'INVENTORY', drCr: 'DR', amount: inventory, remarks: `Purchase ${pi.piRefno}`, roleTag: 'INVENTORY' });
+    if (inventory < 0 && !grnLines.length) throw new Error(`Purchase ${pi.piRefno}: stock value came out negative (${inventory})`);
+    add({ role: 'INVENTORY', drCr: inventory >= 0 ? 'DR' : 'CR', amount: Math.abs(inventory), remarks: `Purchase ${pi.piRefno}`, roleTag: 'INVENTORY' });
 
     const posted = await this.vouchers.postLegs(tx, {
       header: {
@@ -687,8 +907,30 @@ export class PurchaseInvoiceService {
 
     // ── 4 · shortage rows ───────────────────────────────────────────────
     for (const l of lines) {
-      if (!l.piiShortQty.greaterThan(0)) continue;
       const value = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.times(l.piiShortQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+      const g = l.piiSrcItemId ? grnOf.get(l.piiSrcItemId) : undefined;
+      if (g) {
+        // R3: the GRN's challan-short row is this line's shortage — adopt it; no short on the bill closes it
+        const [row] = await tx.$queryRaw<{ psh_id: string; psh_acc_year: string }[]>`
+          SELECT psh_id, psh_acc_year FROM purchase.pur_shortage
+           WHERE psh_src_doc_type = 'GRN' AND psh_src_item_id = ${g.gri_id}::uuid AND psh_src_doc_year = ${g.gri_acc_year}::bpchar
+             AND psh_bill_item_id IS NULL AND NOT psh_is_deleted LIMIT 1`;
+        if (row) {
+          const short = l.piiShortQty.greaterThan(0);
+          await tx.purShortage.update({
+            where: { pshId_pshAccYear: { pshId: row.psh_id, pshAccYear: row.psh_acc_year } },
+            data: {
+              pshBillDocId: piId, pshBillDocYear: accYear, pshBillItemId: l.piiId,
+              ...(short
+                ? { pshReason: 'SHORT_BILL', pshQtyBase: l.piiShortQty.times(l.piiToBaseFactor), pshValue: value, pshGstPending: l.piiItcPendingAmt, pshOriginCostRate: l.piiLandedCostWot }
+                : { pshIsDeleted: true }),
+              pshModifiedBy: actor, pshModifiedOn: postedOn,
+            },
+          });
+          continue;
+        }
+      }
+      if (!l.piiShortQty.greaterThan(0)) continue;
       await tx.purShortage.create({
         data: {
           pshCompanyId: pi.piCompanyId, pshBranchId: pi.piBranchId, pshAccYear: accYear, pshSupplierId: pi.piSupplierId, pshItemId: l.piiItemId,

@@ -38,6 +38,9 @@ export class PurchaseInvoiceLineDto {
   @ApiProperty() @IsInt() @Min(1) lineNo!: number;
   @ApiProperty() @IsUUID() itemId!: string;
   @ApiProperty({ description: 'item_unit_conversion.iuc_id' }) @IsUUID() uomId!: string;
+  @ApiPropertyOptional({ description: 'The GRN line this bill line bills (pur_grn_item.gri_id), whole. Unit, received / damaged / free and the batches come from it, locked; stock is already in (the bill revalues it — P13).' })
+  @IsOptional() @IsUUID() grnItemId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) grnItemAccYear?: string;
   @ApiProperty() @IsNumber() @Min(0) billedQty!: number;
   @ApiPropertyOptional({ description: 'Defaults to billed − damaged.' }) @IsOptional() @IsNumber() @Min(0) receivedQty?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) damagedQty?: number;
@@ -124,4 +127,11 @@ export class CancelPurchaseInvoiceDto {
   @ApiProperty() @IsUUID() piId!: string;
   @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
   @ApiProperty() @IsString() @MaxLength(250) reason!: string;
+}
+
+export class GrnLinesQueryDto {
+  @ApiProperty() @IsUUID() companyId!: string;
+  @ApiProperty() @IsUUID() branchId!: string;
+  @ApiProperty() @IsUUID() supplierId!: string;
+  @ApiPropertyOptional({ description: 'The draft being edited — its own GRN lines are listed as free.' }) @IsOptional() @IsUUID() piId?: string;
 }

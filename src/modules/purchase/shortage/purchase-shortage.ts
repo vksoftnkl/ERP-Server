@@ -149,7 +149,9 @@ export class PurchaseShortageService {
              COALESCE((SELECT SUM(c.psc_amount) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) AS cls_amount,
              a.pia_batch_no AS batch_no, a.pia_expiry_date AS expiry, a.pia_mrp AS mrp
         FROM purchase.pur_shortage s
-        LEFT JOIN purchase.pur_invoice_item pii ON s.psh_src_doc_type = 'PURCHASE_BILL' AND pii.pii_id = s.psh_src_item_id AND pii.pii_acc_year = s.psh_src_doc_year
+        -- the bill line whose GST is pending: the line that opened it, or the bill that adopted a GRN challan short (R3)
+        LEFT JOIN purchase.pur_invoice_item pii ON pii.pii_id = COALESCE(s.psh_bill_item_id, CASE WHEN s.psh_src_doc_type = 'PURCHASE_BILL' THEN s.psh_src_item_id END)
+              AND pii.pii_acc_year = COALESCE(s.psh_bill_doc_year, s.psh_src_doc_year)
         LEFT JOIN purchase.pur_grn_item gri ON s.psh_src_doc_type = 'GRN' AND gri.gri_id = s.psh_src_item_id AND gri.gri_acc_year = s.psh_src_doc_year
         LEFT JOIN purchase.pur_return_item pri ON s.psh_src_doc_type = 'PURCHASE_RETURN' AND pri.pri_id = s.psh_src_item_id AND pri.pri_acc_year = s.psh_src_doc_year
         LEFT JOIN LATERAL (SELECT x.pia_batch_no, x.pia_expiry_date, x.pia_mrp FROM purchase.pur_item_alloc x

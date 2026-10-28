@@ -5,7 +5,7 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 
 /** Menu 24 — Purchase Entry. One right per route (code prefix PUR). plan-purchase-backend.md B6. */
 export const PURCHASE_INVOICE_MENU_ID = 24;
@@ -53,6 +53,14 @@ export class PurchaseInvoiceController {
   async get(@Query() q: GetPurchaseInvoiceQueryDto) {
     await this.right('view', 'open a purchase invoice');
     return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
+  }
+
+  @Get('grn-lines')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: "A supplier's posted GRN lines at the branch not yet billed (R4) — what a bill from GRN picks. `blocked` says why a line cannot be billed yet." })
+  async grnLines(@Query() q: GrnLinesQueryDto) {
+    await this.right('view', 'list GRN lines to bill');
+    return { success: true, message: 'GRN lines to bill', data: await this.service.grnLines(q) };
   }
 
   @Post('cancel')

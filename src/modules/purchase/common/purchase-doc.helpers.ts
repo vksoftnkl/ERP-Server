@@ -233,11 +233,11 @@ export async function assertNoLiveReturns(tx: Tx, srcDocId: string, refno: strin
   if (rows.length) purRefuse(`${refno} has return ${rows.map((r) => r.pr_refno).join(', ')} against it — cancel the return first.`, PUR.EDIT_LOCKED_PAID, 'id', 409);
 }
 
-/** A shortage that is already part-received or closed may not vanish under its bill / GRN / return. */
+/** A shortage that is already part-received or closed may not vanish under its bill / GRN / return — nor under the bill that adopted it (R3). */
 export async function assertShortagesUntouched(tx: Tx, srcDocId: string, refno: string) {
   const [t] = await tx.$queryRaw<{ n: bigint }[]>`
     SELECT count(*) AS n FROM purchase.pur_shortage s
-     WHERE s.psh_src_doc_id = ${srcDocId}::uuid AND NOT s.psh_is_deleted
+     WHERE (s.psh_src_doc_id = ${srcDocId}::uuid OR s.psh_bill_doc_id = ${srcDocId}::uuid) AND NOT s.psh_is_deleted
        AND (EXISTS (SELECT 1 FROM purchase.pur_shortage_receipt_item i JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
                      WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
          OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)`;
