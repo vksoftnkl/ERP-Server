@@ -40,6 +40,11 @@ export const TXN_DOC_TYPES = [
   'RECEIPT',
   'PAYMENT',
   'VOUCHER',
+  'PURCHASE_ORDER',
+  'GRN',
+  'PURCHASE_BILL',
+  'PURCHASE_RETURN',
+  'SHORTAGE_RECEIPT',
 ] as const;
 
 export type TxnDocType = (typeof TXN_DOC_TYPES)[number];
@@ -211,6 +216,43 @@ function salesDoc(
   };
 }
 
+/** `fixed.menu_master.menu_id` of the purchase screens (their services own the same numbers). */
+const PURCHASE_MENU_ID = {
+  ORDER: 23,
+  INVOICE: 24,
+  RETURN: 25,
+  SHORTAGE_RECEIPT: 195,
+  GRN: 196,
+} as const;
+
+/**
+ * A purchase header (`purchase.pur_*`): `<p>_id`, `<p>_company_id` … `<p>_refno`,
+ * dated by `<p>_doc_date`. The serial is counted per DEVICE (the refno carries
+ * the device code, PUR/2026-2027/D14/…), so it stays out of the key — entry
+ * order it is (notes 152). These tables keep no type column: `type` names the
+ * column that best tells two documents of the docType apart (the bill's mode,
+ * the return's kind) or, where there is none, the status.
+ */
+function purchaseDoc(label: string, table: string, p: string, type: string, menu: number): TxnDocSpec {
+  return {
+    label,
+    table,
+    id: `${p}_id`,
+    company: `${p}_company_id`,
+    branch: `${p}_branch_id`,
+    year: `${p}_acc_year`,
+    date: `${p}_doc_date`,
+    serial: null,
+    createdOn: `${p}_created_on`,
+    status: `${p}_status`,
+    deleted: `${p}_is_deleted`,
+    refno: `${p}_refno`,
+    type: `h.${type}`,
+    statuses: POSTING_STATUSES,
+    menu,
+  };
+}
+
 const VOUCHER_COLUMNS = {
   table: 'accounts.acc_voucher_header',
   join: 'JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id',
@@ -334,4 +376,10 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     serial: { column: VOUCHER_SERIAL, draft: 'LOW' },
     menu: 'VOUCHER_TYPE',
   },
+
+  PURCHASE_ORDER: purchaseDoc('purchase order', 'purchase.pur_order', 'po', 'po_status', PURCHASE_MENU_ID.ORDER),
+  GRN: purchaseDoc('GRN', 'purchase.pur_grn', 'grn', 'grn_status', PURCHASE_MENU_ID.GRN),
+  PURCHASE_BILL: purchaseDoc('purchase bill', 'purchase.pur_invoice', 'pi', 'pi_mode', PURCHASE_MENU_ID.INVOICE),
+  PURCHASE_RETURN: purchaseDoc('purchase return', 'purchase.pur_return', 'pr', 'pr_kind', PURCHASE_MENU_ID.RETURN),
+  SHORTAGE_RECEIPT: purchaseDoc('shortage receipt', 'purchase.pur_shortage_receipt', 'psr', 'psr_status', PURCHASE_MENU_ID.SHORTAGE_RECEIPT),
 };
