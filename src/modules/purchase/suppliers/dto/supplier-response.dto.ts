@@ -96,6 +96,16 @@ export class SupplierPayloadDto {
   supSupCst!: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   supDrugLiscenceNo!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supDrugLicenceExpiry!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supMsmeCategory!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supMsmeActivity!: string | null;
+  @ApiProperty() supMsmeAgreement!: boolean;
+  @ApiPropertyOptional({ nullable: true }) supMsmeAgreedDays!: number | null;
+  @ApiPropertyOptional({ nullable: true }) supFssaiNo!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supFssaiValidTo!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supDefaultGodownId!: string | null;
+  @ApiProperty() supShowNotesOnEntry!: boolean;
+  @ApiProperty() supIsImport!: boolean;
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   supRegionName!: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })

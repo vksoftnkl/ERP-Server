@@ -679,6 +679,14 @@ export class SuppliersService {
       'supPanNo',
       'supSupCst',
       'supDrugLiscenceNo',
+      'supMsmeCategory',
+      'supMsmeActivity',
+      'supMsmeAgreement',
+      'supMsmeAgreedDays',
+      'supFssaiNo',
+      'supDefaultGodownId',
+      'supShowNotesOnEntry',
+      'supIsImport',
       'supRegionName',
       'supRegionAddr1',
       'supRegionAddr2',
@@ -699,6 +707,13 @@ export class SuppliersService {
     }
     if (hasOwnProperty(saveSupplierDto, 'supCollectionDays')) {
       data.supCollectionDays = saveSupplierDto.supCollectionDays ?? [];
+    }
+    // MST-01 licence dates: YYYY-MM-DD in, a date column out
+    for (const field of ['supDrugLicenceExpiry', 'supFssaiValidTo'] as const) {
+      if (hasOwnProperty(saveSupplierDto, field)) {
+        const v = saveSupplierDto[field];
+        (data as Record<string, unknown>)[field] = v ? new Date(`${String(v).slice(0, 10)}T00:00:00Z`) : null;
+      }
     }
   }
 
@@ -751,6 +766,16 @@ export class SuppliersService {
       supGstType: record.supGstType,
       supSupCst: record.supSupCst,
       supDrugLiscenceNo: record.supDrugLiscenceNo,
+      supDrugLicenceExpiry: record.supDrugLicenceExpiry ? record.supDrugLicenceExpiry.toISOString().slice(0, 10) : null,
+      supMsmeCategory: record.supMsmeCategory,
+      supMsmeActivity: record.supMsmeActivity,
+      supMsmeAgreement: record.supMsmeAgreement,
+      supMsmeAgreedDays: record.supMsmeAgreedDays,
+      supFssaiNo: record.supFssaiNo,
+      supFssaiValidTo: record.supFssaiValidTo ? record.supFssaiValidTo.toISOString().slice(0, 10) : null,
+      supDefaultGodownId: record.supDefaultGodownId,
+      supShowNotesOnEntry: record.supShowNotesOnEntry,
+      supIsImport: record.supIsImport,
       supRegionName: record.supRegionName,
       supRegionAddr1: record.supRegionAddr1,
       supRegionAddr2: record.supRegionAddr2,

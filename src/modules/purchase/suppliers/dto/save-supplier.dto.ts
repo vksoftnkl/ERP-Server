@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsNotEmpty, IsOptional, Max, ValidateIf, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
   NullableNumber,
   NullableString,
+  NullableUpperMaxString,
   NullableUuid,
   OptionalBoolean,
   OptionalIntegerArray,
@@ -137,6 +138,40 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   supDrugLiscenceNo?: string | null;
+  // MST-01 purchase fields (plan-purchase-phase1 §2.5) — MSME 15 / 45-day rule, licences, notes popup
+  @ApiPropertyOptional({ nullable: true, description: 'Drug licence valid to (YYYY-MM-DD).' })
+  @NullableDateString()
+  supDrugLicenceExpiry?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true, enum: ['MICRO', 'SMALL', 'MEDIUM', 'NONE'] })
+  @NullableUpperMaxString(10)
+  @IsIn(['MICRO', 'SMALL', 'MEDIUM', 'NONE', null])
+  supMsmeCategory?: string | null;
+  @ApiPropertyOptional({ maxLength: 15, nullable: true, enum: ['MANUFACTURER', 'SERVICE', 'TRADER'] })
+  @NullableUpperMaxString(15)
+  @IsIn(['MANUFACTURER', 'SERVICE', 'TRADER', null])
+  supMsmeActivity?: string | null;
+  @ApiPropertyOptional({ description: 'Written agreement with the MSME supplier: agreed days apply (max 45), else 15.' })
+  @OptionalBoolean()
+  supMsmeAgreement?: boolean;
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 45 })
+  @NullableInteger(0)
+  @Max(45)
+  supMsmeAgreedDays?: number | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  supFssaiNo?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'FSSAI licence valid to (YYYY-MM-DD).' })
+  @NullableDateString()
+  supFssaiValidTo?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Godown a bill from this supplier opens with.' })
+  @NullableUuid()
+  supDefaultGodownId?: string | null;
+  @ApiPropertyOptional({ description: 'Pop the supplier note up when the supplier is picked on an entry screen.' })
+  @OptionalBoolean()
+  supShowNotesOnEntry?: boolean;
+  @ApiPropertyOptional({ description: 'Import / overseas supplier.' })
+  @OptionalBoolean()
+  supIsImport?: boolean;
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @NullableString(200)
   supRegionName?: string | null;
