@@ -89,6 +89,7 @@ model BranchMaster {
   stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
   stockLotsFirstInward  StockLot[]              @relation("StockLotFirstInwardBranch")
   stockLedgerEntries    StockLedger[]           @relation("StockLedgerBranch")
+  stockCostRevaluations StockCostRevaluation[] @relation("StockCostRevaluationBranch")
   stockBalances         StockBalance[]          @relation("StockBalanceBranch")
   stockItemCosts        StockItemCost[]         @relation("StockItemCostBranch")
   stockVouchers         StockVoucher[]          @relation("StockVoucherBranch")

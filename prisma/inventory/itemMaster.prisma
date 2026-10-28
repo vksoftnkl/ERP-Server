@@ -115,6 +115,7 @@ model ItemMaster {
   stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
   stockLots            StockLot[]            @relation("StockLotItem")
   stockLedgerEntries   StockLedger[]         @relation("StockLedgerItem")
+  stockCostRevaluations StockCostRevaluation[] @relation("StockCostRevaluationItem")
   stockBalances        StockBalance[]        @relation("StockBalanceItem")
   stockItemCosts       StockItemCost[]       @relation("StockItemCostItem")
   stockVoucherItems    StockVoucherItem[]    @relation("StockVoucherItemItem")

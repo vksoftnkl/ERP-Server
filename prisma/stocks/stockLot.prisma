@@ -157,6 +157,7 @@ model StockLot {
   supplier              Supplier?          @relation("StockLotSupplier",      fields: [sltSupplierId],        references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_supplier")
   firstInwardBranch     BranchMaster?      @relation("StockLotFirstInwardBranch", fields: [sltFirstInwardBranch], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_branch")
   ledgerEntries         StockLedger[]      @relation("StockLedgerLot")
+  costRevaluations      StockCostRevaluation[] @relation("StockCostRevaluationLot")
   balances              StockBalance[]     @relation("StockBalanceLot")
   voucherItems          StockVoucherItem[] @relation("StockVoucherItemLot")
   reservations          StockReservation[] @relation("StockReservationLot")

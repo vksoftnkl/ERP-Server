@@ -6203,6 +6203,13 @@ model TaxRateMaster {
   /// original rate.
   taxSupersedesId    String? @db.Uuid                                           @map("tax_supersedes_id")
 
+  // ── Value slab (P15 / ENT-09, 20261028190200_tax_rate_value_slab) ─────────
+  /// Above this taxable value PER PIECE (after discount) the line takes
+  /// taxAboveTaxId instead (GST 2.0 apparel: <= 2,500 at 5 %, above at 18 %).
+  /// Both set or both NULL (ck_tax_value_slab).
+  taxValueThreshold  Decimal? @db.Decimal(14, 2)                                @map("tax_value_threshold")
+  taxAboveTaxId      String?  @db.Uuid                                          @map("tax_above_tax_id")
+
   // ── Audit ──────────────────────────────────────────────────────────────
   taxIsActive        Boolean   @default(true)                                   @map("tax_is_active")
   taxIsDeleted       Boolean   @default(false)                                  @map("tax_is_deleted")
@@ -6215,6 +6222,8 @@ model TaxRateMaster {
   // Relations
   supersedes         TaxRateMaster?  @relation("TaxRateSupersedes", fields: [taxSupersedesId], references: [taxId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tax_supersedes")
   supersededBy       TaxRateMaster[] @relation("TaxRateSupersedes")
+  aboveTax           TaxRateMaster?  @relation("TaxValueSlab", fields: [taxAboveTaxId], references: [taxId], onDelete: NoAction, onUpdate: NoAction, map: "fk_tax_above_tax")
+  belowTaxes         TaxRateMaster[] @relation("TaxValueSlab")
   ledgerOverrides    TaxRateLedger[]
   // Lines taxed under this rate. The reference is a snapshot, so ON DELETE
   // RESTRICT: a rate a document has used can be superseded, never removed.
@@ -8323,6 +8332,7 @@ model PrintPurpose {
   @@schema("public")
 }
 
+// ----- prisma/public/printShareLink.prisma -----
 /// public.print_share_link — a rendered document handed to someone OUTSIDE the
 /// system as a link: the sale bill's WhatsApp send puts one in the message.
 ///
@@ -9937,6 +9947,9 @@ model PurSupplierItem {
   psiMoq              Decimal?  @db.Decimal(18, 6) @map("psi_moq")
   psiLeadDays         Int?      @db.SmallInt @map("psi_lead_days")
   psiIsPreferred      Boolean   @default(false) @map("psi_is_preferred")
+  /// ENT-07 buy N get M: both set or both NULL (ck_psi_scheme)
+  psiSchemeBuyQty     Decimal?  @db.Decimal(18, 3) @map("psi_scheme_buy_qty")
+  psiSchemeFreeQty    Decimal?  @db.Decimal(18, 3) @map("psi_scheme_free_qty")
   psiSource           String    @default("TYPED") @db.VarChar(10) @map("psi_source")
   psiIsActive         Boolean   @default(true) @map("psi_is_active")
   psiIsDeleted        Boolean   @default(false) @map("psi_is_deleted")
@@ -10171,6 +10184,10 @@ model PurGrnItem {
   griValue           Decimal   @default(0) @db.Decimal(15, 2) @map("gri_value")
   griMrp             Decimal?  @db.Decimal(15, 2) @map("gri_mrp")
   griSellA           Decimal?  @db.Decimal(15, 2) @map("gri_sell_a")
+  griSellB           Decimal?  @db.Decimal(15, 2) @map("gri_sell_b")
+  griSellC           Decimal?  @db.Decimal(15, 2) @map("gri_sell_c")
+  griSellD           Decimal?  @db.Decimal(15, 2) @map("gri_sell_d")
+  griPriceUpdateResult String? @db.VarChar(12) @map("gri_price_update_result")
   griRemarks         String?   @db.VarChar(250) @map("gri_remarks")
   griIsDeleted       Boolean   @default(false) @map("gri_is_deleted")
   griSyncDate        DateTime? @db.Timestamptz(6) @map("gri_sync_date")
@@ -10691,6 +10708,25 @@ model TxnAttachment {
   @@id([tatId, tatAccYear], map: "pk_txn_attachment")
   @@map("txn_attachment")
   @@schema("public")
+}
+
+/// R13 — goods under reverse charge when bought from an UNREGISTERED supplier (notification 6/2024-CT(R)).
+/// Company NULL = every company; an item HSN matches when it starts with rnhHsnPrefix.
+/// ux_rnh_scope_prefix_from (COALESCE(company, zero uuid), prefix, from) is DB-only (expression index).
+model PurRcmNotifiedHsn {
+  rnhId            String    @id(map: "pk_pur_rcm_notified_hsn") @default(dbgenerated("uuidv7()")) @db.Uuid @map("rnh_id")
+  rnhCompanyId     String?   @db.Uuid @map("rnh_company_id")
+  rnhHsnPrefix     String    @db.VarChar(8) @map("rnh_hsn_prefix")
+  rnhDescription   String    @db.VarChar(200) @map("rnh_description")
+  rnhNotification  String?   @db.VarChar(60) @map("rnh_notification")
+  rnhEffectiveFrom DateTime  @db.Date @map("rnh_effective_from")
+  rnhEffectiveTo   DateTime? @db.Date @map("rnh_effective_to")
+  rnhIsActive      Boolean   @default(true) @map("rnh_is_active")
+  rnhCreatedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("rnh_created_on")
+  rnhCreatedBy     String    @default("SYSTEM") @db.VarChar(50) @map("rnh_created_by")
+
+  @@map("pur_rcm_notified_hsn")
+  @@schema("purchase")
 }
 
 // ----- prisma/purchase/suppliers.prisma -----
@@ -15844,6 +15880,48 @@ model StockBatchDetail {
   @@schema("stock")
 }
 
+// ----- prisma/stocks/stockCostRevaluation.prisma -----
+/// P13 — value-only stock movements (a bill priced off its GRN revalues the qty still on hand).
+/// Summed by the cost rebuild with stock_ledger. Append-only: a cancel is a reversal row.
+/// One writer: stock-voucher-posting.helper.ts (revalueOnHand / reverseCostRevaluation).
+model StockCostRevaluation {
+  scrId            String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("scr_id")
+  scrAccYear       String    @db.Char(9)                         @map("scr_acc_year")
+  scrCompanyId     String    @db.Uuid                            @map("scr_company_id")
+  scrBranchId      String    @db.Uuid                            @map("scr_branch_id")
+  scrItemId        String    @db.Uuid                            @map("scr_item_id")
+  scrLotId         String    @db.Uuid                            @map("scr_lot_id")
+  scrValue         Decimal   @db.Decimal(18, 2)                  @map("scr_value")
+  scrValueWot      Decimal   @db.Decimal(18, 2)                  @map("scr_value_wot")
+  scrBasisBaseQty  Decimal   @db.Decimal(18, 6)                  @map("scr_basis_base_qty")
+  scrDocDate       DateTime  @db.Date                            @map("scr_doc_date")
+  scrDocDatetime   DateTime  @default(now()) @db.Timestamptz(6)  @map("scr_doc_datetime")
+  scrSrcModule     String    @db.VarChar(20)                     @map("scr_src_module")
+  scrSrcDocType    String    @db.VarChar(30)                     @map("scr_src_doc_type")
+  scrSrcDocId      String    @db.Uuid                            @map("scr_src_doc_id")
+  scrSrcAccYear    String    @db.Char(9)                         @map("scr_src_acc_year")
+  scrSrcLineId     String    @db.Uuid                            @map("scr_src_line_id")
+  scrSrcRefno      String?   @db.VarChar(100)                    @map("scr_src_refno")
+  scrIsReversal    Boolean   @default(false)                     @map("scr_is_reversal")
+  scrReversesId    String?   @db.Uuid                            @map("scr_reverses_id")
+  scrNarration     String?   @db.Text                            @map("scr_narration")
+  scrIsDeleted     Boolean   @default(false)                     @map("scr_is_deleted")
+  scrSyncDate      DateTime? @db.Timestamptz(6)                  @map("scr_sync_date")
+  scrCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)  @map("scr_created_on")
+  scrCreatedBy     String?   @db.Text                            @map("scr_created_by")
+
+  branch           BranchMaster @relation("StockCostRevaluationBranch", fields: [scrBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_branch")
+  item             ItemMaster   @relation("StockCostRevaluationItem",   fields: [scrItemId],   references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_item")
+  lot              StockLot     @relation("StockCostRevaluationLot",    fields: [scrLotId],    references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_lot")
+
+  @@id([scrId, scrAccYear], map: "pk_stock_cost_revaluation")
+  // Partial indexes - DB-only (WHERE NOT scr_is_deleted), Prisma would keep re-creating them:
+  //   ix_scr_item (company, branch, item) · ix_scr_lot (lot) · ix_scr_source (src doc, type, year)
+  //   ux_scr_source / ux_scr_reversal (unique, see the P13 migration)
+  @@map("stock_cost_revaluation")
+  @@schema("stock")
+}
+
 // ----- prisma/stocks/stockDemandDaily.prisma -----
 /// stock.stock_demand_daily — what actually sold, per branch, per day.
 ///
@@ -17932,44 +18010,3 @@ model StockVoucherItem {
   @@schema("stock")
 }
 
-
-/// P13 — value-only stock movements (a bill priced off its GRN revalues the qty still on hand).
-/// Summed by the cost rebuild with stock_ledger. Append-only: a cancel is a reversal row.
-/// One writer: stock-voucher-posting.helper.ts (revalueOnHand / reverseCostRevaluation).
-model StockCostRevaluation {
-  scrId            String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("scr_id")
-  scrAccYear       String    @db.Char(9)                         @map("scr_acc_year")
-  scrCompanyId     String    @db.Uuid                            @map("scr_company_id")
-  scrBranchId      String    @db.Uuid                            @map("scr_branch_id")
-  scrItemId        String    @db.Uuid                            @map("scr_item_id")
-  scrLotId         String    @db.Uuid                            @map("scr_lot_id")
-  scrValue         Decimal   @db.Decimal(18, 2)                  @map("scr_value")
-  scrValueWot      Decimal   @db.Decimal(18, 2)                  @map("scr_value_wot")
-  scrBasisBaseQty  Decimal   @db.Decimal(18, 6)                  @map("scr_basis_base_qty")
-  scrDocDate       DateTime  @db.Date                            @map("scr_doc_date")
-  scrDocDatetime   DateTime  @default(now()) @db.Timestamptz(6)  @map("scr_doc_datetime")
-  scrSrcModule     String    @db.VarChar(20)                     @map("scr_src_module")
-  scrSrcDocType    String    @db.VarChar(30)                     @map("scr_src_doc_type")
-  scrSrcDocId      String    @db.Uuid                            @map("scr_src_doc_id")
-  scrSrcAccYear    String    @db.Char(9)                         @map("scr_src_acc_year")
-  scrSrcLineId     String    @db.Uuid                            @map("scr_src_line_id")
-  scrSrcRefno      String?   @db.VarChar(100)                    @map("scr_src_refno")
-  scrIsReversal    Boolean   @default(false)                     @map("scr_is_reversal")
-  scrReversesId    String?   @db.Uuid                            @map("scr_reverses_id")
-  scrNarration     String?   @db.Text                            @map("scr_narration")
-  scrIsDeleted     Boolean   @default(false)                     @map("scr_is_deleted")
-  scrSyncDate      DateTime? @db.Timestamptz(6)                  @map("scr_sync_date")
-  scrCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)  @map("scr_created_on")
-  scrCreatedBy     String?   @db.Text                            @map("scr_created_by")
-
-  branch           BranchMaster @relation("StockCostRevaluationBranch", fields: [scrBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_branch")
-  item             ItemMaster   @relation("StockCostRevaluationItem",   fields: [scrItemId],   references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_item")
-  lot              StockLot     @relation("StockCostRevaluationLot",    fields: [scrLotId],    references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_scr_lot")
-
-  @@id([scrId, scrAccYear], map: "pk_stock_cost_revaluation")
-  @@index([scrCompanyId, scrBranchId, scrItemId], map: "ix_scr_item")
-  @@index([scrLotId], map: "ix_scr_lot")
-  @@index([scrSrcDocId, scrSrcDocType, scrSrcAccYear], map: "ix_scr_source")
-  @@map("stock_cost_revaluation")
-  @@schema("stock")
-}
