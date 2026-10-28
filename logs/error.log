@@ -20828,3 +20828,67 @@ Raw query failed. Code: `42703`. Message: `column l.led_code does not exist`
     at async PurchaseAgentService.get (/home/vk/Dev/erp/ERP server/src/modules/purchase/agent/purchase-agent.ts:124:19)
     at async PurchaseAgentController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/agent/purchase-agent.ts:149:18)
 2026-10-28T07:37:43.166Z ERROR [DatasetRunnerService] Dataset 'head' (01a18170-b811-7d75-9e06-99de2008eb6e) failed after binding :company_id, :as_on, :side, :filter_branch_id, :party_id, :area_id, :salesman_id, :collection_day, :age_by, :include_on_account, :only_overdue, :min_due_days, :max_due_days, :deduct_pdc, :hide_zero, :sort, :dir, :group_id, :user_id, :buckets: invalid input syntax for type integer: "Party-wise Outstanding refused - Area, salesman and collection day apply to customers only."
+2026-10-28T08:35:43.162Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientUnknownRequestError: 
+Invalid `tx.purInvoice.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:827:27
+
+  824 };
+  825 let piId: string;
+  826 if (id) {
+→ 827   await tx.purInvoice.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"pur_invoice_2026_2027\" violates check constraint \"ck_pi_sister\"", severity: "ERROR", detail: Some("Failing row contains (01a181a5-77d8-7336-a47d-c0893dfebf92, 019cc885-d0f4-771b-a7d1-7c98f9ff3ac1, 019d9b39-3dbd-702a-8c7a-90aa1bee679a, null, 2026-2027, 01a14a14-a211-7f53-a5f4-668222f3dc44, null, 1, PUR/2026-2027/D14/00001, 2026-10-28, 2026-10-28 14:04:27.416+05:30, DRAFT, 01a181a5-74db-7e79-a66b-f67106aed26c, 33AAPCA6346P1Z2, REGULAR, ZTSIS-140542, 2026-10-28, 2026-10-28, DIRECT, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019db036-36c7-7104-b998-73150eb86a21, 2600.00, CREDIT, 0, 2026-10-28, null, null, null, f, null, null, null, null, f, null, null, null, 2203.39, 0.00, 2203.39, 0.00, 0.00, 396.61, 0.00, 0.00, 0.00, 0.00, 2600.00, 0.00, 0.00, 396.61, 0.00, 0.00, {\"priceUpdate\": \"OFF\", \"roundOffStep\": 1, \"invAmountCheck\": \"REF..., null, 2, 0, null, f, null, 2026-10-28 14:04:27.416+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-28 14:05:43.135+05:30, 019e441b-6e48-7918-b246-b857ffb35db1)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseInvoiceService.writeDocument (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:827:7)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:211:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:190:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:29:18)
+2026-10-28T08:35:43.287Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientUnknownRequestError: 
+Invalid `tx.purInvoice.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:827:27
+
+  824 };
+  825 let piId: string;
+  826 if (id) {
+→ 827   await tx.purInvoice.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"pur_invoice_2026_2027\" violates check constraint \"ck_pi_sister\"", severity: "ERROR", detail: Some("Failing row contains (01a181a6-9fca-7178-a96a-6414a698db05, 019cc885-d0f4-771b-a7d1-7c98f9ff3ac1, 019d9b39-3dbd-702a-8c7a-90aa1bee679a, null, 2026-2027, 01a14a14-a211-7f53-a5f4-668222f3dc44, null, 2, PUR/2026-2027/D14/00002, 2026-10-28, 2026-10-28 14:05:43.178+05:30, DRAFT, 01a181a5-74db-7e79-a66b-f67106aed26c, 33AAPCA6346P1Z2, REGULAR, ZTSIS-140542, 2026-10-28, 2026-10-28, DIRECT, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019db036-36c7-7104-b998-73150eb86a21, 2600.00, CREDIT, 0, 2026-10-28, null, null, null, f, null, null, null, null, f, null, null, null, 2203.39, 0.00, 2203.39, 0.00, 0.00, 396.61, 0.00, 0.00, 0.00, 0.00, 2600.00, 0.00, 0.00, 396.61, 0.00, 0.00, {\"priceUpdate\": \"OFF\", \"roundOffStep\": 1, \"invAmountCheck\": \"REF..., null, 2, 0, null, f, null, 2026-10-28 14:05:43.178+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-28 14:05:43.283+05:30, 019e441b-6e48-7918-b246-b857ffb35db1)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseInvoiceService.writeDocument (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:827:7)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:211:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:190:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:29:18)
+2026-10-28T08:50:34.033Z ERROR [AllExceptionsFilter] GET /api/v1/txn-attachments?docType=PURCHASE_BILL&docId=01a181b2-3129-7fff-9c05-0297b334c0a3
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tat_mime" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseAttachmentService.list (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:51:18)
+    at async PurchaseAttachmentController.list (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:100:59)
+2026-10-28T08:50:34.047Z ERROR [AllExceptionsFilter] POST /api/v1/txn-attachments/upload
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tat_doc_type" of relation "txn_attachment" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PurchaseAttachmentService.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:65:19)
+    at async PurchaseAttachmentController.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:108:56)
