@@ -41,6 +41,11 @@ export class PurchaseInvoiceLineDto {
   @ApiPropertyOptional({ description: 'The GRN line this bill line bills (pur_grn_item.gri_id), whole. Unit, received / damaged / free and the batches come from it, locked; stock is already in (the bill revalues it — P13).' })
   @IsOptional() @IsUUID() grnItemId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) grnItemAccYear?: string;
+  @ApiPropertyOptional({ description: 'DOC-04: the PO line this bill line receives (pur_order_item.poi_id) — goods came with the bill; the qty billed (base units) reduces what the PO still has pending and may not exceed it.' })
+  @IsOptional() @IsUUID() poItemId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(9) poItemAccYear?: string;
+  @ApiPropertyOptional({ description: 'ENT-04: the cost per billed unit INCLUDING GST / cess, as typed — the rate is back-solved from it (after disc % and scheme %); the answer\'s line rate is the result.' })
+  @IsOptional() @IsNumber() @Min(0) costIncl?: number;
   @ApiProperty() @IsNumber() @Min(0) billedQty!: number;
   @ApiPropertyOptional({ description: 'Defaults to billed − damaged.' }) @IsOptional() @IsNumber() @Min(0) receivedQty?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) damagedQty?: number;
@@ -62,7 +67,8 @@ export class PurchaseInvoiceLineDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() sellB?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() sellC?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() sellD?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() markupAPct?: number;
+  @ApiPropertyOptional({ description: 'ENT-18: markup % on the cost without tax; with no sellA the server prices Sell A from it (GST added).' })
+  @IsOptional() @IsNumber() markupAPct?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) remarks?: string;
   @ApiPropertyOptional({ type: [PurchaseAllocDto] })
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseAllocDto)

@@ -17,8 +17,9 @@ import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stoc
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { recordSupplierItems } from '../supplier-item/purchase-supplier-item';
+import { closePosOnFirstBill } from '../order/purchase-order';
 import { loadPurchaseSettings, type PurchaseSettings } from '../common/purchase-settings';
-import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
+import { calcPurchase, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCost, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
   allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
@@ -95,6 +96,18 @@ interface GrnFacts {
   rejected_billed?: Prisma.Decimal;
 }
 
+/** DOC-04 — the PO line a direct bill line receives (goods came with the bill). */
+interface PoFacts {
+  poi_id: string; poi_acc_year: string; poi_line_no: number; poi_item_id: string; poi_to_base_factor: Prisma.Decimal;
+  poi_qty: Prisma.Decimal; poi_short_closed_qty: Prisma.Decimal;
+  po_id: string; po_acc_year: string; po_refno: string; po_status: string; po_company_id: string; po_branch_id: string; po_supplier_id: string;
+  /** base units already received on GRNs / billed on other bills (not cancelled) */
+  used_base: Prisma.Decimal;
+}
+
+/** per line, what the answer shows beside the money: the (back-solved) rate, the cost incl. tax per billed unit, Sell A / markup / margin */
+interface LineInfo { rate: number; costIncl: string | null; sellA: number | null; markupAPct: string | null; marginAPct: string | null }
+
 interface Prepared {
   supplier: SupplierRow;
   interState: boolean;
@@ -105,6 +118,9 @@ interface Prepared {
   calc: CalcOut;
   /** lineNo → the GRN line it bills */
   grn: Map<number, GrnFacts>;
+  /** lineNo → the PO line it receives (DOC-04) */
+  po: Map<number, PoFacts>;
+  info: LineInfo[];
   /** set by save (the purchase.* settings snapshotted on the bill) */
   settings?: PurchaseSettings;
   allocs: Map<number, { godownId: string; bucket: string; batchNo: string | null; mfgDate: string | null; expiryDate: string | null; mrp: number | null; salePrice: number | null; serialNo: string | null; warrantyTo: string | null; sizeId: string | null; colourId: string | null; model: string | null; qty: Prisma.Decimal; freeQty: Prisma.Decimal }[]>;
@@ -233,7 +249,8 @@ export class PurchaseInvoiceService {
     const byLine = new Map<string, typeof allocs>();
     for (const a of allocs) byLine.set(a.piaLineId, [...(byLine.get(a.piaLineId) ?? []), a]);
     return jsonSafe({
-      header: { ...header, supplierName: supplier[0]?.sup_name ?? null },
+      header: { ...header, supplierName: supplier[0]?.sup_name ?? null,
+                godownName: (await this.prisma.$queryRaw<{ gdl_name: string }[]>`SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid`)[0]?.gdl_name ?? null },
       lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [] })),
       charges,
     });
@@ -381,6 +398,7 @@ export class PurchaseInvoiceService {
     );
     const problems: { field: string; code: string; message: string }[] = [];
     const grn = await this.loadGrnLines(tx, dto, problems);
+    const po = await this.loadPoLines(tx, dto, items, problems);
     dto.lines.forEach((l, i) => {
       const it = items.get(l.uomId);
       if (!it) problems.push({ field: `lines.${i}.uomId`, code: PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit ${l.uomId} not found` });
@@ -446,6 +464,18 @@ export class PurchaseInvoiceService {
     }
     if (problems.length) purRefuseMany(problems[0].message, problems);
 
+    // ENT-04: a typed cost incl. tax back-solves the rate — net of tax first, then the line's per-qty and % discounts undone
+    for (const l of dto.lines) {
+      if (l.costIncl === undefined || l.costIncl === null || !(l.costIncl > 0)) continue;
+      const tax = l.taxId ? taxes.get(l.taxId) : undefined;
+      const taxed = taxMode === 'REGULAR';
+      const net = rateFromInclusiveCost(l.costIncl, taxed ? (tax?.tax_rate_perc ?? 0) : 0,
+                                        taxed ? (l.cessPct ?? tax?.tax_cess_perc ?? 0) : 0, taxed ? (l.cessPerUnit ?? tax?.tax_cess_per_unit ?? 0) : 0);
+      const d = D(1).minus(D(l.discPct).dividedBy(100)), s = D(1).minus(D(l.schPct).dividedBy(100));
+      if (d.lessThanOrEqualTo(0) || s.lessThanOrEqualTo(0)) continue;
+      l.rate = Number(net.plus(D(l.schPerQty)).dividedBy(s).plus(D(l.discPerQty)).dividedBy(d).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP));
+    }
+
     const calc = calcPurchase({
       interState,
       supplierTaxMode: taxMode,
@@ -464,6 +494,23 @@ export class PurchaseInvoiceService {
           weight: l.weight ?? 0, itcClass: (it.item_itc_class as ItcClass | null) ?? 'ELIGIBLE', shortagePct: it.item_shortage_pct ?? 0,
         };
       }),
+    });
+
+    // ENT-18: Sell A from a markup % on the cost without tax (GST added), or the markup / margin of a typed Sell A
+    const info: LineInfo[] = dto.lines.map((l, i) => {
+      const o = calc.lines[i];
+      const costUnit = o.landedCostWot.times(D(items.get(l.uomId)!.iuc_to_base_factor));
+      const gstMul = D(1).plus(o.gstPct.dividedBy(100));
+      if ((l.sellA === undefined || l.sellA === null) && l.markupAPct !== undefined && l.markupAPct !== null && costUnit.greaterThan(0))
+        l.sellA = Number(priceFromMarkup(costUnit, l.markupAPct).times(gstMul).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP));
+      const sellWot = l.sellA ? D(l.sellA).dividedBy(gstMul) : null;
+      const mk = sellWot && costUnit.greaterThan(0) ? markupOf(costUnit, sellWot) : null;
+      l.markupAPct = mk ? Number(mk.toFixed(4)) : undefined;
+      const billed = D(l.billedQty);
+      return {
+        rate: l.rate, costIncl: billed.greaterThan(0) ? o.total.dividedBy(billed).toFixed(2) : null, sellA: l.sellA ?? null,
+        markupAPct: mk ? mk.toFixed(2) : null, marginAPct: sellWot && costUnit.greaterThan(0) ? marginOf(costUnit, sellWot).toFixed(2) : null,
+      };
     });
 
     // allocation rows: given ones must add up to what came in; else one SALEABLE + one DAMAGED row in the header godown
@@ -503,7 +550,62 @@ export class PurchaseInvoiceService {
     });
     if (allocProblems.length) purRefuseMany(allocProblems[0].message, allocProblems);
 
-    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn };
+    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info };
+  }
+
+  /**
+   * DOC-04 — PO lines a direct bill receives. Same supplier, branch and item, a confirmed PO, and the
+   * billed qty (base units, Σ over the bill's lines of one PO line) within what the PO still has
+   * pending: ordered − short-closed − received on GRNs − billed on other live bills (this bill's own
+   * saved draft is not counted). Goods come with the bill, so the line is otherwise a direct line.
+   */
+  private async loadPoLines(tx: Tx, dto: SavePurchaseInvoiceDto, items: Map<string, ItemRow>, problems: { field: string; code: string; message: string }[]) {
+    const h = dto.header;
+    const out = new Map<number, PoFacts>();
+    const named = dto.lines.filter((l) => l.poItemId);
+    if (!named.length) return out;
+    const rows = await tx.$queryRaw<PoFacts[]>`
+      SELECT poi.poi_id, poi.poi_acc_year, poi.poi_line_no, poi.poi_item_id, poi.poi_to_base_factor, poi.poi_qty, poi.poi_short_closed_qty,
+             po.po_id, po.po_acc_year, po.po_refno, po.po_status, po.po_company_id, po.po_branch_id, po.po_supplier_id,
+             COALESCE((SELECT SUM((gri.gri_received_qty + gri.gri_damaged_qty) * gri.gri_to_base_factor)
+                         FROM purchase.pur_grn_item gri JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+                        WHERE gri.gri_src_doc_type = 'PURCHASE_ORDER' AND gri.gri_src_item_id = poi.poi_id AND NOT gri.gri_is_deleted
+                          AND NOT g.grn_is_deleted AND g.grn_status <> 'CANCELLED'), 0)
+           + COALESCE((SELECT SUM(pii.pii_billed_qty * pii.pii_to_base_factor)
+                         FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+                        WHERE pii.pii_src_doc_type = 'PURCHASE_ORDER' AND pii.pii_src_item_id = poi.poi_id AND NOT pii.pii_is_deleted
+                          AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED' AND p.pi_id IS DISTINCT FROM ${h.piId ?? null}::uuid), 0) AS used_base
+        FROM purchase.pur_order_item poi
+        JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+       WHERE poi.poi_id = ANY(${named.map((l) => l.poItemId!)}::uuid[]) AND NOT poi.poi_is_deleted AND NOT po.po_is_deleted`;
+    const byId = new Map(rows.map((r) => [r.poi_id, r]));
+    const want = new Map<string, Prisma.Decimal>();
+    dto.lines.forEach((l, i) => {
+      if (!l.poItemId) return;
+      const field = `lines.${i}.poItemId`;
+      const say = (code: string, message: string) => problems.push({ field, code, message: `Line ${l.lineNo}: ${message}` });
+      if (l.grnItemId) return say(PUR.QTY_INVALID, 'a line comes from a GRN or from a PO, not both');
+      const p = byId.get(l.poItemId);
+      if (!p) return say(PUR.NOT_FOUND, 'its PO line was not found');
+      if (p.po_status !== 'POSTED') return say(PUR.NOT_POSTED, `${p.po_refno} is ${p.po_status} — only a confirmed PO is received`);
+      if (p.po_supplier_id !== h.supplierId) return say(PUR.GRN_MISMATCH, `${p.po_refno} is another supplier's PO`);
+      if (p.po_company_id !== h.companyId || p.po_branch_id !== h.branchId) return say(PUR.GRN_MISMATCH, `${p.po_refno} is another branch's PO`);
+      if (p.poi_item_id !== l.itemId) return say(PUR.GRN_MISMATCH, `the item must be the PO line's (${p.po_refno} line ${p.poi_line_no})`);
+      const factor = D(items.get(l.uomId)?.iuc_to_base_factor ?? 1);
+      want.set(p.poi_id, (want.get(p.poi_id) ?? ZERO).plus(D(l.billedQty).times(factor)));
+      out.set(l.lineNo, p);
+    });
+    for (const [id, base] of want) {
+      const p = byId.get(id)!;
+      const pending = p.poi_qty.minus(p.poi_short_closed_qty).times(p.poi_to_base_factor).minus(p.used_base);
+      if (base.greaterThan(pending)) {
+        const i = dto.lines.findIndex((l) => l.poItemId === id);
+        const unit = p.poi_to_base_factor.isZero() ? base : base.dividedBy(p.poi_to_base_factor);
+        problems.push({ field: `lines.${i}.billedQty`, code: PUR.QTY_INVALID,
+          message: `Line ${dto.lines[i].lineNo}: ${unit.toDecimalPlaces(3).toString()} billed against ${p.po_refno} line ${p.poi_line_no}, only ${Prisma.Decimal.max(0, pending.dividedBy(p.poi_to_base_factor.isZero() ? 1 : p.poi_to_base_factor)).toDecimalPlaces(3).toString()} pending — enter the excess as a separate line` });
+      }
+    }
+    return out;
   }
 
   /**
@@ -641,7 +743,8 @@ export class PurchaseInvoiceService {
     return {
       interState: p.interState,
       supplierTaxMode: p.taxMode,
-      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString() })),
+      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
+                                      ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null })),
       charges: c.charges.map((ch, i) => ({ chgId: dto.charges![i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
       totals: decimals({ ...c, lines: undefined, charges: undefined }),
       invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
@@ -732,11 +835,14 @@ export class PurchaseInvoiceService {
       const o = c.lines[i];
       const it = p.items.get(l.uomId)!;
       const g = p.grn.get(l.lineNo);
+      const po = p.po.get(l.lineNo);
       const row = await tx.purInvoiceItem.create({
         data: {
           piiPiId: piId, piiCompanyId: h.companyId, piiBranchId: h.branchId, piiAccYear: h.accYear, piiLineNo: l.lineNo,
           ...(g ? { piiSrcDocType: 'GRN', piiSrcDocId: g.grn_id, piiSrcDocYear: g.gri_acc_year, piiSrcItemId: g.gri_id, piiSrcDocLineNo: g.gri_line_no, piiSrcDocRefno: g.grn_refno,
-                    piiRejectedAtGrnQty: g.rejected_billed ?? ZERO } : {}),
+                    piiRejectedAtGrnQty: g.rejected_billed ?? ZERO }
+             : po ? { piiSrcDocType: 'PURCHASE_ORDER', piiSrcDocId: po.po_id, piiSrcDocYear: po.poi_acc_year, piiSrcItemId: po.poi_id,
+                      piiSrcDocLineNo: po.poi_line_no, piiSrcDocRefno: po.po_refno } : {}),
           piiItemId: l.itemId, piiUomId: l.uomId, piiBaseUomId: it.base_iuc_id, piiToBaseFactor: it.iuc_to_base_factor,
           piiHsnCode: it.item_hsn_code, piiWeight: l.weight ?? null,
           piiBilledQty: D(l.billedQty), piiReceivedQty: D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
@@ -1085,10 +1191,18 @@ export class PurchaseInvoiceService {
           JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
           JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
          WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])` : [];
+      // DOC-04: a direct bill line that received a PO line is checked against it the same way
+      const poDirect = lines.filter((l) => l.piiSrcDocType === 'PURCHASE_ORDER' && l.piiSrcItemId);
+      const fromPoDirect = poDirect.length ? await tx.$queryRaw<{ poi_id: string; po_refno: string; po_rate_base: Prisma.Decimal }[]>`
+        SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+          FROM purchase.pur_order_item poi
+          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+         WHERE poi.poi_id = ANY(${poDirect.map((l) => l.piiSrcItemId!)}::uuid[])` : [];
       const tol = D(settingsNow.rateTolerancePct);
       const over: string[] = [];
-      for (const r of fromPo) {
-        const l = grnLines.find((x) => x.piiSrcItemId === r.gri_id);
+      const checks = [...fromPo.map((r) => ({ l: grnLines.find((x) => x.piiSrcItemId === r.gri_id), r })),
+                      ...fromPoDirect.map((r) => ({ l: poDirect.find((x) => x.piiSrcItemId === r.poi_id), r }))];
+      for (const { l, r } of checks) {
         if (!l || !r.po_rate_base || D(r.po_rate_base).isZero()) continue;
         const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
         const pct = billBase.minus(r.po_rate_base).dividedBy(r.po_rate_base).times(100);
@@ -1128,6 +1242,8 @@ export class PurchaseInvoiceService {
 
     // ── 4a · MST-02: the first bill of a (supplier, item) pair makes its supplier–item row (AUTO); an existing row is kept
     await recordSupplierItems(tx, pi.piCompanyId, pi.piSupplierId, lines.map((l) => ({ itemId: l.piiItemId, uomId: l.piiUomId, factor: l.piiToBaseFactor })), actor);
+    // ── 4a' · purchase.close_po_on_first_bill (WS3): the PO's unbilled rest closes with its first bill
+    notes.push(...await closePosOnFirstBill(tx, { piId, accYear, companyId: pi.piCompanyId, branchId: pi.piBranchId, refno: pi.piRefno, actor }));
 
     // ── 4b · R18: the debit note for what the bill charges but the GRN sent back ──
     const rejectedLines = grnLines.filter((l) => l.piiRejectedAtGrnQty.greaterThan(0));

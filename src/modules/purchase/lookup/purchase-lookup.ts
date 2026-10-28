@@ -158,7 +158,7 @@ export class PurchaseLookupService {
       const p = pending.find((r) => r.itemId === q.itemId);
       if (p) {
         const net = D(p.rate as Prisma.Decimal).times(D(1).minus(D(p.discPct as Prisma.Decimal).div(100))).times(D(1).minus(D(p.schPct as Prisma.Decimal).div(100)));
-        poRate = { poId: p.poId, refno: p.refno, rate: p.rate, netRate: net.toDecimalPlaces(4), unitName: p.unitName, pendingQty: p.pendingQty };
+        poRate = { poId: p.poId, poiId: p.poiId, accYear: p.accYear, discPct: p.discPct, schPct: p.schPct, refno: p.refno, rate: p.rate, netRate: net.toDecimalPlaces(4), unitName: p.unitName, pendingQty: p.pendingQty };
       }
       const [psi] = await this.prisma.$queryRaw<Record<string, unknown>[]>`
         SELECT psi_supplier_item_code AS "code", psi_supplier_barcode AS "barcode", psi_moq AS "moq", psi_lead_days AS "leadDays",
