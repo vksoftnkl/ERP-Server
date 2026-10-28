@@ -15,6 +15,7 @@ import { StockVoucherSource } from 'src/modules/stocks/posting/stock-voucher.sou
 import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stock-voucher/stock-voucher-numbering.helper';
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
 import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
+import { recordSupplierItems } from '../supplier-item/purchase-supplier-item';
 import { calcPurchase, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
@@ -1012,6 +1013,9 @@ export class PurchaseInvoiceService {
         },
       });
     }
+
+    // ── 4a · MST-02: the first bill of a (supplier, item) pair makes its supplier–item row (AUTO); an existing row is kept
+    await recordSupplierItems(tx, pi.piCompanyId, pi.piSupplierId, lines.map((l) => ({ itemId: l.piiItemId, uomId: l.piiUomId, factor: l.piiToBaseFactor })), actor);
 
     // ── 4b · R18: the debit note for what the bill charges but the GRN sent back ──
     const rejectedLines = grnLines.filter((l) => l.piiRejectedAtGrnQty.greaterThan(0));
