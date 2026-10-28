@@ -320,6 +320,48 @@ export async function unitNames(db: { $queryRaw: Tx['$queryRaw'] }, uomIds: stri
   return new Map(rows.map((r) => [r.iuc_id, { itemName: r.item_name, unitName: r.unit_name }]));
 }
 
+// ── ENT-15: shelf life left at receipt ─────────────────────────────────────
+export interface ShelfLifeRow { lineNo: number; index: number; itemId: string; bucket?: string | null; mfgDate?: Date | null; expiryDate?: Date | null }
+export interface ShelfLifeIssue { field: string; code: string; message: string }
+
+/**
+ * The SALEABLE rows that arrive with less than the minimum shelf life left
+ * (purchase.shelf_life_mode / min_shelf_life_pct; the item's own
+ * item_min_shelf_life_pct wins). Life left % = (expiry − receipt) ÷ (expiry − mfg),
+ * or ÷ item_expiry_days when no mfg date is keyed. A row with no expiry is not
+ * judged; an expired row is always an issue. Mode OFF → none.
+ */
+export async function shelfLifeIssues(tx: Tx, mode: 'OFF' | 'WARN' | 'REFUSE', minPct: number, receipt: string, rows: ShelfLifeRow[]): Promise<ShelfLifeIssue[]> {
+  if (mode === 'OFF') return [];
+  const judged = rows.filter((r) => r.expiryDate && (r.bucket ?? 'SALEABLE') === 'SALEABLE');
+  if (!judged.length) return [];
+  const items = await tx.$queryRaw<{ item_id: string; name: string | null; min_pct: Prisma.Decimal | null; days: number | null }[]>`
+    SELECT item_id, item_name_en AS name, item_min_shelf_life_pct AS min_pct, item_expiry_days AS days
+      FROM inventory.item_master WHERE item_id = ANY(${[...new Set(judged.map((r) => r.itemId))]}::uuid[])`;
+  const by = new Map(items.map((i) => [i.item_id, i]));
+  const day = 86400000;
+  const rec = dateOf(receipt)!.getTime();
+  const shown = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().join('-');
+  const out: ShelfLifeIssue[] = [];
+  for (const r of judged) {
+    const it = by.get(r.itemId);
+    const want = it?.min_pct != null ? Number(it.min_pct) : minPct;
+    const exp = r.expiryDate!.getTime();
+    const span = r.mfgDate && r.mfgDate.getTime() < exp ? (exp - r.mfgDate.getTime()) / day : (it?.days ?? 0);
+    const leftDays = (exp - rec) / day;
+    const name = it?.name ?? 'the item';
+    if (leftDays < 0) {
+      out.push({ field: `lines.${r.index}.allocs`, code: 'PUR_SHELF_LIFE', message: `Line ${r.lineNo}: ${name} expired on ${shown(r.expiryDate!)}.` });
+      continue;
+    }
+    if (!(span > 0) || !(want > 0)) continue;
+    const pct = Math.floor((leftDays / span) * 100);
+    if (pct < want) out.push({ field: `lines.${r.index}.allocs`, code: 'PUR_SHELF_LIFE',
+      message: `Line ${r.lineNo}: ${name} has ${pct} % of its shelf life left (expires ${shown(r.expiryDate!)}) — the minimum is ${want} %.` });
+  }
+  return out;
+}
+
 /** BigInt → string, recursively (JSON cannot carry a BigInt). */
 export function jsonSafe<T>(v: T): T {
   if (typeof v === 'bigint') return v.toString() as unknown as T;
