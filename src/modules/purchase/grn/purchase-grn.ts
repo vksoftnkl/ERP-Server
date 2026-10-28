@@ -47,6 +47,9 @@ export class GrnLineDto {
   @ApiProperty({ description: 'Provisional net rate per unit, without tax (default: the PO line\'s).' }) @IsNumber() @Min(0) rate!: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() mrp?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() sellA?: number;
+  @ApiPropertyOptional({ description: 'price_set_at = GRN: price level B written at post.' }) @IsOptional() @IsNumber() sellB?: number;
+  @ApiPropertyOptional({ description: 'price_set_at = GRN: price level C written at post.' }) @IsOptional() @IsNumber() sellC?: number;
+  @ApiPropertyOptional({ description: 'price_set_at = GRN: price level D written at post.' }) @IsOptional() @IsNumber() sellD?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() weight?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) remarks?: string;
   @ApiPropertyOptional({ type: [PurchaseAllocDto] }) @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseAllocDto) allocs?: PurchaseAllocDto[];
@@ -122,6 +125,7 @@ export class PurchaseGrnService {
       });
       if (problems.length) purRefuseMany(problems[0].message, problems);
       const settings = await loadPurchaseSettings(tx, h.companyId, h.branchId);
+      const priceAtGrn = settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN';
 
       // F4 excess: what came beyond the PO line's pending qty. HOLD_FOR_BILL (default) keeps it at the
       // provisional rate for the bill; KEEP_FREE takes it as free goods (no value); RETURN = sent back at
@@ -216,6 +220,8 @@ export class PurchaseGrnService {
           griChallanQty: D(l.challanQty ?? D(l.receivedQty).plus(D(l.damagedQty))), griReceivedQty: D(l.receivedQty), griDamagedQty: D(l.damagedQty),
           griDamageReasonId: l.damageReasonId ?? null, griFreeQty: D(l.freeQty), griExcessQty: excessOf[i], griExcessAction: l.excessAction ?? null,
           griProvisionalRate: D(l.rate), griOffbillShare: o.offbillShare, griValue: o.netGross, griMrp: l.mrp ?? null, griSellA: l.sellA ?? null,
+          griSellB: l.sellB ?? null, griSellC: l.sellC ?? null, griSellD: l.sellD ?? null,
+          griPriceUpdateResult: priceAtGrn ? 'NONE' : 'OFF',
           griRemarks: l.remarks ?? null, griCreatedBy: actor,
         }, select: { griId: true } });
         const allocs = l.allocs?.length ? l.allocs : [
@@ -388,17 +394,20 @@ export class PurchaseGrnService {
         pshReason: 'SHORT_CHALLAN', pshQtyBase: short.times(l.griToBaseFactor), pshOriginCostRate: cost(l), pshCreatedBy: actor,
       } });
     }
-    // purchase.price_set_at = GRN: the GRN's Sell A / MRP go through the purchase price writer (D16: a newer change wins)
+    // purchase.price_set_at = GRN: the GRN's Sell A–D / MRP go through the purchase price writer (D16: a newer change wins)
     if (settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN') {
+      const lv = (v: Prisma.Decimal | null) => (v ? Number(v) : 0);
       const businessTime = docDate === isoDate(postedOn) ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
       const result = await this.prices.applyPurchasePrices(tx, {
         companyId: g.grnCompanyId, branchId: g.grnBranchId, actor, billRef: g.grnRefno, businessTime,
         rows: lines.map((l) => ({ key: l.griId, itemId: l.griItemId, uomId: l.griUomId, mrp: l.griMrp ? Number(l.griMrp) : null,
-                                  levels: [{ level: 1, price: l.griSellA ? Number(l.griSellA) : 0 }] })),
+                                  levels: [{ level: 1, price: lv(l.griSellA) }, { level: 2, price: lv(l.griSellB) }, { level: 3, price: lv(l.griSellC) }, { level: 4, price: lv(l.griSellD) }] })),
       });
       for (const l of lines) {
         const r = result.get(l.griId);
-        if (r?.note) notes.push({ field: `lines.${l.griLineNo - 1}`, code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', message: `Line ${l.griLineNo}: ${r.note}` });
+        if (!r) continue;
+        await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: r.result } });
+        if (r.note) notes.push({ field: `lines.${l.griLineNo - 1}`, code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', message: `Line ${l.griLineNo}: ${r.note}` });
       }
     }
     await tx.purGrn.update({ where: { grnId_grnAccYear: { grnId, grnAccYear: accYear } }, data: { grnStatus: 'POSTED', grnPostedVoucherId: posted.voucherId, grnModifiedBy: actor, grnModifiedOn: postedOn } });
