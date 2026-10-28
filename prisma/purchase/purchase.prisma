@@ -19,6 +19,9 @@ model PurSupplierItem {
   psiMoq              Decimal?  @db.Decimal(18, 6) @map("psi_moq")
   psiLeadDays         Int?      @db.SmallInt @map("psi_lead_days")
   psiIsPreferred      Boolean   @default(false) @map("psi_is_preferred")
+  /// ENT-07 buy N get M: both set or both NULL (ck_psi_scheme)
+  psiSchemeBuyQty     Decimal?  @db.Decimal(18, 3) @map("psi_scheme_buy_qty")
+  psiSchemeFreeQty    Decimal?  @db.Decimal(18, 3) @map("psi_scheme_free_qty")
   psiSource           String    @default("TYPED") @db.VarChar(10) @map("psi_source")
   psiIsActive         Boolean   @default(true) @map("psi_is_active")
   psiIsDeleted        Boolean   @default(false) @map("psi_is_deleted")
@@ -253,6 +256,10 @@ model PurGrnItem {
   griValue           Decimal   @default(0) @db.Decimal(15, 2) @map("gri_value")
   griMrp             Decimal?  @db.Decimal(15, 2) @map("gri_mrp")
   griSellA           Decimal?  @db.Decimal(15, 2) @map("gri_sell_a")
+  griSellB           Decimal?  @db.Decimal(15, 2) @map("gri_sell_b")
+  griSellC           Decimal?  @db.Decimal(15, 2) @map("gri_sell_c")
+  griSellD           Decimal?  @db.Decimal(15, 2) @map("gri_sell_d")
+  griPriceUpdateResult String? @db.VarChar(12) @map("gri_price_update_result")
   griRemarks         String?   @db.VarChar(250) @map("gri_remarks")
   griIsDeleted       Boolean   @default(false) @map("gri_is_deleted")
   griSyncDate        DateTime? @db.Timestamptz(6) @map("gri_sync_date")
@@ -773,4 +780,23 @@ model TxnAttachment {
   @@id([tatId, tatAccYear], map: "pk_txn_attachment")
   @@map("txn_attachment")
   @@schema("public")
+}
+
+/// R13 — goods under reverse charge when bought from an UNREGISTERED supplier (notification 6/2024-CT(R)).
+/// Company NULL = every company; an item HSN matches when it starts with rnhHsnPrefix.
+/// ux_rnh_scope_prefix_from (COALESCE(company, zero uuid), prefix, from) is DB-only (expression index).
+model PurRcmNotifiedHsn {
+  rnhId            String    @id(map: "pk_pur_rcm_notified_hsn") @default(dbgenerated("uuidv7()")) @db.Uuid @map("rnh_id")
+  rnhCompanyId     String?   @db.Uuid @map("rnh_company_id")
+  rnhHsnPrefix     String    @db.VarChar(8) @map("rnh_hsn_prefix")
+  rnhDescription   String    @db.VarChar(200) @map("rnh_description")
+  rnhNotification  String?   @db.VarChar(60) @map("rnh_notification")
+  rnhEffectiveFrom DateTime  @db.Date @map("rnh_effective_from")
+  rnhEffectiveTo   DateTime? @db.Date @map("rnh_effective_to")
+  rnhIsActive      Boolean   @default(true) @map("rnh_is_active")
+  rnhCreatedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("rnh_created_on")
+  rnhCreatedBy     String    @default("SYSTEM") @db.VarChar(50) @map("rnh_created_by")
+
+  @@map("pur_rcm_notified_hsn")
+  @@schema("purchase")
 }

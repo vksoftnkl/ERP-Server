@@ -51,6 +51,13 @@ model TaxRateMaster {
   /// original rate.
   taxSupersedesId    String? @db.Uuid                                           @map("tax_supersedes_id")
 
+  // ── Value slab (P15 / ENT-09, 20261028190200_tax_rate_value_slab) ─────────
+  /// Above this taxable value PER PIECE (after discount) the line takes
+  /// taxAboveTaxId instead (GST 2.0 apparel: <= 2,500 at 5 %, above at 18 %).
+  /// Both set or both NULL (ck_tax_value_slab).
+  taxValueThreshold  Decimal? @db.Decimal(14, 2)                                @map("tax_value_threshold")
+  taxAboveTaxId      String?  @db.Uuid                                          @map("tax_above_tax_id")
+
   // ── Audit ──────────────────────────────────────────────────────────────
   taxIsActive        Boolean   @default(true)                                   @map("tax_is_active")
   taxIsDeleted       Boolean   @default(false)                                  @map("tax_is_deleted")
@@ -63,6 +70,8 @@ model TaxRateMaster {
   // Relations
   supersedes         TaxRateMaster?  @relation("TaxRateSupersedes", fields: [taxSupersedesId], references: [taxId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tax_supersedes")
   supersededBy       TaxRateMaster[] @relation("TaxRateSupersedes")
+  aboveTax           TaxRateMaster?  @relation("TaxValueSlab", fields: [taxAboveTaxId], references: [taxId], onDelete: NoAction, onUpdate: NoAction, map: "fk_tax_above_tax")
+  belowTaxes         TaxRateMaster[] @relation("TaxValueSlab")
   ledgerOverrides    TaxRateLedger[]
   // Lines taxed under this rate. The reference is a snapshot, so ON DELETE
   // RESTRICT: a rate a document has used can be superseded, never removed.
