@@ -395,6 +395,12 @@ export class PurchaseReturnService {
     if (!pr) purNotFound(`Return ${prId} not found`);
     if (pr.prStatus !== 'DRAFT') purConflict(`${pr.prRefno} is ${pr.prStatus} — only a draft can be posted.`, PUR.NOT_DRAFT, 'prId');
     const lines = await tx.purReturnItem.findMany({ where: { priPrId: prId, priAccYear: accYear, priIsDeleted: false }, orderBy: { priLineNo: 'asc' } });
+    // WS6: a GRN line billed after this draft was saved — its goods now go back against the bill (a bill no longer waits for a draft return)
+    if (pr.prKind === 'AGAINST_GRN') {
+      const billed = await this.billedGrnLines(tx, pr.prSrcDocId);
+      const hit = lines.find((l) => l.priSrcItemId && billed.has(l.priSrcItemId));
+      if (hit) purConflict(`${pr.prRefno} line ${hit.priLineNo}: that GRN line is now billed in ${billed.get(hit.priSrcItemId!)} — cancel this draft and return the goods against the bill.`, PUR.GRN_LINE_BILLED, 'prId');
+    }
     const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: prId, piaAccYear: accYear, piaIsDeleted: false } });
     const allocOf = new Map(allocs.map((a) => [a.piaLineId, a]));
     const postedOn = new Date();

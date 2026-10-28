@@ -26,6 +26,7 @@ import { calcPurchase, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCos
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
   allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
+  shelfLifeIssues,
 } from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto } from './dto/save-purchase-invoice.dto';
 
@@ -68,8 +69,19 @@ import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvo
  * the bill's: it is recognised by having no allocation rows, and it is
  * cancelled with the bill, never on its own.
  *
- * Still refused: a draft GRN return on the line, a challan short already
- * received / closed, billing less than was kept, off-bill charges.
+ * WS6 (10-28) — no longer refused:
+ *  - a DRAFT GRN return on the line: the bill goes through; that return can no
+ *    longer post (its line is billed — return the goods against the bill).
+ *  - a challan short already received / closed (R3 slice 2): what a Shortage
+ *    Receipt brought in counts as received on the line (its value sits in GRNI,
+ *    the bill clears it and revalues those lots too); what was closed is never
+ *    billed (billed beyond kept + still-open short is refused). The old row is
+ *    settled at received + closed; a short the bill still bills opens its own
+ *    SHORT_BILL row. Cancel puts the row back as the GRN made it.
+ *  - billing less than was kept: the units not billed are the supplier's free
+ *    goods — they share the bill's cost (D2) and GRNI clears whole (a warning).
+ * Still refused, by plan (addendum 2 R4): off-bill charges on a bill from a GRN
+ * — our own labour / freight stays on the GRN.
  */
 
 const D = (v: Prisma.Decimal.Value | null | undefined) => new Prisma.Decimal(v ?? 0);
@@ -93,10 +105,26 @@ interface GrnFacts {
   gri_to_base_factor: Prisma.Decimal; gri_value: Prisma.Decimal; gri_offbill_share: Prisma.Decimal;
   grn_id: string; grn_refno: string; grn_doc_date: Date; grn_status: string; grn_company_id: string; grn_branch_id: string; grn_supplier_id: string;
   billed_in: string | null; draft_return: string | null; short_touched: bigint;
+  /** the GRN's challan-short row (R3) and what happened to it before the bill: posted receipts (base qty, value), closes (base qty) */
+  short_id: string | null; short_year: string | null; short_qty_base: Prisma.Decimal | null;
+  short_rcv_base: Prisma.Decimal; short_rcv_value: Prisma.Decimal; short_closed_base: Prisma.Decimal;
   /** posted GRN returns of the line: paid qty, free qty (line unit), and the GRNI value they took off */
   returned_qty: Prisma.Decimal; returned_free: Prisma.Decimal; returned_value: Prisma.Decimal;
   /** set by prepare: of the returned qty, how much this bill bills (→ its debit note) */
   rejected_billed?: Prisma.Decimal;
+  /** set by prepare: kept units the bill does not bill (taken as free goods) */
+  free_kept?: Prisma.Decimal;
+}
+
+/** WS6 — a GRN line's quantities as the bill sees them (line unit): what came in (incl. a challan short received
+ *  before the bill), what went back, what of the challan short is still open, and whether that short row has history. */
+function grnKept(g: GrnFacts) {
+  const f = g.gri_to_base_factor.isZero() ? D(1) : g.gri_to_base_factor;
+  const shortRecv = g.short_rcv_base.dividedBy(f);
+  const history = g.short_id != null && (!g.short_rcv_base.isZero() || !g.short_closed_base.isZero());
+  const openShort = g.short_qty_base == null ? ZERO : Prisma.Decimal.max(0, g.short_qty_base.minus(g.short_rcv_base).minus(g.short_closed_base).dividedBy(f));
+  const closed = g.short_closed_base.dividedBy(f);
+  return { f, shortRecv, history, openShort, closed, kept: g.gri_received_qty.plus(g.gri_damaged_qty).plus(shortRecv).minus(g.returned_qty) };
 }
 
 /** DOC-04 — the PO line a direct bill line receives (goods came with the bill). */
@@ -196,6 +224,20 @@ export class PurchaseInvoiceService {
         p.settings = settings;
         await this.assertNotDuplicate(tx, dto, settings, warnings);
         if (h.post) this.assertPrintedAmount(p, dto, settings, warnings);
+        // WS6: a GRN line billed for less than was kept — the rest are free goods (they share the cost)
+        dto.lines.forEach((l, i) => {
+          const g = p.grn.get(l.lineNo);
+          if (g?.free_kept?.greaterThan(0)) {
+            warnings.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', field: `lines.${i}.billedQty`,
+              message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
+          }
+        });
+        // ENT-15 on a direct bill (lines from a GRN were judged on the GRN): WARN on any save, REFUSE stops the post
+        const shelf = await shelfLifeIssues(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate,
+          dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
+            lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null })))));
+        if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post) purRefuseMany(shelf[0].message, shelf);
+        if (!h.post) warnings.push(...shelf);   // a post says it itself
 
         let id = h.piId ?? null;
         let slno: bigint, refno: string, fromStatus: string | null = null;
@@ -333,6 +375,16 @@ export class PurchaseInvoiceService {
           FROM purchase.pur_grn_item gri
          WHERE s.psh_bill_doc_id = ${dto.piId}::uuid AND s.psh_bill_doc_year = ${dto.accYear}::bpchar
            AND s.psh_src_doc_type = 'GRN' AND gri.gri_id = s.psh_src_item_id AND gri.gri_acc_year = s.psh_src_doc_year`;
+      // WS6: a challan short received / closed before the bill was settled at what it saw — back to what the GRN opened
+      await tx.$executeRaw`
+        UPDATE purchase.pur_shortage s
+           SET psh_qty_base = (gri.gri_challan_qty - gri.gri_received_qty - gri.gri_damaged_qty) * gri.gri_to_base_factor,
+               psh_modified_by = ${actor}, psh_modified_on = ${cancelledOn}
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_grn_item gri ON gri.gri_id = pii.pii_src_item_id AND gri.gri_acc_year = pii.pii_src_doc_year
+         WHERE pii.pii_pi_id = ${dto.piId}::uuid AND pii.pii_acc_year = ${dto.accYear}::bpchar AND pii.pii_src_doc_type = 'GRN' AND NOT pii.pii_is_deleted
+           AND s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND s.psh_src_doc_year = gri.gri_acc_year
+           AND s.psh_reason = 'SHORT_CHALLAN' AND s.psh_bill_doc_id IS NULL AND NOT s.psh_is_deleted`;
       await tx.accBillBalance.updateMany({
         where: { ablSrcModule: SRC_MODULE, ablSrcDocType: DOC_TYPE, ablSrcDocId: dto.piId, ablIsDeleted: false },
         data: { ablIsDeleted: true, ablModifiedBy: actor },
@@ -408,7 +460,8 @@ export class PurchaseInvoiceService {
       else if (it.iuc_item_id !== l.itemId) problems.push({ field: `lines.${i}.uomId`, code: PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: the unit belongs to another item` });
       const billed = D(l.billedQty), recd = l.receivedQty === undefined ? null : D(l.receivedQty), dmg = D(l.damagedQty);
       if (billed.isZero() && D(l.freeQty).isZero()) problems.push({ field: `lines.${i}.billedQty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: no qty` });
-      if (recd && recd.plus(dmg).greaterThan(billed)) problems.push({ field: `lines.${i}.receivedQty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: received + damaged is more than billed — enter the excess separately` });
+      // a GRN line billed for less than was kept is allowed (WS6: the rest are free goods); a direct line enters its excess separately
+      if (recd && !l.grnItemId && recd.plus(dmg).greaterThan(billed)) problems.push({ field: `lines.${i}.receivedQty`, code: PUR.QTY_INVALID, message: `Line ${l.lineNo}: received + damaged is more than billed — enter the excess separately` });
     });
     // a line without a tax id takes the item's default rate
     for (const l of dto.lines) if (!l.taxId) l.taxId = items.get(l.uomId)?.item_default_tax_id ?? undefined;
@@ -637,21 +690,24 @@ export class PurchaseInvoiceService {
       if (g.grn_supplier_id !== h.supplierId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} is another supplier's GRN`);
       if (g.grn_company_id !== h.companyId || g.grn_branch_id !== h.branchId) return say(PUR.GRN_MISMATCH, `${g.grn_refno} was received at another branch — bill it there`);
       if (g.billed_in) return say(PUR.GRN_LINE_BILLED, `${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}`);
-      if (g.draft_return) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no} has the draft return ${g.draft_return} — post or cancel it first`);
-      if (Number(g.short_touched) > 0) return say(PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no}: its challan shortage is already received or closed — cancel that first, bill the GRN, then receive the shortage against the bill`);
       if (l.itemId !== g.gri_item_id || l.uomId !== g.gri_uom_id) return say(PUR.GRN_MISMATCH, `the item and unit must be the GRN line's (${g.grn_refno} line ${g.gri_line_no})`);
-      const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
-      if (D(l.billedQty).lessThan(kept)) {
-        return say(PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()} is less than the ${kept.toString()} kept from ${g.grn_refno}${g.returned_qty.isZero() ? '' : ` (${g.returned_qty.toString()} went back on a GRN return)`} — bill it all (return the excess against the bill)`);
-      }
+      const k = grnKept(g);
+      const kept = k.kept;
+      // billed < kept: the rest is the supplier's free goods (shares the cost); prepare's caller warns
+      g.free_kept = Prisma.Decimal.max(0, kept.minus(D(l.billedQty)));
       // R18: billed beyond what was kept, up to what went back = rejected (its debit note is written at post);
       // the calculation sees it as having come in, so its GST is claimed here and reversed by that note
-      const rejected = Prisma.Decimal.min(g.returned_qty, D(l.billedQty).minus(kept));
+      const rejected = Prisma.Decimal.min(g.returned_qty, Prisma.Decimal.max(0, D(l.billedQty).minus(kept)));
       g.rejected_billed = rejected;
+      // a challan short the supplier's later goods / closes already touched: only what is still open can be billed short
+      const shortBilled = Prisma.Decimal.max(0, D(l.billedQty).minus(kept).minus(rejected));
+      if (k.history && shortBilled.greaterThan(k.openShort)) {
+        return say(PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()}: ${kept.toString()} came in on ${g.grn_refno}${k.shortRecv.isZero() ? '' : ` (${k.shortRecv.toString()} of it on a shortage receipt)`} and only ${k.openShort.toString()} is still short — ${k.closed.toString()} of the challan short was closed, it is not billed`);
+      }
       let notBilledBack = g.returned_qty.minus(rejected);
       const recd = Prisma.Decimal.max(0, g.gri_received_qty.minus(notBilledBack));
       notBilledBack = notBilledBack.minus(g.gri_received_qty.minus(recd));
-      l.receivedQty = Number(recd);
+      l.receivedQty = Number(recd.plus(k.shortRecv));
       l.damagedQty = Number(g.gri_damaged_qty.minus(notBilledBack));
       l.freeQty = Number(Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free)));
       l.allocs = undefined;
@@ -683,7 +739,9 @@ export class PurchaseInvoiceService {
                                 JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
                                WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
                    OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c
-                                 WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched
+                                 WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched,
+             sh.psh_id AS short_id, sh.psh_acc_year AS short_year, sh.psh_qty_base AS short_qty_base,
+             COALESCE(sh.rcv_base, 0) AS short_rcv_base, COALESCE(sh.rcv_value, 0) AS short_rcv_value, COALESCE(sh.closed_base, 0) AS short_closed_base
         FROM purchase.pur_grn_item gri
         JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
         LEFT JOIN LATERAL (
@@ -692,6 +750,19 @@ export class PurchaseInvoiceService {
             JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
            WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = gri.gri_id AND NOT ri.pri_is_deleted
              AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted) ret ON true
+        LEFT JOIN LATERAL (
+          SELECT s.psh_id, s.psh_acc_year, s.psh_qty_base,
+                 (SELECT SUM(i.psri_qty * i.psri_to_base_factor) FROM purchase.pur_shortage_receipt_item i
+                    JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                   WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status = 'POSTED') AS rcv_base,
+                 (SELECT SUM(i.psri_value) FROM purchase.pur_shortage_receipt_item i
+                    JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                   WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status = 'POSTED') AS rcv_value,
+                 (SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted) AS closed_base
+            FROM purchase.pur_shortage s
+           WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND s.psh_src_doc_year = gri.gri_acc_year
+             AND s.psh_reason = 'SHORT_CHALLAN' AND s.psh_bill_item_id IS NULL AND NOT s.psh_is_deleted
+           LIMIT 1) sh ON true
        WHERE gri.gri_id = ANY(${griIds}::uuid[]) AND NOT gri.gri_is_deleted AND NOT g.grn_is_deleted`;
   }
 
@@ -727,7 +798,7 @@ export class PurchaseInvoiceService {
         .sort((a, b) => a.grn_doc_date.getTime() - b.grn_doc_date.getTime() || a.grn_refno.localeCompare(b.grn_refno) || a.gri_line_no - b.gri_line_no)
         .map((f) => {
           const e = ex.get(f.gri_id);
-          const blocked = f.draft_return ? `Draft return ${f.draft_return} against it` : Number(f.short_touched) > 0 ? 'Challan shortage already received / closed' : null;
+          const blocked = null;   // WS6: a draft return / a touched challan short no longer stop the bill
           return {
             grnItemId: f.gri_id, grnItemAccYear: f.gri_acc_year, grnId: f.grn_id, grnRefno: f.grn_refno, grnDate: isoDate(f.grn_doc_date), lineNo: f.gri_line_no,
             challanNo: e?.grn_challan_no ?? null, supplierInvNo: e?.grn_supplier_inv_no ?? null, poRefno: e?.gri_src_doc_refno ?? null,
@@ -849,7 +920,7 @@ export class PurchaseInvoiceService {
                       piiSrcDocLineNo: po.poi_line_no, piiSrcDocRefno: po.po_refno } : {}),
           piiItemId: l.itemId, piiUomId: l.uomId, piiBaseUomId: it.base_iuc_id, piiToBaseFactor: it.iuc_to_base_factor,
           piiHsnCode: it.item_hsn_code, piiWeight: l.weight ?? null,
-          piiBilledQty: D(l.billedQty), piiReceivedQty: D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
+          piiBilledQty: D(l.billedQty), piiReceivedQty: l.grnItemId && l.receivedQty != null ? D(l.receivedQty) : D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),   // a GRN line may have received more than billed (WS6)
           piiShortQty: o.pendingShortQty, piiAbsorbedShortQty: o.absorbedShortQty, piiFreeQty: D(l.freeQty),
           piiRate: D(l.rate), piiDiscPct: D(l.discPct), piiDiscPerQty: D(l.discPerQty), piiDiscAmt: o.discAmt,
           piiSchPct: D(l.schPct), piiSchPerQty: D(l.schPerQty), piiSchAmt: o.schAmt, piiExtraDiscAmt: o.extraDiscAmt,
@@ -933,6 +1004,15 @@ export class PurchaseInvoiceService {
     const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC_TYPE, piaDocId: piId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: { piaRowNo: 'asc' } });
     const postedOn = new Date();
     const docDate = isoDate(pi.piDocDate);
+    // ENT-15 under the post too (a draft saved before the setting changed); GRN lines carry no allocation rows here
+    {
+      const st = await loadPurchaseSettings(tx, pi.piCompanyId, pi.piBranchId);
+      const lineOf = new Map(lines.map((l) => [l.piiId, l]));
+      const shelf = await shelfLifeIssues(tx, st.shelfLifeMode, st.minShelfLifePct, docDate,
+        allocs.filter((a) => lineOf.has(a.piaLineId)).map((a) => { const l = lineOf.get(a.piaLineId)!; return { lineNo: l.piiLineNo, index: l.piiLineNo - 1, itemId: l.piiItemId, bucket: a.piaBucket, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate }; }));
+      if (shelf.length && st.shelfLifeMode === 'REFUSE') purRefuseMany(shelf[0].message, shelf);
+      for (const x of shelf) notes.push({ code: x.code, field: x.field, message: x.message });
+    }
 
     // ── 1 · stock: the shadow RECEIPT ───────────────────────────────────
     const stockAllocs = allocs.filter((a) => a.piaQty.plus(a.piaFreeQty).greaterThan(0));
@@ -1010,17 +1090,19 @@ export class PurchaseInvoiceService {
         const g = grnOf.get(l.piiSrcItemId!);
         if (!g || g.grn_status !== 'POSTED') purConflict(`Line ${l.piiLineNo}: its GRN is no longer posted.`, PUR.NOT_POSTED, 'lines');
         if (g.billed_in) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}.`, PUR.GRN_LINE_BILLED, 'lines');
-        if (g.draft_return) purConflict(`Line ${l.piiLineNo}: ${g.grn_refno} has the draft return ${g.draft_return} — post or cancel it first.`, PUR.GRN_NOT_BUILT, 'lines');
-        if (Number(g.short_touched) > 0) purConflict(`Line ${l.piiLineNo}: the challan shortage of ${g.grn_refno} was received / closed meanwhile.`, PUR.GRN_NOT_BUILT, 'lines');
-        // R18: the rejected qty the draft was saved with must still be what the GRN returns say
-        const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
+        // R18 + WS6: what the draft was saved with (rejected qty; received + damaged incl. a shortage received meanwhile)
+        // must still be what the GRN's returns / shortage receipts / closes say
+        const k = grnKept(g);
+        const kept = k.kept;
         const rejected = Prisma.Decimal.min(g.returned_qty, Prisma.Decimal.max(0, l.piiBilledQty.minus(kept)));
-        if (l.piiBilledQty.lessThan(kept) || !rejected.equals(l.piiRejectedAtGrnQty)) {
-          purConflict(`Line ${l.piiLineNo}: the returns against ${g.grn_refno} changed since this draft was saved — save it again.`, PUR.GRN_NOT_BUILT, 'lines');
+        if (!rejected.equals(l.piiRejectedAtGrnQty) || !l.piiReceivedQty.plus(l.piiDamagedQty).equals(kept.plus(rejected))
+            || (k.history && l.piiShortQty.greaterThan(k.openShort))) {
+          purConflict(`Line ${l.piiLineNo}: the returns / shortage receipts against ${g.grn_refno} changed since this draft was saved — save it again.`, PUR.GRN_NOT_BUILT, 'lines');
         }
         const f = g.gri_to_base_factor;
         const keptBase = kept.plus(Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free))).times(f);
-        const grniOpen = g.gri_value.minus(g.returned_value);
+        // GRNI holds the GRN line's value (less what went back) and what a challan short received before the bill added
+        const grniOpen = g.gri_value.minus(g.returned_value).plus(g.short_rcv_value);
         const landedKept = l.piiLandedCostWot.times(keptBase).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
         grniDr = grniDr.plus(grniOpen);
         variance = variance.plus(landedKept.minus(grniOpen));
@@ -1042,6 +1124,16 @@ export class PurchaseInvoiceService {
          WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])
            AND NOT ri.pri_is_deleted AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted
          GROUP BY 1, 2`;
+      // WS6: the lots a challan short brought in before the bill (posted Shortage Receipts on the GRN line's row)
+      const srLots = await tx.$queryRaw<{ gri_id: string; lot_id: string; qty: Prisma.Decimal }[]>`
+        SELECT s.psh_src_item_id AS gri_id, a.pia_lot_id AS lot_id, SUM(a.pia_qty * i.psri_to_base_factor) AS qty
+          FROM purchase.pur_shortage s
+          JOIN purchase.pur_shortage_receipt_item i ON i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted
+          JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year AND r.psr_status = 'POSTED' AND NOT r.psr_is_deleted
+          JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'SHORTAGE_RECEIPT' AND a.pia_line_id = i.psri_id AND a.pia_acc_year = i.psri_acc_year AND NOT a.pia_is_deleted
+         WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])
+           AND s.psh_reason = 'SHORT_CHALLAN' AND NOT s.psh_is_deleted AND a.pia_lot_id IS NOT NULL
+         GROUP BY 1, 2`;
       for (const r of revLines) {
         const l = grnLines.find((x) => x.piiId === r.lineId)!;
         const g = grnOf.get(l.piiSrcItemId!)!;
@@ -1050,6 +1142,7 @@ export class PurchaseInvoiceService {
           lotIn.set(a.piaLotId!, (lotIn.get(a.piaLotId!) ?? ZERO).plus(a.piaQty.plus(a.piaFreeQty).times(g.gri_to_base_factor)));
         }
         for (const b of back.filter((x) => x.gri_id === g.gri_id)) lotIn.set(b.lot_id, (lotIn.get(b.lot_id) ?? ZERO).minus(D(b.qty)));
+        for (const s2 of srLots.filter((x) => x.gri_id === g.gri_id)) lotIn.set(s2.lot_id, (lotIn.get(s2.lot_id) ?? ZERO).plus(D(s2.qty)));
         r.lots = [...lotIn].filter(([, q]) => q.greaterThan(0)).map(([lotId, baseQty]) => ({ lotId, baseQty }));
       }
       const intoStock = await revalueOnHand(tx,
@@ -1162,7 +1255,13 @@ export class PurchaseInvoiceService {
           SELECT psh_id, psh_acc_year FROM purchase.pur_shortage
            WHERE psh_src_doc_type = 'GRN' AND psh_src_item_id = ${g.gri_id}::uuid AND psh_src_doc_year = ${g.gri_acc_year}::bpchar
              AND psh_bill_item_id IS NULL AND NOT psh_is_deleted LIMIT 1`;
-        if (row) {
+        if (row && g.short_id === row.psh_id && grnKept(g).history) {
+          // WS6: received / closed before the bill — the row is settled at what it saw; a short still billed opens its own row below
+          await tx.purShortage.update({
+            where: { pshId_pshAccYear: { pshId: row.psh_id, pshAccYear: row.psh_acc_year } },
+            data: { pshQtyBase: g.short_rcv_base.plus(g.short_closed_base), pshModifiedBy: actor, pshModifiedOn: postedOn },
+          });
+        } else if (row) {
           const short = l.piiShortQty.greaterThan(0);
           await tx.purShortage.update({
             where: { pshId_pshAccYear: { pshId: row.psh_id, pshAccYear: row.psh_acc_year } },
