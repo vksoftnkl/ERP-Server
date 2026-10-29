@@ -20892,3 +20892,4 @@ Raw query failed. Code: `42703`. Message: `column "tat_doc_type" of relation "tx
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async PurchaseAttachmentService.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:65:19)
     at async PurchaseAttachmentController.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:108:56)
+2026-10-29T07:33:29.993Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
