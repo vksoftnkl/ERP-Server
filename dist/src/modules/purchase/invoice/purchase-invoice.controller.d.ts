@@ -19,6 +19,7 @@ export declare class PurchaseInvoiceController {
             }[];
             header: {
                 supplierName: string;
+                godownName: string;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -202,6 +203,12 @@ export declare class PurchaseInvoiceController {
             interState: boolean;
             supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
             lines: {
+                poRefno: string | null;
+                rate: number;
+                costIncl: string | null;
+                sellA: number | null;
+                markupAPct: string | null;
+                marginAPct: string | null;
                 rejectedQty: string;
                 lineNo: number;
             }[];
@@ -223,6 +230,7 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -405,6 +413,7 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -587,6 +596,7 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -798,7 +808,10 @@ export declare class PurchaseInvoiceController {
             taxId: string | null;
             mrp: import("@prisma/client/runtime/library").Decimal | null;
             sellA: import("@prisma/client/runtime/library").Decimal | null;
-            blocked: string | null;
+            sellB: import("@prisma/client/runtime/library").Decimal | null;
+            sellC: import("@prisma/client/runtime/library").Decimal | null;
+            sellD: import("@prisma/client/runtime/library").Decimal | null;
+            blocked: null;
         }[];
     }>;
     cancel(dto: CancelPurchaseInvoiceDto): Promise<{
@@ -807,6 +820,7 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;

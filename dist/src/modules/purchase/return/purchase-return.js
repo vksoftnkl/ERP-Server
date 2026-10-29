@@ -24,6 +24,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
 const purchase_errors_1 = require("../common/purchase.errors");
+const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 exports.RETURN_MENU_ID = 25;
 const DOC = 'PURCHASE_RETURN';
@@ -590,6 +591,10 @@ let PurchaseReturnService = class PurchaseReturnService {
             }),
         });
     }
+    async defaultSettlement(tx, companyId, branchId) {
+        const st = await (0, purchase_settings_1.loadPurchaseSettings)(tx, companyId, branchId);
+        return st.returnSettlementDefault === 'ADVANCE' ? 'ADVANCE' : 'ADJUST';
+    }
     async save(dto) {
         const actor = this.actor();
         const h = dto.header;
@@ -674,7 +679,7 @@ let PurchaseReturnService = class PurchaseReturnService {
             const data = {
                 prCompanyId: h.companyId, prBranchId: h.branchId, prAccYear: h.accYear, prDeviceId: h.deviceId, prSlno: slno, prRefno: refno,
                 prDocDate: (0, purchase_doc_helpers_1.dateOf)(h.docDate), prKind: h.kind, prSrcDocId: src.id, prSrcAccYear: src.accYear, prSupplierId: src.supplierId,
-                prGodownId: rows[0]?.lot?.godown_id ?? null, prSettlement: h.settlement ?? 'ADJUST',
+                prGodownId: rows[0]?.lot?.godown_id ?? null, prSettlement: h.settlement ?? await this.defaultSettlement(tx, h.companyId, h.branchId),
                 prSupplierCnNo: h.supplierCnNo ?? null, prSupplierCnDate: (0, purchase_doc_helpers_1.dateOf)(h.supplierCnDate), prEwbNo: h.ewbNo ?? null,
                 prVehicleNo: h.vehicleNo ?? null, prDriverName: h.driverName ?? null, prOurRef: src.refno,
                 prReturnValue: returnValue, prClaimValue: claimValue, prItcReversed: itcReversed, prReplaceQtyBase: replaceBase,
@@ -723,6 +728,12 @@ let PurchaseReturnService = class PurchaseReturnService {
         if (pr.prStatus !== 'DRAFT')
             (0, purchase_errors_1.purConflict)(`${pr.prRefno} is ${pr.prStatus} — only a draft can be posted.`, purchase_errors_1.PUR.NOT_DRAFT, 'prId');
         const lines = await tx.purReturnItem.findMany({ where: { priPrId: prId, priAccYear: accYear, priIsDeleted: false }, orderBy: { priLineNo: 'asc' } });
+        if (pr.prKind === 'AGAINST_GRN') {
+            const billed = await this.billedGrnLines(tx, pr.prSrcDocId);
+            const hit = lines.find((l) => l.priSrcItemId && billed.has(l.priSrcItemId));
+            if (hit)
+                (0, purchase_errors_1.purConflict)(`${pr.prRefno} line ${hit.priLineNo}: that GRN line is now billed in ${billed.get(hit.priSrcItemId)} — cancel this draft and return the goods against the bill.`, purchase_errors_1.PUR.GRN_LINE_BILLED, 'prId');
+        }
         const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: prId, piaAccYear: accYear, piaIsDeleted: false } });
         const allocOf = new Map(allocs.map((a) => [a.piaLineId, a]));
         const postedOn = new Date();

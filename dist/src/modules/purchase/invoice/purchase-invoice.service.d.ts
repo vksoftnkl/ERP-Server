@@ -17,6 +17,12 @@ export declare class PurchaseInvoiceService {
         interState: boolean;
         supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
         lines: {
+            poRefno: string | null;
+            rate: number;
+            costIncl: string | null;
+            sellA: number | null;
+            markupAPct: string | null;
+            marginAPct: string | null;
             rejectedQty: string;
             lineNo: number;
         }[];
@@ -34,6 +40,7 @@ export declare class PurchaseInvoiceService {
     setHold(dto: PurchaseInvoiceHoldDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -218,6 +225,7 @@ export declare class PurchaseInvoiceService {
         }[];
         header: {
             supplierName: string;
+            godownName: string;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -396,6 +404,7 @@ export declare class PurchaseInvoiceService {
     post(piId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -574,6 +583,7 @@ export declare class PurchaseInvoiceService {
     get(piId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -752,6 +762,7 @@ export declare class PurchaseInvoiceService {
     cancel(dto: CancelPurchaseInvoiceDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -929,6 +940,7 @@ export declare class PurchaseInvoiceService {
     }>;
     private actor;
     private prepare;
+    private loadPoLines;
     private loadGrnLines;
     private grnFacts;
     grnLines(q: GrnLinesQueryDto): Promise<{
@@ -958,7 +970,10 @@ export declare class PurchaseInvoiceService {
         taxId: string | null;
         mrp: Prisma.Decimal | null;
         sellA: Prisma.Decimal | null;
-        blocked: string | null;
+        sellB: Prisma.Decimal | null;
+        sellC: Prisma.Decimal | null;
+        sellD: Prisma.Decimal | null;
+        blocked: null;
     }[]>;
     private calcPayload;
     private assertNotDuplicate;

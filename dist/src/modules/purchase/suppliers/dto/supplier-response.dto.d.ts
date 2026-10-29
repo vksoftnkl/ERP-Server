@@ -43,6 +43,16 @@ export declare class SupplierPayloadDto {
     supGstType: string;
     supSupCst: string | null;
     supDrugLiscenceNo: string | null;
+    supDrugLicenceExpiry: string | null;
+    supMsmeCategory: string | null;
+    supMsmeActivity: string | null;
+    supMsmeAgreement: boolean;
+    supMsmeAgreedDays: number | null;
+    supFssaiNo: string | null;
+    supFssaiValidTo: string | null;
+    supDefaultGodownId: string | null;
+    supShowNotesOnEntry: boolean;
+    supIsImport: boolean;
     supRegionName: string | null;
     supRegionAddr1: string | null;
     supRegionAddr2: string | null;

@@ -79,6 +79,10 @@ class SaveItemDto {
     item_allow_sales;
     item_allow_sales_return;
     item_allow_purchase;
+    item_purchase_uom_id;
+    item_min_shelf_life_pct;
+    item_itc_class;
+    item_shortage_pct;
     item_allow_po;
     item_allow_so;
     item_allow_neg_stock;
@@ -270,6 +274,33 @@ __decorate([
     (0, dtoDecorators_1.OptionalNotNullBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveItemDto.prototype, "item_allow_purchase", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'The unit a purchase line opens in (item_unit_conversion.iuc_id of this item).' }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveItemDto.prototype, "item_purchase_uom_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0, maximum: 100, description: 'Minimum shelf life left at receipt, % (blank = the company default).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    (0, class_validator_1.Max)(100),
+    __metadata("design:type", Object)
+], SaveItemDto.prototype, "item_min_shelf_life_pct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, enum: ['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5'], description: 'Input tax credit class on purchase (blank = eligible).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5', null]),
+    __metadata("design:type", Object)
+], SaveItemDto.prototype, "item_itc_class", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0, maximum: 100, description: 'Normal shortage % (transit loss) accepted without a claim.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    (0, class_validator_1.Max)(100),
+    __metadata("design:type", Object)
+], SaveItemDto.prototype, "item_shortage_pct", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: true }),
     (0, dtoDecorators_1.OptionalNotNullBoolean)(),

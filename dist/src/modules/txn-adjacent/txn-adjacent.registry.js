@@ -20,6 +20,11 @@ exports.TXN_DOC_TYPES = [
     'RECEIPT',
     'PAYMENT',
     'VOUCHER',
+    'PURCHASE_ORDER',
+    'GRN',
+    'PURCHASE_BILL',
+    'PURCHASE_RETURN',
+    'SHORTAGE_RECEIPT',
 ];
 const STOCK_STATUSES = ['DRAFT', 'POSTED', 'IN_TRANSIT', 'RECEIVED', 'CANCELLED'];
 const POSTING_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'];
@@ -89,6 +94,32 @@ function salesDoc(label, table, p, own, statuses, menu) {
         menu,
     };
 }
+const PURCHASE_MENU_ID = {
+    ORDER: 23,
+    INVOICE: 24,
+    RETURN: 25,
+    SHORTAGE_RECEIPT: 195,
+    GRN: 196,
+};
+function purchaseDoc(label, table, p, type, menu) {
+    return {
+        label,
+        table,
+        id: `${p}_id`,
+        company: `${p}_company_id`,
+        branch: `${p}_branch_id`,
+        year: `${p}_acc_year`,
+        date: `${p}_doc_date`,
+        serial: null,
+        createdOn: `${p}_created_on`,
+        status: `${p}_status`,
+        deleted: `${p}_is_deleted`,
+        refno: `${p}_refno`,
+        type: `h.${type}`,
+        statuses: POSTING_STATUSES,
+        menu,
+    };
+}
 const VOUCHER_COLUMNS = {
     table: 'accounts.acc_voucher_header',
     join: 'JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id',
@@ -136,5 +167,10 @@ exports.TXN_DOC_REGISTRY = {
         serial: { column: VOUCHER_SERIAL, draft: 'LOW' },
         menu: 'VOUCHER_TYPE',
     },
+    PURCHASE_ORDER: purchaseDoc('purchase order', 'purchase.pur_order', 'po', 'po_status', PURCHASE_MENU_ID.ORDER),
+    GRN: purchaseDoc('GRN', 'purchase.pur_grn', 'grn', 'grn_status', PURCHASE_MENU_ID.GRN),
+    PURCHASE_BILL: purchaseDoc('purchase bill', 'purchase.pur_invoice', 'pi', 'pi_mode', PURCHASE_MENU_ID.INVOICE),
+    PURCHASE_RETURN: purchaseDoc('purchase return', 'purchase.pur_return', 'pr', 'pr_kind', PURCHASE_MENU_ID.RETURN),
+    SHORTAGE_RECEIPT: purchaseDoc('shortage receipt', 'purchase.pur_shortage_receipt', 'psr', 'psr_status', PURCHASE_MENU_ID.SHORTAGE_RECEIPT),
 };
 //# sourceMappingURL=txn-adjacent.registry.js.map

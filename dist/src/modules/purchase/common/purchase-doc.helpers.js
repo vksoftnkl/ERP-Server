@@ -20,6 +20,7 @@ exports.assertShortagesUntouched = assertShortagesUntouched;
 exports.withdrawBillRows = withdrawBillRows;
 exports.statusLog = statusLog;
 exports.unitNames = unitNames;
+exports.shelfLifeIssues = shelfLifeIssues;
 exports.jsonSafe = jsonSafe;
 const client_1 = require("@prisma/client");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
@@ -278,6 +279,40 @@ async function unitNames(db, uomIds) {
       JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
      WHERE iuc.iuc_id = ANY(${[...new Set(uomIds)]}::uuid[])`;
     return new Map(rows.map((r) => [r.iuc_id, { itemName: r.item_name, unitName: r.unit_name }]));
+}
+async function shelfLifeIssues(tx, mode, minPct, receipt, rows) {
+    if (mode === 'OFF')
+        return [];
+    const judged = rows.filter((r) => r.expiryDate && (r.bucket ?? 'SALEABLE') === 'SALEABLE');
+    if (!judged.length)
+        return [];
+    const items = await tx.$queryRaw `
+    SELECT item_id, item_name_en AS name, item_min_shelf_life_pct AS min_pct, item_expiry_days AS days
+      FROM inventory.item_master WHERE item_id = ANY(${[...new Set(judged.map((r) => r.itemId))]}::uuid[])`;
+    const by = new Map(items.map((i) => [i.item_id, i]));
+    const day = 86400000;
+    const rec = (0, exports.dateOf)(receipt).getTime();
+    const shown = (d) => d.toISOString().slice(0, 10).split('-').reverse().join('-');
+    const out = [];
+    for (const r of judged) {
+        const it = by.get(r.itemId);
+        const want = it?.min_pct != null ? Number(it.min_pct) : minPct;
+        const exp = r.expiryDate.getTime();
+        const span = r.mfgDate && r.mfgDate.getTime() < exp ? (exp - r.mfgDate.getTime()) / day : (it?.days ?? 0);
+        const leftDays = (exp - rec) / day;
+        const name = it?.name ?? 'the item';
+        if (leftDays < 0) {
+            out.push({ field: `lines.${r.index}.allocs`, code: 'PUR_SHELF_LIFE', message: `Line ${r.lineNo}: ${name} expired on ${shown(r.expiryDate)}.` });
+            continue;
+        }
+        if (!(span > 0) || !(want > 0))
+            continue;
+        const pct = Math.floor((leftDays / span) * 100);
+        if (pct < want)
+            out.push({ field: `lines.${r.index}.allocs`, code: 'PUR_SHELF_LIFE',
+                message: `Line ${r.lineNo}: ${name} has ${pct} % of its shelf life left (expires ${shown(r.expiryDate)}) — the minimum is ${want} %.` });
+    }
+    return out;
 }
 function jsonSafe(v) {
     if (typeof v === 'bigint')

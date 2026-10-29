@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
 export declare const PURCHASE_ORDER_MENU_ID = 23;
 export declare class PurchaseOrderLineDto {
     lineNo: number;
@@ -15,6 +16,7 @@ export declare class PurchaseOrderLineDto {
     mrp?: number;
     weight?: number;
     remarks?: string;
+    lineId?: string;
 }
 export declare class PurchaseOrderHeaderDto {
     poId?: string;
@@ -31,6 +33,7 @@ export declare class PurchaseOrderHeaderDto {
     termsText?: string;
     remarks?: string;
     post?: boolean;
+    amendReason?: string;
 }
 export declare class SavePurchaseOrderDto {
     header: PurchaseOrderHeaderDto;
@@ -44,15 +47,50 @@ export declare class PurchaseOrderReasonDto extends PurchaseOrderRefDto {
     reason: string;
     lineIds?: string[];
 }
+export declare class PurchaseOrderApproveDto extends PurchaseOrderRefDto {
+    approve?: boolean;
+    reason?: string;
+}
+export declare class ClonePurchaseOrderDto extends PurchaseOrderRefDto {
+    deviceId: string;
+    toAccYear?: string;
+    docDate?: string;
+}
+export declare class MergeSourceDto {
+    poId: string;
+    accYear: string;
+}
+export declare class MergePurchaseOrdersDto {
+    sources: MergeSourceDto[];
+    accYear: string;
+    deviceId: string;
+    docDate?: string;
+}
 export declare class PendingPoLinesQueryDto {
     companyId: string;
     branchId: string;
     supplierId: string;
 }
+type Db = Prisma.TransactionClient | PrismaService;
+export declare function poUsedQty(tx: Db, poId: string): Promise<Map<string, Prisma.Decimal>>;
+export declare function assertPoApproved(tx: Db, poId: string): Promise<void>;
+export declare function closePosOnFirstBill(tx: Prisma.TransactionClient, a: {
+    piId: string;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    refno: string;
+    actor: string;
+}): Promise<{
+    code: string;
+    message: string;
+    field: string;
+}[]>;
 export declare class PurchaseOrderService {
     private readonly prisma;
     private readonly ctx;
-    constructor(prisma: PrismaService, ctx: RequestContextService);
+    private readonly audit;
+    constructor(prisma: PrismaService, ctx: RequestContextService, audit: AuditLogService);
     private actor;
     private compute;
     preview(dto: SavePurchaseOrderDto): Promise<{
@@ -75,6 +113,9 @@ export declare class PurchaseOrderService {
     save(dto: SavePurchaseOrderDto): Promise<{
         header: {
             supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
             poId: string;
             poCompanyId: string;
             poBranchId: string;
@@ -90,6 +131,7 @@ export declare class PurchaseOrderService {
             poSupplierId: string;
             poExpectedDate: Date | null;
             poDeliverGodownId: string | null;
+            poAgentId: string | null;
             poContact: string | null;
             poCreditDays: number | null;
             poTermsText: string | null;
@@ -111,7 +153,6 @@ export declare class PurchaseOrderService {
             poCreatedBy: string;
             poModifiedOn: Date | null;
             poModifiedBy: string | null;
-            poAgentId: string | null;
         };
         lines: {
             receivedQty: string;
@@ -169,10 +210,15 @@ export declare class PurchaseOrderService {
             poiModifiedBy: string | null;
         }[];
     }>;
-    private usedQty;
+    saveIn(tx: Prisma.TransactionClient, dto: SavePurchaseOrderDto, actor: string, opts?: {
+        auditNote?: string;
+    }): Promise<string>;
     get(poId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
             poId: string;
             poCompanyId: string;
             poBranchId: string;
@@ -188,6 +234,7 @@ export declare class PurchaseOrderService {
             poSupplierId: string;
             poExpectedDate: Date | null;
             poDeliverGodownId: string | null;
+            poAgentId: string | null;
             poContact: string | null;
             poCreditDays: number | null;
             poTermsText: string | null;
@@ -209,7 +256,6 @@ export declare class PurchaseOrderService {
             poCreatedBy: string;
             poModifiedOn: Date | null;
             poModifiedBy: string | null;
-            poAgentId: string | null;
         };
         lines: {
             receivedQty: string;
@@ -267,9 +313,13 @@ export declare class PurchaseOrderService {
             poiModifiedBy: string | null;
         }[];
     }>;
+    private getDoc;
     cancel(dto: PurchaseOrderReasonDto): Promise<{
         header: {
             supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
             poId: string;
             poCompanyId: string;
             poBranchId: string;
@@ -285,6 +335,7 @@ export declare class PurchaseOrderService {
             poSupplierId: string;
             poExpectedDate: Date | null;
             poDeliverGodownId: string | null;
+            poAgentId: string | null;
             poContact: string | null;
             poCreditDays: number | null;
             poTermsText: string | null;
@@ -306,7 +357,6 @@ export declare class PurchaseOrderService {
             poCreatedBy: string;
             poModifiedOn: Date | null;
             poModifiedBy: string | null;
-            poAgentId: string | null;
         };
         lines: {
             receivedQty: string;
@@ -367,6 +417,9 @@ export declare class PurchaseOrderService {
     shortClose(dto: PurchaseOrderReasonDto): Promise<{
         header: {
             supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
             poId: string;
             poCompanyId: string;
             poBranchId: string;
@@ -382,6 +435,7 @@ export declare class PurchaseOrderService {
             poSupplierId: string;
             poExpectedDate: Date | null;
             poDeliverGodownId: string | null;
+            poAgentId: string | null;
             poContact: string | null;
             poCreditDays: number | null;
             poTermsText: string | null;
@@ -403,7 +457,6 @@ export declare class PurchaseOrderService {
             poCreatedBy: string;
             poModifiedOn: Date | null;
             poModifiedBy: string | null;
-            poAgentId: string | null;
         };
         lines: {
             receivedQty: string;
@@ -461,6 +514,307 @@ export declare class PurchaseOrderService {
             poiModifiedBy: string | null;
         }[];
     }>;
+    approve(dto: PurchaseOrderApproveDto): Promise<{
+        header: {
+            supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
+            poId: string;
+            poCompanyId: string;
+            poBranchId: string;
+            poTenantId: string | null;
+            poAccYear: string;
+            poDeviceId: string;
+            poSessionId: string | null;
+            poSlno: bigint;
+            poRefno: string;
+            poDocDate: Date;
+            poDocDatetime: Date;
+            poStatus: string;
+            poSupplierId: string;
+            poExpectedDate: Date | null;
+            poDeliverGodownId: string | null;
+            poAgentId: string | null;
+            poContact: string | null;
+            poCreditDays: number | null;
+            poTermsText: string | null;
+            poApprovalStatus: string;
+            poIsShortClosed: boolean;
+            poShortCloseReason: string | null;
+            poGrossAmt: Prisma.Decimal;
+            poTaxableAmt: Prisma.Decimal;
+            poTaxAmt: Prisma.Decimal;
+            poChargesAmt: Prisma.Decimal;
+            poNetAmt: Prisma.Decimal;
+            poRemarks: string | null;
+            poRevisionNo: number;
+            poPrintCount: number;
+            poPostedVoucherId: string | null;
+            poIsDeleted: boolean;
+            poSyncDate: Date | null;
+            poCreatedOn: Date;
+            poCreatedBy: string;
+            poModifiedOn: Date | null;
+            poModifiedBy: string | null;
+        };
+        lines: {
+            receivedQty: string;
+            pendingQty: string;
+            itemName?: string | undefined;
+            unitName?: string | undefined;
+            poiId: string;
+            poiPoId: string;
+            poiCompanyId: string;
+            poiBranchId: string;
+            poiAccYear: string;
+            poiLineNo: number;
+            poiItemId: string;
+            poiUomId: string;
+            poiBaseUomId: string;
+            poiToBaseFactor: Prisma.Decimal;
+            poiHsnCode: string | null;
+            poiWeight: Prisma.Decimal | null;
+            poiQty: Prisma.Decimal;
+            poiFreeQty: Prisma.Decimal;
+            poiRate: Prisma.Decimal;
+            poiDiscPct: Prisma.Decimal;
+            poiDiscPerQty: Prisma.Decimal;
+            poiDiscAmt: Prisma.Decimal;
+            poiSchPct: Prisma.Decimal;
+            poiSchPerQty: Prisma.Decimal;
+            poiSchAmt: Prisma.Decimal;
+            poiExtraDiscAmt: Prisma.Decimal;
+            poiChrgBeforeTax: Prisma.Decimal;
+            poiChrgAfterTax: Prisma.Decimal;
+            poiGrossAmt: Prisma.Decimal;
+            poiTaxableAmt: Prisma.Decimal;
+            poiTaxId: string | null;
+            poiGstPct: Prisma.Decimal;
+            poiCgstAmt: Prisma.Decimal;
+            poiSgstAmt: Prisma.Decimal;
+            poiIgstAmt: Prisma.Decimal;
+            poiCessPct: Prisma.Decimal;
+            poiCessPerUnit: Prisma.Decimal;
+            poiCessAmt: Prisma.Decimal;
+            poiTotalAmt: Prisma.Decimal;
+            poiMrp: Prisma.Decimal | null;
+            poiExpectedSell: Prisma.Decimal | null;
+            poiModel: string | null;
+            poiSizeId: string | null;
+            poiColourId: string | null;
+            poiShortClosedQty: Prisma.Decimal;
+            poiShortCloseReason: string | null;
+            poiRemarks: string | null;
+            poiIsDeleted: boolean;
+            poiSyncDate: Date | null;
+            poiCreatedOn: Date;
+            poiCreatedBy: string;
+            poiModifiedOn: Date | null;
+            poiModifiedBy: string | null;
+        }[];
+    }>;
+    clone(dto: ClonePurchaseOrderDto): Promise<{
+        header: {
+            supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
+            poId: string;
+            poCompanyId: string;
+            poBranchId: string;
+            poTenantId: string | null;
+            poAccYear: string;
+            poDeviceId: string;
+            poSessionId: string | null;
+            poSlno: bigint;
+            poRefno: string;
+            poDocDate: Date;
+            poDocDatetime: Date;
+            poStatus: string;
+            poSupplierId: string;
+            poExpectedDate: Date | null;
+            poDeliverGodownId: string | null;
+            poAgentId: string | null;
+            poContact: string | null;
+            poCreditDays: number | null;
+            poTermsText: string | null;
+            poApprovalStatus: string;
+            poIsShortClosed: boolean;
+            poShortCloseReason: string | null;
+            poGrossAmt: Prisma.Decimal;
+            poTaxableAmt: Prisma.Decimal;
+            poTaxAmt: Prisma.Decimal;
+            poChargesAmt: Prisma.Decimal;
+            poNetAmt: Prisma.Decimal;
+            poRemarks: string | null;
+            poRevisionNo: number;
+            poPrintCount: number;
+            poPostedVoucherId: string | null;
+            poIsDeleted: boolean;
+            poSyncDate: Date | null;
+            poCreatedOn: Date;
+            poCreatedBy: string;
+            poModifiedOn: Date | null;
+            poModifiedBy: string | null;
+        };
+        lines: {
+            receivedQty: string;
+            pendingQty: string;
+            itemName?: string | undefined;
+            unitName?: string | undefined;
+            poiId: string;
+            poiPoId: string;
+            poiCompanyId: string;
+            poiBranchId: string;
+            poiAccYear: string;
+            poiLineNo: number;
+            poiItemId: string;
+            poiUomId: string;
+            poiBaseUomId: string;
+            poiToBaseFactor: Prisma.Decimal;
+            poiHsnCode: string | null;
+            poiWeight: Prisma.Decimal | null;
+            poiQty: Prisma.Decimal;
+            poiFreeQty: Prisma.Decimal;
+            poiRate: Prisma.Decimal;
+            poiDiscPct: Prisma.Decimal;
+            poiDiscPerQty: Prisma.Decimal;
+            poiDiscAmt: Prisma.Decimal;
+            poiSchPct: Prisma.Decimal;
+            poiSchPerQty: Prisma.Decimal;
+            poiSchAmt: Prisma.Decimal;
+            poiExtraDiscAmt: Prisma.Decimal;
+            poiChrgBeforeTax: Prisma.Decimal;
+            poiChrgAfterTax: Prisma.Decimal;
+            poiGrossAmt: Prisma.Decimal;
+            poiTaxableAmt: Prisma.Decimal;
+            poiTaxId: string | null;
+            poiGstPct: Prisma.Decimal;
+            poiCgstAmt: Prisma.Decimal;
+            poiSgstAmt: Prisma.Decimal;
+            poiIgstAmt: Prisma.Decimal;
+            poiCessPct: Prisma.Decimal;
+            poiCessPerUnit: Prisma.Decimal;
+            poiCessAmt: Prisma.Decimal;
+            poiTotalAmt: Prisma.Decimal;
+            poiMrp: Prisma.Decimal | null;
+            poiExpectedSell: Prisma.Decimal | null;
+            poiModel: string | null;
+            poiSizeId: string | null;
+            poiColourId: string | null;
+            poiShortClosedQty: Prisma.Decimal;
+            poiShortCloseReason: string | null;
+            poiRemarks: string | null;
+            poiIsDeleted: boolean;
+            poiSyncDate: Date | null;
+            poiCreatedOn: Date;
+            poiCreatedBy: string;
+            poiModifiedOn: Date | null;
+            poiModifiedBy: string | null;
+        }[];
+    }>;
+    merge(dto: MergePurchaseOrdersDto): Promise<{
+        header: {
+            supplierName: string;
+            approvedBy: string | null;
+            approvedOn: Date;
+            approvalRemarks: string | null;
+            poId: string;
+            poCompanyId: string;
+            poBranchId: string;
+            poTenantId: string | null;
+            poAccYear: string;
+            poDeviceId: string;
+            poSessionId: string | null;
+            poSlno: bigint;
+            poRefno: string;
+            poDocDate: Date;
+            poDocDatetime: Date;
+            poStatus: string;
+            poSupplierId: string;
+            poExpectedDate: Date | null;
+            poDeliverGodownId: string | null;
+            poAgentId: string | null;
+            poContact: string | null;
+            poCreditDays: number | null;
+            poTermsText: string | null;
+            poApprovalStatus: string;
+            poIsShortClosed: boolean;
+            poShortCloseReason: string | null;
+            poGrossAmt: Prisma.Decimal;
+            poTaxableAmt: Prisma.Decimal;
+            poTaxAmt: Prisma.Decimal;
+            poChargesAmt: Prisma.Decimal;
+            poNetAmt: Prisma.Decimal;
+            poRemarks: string | null;
+            poRevisionNo: number;
+            poPrintCount: number;
+            poPostedVoucherId: string | null;
+            poIsDeleted: boolean;
+            poSyncDate: Date | null;
+            poCreatedOn: Date;
+            poCreatedBy: string;
+            poModifiedOn: Date | null;
+            poModifiedBy: string | null;
+        };
+        lines: {
+            receivedQty: string;
+            pendingQty: string;
+            itemName?: string | undefined;
+            unitName?: string | undefined;
+            poiId: string;
+            poiPoId: string;
+            poiCompanyId: string;
+            poiBranchId: string;
+            poiAccYear: string;
+            poiLineNo: number;
+            poiItemId: string;
+            poiUomId: string;
+            poiBaseUomId: string;
+            poiToBaseFactor: Prisma.Decimal;
+            poiHsnCode: string | null;
+            poiWeight: Prisma.Decimal | null;
+            poiQty: Prisma.Decimal;
+            poiFreeQty: Prisma.Decimal;
+            poiRate: Prisma.Decimal;
+            poiDiscPct: Prisma.Decimal;
+            poiDiscPerQty: Prisma.Decimal;
+            poiDiscAmt: Prisma.Decimal;
+            poiSchPct: Prisma.Decimal;
+            poiSchPerQty: Prisma.Decimal;
+            poiSchAmt: Prisma.Decimal;
+            poiExtraDiscAmt: Prisma.Decimal;
+            poiChrgBeforeTax: Prisma.Decimal;
+            poiChrgAfterTax: Prisma.Decimal;
+            poiGrossAmt: Prisma.Decimal;
+            poiTaxableAmt: Prisma.Decimal;
+            poiTaxId: string | null;
+            poiGstPct: Prisma.Decimal;
+            poiCgstAmt: Prisma.Decimal;
+            poiSgstAmt: Prisma.Decimal;
+            poiIgstAmt: Prisma.Decimal;
+            poiCessPct: Prisma.Decimal;
+            poiCessPerUnit: Prisma.Decimal;
+            poiCessAmt: Prisma.Decimal;
+            poiTotalAmt: Prisma.Decimal;
+            poiMrp: Prisma.Decimal | null;
+            poiExpectedSell: Prisma.Decimal | null;
+            poiModel: string | null;
+            poiSizeId: string | null;
+            poiColourId: string | null;
+            poiShortClosedQty: Prisma.Decimal;
+            poiShortCloseReason: string | null;
+            poiRemarks: string | null;
+            poiIsDeleted: boolean;
+            poiSyncDate: Date | null;
+            poiCreatedOn: Date;
+            poiCreatedBy: string;
+            poiModifiedOn: Date | null;
+            poiModifiedBy: string | null;
+        }[];
+    }>;
+    revisions(poId: string): Promise<Record<string, unknown>[]>;
     pendingLines(q: PendingPoLinesQueryDto): Promise<Record<string, unknown>[]>;
 }
 export declare class PurchaseOrderController {
@@ -475,6 +829,9 @@ export declare class PurchaseOrderController {
         data: {
             header: {
                 supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
                 poId: string;
                 poCompanyId: string;
                 poBranchId: string;
@@ -490,6 +847,7 @@ export declare class PurchaseOrderController {
                 poSupplierId: string;
                 poExpectedDate: Date | null;
                 poDeliverGodownId: string | null;
+                poAgentId: string | null;
                 poContact: string | null;
                 poCreditDays: number | null;
                 poTermsText: string | null;
@@ -511,7 +869,6 @@ export declare class PurchaseOrderController {
                 poCreatedBy: string;
                 poModifiedOn: Date | null;
                 poModifiedBy: string | null;
-                poAgentId: string | null;
             };
             lines: {
                 receivedQty: string;
@@ -597,6 +954,9 @@ export declare class PurchaseOrderController {
         data: {
             header: {
                 supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
                 poId: string;
                 poCompanyId: string;
                 poBranchId: string;
@@ -612,6 +972,7 @@ export declare class PurchaseOrderController {
                 poSupplierId: string;
                 poExpectedDate: Date | null;
                 poDeliverGodownId: string | null;
+                poAgentId: string | null;
                 poContact: string | null;
                 poCreditDays: number | null;
                 poTermsText: string | null;
@@ -633,7 +994,6 @@ export declare class PurchaseOrderController {
                 poCreatedBy: string;
                 poModifiedOn: Date | null;
                 poModifiedBy: string | null;
-                poAgentId: string | null;
             };
             lines: {
                 receivedQty: string;
@@ -703,6 +1063,9 @@ export declare class PurchaseOrderController {
         data: {
             header: {
                 supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
                 poId: string;
                 poCompanyId: string;
                 poBranchId: string;
@@ -718,6 +1081,7 @@ export declare class PurchaseOrderController {
                 poSupplierId: string;
                 poExpectedDate: Date | null;
                 poDeliverGodownId: string | null;
+                poAgentId: string | null;
                 poContact: string | null;
                 poCreditDays: number | null;
                 poTermsText: string | null;
@@ -739,7 +1103,6 @@ export declare class PurchaseOrderController {
                 poCreatedBy: string;
                 poModifiedOn: Date | null;
                 poModifiedBy: string | null;
-                poAgentId: string | null;
             };
             lines: {
                 receivedQty: string;
@@ -804,6 +1167,9 @@ export declare class PurchaseOrderController {
         data: {
             header: {
                 supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
                 poId: string;
                 poCompanyId: string;
                 poBranchId: string;
@@ -819,6 +1185,7 @@ export declare class PurchaseOrderController {
                 poSupplierId: string;
                 poExpectedDate: Date | null;
                 poDeliverGodownId: string | null;
+                poAgentId: string | null;
                 poContact: string | null;
                 poCreditDays: number | null;
                 poTermsText: string | null;
@@ -840,7 +1207,6 @@ export declare class PurchaseOrderController {
                 poCreatedBy: string;
                 poModifiedOn: Date | null;
                 poModifiedBy: string | null;
-                poAgentId: string | null;
             };
             lines: {
                 receivedQty: string;
@@ -899,4 +1265,322 @@ export declare class PurchaseOrderController {
             }[];
         };
     }>;
+    approve(dto: PurchaseOrderApproveDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            header: {
+                supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
+                poId: string;
+                poCompanyId: string;
+                poBranchId: string;
+                poTenantId: string | null;
+                poAccYear: string;
+                poDeviceId: string;
+                poSessionId: string | null;
+                poSlno: bigint;
+                poRefno: string;
+                poDocDate: Date;
+                poDocDatetime: Date;
+                poStatus: string;
+                poSupplierId: string;
+                poExpectedDate: Date | null;
+                poDeliverGodownId: string | null;
+                poAgentId: string | null;
+                poContact: string | null;
+                poCreditDays: number | null;
+                poTermsText: string | null;
+                poApprovalStatus: string;
+                poIsShortClosed: boolean;
+                poShortCloseReason: string | null;
+                poGrossAmt: Prisma.Decimal;
+                poTaxableAmt: Prisma.Decimal;
+                poTaxAmt: Prisma.Decimal;
+                poChargesAmt: Prisma.Decimal;
+                poNetAmt: Prisma.Decimal;
+                poRemarks: string | null;
+                poRevisionNo: number;
+                poPrintCount: number;
+                poPostedVoucherId: string | null;
+                poIsDeleted: boolean;
+                poSyncDate: Date | null;
+                poCreatedOn: Date;
+                poCreatedBy: string;
+                poModifiedOn: Date | null;
+                poModifiedBy: string | null;
+            };
+            lines: {
+                receivedQty: string;
+                pendingQty: string;
+                itemName?: string | undefined;
+                unitName?: string | undefined;
+                poiId: string;
+                poiPoId: string;
+                poiCompanyId: string;
+                poiBranchId: string;
+                poiAccYear: string;
+                poiLineNo: number;
+                poiItemId: string;
+                poiUomId: string;
+                poiBaseUomId: string;
+                poiToBaseFactor: Prisma.Decimal;
+                poiHsnCode: string | null;
+                poiWeight: Prisma.Decimal | null;
+                poiQty: Prisma.Decimal;
+                poiFreeQty: Prisma.Decimal;
+                poiRate: Prisma.Decimal;
+                poiDiscPct: Prisma.Decimal;
+                poiDiscPerQty: Prisma.Decimal;
+                poiDiscAmt: Prisma.Decimal;
+                poiSchPct: Prisma.Decimal;
+                poiSchPerQty: Prisma.Decimal;
+                poiSchAmt: Prisma.Decimal;
+                poiExtraDiscAmt: Prisma.Decimal;
+                poiChrgBeforeTax: Prisma.Decimal;
+                poiChrgAfterTax: Prisma.Decimal;
+                poiGrossAmt: Prisma.Decimal;
+                poiTaxableAmt: Prisma.Decimal;
+                poiTaxId: string | null;
+                poiGstPct: Prisma.Decimal;
+                poiCgstAmt: Prisma.Decimal;
+                poiSgstAmt: Prisma.Decimal;
+                poiIgstAmt: Prisma.Decimal;
+                poiCessPct: Prisma.Decimal;
+                poiCessPerUnit: Prisma.Decimal;
+                poiCessAmt: Prisma.Decimal;
+                poiTotalAmt: Prisma.Decimal;
+                poiMrp: Prisma.Decimal | null;
+                poiExpectedSell: Prisma.Decimal | null;
+                poiModel: string | null;
+                poiSizeId: string | null;
+                poiColourId: string | null;
+                poiShortClosedQty: Prisma.Decimal;
+                poiShortCloseReason: string | null;
+                poiRemarks: string | null;
+                poiIsDeleted: boolean;
+                poiSyncDate: Date | null;
+                poiCreatedOn: Date;
+                poiCreatedBy: string;
+                poiModifiedOn: Date | null;
+                poiModifiedBy: string | null;
+            }[];
+        };
+    }>;
+    clone(dto: ClonePurchaseOrderDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            header: {
+                supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
+                poId: string;
+                poCompanyId: string;
+                poBranchId: string;
+                poTenantId: string | null;
+                poAccYear: string;
+                poDeviceId: string;
+                poSessionId: string | null;
+                poSlno: bigint;
+                poRefno: string;
+                poDocDate: Date;
+                poDocDatetime: Date;
+                poStatus: string;
+                poSupplierId: string;
+                poExpectedDate: Date | null;
+                poDeliverGodownId: string | null;
+                poAgentId: string | null;
+                poContact: string | null;
+                poCreditDays: number | null;
+                poTermsText: string | null;
+                poApprovalStatus: string;
+                poIsShortClosed: boolean;
+                poShortCloseReason: string | null;
+                poGrossAmt: Prisma.Decimal;
+                poTaxableAmt: Prisma.Decimal;
+                poTaxAmt: Prisma.Decimal;
+                poChargesAmt: Prisma.Decimal;
+                poNetAmt: Prisma.Decimal;
+                poRemarks: string | null;
+                poRevisionNo: number;
+                poPrintCount: number;
+                poPostedVoucherId: string | null;
+                poIsDeleted: boolean;
+                poSyncDate: Date | null;
+                poCreatedOn: Date;
+                poCreatedBy: string;
+                poModifiedOn: Date | null;
+                poModifiedBy: string | null;
+            };
+            lines: {
+                receivedQty: string;
+                pendingQty: string;
+                itemName?: string | undefined;
+                unitName?: string | undefined;
+                poiId: string;
+                poiPoId: string;
+                poiCompanyId: string;
+                poiBranchId: string;
+                poiAccYear: string;
+                poiLineNo: number;
+                poiItemId: string;
+                poiUomId: string;
+                poiBaseUomId: string;
+                poiToBaseFactor: Prisma.Decimal;
+                poiHsnCode: string | null;
+                poiWeight: Prisma.Decimal | null;
+                poiQty: Prisma.Decimal;
+                poiFreeQty: Prisma.Decimal;
+                poiRate: Prisma.Decimal;
+                poiDiscPct: Prisma.Decimal;
+                poiDiscPerQty: Prisma.Decimal;
+                poiDiscAmt: Prisma.Decimal;
+                poiSchPct: Prisma.Decimal;
+                poiSchPerQty: Prisma.Decimal;
+                poiSchAmt: Prisma.Decimal;
+                poiExtraDiscAmt: Prisma.Decimal;
+                poiChrgBeforeTax: Prisma.Decimal;
+                poiChrgAfterTax: Prisma.Decimal;
+                poiGrossAmt: Prisma.Decimal;
+                poiTaxableAmt: Prisma.Decimal;
+                poiTaxId: string | null;
+                poiGstPct: Prisma.Decimal;
+                poiCgstAmt: Prisma.Decimal;
+                poiSgstAmt: Prisma.Decimal;
+                poiIgstAmt: Prisma.Decimal;
+                poiCessPct: Prisma.Decimal;
+                poiCessPerUnit: Prisma.Decimal;
+                poiCessAmt: Prisma.Decimal;
+                poiTotalAmt: Prisma.Decimal;
+                poiMrp: Prisma.Decimal | null;
+                poiExpectedSell: Prisma.Decimal | null;
+                poiModel: string | null;
+                poiSizeId: string | null;
+                poiColourId: string | null;
+                poiShortClosedQty: Prisma.Decimal;
+                poiShortCloseReason: string | null;
+                poiRemarks: string | null;
+                poiIsDeleted: boolean;
+                poiSyncDate: Date | null;
+                poiCreatedOn: Date;
+                poiCreatedBy: string;
+                poiModifiedOn: Date | null;
+                poiModifiedBy: string | null;
+            }[];
+        };
+    }>;
+    merge(dto: MergePurchaseOrdersDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            header: {
+                supplierName: string;
+                approvedBy: string | null;
+                approvedOn: Date;
+                approvalRemarks: string | null;
+                poId: string;
+                poCompanyId: string;
+                poBranchId: string;
+                poTenantId: string | null;
+                poAccYear: string;
+                poDeviceId: string;
+                poSessionId: string | null;
+                poSlno: bigint;
+                poRefno: string;
+                poDocDate: Date;
+                poDocDatetime: Date;
+                poStatus: string;
+                poSupplierId: string;
+                poExpectedDate: Date | null;
+                poDeliverGodownId: string | null;
+                poAgentId: string | null;
+                poContact: string | null;
+                poCreditDays: number | null;
+                poTermsText: string | null;
+                poApprovalStatus: string;
+                poIsShortClosed: boolean;
+                poShortCloseReason: string | null;
+                poGrossAmt: Prisma.Decimal;
+                poTaxableAmt: Prisma.Decimal;
+                poTaxAmt: Prisma.Decimal;
+                poChargesAmt: Prisma.Decimal;
+                poNetAmt: Prisma.Decimal;
+                poRemarks: string | null;
+                poRevisionNo: number;
+                poPrintCount: number;
+                poPostedVoucherId: string | null;
+                poIsDeleted: boolean;
+                poSyncDate: Date | null;
+                poCreatedOn: Date;
+                poCreatedBy: string;
+                poModifiedOn: Date | null;
+                poModifiedBy: string | null;
+            };
+            lines: {
+                receivedQty: string;
+                pendingQty: string;
+                itemName?: string | undefined;
+                unitName?: string | undefined;
+                poiId: string;
+                poiPoId: string;
+                poiCompanyId: string;
+                poiBranchId: string;
+                poiAccYear: string;
+                poiLineNo: number;
+                poiItemId: string;
+                poiUomId: string;
+                poiBaseUomId: string;
+                poiToBaseFactor: Prisma.Decimal;
+                poiHsnCode: string | null;
+                poiWeight: Prisma.Decimal | null;
+                poiQty: Prisma.Decimal;
+                poiFreeQty: Prisma.Decimal;
+                poiRate: Prisma.Decimal;
+                poiDiscPct: Prisma.Decimal;
+                poiDiscPerQty: Prisma.Decimal;
+                poiDiscAmt: Prisma.Decimal;
+                poiSchPct: Prisma.Decimal;
+                poiSchPerQty: Prisma.Decimal;
+                poiSchAmt: Prisma.Decimal;
+                poiExtraDiscAmt: Prisma.Decimal;
+                poiChrgBeforeTax: Prisma.Decimal;
+                poiChrgAfterTax: Prisma.Decimal;
+                poiGrossAmt: Prisma.Decimal;
+                poiTaxableAmt: Prisma.Decimal;
+                poiTaxId: string | null;
+                poiGstPct: Prisma.Decimal;
+                poiCgstAmt: Prisma.Decimal;
+                poiSgstAmt: Prisma.Decimal;
+                poiIgstAmt: Prisma.Decimal;
+                poiCessPct: Prisma.Decimal;
+                poiCessPerUnit: Prisma.Decimal;
+                poiCessAmt: Prisma.Decimal;
+                poiTotalAmt: Prisma.Decimal;
+                poiMrp: Prisma.Decimal | null;
+                poiExpectedSell: Prisma.Decimal | null;
+                poiModel: string | null;
+                poiSizeId: string | null;
+                poiColourId: string | null;
+                poiShortClosedQty: Prisma.Decimal;
+                poiShortCloseReason: string | null;
+                poiRemarks: string | null;
+                poiIsDeleted: boolean;
+                poiSyncDate: Date | null;
+                poiCreatedOn: Date;
+                poiCreatedBy: string;
+                poiModifiedOn: Date | null;
+                poiModifiedBy: string | null;
+            }[];
+        };
+    }>;
+    revisions(q: PurchaseOrderRefDto): Promise<{
+        success: boolean;
+        message: string;
+        data: Record<string, unknown>[];
+    }>;
 }
+export {};

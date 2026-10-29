@@ -133,6 +133,7 @@ export declare class PurchaseReturnService {
             uomId: string;
         }[];
     }>;
+    private defaultSettlement;
     save(dto: SaveReturnDto): Promise<{
         header: {
             supplierName: string;

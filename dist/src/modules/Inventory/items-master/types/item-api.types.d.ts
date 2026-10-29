@@ -69,6 +69,10 @@ export interface ItemPayload {
     item_allow_sales: boolean;
     item_allow_sales_return: boolean;
     item_allow_purchase: boolean;
+    item_purchase_uom_id?: string | null;
+    item_min_shelf_life_pct?: number | null;
+    item_itc_class?: string | null;
+    item_shortage_pct?: number | null;
     item_allow_po: boolean;
     item_allow_so: boolean;
     item_allow_neg_stock: boolean;

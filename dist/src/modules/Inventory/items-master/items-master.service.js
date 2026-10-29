@@ -1267,6 +1267,18 @@ let ItemsMasterService = class ItemsMasterService {
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_allow_purchase')) {
             data.itemAllowPurchase = saveItemDto.item_allow_purchase;
         }
+        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_purchase_uom_id')) {
+            data.itemPurchaseUomId = saveItemDto.item_purchase_uom_id ?? null;
+        }
+        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_min_shelf_life_pct')) {
+            data.itemMinShelfLifePct = saveItemDto.item_min_shelf_life_pct ?? null;
+        }
+        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_itc_class')) {
+            data.itemItcClass = saveItemDto.item_itc_class ?? null;
+        }
+        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_shortage_pct')) {
+            data.itemShortagePct = saveItemDto.item_shortage_pct ?? null;
+        }
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_allow_po')) {
             data.itemAllowPo = saveItemDto.item_allow_po;
         }
@@ -1416,6 +1428,10 @@ let ItemsMasterService = class ItemsMasterService {
             item_allow_sales: record.itemAllowSales,
             item_allow_sales_return: record.itemAllowSalesReturn,
             item_allow_purchase: record.itemAllowPurchase,
+            item_purchase_uom_id: record.itemPurchaseUomId ?? null,
+            item_min_shelf_life_pct: record.itemMinShelfLifePct == null ? null : (0, module_service_utils_1.toNumber)(record.itemMinShelfLifePct),
+            item_itc_class: record.itemItcClass ?? null,
+            item_shortage_pct: record.itemShortagePct == null ? null : (0, module_service_utils_1.toNumber)(record.itemShortagePct),
             item_allow_po: record.itemAllowPo,
             item_allow_so: record.itemAllowSo,
             item_allow_neg_stock: record.itemAllowNegStock,

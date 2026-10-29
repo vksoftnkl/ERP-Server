@@ -20,6 +20,11 @@ export declare class PurchaseInvoiceLineDto {
     uomId: string;
     grnItemId?: string;
     grnItemAccYear?: string;
+    poItemId?: string;
+    sisterSaleItemId?: string;
+    sisterSaleItemAccYear?: string;
+    poItemAccYear?: string;
+    costIncl?: number;
     billedQty: number;
     receivedQty?: number;
     damagedQty?: number;

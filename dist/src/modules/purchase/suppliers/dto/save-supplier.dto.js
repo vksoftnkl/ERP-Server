@@ -49,6 +49,16 @@ class SaveSupplierDto {
     supGstType;
     supSupCst;
     supDrugLiscenceNo;
+    supDrugLicenceExpiry;
+    supMsmeCategory;
+    supMsmeActivity;
+    supMsmeAgreement;
+    supMsmeAgreedDays;
+    supFssaiNo;
+    supFssaiValidTo;
+    supDefaultGodownId;
+    supShowNotesOnEntry;
+    supIsImport;
     supRegionName;
     supRegionAddr1;
     supRegionAddr2;
@@ -248,6 +258,59 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supDrugLiscenceNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Drug licence valid to (YYYY-MM-DD).' }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supDrugLicenceExpiry", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true, enum: ['MICRO', 'SMALL', 'MEDIUM', 'NONE'] }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(10),
+    (0, class_validator_1.IsIn)(['MICRO', 'SMALL', 'MEDIUM', 'NONE', null]),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supMsmeCategory", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true, enum: ['MANUFACTURER', 'SERVICE', 'TRADER'] }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(15),
+    (0, class_validator_1.IsIn)(['MANUFACTURER', 'SERVICE', 'TRADER', null]),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supMsmeActivity", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Written agreement with the MSME supplier: agreed days apply (max 45), else 15.' }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSupplierDto.prototype, "supMsmeAgreement", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, minimum: 0, maximum: 45 }),
+    (0, dtoDecorators_1.NullableInteger)(0),
+    (0, class_validator_1.Max)(45),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supMsmeAgreedDays", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supFssaiNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'FSSAI licence valid to (YYYY-MM-DD).' }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supFssaiValidTo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Godown a bill from this supplier opens with.' }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSupplierDto.prototype, "supDefaultGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Pop the supplier note up when the supplier is picked on an entry screen.' }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSupplierDto.prototype, "supShowNotesOnEntry", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Import / overseas supplier.' }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSupplierDto.prototype, "supIsImport", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
     (0, dtoDecorators_1.NullableString)(200),

@@ -19,6 +19,8 @@ export declare class SaveSupplierItemDto {
     packQty?: number;
     moq?: number;
     leadDays?: number;
+    schemeBuyQty?: number;
+    schemeFreeQty?: number;
     isPreferred?: boolean;
     isActive?: boolean;
 }

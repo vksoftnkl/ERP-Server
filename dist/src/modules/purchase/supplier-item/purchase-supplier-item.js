@@ -60,6 +60,8 @@ class SaveSupplierItemDto {
     packQty;
     moq;
     leadDays;
+    schemeBuyQty;
+    schemeFreeQty;
     isPreferred;
     isActive;
 }
@@ -122,6 +124,20 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveSupplierItemDto.prototype, "leadDays", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-07 scheme "buy N get M": N, in the line unit. Give both or neither; neither clears the scheme.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0.001),
+    __metadata("design:type", Number)
+], SaveSupplierItemDto.prototype, "schemeBuyQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-07 scheme "buy N get M": M free per N bought. Purchase Entry fills Free = floor(qty / N) × M.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0.001),
+    __metadata("design:type", Number)
+], SaveSupplierItemDto.prototype, "schemeFreeQty", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'First in Reorder → PO; one preferred supplier per item.' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
@@ -169,6 +185,9 @@ let PurchaseSupplierItemService = class PurchaseSupplierItemService {
         const id = supplierItemId(dto.companyId, dto.supplierId, dto.itemId);
         const code = dto.supplierItemCode?.trim() || null;
         const barcode = dto.supplierBarcode?.trim() || null;
+        const schBuy = dto.schemeBuyQty ?? null, schFree = dto.schemeFreeQty ?? null;
+        if ((schBuy === null) !== (schFree === null))
+            (0, purchase_errors_1.purRefuse)('A scheme needs both numbers: buy how many, and how many free.', 'PUR_SCHEME_INCOMPLETE', schBuy === null ? 'schemeBuyQty' : 'schemeFreeQty');
         await this.prisma.$transaction(async (tx) => {
             const [sup] = await tx.$queryRaw `SELECT count(*) AS n FROM purchase.suppliers WHERE sup_id = ${dto.supplierId}::uuid AND NOT sup_is_deleted`;
             if (!Number(sup.n))
@@ -203,14 +222,15 @@ let PurchaseSupplierItemService = class PurchaseSupplierItemService {
             }
             await tx.$executeRaw `
         INSERT INTO purchase.pur_supplier_item (psi_id, psi_company_id, psi_supplier_id, psi_item_id, psi_supplier_item_code, psi_supplier_barcode,
-                    psi_buy_uom_id, psi_pack_qty, psi_moq, psi_lead_days, psi_is_preferred, psi_source, psi_is_active, psi_created_by)
+                    psi_buy_uom_id, psi_pack_qty, psi_moq, psi_lead_days, psi_scheme_buy_qty, psi_scheme_free_qty, psi_is_preferred, psi_source, psi_is_active, psi_created_by)
         VALUES (${id}::uuid, ${dto.companyId}::uuid, ${dto.supplierId}::uuid, ${dto.itemId}::uuid, ${code}, ${barcode},
                 ${dto.buyUomId ?? null}::uuid, ${pack ?? (0, purchase_doc_helpers_1.D)(1)}::numeric, ${dto.moq ?? null}::numeric, ${dto.leadDays ?? null}::smallint,
-                ${dto.isPreferred ?? false}, 'TYPED', ${dto.isActive ?? true}, ${actor})
+                ${schBuy}::numeric, ${schFree}::numeric, ${dto.isPreferred ?? false}, 'TYPED', ${dto.isActive ?? true}, ${actor})
         ON CONFLICT (psi_id) DO UPDATE SET
           psi_supplier_item_code = EXCLUDED.psi_supplier_item_code, psi_supplier_barcode = EXCLUDED.psi_supplier_barcode,
           psi_buy_uom_id = EXCLUDED.psi_buy_uom_id, psi_pack_qty = EXCLUDED.psi_pack_qty, psi_moq = EXCLUDED.psi_moq,
-          psi_lead_days = EXCLUDED.psi_lead_days, psi_is_preferred = EXCLUDED.psi_is_preferred, psi_source = 'TYPED',
+          psi_lead_days = EXCLUDED.psi_lead_days, psi_scheme_buy_qty = EXCLUDED.psi_scheme_buy_qty, psi_scheme_free_qty = EXCLUDED.psi_scheme_free_qty,
+          psi_is_preferred = EXCLUDED.psi_is_preferred, psi_source = 'TYPED',
           psi_is_active = EXCLUDED.psi_is_active, psi_is_deleted = false, psi_modified_on = now(), psi_modified_by = ${actor}`;
             if (dto.isPreferred) {
                 await tx.$executeRaw `

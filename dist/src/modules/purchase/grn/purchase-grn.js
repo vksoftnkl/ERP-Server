@@ -12,8 +12,9 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PurchaseGrnController = exports.PurchaseGrnService = exports.GrnCancelDto = exports.GrnRefDto = exports.SaveGrnDto = exports.GrnHeaderDto = exports.GrnLineDto = exports.GRN_MENU_ID = void 0;
+exports.PurchaseLabelsController = exports.PurchaseGrnController = exports.PurchaseGrnService = exports.GrnCancelDto = exports.LabelsFromDocDto = exports.GrnRefDto = exports.SaveGrnDto = exports.GrnHeaderDto = exports.GrnLineDto = exports.GRN_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
+const purchase_order_1 = require("../order/purchase-order");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -24,6 +25,8 @@ const voucher_posting_service_1 = require("../../../common/posting/voucher-posti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
+const selling_price_bulk_service_1 = require("../../stocks/selling-price-bulk/selling-price-bulk.service");
+const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_calc_1 = require("../common/purchase-calc");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
@@ -46,6 +49,9 @@ class GrnLineDto {
     rate;
     mrp;
     sellA;
+    sellB;
+    sellC;
+    sellD;
     weight;
     remarks;
     allocs;
@@ -144,6 +150,24 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], GrnLineDto.prototype, "sellA", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'price_set_at = GRN: price level B written at post.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GrnLineDto.prototype, "sellB", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'price_set_at = GRN: price level C written at post.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GrnLineDto.prototype, "sellC", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'price_set_at = GRN: price level D written at post.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GrnLineDto.prototype, "sellD", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -369,6 +393,28 @@ __decorate([
     (0, class_validator_1.MaxLength)(9),
     __metadata("design:type", String)
 ], GrnRefDto.prototype, "accYear", void 0);
+class LabelsFromDocDto {
+    docType;
+    docId;
+    accYear;
+}
+exports.LabelsFromDocDto = LabelsFromDocDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: ['GRN', 'PURCHASE_BILL'] }),
+    (0, class_validator_1.IsIn)(['GRN', 'PURCHASE_BILL']),
+    __metadata("design:type", String)
+], LabelsFromDocDto.prototype, "docType", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], LabelsFromDocDto.prototype, "docId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], LabelsFromDocDto.prototype, "accYear", void 0);
 class GrnCancelDto extends GrnRefDto {
     reason;
 }
@@ -384,11 +430,13 @@ let PurchaseGrnService = class PurchaseGrnService {
     ctx;
     vouchers;
     stockPosting;
-    constructor(prisma, ctx, vouchers, stockPosting) {
+    prices;
+    constructor(prisma, ctx, vouchers, stockPosting, prices) {
         this.prisma = prisma;
         this.ctx = ctx;
         this.vouchers = vouchers;
         this.stockPosting = stockPosting;
+        this.prices = prices;
     }
     actor() {
         const u = this.ctx.getUserId();
@@ -400,6 +448,7 @@ let PurchaseGrnService = class PurchaseGrnService {
     async save(dto) {
         const actor = this.actor();
         const h = dto.header;
+        const warnings = [];
         const id = await this.prisma.$transaction(async (tx) => {
             await (0, purchase_doc_helpers_1.supplierRow)(tx, h.supplierId);
             const units = await (0, purchase_doc_helpers_1.loadUnits)(tx, dto.lines.map((l) => l.uomId));
@@ -413,6 +462,57 @@ let PurchaseGrnService = class PurchaseGrnService {
             });
             if (problems.length)
                 (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
+            const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
+            const priceAtGrn = settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN';
+            const excessOf = [];
+            for (let i = 0; i < dto.lines.length; i++) {
+                const l = dto.lines[i];
+                let excess = purchase_doc_helpers_1.ZERO;
+                if (l.poItemId) {
+                    const pendingBase = await this.poPendingBase(tx, l.poItemId, h.grnId ?? null);
+                    const f = units.get(l.uomId).iuc_to_base_factor;
+                    const inBase = (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)).times(f);
+                    if (pendingBase != null && inBase.greaterThan(pendingBase))
+                        excess = inBase.minus(client_1.Prisma.Decimal.max(pendingBase, 0)).dividedBy(f).toDecimalPlaces(4);
+                }
+                const action = l.excessAction ?? (excess.greaterThan(0) ? 'HOLD_FOR_BILL' : null);
+                if (action === 'RETURN') {
+                    if (excess.greaterThan(0))
+                        problems.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_IN_RECEIVED',
+                            message: `Line ${l.lineNo}: ${excess.toString()} over the PO is still in Received — what goes back at the gate is not received (key it as Excess).` });
+                    excessOf.push((0, purchase_doc_helpers_1.D)(l.excessQty));
+                }
+                else if (excess.greaterThan(0) && action === 'KEEP_FREE') {
+                    const take = client_1.Prisma.Decimal.min(excess, (0, purchase_doc_helpers_1.D)(l.receivedQty));
+                    l.receivedQty = Number((0, purchase_doc_helpers_1.D)(l.receivedQty).minus(take));
+                    l.freeQty = Number((0, purchase_doc_helpers_1.D)(l.freeQty).plus(take));
+                    let left = take;
+                    for (const a of l.allocs ?? []) {
+                        if ((a.bucket ?? 'SALEABLE') !== 'SALEABLE' || !left.greaterThan(0))
+                            continue;
+                        const m = client_1.Prisma.Decimal.min(left, (0, purchase_doc_helpers_1.D)(a.qty));
+                        a.qty = Number((0, purchase_doc_helpers_1.D)(a.qty).minus(m));
+                        a.freeQty = Number((0, purchase_doc_helpers_1.D)(a.freeQty).plus(m));
+                        left = left.minus(m);
+                    }
+                    warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_KEPT_FREE', message: `Line ${l.lineNo}: ${take.toString()} over the PO taken as free goods (no value).` });
+                    excessOf.push(take);
+                }
+                else {
+                    if (excess.greaterThan(0))
+                        warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_HELD',
+                            message: `Line ${l.lineNo}: ${excess.toString()} over the PO — received at the provisional rate; the bill must cover it.` });
+                    excessOf.push(excess);
+                }
+                l.excessAction = excessOf[i].greaterThan(0) ? (action ?? undefined) : undefined;
+            }
+            if (problems.length)
+                (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
+            const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate, dto.lines.flatMap((l, i) => (l.allocs ?? []).map((a) => ({ lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: (0, purchase_doc_helpers_1.dateOf)(a.mfgDate), expiryDate: (0, purchase_doc_helpers_1.dateOf)(a.expiryDate) }))));
+            if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post)
+                (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
+            if (!h.post)
+                warnings.push(...shelf);
             if (!dto.charges?.length && h.receivedBy?.length && h.payCoolie !== false)
                 dto.charges = await this.coolieFor(tx, h.receivedBy);
             for (const c of dto.charges ?? [])
@@ -464,8 +564,10 @@ let PurchaseGrnService = class PurchaseGrnService {
                         griSrcDocType: l.poItemId ? 'PURCHASE_ORDER' : null, griSrcDocId: l.poItemId ? await this.poIdOf(tx, l.poItemId) : null,
                         griSrcDocYear: l.poItemId ? (l.poItemAccYear ?? h.accYear) : null, griSrcItemId: l.poItemId ?? null,
                         griChallanQty: (0, purchase_doc_helpers_1.D)(l.challanQty ?? (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty))), griReceivedQty: (0, purchase_doc_helpers_1.D)(l.receivedQty), griDamagedQty: (0, purchase_doc_helpers_1.D)(l.damagedQty),
-                        griDamageReasonId: l.damageReasonId ?? null, griFreeQty: (0, purchase_doc_helpers_1.D)(l.freeQty), griExcessQty: (0, purchase_doc_helpers_1.D)(l.excessQty), griExcessAction: l.excessAction ?? null,
+                        griDamageReasonId: l.damageReasonId ?? null, griFreeQty: (0, purchase_doc_helpers_1.D)(l.freeQty), griExcessQty: excessOf[i], griExcessAction: l.excessAction ?? null,
                         griProvisionalRate: (0, purchase_doc_helpers_1.D)(l.rate), griOffbillShare: o.offbillShare, griValue: o.netGross, griMrp: l.mrp ?? null, griSellA: l.sellA ?? null,
+                        griSellB: l.sellB ?? null, griSellC: l.sellC ?? null, griSellD: l.sellD ?? null,
+                        griPriceUpdateResult: priceAtGrn ? 'NONE' : 'OFF',
                         griRemarks: l.remarks ?? null, griCreatedBy: actor,
                     }, select: { griId: true } });
                 const allocs = l.allocs?.length ? l.allocs : [
@@ -491,10 +593,24 @@ let PurchaseGrnService = class PurchaseGrnService {
             if (isNew)
                 await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.GRN, docId: grnId, refno, event: purchase_doc_helpers_1.TxnStatusEvent.CREATED, from: null, to: 'DRAFT', actor, deviceId: h.deviceId });
             if (h.post)
-                await this.postInTx(tx, grnId, h.accYear, actor);
+                warnings.push(...await this.postInTx(tx, grnId, h.accYear, actor));
             return grnId;
         }, { timeout: 60000, maxWait: 10000 });
-        return this.get(id, h.accYear);
+        return { ...(await this.get(id, h.accYear)), warnings };
+    }
+    async poPendingBase(tx, poiId, exceptGrnId) {
+        const [r] = await tx.$queryRaw `
+      SELECT (poi.poi_qty - poi.poi_short_closed_qty) * poi.poi_to_base_factor
+             - COALESCE((SELECT SUM((gri.gri_received_qty + gri.gri_damaged_qty) * gri.gri_to_base_factor)
+                           FROM purchase.pur_grn_item gri JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+                          WHERE gri.gri_src_doc_type = 'PURCHASE_ORDER' AND gri.gri_src_item_id = poi.poi_id AND NOT gri.gri_is_deleted
+                            AND NOT g.grn_is_deleted AND g.grn_status <> 'CANCELLED' AND g.grn_id IS DISTINCT FROM ${exceptGrnId}::uuid), 0)
+             - COALESCE((SELECT SUM(pii.pii_billed_qty * pii.pii_to_base_factor)
+                           FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+                          WHERE pii.pii_src_doc_type = 'PURCHASE_ORDER' AND pii.pii_src_item_id = poi.poi_id AND NOT pii.pii_is_deleted
+                            AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'), 0) AS pending
+        FROM purchase.pur_order_item poi WHERE poi.poi_id = ${poiId}::uuid AND NOT poi.poi_is_deleted`;
+        return r ? (0, purchase_doc_helpers_1.D)(r.pending) : null;
     }
     async coolieFor(tx, employees) {
         const [c] = await tx.$queryRaw `
@@ -507,6 +623,7 @@ let PurchaseGrnService = class PurchaseGrnService {
         const [r] = await tx.$queryRaw `SELECT poi_po_id AS id FROM purchase.pur_order_item WHERE poi_id = ${poiId}::uuid LIMIT 1`;
         if (!r)
             (0, purchase_errors_1.purRefuse)(`PO line ${poiId} not found`, purchase_errors_1.PUR.NOT_FOUND, 'lines.poItemId', 404);
+        await (0, purchase_order_1.assertPoApproved)(tx, r.id);
         return r.id;
     }
     async loadCharges(tx, charges) {
@@ -549,10 +666,11 @@ let PurchaseGrnService = class PurchaseGrnService {
     }
     async post(grnId, accYear) {
         const actor = this.actor();
-        await this.prisma.$transaction((tx) => this.postInTx(tx, grnId, accYear, actor), { timeout: 60000, maxWait: 10000 });
-        return this.get(grnId, accYear);
+        const warnings = await this.prisma.$transaction((tx) => this.postInTx(tx, grnId, accYear, actor), { timeout: 60000, maxWait: 10000 });
+        return { ...(await this.get(grnId, accYear)), warnings };
     }
     async postInTx(tx, grnId, accYear, actor) {
+        const notes = [];
         const g = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: accYear, grnIsDeleted: false } });
         if (!g)
             (0, purchase_errors_1.purNotFound)(`GRN ${grnId} not found`);
@@ -563,6 +681,10 @@ let PurchaseGrnService = class PurchaseGrnService {
         const byLine = new Map(lines.map((l) => [l.griId, l]));
         const postedOn = new Date();
         const docDate = (0, purchase_doc_helpers_1.isoDate)(g.grnDocDate);
+        const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, g.grnCompanyId, g.grnBranchId);
+        const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, docDate, allocs.map((a) => { const l = byLine.get(a.piaLineId); return { lineNo: l.griLineNo, index: l.griLineNo - 1, itemId: l.griItemId, bucket: a.piaBucket, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate }; }));
+        if (shelf.length && settings.shelfLifeMode === 'REFUSE')
+            (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
         const cost = (l) => {
             const inBase = l.griReceivedQty.plus(l.griDamagedQty).plus(l.griFreeQty).times(l.griToBaseFactor);
             return inBase.isZero() ? purchase_doc_helpers_1.ZERO : l.griValue.plus(l.griOffbillShare).dividedBy(inBase).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP);
@@ -611,8 +733,69 @@ let PurchaseGrnService = class PurchaseGrnService {
                     pshReason: 'SHORT_CHALLAN', pshQtyBase: short.times(l.griToBaseFactor), pshOriginCostRate: cost(l), pshCreatedBy: actor,
                 } });
         }
+        if (settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN') {
+            const lv = (v) => (v ? Number(v) : 0);
+            const businessTime = docDate === (0, purchase_doc_helpers_1.isoDate)(postedOn) ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
+            const result = await this.prices.applyPurchasePrices(tx, {
+                companyId: g.grnCompanyId, branchId: g.grnBranchId, actor, billRef: g.grnRefno, businessTime,
+                rows: lines.map((l) => ({ key: l.griId, itemId: l.griItemId, uomId: l.griUomId, mrp: l.griMrp ? Number(l.griMrp) : null,
+                    levels: [{ level: 1, price: lv(l.griSellA) }, { level: 2, price: lv(l.griSellB) }, { level: 3, price: lv(l.griSellC) }, { level: 4, price: lv(l.griSellD) }] })),
+            });
+            for (const l of lines) {
+                const r = result.get(l.griId);
+                if (!r)
+                    continue;
+                await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: r.result } });
+                if (r.note)
+                    notes.push({ field: `lines.${l.griLineNo - 1}`, code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', message: `Line ${l.griLineNo}: ${r.note}` });
+            }
+        }
         await tx.purGrn.update({ where: { grnId_grnAccYear: { grnId, grnAccYear: accYear } }, data: { grnStatus: 'POSTED', grnPostedVoucherId: posted.voucherId, grnModifiedBy: actor, grnModifiedOn: postedOn } });
         await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno, event: purchase_doc_helpers_1.TxnStatusEvent.POSTED, from: 'DRAFT', to: 'POSTED', actor, deviceId: g.grnDeviceId });
+        return [...shelf, ...notes];
+    }
+    async labels(q) {
+        const rows = await this.prisma.$queryRaw `
+      WITH r AS (
+        SELECT a.pia_id, a.pia_row_no, a.pia_doc_type, a.pia_line_id, a.pia_company_id, a.pia_batch_no, a.pia_mrp, a.pia_sale_price,
+               a.pia_size_id, a.pia_colour_id, a.pia_model, a.pia_expiry_date, a.pia_qty + a.pia_free_qty AS pieces
+          FROM purchase.pur_item_alloc a
+         WHERE NOT a.pia_is_deleted AND a.pia_bucket = 'SALEABLE' AND a.pia_acc_year = ${q.accYear}::bpchar
+           AND ((a.pia_doc_type = ${q.docType} AND a.pia_doc_id = ${q.docId}::uuid)
+             OR (${q.docType} = 'PURCHASE_BILL' AND a.pia_doc_type = 'GRN' AND a.pia_line_id IN (
+                   SELECT pii_src_item_id FROM purchase.pur_invoice_item
+                    WHERE pii_pi_id = ${q.docId}::uuid AND pii_src_doc_type = 'GRN' AND NOT pii_is_deleted))))
+      SELECT r.pia_id AS "rowId", COALESCE(gri.gri_line_no, pii.pii_line_no) AS "lineNo", r.pia_row_no AS "rowNo",
+             im.item_id AS "itemId", im.item_name_en AS "itemName", u.unit_name AS "unitName",
+             COALESCE(NULLIF(r.pia_batch_no, ''), e.ean_code) AS "barcode", r.pia_batch_no AS "batchNo", e.ean_code AS "ean",
+             COALESCE(r.pia_mrp, gri.gri_mrp, pii.pii_mrp) AS "mrp",
+             COALESCE(r.pia_sale_price, gri.gri_sell_a, pii.pii_sell_a, p.ipm_sales_price_a) AS "price",
+             sz.isz_name AS "size", cl.icl_name AS "colour", r.pia_model AS "model", r.pia_expiry_date AS "expiryDate",
+             r.pieces AS "qty", c.comp_name AS "companyName"
+        FROM r
+        LEFT JOIN purchase.pur_grn_item gri ON r.pia_doc_type = 'GRN' AND gri.gri_id = r.pia_line_id
+        LEFT JOIN purchase.pur_invoice_item pii ON r.pia_doc_type = 'PURCHASE_BILL' AND pii.pii_id = r.pia_line_id
+        JOIN inventory.item_master im ON im.item_id = COALESCE(gri.gri_item_id, pii.pii_item_id)
+        LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = COALESCE(gri.gri_uom_id, pii.pii_uom_id)
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN inventory.item_size_master sz ON sz.isz_id = r.pia_size_id
+        LEFT JOIN inventory.item_colour_master cl ON cl.icl_id = r.pia_colour_id
+        LEFT JOIN public.companys c ON c.comp_id = r.pia_company_id
+        LEFT JOIN LATERAL (SELECT ean_code FROM inventory.item_ean_codes
+                            WHERE ean_item_id = im.item_id AND ean_uc_unit_id = iuc.iuc_id AND ean_is_active AND NOT ean_is_deleted
+                            ORDER BY ean_is_default DESC, ean_sl_no LIMIT 1) e ON true
+        LEFT JOIN LATERAL (SELECT ipm_sales_price_a FROM inventory.item_price_master
+                            WHERE ipm_item_id = im.item_id AND ipm_uc_unit_id = iuc.iuc_id AND ipm_is_active AND NOT ipm_is_deleted
+                            ORDER BY (ipm_branch_id IS NOT NULL) DESC, ipm_effective_from DESC NULLS LAST LIMIT 1) p ON true
+       ORDER BY 2, 3`;
+        if (!rows.length) {
+            const [doc] = q.docType === 'GRN'
+                ? await this.prisma.$queryRaw `SELECT grn_status AS s FROM purchase.pur_grn WHERE grn_id = ${q.docId}::uuid AND grn_acc_year = ${q.accYear}::bpchar`
+                : await this.prisma.$queryRaw `SELECT pi_status AS s FROM purchase.pur_invoice WHERE pi_id = ${q.docId}::uuid AND pi_acc_year = ${q.accYear}::bpchar`;
+            if (!doc)
+                (0, purchase_errors_1.purNotFound)(`${q.docType} ${q.docId} not found`);
+        }
+        return (0, purchase_doc_helpers_1.jsonSafe)(rows.map((r) => ({ ...r, copies: Math.max(1, Math.ceil(Number(r.qty))), textile: !!(r.size || r.colour || r.model) })));
     }
     async get(grnId, accYear) {
         const header = await this.prisma.purGrn.findFirst({ where: { grnId, grnAccYear: accYear, grnIsDeleted: false } });
@@ -674,7 +857,8 @@ exports.PurchaseGrnService = PurchaseGrnService;
 exports.PurchaseGrnService = PurchaseGrnService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService, request_context_service_1.RequestContextService,
-        voucher_posting_service_1.VoucherPostingService, stock_posting_service_1.StockPostingService])
+        voucher_posting_service_1.VoucherPostingService, stock_posting_service_1.StockPostingService,
+        selling_price_bulk_service_1.SellingPriceBulkService])
 ], PurchaseGrnService);
 let PurchaseGrnController = class PurchaseGrnController {
     service;
@@ -753,4 +937,34 @@ exports.PurchaseGrnController = PurchaseGrnController = __decorate([
     (0, common_1.Controller)('purchase/grns'),
     __metadata("design:paramtypes", [PurchaseGrnService, prisma_service_1.PrismaService, request_context_service_1.RequestContextService])
 ], PurchaseGrnController);
+let PurchaseLabelsController = class PurchaseLabelsController {
+    service;
+    prisma;
+    ctx;
+    constructor(service, prisma, ctx) {
+        this.service = service;
+        this.prisma = prisma;
+        this.ctx = ctx;
+    }
+    async fromDoc(q) {
+        await (0, rights_1.assertMenuRight)(this.prisma, { userId: this.ctx.getUserId(), menuId: q.docType === 'GRN' ? exports.GRN_MENU_ID : 24, right: 'view', codePrefix: 'LBL', action: 'print purchase labels' });
+        return { success: true, message: 'Labels', data: await this.service.labels(q) };
+    }
+};
+exports.PurchaseLabelsController = PurchaseLabelsController;
+__decorate([
+    (0, common_1.Get)('from-doc'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'ENT-21: the labels of a GRN or purchase bill — one row per saleable allocation row, copies = received + free (damaged get none).' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [LabelsFromDocDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseLabelsController.prototype, "fromDoc", null);
+exports.PurchaseLabelsController = PurchaseLabelsController = __decorate([
+    (0, swagger_1.ApiTags)('Purchase — Labels'),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.Controller)('purchase/labels'),
+    __metadata("design:paramtypes", [PurchaseGrnService, prisma_service_1.PrismaService, request_context_service_1.RequestContextService])
+], PurchaseLabelsController);
 //# sourceMappingURL=purchase-grn.js.map

@@ -180,5 +180,19 @@ export declare function unitNames(db: {
     itemName: string;
     unitName: string;
 }>>;
+export interface ShelfLifeRow {
+    lineNo: number;
+    index: number;
+    itemId: string;
+    bucket?: string | null;
+    mfgDate?: Date | null;
+    expiryDate?: Date | null;
+}
+export interface ShelfLifeIssue {
+    field: string;
+    code: string;
+    message: string;
+}
+export declare function shelfLifeIssues(tx: Tx, mode: 'OFF' | 'WARN' | 'REFUSE', minPct: number, receipt: string, rows: ShelfLifeRow[]): Promise<ShelfLifeIssue[]>;
 export declare function jsonSafe<T>(v: T): T;
 export { TxnStatusDocType, TxnStatusEvent };

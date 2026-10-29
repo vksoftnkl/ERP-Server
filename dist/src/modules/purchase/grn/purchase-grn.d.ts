@@ -3,6 +3,7 @@ import { VoucherPostingService } from "../../../common/posting/voucher-posting.s
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { StockPostingService } from "../../stocks/posting/stock-posting.service";
+import { SellingPriceBulkService } from "../../stocks/selling-price-bulk/selling-price-bulk.service";
 import { PurchaseAllocDto, PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
 export declare const GRN_MENU_ID = 196;
 export declare class GrnLineDto {
@@ -21,6 +22,9 @@ export declare class GrnLineDto {
     rate: number;
     mrp?: number;
     sellA?: number;
+    sellB?: number;
+    sellC?: number;
+    sellD?: number;
     weight?: number;
     remarks?: string;
     allocs?: PurchaseAllocDto[];
@@ -58,6 +62,11 @@ export declare class GrnRefDto {
     grnId: string;
     accYear: string;
 }
+export declare class LabelsFromDocDto {
+    docType: string;
+    docId: string;
+    accYear: string;
+}
 export declare class GrnCancelDto extends GrnRefDto {
     reason: string;
 }
@@ -66,10 +75,16 @@ export declare class PurchaseGrnService {
     private readonly ctx;
     private readonly vouchers;
     private readonly stockPosting;
-    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService);
+    private readonly prices;
+    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, prices: SellingPriceBulkService);
     private actor;
     private rules;
     save(dto: SaveGrnDto): Promise<{
+        warnings: {
+            field: string;
+            code: string;
+            message: string;
+        }[];
         header: {
             supplierName: string;
             receivedBy: {
@@ -185,6 +200,10 @@ export declare class PurchaseGrnService {
             griValue: Prisma.Decimal;
             griMrp: Prisma.Decimal | null;
             griSellA: Prisma.Decimal | null;
+            griSellB: Prisma.Decimal | null;
+            griSellC: Prisma.Decimal | null;
+            griSellD: Prisma.Decimal | null;
+            griPriceUpdateResult: string | null;
             griRemarks: string | null;
             griIsDeleted: boolean;
             griSyncDate: Date | null;
@@ -194,11 +213,13 @@ export declare class PurchaseGrnService {
             griModifiedBy: string | null;
         }[];
     }>;
+    private poPendingBase;
     private coolieFor;
     private poIdOf;
     private loadCharges;
     private writeCharges;
     post(grnId: string, accYear: string): Promise<{
+        warnings: import("../common/purchase-doc.helpers").ShelfLifeIssue[];
         header: {
             supplierName: string;
             receivedBy: {
@@ -314,6 +335,10 @@ export declare class PurchaseGrnService {
             griValue: Prisma.Decimal;
             griMrp: Prisma.Decimal | null;
             griSellA: Prisma.Decimal | null;
+            griSellB: Prisma.Decimal | null;
+            griSellC: Prisma.Decimal | null;
+            griSellD: Prisma.Decimal | null;
+            griPriceUpdateResult: string | null;
             griRemarks: string | null;
             griIsDeleted: boolean;
             griSyncDate: Date | null;
@@ -324,6 +349,10 @@ export declare class PurchaseGrnService {
         }[];
     }>;
     private postInTx;
+    labels(q: LabelsFromDocDto): Promise<{
+        copies: number;
+        textile: boolean;
+    }[]>;
     get(grnId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
@@ -440,6 +469,10 @@ export declare class PurchaseGrnService {
             griValue: Prisma.Decimal;
             griMrp: Prisma.Decimal | null;
             griSellA: Prisma.Decimal | null;
+            griSellB: Prisma.Decimal | null;
+            griSellC: Prisma.Decimal | null;
+            griSellD: Prisma.Decimal | null;
+            griPriceUpdateResult: string | null;
             griRemarks: string | null;
             griIsDeleted: boolean;
             griSyncDate: Date | null;
@@ -565,6 +598,10 @@ export declare class PurchaseGrnService {
             griValue: Prisma.Decimal;
             griMrp: Prisma.Decimal | null;
             griSellA: Prisma.Decimal | null;
+            griSellB: Prisma.Decimal | null;
+            griSellC: Prisma.Decimal | null;
+            griSellD: Prisma.Decimal | null;
+            griPriceUpdateResult: string | null;
             griRemarks: string | null;
             griIsDeleted: boolean;
             griSyncDate: Date | null;
@@ -585,6 +622,11 @@ export declare class PurchaseGrnController {
         success: boolean;
         message: string;
         data: {
+            warnings: {
+                field: string;
+                code: string;
+                message: string;
+            }[];
             header: {
                 supplierName: string;
                 receivedBy: {
@@ -700,6 +742,10 @@ export declare class PurchaseGrnController {
                 griValue: Prisma.Decimal;
                 griMrp: Prisma.Decimal | null;
                 griSellA: Prisma.Decimal | null;
+                griSellB: Prisma.Decimal | null;
+                griSellC: Prisma.Decimal | null;
+                griSellD: Prisma.Decimal | null;
+                griPriceUpdateResult: string | null;
                 griRemarks: string | null;
                 griIsDeleted: boolean;
                 griSyncDate: Date | null;
@@ -714,6 +760,7 @@ export declare class PurchaseGrnController {
         success: boolean;
         message: string;
         data: {
+            warnings: import("../common/purchase-doc.helpers").ShelfLifeIssue[];
             header: {
                 supplierName: string;
                 receivedBy: {
@@ -829,6 +876,10 @@ export declare class PurchaseGrnController {
                 griValue: Prisma.Decimal;
                 griMrp: Prisma.Decimal | null;
                 griSellA: Prisma.Decimal | null;
+                griSellB: Prisma.Decimal | null;
+                griSellC: Prisma.Decimal | null;
+                griSellD: Prisma.Decimal | null;
+                griPriceUpdateResult: string | null;
                 griRemarks: string | null;
                 griIsDeleted: boolean;
                 griSyncDate: Date | null;
@@ -958,6 +1009,10 @@ export declare class PurchaseGrnController {
                 griValue: Prisma.Decimal;
                 griMrp: Prisma.Decimal | null;
                 griSellA: Prisma.Decimal | null;
+                griSellB: Prisma.Decimal | null;
+                griSellC: Prisma.Decimal | null;
+                griSellD: Prisma.Decimal | null;
+                griPriceUpdateResult: string | null;
                 griRemarks: string | null;
                 griIsDeleted: boolean;
                 griSyncDate: Date | null;
@@ -1087,6 +1142,10 @@ export declare class PurchaseGrnController {
                 griValue: Prisma.Decimal;
                 griMrp: Prisma.Decimal | null;
                 griSellA: Prisma.Decimal | null;
+                griSellB: Prisma.Decimal | null;
+                griSellC: Prisma.Decimal | null;
+                griSellD: Prisma.Decimal | null;
+                griPriceUpdateResult: string | null;
                 griRemarks: string | null;
                 griIsDeleted: boolean;
                 griSyncDate: Date | null;
@@ -1096,5 +1155,19 @@ export declare class PurchaseGrnController {
                 griModifiedBy: string | null;
             }[];
         };
+    }>;
+}
+export declare class PurchaseLabelsController {
+    private readonly service;
+    private readonly prisma;
+    private readonly ctx;
+    constructor(service: PurchaseGrnService, prisma: PrismaService, ctx: RequestContextService);
+    fromDoc(q: LabelsFromDocDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            copies: number;
+            textile: boolean;
+        }[];
     }>;
 }

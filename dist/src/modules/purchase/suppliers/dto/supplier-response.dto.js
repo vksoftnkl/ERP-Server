@@ -78,6 +78,16 @@ class SupplierPayloadDto {
     supGstType;
     supSupCst;
     supDrugLiscenceNo;
+    supDrugLicenceExpiry;
+    supMsmeCategory;
+    supMsmeActivity;
+    supMsmeAgreement;
+    supMsmeAgreedDays;
+    supFssaiNo;
+    supFssaiValidTo;
+    supDefaultGodownId;
+    supShowNotesOnEntry;
+    supIsImport;
     supRegionName;
     supRegionAddr1;
     supRegionAddr2;
@@ -246,6 +256,46 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
     __metadata("design:type", Object)
 ], SupplierPayloadDto.prototype, "supDrugLiscenceNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supDrugLicenceExpiry", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supMsmeCategory", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supMsmeActivity", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], SupplierPayloadDto.prototype, "supMsmeAgreement", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supMsmeAgreedDays", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supFssaiNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supFssaiValidTo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], SupplierPayloadDto.prototype, "supDefaultGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], SupplierPayloadDto.prototype, "supShowNotesOnEntry", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], SupplierPayloadDto.prototype, "supIsImport", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
     __metadata("design:type", Object)

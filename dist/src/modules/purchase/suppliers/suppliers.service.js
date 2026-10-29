@@ -389,7 +389,7 @@ let SuppliersService = class SuppliersService {
         }
     }
     async resolveRelatedNames(client, record) {
-        const [company, branch, group] = await Promise.all([
+        const [company, branch, group, godown] = await Promise.all([
             record.supCompanyId
                 ? client.company.findFirst({
                     where: { compId: record.supCompanyId },
@@ -408,11 +408,18 @@ let SuppliersService = class SuppliersService {
                     select: { spgName: true },
                 })
                 : null,
+            record.supDefaultGodownId
+                ? client.godownLocation.findFirst({
+                    where: { gdlId: record.supDefaultGodownId },
+                    select: { gdlName: true },
+                })
+                : null,
         ]);
         return {
             supCompanyName: company?.compName ?? null,
             supBranchName: branch?.brName ?? null,
             supGroupName: group?.spgName ?? null,
+            supDefaultGodownName: godown?.gdlName ?? null,
         };
     }
     findCustomerRole(tx, ledId) {
@@ -517,6 +524,14 @@ let SuppliersService = class SuppliersService {
             'supPanNo',
             'supSupCst',
             'supDrugLiscenceNo',
+            'supMsmeCategory',
+            'supMsmeActivity',
+            'supMsmeAgreement',
+            'supMsmeAgreedDays',
+            'supFssaiNo',
+            'supDefaultGodownId',
+            'supShowNotesOnEntry',
+            'supIsImport',
             'supRegionName',
             'supRegionAddr1',
             'supRegionAddr2',
@@ -535,6 +550,12 @@ let SuppliersService = class SuppliersService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, 'supCollectionDays')) {
             data.supCollectionDays = saveSupplierDto.supCollectionDays ?? [];
+        }
+        for (const field of ['supDrugLicenceExpiry', 'supFssaiValidTo']) {
+            if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, field)) {
+                const v = saveSupplierDto[field];
+                data[field] = v ? new Date(`${String(v).slice(0, 10)}T00:00:00Z`) : null;
+            }
         }
     }
     normalizeStateCode(value) {
@@ -583,6 +604,16 @@ let SuppliersService = class SuppliersService {
             supGstType: record.supGstType,
             supSupCst: record.supSupCst,
             supDrugLiscenceNo: record.supDrugLiscenceNo,
+            supDrugLicenceExpiry: record.supDrugLicenceExpiry ? record.supDrugLicenceExpiry.toISOString().slice(0, 10) : null,
+            supMsmeCategory: record.supMsmeCategory,
+            supMsmeActivity: record.supMsmeActivity,
+            supMsmeAgreement: record.supMsmeAgreement,
+            supMsmeAgreedDays: record.supMsmeAgreedDays,
+            supFssaiNo: record.supFssaiNo,
+            supFssaiValidTo: record.supFssaiValidTo ? record.supFssaiValidTo.toISOString().slice(0, 10) : null,
+            supDefaultGodownId: record.supDefaultGodownId,
+            supShowNotesOnEntry: record.supShowNotesOnEntry,
+            supIsImport: record.supIsImport,
             supRegionName: record.supRegionName,
             supRegionAddr1: record.supRegionAddr1,
             supRegionAddr2: record.supRegionAddr2,

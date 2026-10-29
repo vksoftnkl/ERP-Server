@@ -124,6 +124,11 @@ class PurchaseInvoiceLineDto {
     uomId;
     grnItemId;
     grnItemAccYear;
+    poItemId;
+    sisterSaleItemId;
+    sisterSaleItemAccYear;
+    poItemAccYear;
+    costIncl;
     billedQty;
     receivedQty;
     damagedQty;
@@ -179,6 +184,39 @@ __decorate([
     (0, class_validator_1.MaxLength)(9),
     __metadata("design:type", String)
 ], PurchaseInvoiceLineDto.prototype, "grnItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'DOC-04: the PO line this bill line receives (pur_order_item.poi_id) — goods came with the bill; the qty billed (base units) reduces what the PO still has pending and may not exceed it.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "poItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: "DOC-08: the sister company sale line this purchase line pulls (sales.sale_bill_item.sbi_id) — see GET /purchase/sister-bills/lines." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "sisterSaleItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "sisterSaleItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "poItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-04: the cost per billed unit INCLUDING GST / cess, as typed — the rate is back-solved from it (after disc % and scheme %); the answer\'s line rate is the result.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "costIncl", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     (0, class_validator_1.IsNumber)(),
@@ -309,7 +347,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PurchaseInvoiceLineDto.prototype, "sellD", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-18: markup % on the cost without tax; with no sellA the server prices Sell A from it (GST added).' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)

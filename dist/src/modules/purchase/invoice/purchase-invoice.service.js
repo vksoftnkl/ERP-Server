@@ -11,6 +11,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PurchaseInvoiceService = void 0;
 const common_1 = require("@nestjs/common");
+const purchase_value_slab_1 = require("../common/purchase-value-slab");
+const purchase_rcm_1 = require("../common/purchase-rcm");
+const purchase_sister_1 = require("../sister/purchase-sister");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -22,6 +25,7 @@ const stock_voucher_source_1 = require("../../stocks/posting/stock-voucher.sourc
 const stock_voucher_numbering_helper_1 = require("../../stocks/stock-voucher/stock-voucher-numbering.helper");
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const purchase_supplier_item_1 = require("../supplier-item/purchase-supplier-item");
+const purchase_order_1 = require("../order/purchase-order");
 const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_calc_1 = require("../common/purchase-calc");
 const purchase_errors_1 = require("../common/purchase.errors");
@@ -32,6 +36,14 @@ const num = (v) => Number(v.toFixed(2));
 const DOC_TYPE = 'PURCHASE_BILL';
 const SRC_MODULE = 'PURCHASE';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function grnKept(g) {
+    const f = g.gri_to_base_factor.isZero() ? D(1) : g.gri_to_base_factor;
+    const shortRecv = g.short_rcv_base.dividedBy(f);
+    const history = g.short_id != null && (!g.short_rcv_base.isZero() || !g.short_closed_base.isZero());
+    const openShort = g.short_qty_base == null ? ZERO : client_1.Prisma.Decimal.max(0, g.short_qty_base.minus(g.short_rcv_base).minus(g.short_closed_base).dividedBy(f));
+    const closed = g.short_closed_base.dividedBy(f);
+    return { f, shortRecv, history, openShort, closed, kept: g.gri_received_qty.plus(g.gri_damaged_qty).plus(shortRecv).minus(g.returned_qty) };
+}
 let PurchaseInvoiceService = class PurchaseInvoiceService {
     prisma;
     requestContext;
@@ -91,6 +103,20 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             await this.assertNotDuplicate(tx, dto, settings, warnings);
             if (h.post)
                 this.assertPrintedAmount(p, dto, settings, warnings);
+            dto.lines.forEach((l, i) => {
+                const g = p.grn.get(l.lineNo);
+                if (g?.free_kept?.greaterThan(0)) {
+                    warnings.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', field: `lines.${i}.billedQty`,
+                        message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
+                }
+            });
+            const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate, dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
+                lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null
+            })))));
+            if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post)
+                (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
+            if (!h.post)
+                warnings.push(...shelf);
             let id = h.piId ?? null;
             let slno, refno, fromStatus = null;
             if (id) {
@@ -147,7 +173,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         for (const a of allocs)
             byLine.set(a.piaLineId, [...(byLine.get(a.piaLineId) ?? []), a]);
         return jsonSafe({
-            header: { ...header, supplierName: supplier[0]?.sup_name ?? null },
+            header: { ...header, supplierName: supplier[0]?.sup_name ?? null,
+                godownName: (await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid`)[0]?.gdl_name ?? null },
             lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [] })),
             charges,
         });
@@ -216,6 +243,15 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
           FROM purchase.pur_grn_item gri
          WHERE s.psh_bill_doc_id = ${dto.piId}::uuid AND s.psh_bill_doc_year = ${dto.accYear}::bpchar
            AND s.psh_src_doc_type = 'GRN' AND gri.gri_id = s.psh_src_item_id AND gri.gri_acc_year = s.psh_src_doc_year`;
+            await tx.$executeRaw `
+        UPDATE purchase.pur_shortage s
+           SET psh_qty_base = (gri.gri_challan_qty - gri.gri_received_qty - gri.gri_damaged_qty) * gri.gri_to_base_factor,
+               psh_modified_by = ${actor}, psh_modified_on = ${cancelledOn}
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_grn_item gri ON gri.gri_id = pii.pii_src_item_id AND gri.gri_acc_year = pii.pii_src_doc_year
+         WHERE pii.pii_pi_id = ${dto.piId}::uuid AND pii.pii_acc_year = ${dto.accYear}::bpchar AND pii.pii_src_doc_type = 'GRN' AND NOT pii.pii_is_deleted
+           AND s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND s.psh_src_doc_year = gri.gri_acc_year
+           AND s.psh_reason = 'SHORT_CHALLAN' AND s.psh_bill_doc_id IS NULL AND NOT s.psh_is_deleted`;
             await tx.accBillBalance.updateMany({
                 where: { ablSrcModule: SRC_MODULE, ablSrcDocType: DOC_TYPE, ablSrcDocId: dto.piId, ablIsDeleted: false },
                 data: { ablIsDeleted: true, ablModifiedBy: actor },
@@ -275,6 +311,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
          WHERE iuc.iuc_id = ANY(${uomIds}::uuid[]) AND NOT iuc.iuc_is_deleted`).map((r) => [r.iuc_id, r]));
         const problems = [];
         const grn = await this.loadGrnLines(tx, dto, problems);
+        const po = await this.loadPoLines(tx, dto, items, problems);
         dto.lines.forEach((l, i) => {
             const it = items.get(l.uomId);
             if (!it)
@@ -284,12 +321,13 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             const billed = D(l.billedQty), recd = l.receivedQty === undefined ? null : D(l.receivedQty), dmg = D(l.damagedQty);
             if (billed.isZero() && D(l.freeQty).isZero())
                 problems.push({ field: `lines.${i}.billedQty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: no qty` });
-            if (recd && recd.plus(dmg).greaterThan(billed))
+            if (recd && !l.grnItemId && recd.plus(dmg).greaterThan(billed))
                 problems.push({ field: `lines.${i}.receivedQty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: received + damaged is more than billed — enter the excess separately` });
         });
         for (const l of dto.lines)
             if (!l.taxId)
                 l.taxId = items.get(l.uomId)?.item_default_tax_id ?? undefined;
+        await (0, purchase_value_slab_1.applyValueSlabs)(tx, dto.lines, (u) => items.get(u)?.iuc_to_base_factor);
         const taxIds = [...new Set(dto.lines.map((l) => l.taxId).filter((t) => !!t))];
         const taxes = new Map((taxIds.length
             ? await tx.$queryRaw `SELECT tax_id, tax_rate_perc, tax_cess_perc, tax_cess_per_unit FROM inventory.tax_rate_master WHERE tax_id = ANY(${taxIds}::uuid[])`
@@ -347,6 +385,17 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         }
         if (problems.length)
             (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
+        for (const l of dto.lines) {
+            if (l.costIncl === undefined || l.costIncl === null || !(l.costIncl > 0))
+                continue;
+            const tax = l.taxId ? taxes.get(l.taxId) : undefined;
+            const taxed = taxMode === 'REGULAR';
+            const net = (0, purchase_calc_1.rateFromInclusiveCost)(l.costIncl, taxed ? (tax?.tax_rate_perc ?? 0) : 0, taxed ? (l.cessPct ?? tax?.tax_cess_perc ?? 0) : 0, taxed ? (l.cessPerUnit ?? tax?.tax_cess_per_unit ?? 0) : 0);
+            const d = D(1).minus(D(l.discPct).dividedBy(100)), s = D(1).minus(D(l.schPct).dividedBy(100));
+            if (d.lessThanOrEqualTo(0) || s.lessThanOrEqualTo(0))
+                continue;
+            l.rate = Number(net.plus(D(l.schPerQty)).dividedBy(s).plus(D(l.discPerQty)).dividedBy(d).toDecimalPlaces(4, client_1.Prisma.Decimal.ROUND_HALF_UP));
+        }
         const calc = (0, purchase_calc_1.calcPurchase)({
             interState,
             supplierTaxMode: taxMode,
@@ -365,6 +414,21 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                     weight: l.weight ?? 0, itcClass: it.item_itc_class ?? 'ELIGIBLE', shortagePct: it.item_shortage_pct ?? 0,
                 };
             }),
+        });
+        const info = dto.lines.map((l, i) => {
+            const o = calc.lines[i];
+            const costUnit = o.landedCostWot.times(D(items.get(l.uomId).iuc_to_base_factor));
+            const gstMul = D(1).plus(o.gstPct.dividedBy(100));
+            if ((l.sellA === undefined || l.sellA === null) && l.markupAPct !== undefined && l.markupAPct !== null && costUnit.greaterThan(0))
+                l.sellA = Number((0, purchase_calc_1.priceFromMarkup)(costUnit, l.markupAPct).times(gstMul).toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP));
+            const sellWot = l.sellA ? D(l.sellA).dividedBy(gstMul) : null;
+            const mk = sellWot && costUnit.greaterThan(0) ? (0, purchase_calc_1.markupOf)(costUnit, sellWot) : null;
+            l.markupAPct = mk ? Number(mk.toFixed(4)) : undefined;
+            const billed = D(l.billedQty);
+            return {
+                rate: l.rate, costIncl: billed.greaterThan(0) ? o.total.dividedBy(billed).toFixed(2) : null, sellA: l.sellA ?? null,
+                markupAPct: mk ? mk.toFixed(2) : null, marginAPct: sellWot && costUnit.greaterThan(0) ? (0, purchase_calc_1.marginOf)(costUnit, sellWot).toFixed(2) : null,
+            };
         });
         const allocs = new Map();
         const allocProblems = [];
@@ -408,7 +472,63 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         });
         if (allocProblems.length)
             (0, purchase_errors_1.purRefuseMany)(allocProblems[0].message, allocProblems);
-        return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn };
+        return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info };
+    }
+    async loadPoLines(tx, dto, items, problems) {
+        const h = dto.header;
+        const out = new Map();
+        const named = dto.lines.filter((l) => l.poItemId);
+        if (!named.length)
+            return out;
+        const rows = await tx.$queryRaw `
+      SELECT poi.poi_id, poi.poi_acc_year, poi.poi_line_no, poi.poi_item_id, poi.poi_to_base_factor, poi.poi_qty, poi.poi_short_closed_qty,
+             po.po_id, po.po_acc_year, po.po_refno, po.po_status, po.po_company_id, po.po_branch_id, po.po_supplier_id,
+             COALESCE((SELECT SUM((gri.gri_received_qty + gri.gri_damaged_qty) * gri.gri_to_base_factor)
+                         FROM purchase.pur_grn_item gri JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+                        WHERE gri.gri_src_doc_type = 'PURCHASE_ORDER' AND gri.gri_src_item_id = poi.poi_id AND NOT gri.gri_is_deleted
+                          AND NOT g.grn_is_deleted AND g.grn_status <> 'CANCELLED'), 0)
+           + COALESCE((SELECT SUM(pii.pii_billed_qty * pii.pii_to_base_factor)
+                         FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+                        WHERE pii.pii_src_doc_type = 'PURCHASE_ORDER' AND pii.pii_src_item_id = poi.poi_id AND NOT pii.pii_is_deleted
+                          AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED' AND p.pi_id IS DISTINCT FROM ${h.piId ?? null}::uuid), 0) AS used_base
+        FROM purchase.pur_order_item poi
+        JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+       WHERE poi.poi_id = ANY(${named.map((l) => l.poItemId)}::uuid[]) AND NOT poi.poi_is_deleted AND NOT po.po_is_deleted`;
+        const byId = new Map(rows.map((r) => [r.poi_id, r]));
+        const want = new Map();
+        dto.lines.forEach((l, i) => {
+            if (!l.poItemId)
+                return;
+            const field = `lines.${i}.poItemId`;
+            const say = (code, message) => problems.push({ field, code, message: `Line ${l.lineNo}: ${message}` });
+            if (l.grnItemId)
+                return say(purchase_errors_1.PUR.QTY_INVALID, 'a line comes from a GRN or from a PO, not both');
+            const p = byId.get(l.poItemId);
+            if (!p)
+                return say(purchase_errors_1.PUR.NOT_FOUND, 'its PO line was not found');
+            if (p.po_status !== 'POSTED')
+                return say(purchase_errors_1.PUR.NOT_POSTED, `${p.po_refno} is ${p.po_status} — only a confirmed PO is received`);
+            if (p.po_supplier_id !== h.supplierId)
+                return say(purchase_errors_1.PUR.GRN_MISMATCH, `${p.po_refno} is another supplier's PO`);
+            if (p.po_company_id !== h.companyId || p.po_branch_id !== h.branchId)
+                return say(purchase_errors_1.PUR.GRN_MISMATCH, `${p.po_refno} is another branch's PO`);
+            if (p.poi_item_id !== l.itemId)
+                return say(purchase_errors_1.PUR.GRN_MISMATCH, `the item must be the PO line's (${p.po_refno} line ${p.poi_line_no})`);
+            const factor = D(items.get(l.uomId)?.iuc_to_base_factor ?? 1);
+            want.set(p.poi_id, (want.get(p.poi_id) ?? ZERO).plus(D(l.billedQty).times(factor)));
+            out.set(l.lineNo, p);
+        });
+        for (const [id, base] of want) {
+            const p = byId.get(id);
+            const pending = p.poi_qty.minus(p.poi_short_closed_qty).times(p.poi_to_base_factor).minus(p.used_base);
+            if (base.greaterThan(pending)) {
+                const i = dto.lines.findIndex((l) => l.poItemId === id);
+                const unit = p.poi_to_base_factor.isZero() ? base : base.dividedBy(p.poi_to_base_factor);
+                problems.push({ field: `lines.${i}.billedQty`, code: purchase_errors_1.PUR.QTY_INVALID,
+                    message: `Line ${dto.lines[i].lineNo}: ${unit.toDecimalPlaces(3).toString()} billed against ${p.po_refno} line ${p.poi_line_no}, only ${client_1.Prisma.Decimal.max(0, pending.dividedBy(p.poi_to_base_factor.isZero() ? 1 : p.poi_to_base_factor)).toDecimalPlaces(3).toString()} pending — enter the excess as a separate line` });
+            }
+        }
+        return out;
     }
     async loadGrnLines(tx, dto, problems) {
         const h = dto.header;
@@ -438,22 +558,21 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 return say(purchase_errors_1.PUR.GRN_MISMATCH, `${g.grn_refno} was received at another branch — bill it there`);
             if (g.billed_in)
                 return say(purchase_errors_1.PUR.GRN_LINE_BILLED, `${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}`);
-            if (g.draft_return)
-                return say(purchase_errors_1.PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no} has the draft return ${g.draft_return} — post or cancel it first`);
-            if (Number(g.short_touched) > 0)
-                return say(purchase_errors_1.PUR.GRN_NOT_BUILT, `${g.grn_refno} line ${g.gri_line_no}: its challan shortage is already received or closed — cancel that first, bill the GRN, then receive the shortage against the bill`);
             if (l.itemId !== g.gri_item_id || l.uomId !== g.gri_uom_id)
                 return say(purchase_errors_1.PUR.GRN_MISMATCH, `the item and unit must be the GRN line's (${g.grn_refno} line ${g.gri_line_no})`);
-            const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
-            if (D(l.billedQty).lessThan(kept)) {
-                return say(purchase_errors_1.PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()} is less than the ${kept.toString()} kept from ${g.grn_refno}${g.returned_qty.isZero() ? '' : ` (${g.returned_qty.toString()} went back on a GRN return)`} — bill it all (return the excess against the bill)`);
-            }
-            const rejected = client_1.Prisma.Decimal.min(g.returned_qty, D(l.billedQty).minus(kept));
+            const k = grnKept(g);
+            const kept = k.kept;
+            g.free_kept = client_1.Prisma.Decimal.max(0, kept.minus(D(l.billedQty)));
+            const rejected = client_1.Prisma.Decimal.min(g.returned_qty, client_1.Prisma.Decimal.max(0, D(l.billedQty).minus(kept)));
             g.rejected_billed = rejected;
+            const shortBilled = client_1.Prisma.Decimal.max(0, D(l.billedQty).minus(kept).minus(rejected));
+            if (k.history && shortBilled.greaterThan(k.openShort)) {
+                return say(purchase_errors_1.PUR.QTY_INVALID, `billed ${D(l.billedQty).toString()}: ${kept.toString()} came in on ${g.grn_refno}${k.shortRecv.isZero() ? '' : ` (${k.shortRecv.toString()} of it on a shortage receipt)`} and only ${k.openShort.toString()} is still short — ${k.closed.toString()} of the challan short was closed, it is not billed`);
+            }
             let notBilledBack = g.returned_qty.minus(rejected);
             const recd = client_1.Prisma.Decimal.max(0, g.gri_received_qty.minus(notBilledBack));
             notBilledBack = notBilledBack.minus(g.gri_received_qty.minus(recd));
-            l.receivedQty = Number(recd);
+            l.receivedQty = Number(recd.plus(k.shortRecv));
             l.damagedQty = Number(g.gri_damaged_qty.minus(notBilledBack));
             l.freeQty = Number(client_1.Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free)));
             l.allocs = undefined;
@@ -484,7 +603,9 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                                 JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
                                WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
                    OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c
-                                 WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched
+                                 WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)) AS short_touched,
+             sh.psh_id AS short_id, sh.psh_acc_year AS short_year, sh.psh_qty_base AS short_qty_base,
+             COALESCE(sh.rcv_base, 0) AS short_rcv_base, COALESCE(sh.rcv_value, 0) AS short_rcv_value, COALESCE(sh.closed_base, 0) AS short_closed_base
         FROM purchase.pur_grn_item gri
         JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
         LEFT JOIN LATERAL (
@@ -493,6 +614,19 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             JOIN purchase.pur_return pr ON pr.pr_id = ri.pri_pr_id AND pr.pr_acc_year = ri.pri_acc_year
            WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = gri.gri_id AND NOT ri.pri_is_deleted
              AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted) ret ON true
+        LEFT JOIN LATERAL (
+          SELECT s.psh_id, s.psh_acc_year, s.psh_qty_base,
+                 (SELECT SUM(i.psri_qty * i.psri_to_base_factor) FROM purchase.pur_shortage_receipt_item i
+                    JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                   WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status = 'POSTED') AS rcv_base,
+                 (SELECT SUM(i.psri_value) FROM purchase.pur_shortage_receipt_item i
+                    JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                   WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status = 'POSTED') AS rcv_value,
+                 (SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted) AS closed_base
+            FROM purchase.pur_shortage s
+           WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = gri.gri_id AND s.psh_src_doc_year = gri.gri_acc_year
+             AND s.psh_reason = 'SHORT_CHALLAN' AND s.psh_bill_item_id IS NULL AND NOT s.psh_is_deleted
+           LIMIT 1) sh ON true
        WHERE gri.gri_id = ANY(${griIds}::uuid[]) AND NOT gri.gri_is_deleted AND NOT g.grn_is_deleted`;
     }
     async grnLines(q) {
@@ -507,7 +641,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         if (!facts.length)
             return [];
         const extra = await this.prisma.$queryRaw `
-      SELECT gri.gri_id, gri.gri_provisional_rate, gri.gri_mrp, gri.gri_sell_a, po.po_refno AS gri_src_doc_refno, g.grn_challan_no, g.grn_supplier_inv_no,
+      SELECT gri.gri_id, gri.gri_provisional_rate, gri.gri_mrp, gri.gri_sell_a, gri.gri_sell_b, gri.gri_sell_c, gri.gri_sell_d, po.po_refno AS gri_src_doc_refno, g.grn_challan_no, g.grn_supplier_inv_no,
              im.item_name_en AS item_name, u.unit_name, im.item_default_tax_id,
              poi.poi_disc_pct, poi.poi_rate, poi.poi_tax_id
         FROM purchase.pur_grn_item gri
@@ -523,7 +657,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             .sort((a, b) => a.grn_doc_date.getTime() - b.grn_doc_date.getTime() || a.grn_refno.localeCompare(b.grn_refno) || a.gri_line_no - b.gri_line_no)
             .map((f) => {
             const e = ex.get(f.gri_id);
-            const blocked = f.draft_return ? `Draft return ${f.draft_return} against it` : Number(f.short_touched) > 0 ? 'Challan shortage already received / closed' : null;
+            const blocked = null;
             return {
                 grnItemId: f.gri_id, grnItemAccYear: f.gri_acc_year, grnId: f.grn_id, grnRefno: f.grn_refno, grnDate: isoDate(f.grn_doc_date), lineNo: f.gri_line_no,
                 challanNo: e?.grn_challan_no ?? null, supplierInvNo: e?.grn_supplier_inv_no ?? null, poRefno: e?.gri_src_doc_refno ?? null,
@@ -532,7 +666,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 returnedQty: f.returned_qty, returnedFreeQty: f.returned_free,
                 provisionalRate: e?.gri_provisional_rate ?? null, provisionalValue: f.gri_value,
                 poRate: e?.poi_rate ?? null, poDiscPct: e?.poi_disc_pct ?? null, taxId: e?.poi_tax_id ?? e?.item_default_tax_id ?? null,
-                mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null, blocked,
+                mrp: e?.gri_mrp ?? null, sellA: e?.gri_sell_a ?? null,
+                sellB: e?.gri_sell_b ?? null, sellC: e?.gri_sell_c ?? null, sellD: e?.gri_sell_d ?? null, blocked,
             };
         }));
     }
@@ -541,7 +676,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         return {
             interState: p.interState,
             supplierTaxMode: p.taxMode,
-            lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString() })),
+            lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
+                ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null })),
             charges: c.charges.map((ch, i) => ({ chgId: dto.charges[i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
             totals: decimals({ ...c, lines: undefined, charges: undefined }),
             invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
@@ -599,7 +735,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             piSupplierInvNo: h.supplierInvNo.trim(), piSupplierInvDate: new Date(`${h.supplierInvDate}T00:00:00Z`),
             piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`)
                 : p.grn.size ? new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime()))) : new Date(`${h.docDate}T00:00:00Z`),
-            piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
+            piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piSisterCompanyId: null, piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
             piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piIsReverseCharge: false,
             piEwbNo: h.ewbNo ?? null, piEwbDate: h.ewbDate ? new Date(`${h.ewbDate}T00:00:00Z`) : null, piIrn: h.irn ?? null, piAckNo: h.ackNo ?? null,
             piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
@@ -625,14 +761,17 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             const o = c.lines[i];
             const it = p.items.get(l.uomId);
             const g = p.grn.get(l.lineNo);
+            const po = p.po.get(l.lineNo);
             const row = await tx.purInvoiceItem.create({
                 data: {
                     piiPiId: piId, piiCompanyId: h.companyId, piiBranchId: h.branchId, piiAccYear: h.accYear, piiLineNo: l.lineNo,
                     ...(g ? { piiSrcDocType: 'GRN', piiSrcDocId: g.grn_id, piiSrcDocYear: g.gri_acc_year, piiSrcItemId: g.gri_id, piiSrcDocLineNo: g.gri_line_no, piiSrcDocRefno: g.grn_refno,
-                        piiRejectedAtGrnQty: g.rejected_billed ?? ZERO } : {}),
+                        piiRejectedAtGrnQty: g.rejected_billed ?? ZERO }
+                        : po ? { piiSrcDocType: 'PURCHASE_ORDER', piiSrcDocId: po.po_id, piiSrcDocYear: po.poi_acc_year, piiSrcItemId: po.poi_id,
+                            piiSrcDocLineNo: po.poi_line_no, piiSrcDocRefno: po.po_refno } : {}),
                     piiItemId: l.itemId, piiUomId: l.uomId, piiBaseUomId: it.base_iuc_id, piiToBaseFactor: it.iuc_to_base_factor,
                     piiHsnCode: it.item_hsn_code, piiWeight: l.weight ?? null,
-                    piiBilledQty: D(l.billedQty), piiReceivedQty: D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
+                    piiBilledQty: D(l.billedQty), piiReceivedQty: l.grnItemId && l.receivedQty != null ? D(l.receivedQty) : D(l.billedQty).minus(D(l.damagedQty)).minus(o.shortQty), piiDamagedQty: D(l.damagedQty),
                     piiShortQty: o.pendingShortQty, piiAbsorbedShortQty: o.absorbedShortQty, piiFreeQty: D(l.freeQty),
                     piiRate: D(l.rate), piiDiscPct: D(l.discPct), piiDiscPerQty: D(l.discPerQty), piiDiscAmt: o.discAmt,
                     piiSchPct: D(l.schPct), piiSchPerQty: D(l.schPerQty), piiSchAmt: o.schAmt, piiExtraDiscAmt: o.extraDiscAmt,
@@ -684,6 +823,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             ${r.amount.abs()}::numeric, ${m.chg_on_bill}, ${r.partyId}::uuid, ${actor})`;
             }
         }
+        await (0, purchase_rcm_1.assertNoUnregisteredRcm)(tx, { companyId: h.companyId, supplierId: h.supplierId, docDate: h.docDate }, dto.lines);
+        await (0, purchase_sister_1.recordSisterPull)(tx, { companyId: h.companyId, supplierId: h.supplierId, piId, accYear: h.accYear }, dto.lines);
         return piId;
     }
     stockRules() {
@@ -709,6 +850,15 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC_TYPE, piaDocId: piId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: { piaRowNo: 'asc' } });
         const postedOn = new Date();
         const docDate = isoDate(pi.piDocDate);
+        {
+            const st = await (0, purchase_settings_1.loadPurchaseSettings)(tx, pi.piCompanyId, pi.piBranchId);
+            const lineOf = new Map(lines.map((l) => [l.piiId, l]));
+            const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, st.shelfLifeMode, st.minShelfLifePct, docDate, allocs.filter((a) => lineOf.has(a.piaLineId)).map((a) => { const l = lineOf.get(a.piaLineId); return { lineNo: l.piiLineNo, index: l.piiLineNo - 1, itemId: l.piiItemId, bucket: a.piaBucket, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate }; }));
+            if (shelf.length && st.shelfLifeMode === 'REFUSE')
+                (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
+            for (const x of shelf)
+                notes.push({ code: x.code, field: x.field, message: x.message });
+        }
         const stockAllocs = allocs.filter((a) => a.piaQty.plus(a.piaFreeQty).greaterThan(0));
         if (stockAllocs.length) {
             const rules = this.stockRules();
@@ -781,18 +931,16 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                     (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: its GRN is no longer posted.`, purchase_errors_1.PUR.NOT_POSTED, 'lines');
                 if (g.billed_in)
                     (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: ${g.grn_refno} line ${g.gri_line_no} is already billed in ${g.billed_in}.`, purchase_errors_1.PUR.GRN_LINE_BILLED, 'lines');
-                if (g.draft_return)
-                    (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: ${g.grn_refno} has the draft return ${g.draft_return} — post or cancel it first.`, purchase_errors_1.PUR.GRN_NOT_BUILT, 'lines');
-                if (Number(g.short_touched) > 0)
-                    (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: the challan shortage of ${g.grn_refno} was received / closed meanwhile.`, purchase_errors_1.PUR.GRN_NOT_BUILT, 'lines');
-                const kept = g.gri_received_qty.plus(g.gri_damaged_qty).minus(g.returned_qty);
+                const k = grnKept(g);
+                const kept = k.kept;
                 const rejected = client_1.Prisma.Decimal.min(g.returned_qty, client_1.Prisma.Decimal.max(0, l.piiBilledQty.minus(kept)));
-                if (l.piiBilledQty.lessThan(kept) || !rejected.equals(l.piiRejectedAtGrnQty)) {
-                    (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: the returns against ${g.grn_refno} changed since this draft was saved — save it again.`, purchase_errors_1.PUR.GRN_NOT_BUILT, 'lines');
+                if (!rejected.equals(l.piiRejectedAtGrnQty) || !l.piiReceivedQty.plus(l.piiDamagedQty).equals(kept.plus(rejected))
+                    || (k.history && l.piiShortQty.greaterThan(k.openShort))) {
+                    (0, purchase_errors_1.purConflict)(`Line ${l.piiLineNo}: the returns / shortage receipts against ${g.grn_refno} changed since this draft was saved — save it again.`, purchase_errors_1.PUR.GRN_NOT_BUILT, 'lines');
                 }
                 const f = g.gri_to_base_factor;
                 const keptBase = kept.plus(client_1.Prisma.Decimal.max(0, g.gri_free_qty.minus(g.returned_free))).times(f);
-                const grniOpen = g.gri_value.minus(g.returned_value);
+                const grniOpen = g.gri_value.minus(g.returned_value).plus(g.short_rcv_value);
                 const landedKept = l.piiLandedCostWot.times(keptBase).toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP);
                 grniDr = grniDr.plus(grniOpen);
                 variance = variance.plus(landedKept.minus(grniOpen));
@@ -812,6 +960,15 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
          WHERE ri.pri_src_doc_type = 'GRN' AND ri.pri_src_item_id = ANY(${grnLines.map((l) => l.piiSrcItemId)}::uuid[])
            AND NOT ri.pri_is_deleted AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted
          GROUP BY 1, 2`;
+            const srLots = await tx.$queryRaw `
+        SELECT s.psh_src_item_id AS gri_id, a.pia_lot_id AS lot_id, SUM(a.pia_qty * i.psri_to_base_factor) AS qty
+          FROM purchase.pur_shortage s
+          JOIN purchase.pur_shortage_receipt_item i ON i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted
+          JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year AND r.psr_status = 'POSTED' AND NOT r.psr_is_deleted
+          JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'SHORTAGE_RECEIPT' AND a.pia_line_id = i.psri_id AND a.pia_acc_year = i.psri_acc_year AND NOT a.pia_is_deleted
+         WHERE s.psh_src_doc_type = 'GRN' AND s.psh_src_item_id = ANY(${grnLines.map((l) => l.piiSrcItemId)}::uuid[])
+           AND s.psh_reason = 'SHORT_CHALLAN' AND NOT s.psh_is_deleted AND a.pia_lot_id IS NOT NULL
+         GROUP BY 1, 2`;
             for (const r of revLines) {
                 const l = grnLines.find((x) => x.piiId === r.lineId);
                 const g = grnOf.get(l.piiSrcItemId);
@@ -821,6 +978,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 }
                 for (const b of back.filter((x) => x.gri_id === g.gri_id))
                     lotIn.set(b.lot_id, (lotIn.get(b.lot_id) ?? ZERO).minus(D(b.qty)));
+                for (const s2 of srLots.filter((x) => x.gri_id === g.gri_id))
+                    lotIn.set(s2.lot_id, (lotIn.get(s2.lot_id) ?? ZERO).plus(D(s2.qty)));
                 r.lots = [...lotIn].filter(([, q]) => q.greaterThan(0)).map(([lotId, baseQty]) => ({ lotId, baseQty }));
             }
             const intoStock = await (0, stock_voucher_posting_helper_1.revalueOnHand)(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: piId, srcAccYear: accYear,
@@ -925,7 +1084,13 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
           SELECT psh_id, psh_acc_year FROM purchase.pur_shortage
            WHERE psh_src_doc_type = 'GRN' AND psh_src_item_id = ${g.gri_id}::uuid AND psh_src_doc_year = ${g.gri_acc_year}::bpchar
              AND psh_bill_item_id IS NULL AND NOT psh_is_deleted LIMIT 1`;
-                if (row) {
+                if (row && g.short_id === row.psh_id && grnKept(g).history) {
+                    await tx.purShortage.update({
+                        where: { pshId_pshAccYear: { pshId: row.psh_id, pshAccYear: row.psh_acc_year } },
+                        data: { pshQtyBase: g.short_rcv_base.plus(g.short_closed_base), pshModifiedBy: actor, pshModifiedOn: postedOn },
+                    });
+                }
+                else if (row) {
                     const short = l.piiShortQty.greaterThan(0);
                     await tx.purShortage.update({
                         where: { pshId_pshAccYear: { pshId: row.psh_id, pshAccYear: row.psh_acc_year } },
@@ -960,10 +1125,17 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
           JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
           JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
          WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId)}::uuid[])` : [];
+            const poDirect = lines.filter((l) => l.piiSrcDocType === 'PURCHASE_ORDER' && l.piiSrcItemId);
+            const fromPoDirect = poDirect.length ? await tx.$queryRaw `
+        SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+          FROM purchase.pur_order_item poi
+          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
+         WHERE poi.poi_id = ANY(${poDirect.map((l) => l.piiSrcItemId)}::uuid[])` : [];
             const tol = D(settingsNow.rateTolerancePct);
             const over = [];
-            for (const r of fromPo) {
-                const l = grnLines.find((x) => x.piiSrcItemId === r.gri_id);
+            const checks = [...fromPo.map((r) => ({ l: grnLines.find((x) => x.piiSrcItemId === r.gri_id), r })),
+                ...fromPoDirect.map((r) => ({ l: poDirect.find((x) => x.piiSrcItemId === r.poi_id), r }))];
+            for (const { l, r } of checks) {
                 if (!l || !r.po_rate_base || D(r.po_rate_base).isZero())
                     continue;
                 const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
@@ -1002,6 +1174,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             }
         }
         await (0, purchase_supplier_item_1.recordSupplierItems)(tx, pi.piCompanyId, pi.piSupplierId, lines.map((l) => ({ itemId: l.piiItemId, uomId: l.piiUomId, factor: l.piiToBaseFactor })), actor);
+        notes.push(...await (0, purchase_order_1.closePosOnFirstBill)(tx, { piId, accYear, companyId: pi.piCompanyId, branchId: pi.piBranchId, refno: pi.piRefno, actor }));
         const rejectedLines = grnLines.filter((l) => l.piiRejectedAtGrnQty.greaterThan(0));
         if (rejectedLines.length)
             await this.writeRejectedDebitNote(tx, pi, rejectedLines, actor, postedOn);

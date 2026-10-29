@@ -12,6 +12,7 @@ var BillLifecycleService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillLifecycleService = void 0;
 const common_1 = require("@nestjs/common");
+const purchase_sister_1 = require("../../purchase/sister/purchase-sister");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -252,6 +253,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     async cancelIn(tx, bill, ctx, reason, now, opts = {}) {
         const action = opts.action ?? 'cancel';
         await this.assertUnwindable(tx, bill, ctx, reason, 'cancel');
+        await (0, purchase_sister_1.assertSaleBillNotPulled)(tx, bill.sbId);
         const items = await tx.saleBillItem.findMany({
             where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
         });
@@ -337,6 +339,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                     ? posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED
                     : posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'sbId');
             }
+            await (0, purchase_sister_1.assertSaleBillNotPulled)(tx, bill.sbId);
             const ctx = await this.salesContext.resolve({ companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, tx);
             if (!ctx.rights.amend) {
                 (0, sales_errors_1.throwSalesRight)('This user may not amend on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_AMEND);

@@ -42,6 +42,10 @@ class ItemPayloadDto {
     item_allow_sales;
     item_allow_sales_return;
     item_allow_purchase;
+    item_purchase_uom_id;
+    item_min_shelf_life_pct;
+    item_itc_class;
+    item_shortage_pct;
     item_allow_po;
     item_allow_so;
     item_allow_neg_stock;
@@ -200,6 +204,22 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], ItemPayloadDto.prototype, "item_allow_purchase", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_purchase_uom_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_min_shelf_life_pct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_itc_class", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_shortage_pct", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
