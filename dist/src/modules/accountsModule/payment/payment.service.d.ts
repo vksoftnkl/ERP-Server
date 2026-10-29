@@ -1,0 +1,53 @@
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { TenderDetailService } from '../tenderDetail/tender-detail.service';
+import { STORED_HEADER_SELECT, statusOf, type StoredHeader } from '../receipt/receipt.service';
+import { money, sum, ZERO } from '../receipt/receipt.utils';
+import { PaymentOpenItemsService } from './payment-open-items.service';
+import { type NormalisedPaymentOtherLine } from './payment-lines';
+import type { PaymentSettings } from './payment.settings';
+import { SaveDraftPaymentDto, UpdatePaymentHeaderDto } from './dto/save-payment.dto';
+import { DeletePaymentDto, GetPaymentQueryDto } from './dto/post-payment.dto';
+import type { PaymentDeletePayload, PaymentDraftPayload, PaymentHeader, PaymentOtherLine, PaymentPayload, PaymentTender } from './types/payment-api.types';
+export { STORED_HEADER_SELECT, statusOf };
+export type { StoredHeader };
+export declare class PaymentService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly tenderDetailService;
+    private readonly openItemsService;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, tenderDetailService: TenderDetailService, openItemsService: PaymentOpenItemsService);
+    save(dto: SaveDraftPaymentDto): Promise<PaymentDraftPayload>;
+    saveInTransaction(tx: Prisma.TransactionClient, dto: SaveDraftPaymentDto, actor: string): Promise<PaymentDraftPayload>;
+    get(query: GetPaymentQueryDto): Promise<PaymentPayload>;
+    loadFullPayment(client: Prisma.TransactionClient | PrismaService, header: StoredHeader): Promise<PaymentPayload>;
+    private rememberedSettlement;
+    updateHeader(dto: UpdatePaymentHeaderDto, body: Record<string, unknown>): Promise<PaymentHeader>;
+    deleteDraft(dto: DeletePaymentDto): Promise<PaymentDeletePayload>;
+    private assertDraftWroteNoAccounting;
+    loadHeaderOrThrow(client: Prisma.TransactionClient | PrismaService, voucherId: string, accYear: string): Promise<StoredHeader>;
+    allocateNumber(tx: Prisma.TransactionClient, scope: {
+        companyId: string;
+        branchId: string;
+        accYear: string;
+        voucherTypeId: number;
+        voucherDate: Date;
+    }): Promise<{
+        voucherNo: bigint;
+        voucherSlno: bigint;
+        voucherRefno: string;
+    }>;
+    assertPostable(tx: Prisma.TransactionClient, header: StoredHeader, settings: PaymentSettings): Promise<void>;
+    private assertSalesman;
+    private isEditableStatus;
+    private assertInstrumentYearsWritable;
+    private upsertDraftHeader;
+    private syncTenders;
+    private keepUnmentioned;
+    loadTenderPayload(client: Prisma.TransactionClient | PrismaService, voucherId: string): Promise<PaymentTender[]>;
+    private loadTenderCheques;
+    toHeaderPayload(client: Prisma.TransactionClient | PrismaService, header: StoredHeader): Promise<PaymentHeader>;
+}
+export declare function toOtherLinePayload(line: NormalisedPaymentOtherLine): PaymentOtherLine;
+export { ZERO, money, sum };

@@ -1,0 +1,32 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TaxRateErrorCode = void 0;
+var TaxRateErrorCode;
+(function (TaxRateErrorCode) {
+    TaxRateErrorCode["NOT_FOUND"] = "TAX_RATE_NOT_FOUND";
+    TaxRateErrorCode["SUPERSEDED_NOT_FOUND"] = "TAX_RATE_SUPERSEDED_NOT_FOUND";
+    TaxRateErrorCode["LINE_NOT_FOUND"] = "TAX_RATE_LINE_NOT_FOUND";
+    TaxRateErrorCode["SUPPLY_NATURE_INVALID"] = "TAX_RATE_SUPPLY_NATURE_INVALID";
+    TaxRateErrorCode["NAME_REQUIRED"] = "TAX_RATE_NAME_REQUIRED";
+    TaxRateErrorCode["TAXABILITY_INVALID"] = "TAX_RATE_TAXABILITY_INVALID";
+    TaxRateErrorCode["PERC_OUT_OF_RANGE"] = "TAX_RATE_PERC_OUT_OF_RANGE";
+    TaxRateErrorCode["CESS_BASIS_INVALID"] = "TAX_RATE_CESS_BASIS_INVALID";
+    TaxRateErrorCode["CESS_NEGATIVE"] = "TAX_RATE_CESS_NEGATIVE";
+    TaxRateErrorCode["CESS_BASIS_MISMATCH"] = "TAX_RATE_CESS_BASIS_MISMATCH";
+    TaxRateErrorCode["EXEMPT_NOT_ZERO"] = "TAX_RATE_EXEMPT_NOT_ZERO";
+    TaxRateErrorCode["NAME_TAKEN"] = "TAX_RATE_NAME_TAKEN";
+    TaxRateErrorCode["CODE_TAKEN"] = "TAX_RATE_CODE_TAKEN";
+    TaxRateErrorCode["DUPLICATE"] = "TAX_RATE_DUPLICATE";
+    TaxRateErrorCode["REFERENCE_NOT_FOUND"] = "TAX_RATE_REFERENCE_NOT_FOUND";
+    TaxRateErrorCode["SELF_SUPERSEDE"] = "TAX_RATE_SELF_SUPERSEDE";
+    TaxRateErrorCode["SUPERSEDE_LOOP"] = "TAX_RATE_SUPERSEDE_LOOP";
+    TaxRateErrorCode["IN_USE"] = "TAX_RATE_IN_USE";
+    TaxRateErrorCode["LINE_DUPLICATE"] = "TAX_RATE_LINE_DUPLICATE";
+    TaxRateErrorCode["LINE_ROLE_UNKNOWN"] = "TAX_RATE_LINE_ROLE_UNKNOWN";
+    TaxRateErrorCode["LINE_ROLE_INACTIVE"] = "TAX_RATE_LINE_ROLE_INACTIVE";
+    TaxRateErrorCode["LINE_ROLE_NOT_PER_RATE"] = "TAX_RATE_LINE_ROLE_NOT_PER_RATE";
+    TaxRateErrorCode["LINE_SUPPLY_NATURE_NOT_ALLOWED"] = "TAX_RATE_LINE_SUPPLY_NATURE_NOT_ALLOWED";
+    TaxRateErrorCode["REF_NOT_FOUND"] = "TAX_RATE_REF_NOT_FOUND";
+    TaxRateErrorCode["REF_INACTIVE"] = "TAX_RATE_REF_INACTIVE";
+})(TaxRateErrorCode || (exports.TaxRateErrorCode = TaxRateErrorCode = {}));
+//# sourceMappingURL=tax-rate-error-codes.js.map
