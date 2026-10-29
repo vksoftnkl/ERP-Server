@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-23.3",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23",
+  "version": "2026-10-29.1",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -2505,6 +2505,606 @@
       "title": "Not allowed",
       "line": "You have no right to change this.",
       "todo": "Call manager."
+    },
+    {
+      "code": "CUSTOMER_HAS_BALANCE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete customer",
+      "line": "This customer's balance is not zero.",
+      "todo": "Settle it to zero first, then delete."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_HAS_BALANCE",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete supplier",
+      "line": "This supplier's balance is not zero.",
+      "todo": "Settle it to zero first, then delete."
+    },
+    {
+      "code": "CUSTOMER_HAS_CHEQUE_IN_HAND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete customer",
+      "line": "A cheque from this customer is not cleared yet.",
+      "todo": "Clear or return the cheque first."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_HAS_CHEQUE_IN_HAND",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete supplier",
+      "line": "A cheque to this supplier is not cleared yet.",
+      "todo": "Clear or cancel the cheque first."
+    },
+    {
+      "code": "CUSTOMER_GST_TYPE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong GST type",
+      "line": "GST type must be Regular, Composition, SEZ, Overseas or Unregistered.",
+      "todo": "Pick one from the list."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GST_TYPE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong GST type",
+      "line": "GST type must be Regular, Composition, SEZ, Overseas or Unregistered.",
+      "todo": "Pick one from the list."
+    },
+    {
+      "code": "CUSTOMER_GST_TYPE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST type missing",
+      "line": "This customer has a GST No but no GST type.",
+      "todo": "Pick the GST type."
+    },
+    {
+      "code": "CUSTOMER_GSTIN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No needed",
+      "line": "A Regular, Composition or SEZ customer must have a GST No.",
+      "todo": "Type the GST No, or choose Unregistered."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GSTIN_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No needed",
+      "line": "A Regular, Composition or SEZ supplier must have a GST No.",
+      "todo": "Type the GST No, or choose Unregistered."
+    },
+    {
+      "code": "CUSTOMER_GSTIN_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No not allowed",
+      "line": "An Unregistered or Overseas customer has no GST No.",
+      "todo": "Clear the GST No, or choose Regular."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GSTIN_NOT_ALLOWED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No not allowed",
+      "line": "An Unregistered or Overseas supplier has no GST No.",
+      "todo": "Clear the GST No, or choose Regular."
+    },
+    {
+      "code": "CUSTOMER_OVERSEAS_STATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong state",
+      "line": "An overseas customer's state must be \"Other Country\".",
+      "todo": "Choose Other Country as the state."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_OVERSEAS_STATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong state",
+      "line": "An overseas supplier's state must be \"Other Country\".",
+      "todo": "Choose Other Country as the state."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GSTIN_STATE_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No and state differ",
+      "line": "This GST No is from another state.",
+      "todo": "Correct the GST No or the state."
+    },
+    {
+      "code": "CUSTOMER_COMPANY_HAS_BOOKS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot change company",
+      "line": "This party has entries in its company.",
+      "todo": "Keep the company. Make a new party for the other company."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_COMPANY_HAS_BOOKS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot change company",
+      "line": "This party has entries in its company.",
+      "todo": "Keep the company. Make a new party for the other company."
+    },
+    {
+      "code": "CUSTOMER_PRICE_LEVEL_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Price level not found",
+      "line": "This price level is not there.",
+      "todo": "Pick the price level again."
+    },
+    {
+      "code": "CUSTOMER_BRANCH_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Branch not found",
+      "line": "This branch is not there.",
+      "todo": "Pick the branch again."
+    },
+    {
+      "code": "CUSTOMER_GSTIN_STATE_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "GST No and state differ",
+      "line": "This GST No is from another state.",
+      "todo": "Correct the GST No or the state."
+    },
+    {
+      "code": "LOOKUP_COMPANY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Company not found",
+      "line": "This company is not there.",
+      "todo": "Pick the company again."
+    },
+    {
+      "code": "VALIDATION_IS_GSTIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong GST No",
+      "line": "This GST No / UIN is not in the right form.",
+      "todo": "Check the 15 letters and numbers."
+    },
+    {
+      "code": "VALIDATION_IS_GSTIN",
+      "variant": "field=cusEcommerceGstin",
+      "lang": "en",
+      "title": "Wrong GST No",
+      "line": "The e-commerce GST No is not in the right form.",
+      "todo": "Check the 15 letters and numbers."
+    },
+    {
+      "code": "VALIDATION_IS_PAN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong PAN",
+      "line": "The PAN is not in the right form.",
+      "todo": "Type it like ABCDE1234F."
+    },
+    {
+      "code": "VALIDATION_IS_EMAIL",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong e-mail",
+      "line": "The e-mail address is not right.",
+      "todo": "Type it like name@example.com."
+    },
+    {
+      "code": "CUSTOMER_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name needed",
+      "line": "The customer name is empty.",
+      "todo": "Type the customer name."
+    },
+    {
+      "code": "CUSTOMER_STATE_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "State needed",
+      "line": "The state is empty.",
+      "todo": "Pick the state."
+    },
+    {
+      "code": "CUSTOMER_STATE_CODE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong state",
+      "line": "The state code is wrong.",
+      "todo": "Pick the state again."
+    },
+    {
+      "code": "CUSTOMER_INVALID_DATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong date",
+      "line": "A date is not right.",
+      "todo": "Check the dates."
+    },
+    {
+      "code": "CUSTOMER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This customer is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "CUSTOMER_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Already there",
+      "line": "A customer with the same details is already saved.",
+      "todo": "Check the name, or refresh the list."
+    },
+    {
+      "code": "CUSTOMER_NAME_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "Another account already has this name.",
+      "todo": "Type a different name."
+    },
+    {
+      "code": "CUSTOMER_LINK_LEDGER_ON_UPDATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "CUSTOMER_LINK_LEDGER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Account not found",
+      "line": "This account is not there now.",
+      "todo": "Pick the account again."
+    },
+    {
+      "code": "CUSTOMER_LINK_LEDGER_NOT_PARTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Not a party account",
+      "line": "Only a party account can become a customer.",
+      "todo": "Pick a party account."
+    },
+    {
+      "code": "CUSTOMER_LINK_LEDGER_ALREADY_CUSTOMER",
+      "variant": "",
+      "lang": "en",
+      "title": "Already a customer",
+      "line": "This account is already a customer.",
+      "todo": "Open that customer instead."
+    },
+    {
+      "code": "CUSTOMER_AREA_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Area not found",
+      "line": "This area is not there.",
+      "todo": "Pick the area again."
+    },
+    {
+      "code": "CUSTOMER_COMPANY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Company not found",
+      "line": "This company is not there.",
+      "todo": "Pick the company again."
+    },
+    {
+      "code": "CUSTOMER_STATE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "State not found",
+      "line": "This state is not in the list.",
+      "todo": "Pick the state again."
+    },
+    {
+      "code": "CUSTOMER_UNKNOWN_GROUP",
+      "variant": "",
+      "lang": "en",
+      "title": "Group not found",
+      "line": "This customer group is not there.",
+      "todo": "Pick the group again."
+    },
+    {
+      "code": "CUSTOMER_GROUP_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name needed",
+      "line": "The group name is empty.",
+      "todo": "Type the group name."
+    },
+    {
+      "code": "CUSTOMER_GROUP_NAME_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "Another customer group has this name.",
+      "todo": "Type a different name."
+    },
+    {
+      "code": "CUSTOMER_GROUP_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This customer group is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "CUSTOMER_GROUP_COMPANY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Company not found",
+      "line": "This company is not there.",
+      "todo": "Pick the company again."
+    },
+    {
+      "code": "CUSTOMER_GROUP_HAS_CUSTOMERS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete group",
+      "line": "Some customers are still in this group.",
+      "todo": "Move them to another group first."
+    },
+    {
+      "code": "LOOKUP_CUSTOMER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Customer not found",
+      "line": "This customer is not there now.",
+      "todo": "Pick the customer again."
+    },
+    {
+      "code": "LOOKUP_ITEM_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Item not found",
+      "line": "This item is not there now.",
+      "todo": "Pick the item again."
+    },
+    {
+      "code": "LOOKUP_LOT_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Lot not found",
+      "line": "This lot is not there for this item.",
+      "todo": "Pick the lot again."
+    },
+    {
+      "code": "LOOKUP_PRICE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "No price",
+      "line": "This item has no price.",
+      "todo": "Set the price in the item master."
+    },
+    {
+      "code": "LOOKUP_BUCKET_PRICE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "No price",
+      "line": "This item has no price at this MRP.",
+      "todo": "Pick another MRP, or set the price."
+    },
+    {
+      "code": "LOOKUP_LOADING_SCOPE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "LOOKUP_LOADING_WEIGHT_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Weight missing",
+      "line": "This item's unit has no weight, so loading cannot be worked out.",
+      "todo": "Set the weight in the item's units."
+    },
+    {
+      "code": "LOOKUP_BARCODE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Barcode not found",
+      "line": "No item has this barcode.",
+      "todo": "Check the barcode, or add it to the item."
+    },
+    {
+      "code": "LOOKUP_BARCODE_ITEM_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Item not here",
+      "line": "This barcode's item is not in this company or branch.",
+      "todo": "Check the barcode."
+    },
+    {
+      "code": "LOOKUP_DOCUMENT_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "No document has this number here.",
+      "todo": "Check the number."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name needed",
+      "line": "The supplier name is empty.",
+      "todo": "Type the supplier name."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_PURCHASE_TYPE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Purchase type needed",
+      "line": "The purchase type is empty.",
+      "todo": "Pick the purchase type."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_STATE_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "State needed",
+      "line": "The state is empty.",
+      "todo": "Pick the state."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GST_TYPE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "GST type missing",
+      "line": "The GST type is empty.",
+      "todo": "Pick the GST type."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_STATE_CODE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong state",
+      "line": "The state code is wrong.",
+      "todo": "Pick the state again."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This supplier is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_NAME_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "Another supplier or account already has this name.",
+      "todo": "Type a different name."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_UNKNOWN_GROUP",
+      "variant": "",
+      "lang": "en",
+      "title": "Group not found",
+      "line": "This supplier group is not there.",
+      "todo": "Pick the group again."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_LINK_LEDGER_ON_UPDATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_LINK_LEDGER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Account not found",
+      "line": "This account is not there now.",
+      "todo": "Pick the account again."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_LINK_LEDGER_NOT_PARTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Not a party account",
+      "line": "Only a party account can become a supplier.",
+      "todo": "Pick a party account."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_LINK_LEDGER_ALREADY_SUPPLIER",
+      "variant": "",
+      "lang": "en",
+      "title": "Already a supplier",
+      "line": "This account is already a supplier.",
+      "todo": "Open that supplier instead."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_BANK_WITH_LINK_LEDGER",
+      "variant": "",
+      "lang": "en",
+      "title": "Save first",
+      "line": "Bank details cannot go in the same save.",
+      "todo": "Save the supplier, then add the bank details."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GROUP_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name needed",
+      "line": "The group name is empty.",
+      "todo": "Type the group name."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GROUP_NAME_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "Another supplier group has this name.",
+      "todo": "Type a different name."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GROUP_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This supplier group is not there now.",
+      "todo": "Refresh the list."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_GROUP_HAS_SUPPLIERS",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot delete group",
+      "line": "Some suppliers are still in this group.",
+      "todo": "Move them to another group first."
+    },
+    {
+      "code": "VALIDATION_MIN",
+      "variant": "field=cusDiscPerc",
+      "lang": "en",
+      "title": "Wrong discount",
+      "line": "Discount must be 0 to 100.",
+      "todo": "Type a discount from 0 to 100."
+    },
+    {
+      "code": "VALIDATION_MAX",
+      "variant": "field=cusDiscPerc",
+      "lang": "en",
+      "title": "Wrong discount",
+      "line": "Discount must be 0 to 100.",
+      "todo": "Type a discount from 0 to 100."
+    },
+    {
+      "code": "VALIDATION_MIN",
+      "variant": "field=cgrDiscPerc",
+      "lang": "en",
+      "title": "Wrong discount",
+      "line": "Discount must be 0 to 100.",
+      "todo": "Type a discount from 0 to 100."
+    },
+    {
+      "code": "VALIDATION_MAX",
+      "variant": "field=cgrDiscPerc",
+      "lang": "en",
+      "title": "Wrong discount",
+      "line": "Discount must be 0 to 100.",
+      "todo": "Type a discount from 0 to 100."
     }
   ]
 }

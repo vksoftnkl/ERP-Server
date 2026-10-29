@@ -44,6 +44,25 @@ describe('SaveCustomerGroupDto', () => {
     ]);
   });
 
+  it('refuses a negative debit limit and a discount outside 0-100 (F10)', () => {
+    expect(erroredFields({ cgrDebitLimit: -1 })).toEqual(['cgrDebitLimit']);
+    expect(erroredFields({ cgrDiscPerc: -0.5 })).toEqual(['cgrDiscPerc']);
+    expect(erroredFields({ cgrDiscPerc: 100.01 })).toEqual(['cgrDiscPerc']);
+    expect(erroredFields({ cgrDiscPerc: 100, cgrDebitLimit: 0 })).toEqual([]);
+  });
+
+  it('accepts null on the NOT NULL terms (the service stores 0)', () => {
+    expect(
+      erroredFields({
+        cgrOrder: null,
+        cgrDiscPerc: null,
+        cgrDebitDays: null,
+        cgrDebitLimit: null,
+        cgrBillsLimit: null,
+      }),
+    ).toEqual([]);
+  });
+
   it('refuses a fractional day count', () => {
     expect(erroredFields({ cgrDebitDays: 1.5 })).toEqual(['cgrDebitDays']);
   });

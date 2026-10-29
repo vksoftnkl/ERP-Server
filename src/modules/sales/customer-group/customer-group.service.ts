@@ -13,7 +13,7 @@ import {
   DEFAULT_ACTOR,
   SalesWriteClient,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
   normalizeRequiredText,
   throwOnUniqueConstraintError,
   throwSalesBadRequest,
@@ -24,6 +24,9 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
+// NOT NULL DEFAULT 0 columns (checked in the catalog): an explicit null is "cleared" and
+// stores the default instead of failing the write with a 500.
+const ZERO_WHEN_CLEARED = (value: unknown): unknown => (value === null ? 0 : value);
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
   'cgrCompanyId',
   'cgrBranchId',
@@ -174,14 +177,14 @@ export class CustomerGroupService {
       CustomerGroupErrorDetail,
       CustomerGroupErrorResponse
     >(saveCustomerGroupDto.cgrName, 'cgrName', undefined, CustomerGroupErrorCode.NAME_REQUIRED);
-    const companyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
+    const companyId = isPresentField(saveCustomerGroupDto, 'cgrCompanyId')
       ? (saveCustomerGroupDto.cgrCompanyId ?? null)
       : null;
 
     const data: Prisma.CustGroupUncheckedCreateInput = {
       cgrName: normalizedName,
       cgrCompanyId: companyId,
-      cgrCollectionDays: hasOwnProperty(saveCustomerGroupDto, 'cgrCollectionDays')
+      cgrCollectionDays: isPresentField(saveCustomerGroupDto, 'cgrCollectionDays')
         ? (saveCustomerGroupDto.cgrCollectionDays ?? [])
         : [],
       cgrCreatedOn: now,
@@ -257,7 +260,7 @@ export class CustomerGroupService {
           CustomerGroupErrorDetail,
           CustomerGroupErrorResponse
         >(saveCustomerGroupDto.cgrName, 'cgrName', undefined, CustomerGroupErrorCode.NAME_REQUIRED);
-        const nextCompanyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
+        const nextCompanyId = isPresentField(saveCustomerGroupDto, 'cgrCompanyId')
           ? (saveCustomerGroupDto.cgrCompanyId ?? null)
           : existing.cgrCompanyId;
 
@@ -392,6 +395,11 @@ export class CustomerGroupService {
   ): void {
     applyPresentFields(data, saveCustomerGroupDto, CUSTOMER_GROUP_OPTIONAL_FIELDS, {
       cgrCollectionDays: (value) => value ?? [],
+      cgrOrder: ZERO_WHEN_CLEARED,
+      cgrDiscPerc: ZERO_WHEN_CLEARED,
+      cgrDebitDays: ZERO_WHEN_CLEARED,
+      cgrDebitLimit: ZERO_WHEN_CLEARED,
+      cgrBillsLimit: ZERO_WHEN_CLEARED,
     });
   }
 

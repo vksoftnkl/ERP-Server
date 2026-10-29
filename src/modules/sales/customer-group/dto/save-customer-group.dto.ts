@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, Max } from 'class-validator';
 import {
   NullableInteger,
   NullableNumber,
@@ -44,13 +44,23 @@ export class SaveCustomerGroupDto {
   @NullableStringStrict(250)
   cgrNarration?: string | null;
 
-  @ApiPropertyOptional({ default: 0 })
+  // F3: on these NOT NULL columns an explicit null means "cleared" and is stored as the
+  // column default, 0.
+  @ApiPropertyOptional({ type: Number, default: 0, nullable: true, description: 'null = 0' })
   @NullableNumber()
-  cgrOrder?: number;
+  cgrOrder?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @NullableNumber()
-  cgrDiscPerc?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableNumber(0)
+  @Max(100)
+  cgrDiscPerc?: number | null;
 
   @ApiPropertyOptional({
     type: [Number],
@@ -63,17 +73,35 @@ export class SaveCustomerGroupDto {
   @OptionalBoolean()
   cgrDebitAllowed?: boolean;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
   @NullableInteger(0)
-  cgrDebitDays?: number;
+  cgrDebitDays?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @NullableNumber()
-  cgrDebitLimit?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableNumber(0)
+  cgrDebitLimit?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
   @NullableInteger(0)
-  cgrBillsLimit?: number;
+  cgrBillsLimit?: number | null;
 
   @ApiPropertyOptional({ default: false })
   @OptionalBoolean()

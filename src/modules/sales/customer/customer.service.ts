@@ -5,7 +5,8 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
 import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 import { LedGstPartyRegType } from '../../accountsModule/accountLedgerMasters/types/account-ledger-master-enum';
-import { SaveCustomerDto } from './dto/save-customer.dto';
+import { AccountLedgerErrorCode } from '../../accountsModule/accountLedgerMasters/types/account-ledger-master-error-codes';
+import { SaveCustomerDto, gstinKindOf } from './dto/save-customer.dto';
 import {
   CustomerErrorDetail,
   CustomerErrorResponse,
@@ -16,7 +17,9 @@ import {
   DEFAULT_ACTOR,
   SalesWriteClient,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
+  isUniqueConstraintError,
+  violatedConstraintOf,
   normalizeRequiredText,
   resolveActor,
   throwOnUniqueConstraintError,
@@ -28,6 +31,55 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
+// NOT NULL DEFAULT 0 columns (checked in the catalog): an explicit null is "cleared" and
+// stores the default instead of failing the write with a 500 (F3).
+const CUSTOMER_ZERO_WHEN_CLEARED_FIELDS = [
+  'cusCreditBillLimit',
+  'cusCreditAmtLimit',
+  'cusCreditDays',
+  'cusDebitBalance',
+  'cusDiscPerc',
+  'cusDebitGraceDays',
+  'cusSortOrder',
+] as const;
+const zeroWhenCleared = (value: unknown): unknown => (value === null ? 0 : value);
+// The linked ledger's company-wide name check (LEDGER_NAME_TAKEN on ledName), said in the
+// customer's own words: CUSTOMER_NAME_EXISTS on cusName. Anything else is passed on.
+function rethrowLedgerNameClash(error: unknown): void {
+  if (!(error instanceof ConflictException)) {
+    return;
+  }
+  const body = error.getResponse() as { errors?: Array<{ code?: string }> } | string;
+  const errors = typeof body === 'object' && Array.isArray(body.errors) ? body.errors : [];
+  if (!errors.some((detail) => detail.code === AccountLedgerErrorCode.NAME_TAKEN)) {
+    return;
+  }
+  throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>(
+    'Customer name already exists for this company',
+    [CUSTOMER_NAME_EXISTS_DETAIL],
+  );
+}
+// R4 — the ledger-name unique indexes (uq_led_name_company / uq_led_name_shared, on
+// lower(led_name)). Two saves of one new name can both pass the ledger's pre-check; the
+// loser's P2002 / P2010-23505 names the ledger name, and is the same clash the pre-check
+// reports as CUSTOMER_NAME_EXISTS.
+function isLedgerNameUniqueViolation(error: unknown): boolean {
+  if (!isUniqueConstraintError(error)) {
+    return false;
+  }
+  // A raw 23505's "Key (led_company_id, lower((led_name)::text))=…" has nested brackets
+  // that violatedConstraintOf cannot parse, so its message is read as well.
+  const rawMessage = (error as { meta?: { message?: unknown } }).meta?.message;
+  const target = [violatedConstraintOf(error), typeof rawMessage === 'string' ? rawMessage : '']
+    .filter(Boolean)
+    .join(' ');
+  return /uq_led_name|led_name/i.test(target);
+}
+const CUSTOMER_NAME_EXISTS_DETAIL: CustomerErrorDetail = {
+  field: 'cusName',
+  message: 'Duplicate customer name is not allowed for this company',
+  code: CustomerErrorCode.NAME_EXISTS,
+};
 const CUSTOMER_OPTIONAL_FIELDS = [
   'cusTitle',
   'cusShort',
@@ -186,9 +238,9 @@ function toLedgerItCollectionFlags(saveCustomerDto: SaveCustomerDto): {
   tcs?: boolean;
   tds?: boolean;
 } {
-  const hasTcsFlag = hasOwnProperty(saveCustomerDto, 'cusTcsApplicable');
-  const hasItcollType = hasOwnProperty(saveCustomerDto, 'cusItcollType');
-  const hasItcollExempted = hasOwnProperty(saveCustomerDto, 'cusItcollExempted');
+  const hasTcsFlag = isPresentField(saveCustomerDto, 'cusTcsApplicable');
+  const hasItcollType = isPresentField(saveCustomerDto, 'cusItcollType');
+  const hasItcollExempted = isPresentField(saveCustomerDto, 'cusItcollExempted');
   if (!hasTcsFlag && !hasItcollType && !hasItcollExempted) {
     return {};
   }
@@ -364,15 +416,16 @@ export class CustomerService {
         >(dto.cusStateName, 'cusStateName', undefined, CustomerErrorCode.STATE_NAME_REQUIRED);
         const normalizedStateCode = this.normalizeStateCode(dto.cusStateCode);
         const now = new Date();
-        const createdBy = resolveActor(dto.cusCreatedBy, this.requestContextService.getUserId());
+        // F6: the stamp is the logged-in user's; a body cusCreatedBy is ignored.
+        const createdBy = resolveActor(null, this.requestContextService.getUserId());
         const data: Prisma.CustomerUncheckedCreateInput = {
           cusStateName: normalizedStateName,
           cusStateCode: normalizedStateCode,
-          cusCompanyId: hasOwnProperty(dto, 'cusCompanyId') ? (dto.cusCompanyId ?? null) : null,
+          cusCompanyId: isPresentField(dto, 'cusCompanyId') ? (dto.cusCompanyId ?? null) : null,
           cusAreaId: dto.cusAreaId,
           cusGroupId: dto.cusGroupId,
           cusPriceLevelId: dto.cusPriceLevelId,
-          cusCollectionDays: hasOwnProperty(dto, 'cusCollectionDays')
+          cusCollectionDays: isPresentField(dto, 'cusCollectionDays')
             ? (dto.cusCollectionDays ?? [])
             : [],
           cusBilledDate: now,
@@ -387,6 +440,9 @@ export class CustomerService {
         await this.ensureAreaExists(tx, data.cusAreaId);
         await this.ensureCustomerGroupExists(tx, data.cusGroupId);
         await this.ensureStateCodeExists(tx, normalizedStateCode);
+        await this.ensurePriceLevelExists(tx, data.cusPriceLevelId);
+        await this.ensureBranchExists(tx, saveCustomerDto.cusBranchId);
+        this.ensureGstinMatchesState(saveCustomerDto.cusGstNo, normalizedStateCode);
         if (linkLedger) {
           return this.createCustomerOnLedger(tx, data, linkLedger);
         }
@@ -399,7 +455,14 @@ export class CustomerService {
           stateName: normalizedStateName,
           stateCode: normalizedStateCode,
         });
-        const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+        let ledger: Awaited<ReturnType<AccountLedgerMastersService['createLedgerWithinTx']>>;
+        try {
+          ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+        } catch (error: unknown) {
+          // F8: the same customer-worded clash an update gives.
+          rethrowLedgerNameClash(error);
+          throw error;
+        }
         data.cusId = ledger.ledId;
         // Nothing else to link. Because cus_id IS led_id, a customer id and a
         // party-ledger id are the same value, and every module that needs the
@@ -426,6 +489,12 @@ export class CustomerService {
         return payload;
       });
     } catch (error: unknown) {
+      if (isLedgerNameUniqueViolation(error)) {
+        throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>(
+          'Customer name already exists for this company',
+          [CUSTOMER_NAME_EXISTS_DETAIL],
+        );
+      }
       throwOnUniqueConstraintError<CustomerErrorDetail, CustomerErrorResponse>(
         error,
         'Customer already exists',
@@ -594,23 +663,39 @@ export class CustomerService {
           CustomerErrorCode.STATE_NAME_REQUIRED,
         );
         const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
-        const nextAreaId = hasOwnProperty(saveCustomerDto, 'cusAreaId')
+        // F5: a name that is sent must not be blank, as on a create ('' arrives as null).
+        // Left out, the stored name stays.
+        const normalizedName =
+          saveCustomerDto.cusName !== undefined
+            ? normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
+                saveCustomerDto.cusName ?? '',
+                'cusName',
+                undefined,
+                CustomerErrorCode.NAME_REQUIRED,
+              )
+            : undefined;
+        const nextAreaId = isPresentField(saveCustomerDto, 'cusAreaId')
           ? saveCustomerDto.cusAreaId
           : existing.cusAreaId;
-        const nextGroupId = hasOwnProperty(saveCustomerDto, 'cusGroupId')
+        const nextGroupId = isPresentField(saveCustomerDto, 'cusGroupId')
           ? saveCustomerDto.cusGroupId
           : existing.cusGroupId;
-        const nextCompanyId = hasOwnProperty(saveCustomerDto, 'cusCompanyId')
+        const nextCompanyId = isPresentField(saveCustomerDto, 'cusCompanyId')
           ? (saveCustomerDto.cusCompanyId ?? null)
           : existing.cusCompanyId;
-        const nextPriceLevelId = hasOwnProperty(saveCustomerDto, 'cusPriceLevelId')
+        const nextPriceLevelId = isPresentField(saveCustomerDto, 'cusPriceLevelId')
           ? saveCustomerDto.cusPriceLevelId
           : existing.cusPriceLevelId;
         await this.ensureCompanyExists(tx, nextCompanyId);
         await this.ensureAreaExists(tx, nextAreaId);
         await this.ensureCustomerGroupExists(tx, nextGroupId);
         await this.ensureStateCodeExists(tx, normalizedStateCode);
+        await this.ensurePriceLevelExists(tx, nextPriceLevelId);
+        await this.ensureBranchExists(tx, saveCustomerDto.cusBranchId);
+        this.ensureGstinMatchesState(saveCustomerDto.cusGstNo, normalizedStateCode);
         const now = new Date();
+        // F6: the stamp and the audit row name the logged-in user; a body cusModifiedBy is ignored.
+        const modifiedBy = resolveActor(null, this.requestContextService.getUserId());
         const data: Prisma.CustomerUncheckedUpdateInput = {
           cusStateName: normalizedStateName,
           cusStateCode: normalizedStateCode,
@@ -623,12 +708,12 @@ export class CustomerService {
             increment: 1,
           },
           cusModifiedOn: now,
-          cusModifiedBy: resolveActor(
-            saveCustomerDto.cusModifiedBy,
-            this.requestContextService.getUserId(),
-          ),
+          cusModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveCustomerDto);
+        if (normalizedName !== undefined) {
+          data.cusName = normalizedName;
+        }
         const updated = await tx.customer.update({
           where: {
             cusId,
@@ -664,18 +749,7 @@ export class CustomerService {
           } catch (error: unknown) {
             // The linked-ledger write enforces company-scoped name uniqueness. Surface a
             // collision in the customer's own vocabulary instead of leaking the ledName field.
-            if (error instanceof ConflictException) {
-              throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>(
-                'Customer name already exists for this company',
-                [
-                  {
-                    field: 'cusName',
-                    message: 'Duplicate customer name is not allowed for this company',
-                    code: CustomerErrorCode.NAME_EXISTS,
-                  },
-                ],
-              );
-            }
+            rethrowLedgerNameClash(error);
             throw error;
           }
         }
@@ -690,7 +764,7 @@ export class CustomerService {
             displayName: payload.cusName || payload.cusId,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.cusModifiedBy,
+            userId: modifiedBy,
             notes: 'Customer updated',
           },
           tx,
@@ -698,6 +772,12 @@ export class CustomerService {
         return payload;
       });
     } catch (error: unknown) {
+      if (isLedgerNameUniqueViolation(error)) {
+        throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>(
+          'Customer name already exists for this company',
+          [CUSTOMER_NAME_EXISTS_DETAIL],
+        );
+      }
       throwOnUniqueConstraintError<CustomerErrorDetail, CustomerErrorResponse>(
         error,
         'Customer already exists',
@@ -834,6 +914,73 @@ export class CustomerService {
       );
     }
   }
+  // cus_price_level_id is NOT NULL with a foreign key to inventory.item_price_levels: an
+  // unknown id (React sends a blank as 0) would 500 on the key, and a deleted level would
+  // be stored. Both are refused here, where there is a field to name (F4).
+  private async ensurePriceLevelExists(
+    tx: CustomerWriteClient,
+    priceLevelId: number,
+  ): Promise<void> {
+    const level = await tx.itemPriceLevel.findFirst({
+      where: { iplId: priceLevelId, iplIsDeleted: false },
+      select: { iplId: true },
+    });
+    if (!level) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>(
+        'Price level does not exist',
+        [
+          {
+            field: 'cusPriceLevelId',
+            message: `No active price level found with id ${priceLevelId}`,
+            code: CustomerErrorCode.PRICE_LEVEL_NOT_FOUND,
+          },
+        ],
+      );
+    }
+  }
+  // cusBranchId is copied to the ledger's led_branch_id, a foreign key to branch_master.
+  // Checked only when a branch is sent; null (no branch) and left out pass (F4).
+  private async ensureBranchExists(
+    tx: CustomerWriteClient,
+    branchId: string | null | undefined,
+  ): Promise<void> {
+    if (branchId === undefined || branchId === null) {
+      return;
+    }
+    const branch = await tx.branchMaster.findFirst({
+      where: { brId: branchId, brIsDeleted: false },
+      select: { brId: true },
+    });
+    if (!branch) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Branch does not exist', [
+        {
+          field: 'cusBranchId',
+          message: `No active branch found with id ${branchId}`,
+          code: CustomerErrorCode.BRANCH_NOT_FOUND,
+        },
+      ]);
+    }
+  }
+  // A GSTIN's first two digits are the state it is registered in. The DTO has already
+  // checked the shape; this checks the state against the customer's own (F10). Only a
+  // GSTIN that is sent is checked.
+  private ensureGstinMatchesState(gstin: string | null | undefined, stateCode: string): void {
+    // U1: only a normal GSTIN carries the customer's own state. A TDS deductor's, a UIN,
+    // an OIDAR (99) or a non-resident's number is not checked.
+    if (!gstin || gstinKindOf(gstin) !== 'NORMAL') {
+      return;
+    }
+    const gstinState = gstin.slice(0, 2);
+    if (gstinState !== stateCode) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
+        {
+          field: 'cusGstNo',
+          message: `GSTIN ${gstin} is registered in state ${gstinState}, but cusStateCode is ${stateCode}`,
+          code: CustomerErrorCode.GSTIN_STATE_MISMATCH,
+        },
+      ]);
+    }
+  }
   // sales.customers.cus_state_code carries no foreign key to fixed.state_codes,
   // so nothing but this stops a customer being saved with a code that is not a
   // GST state code ('TN' for Tamil Nadu instead of '33'). The transactions that
@@ -881,13 +1028,18 @@ export class CustomerService {
     const ledgerDtoRecord = ledgerDto as unknown as Record<string, unknown>;
     const customerRecord = saveCustomerDto as unknown as Record<string, unknown>;
     for (const [cusField, ledField] of CUSTOMER_TO_LEDGER_FIELD_MAP) {
-      if (hasOwnProperty(saveCustomerDto, cusField)) {
-        ledgerDtoRecord[ledField] = customerRecord[cusField];
+      if (isPresentField(saveCustomerDto, cusField)) {
+        // R3: the ledger's sort order is NOT NULL DEFAULT 0 as well; a cleared one is 0 on
+        // both rows, never null on the ledger alone.
+        ledgerDtoRecord[ledField] =
+          cusField === 'cusSortOrder'
+            ? zeroWhenCleared(customerRecord[cusField])
+            : customerRecord[cusField];
       }
     }
     // The statutory fields the map can't carry one-to-one: the customer stores
     // free text, the ledger stores a CHECK-backed vocabulary or a pair of flags.
-    if (hasOwnProperty(saveCustomerDto, 'cusGstType')) {
+    if (isPresentField(saveCustomerDto, 'cusGstType')) {
       ledgerDto.ledGstPartyRegType = toLedgerGstPartyRegType(saveCustomerDto.cusGstType);
     }
     const itCollectionFlags = toLedgerItCollectionFlags(saveCustomerDto);
@@ -909,6 +1061,9 @@ export class CustomerService {
       cusMarriageDate: (value) =>
         this.toDateOrNull(value as string | null | undefined, 'cusMarriageDate'),
       cusCollectionDays: (value) => value ?? [],
+      ...Object.fromEntries(
+        CUSTOMER_ZERO_WHEN_CLEARED_FIELDS.map((field) => [field, zeroWhenCleared]),
+      ),
     });
   }
   private normalizeStateCode(value: string | null | undefined): string {

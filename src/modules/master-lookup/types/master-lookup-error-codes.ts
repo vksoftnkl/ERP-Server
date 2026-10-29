@@ -24,4 +24,6 @@ export enum MasterLookupErrorCode {
   BARCODE_ITEM_NOT_FOUND = 'LOOKUP_BARCODE_ITEM_NOT_FOUND',
   /** No document of that module has this number in the company / branch. */
   DOCUMENT_NOT_FOUND = 'LOOKUP_DOCUMENT_NOT_FOUND',
+  /** company_id names no live company. */
+  COMPANY_NOT_FOUND = 'LOOKUP_COMPANY_NOT_FOUND',
 }

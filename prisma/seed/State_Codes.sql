@@ -1,4 +1,4 @@
--- Seed: fixed.state_codes -- the GST state codes of India (40 rows).
+-- Seed: fixed.state_codes -- the GST state codes of India (41 rows).
 --
 -- The two-digit code that opens every GSTIN, and the value place-of-supply is decided
 -- on: sales.sale_quotation, sale_bill and sale_order (twice -- place of supply and
@@ -12,8 +12,9 @@
 -- supply). tin_code is the legacy VAT TIN prefix, which matches the GST code for
 -- every state. is_active = false retires a code without deleting it -- 25 (Daman and
 -- Diu) was merged into 26 in 2020, and old documents still have to resolve its label.
--- 97 (Other Territory) and 99 (Centre Jurisdiction) are the department's own
--- pseudo-states, not geography.
+-- 96 (Other Country, a foreign party: export / import, an OVERSEAS customer or supplier;
+-- party master rules 2026-10-29, migration 20261029120000), 97 (Other Territory) and 99
+-- (Centre Jurisdiction) are the department's own pseudo-states, not geography.
 --
 -- state_sync_date is left NULL: it records when a site last reconciled the list
 -- against the GST portal, which is per-environment and not a property of the data.
@@ -67,6 +68,7 @@ VALUES
     ,('36', 'Telangana', false, '36', true , false, 'system', 'system')
     ,('37', 'Andhra Pradesh', false, '37', true , false, 'system', 'system')
     ,('38', 'Ladakh', true , '38', true , false, 'system', 'system')
+    ,('96', 'Other Country', false, '96', true , false, 'system', 'system')
     ,('97', 'Other Territory', false, '97', true , false, 'system', 'system')
     ,('99', 'Centre Jurisdiction', false, '99', true , false, 'system', 'system')
 ON CONFLICT (state_code) DO NOTHING;

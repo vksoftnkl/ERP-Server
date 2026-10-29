@@ -2,6 +2,8 @@ import { HttpException } from '@nestjs/common';
 import { CustGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
+import { SaveCustomerGroupDto } from './dto/save-customer-group.dto';
 import { CustomerGroupService } from './customer-group.service';
 import { CustomerGroupErrorCode } from './types/customer-group-error-codes';
 
@@ -172,6 +174,25 @@ describe('CustomerGroupService', () => {
       });
     });
 
+    it('stores 0 for a NOT NULL number sent as null (F3)', async () => {
+      await service.save({
+        cgrName: 'Wholesale',
+        cgrOrder: null,
+        cgrDiscPerc: null,
+        cgrDebitDays: null,
+        cgrDebitLimit: null,
+        cgrBillsLimit: null,
+      });
+
+      expect(createdData()).toMatchObject({
+        cgrOrder: 0,
+        cgrDiscPerc: 0,
+        cgrDebitDays: 0,
+        cgrDebitLimit: 0,
+        cgrBillsLimit: 0,
+      });
+    });
+
     it('stores no collection days as an empty list', async () => {
       await service.save({ cgrName: 'Wholesale' });
 
@@ -309,6 +330,38 @@ describe('CustomerGroupService', () => {
 
       expect(refusal.status).toBe(409);
       expect(prisma.custGroup.update).not.toHaveBeenCalled();
+    });
+
+    it('checks a rename with no cgrCompanyId in the group own company, keeping company and days (R1)', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        { cgrId: GROUP_ID, cgrName: 'Wholesale B' },
+        { type: 'body', metatype: SaveCustomerGroupDto },
+      )) as SaveCustomerGroupDto;
+
+      await service.save(dto);
+
+      expect(prisma.custGroup.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            cgrCompanyId: COMPANY_ID,
+            cgrId: { not: GROUP_ID },
+          }) as object,
+        }),
+      );
+      const data = (prisma.custGroup.update.mock.calls[0][0] as { data: Record<string, unknown> })
+        .data;
+      expect(data.cgrCompanyId).toBe(COMPANY_ID);
+      expect(data).not.toHaveProperty('cgrCollectionDays');
+    });
+
+    it('stores 0 for a term cleared to null on an update (F3)', async () => {
+      await service.save({ cgrId: GROUP_ID, cgrName: 'Wholesale', cgrDebitLimit: null });
+
+      expect(prisma.custGroup.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ cgrDebitLimit: 0 }) as object,
+        }),
+      );
     });
 
     it('writes the terms sent and audits the before and after', async () => {

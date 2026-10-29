@@ -1,4 +1,26 @@
-import { numericOverflowOf } from './module-shared.utils';
+import { applyPresentFields, isPresentField, numericOverflowOf } from './module-shared.utils';
+
+describe('applyPresentFields / isPresentField (R1)', () => {
+  // What the house ValidationPipe hands a service: every declared field is an own
+  // property, a field left out holds undefined.
+  const dto = { sent: 'x', cleared: null, leftOut: undefined };
+
+  it('treats an own undefined as left out, and null as sent', () => {
+    expect(isPresentField(dto, 'sent')).toBe(true);
+    expect(isPresentField(dto, 'cleared')).toBe(true);
+    expect(isPresentField(dto, 'leftOut')).toBe(false);
+    expect(isPresentField(dto, 'absent')).toBe(false);
+  });
+
+  it('copies sent fields only, so a left-out field keeps what the target already holds', () => {
+    const target: Record<string, unknown> = { leftOut: 'kept' };
+    applyPresentFields(target, dto, ['sent', 'cleared', 'leftOut'], {
+      leftOut: () => 'transform must not run',
+      cleared: (value) => value ?? [],
+    });
+    expect(target).toEqual({ sent: 'x', cleared: [], leftOut: 'kept' });
+  });
+});
 
 describe('numericOverflowOf', () => {
   it('reads the detail out of an ORM write (PrismaClientUnknownRequestError)', () => {

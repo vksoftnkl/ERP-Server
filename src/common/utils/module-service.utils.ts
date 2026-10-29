@@ -20,6 +20,7 @@ export {
   violatedCheckOf,
   isPrismaErrorCode,
   isUniqueConstraintError,
+  isPresentField,
   normalizeNullableString,
   normalizeRequiredText,
   resolveActor,

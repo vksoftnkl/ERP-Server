@@ -297,6 +297,18 @@ export function hasOwnProperty<T extends object>(obj: T, key: PropertyKey): bool
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 export type PresentFieldTransform = (value: unknown) => unknown;
+/**
+ * Was this field SENT? A DTO built by the house ValidationPipe holds every declared
+ * field as an own property (ES2022 class fields), a field left out as an own
+ * `undefined`, so hasOwnProperty alone cannot tell; an `undefined` value is "left out".
+ * null is sent (= clear).
+ */
+export function isPresentField<T extends object>(obj: T, key: PropertyKey): boolean {
+  return hasOwnProperty(obj, key) && (obj as Record<PropertyKey, unknown>)[key] !== undefined;
+}
+// Copies each field the source SENT (isPresentField) onto the target, through its
+// transform. A field left out (absent or undefined) is skipped, so it never overwrites
+// a value the caller set on the target first.
 export function applyPresentFields(
   target: object,
   source: object,
@@ -306,7 +318,7 @@ export function applyPresentFields(
   const targetRecord = target as Record<string, unknown>;
   const sourceRecord = source as Record<string, unknown>;
   for (const field of fields) {
-    if (!hasOwnProperty(source, field)) {
+    if (!isPresentField(source, field)) {
       continue;
     }
     const value = sourceRecord[field];

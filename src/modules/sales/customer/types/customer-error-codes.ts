@@ -38,4 +38,10 @@ export enum CustomerErrorCode {
   GROUP_NOT_FOUND = 'CUSTOMER_UNKNOWN_GROUP',
   /** cusStateCode names no live state. */
   STATE_NOT_FOUND = 'CUSTOMER_STATE_NOT_FOUND',
+  /** cusPriceLevelId names no live price level (0 included: a blank the client sent as 0). */
+  PRICE_LEVEL_NOT_FOUND = 'CUSTOMER_PRICE_LEVEL_NOT_FOUND',
+  /** cusBranchId was sent and names no live branch. */
+  BRANCH_NOT_FOUND = 'CUSTOMER_BRANCH_NOT_FOUND',
+  /** cusGstNo's first two digits are not the customer's state code (cusStateCode). */
+  GSTIN_STATE_MISMATCH = 'CUSTOMER_GSTIN_STATE_MISMATCH',
 }

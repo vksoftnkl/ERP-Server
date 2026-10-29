@@ -156,11 +156,10 @@ model AccLedgerMaster {
   // them four live parties had no ledger row at all and could not be posted to.
   customer                 Customer?              @relation("CustomerLedger")
   supplier                 Supplier?              @relation("SupplierLedger")
-  // Kept for the exact-case scoped case; the three rules below are what actually hold,
-  // because this one is INERT for shared rows (led_company_id IS NULL — 50 of 61
-  // ledgers) and case-sensitive besides.
-  @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
-  @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
+  // The plain @@unique([ledCompanyId, ledName]) and @@unique([ledCompanyId, ledTallyName])
+  // were dropped by 20261029110000_ledger_name_unique_skip_deleted: they counted soft-deleted
+  // rows, so a deleted ledger's name could never be reused. The partial rules below hold for
+  // live rows (uq_led_tally_name_company / uq_led_tally_name_shared for the Tally name).
   @@index([ledCompanyId], name: "idx_led_company_id")
   @@index([ledBranchId], name: "idx_led_branch_id")
   @@index([ledGroupId], name: "idx_led_group_id")
@@ -170,6 +169,9 @@ model AccLedgerMaster {
   // Partial unique indexes — enforced via raw SQL migration, not expressible in Prisma schema:
   //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
   //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
+  //   uq_led_tally_name_shared   UNIQUE (lower(led_tally_name))                 WHERE led_company_id IS NULL     AND NOT led_is_deleted AND led_tally_name IS NOT NULL
+  //   uq_led_tally_name_company  UNIQUE (led_company_id, lower(led_tally_name)) WHERE led_company_id IS NOT NULL AND NOT led_is_deleted AND led_tally_name IS NOT NULL
+  //   (20261029110000)
   //
   // NAME UNIQUENESS — the same three rules as acc_group_master (20260917110000):
   //   uq_led_name_shared   UNIQUE (lower(led_name)) WHERE led_company_id IS NULL     AND NOT led_is_deleted

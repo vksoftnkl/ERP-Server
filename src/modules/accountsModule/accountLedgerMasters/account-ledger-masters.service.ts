@@ -16,6 +16,7 @@ import { AccountLedgerErrorCode } from './types/account-ledger-master-error-code
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
+  isPresentField,
   normalizeRequiredText,
   throwAccountsBadRequest,
   throwAccountsConflict,
@@ -410,7 +411,9 @@ export class AccountLedgerMastersService {
     const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
     await this.ensureGroupExists(nextGroupId, tx);
     await this.ensureTaxRateExists(tx, saveAccountLedgerMasterDto.ledTaxId);
-    const nextCompanyId = hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
+    // Left out (an own undefined after the ValidationPipe) keeps the stored company;
+    // null moves the ledger to shared.
+    const nextCompanyId = isPresentField(saveAccountLedgerMasterDto, 'ledCompanyId')
       ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
       : existing.ledCompanyId;
     await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId, {

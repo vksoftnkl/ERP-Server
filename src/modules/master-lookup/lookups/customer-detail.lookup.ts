@@ -19,9 +19,14 @@ import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
  *    the salesman name.
  *  - name/address (legacy `iregional`): regional=true returns the
  *    regional-language fields (falling back to English), else the English ones.
- *  - `tcs_customer`: true only when the customer's IT-collection type is TCS
- *    and it is not exempted.
- *  - `local_sales`: true when the customer and company share a state code.
+ *  - `tcs_customer`: false when the customer is exempted (cus_itcoll_exempted);
+ *    otherwise the linked ledger's led_is_tcs_applicable (cus_id IS led_id), which
+ *    the customer save derives from cusTcsApplicable / a 'TCS' IT-collection type
+ *    and which receipts read. A legacy customer with no ledger falls back to
+ *    cusTcsApplicable / a 'TCS' type on its own columns.
+ *  - `local_sales`: true when the customer and company share a state code. An
+ *    unknown or deleted company_id is refused (LOOKUP_COMPANY_NOT_FOUND) rather
+ *    than answered as an inter-state sale.
  *  - `billed_date`: "<n> days : dd/MM/yy" built from the last billed date.
  *
  * Schema divergences from the legacy query:
@@ -51,10 +56,14 @@ export class CustomerDetailLookup {
     }
     // Company (legacy INNER JOIN companys ON comp_id = icompany_id) and the
     // salesman (legacy default_salesman[1] ⋈ employee_master).
-    const [company, salesman] = await Promise.all([
+    const [company, ledger, salesman] = await Promise.all([
       this.prisma.company.findFirst({
-        where: { compId: company_id },
+        where: { compId: company_id, compIsDeleted: false },
         select: { compTcsApplicable: true, compStateCode: true },
+      }),
+      this.prisma.accLedgerMaster.findFirst({
+        where: { ledId: customer.cusId, ledIsDeleted: false },
+        select: { ledIsTcsApplicable: true },
       }),
       customer.cusDefaultSalesman
         ? this.prisma.employeeMaster.findFirst({
@@ -63,6 +72,20 @@ export class CustomerDetailLookup {
           })
         : Promise.resolve(null),
     ]);
+    if (!company) {
+      throwMasterNotFound<MasterErrorDetail>(
+        'Company not found',
+        'company_id',
+        `No active company found for id ${company_id}`,
+        MasterLookupErrorCode.COMPANY_NOT_FOUND,
+      );
+    }
+    // The save's rule: an exemption vetoes TCS, whatever else says it applies.
+    const tcsCustomer =
+      !customer.cusItcollExempted &&
+      (ledger
+        ? ledger.ledIsTcsApplicable
+        : customer.cusTcsApplicable || customer.cusItcollType?.trim().toUpperCase() === 'TCS');
     // Legacy `iregional`: regional name/address fall back to English when unset.
     const custName = regional ? (customer.cusRegionName ?? customer.cusName) : customer.cusName;
     const custAddress = regional
@@ -103,12 +126,11 @@ export class CustomerDetailLookup {
       cust_disc_perc: toNumber(customer.cusDiscPerc),
       salesman_id: customer.cusDefaultSalesman,
       salesman_name: salesman?.empName ?? null,
-      tcs_company: company?.compTcsApplicable ?? false,
-      // Legacy: TCS applies only when the IT-collection type is TCS and unexempted.
-      tcs_customer: customer.cusItcollType === 'TCS' && customer.cusItcollExempted === false,
+      tcs_company: company.compTcsApplicable,
+      tcs_customer: tcsCustomer,
       cust_pan: Boolean(customer.cusPanNo),
       // Legacy `local_sales`: customer and company in the same state.
-      local_sales: !!company && customer.cusStateCode === company.compStateCode,
+      local_sales: customer.cusStateCode === company.compStateCode,
       cust_points: null,
       billed_date: formatBilledDate(customer.cusBilledDate),
     };

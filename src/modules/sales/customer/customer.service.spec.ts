@@ -5,6 +5,14 @@ import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { CustomerService } from './customer.service';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import { CustomerErrorCode } from './types/customer-error-codes';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
+
+/** A body as the controller receives it: through the house ValidationPipe (R1). */
+const viaPipe = (body: object): Promise<SaveCustomerDto> =>
+  createHouseValidationPipe().transform(body, {
+    type: 'body',
+    metatype: SaveCustomerDto,
+  }) as Promise<SaveCustomerDto>;
 
 const CUS_ID = '019c6f6c-be87-7a11-8905-36092c46e101';
 const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46e102';
@@ -125,6 +133,14 @@ const createDto = (overrides: Partial<SaveCustomerDto> = {}): SaveCustomerDto =>
   cusPriceLevelId: 1,
   ...overrides,
 });
+
+/** The ledger master's company-wide name refusal, as createLedgerWithinTx / updateLedgerWithinTx throw it. */
+const ledgerNameTaken = () =>
+  new ConflictException({
+    success: false,
+    message: 'Account ledger name already exists',
+    errors: [{ field: 'ledName', message: 'taken', code: 'LEDGER_NAME_TAKEN' }],
+  });
 
 /** The status and body of the HttpException a call was refused with. */
 async function refusalOf(promise: Promise<unknown>): Promise<{ status: number; body: unknown }> {
@@ -422,11 +438,116 @@ describe('CustomerService', () => {
       expect(createdData().cusCollectionDays).toEqual([2, 5]);
     });
 
-    it('takes the creator named in the body over the request user', async () => {
+    it('stamps the request user and ignores a creator named in the body (F6)', async () => {
       await service.save(createDto({ cusCreatedBy: '  importer  ' }));
 
-      expect(createdData().cusCreatedBy).toBe('importer');
-      expect(auditEntry().userId).toBe('importer');
+      expect(createdData().cusCreatedBy).toBe(USER_ID);
+      expect(auditEntry().userId).toBe(USER_ID);
+    });
+
+    it('words a ledger name clash on a create as a customer name clash (F8)', async () => {
+      ledgers.createLedgerWithinTx.mockRejectedValue(ledgerNameTaken());
+
+      const refusal = await refusalOf(service.save(createDto()));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'cusName', code: CustomerErrorCode.NAME_EXISTS }] },
+      });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a ledger-name race on a create as CUSTOMER_NAME_EXISTS (R4)', async () => {
+      ledgers.createLedgerWithinTx.mockRejectedValue(
+        Object.assign(new Error('unique'), {
+          code: 'P2002',
+          meta: { target: 'uq_led_name_shared' },
+        }),
+      );
+
+      const refusal = await refusalOf(service.save(createDto()));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'cusName', code: CustomerErrorCode.NAME_EXISTS }] },
+      });
+    });
+
+    it('passes a ledger conflict that is not the name clash on untouched', async () => {
+      const other = new ConflictException({ errors: [{ field: 'ledX', code: 'LEDGER_OTHER' }] });
+      ledgers.createLedgerWithinTx.mockRejectedValue(other);
+
+      await expect(service.save(createDto())).rejects.toBe(other);
+    });
+
+    it('stores 0 for a NOT NULL number sent as null (F3)', async () => {
+      await service.save(
+        createDto({
+          cusCreditBillLimit: null,
+          cusCreditAmtLimit: null,
+          cusCreditDays: null,
+          cusDebitBalance: null,
+          cusDiscPerc: null,
+          cusDebitGraceDays: null,
+          cusSortOrder: null,
+        }),
+      );
+
+      expect(createdData()).toMatchObject({
+        cusCreditBillLimit: 0,
+        cusCreditAmtLimit: 0,
+        cusCreditDays: 0,
+        cusDebitBalance: 0,
+        cusDiscPerc: 0,
+        cusDebitGraceDays: 0,
+        cusSortOrder: 0,
+      });
+    });
+
+    it.each([
+      ['price level', 'itemPriceLevel', 'cusPriceLevelId', CustomerErrorCode.PRICE_LEVEL_NOT_FOUND],
+      ['branch', 'branchMaster', 'cusBranchId', CustomerErrorCode.BRANCH_NOT_FOUND],
+    ] as const)('refuses an unknown %s before the ledger (F4)', async (_l, model, field, code) => {
+      prisma[model].findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(createDto({ cusBranchId: BRANCH_ID })));
+
+      expect(refusal).toMatchObject({ status: 400, body: { errors: [{ field, code }] } });
+      expect(ledgers.createLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it('looks the price level up live only', async () => {
+      await service.save(createDto({ cusPriceLevelId: 4 }));
+
+      expect(prisma.itemPriceLevel.findFirst).toHaveBeenCalledWith({
+        where: { iplId: 4, iplIsDeleted: false },
+        select: { iplId: true },
+      });
+    });
+
+    it('does not look a branch up when none is sent', async () => {
+      await service.save(createDto());
+      await service.save(createDto({ cusBranchId: null }));
+
+      expect(prisma.branchMaster.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({ select: { brId: true } }),
+      );
+    });
+
+    it('refuses a GSTIN of another state (F10)', async () => {
+      const refusal = await refusalOf(service.save(createDto({ cusGstNo: '32ABCDE1234F1Z5' })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'cusGstNo', code: CustomerErrorCode.GSTIN_STATE_MISMATCH }] },
+      });
+      expect(ledgers.createLedgerWithinTx).not.toHaveBeenCalled();
+    });
+
+    it('accepts a GSTIN of the customer state', async () => {
+      await service.save(createDto({ cusGstNo: '33ABCDE1234F1Z5' }));
+
+      expect(createdData().cusGstNo).toBe('33ABCDE1234F1Z5');
     });
 
     it('falls back to the default actor when nobody is named and no user is logged in', async () => {
@@ -707,7 +828,7 @@ describe('CustomerService', () => {
       expect(prisma.customer.update).not.toHaveBeenCalled();
     });
 
-    it('counts the save and stamps the modifier named in the body', async () => {
+    it('counts the save and stamps the request user, not a body modifier (F6)', async () => {
       await service.save(updateDto({ cusModifiedBy: 'counter-3' }));
 
       expect(prisma.customer.update).toHaveBeenCalledWith(
@@ -720,7 +841,7 @@ describe('CustomerService', () => {
         cusGroupId: GROUP_ID,
         cusBilledDate: expect.any(Date),
         cusBilledCount: { increment: 1 },
-        cusModifiedBy: 'counter-3',
+        cusModifiedBy: USER_ID,
       });
     });
 
@@ -744,12 +865,179 @@ describe('CustomerService', () => {
       expect(ledgerUpdateDto()).not.toHaveProperty('ledIsActive');
     });
 
-    it('falls back to the ledger name when the customer name is empty', async () => {
+    it.each([
+      ['null', null],
+      ['blank', '   '],
+    ])('refuses a %s name on an update, as a create does (F5)', async (_label, cusName) => {
+      const refusal = await refusalOf(service.save(updateDto({ cusName })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'cusName', code: CustomerErrorCode.NAME_REQUIRED }] },
+      });
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it('stores a sent name trimmed, and keeps the stored one when it is left out', async () => {
+      await service.save(updateDto({ cusName: '  Ravi Mart ' }));
+      expect(updatedData().cusName).toBe('Ravi Mart');
+
+      prisma.customer.update.mockClear();
+      await service.save(updateDto({ cusName: undefined }));
+      expect(updatedData().cusName).toBeUndefined();
+    });
+
+    it('falls back to the ledger name for a legacy row whose name is empty', async () => {
       prisma.customer.update.mockResolvedValue(customerRow({ cusName: null }));
 
-      await service.save(updateDto({ cusName: null }));
+      await service.save(updateDto({ cusName: undefined }));
 
       expect(ledgerUpdateDto().ledName).toBe('Ravi Stores');
+    });
+
+    it('stores 0 for a NOT NULL number cleared to null, and skips one left out (F3)', async () => {
+      await service.save(updateDto({ cusDiscPerc: null, cusCreditDays: undefined }));
+
+      expect(updatedData().cusDiscPerc).toBe(0);
+      expect(updatedData().cusCreditDays).toBeUndefined();
+    });
+
+    describe('a body that went through the house ValidationPipe (R1)', () => {
+      // What the Qt customer screen sends on a phone-only edit: no company, no TCS / TDS
+      // columns, no collection days.
+      const phoneOnlyEdit = () =>
+        viaPipe({
+          cusId: CUS_ID,
+          cusName: 'Ravi Stores',
+          cusStateName: 'Tamil Nadu',
+          cusStateCode: '33',
+          cusAreaId: AREA_ID,
+          cusGroupId: GROUP_ID,
+          cusPriceLevelId: 1,
+          cusPhone1: '9840000002',
+        });
+
+      beforeEach(() => {
+        prisma.customer.findFirst.mockResolvedValue(
+          customerRow({ cusCompanyId: COMPANY_ID, cusCollectionDays: [2, 5] }),
+        );
+      });
+
+      it('arrives with every left-out field as an own undefined', async () => {
+        const dto = await phoneOnlyEdit();
+
+        expect(Object.prototype.hasOwnProperty.call(dto, 'cusItcollType')).toBe(true);
+        expect(dto.cusItcollType).toBeUndefined();
+      });
+
+      it('keeps the company and the collection days it was not sent', async () => {
+        await service.save(await phoneOnlyEdit());
+
+        expect(updatedData().cusCompanyId).toBe(COMPANY_ID);
+        expect(updatedData()).not.toHaveProperty('cusCollectionDays');
+        expect(prisma.company.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { compId: COMPANY_ID, compIsDeleted: false } }),
+        );
+      });
+
+      it('leaves the ledger TCS / TDS flags, company and sort order alone', async () => {
+        await service.save(await phoneOnlyEdit());
+
+        const ledgerDto = ledgerUpdateDto();
+        expect(ledgerDto.ledPhone1).toBe('9840000002');
+        for (const key of [
+          'ledIsTcsApplicable',
+          'ledIsTdsApplicable',
+          'ledCompanyId',
+          'ledSortOrder',
+          'ledGstPartyRegType',
+        ]) {
+          expect(ledgerDto).not.toHaveProperty(key);
+        }
+      });
+
+      it('still recomputes the TCS flag when the screen sends it', async () => {
+        await service.save(
+          await viaPipe({
+            cusId: CUS_ID,
+            cusStateName: 'Tamil Nadu',
+            cusStateCode: '33',
+            cusAreaId: AREA_ID,
+            cusGroupId: GROUP_ID,
+            cusPriceLevelId: 1,
+            cusTcsApplicable: false,
+          }),
+        );
+
+        expect(ledgerUpdateDto().ledIsTcsApplicable).toBe(false);
+        expect(ledgerUpdateDto()).not.toHaveProperty('ledIsTdsApplicable');
+      });
+    });
+
+    it('stores a cleared sort order as 0 on the ledger too (R3)', async () => {
+      await service.save(updateDto({ cusSortOrder: null }));
+
+      expect(updatedData().cusSortOrder).toBe(0);
+      expect(ledgerUpdateDto().ledSortOrder).toBe(0);
+    });
+
+    it('refuses a GSTIN of another state on an update too (R5)', async () => {
+      const refusal = await refusalOf(service.save(updateDto({ cusGstNo: '32ABCDE1234F1Z5' })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: { errors: [{ field: 'cusGstNo', code: CustomerErrorCode.GSTIN_STATE_MISMATCH }] },
+      });
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a TDS deductor', '07DELN12345A1D5'],
+      ['a UIN', '0717UNO00157UN5'],
+      ['an OIDAR', '9917USA29012OSQ'],
+      ['a non-resident', '0717USA29012NR5'],
+    ])('does not check the state of %s GSTIN (U1)', async (_label, gstin) => {
+      await service.save(updateDto({ cusGstNo: gstin }));
+
+      expect(updatedData().cusGstNo).toBe(gstin);
+    });
+
+    it.each([
+      ['P2002 on uq_led_name_company', { code: 'P2002', meta: { target: 'uq_led_name_company' } }],
+      ['P2002 on the ledger name column', { code: 'P2002', meta: { target: ['led_name'] } }],
+      [
+        'a raw 23505 on the ledger name',
+        {
+          code: 'P2010',
+          meta: {
+            code: '23505',
+            message: 'Key (led_company_id, lower((led_name)::text))=(x, y) already exists.',
+          },
+        },
+      ],
+    ])('answers a ledger-name race (%s) as CUSTOMER_NAME_EXISTS (R4)', async (_l, shape) => {
+      ledgers.updateLedgerWithinTx.mockRejectedValue(Object.assign(new Error('unique'), shape));
+
+      const refusal = await refusalOf(service.save(updateDto()));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ field: 'cusName', code: CustomerErrorCode.NAME_EXISTS }] },
+      });
+    });
+
+    it('refuses a price level that is gone (F4)', async () => {
+      prisma.itemPriceLevel.findFirst.mockResolvedValue(null);
+
+      const refusal = await refusalOf(service.save(updateDto({ cusPriceLevelId: 0 })));
+
+      expect(refusal).toMatchObject({
+        status: 400,
+        body: {
+          errors: [{ field: 'cusPriceLevelId', code: CustomerErrorCode.PRICE_LEVEL_NOT_FOUND }],
+        },
+      });
+      expect(prisma.customer.update).not.toHaveBeenCalled();
     });
 
     it('keeps the group of a ledger shared with a live supplier, and its active flag', async () => {
@@ -783,7 +1071,7 @@ describe('CustomerService', () => {
     });
 
     it('words a ledger name clash as a customer name clash', async () => {
-      ledgers.updateLedgerWithinTx.mockRejectedValue(new ConflictException('ledName taken'));
+      ledgers.updateLedgerWithinTx.mockRejectedValue(ledgerNameTaken());
 
       const refusal = await refusalOf(service.save(updateDto()));
 
@@ -896,7 +1184,7 @@ describe('CustomerService', () => {
       });
     });
 
-    it('audits the stored row against the saved one, under the modifier', async () => {
+    it('audits the stored row against the saved one, under the request user', async () => {
       prisma.customer.findFirst.mockResolvedValue(customerRow({ cusPhone1: '9000000000' }));
       prisma.customer.update.mockImplementation(async ({ data }: { data: Partial<Customer> }) =>
         customerRow({ cusPhone1: data.cusPhone1, cusModifiedBy: 'counter-3' }),
@@ -913,7 +1201,7 @@ describe('CustomerService', () => {
         displayName: 'Ravi Stores',
         originalRecord: expect.objectContaining({ cusPhone1: '9000000000' }),
         modifiedRecord: payload,
-        userId: 'counter-3',
+        userId: USER_ID,
       });
       expect(payload.cusPhone1).toBe('9840000002');
     });
