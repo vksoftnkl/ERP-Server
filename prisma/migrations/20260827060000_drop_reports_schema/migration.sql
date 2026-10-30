@@ -1,0 +1,28 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Drop the reports schema — the reporting/print-template engine is removed.
+--
+--  Reverses 20260824060000_add_reports_print_templates and
+--  20260825060000_add_reports_report_dataset, which between them created
+--  everything the schema held:
+--
+--    reports.print_template            band-based report designs
+--    reports.print_template_revision   append-only version history
+--    reports.printer_profile           per-model escape-command dialects
+--    reports.report_dataset            runtime-defined datasets
+--
+--  Those two migrations are LEFT IN PLACE rather than deleted. They are
+--  already recorded in _prisma_migrations on every deployed database, and
+--  removing an applied migration makes `prisma migrate deploy` report drift.
+--  A fresh install therefore creates the schema and drops it again, which
+--  costs nothing and keeps history append-only.
+--
+--  CASCADE is what does the work: every index, constraint and foreign key
+--  above was created inside the schema (an index lives in its table's
+--  schema), so nothing outside `reports` references any of it, and the drop
+--  cannot reach beyond the objects listed here.
+--
+--  IF EXISTS so the migration is a no-op on a database provisioned after the
+--  reporting feature was removed but before this file was squashed away.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+DROP SCHEMA IF EXISTS reports CASCADE;

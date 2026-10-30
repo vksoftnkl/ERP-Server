@@ -1,0 +1,48 @@
+/// stock.stock_batch_detail — a batch's size, colour and model (textile auto
+/// batch, addendum 2 E2), keyed by (company, batch no): an auto batch no is
+/// unique in the company by construction, a Re-lot keeps it, and a draft has
+/// it before any lot exists. stock_lot, stock_voucher_item and sale_bill_item
+/// carry nothing of it; readers join on the folded batch.
+///
+/// sbdId is uuid v5 over (company, batch no), computed by the server
+/// (batch-detail.helper.ts), so two installs writing one batch write one row.
+/// Written by the inward save (opening stock now, purchase later) in the
+/// transaction that numbers the batch; after the document posts, only by
+/// POST /stock/batch-detail/update.
+///
+/// DB-only, not declared here (all partial, one on an expression):
+///   ux_sbd_batch    unique (company, batch_no) among live rows
+///   ix_sbd_model    (company, item, upper(model)) — model suggestions
+///   ix_sbd_size     (company, size_id)  — reports, master "in use"
+///   ix_sbd_colour   (company, colour_id)
+///   ix_sbd_src_doc  (src_doc_id)
+/// CHECKs: ck_sbd_batch_shape (stored upper(btrim())), ck_sbd_model,
+/// ck_sbd_src (the source triple is all-or-nothing).
+model StockBatchDetail {
+  sbdId          String    @id(map: "pk_stock_batch_detail") @db.Uuid @map("sbd_id")
+  sbdCompanyId   String    @db.Uuid               @map("sbd_company_id")
+  sbdBatchNo     String    @db.VarChar(100)       @map("sbd_batch_no")
+  sbdItemId      String    @db.Uuid               @map("sbd_item_id")
+  sbdSizeId      String?   @db.Uuid               @map("sbd_size_id")
+  sbdColourId    String?   @db.Uuid               @map("sbd_colour_id")
+  sbdModel       String?   @db.VarChar(100)       @map("sbd_model")
+  /// OPENING (the stock voucher type) now; PURCHASE later.
+  sbdSrcDocType  String?   @db.VarChar(30)        @map("sbd_src_doc_type")
+  sbdSrcDocId    String?   @db.Uuid               @map("sbd_src_doc_id")
+  sbdSrcLineId   String?   @db.Uuid               @map("sbd_src_line_id")
+  sbdIsActive    Boolean   @default(true)         @map("sbd_is_active")
+  sbdIsDeleted   Boolean   @default(false)        @map("sbd_is_deleted")
+  sbdSyncDate    DateTime? @db.Timestamptz(6)     @map("sbd_sync_date")
+  sbdCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("sbd_created_on")
+  sbdCreatedBy   String?                          @map("sbd_created_by")
+  sbdModifiedOn  DateTime? @db.Timestamptz(6)     @map("sbd_modified_on")
+  sbdModifiedBy  String?                          @map("sbd_modified_by")
+
+  company        Company           @relation("StockBatchDetailCompany", fields: [sbdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbd_company")
+  item           ItemMaster        @relation("StockBatchDetailItem",    fields: [sbdItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbd_item")
+  size           ItemSizeMaster?   @relation("StockBatchDetailSize",    fields: [sbdSizeId],    references: [iszId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbd_size")
+  colour         ItemColourMaster? @relation("StockBatchDetailColour",  fields: [sbdColourId],  references: [iclId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbd_colour")
+
+  @@map("stock_batch_detail")
+  @@schema("stock")
+}

@@ -1,0 +1,861 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PurchaseSettingsQueryDto = exports.PurchaseInvoiceHoldDto = exports.GrnLinesQueryDto = exports.CancelPurchaseInvoiceDto = exports.PostPurchaseInvoiceDto = exports.GetPurchaseInvoiceQueryDto = exports.SavePurchaseInvoiceDto = exports.PurchaseInvoiceHeaderDto = exports.PurchaseTransportDto = exports.PurchaseChargeDto = exports.PurchaseChargePayeeDto = exports.PurchaseInvoiceLineDto = exports.PurchaseAllocDto = void 0;
+const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
+const class_validator_1 = require("class-validator");
+class PurchaseAllocDto {
+    godownId;
+    bucket;
+    batchNo;
+    mfgDate;
+    expiryDate;
+    mrp;
+    salePrice;
+    serialNo;
+    warrantyTo;
+    sizeId;
+    colourId;
+    model;
+    qty;
+    freeQty;
+}
+exports.PurchaseAllocDto = PurchaseAllocDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "godownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['SALEABLE', 'DAMAGED'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['SALEABLE', 'DAMAGED']),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "bucket", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "batchNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "mfgDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "expiryDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseAllocDto.prototype, "mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseAllocDto.prototype, "salePrice", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "serialNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "warrantyTo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "sizeId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "colourId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(60),
+    __metadata("design:type", String)
+], PurchaseAllocDto.prototype, "model", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseAllocDto.prototype, "qty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseAllocDto.prototype, "freeQty", void 0);
+class PurchaseInvoiceLineDto {
+    lineNo;
+    itemId;
+    uomId;
+    grnItemId;
+    grnItemAccYear;
+    poItemId;
+    sisterSaleItemId;
+    sisterSaleItemAccYear;
+    poItemAccYear;
+    costIncl;
+    billedQty;
+    receivedQty;
+    damagedQty;
+    freeQty;
+    rate;
+    discPct;
+    discPerQty;
+    discAmt;
+    schPct;
+    schPerQty;
+    schAmt;
+    extraDiscAmt;
+    taxId;
+    cessPct;
+    cessPerUnit;
+    weight;
+    mrp;
+    sellA;
+    sellB;
+    sellC;
+    sellD;
+    markupAPct;
+    remarks;
+    allocs;
+}
+exports.PurchaseInvoiceLineDto = PurchaseInvoiceLineDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "lineNo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "itemId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'item_unit_conversion.iuc_id' }),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "uomId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The GRN line this bill line bills (pur_grn_item.gri_id), whole. Unit, received / damaged / free and the batches come from it, locked; stock is already in (the bill revalues it — P13).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "grnItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "grnItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'DOC-04: the PO line this bill line receives (pur_order_item.poi_id) — goods came with the bill; the qty billed (base units) reduces what the PO still has pending and may not exceed it.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "poItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: "DOC-08: the sister company sale line this purchase line pulls (sales.sale_bill_item.sbi_id) — see GET /purchase/sister-bills/lines." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "sisterSaleItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "sisterSaleItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "poItemAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-04: the cost per billed unit INCLUDING GST / cess, as typed — the rate is back-solved from it (after disc % and scheme %); the answer\'s line rate is the result.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "costIncl", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "billedQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Defaults to billed − damaged.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "receivedQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "damagedQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "freeQty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "rate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "discPct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "discPerQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "discAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "schPct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "schPerQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "schAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "extraDiscAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'tax_rate_master.tax_id — the GST % is read from it.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "taxId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "cessPct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "cessPerUnit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "weight", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "sellA", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "sellB", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "sellC", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "sellD", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ENT-18: markup % on the cost without tax; with no sellA the server prices Sell A from it (GST added).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceLineDto.prototype, "markupAPct", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseInvoiceLineDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: [PurchaseAllocDto] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => PurchaseAllocDto),
+    __metadata("design:type", Array)
+], PurchaseInvoiceLineDto.prototype, "allocs", void 0);
+class PurchaseChargePayeeDto {
+    partyId;
+    amount;
+}
+exports.PurchaseChargePayeeDto = PurchaseChargePayeeDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Ledger id (an employee\'s own ledger, a transporter …)' }),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseChargePayeeDto.prototype, "partyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseChargePayeeDto.prototype, "amount", void 0);
+class PurchaseChargeDto {
+    chgId;
+    rate;
+    amount;
+    payees;
+}
+exports.PurchaseChargeDto = PurchaseChargeDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'charge_master.chg_id (module P / B)' }),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseChargeDto.prototype, "chgId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Per-unit rate / % / fixed amount; default = the master\'s.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseChargeDto.prototype, "rate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'A typed amount wins over the method.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseChargeDto.prototype, "amount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: [PurchaseChargePayeeDto] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => PurchaseChargePayeeDto),
+    __metadata("design:type", Array)
+], PurchaseChargeDto.prototype, "payees", void 0);
+class PurchaseTransportDto {
+    vehicleNo;
+    driverName;
+    mode;
+    transporterId;
+    transporterName;
+    transporterGstin;
+    lrNo;
+    lrDate;
+    distanceKm;
+    remarks;
+}
+exports.PurchaseTransportDto = PurchaseTransportDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'pur_invoice.pi_vehicle_no. Omit = keep the saved one; null / blank = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(20),
+    __metadata("design:type", Object)
+], PurchaseTransportDto.prototype, "vehicleNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'pur_invoice.pi_driver_name. Omit = keep the saved one; null / blank = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", Object)
+], PurchaseTransportDto.prototype, "driverName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['ROAD', 'RAIL', 'AIR', 'SHIP'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['ROAD', 'RAIL', 'AIR', 'SHIP']),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "mode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'public.transporter_master.trn_id' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Typed name; default = the transporter master\'s name.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(200),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(15),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(50),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "lrNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "lrDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseTransportDto.prototype, "distanceKm", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "remarks", void 0);
+class PurchaseInvoiceHeaderDto {
+    piId;
+    companyId;
+    branchId;
+    accYear;
+    deviceId;
+    sessionId;
+    supplierId;
+    supplierInvNo;
+    supplierInvDate;
+    docDate;
+    goodsReceivedOn;
+    godownId;
+    mode;
+    creditDays;
+    invoiceAmountPrinted;
+    tcsAmount;
+    ewbNo;
+    ewbDate;
+    irn;
+    ackNo;
+    remarks;
+    agentId;
+    billFromGstin;
+    transport;
+    overrideWarnings;
+    overrideReason;
+    post;
+}
+exports.PurchaseInvoiceHeaderDto = PurchaseInvoiceHeaderDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Set to update a draft.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'fixed.device_master.dev_id — the number series.' }),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "deviceId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "sessionId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The supplier = its ledger (sup_id = led_id).' }),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(60),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "supplierInvNo", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "supplierInvDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Our entry / posting date.' }),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "docDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "goodsReceivedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "godownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['CREDIT'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['CREDIT', 'CASH']),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "mode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceHeaderDto.prototype, "creditDays", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The bill total as printed — compared with net payable.' }),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], PurchaseInvoiceHeaderDto.prototype, "invoiceAmountPrinted", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseInvoiceHeaderDto.prototype, "tcsAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(15),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "ewbNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "ewbDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(64),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "irn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(20),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "ackNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'purchase.pur_agent.pag_id (= the agent\'s ledger, Agents master menu 28). Omit / null = no agent.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "agentId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: "Bill from: which of the supplier's GSTINs the bill is from (the master's, or one of its ledger's BILL_TO / BOTH addresses — see supplier-context billFrom[]). Default the master's. Its state against the place of supply decides CGST+SGST vs IGST." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(15),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "billFromGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: PurchaseTransportDto, nullable: true, description: 'Omit = keep the saved band and vehicle / driver; null = remove the band and clear vehicle / driver; an object = write the band (all blank = remove) — its vehicleNo / driverName are kept when absent.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => PurchaseTransportDto),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "transport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'With post: go past the WARN items that need a right (needsRight = OVERRIDE, e.g. PUR_RATE_ABOVE_PO: no payment hold). Needs the Override right on menu 24; logged on the bill\'s trail.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PurchaseInvoiceHeaderDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Why the warnings were overridden — kept in the trail.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "overrideReason", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Save and post in one transaction.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PurchaseInvoiceHeaderDto.prototype, "post", void 0);
+class SavePurchaseInvoiceDto {
+    header;
+    lines;
+    charges;
+}
+exports.SavePurchaseInvoiceDto = SavePurchaseInvoiceDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: PurchaseInvoiceHeaderDto }),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => PurchaseInvoiceHeaderDto),
+    __metadata("design:type", PurchaseInvoiceHeaderDto)
+], SavePurchaseInvoiceDto.prototype, "header", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: [PurchaseInvoiceLineDto] }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => PurchaseInvoiceLineDto),
+    __metadata("design:type", Array)
+], SavePurchaseInvoiceDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: [PurchaseChargeDto] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => PurchaseChargeDto),
+    __metadata("design:type", Array)
+], SavePurchaseInvoiceDto.prototype, "charges", void 0);
+class GetPurchaseInvoiceQueryDto {
+    piId;
+    accYear;
+}
+exports.GetPurchaseInvoiceQueryDto = GetPurchaseInvoiceQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GetPurchaseInvoiceQueryDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], GetPurchaseInvoiceQueryDto.prototype, "accYear", void 0);
+class PostPurchaseInvoiceDto {
+    piId;
+    accYear;
+    overrideWarnings;
+    overrideReason;
+}
+exports.PostPurchaseInvoiceDto = PostPurchaseInvoiceDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Go past the WARN items that need a right (Override on menu 24); logged.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PostPurchaseInvoiceDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "overrideReason", void 0);
+class CancelPurchaseInvoiceDto {
+    piId;
+    accYear;
+    reason;
+}
+exports.CancelPurchaseInvoiceDto = CancelPurchaseInvoiceDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], CancelPurchaseInvoiceDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], CancelPurchaseInvoiceDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], CancelPurchaseInvoiceDto.prototype, "reason", void 0);
+class GrnLinesQueryDto {
+    companyId;
+    branchId;
+    supplierId;
+    piId;
+}
+exports.GrnLinesQueryDto = GrnLinesQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The draft being edited — its own GRN lines are listed as free.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], GrnLinesQueryDto.prototype, "piId", void 0);
+class PurchaseInvoiceHoldDto {
+    piId;
+    accYear;
+    hold;
+    reason;
+}
+exports.PurchaseInvoiceHoldDto = PurchaseInvoiceHoldDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseInvoiceHoldDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PurchaseInvoiceHoldDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'true = put on payment hold; false = release (needs the Override right on menu 24).' }),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PurchaseInvoiceHoldDto.prototype, "hold", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Why — kept on the bill and in its trail.' }),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseInvoiceHoldDto.prototype, "reason", void 0);
+class PurchaseSettingsQueryDto {
+    companyId;
+    branchId;
+}
+exports.PurchaseSettingsQueryDto = PurchaseSettingsQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseSettingsQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseSettingsQueryDto.prototype, "branchId", void 0);
+//# sourceMappingURL=save-purchase-invoice.dto.js.map

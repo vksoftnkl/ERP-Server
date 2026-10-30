@@ -1,0 +1,53 @@
+/// §2.9 — the TDS rate master (migration 20260925170000_tds_rates).
+///
+/// Lookup at the document date: the party ledger's `ledTdsNatureOfPayment`
+/// gives the SECTION, `ledTdsDeducteeType` the DEDUCTEE TYPE (falling back to
+/// the ANY row), and the row whose period holds the date gives the rate. No
+/// PAN → `tdrNoPanRate` (206AA). A company's own row wins over the
+/// NULL-company default.
+///
+/// Thresholds are CHECKED by the service, not stored per party: single = this
+/// payment, annual = the party's total in the financial year. 0 = none.
+///
+/// Effective-dated: a correction is a new row, never an edit.
+model TdsRate {
+  tdrId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("tdr_id")
+  // NULL = every company
+  tdrCompanyId        String?   @db.Uuid @map("tdr_company_id")
+  // '194C', '194J' … (the ledger's nature of payment)
+  tdrSection          String    @db.VarChar(16) @map("tdr_section")
+  tdrSectionName      String    @db.VarChar(120) @map("tdr_section_name")
+  // ck_tdr_deductee: COMPANY | INDIVIDUAL | HUF | FIRM | AOP | ANY
+  tdrDeducteeType     String    @db.VarChar(16) @map("tdr_deductee_type")
+  // percent
+  tdrRate             Decimal   @db.Decimal(6, 3) @map("tdr_rate")
+  // 206AA
+  tdrNoPanRate        Decimal   @default(20) @db.Decimal(6, 3) @map("tdr_no_pan_rate")
+  tdrThresholdSingle  Decimal   @default(0) @db.Decimal(14, 2) @map("tdr_threshold_single")
+  tdrThresholdAnnual  Decimal   @default(0) @db.Decimal(14, 2) @map("tdr_threshold_annual")
+  tdrEffectiveFrom    DateTime  @db.Date @map("tdr_effective_from")
+  // NULL = open ended
+  tdrEffectiveTo      DateTime? @db.Date @map("tdr_effective_to")
+  tdrIsActive         Boolean   @default(true) @map("tdr_is_active")
+  tdrRemarks          String?   @db.VarChar(250) @map("tdr_remarks")
+  tdrIsDeleted        Boolean   @default(false) @map("tdr_is_deleted")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  tdrSyncDate         DateTime? @db.Timestamptz(6) @map("tdr_sync_date")
+  tdrCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("tdr_created_on")
+  tdrCreatedBy        String?   @db.VarChar(50) @map("tdr_created_by")
+  tdrModifiedOn       DateTime? @db.Timestamptz(6) @map("tdr_modified_on")
+  tdrModifiedBy       String?   @db.VarChar(50) @map("tdr_modified_by")
+  company             Company?  @relation("TdsRateCompany", fields: [tdrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("tds_rates")
+  @@schema("accounts")
+  // DB-only objects (migration 20260925170000_tds_rates):
+  //   - CHECK ck_tdr_rate, ck_tdr_threshold, ck_tdr_dates, ck_tdr_deductee,
+  //     ck_tdr_section.
+  //   - EXCLUDE ex_tdr_overlap (gist): no two live rows for one company ×
+  //     section × deductee may overlap in date range.
+  //   - Partial index ix_tdr_lookup (section, deductee, effective_from) on
+  //     live rows.
+  //   - Sync triggers zz_sync_mark_dirty / zz_sync_log_delete, only where the
+  //     cloud-sync functions exist.
+}

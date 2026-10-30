@@ -1,0 +1,122 @@
+/// stock.stock_reorder_policy — the SETTINGS a replenishment decision is made
+/// from. One row per item per location.
+///
+/// srpGodownId NULL = THE WHOLE BRANCH, however many godowns it operates. A
+/// shop keeps one reorder level for an item and does not care whether the
+/// units are on the shelf or in the back store; a warehouse that does care
+/// adds a godown-specific row beside it. ux_srp_scope COALESCEs the godown to
+/// the nil uuid, because a plain unique index treats every NULL as distinct
+/// and would let the same branch-wide row be inserted twice.
+///
+/// srpSource IS LOAD-BEARING, not a label. MANUAL means a human set these
+/// numbers and the nightly job MUST NOT overwrite them: a buyer who has
+/// deliberately raised a level for a festival will not do it twice, and a job
+/// that silently reverts it destroys trust in the whole module. COMPUTED rows
+/// are the job's to maintain, and srpComputedOn says when it last did.
+///
+/// THE NUMBERS ARE SETTINGS, NOT ANSWERS. What to order today is
+/// [[StockForecast]].sfcSuggestedOrderQty, computed from these plus actual
+/// demand. This table holds only what a human decided about the item: how low
+/// it may go, how much to buy, how long the supplier takes, and how sure we
+/// want to be.
+///
+/// srpServiceLevelPerc is the probability of NOT stocking out during lead
+/// time that srpSafetyStock is sized for. 95.000 is the usual retail answer,
+/// and it is strictly between 0 and 100 — 100% service means infinite safety
+/// stock, which ck_srp_service_level refuses rather than letting a job compute
+/// it.
+///
+/// srpLeadTimeSdDays is the standard deviation of the lead time, and it is
+/// what makes safety stock honest: an item whose supplier takes 3 days ± 1 and
+/// an item whose supplier takes 3 days ± 6 need very different buffers, and
+/// only the second figure tells them apart.
+///
+/// srpMoq and srpPackMultiple are the supplier's constraints, applied AFTER
+/// the maths — a suggestion of 17 against a case of 12 becomes 24, and
+/// pretending otherwise produces orders no supplier will accept.
+/// srpShelfCapacityQty is the opposite constraint: no point ordering more than
+/// the shelf holds.
+///
+/// WRITE RULES:
+///   * srpUomId is part of the key: min/max/reorder are expressed in the unit
+///     a buyer thinks in ("reorder at 4 cases"), NOT in the base unit.
+///   * A max of 0 means NO CEILING — ck_srp_levels exempts it from the
+///     "max >= min" rule rather than forcing a sentinel.
+///   * srpAutoReplenish arms the sweep that raises orders without a human. It
+///     is off by default, and it should stay off until the forecast for that
+///     item has been watched for a while.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   srpSource  MANUAL | COMPUTED
+/// plus ck_srp_levels, ck_srp_lead_time, ck_srp_service_level, ck_srp_pack
+/// (a pack multiple of 0 would divide by zero) and ck_srp_review.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (all three carry a WHERE, and ux_srp_scope
+/// is over an expression as well):
+///   ux_srp_scope  one policy per item per location, godown COALESCEd to the
+///                 nil uuid so the branch-wide row has something to be unique
+///                 against. Uniqueness on this path is app-side.
+///   ix_srp_item   the item's policies across branches
+///   ix_srp_auto   the auto-replenishment sweep
+model StockReorderPolicy {
+  srpId                  String    @id(map: "pk_stock_reorder_policy") @default(dbgenerated("uuidv7()")) @db.Uuid @map("srp_id")
+  srpCompanyId           String    @db.Uuid                          @map("srp_company_id")
+  srpBranchId            String    @db.Uuid                          @map("srp_branch_id")
+  /// NULL = the whole branch, however many godowns it operates.
+  srpGodownId            String?   @db.Uuid                          @map("srp_godown_id")
+  srpItemId              String    @db.Uuid                          @map("srp_item_id")
+  /// The unit the buyer thinks in — an item_unit_conversion(iuc_id). Every
+  /// quantity below is in THIS unit, not the base unit.
+  srpUomId               String    @db.Uuid                          @map("srp_uom_id")
+
+  srpMinQty              Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_min_qty")
+  /// 0 = NO CEILING, exempted from the "max >= min" rule.
+  srpMaxQty              Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_max_qty")
+  srpReorderLevel        Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_reorder_level")
+  srpReorderQty          Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_reorder_qty")
+  srpSafetyStock         Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_safety_stock")
+
+  srpLeadTimeDays        Decimal   @default(0) @db.Decimal(9, 3)     @map("srp_lead_time_days")
+  /// The standard deviation of the lead time — what tells "3 days ± 1" apart
+  /// from "3 days ± 6", and the only thing that makes safety stock honest.
+  srpLeadTimeSdDays      Decimal   @default(0) @db.Decimal(9, 3)     @map("srp_lead_time_sd_days")
+  srpReviewPeriodDays    Int       @default(7)                       @map("srp_review_period_days")
+  /// The probability of not stocking out during lead time that the safety
+  /// stock is sized for. 95.000 is the usual retail answer; strictly between
+  /// 0 and 100, because 100% service means infinite stock.
+  srpServiceLevelPerc    Decimal   @default(95) @db.Decimal(9, 3)    @map("srp_service_level_perc")
+
+  /// The supplier's constraints, applied AFTER the maths.
+  srpMoq                 Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_moq")
+  srpPackMultiple        Decimal   @default(1) @db.Decimal(18, 6)    @map("srp_pack_multiple")
+  /// The opposite constraint: no point ordering more than the shelf holds.
+  srpShelfCapacityQty    Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_shelf_capacity_qty")
+  srpPreferredSupplierId String?   @db.Uuid                          @map("srp_preferred_supplier_id")
+
+  /// MANUAL means a human set these and a job MUST NOT overwrite them.
+  srpSource              String    @default("MANUAL") @db.VarChar(20) @map("srp_source")
+  srpComputedOn          DateTime? @db.Timestamptz(6)                @map("srp_computed_on")
+  /// Arms the sweep that raises orders without a human. Off by default.
+  srpAutoReplenish       Boolean   @default(false)                   @map("srp_auto_replenish")
+
+  srpRemarks             String?   @db.VarChar(250)                  @map("srp_remarks")
+  srpIsActive            Boolean   @default(true)                    @map("srp_is_active")
+  srpIsDeleted           Boolean   @default(false)                   @map("srp_is_deleted")
+  srpSyncDate            DateTime? @db.Timestamptz(6)                @map("srp_sync_date")
+  srpCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("srp_created_on")
+  srpCreatedBy           String?   @db.Text                          @map("srp_created_by")
+  srpModifiedOn          DateTime? @db.Timestamptz(6)                @map("srp_modified_on")
+  srpModifiedBy          String?   @db.Text                          @map("srp_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company                Company            @relation("StockReorderPolicyCompany",  fields: [srpCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_company")
+  branch                 BranchMaster       @relation("StockReorderPolicyBranch",   fields: [srpBranchId],            references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_branch")
+  godown                 GodownLocation?    @relation("StockReorderPolicyGodown",   fields: [srpGodownId],            references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_godown")
+  item                   ItemMaster         @relation("StockReorderPolicyItem",     fields: [srpItemId],              references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_item")
+  uom                    ItemUnitConversion @relation("StockReorderPolicyUom",      fields: [srpUomId],               references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_uom")
+  preferredSupplier      Supplier?          @relation("StockReorderPolicySupplier", fields: [srpPreferredSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_supplier")
+
+  @@map("stock_reorder_policy")
+  @@schema("stock")
+}

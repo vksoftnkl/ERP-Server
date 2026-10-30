@@ -1,0 +1,71 @@
+/// TILL APPROVAL — one row per request, decided once (share file 47 §7,
+/// migration 20261008100000). Generic on purpose: the void / price-override /
+/// reprint gates (SIX_TXN_CONTROLS §7) write here too, so "every override in a
+/// session" is one query.
+///
+/// NOT a voucher approval step. This approves an EXCEPTION — a variance, a
+/// payout over a limit, a drawer opened with no sale — and records who let it
+/// through.
+///   COUNTER channel: the approver types their PIN on the cashier's screen; the
+///     STORE server verifies usr_pin_hash and writes the decision in the same call.
+///   REMOTE channel: the request sits PENDING; an approver with taa_can_remote
+///     decides THROUGH THE STORE SERVER'S API (one writer per row). HO reviews
+///     go to till_session_review, never here.
+model TillApproval {
+  tapId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tap_id")
+  tapCompanyId        String    @db.Uuid                             @map("tap_company_id")
+  tapBranchId         String    @db.Uuid                             @map("tap_branch_id")
+  tapTenantId         String?   @db.Uuid                             @map("tap_tenant_id")
+  tapAccYear          String    @db.Char(9)                          @map("tap_acc_year")
+  /// ck_tar_event's list.
+  tapEventCode        String    @db.VarChar(30)                      @map("tap_event_code")
+  tapSessionId        String?   @db.Uuid                             @map("tap_session_id")
+  tapCounterId        String?   @db.Uuid                             @map("tap_counter_id")
+  /// TILL_SESSION | TILL_MOVEMENT | SALE_BILL …
+  tapSrcDocType       String?   @db.VarChar(30)                      @map("tap_src_doc_type")
+  tapSrcDocId         String?   @db.Uuid                             @map("tap_src_doc_id")
+  tapSrcRefno         String?   @db.VarChar(100)                     @map("tap_src_refno")
+  tapAmount           Decimal   @default(0) @db.Decimal(15, 2)       @map("tap_amount")
+  /// How many of this event already in the session.
+  tapCountInSession   Int       @default(0)                          @map("tap_count_in_session")
+  tapRuleId           String?   @db.Uuid                             @map("tap_rule_id")
+  /// mode / threshold / role as they were when it fired.
+  tapRuleSnapshot     Json?     @db.JsonB                            @map("tap_rule_snapshot")
+  /// SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  tapRequiredRole     String    @db.VarChar(20)                      @map("tap_required_role")
+  tapTwoPerson        Boolean   @default(false)                      @map("tap_two_person")
+  /// Snapshotted from the rule (or till.single_operator): ck_tap_self reads it.
+  tapSelfAllowed      Boolean   @default(false)                      @map("tap_self_allowed")
+  /// COUNTER | REMOTE
+  tapChannel          String    @default("COUNTER") @db.VarChar(8)   @map("tap_channel")
+  tapRequestedBy      String    @db.Uuid                             @map("tap_requested_by")
+  tapRequestedOn      DateTime  @default(now()) @db.Timestamptz(6)   @map("tap_requested_on")
+  tapReasonId         String?   @db.Uuid                             @map("tap_reason_id")
+  tapRequestNote      String?   @db.VarChar(500)                     @map("tap_request_note")
+  /// PENDING | APPROVED | REJECTED | EXPIRED | CANCELLED
+  tapStatus           String    @default("PENDING") @db.VarChar(10)  @map("tap_status")
+  tapDecidedBy        String?   @db.Uuid                             @map("tap_decided_by")
+  tapDecidedOn        DateTime? @db.Timestamptz(6)                   @map("tap_decided_on")
+  tapDecidedDeviceId  String?   @db.Uuid                             @map("tap_decided_device_id")
+  tapDecisionNote     String?   @db.VarChar(500)                     @map("tap_decision_note")
+  /// Two-person: a third person (ck_tap_second, ck_tap_two_person).
+  tapSecondBy         String?   @db.Uuid                             @map("tap_second_by")
+  tapSecondOn         DateTime? @db.Timestamptz(6)                   @map("tap_second_on")
+  tapExpiresOn        DateTime? @db.Timestamptz(6)                   @map("tap_expires_on")
+  tapDeviceId         String?   @db.Uuid                             @map("tap_device_id")
+  tapIsDeleted        Boolean   @default(false)                      @map("tap_is_deleted")
+  tapSyncDate         DateTime? @db.Timestamptz(6)                   @map("tap_sync_date")
+  tapCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tap_created_on")
+  tapModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tap_modified_on")
+
+  // Relations
+  reason              TillReason? @relation("TillApprovalReason", fields: [tapReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tap_reason")
+
+  @@id([tapId, tapAccYear], map: "pk_till_approval")
+
+  // DB-only: ix_tap_pending, ix_tap_session, ix_tap_doc, ix_tap_approver (all partial).
+  // CHECKs: ck_tap_status, ck_tap_channel, ck_tap_decided, ck_tap_self, ck_tap_second,
+  //         ck_tap_two_person, ck_tap_amount, ck_tap_event, ck_tap_role.
+  @@map("till_approval")
+  @@schema("accounts")
+}

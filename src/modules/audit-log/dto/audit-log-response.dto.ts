@@ -1,23 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ModuleErrorFieldDto,
+  ModuleErrorResponseDto,
+} from '../../../common/utils/module-response.dto';
 
-export class AuditLogErrorFieldDto {
-  @ApiProperty({ example: 'date_from' })
-  field!: string;
-
-  @ApiProperty({ example: 'date_from must be less than or equal to date_to' })
-  message!: string;
-}
-
-export class AuditLogErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation error' })
-  message!: string;
-
-  @ApiProperty({ type: AuditLogErrorFieldDto, isArray: true })
-  errors!: AuditLogErrorFieldDto[];
-}
+export {
+  ModuleErrorFieldDto as AuditLogErrorFieldDto,
+  ModuleErrorResponseDto as AuditLogErrorResponseDto,
+};
 
 export class AuditLogListItemDto {
   @ApiProperty({ format: 'uuid' })
@@ -56,25 +46,54 @@ export class AuditLogListItemDto {
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   log_user_id!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 'Admin User' })
+  log_user_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   log_branch_id!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 'Head Office' })
+  log_branch_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   log_notes!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'The raw record id' })
+  log_entity_id!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 2,
+    description:
+      'Notes 89 — revision of a transaction document: 1 = create, then one per save. ' +
+      'log_original_record / log_modified_record hold the whole document (the /get shape) ' +
+      'before and after that save. Null on every other row.',
+  })
+  log_rev_no!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Till 1' })
+  log_device_name!: string | null;
 }
 
 export class AuditLogListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
+  @ApiPropertyOptional({ example: 1, nullable: true })
+  page!: number | null;
 
   @ApiProperty({ example: 20 })
   limit!: number;
 
-  @ApiProperty({ example: 100 })
-  total!: number;
+  @ApiPropertyOptional({ example: 100, nullable: true })
+  total!: number | null;
 
-  @ApiProperty({ example: 5 })
-  total_pages!: number;
+  @ApiPropertyOptional({ example: 5, nullable: true })
+  total_pages!: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'uuid',
+    description: 'Pass as cursor for next page',
+  })
+  next_cursor!: string | null;
 }
 
 export class AuditLogSuccessListDto {

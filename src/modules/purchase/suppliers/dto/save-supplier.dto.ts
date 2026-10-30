@@ -1,434 +1,247 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsIn, IsNotEmpty, IsOptional, Max, ValidateIf, ValidateNested } from 'class-validator';
 import {
-  IsArray,
-  IsBoolean,
-  IsDateString,
-  IsInt,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-  MaxLength,
-  Min,
-  ValidateIf,
-  isUUID,
-} from 'class-validator';
-const toNullableString = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-const toNullableUuid = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return isUUID(trimmed, 'all') ? trimmed : value;
-};
-const toNullableInteger = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return null;
-  }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : value;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : value;
-  }
-  return value;
-};
-const toNullableNumber = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return null;
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : value;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-  return value;
-};
-const toOptionalIntegerArray = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => Number(entry));
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-    if (!normalized) {
-      return [];
-    }
-    const withoutBrackets =
-      normalized.startsWith('[') && normalized.endsWith(']')
-        ? normalized.slice(1, -1).trim()
-        : normalized;
-    const splitValues = withoutBrackets.includes(',')
-      ? withoutBrackets.split(',')
-      : withoutBrackets
-        ? [withoutBrackets]
-        : [];
-    return splitValues.map((entry) => Number(entry.trim()));
-  }
-  return value;
-};
-const toUpperTrimmed = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  return value.trim().toUpperCase();
-};
+  NullableDateString,
+  NullableInteger,
+  NullableNumber,
+  NullableString,
+  NullableUpperMaxString,
+  NullableUuid,
+  OptionalBoolean,
+  OptionalIntegerArray,
+  OptionalUuid,
+  RequiredUuid,
+  TrimmedString,
+  UpperString,
+} from 'src/common/dto/dtoDecorators';
+import { NullableUpperPattern, PARTY_GSTIN_PATTERN } from 'src/common/party/party-gstin';
+import { LedgerBankAccountItemDto } from '../../../accountsModule/accountLedgerMasters/dto/ledger-bank-account-item.dto';
+import { normalizeBankAccountItems } from '../../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 export class SaveSupplierDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing supplier',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   supId?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Create only: make this existing PARTY ledger a supplier as well (e.g. a customer that is ' +
+      'also bought from). No ledger is created; the supplier takes the ledger id as its supId, ' +
+      'and the ledger keeps its group. Name, state, address, contact, GSTIN and PAN left out ' +
+      'default from the ledger. 409 when the ledger is already a supplier.',
+  })
+  @OptionalUuid()
+  supLinkLedId?: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   supCompanyId?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   supBranchId?: string | null;
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   supGroupId!: string;
   @ApiProperty({ maxLength: 20 })
-  @IsString()
+  @TrimmedString(20)
   @IsNotEmpty()
-  @MaxLength(20)
   supPurchaseType!: string;
-  @ApiProperty({ maxLength: 200 })
-  @IsString()
+  @ApiProperty({ maxLength: 200, description: 'May be left out when supLinkLedId is set' })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supName))
+  @TrimmedString(200)
   @IsNotEmpty()
-  @MaxLength(200)
   supName!: string;
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(50)
+  @NullableString(50)
   supShort?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr1?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr2?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr3?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supCity?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supDistrict?: string | null;
-  @ApiProperty({ maxLength: 100 })
-  @IsString()
+  @ApiProperty({ maxLength: 100, description: 'May be left out when supLinkLedId is set' })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supStateName))
+  @TrimmedString(100)
   @IsNotEmpty()
-  @MaxLength(100)
   supStateName!: string;
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableString(60)
   supCountry?: string | null;
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   supPincode?: string | null;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   supTel?: string | null;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   supPhone?: string | null;
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
+  @NullableString(120)
   supMailId?: string | null;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   supWhatsappNo?: string | null;
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   supWebsiteAddress?: string | null;
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   supChequePreName?: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   supNotes?: string | null;
   @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
+  @NullableInteger(0)
   supCreditDays?: number;
   @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsNumber()
+  @NullableNumber()
   supCashDiscPerc?: number;
   @ApiPropertyOptional({
     type: [Number],
     description: 'Collection days as integer array (JSON array or comma-separated values)',
   })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalIntegerArray(value))
-  @IsArray()
-  @IsInt({ each: true })
+  @OptionalIntegerArray()
   supCollectionDays?: number[];
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
+  @ApiPropertyOptional({
+    maxLength: 15,
+    nullable: true,
+    pattern: PARTY_GSTIN_PATTERN.source,
+    description:
+      'Trimmed and upper-cased; blank = cleared. Any GSTN shape (normal, TDS deductor, UIN, OIDAR, NRTP), the same check as cusGstNo (VALIDATION_IS_GSTIN); a normal GSTIN must start with supStateCode.',
+  })
+  @NullableUpperPattern(15, 'isGstin', PARTY_GSTIN_PATTERN, 'a 15-character GSTIN')
   supGstNo?: string | null;
-  @ApiProperty({ minLength: 2, maxLength: 2 })
-  @Transform(({ value }) => toUpperTrimmed(value))
-  @IsString()
-  @Length(2, 2)
+  @ApiProperty({
+    minLength: 2,
+    maxLength: 2,
+    description: 'May be left out when supLinkLedId is set',
+  })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supStateCode))
+  @UpperString(2)
   supStateCode!: string;
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   supPanNo?: string | null;
-
-  @ApiProperty({ maxLength: 30 })
-  @IsString()
+  @ApiProperty({
+    maxLength: 30,
+    enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+    description:
+      'Party rules D2. Old spellings (Regular, Unregistered …) are mapped to the code. REGULAR / COMPOSITION / SEZ need supGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs supStateCode 96.',
+  })
+  @TrimmedString(30)
   @IsNotEmpty()
-  @MaxLength(30)
   supGstType!: string;
-
   @ApiPropertyOptional({ maxLength: 25, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(25)
+  @NullableString(25)
   supSupCst?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   supDrugLiscenceNo?: string | null;
-
+  // MST-01 purchase fields (plan-purchase-phase1 §2.5) — MSME 15 / 45-day rule, licences, notes popup
+  @ApiPropertyOptional({ nullable: true, description: 'Drug licence valid to (YYYY-MM-DD).' })
+  @NullableDateString()
+  supDrugLicenceExpiry?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true, enum: ['MICRO', 'SMALL', 'MEDIUM', 'NONE'] })
+  @NullableUpperMaxString(10)
+  @IsIn(['MICRO', 'SMALL', 'MEDIUM', 'NONE', null])
+  supMsmeCategory?: string | null;
+  @ApiPropertyOptional({ maxLength: 15, nullable: true, enum: ['MANUFACTURER', 'SERVICE', 'TRADER'] })
+  @NullableUpperMaxString(15)
+  @IsIn(['MANUFACTURER', 'SERVICE', 'TRADER', null])
+  supMsmeActivity?: string | null;
+  @ApiPropertyOptional({ description: 'Written agreement with the MSME supplier: agreed days apply (max 45), else 15.' })
+  @OptionalBoolean()
+  supMsmeAgreement?: boolean;
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 45 })
+  @NullableInteger(0)
+  @Max(45)
+  supMsmeAgreedDays?: number | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  supFssaiNo?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'FSSAI licence valid to (YYYY-MM-DD).' })
+  @NullableDateString()
+  supFssaiValidTo?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Godown a bill from this supplier opens with.' })
+  @NullableUuid()
+  supDefaultGodownId?: string | null;
+  @ApiPropertyOptional({ description: 'Pop the supplier note up when the supplier is picked on an entry screen.' })
+  @OptionalBoolean()
+  supShowNotesOnEntry?: boolean;
+  @ApiPropertyOptional({ description: 'Import / overseas supplier.' })
+  @OptionalBoolean()
+  supIsImport?: boolean;
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   supRegionName?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr1?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr2?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr3?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supRegionCity?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supRegionDistrict?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   supRegionStateName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableString(60)
   supRegionCountry?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, format: 'date' })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDateString()
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date',
+    deprecated: true,
+    description: 'Ignored (party rules D3-5): no master save writes it. Accepted for one release.',
+  })
+  @NullableDateString()
   supBilledDate?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
+  @NullableInteger()
   supSortOrder?: number | null;
-
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   supIsActive?: boolean;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
-  supStateId?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   supCreatedBy?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   supModifiedBy?: string | null;
+
+  @ApiPropertyOptional({
+    type: LedgerBankAccountItemDto,
+    isArray: true,
+    description:
+      "Bank accounts to persist on the supplier's linked account ledger. On create every item " +
+      'is inserted; on update an item with `lbaId` updates that row, an item without `lbaId` is ' +
+      'inserted. Omitting the array (or sending an empty one) leaves existing bank accounts ' +
+      'untouched — use the ledger bank account delete endpoint to remove them.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBankAccountItems(value))
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LedgerBankAccountItemDto)
+  ledgerBankAccount?: LedgerBankAccountItemDto[];
 }

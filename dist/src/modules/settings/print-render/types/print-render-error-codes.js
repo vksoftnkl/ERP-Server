@@ -1,0 +1,38 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PrintRenderErrorCode = void 0;
+var PrintRenderErrorCode;
+(function (PrintRenderErrorCode) {
+    PrintRenderErrorCode["NO_COMPANY"] = "PRINT_RENDER_NO_COMPANY";
+    PrintRenderErrorCode["DOC_ID_BOTH"] = "PRINT_RENDER_DOC_ID_BOTH";
+    PrintRenderErrorCode["PURPOSE_NOT_FOUND"] = "PRINT_RENDER_PURPOSE_NOT_FOUND";
+    PrintRenderErrorCode["REPRINT_NOT_ALLOWED"] = "PRINT_RENDER_REPRINT_NOT_ALLOWED";
+    PrintRenderErrorCode["NOT_PUBLISHED"] = "PRINT_RENDER_NOT_PUBLISHED";
+    PrintRenderErrorCode["VERSION_NOT_FOUND"] = "PRINT_RENDER_VERSION_NOT_FOUND";
+    PrintRenderErrorCode["REVISION_FROZEN"] = "PRINT_RENDER_REVISION_FROZEN";
+    PrintRenderErrorCode["NO_RENDERER"] = "PRINT_RENDER_NO_RENDERER";
+    PrintRenderErrorCode["MODE_MISMATCH"] = "PRINT_RENDER_MODE_MISMATCH";
+    PrintRenderErrorCode["TIMED_OUT"] = "PRINT_RENDER_TIMED_OUT";
+    PrintRenderErrorCode["ENGINE_NOT_RENDERABLE"] = "PRINT_RENDER_ENGINE_NOT_RENDERABLE";
+    PrintRenderErrorCode["BODY_NOT_JSON_OBJECT"] = "PRINT_RENDER_BODY_NOT_JSON_OBJECT";
+    PrintRenderErrorCode["DESIGN_EMPTY"] = "PRINT_RENDER_DESIGN_EMPTY";
+    PrintRenderErrorCode["DESIGN_INVALID"] = "PRINT_RENDER_DESIGN_INVALID";
+    PrintRenderErrorCode["DATASET_NO_SQL"] = "PRINT_RENDER_DATASET_NO_SQL";
+    PrintRenderErrorCode["DATASET_BIND_FAILED"] = "PRINT_RENDER_DATASET_BIND_FAILED";
+    PrintRenderErrorCode["DATASET_TIMED_OUT"] = "PRINT_RENDER_DATASET_TIMED_OUT";
+    PrintRenderErrorCode["DATASET_FAILED"] = "PRINT_RENDER_DATASET_FAILED";
+    PrintRenderErrorCode["PROVIDER_UNKNOWN"] = "PRINT_RENDER_PROVIDER_UNKNOWN";
+    PrintRenderErrorCode["PROVIDER_FAILED"] = "PRINT_RENDER_PROVIDER_FAILED";
+    PrintRenderErrorCode["PARAMS_NOT_ARRAY"] = "PRINT_RENDER_PARAMS_NOT_ARRAY";
+    PrintRenderErrorCode["PARAM_NOT_OBJECT"] = "PRINT_RENDER_PARAM_NOT_OBJECT";
+    PrintRenderErrorCode["PARAM_NAME_INVALID"] = "PRINT_RENDER_PARAM_NAME_INVALID";
+    PrintRenderErrorCode["PARAM_TYPE_INVALID"] = "PRINT_RENDER_PARAM_TYPE_INVALID";
+    PrintRenderErrorCode["PARAM_NOT_NUMBER"] = "PRINT_RENDER_PARAM_NOT_NUMBER";
+    PrintRenderErrorCode["PARAM_NOT_DATE"] = "PRINT_RENDER_PARAM_NOT_DATE";
+    PrintRenderErrorCode["PARAM_NOT_DATETIME"] = "PRINT_RENDER_PARAM_NOT_DATETIME";
+    PrintRenderErrorCode["PARAM_NOT_UUID"] = "PRINT_RENDER_PARAM_NOT_UUID";
+    PrintRenderErrorCode["PARAM_REQUIRED"] = "PRINT_RENDER_PARAM_REQUIRED";
+    PrintRenderErrorCode["PARAM_SERVER_OWNED"] = "PRINT_RENDER_PARAM_SERVER_OWNED";
+    PrintRenderErrorCode["PARAM_UNKNOWN"] = "PRINT_RENDER_PARAM_UNKNOWN";
+})(PrintRenderErrorCode || (exports.PrintRenderErrorCode = PrintRenderErrorCode = {}));
+//# sourceMappingURL=print-render-error-codes.js.map

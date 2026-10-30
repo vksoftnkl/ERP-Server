@@ -1,21 +1,15 @@
 model PriceLevel {
   priceLvlId        Int      @id @default(autoincrement()) @map("price_lvl_id")
-
   priceLvlName      String   @db.VarChar(200)              @map("price_lvl_name")
   priceLvlShort     String?  @db.VarChar(50)               @map("price_lvl_short")
-
   priceLvlIsActive  Boolean  @default(true)                @map("price_lvl_is_active")
   priceLvlIsAdmin   Boolean  @default(false)               @map("price_lvl_is_admin")
-
   priceLvlIsDeleted Boolean  @default(false)               @map("price_lvl_isDeleted")
   priceLvlSyncDate  DateTime? @db.Timestamptz              @map("price_lvl_SyncDate")
-
   priceLvlCreatedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_createdOn")
   priceLvlCreatedBy String?  @db.VarChar(100)              @map("price_lvl_createdBy")
-
   priceLvlModifiedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_modifiedOn")
   priceLvlModifiedBy String?  @db.VarChar(100)             @map("price_lvl_modifiedBy")
-
   @@map("price_levels")
   @@schema("fixed")
 }

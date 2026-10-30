@@ -1,7 +1,9 @@
 model ItemBrandMaster {
   brand_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  brand_name        String   @unique @db.VarChar(150)
+  /// Unique among live brands, ignoring case: uq_brand_name ON (lower(brand_name)) WHERE NOT
+  /// brand_is_deleted (notes 139 A2/B6). Partial + expression, so DB-only, never declared here.
+  brand_name        String   @db.VarChar(150)
   brand_alias       String?  @db.VarChar(150)
   brand_short       String?  @db.VarChar(50)
   brand_description String?  @db.VarChar(250)
@@ -26,6 +28,9 @@ model ItemBrandMaster {
   // self relation (parent -> children)
   parent   ItemBrandMaster?  @relation("BrandHierarchy", fields: [brand_parent_id], references: [brand_id], onUpdate: Cascade, onDelete: Restrict)
   children ItemBrandMaster[] @relation("BrandHierarchy")
+
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemBrand")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemBrand")
 
   @@map("item_brand_master")
    @@schema("inventory")

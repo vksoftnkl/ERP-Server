@@ -1,17 +1,23 @@
-export interface DropdownDetailErrorDetail {
-  field: string;
-  message: string;
-}
-export interface DropdownDetailErrorResponse {
-  success: false;
-  message: string;
-  errors: DropdownDetailErrorDetail[];
-}
-export interface DropdownDetailSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
+export type { FixedErrorDetail as DropdownDetailErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as DropdownDetailErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as DropdownDetailSuccessResponse } from 'src/common/types/module-api.types';
+export interface DropdownColumnPayload {
+  dropdown_columns_id: string;
+  dropdown_columns_dropdown_id: string;
+  dropdown_columns_no: number;
+  dropdown_columns_data_type: string;
+  dropdown_columns_name: string;
+  dropdown_columns_alias: string | null;
+  dropdown_columns_width: number | null;
+  dropdown_columns_visiblity: boolean;
+  dropdown_columns_allignment: string | null;
+  dropdown_columns_filter: boolean;
+  dropdown_columns_sql_name: string | null;
+  dropdown_columns_created_on: string;
+  dropdown_columns_created_by: string | null;
+  dropdown_columns_modified_on: string | null;
+  dropdown_columns_modified_by: string | null;
+  dropdown_columns_sync_on: string | null;
 }
 export interface DropdownDetailPayload {
   dropdown_id: string;
@@ -25,10 +31,21 @@ export interface DropdownDetailPayload {
   dropdown_max_visible_items: number;
   dropdown_show_header: boolean;
   dropdown_width: number | null;
+  dropdown_device_type: string | null;
+  dropdown_created_on: string;
+  dropdown_created_by: string | null;
+  dropdown_modified_on: string | null;
+  dropdown_modified_by: string | null;
+  dropdown_sync_on: string | null;
+  columns: DropdownColumnPayload[];
 }
-export interface DropdownDetailListMeta {
+export type DropdownDetailListItem = DropdownDetailPayload | Record<string, unknown>;
+export interface DropdownRunMeta {
   page: number;
   limit: number;
   total: number;
-  total_pages: number;
+}
+export interface DropdownRunResult {
+  items: Record<string, unknown>[];
+  meta: DropdownRunMeta;
 }

@@ -1,0 +1,236 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
+  IsIn,
+  IsOptional,
+  Matches,
+  ValidateNested,
+} from 'class-validator';
+import {
+  NullableNumber,
+  NullableUuid,
+  OptionalBoolean,
+  OptionalDateString,
+  OptionalInteger,
+  OptionalNumber,
+  OptionalUuid,
+  RequiredInteger,
+  RequiredNumber,
+  RequiredUuid,
+} from 'src/common/dto/dtoDecorators';
+import { PRICE_LEVELS, PRICE_SCOPES } from '../types/selling-price-bulk.types';
+
+/** One save is one screen-full of dirty rows, not a catalogue reprice. */
+export const MAX_SAVE_ROWS = 1000;
+
+export class SaveSellingPriceLevelDto {
+  @ApiProperty({
+    enum: PRICE_LEVELS,
+    description:
+      'Price level ordinal 1-4, mapping onto item_price_master ipm_sales_price_a..d. ' +
+      'The NAMES come from inventory.item_price_levels; no user-facing text says "A".',
+  })
+  @RequiredInteger(1, 4)
+  level!: number;
+
+  @ApiProperty({
+    example: 118,
+    description:
+      'The shelf price, inclusive of tax. AUTHORITATIVE — the server recomputes priceWot ' +
+      'and markupPerc from it and ignores whatever those two arrive as.',
+  })
+  @RequiredNumber(0)
+  price!: number;
+
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Accepted and DISCARDED. Recomputed from price and the resolved tax %. See §5.1.',
+  })
+  @OptionalNumber()
+  priceWot?: number;
+
+  @ApiPropertyOptional({
+    example: 18,
+    description: 'Accepted and DISCARDED. Recomputed from price and the row cost. See §5.1.',
+  })
+  @OptionalNumber()
+  markupPerc?: number;
+}
+
+export class SaveSellingPriceRowDto {
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'The grid line this row came from. Echoed back on every problem so the client can highlight it.',
+  })
+  @OptionalInteger(0)
+  lineNo?: number;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  itemId!: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'inventory.item_unit_conversion.iuc_id — NOT item_unit_master.unit_id. Same convention ' +
+      'as the stock voucher lines, and the same trap: the foreign key catches a unit_id only ' +
+      'after forty rows have been typed.',
+  })
+  @RequiredUuid()
+  uomId!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The price row (ipm_id) loaded into this row, when it had one. Informational: the save ' +
+      'finds the row to write by item, unit, bucket and target scope — never by this id — so ' +
+      'a CHAIN-sourced id saved at This branch still creates the override.',
+  })
+  @NullableUuid()
+  bucketId?: string | null;
+
+  @ApiPropertyOptional({
+    enum: PRICE_SCOPES,
+    nullable: true,
+    description:
+      'The priceScope this row was LOADED with, echoed back unchanged. Together with the ' +
+      'header scope it is the whole of §5.5 — a CHAIN-sourced row saved at This branch ' +
+      'creates an override, the same row saved at All branches moves the chain. Absent means ' +
+      'the row carries no price yet, and the header scope decides alone.',
+  })
+  @IsOptional()
+  @IsIn(PRICE_SCOPES)
+  priceScope?: (typeof PRICE_SCOPES)[number] | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      "Bucket dimension, echoed back from the load. Never edited here. Blanked by the item's " +
+      'stock track policy on save: an MRP the policy does not track makes this the headline row.',
+  })
+  @NullableNumber(0)
+  mrp?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'Identity dimension, echoed back from the load.',
+  })
+  @NullableNumber(0)
+  salePrice?: number | null;
+
+  @ApiProperty({ type: SaveSellingPriceLevelDto, isArray: true })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => SaveSellingPriceLevelDto)
+  levels!: SaveSellingPriceLevelDto[];
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1385,
+    description:
+      "Notes 147 B — the PRICE ROW's own cost for one of this unit, tax inclusive, as keyed in " +
+      'the quick rate popup or the item card. Written to ipm_cost_price, with ipm_cost_wot = ' +
+      'costPrice ÷ (1 + tax %), in the same save and writer (the Price Change Log records it); ' +
+      "the row's markups and the below-cost check use it. It is not the stock's moving average, " +
+      'which keeps coming from inward and is what costRate shows while the item has stock ' +
+      '(costBasis says which). Absent or null: unchanged — the cost the grid showed, as before.',
+  })
+  @NullableNumber(0)
+  costPrice?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  @NullableNumber(0)
+  minPrice?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  @NullableNumber()
+  roundOff?: number | null;
+}
+
+export class SaveSellingPriceBulkDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  branchId!: string;
+
+  @ApiProperty({
+    enum: PRICE_SCOPES,
+    description:
+      'The header radio. BRANCH = This branch, CHAIN = All branches. It is not a filter on ' +
+      'what was displayed: it decides which row S1 looks for, and therefore whether the save ' +
+      'updates a row or creates one. CHAIN from a non-HQ caller is a 403, never a silent ' +
+      'downgrade to BRANCH.',
+  })
+  @IsIn(PRICE_SCOPES)
+  scope!: (typeof PRICE_SCOPES)[number];
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'The below-cost round trip (§5.3). Suppresses the BELOW_COST verdict ONLY, and only when ' +
+      'inventory.below_cost_price resolves to "warning". Above-MRP and below-min still abort, ' +
+      'and Q26 is re-run on the confirmed post because cost moves when a purchase posts.',
+  })
+  @OptionalBoolean()
+  confirmed?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    example: '2026-10-23',
+    description:
+      'Notes 140 A — the day the new prices start, YYYY-MM-DD. Absent or today: the row in ' +
+      "force today is updated, as always. A later day leaves today's price alone: the row in " +
+      'force on that day is split (it ends the day before, a new row carries the new prices ' +
+      'from that day to its old end), or updated in place when it already starts that day, or ' +
+      'a new row is inserted from that day when the bucket has none. Bills dated on or after ' +
+      'it pick the new row up by themselves. Before today is a 400 STOCK_PRICE_FROM_IN_PAST, ' +
+      'more than a year ahead a 400 STOCK_PRICE_FROM_TOO_FAR. The MRP, minimum and cost checks ' +
+      'judge the row as it will stand on that day.',
+  })
+  @OptionalDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'effectiveFrom must be a date, YYYY-MM-DD' })
+  effectiveFrom?: string;
+
+  @ApiProperty({
+    type: SaveSellingPriceRowDto,
+    isArray: true,
+    description:
+      'CHANGED rows only. The client knows which are dirty; the API must not have to diff four hundred rows to find twelve.',
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_SAVE_ROWS)
+  @ValidateNested({ each: true })
+  @Type(() => SaveSellingPriceRowDto)
+  rows!: SaveSellingPriceRowDto[];
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  @OptionalUuid()
+  userId?: string;
+
+  @ApiPropertyOptional({
+    example: 12,
+    description:
+      'The quick rate popup (plan 2026-10-23 §3.3): the menu of the screen it was opened from — ' +
+      '12 Sale Bill, 14 Quotation, 11 Sales Order, 182 DC, 29 the item list. The price log ' +
+      'files the change under its source as always (CHANGE_SELLING_PRICE, menu 30) and adds ' +
+      '"via <menu name> (menu N)" to its reason, so a rate changed during billing can be told ' +
+      'apart. Omit on menu 30 itself.',
+  })
+  @OptionalInteger(1)
+  originMenuId?: number;
+}

@@ -1,0 +1,37 @@
+model SaleAgent {
+  saId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sa_id")
+  saCompanyId   String    @db.Uuid @map("sa_company_id")
+  saBranchId    String?   @db.Uuid @map("sa_branch_id")
+  saGroupId     String    @db.Uuid @map("sa_group_id")
+  saCode        String?   @db.VarChar(60) @map("sa_code")
+  saName        String    @db.VarChar(200) @map("sa_name")
+  saAlias       String?   @db.VarChar(200) @map("sa_alias")
+  saMobile1     String?   @db.VarChar(20) @map("sa_mobile1")
+  saMobile2     String?   @db.VarChar(20) @map("sa_mobile2")
+  saAddr1       String?   @db.VarChar(250) @map("sa_addr1")
+  saAddr2       String?   @db.VarChar(250) @map("sa_addr2")
+  saCity        String?   @db.VarChar(120) @map("sa_city")
+  saDistrict    String?   @db.VarChar(120) @map("sa_district")
+  saState       String?   @db.VarChar(120) @map("sa_state")
+  saPincode     String?   @db.VarChar(10) @map("sa_pincode")
+  saPanNo       String?   @db.VarChar(20) @map("sa_pan_no")
+  saGstin       String?   @db.VarChar(20) @map("sa_gstin")
+  saRemarks     String?   @db.VarChar(500) @map("sa_remarks")
+  saIsActive    Boolean   @default(true) @map("sa_is_active")
+  saIsDeleted   Boolean   @default(false) @map("sa_is_deleted")
+  saSyncDate    DateTime? @db.Timestamptz(6) @map("sa_sync_date")
+  saCreatedBy   String?   @db.VarChar(100) @map("sa_created_by")
+  saCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("sa_created_on")
+  saModifiedBy  String?   @db.VarChar(100) @map("sa_modified_by")
+
+  // Relations
+  company       Company        @relation("CompanySaleAgents", fields: [saCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_company_id")
+  branch        BranchMaster?  @relation("BranchSaleAgents", fields: [saBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_branch_id")
+  group         SaleAgentGroup @relation(fields: [saGroupId], references: [saGrpId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_group_id")
+  saModifiedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sa_modified_on")
+  
+  @@map("sale_agents")
+  @@schema("sales")
+  // DB-only partial index ix_sale_agents_active on (sa_is_active) WHERE
+  // sa_is_deleted = false is not expressible in Prisma schema.
+}

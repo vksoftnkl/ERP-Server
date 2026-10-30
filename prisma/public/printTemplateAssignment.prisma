@@ -1,0 +1,145 @@
+/// public.print_template_assignment — §5, WHICH design wins, and WHERE.
+///
+/// THERE IS DELIBERATELY NO isDefault COLUMN. Default-ness is the ROW'S
+/// EXISTENCE. A pta_ row is the choice for one scope; templates that are merely
+/// available are PrintTemplate rows matching the purpose, which is what the
+/// "print in format" list shows.
+///
+/// That removes three defects at once:
+///   * "exactly one default" becomes a plain unique index on the scope key,
+///     with no flag anyone can forget to clear.
+///   * THERE IS NO CLEAR STEP. Changing the default is an UPDATE of ONE row.
+///     3.0's clear-then-set was scope-unaware, so on a mixed site setting the
+///     Windows default silently unset the Linux one.
+///   * A partial unique index on a boolean cannot be DEFERRED, so flipping two
+///     rows in one UPDATE can fail on row order alone. With no boolean there is
+///     no swap to get wrong.
+///
+/// Narrowest wins: counter -> branch -> company -> EVERY COMPANY, via
+/// ptaSpecificity. Four rungs, not three: ptaCompanyId is nullable, so a
+/// shipped design can be the default for every company that has not said
+/// otherwise.
+///
+/// PAPER IS NOT IN THE KEY. Output mode is: a 3-inch thermal receipt genuinely
+/// is a different artifact from an A4 tax invoice. Paper is a PROPERTY of the
+/// chosen version, asserted against the counter's printer profile at render
+/// time.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_pta_output_mode,
+/// ck_pta_device_needs_branch, ck_pta_branch_needs_company,
+/// ck_pta_template_scope, ck_pta_copies and ck_pta_printer_one_of live in the
+/// migration and in PrintTemplateAssignmentService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_pta_scope     UNIQUE (COALESCE(company, nil), purpose,
+///                    COALESCE(branch, nil), COALESCE(device, nil),
+///                    output_mode) WHERE NOT deleted — "exactly one default
+///                    per scope", as an index rather than as care. COALESCE to
+///                    the nil uuid rather than NULLS NOT DISTINCT, because it
+///                    is the same expression the resolver uses.
+///   ix_pta_resolve   the render-time resolver, leading with the SAME COALESCE
+///                    expression and ordered by specificity DESC, so that
+///                    "this company's rows plus the global ones" is one index
+///                    scan.
+///   ix_pta_company / ix_pta_branch / ix_pta_device / ix_pta_purpose /
+///   ix_pta_template / ix_pta_printer / ix_pta_created_by / ix_pta_modified_by
+///                    FK-covering, all partial
+model PrintTemplateAssignment {
+  ptaId               String    @id(map: "pk_print_template_assignment") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pta_id")
+  /// NULL = EVERY COMPANY, the ladder's widest rung.
+  ///
+  /// A global row can only ever name a SHIPPED design, and that is enforced
+  /// rather than trusted: ptaTemplateCompanyKey carries the template's owner
+  /// and ck_pta_template_scope ties the two together. Without it a global
+  /// assignment could point at one company's private design and every other
+  /// company's till would render it — their logo, their address, on somebody
+  /// else's paper.
+  ptaCompanyId        String?   @db.Uuid                                     @map("pta_company_id")
+  /// NULL = every branch.
+  ptaBranchId         String?   @db.Uuid                                     @map("pta_branch_id")
+  /// NULL = every counter.
+  ptaDeviceId         String?   @db.Uuid                                     @map("pta_device_id")
+
+  ptaPurposeId        String    @db.Uuid                                     @map("pta_purpose_id")
+  ptaTemplateId       String    @db.Uuid                                     @map("pta_template_id")
+  /// The OWNER of ptaTemplateId, carried so that the composite fk_pta_template
+  /// can exist. Same idiom as the promotion schema's benefit lock: a fact a
+  /// single-column key cannot check is made checkable by carrying the second
+  /// half of the parent's identity.
+  ///
+  /// NOT NULL, and the nil uuid means "a shipped design" — matching
+  /// ptlCompanyKey rather than ptlCompanyId, so no NULL ever reaches the key
+  /// and MATCH SIMPLE cannot quietly stop checking. There is no default: the
+  /// writer must state which design's owner this is, because defaulting it to
+  /// the sentinel would mean defaulting to "shipped", and that is the one
+  /// answer that must never be assumed. PrintTemplateAssignmentService reads it
+  /// off the template rather than trusting the caller.
+  ptaTemplateCompanyKey String  @db.Uuid                                     @map("pta_template_company_key")
+  ptaOutputMode       String    @default("PRINT") @db.VarChar(15)            @map("pta_output_mode")
+
+  /// Where the paper comes out for this scope. NULL = the server's default
+  /// queue for the device.
+  /// Points at public.printer_profile(prf_id) — §6.
+  ptaPrinterId        String?   @db.Uuid                                     @map("pta_printer_id")
+
+  /// The same answer given as a bare queue or share name, for a scope whose
+  /// printer nobody has registered as a profile.
+  ///
+  /// A FALLBACK, never a copy of the profile's name: ck_pta_printer_one_of
+  /// refuses it alongside ptaPrinterId. Two columns answering "which printer"
+  /// is the same defect §5 spent its whole argument removing from 3.0's default
+  /// handling, and a denormalised name on a MASTER goes stale the day the
+  /// profile is renamed — unlike plgPrinterName, which is a snapshot on an
+  /// immutable log and is meant to be frozen.
+  ///
+  /// What it costs: a registered profile carries the family, the codepage, the
+  /// column count and what the device can physically do. A bare name carries
+  /// none of that, so a render through this column falls back to the counter's
+  /// defaults for all of it and prfPaperCode cannot assert anything — which is
+  /// exactly the check that stops an A4 invoice going to an 80mm roll.
+  ptaPrinterName      String?   @db.VarChar(150)                             @map("pta_printer_name")
+
+  /// Overrides the purpose's copy count for this scope. NULL = use it.
+  ptaCopies           Int?      @db.SmallInt                                 @map("pta_copies")
+
+  /// GENERATED ALWAYS ... STORED: 3 counter, 2 branch, 1 company, 0 every
+  /// company. Read-only — writing it raises 428C9. The no-arg dbgenerated() is
+  /// what stops `migrate dev` emitting DROP DEFAULT.
+  ///
+  /// A single CASE rather than added weights, because a counter row must also
+  /// name its branch (ck_pta_device_needs_branch), so device 4 + branch 2 would
+  /// score SIX and every reader would have to know that 6, not 4, means
+  /// counter. Consecutive values cost nothing and cannot be misread.
+  ///
+  /// Rung 0 is its own rung and not shared with rung 1: if a global row and a
+  /// company row both scored 0 the resolver would have a tie it cannot break,
+  /// and ux_pta_scope would let both exist.
+  ptaSpecificity      Int?      @default(dbgenerated()) @db.SmallInt         @map("pta_specificity")
+
+  ptaRemarks          String?   @db.VarChar(250)                             @map("pta_remarks")
+  ptaIsActive         Boolean   @default(true)                               @map("pta_is_active")
+  ptaIsDeleted        Boolean   @default(false)                              @map("pta_is_deleted")
+  ptaSyncDate         DateTime? @db.Timestamptz(6)                           @map("pta_sync_date")
+  ptaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("pta_created_on")
+  ptaCreatedBy        String?   @db.Uuid                                     @map("pta_created_by")
+  ptaModifiedOn       DateTime? @db.Timestamptz(6)                           @map("pta_modified_on")
+  ptaModifiedBy       String?   @db.Uuid                                     @map("pta_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?      @relation("PrintTemplateAssignmentCompany",    fields: [ptaCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_company")
+  branch              BranchMaster? @relation("PrintTemplateAssignmentBranch",     fields: [ptaBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_branch")
+  device              DeviceMaster? @relation("PrintTemplateAssignmentDevice",     fields: [ptaDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_device")
+  purpose             PrintPurpose  @relation("PrintTemplateAssignmentPurpose",    fields: [ptaPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_purpose")
+  /// COMPOSITE, against ux_ptl_id_company_key — (ptl_id, ptl_company_key) —
+  /// so that a company cannot assign another company's private template. Both
+  /// columns are NOT NULL on this side and generated non-null on the other, so
+  /// the key always fires; it subsumes the plain existence check a
+  /// single-column key would give.
+  template            PrintTemplate @relation("PrintTemplateAssignmentTemplate",   fields: [ptaTemplateId, ptaTemplateCompanyKey], references: [ptlId, ptlCompanyKey], onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_template")
+  printer             PrinterProfile? @relation("PrintTemplateAssignmentPrinter", fields: [ptaPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_printer")
+  createdByUser       UserMaster?   @relation("PrintTemplateAssignmentCreatedBy",  fields: [ptaCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateAssignmentModifiedBy", fields: [ptaModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_modified_by")
+
+  @@map("print_template_assignment")
+  @@schema("public")
+}

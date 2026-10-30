@@ -1,27 +1,23 @@
-export interface SupplierErrorDetail {
-  field: string;
-  message: string;
-}
+import type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
+import type { PurchaseErrorDetail, PurchaseErrorResponse } from 'src/common/types/module-api.types';
+import type { SupplierErrorCode } from './supplier-error-codes';
+import type { PartySyncResult } from 'src/common/party/party-sync.service';
 
-export interface SupplierErrorResponse {
-  success: false;
-  message: string;
-  errors: SupplierErrorDetail[];
+/** Notes 119: every refusal names its code — see supplier-error-codes.ts. */
+export interface SupplierErrorDetail extends PurchaseErrorDetail {
+  code: SupplierErrorCode;
 }
-
-export interface SupplierSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type SupplierErrorResponse = PurchaseErrorResponse<SupplierErrorDetail>;
+export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/common/types/module-api.types';
+export type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 export interface SupplierPayload {
   supId: string;
   supCompanyId: string | null;
+  supCompanyName?: string | null;
   supBranchId: string | null;
+  supBranchName?: string | null;
   supGroupId: string;
+  supGroupName?: string | null;
   supPurchaseType: string;
   supName: string;
   supShort: string | null;
@@ -49,6 +45,16 @@ export interface SupplierPayload {
   supGstType: string;
   supSupCst: string | null;
   supDrugLiscenceNo: string | null;
+  supDrugLicenceExpiry: string | null;
+  supMsmeCategory: string | null;
+  supMsmeActivity: string | null;
+  supMsmeAgreement: boolean;
+  supMsmeAgreedDays: number | null;
+  supFssaiNo: string | null;
+  supFssaiValidTo: string | null;
+  supDefaultGodownId: string | null;
+  supShowNotesOnEntry: boolean;
+  supIsImport: boolean;
   supRegionName: string | null;
   supRegionAddr1: string | null;
   supRegionAddr2: string | null;
@@ -66,14 +72,10 @@ export interface SupplierPayload {
   supCreatedBy: string | null;
   supModifiedOn: string;
   supModifiedBy: string | null;
-  supStateId: string | null;
+  ledgerBankAccount: LedgerBankAccountPayload[];
 }
 
-export type SupplierListItem = SupplierPayload | Record<string, unknown>;
-
-export interface SupplierListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+/** POST /suppliers/create → data: the supplier plus what the sync did (party rules D4-6). */
+export interface SupplierSavePayload extends SupplierPayload {
+  partySync: PartySyncResult;
 }

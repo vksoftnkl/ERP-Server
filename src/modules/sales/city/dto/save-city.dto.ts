@@ -1,101 +1,56 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { IsNotEmpty } from 'class-validator';
 import {
-  IsBoolean,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  ValidateIf,
-} from 'class-validator';
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
+  NullableString,
+  OptionalBoolean,
+  OptionalNumber,
+  OptionalUuid,
+  RequiredUuid,
+  TrimmedString,
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveCityDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing city',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   ctmId?: string;
 
   @ApiProperty({ maxLength: 150 })
-  @IsString()
+  @TrimmedString(150)
   @IsNotEmpty()
-  @MaxLength(150)
   ctmName!: string;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ctmAlias?: string | null;
 
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(50)
+  @NullableString(50)
   ctmShort?: string | null;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   ctmStateId!: string;
 
   @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsNumber()
+  @OptionalNumber()
   ctmOrder?: number;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Free-text description' })
+  @NullableString()
+  ctmDescription?: string | null;
+
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ctmIsActive?: boolean;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ctmCreatedBy?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ctmModifiedBy?: string | null;
 }

@@ -1,0 +1,62 @@
+model UserMenus {
+  // ── Primary key ────────────────────────────────────────────────────────────
+  umId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("um_id")
+
+  // ── References ─────────────────────────────────────────────────────────────
+  umUserId      String    @db.Uuid @map("um_user_id")
+  umMenuId      Int       @map("um_menu_id")
+
+  // ── CRUD permissions (admin-assigned) ──────────────────────────────────────
+  umCanView     Boolean   @default(true)  @map("um_can_view")
+  umCanCreate   Boolean   @default(false) @map("um_can_create")
+  umCanEdit     Boolean   @default(false) @map("um_can_edit")
+  umCanDelete   Boolean   @default(false) @map("um_can_delete")
+  umCanPrint    Boolean   @default(false) @map("um_can_print")
+  umCanExport   Boolean   @default(false) @map("um_can_export")
+  // ── Transaction rights (20260921220000) ──────────────────────────────
+  // A transaction screen asks four more questions than a master screen.
+  // Default FALSE: these are GRANTED, never assumed.
+  //
+  // NOTE: a user_menus save is a FULL REPLACE — the client must send all
+  // ten flags or it silently revokes these four.
+  umCanPost     Boolean   @default(false) @map("um_can_post")
+  umCanCancel   Boolean   @default(false) @map("um_can_cancel")
+  umCanAmend    Boolean   @default(false) @map("um_can_amend")
+  /// Passes a WARN-level guard: discount cap, credit limit, back-date, rate
+  /// below minimum.
+  umCanOverride Boolean   @default(false) @map("um_can_override")
+  /// May change how a POSTED bill was paid. Separate from umCanAmend: the
+  /// sale is not being edited, only the tender — but it moves money between
+  /// ledgers, so it is grantable on its own.
+  umCanRetender Boolean   @default(false) @map("um_can_retender")
+
+  // ── User preferences (user-controlled) ─────────────────────────────────────
+  umVisibility  Boolean   @default(true)  @map("um_visibility")
+  umIsFavourite Boolean   @default(false) @map("um_is_favourite")
+  umIsPinned    Boolean   @default(false) @map("um_is_pinned")
+  umSortOrder   Int       @default(0)     @map("um_sort_order")
+
+  // ── Soft delete ────────────────────────────────────────────────────────────
+  umIsDeleted   Boolean   @default(false) @map("um_is_deleted")
+
+  // ── Audit ──────────────────────────────────────────────────────────────────
+  umSyncDate    DateTime? @db.Timestamptz() @map("um_sync_date")
+  umCreatedOn   DateTime  @default(now()) @db.Timestamptz() @map("um_created_on")
+  umCreatedBy   String    @db.Uuid @map("um_created_by")
+  umModifiedOn  DateTime? @db.Timestamptz() @map("um_modified_on")
+  umModifiedBy  String?   @db.Uuid @map("um_modified_by")
+
+  // ── Relations ──────────────────────────────────────────────────────────────
+  user          UserMaster @relation(fields: [umUserId], references: [usrId])
+  menu          Menu       @relation(fields: [umMenuId], references: [menuId])
+
+  // ── Constraints & indexes ──────────────────────────────────────────────────
+  @@unique([umUserId, umMenuId], name: "uq_user_menus_user_menu")
+
+  @@index([umUserId])
+  @@index([umUserId, umCanView, umVisibility])
+  @@index([umUserId, umIsFavourite, umIsPinned])
+
+  @@map("user_menus")
+  @@schema("public")
+}

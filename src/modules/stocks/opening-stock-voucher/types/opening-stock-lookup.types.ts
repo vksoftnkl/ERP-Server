@@ -1,0 +1,100 @@
+/**
+ * What the picker gets back for ONE item on the Opening Stock line grid
+ * (menu 44) — 19q Q6. One round trip fills the whole line: unit, base unit,
+ * conversion factor, tax, and the part nothing else answers, HOW THE ITEM IS
+ * TRACKED.
+ *
+ * IT DELIBERATELY CARRIES NO COST. The engine resolves `rateSource` ONLY when a
+ * line arrives at cost 0 (19_stock_posting.sql §2). A picker that seeds the
+ * cost cell hands the engine a non-zero rate, the CASE never runs, and
+ * `svh_rate_source` silently stops meaning anything — the line is valued at a
+ * figure read when the item was picked rather than when it posted. AVG_COST is
+ * the case that matters: the average moves with every line of the same
+ * document. So the cost cell stays EMPTY unless a human types one.
+ */
+export interface OpeningStockItemLookup {
+  itemId: string;
+  itemCode: string | null;
+  itemName: string;
+  barcode: string | null;
+
+  /**
+   * The unit the line is keyed in and the unit it is STORED in. Both are
+   * `iuc_id`s (`inventory.item_unit_conversion`), never `unit_id`s —
+   * `svi_uom_id` and `svi_base_uom_id` both point at the conversion row.
+   */
+  uomId: string;
+  unitName: string;
+  toBaseFactor: number;
+  baseUomId: string;
+
+  taxPerc: number;
+  /**
+   * Cess travels with the tax because the SCREEN derives cost-without-tax: a
+   * per-UNIT cess is not a percentage of value, and the engine's own derivation
+   * (cost / (1 + tax/100)) cannot express it.
+   */
+  cessPerc: number;
+  cessUnit: number;
+
+  /**
+   * Which identity columns the line must carry — the `stp_track_signature` of
+   * the policy in force ON THE DOCUMENT DATE, or 'N' when no policy row matches
+   * at all (track nothing, the correct default for a grocery line). Nothing
+   * else on the screen decides this.
+   */
+  trackSignature: string;
+
+  /**
+   * Lot IDENTITY, returned only because of it: a signature carrying M or S has
+   * to resolve into a bucket, and these are what it resolves by. They are a
+   * SEED, not an answer — most specific price scope first, then the dearest
+   * bucket — and the line's real bucket is settled by the MRP that ends up
+   * typed. With no bucket row for the unit the headline's MRP seeds `mrp`
+   * (and `salePrice` is 0); both are 0 only when the unit has no price row at
+   * all (PriceBucketGateway.findOpeningSeedBucket). For a signature of N they
+   * are noise.
+   */
+  mrp: number;
+  salePrice: number;
+
+  /**
+   * Notes 153 — the Godown Transfer line's default rates, per unit of THIS
+   * unit (uomId): item_unit_master.unit_loading / unit_unloading when the item
+   * has item_allow_loading, else 0. A seed the screen pre-fills and the user
+   * may change; the line stores what was left. Meaningless on an opening.
+   */
+  loadRate: number;
+  unloadRate: number;
+
+  /**
+   * A WARNING, not a refusal. The engine's rule is per HOLDING (godown, lot and
+   * bucket) per YEAR. This sees the year (onDate's) and, when sent, the godown
+   * and bucket — not the lot, which is not keyed yet — so true means "this
+   * item already has an opening here this year" (notes 143 #8). The real check
+   * is the preflight, and only that may block a post.
+   */
+  alreadyOpened: boolean;
+}
+
+/**
+ * The parameters of one lookup — the DOCUMENT's scope, not the session's.
+ * Company and branch are each optional: absent or null means "no restriction
+ * on this dimension", a value means the item must be in scope for it.
+ */
+export interface OpeningStockItemLookupArgs {
+  companyId?: string | null;
+  branchId?: string | null;
+  itemId: string;
+  /** An `iuc_id`, or absent for the item's default unit. */
+  uomId?: string;
+  /**
+   * The document date, yyyy-MM-dd. The tracking policy is resolved AS AT the
+   * date the stock is being opened on, not as at today: a back-dated opening
+   * must be keyed under the policy that was in force then.
+   */
+  onDate: string;
+  /** Notes 143 #8 — narrow `alreadyOpened` to this godown / bucket when given. */
+  godownId?: string;
+  bucket?: string;
+}

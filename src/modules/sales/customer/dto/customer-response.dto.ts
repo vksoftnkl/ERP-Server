@@ -1,5 +1,5 @@
+import { PartySyncDto } from 'src/common/party/party-response.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class CustomerErrorFieldDto {
   @ApiProperty({ example: 'cusStateCode' })
@@ -36,19 +36,19 @@ export class CustomerPayloadDto {
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusName!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr1!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr2!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr3!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   cusCity!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   cusDistrict!: string | null;
 
   @ApiProperty({ maxLength: 100 })
@@ -207,6 +207,13 @@ export class CustomerPayloadDto {
   @ApiProperty()
   cusPriceLevelId!: number;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Retail Price',
+    description: 'Name of the linked price level (resolved on the get endpoint)',
+  })
+  cusPriceLevelName?: string | null;
+
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   cusBilledDate!: string | null;
 
@@ -219,14 +226,42 @@ export class CustomerPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   cusCompanyId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  cusCompanyName?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   cusBranchId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  cusBranchName?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   cusAreaId!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Downtown',
+    description: 'Name of the linked area (resolved on the get endpoint)',
+  })
+  cusAreaName?: string | null;
+
   @ApiProperty({ format: 'uuid' })
   cusGroupId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Wholesale',
+    description: 'Name of the linked customer group (resolved on the get endpoint)',
+  })
+  cusGroupName?: string | null;
 
   @ApiProperty()
   cusIsActive!: boolean;
@@ -250,20 +285,6 @@ export class CustomerPayloadDto {
   cusModifiedBy!: string | null;
 }
 
-export class CustomerListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class CustomerDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   cusId!: string;
@@ -283,21 +304,20 @@ export class CustomerSuccessSingleDto {
   data!: CustomerPayloadDto;
 }
 
-export class CustomerSuccessListDto {
+export class CustomerSavePayloadDto extends CustomerPayloadDto {
+  @ApiProperty({ type: PartySyncDto, description: 'Party rules D4-6: what the save did to the supplier of the same ledger.' })
+  partySync!: PartySyncDto;
+}
+
+export class CustomerSuccessSaveDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Customers fetched successfully' })
+  @ApiProperty({ example: 'Customer updated successfully' })
   message!: string;
 
-  @ApiProperty({ type: CustomerPayloadDto, isArray: true })
-  data!: CustomerPayloadDto[];
-
-  @ApiProperty({ type: CustomerListMetaDto })
-  meta!: CustomerListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
+  @ApiProperty({ type: CustomerSavePayloadDto })
+  data!: CustomerSavePayloadDto;
 }
 
 export class CustomerSuccessDeleteDto {

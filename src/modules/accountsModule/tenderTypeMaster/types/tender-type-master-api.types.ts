@@ -1,39 +1,17 @@
-export interface TenderTypeMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface TenderTypeMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: TenderTypeMasterErrorDetail[];
-}
-
-export interface TenderTypeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { AccountsErrorDetail as TenderTypeMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as TenderTypeMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as TenderTypeMasterSuccessResponse } from 'src/common/types/module-api.types';
 export interface TenderTypeMasterPayload {
   ttmTypeId: string;
   ttmTypeName: string;
+  ttmDisplayName: string;
   ttmIsActive: boolean;
   ttmIsDeleted: boolean;
   ttmSyncDate: string | null;
   ttmCreatedOn: string;
   ttmCreatedBy: string | null;
-  ttmModifiedOn: string;
+  // acc_tender_types.ttm_modified_on is nullable — a row that has never been
+  // updated since its migration seed carries no modification timestamp.
+  ttmModifiedOn: string | null;
   ttmModifiedBy: string | null;
-}
-
-export type TenderTypeMasterListItem = TenderTypeMasterPayload | Record<string, unknown>;
-
-export interface TenderTypeMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

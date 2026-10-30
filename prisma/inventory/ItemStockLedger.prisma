@@ -1,27 +1,3 @@
-enum StockTrackingType {
-  NONE
-  BATCH
-  LOT
-  @@schema("inventory")
-}
-
-enum StockTxnType {
-  OPENING
-  PURCHASE
-  PURCHASE_RETURN
-  SALE
-  SALES_RETURN
-  TRANSFER_IN
-  TRANSFER_OUT
-  ADJUSTMENT_IN
-  ADJUSTMENT_OUT
-  PRODUCTION_IN
-  CONSUMPTION
-  DAMAGE
-  EXPIRED
-  @@schema("inventory")
-}
-
 model ItemStockLedger {
   stlId                String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("stl_id")
 
@@ -38,8 +14,8 @@ model ItemStockLedger {
   stlSplitNo           Int               @default(1) @map("stl_split_no")
   stlVoucherTypeId     Int               @map("stl_voucher_type_id")
 
-  // Posting / classification
-  stlTxnType           StockTxnType      @map("stl_txn_type")
+  // Posting / classification — validated at app level (StockTxnType)
+  stlTxnType           String            @db.VarChar(30) @map("stl_txn_type")
   stlStockEffect       Int               @db.SmallInt @map("stl_stock_effect")
   stlDocDate           DateTime          @db.Date @map("stl_doc_date")
   stlPostedOn          DateTime          @default(now()) @db.Timestamptz(6) @map("stl_posted_on")
@@ -47,7 +23,7 @@ model ItemStockLedger {
 
   // Item snapshot
   stlItemId            String            @db.Uuid @map("stl_item_id")
-  stlTrackingType      StockTrackingType @default(NONE) @map("stl_tracking_type")
+  stlTrackingType      String            @default("NONE") @db.VarChar(20) @map("stl_tracking_type")
 
   // UOM snapshot
   stlUomId             String            @db.Uuid @map("stl_uom_id")

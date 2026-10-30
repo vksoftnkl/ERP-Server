@@ -42,8 +42,11 @@ model ItemTaxMaster {
   taxCreatedBy            String?   @db.VarChar(100) @map("tax_created_by")
   taxModifiedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("tax_modified_on")
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
-  defaultItems            ItemMaster[]
-  taxHistory              ItemTaxHistory[]
+  // defaultItems / taxHistory moved to TaxRateMaster in migration
+  // 20260912110000_repoint_items_to_tax_rate_master. RETIRED 2026-09-30: the
+  // items-tax-master module, its /item-taxes routes and grid 5 are gone and no
+  // code reads this table — nothing references it either. It stays only until
+  // it is dropped on purpose (its 10 rows carry the old ledger columns).
   @@map("item_tax_master")
    @@schema("inventory")
   // unique slab name globally (since company removed)

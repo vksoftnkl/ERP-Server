@@ -1,41 +1,40 @@
 {
   "scenario": "smoke",
-  "baseUrl": "https://localhost:3010/",
-  "startedAt": "2026-02-17T11:04:56.920Z",
-  "finishedAt": "2026-02-17T11:05:11.924Z",
-  "durationSeconds": 15.003655713,
+  "baseUrl": "http://localhost:3011/",
+  "startedAt": "2026-07-27T11:04:53.734Z",
+  "finishedAt": "2026-07-27T11:05:08.735Z",
+  "durationSeconds": 15.001470934999999,
   "concurrency": 5,
   "timeoutMs": 5000,
   "thinkTimeMs": 0,
   "maxFailureRate": 10,
   "requests": {
-    "total": 62247,
-    "success": 62247,
+    "total": 46445,
+    "success": 46445,
     "failed": 0,
     "successRate": 100,
     "failureRate": 0,
-    "throughputPerSecond": 4148.78888123684
+    "throughputPerSecond": 3096.0297294339957
   },
   "traffic": {
-    "totalBytes": 9143709,
-    "bytesPerSecond": 609432.0727499354
+    "totalBytes": 6827415,
+    "bytesPerSecond": 455116.3702267974
   },
   "latencyMs": {
-    "min": 0.2841179999995802,
-    "avg": 1.2023546307452586,
-    "max": 48.287968,
-    "p50": 0.9264239999997699,
-    "p90": 1.821748000000298,
-    "p95": 2.43014200000016,
-    "p99": 3.938372000000072
+    "min": 0.47514400000000023,
+    "avg": 1.6118689232640813,
+    "max": 32.478275000000004,
+    "p50": 1.7865350000001854,
+    "p90": 2.3821590000006836,
+    "p95": 2.8679539999999974,
+    "p99": 4.07179300000098
   },
   "statusCounts": {
-    "200": 100,
-    "429": 62147
+    "429": 46445
   },
   "errorCounts": {},
   "routeCounts": {
-    "health": 62247
+    "health": 46445
   },
   "acceptedStatuses": [
     429

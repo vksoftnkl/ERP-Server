@@ -1,0 +1,302 @@
+import { Injectable } from '@nestjs/common';
+import { istClockText } from 'src/common/utils/ist-clock.util';
+import { throwStockConflict } from 'src/common/utils/module-service.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
+import type {
+  StockErrorDetail,
+  StockErrorResponse,
+} from '../stock-voucher/types/stock-voucher.types';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import {
+  cancelStockVoucher,
+  postStockVoucher,
+  recallTransferOut,
+} from '../stock-voucher/stock-voucher-posting.helper';
+import type {
+  PostStockVoucherResult,
+  RecallTransferOutResult,
+  StockLedgerSourceLabel,
+} from '../stock-voucher/stock-voucher-posting.helper';
+import { StockAccountsPostingService } from './stock-accounts-posting.service';
+import { StockVoucherSource } from './stock-voucher.source';
+
+/** What `post()` reports: the engine's result plus the accounts voucher, if one was written. */
+export interface StockPostOutcome extends PostStockVoucherResult {
+  accountsVoucherId: string | null;
+}
+
+/**
+ * §3.1 — ONE stock engine, and one door into it.
+ *
+ * ── Why this service exists at all ─────────────────────────────────────────
+ *
+ * The posting phases — pickIssueLots → resolveLots → attachLotsToLines →
+ * writeLedger → applyBalances → applyItemCost → assertNegativeStockPolicy →
+ * refreshLotTotals → recomputeHeaderTotals — were written twice before: once
+ * as `stock.fn_svh_post` in plpgsql and once in TypeScript, and the two drifted
+ * apart with nobody the wiser. A delivery challan, a sale bill, a sale return,
+ * a DC return and both halves of a transfer need the same phases. If each grows
+ * its own, the same thing happens again and the next person cannot tell which
+ * engine a holding came from.
+ *
+ * So: every document posts stock through `post(tx, source)`, the phases live in
+ * one place, and a `StockLineSource` is the only thing a new document has to
+ * write. The transfer routes post here too since 2026-09-28; the SQL functions
+ * they used to call were never deployed.
+ *
+ * ── The freeze guard ───────────────────────────────────────────────────────
+ *
+ * `fn_sml_freeze_guard` used to refuse a `stock_ledger` insert while a godown
+ * was frozen for a count — and it tested **`now()`**: the moment the row
+ * ARRIVED, not the moment the goods moved. A sale made at 10:00, before the
+ * count began, that syncs at 14:00 during it, was refused although the shelf
+ * was already short when the counter started counting. That is exactly the
+ * offline failure `offline-sync-invariants.md` §7b describes.
+ *
+ * Migration `20260922060000` dropped the trigger. `assertNotFrozen` below is
+ * its replacement, and it tests **`sml_doc_datetime`** — the movement's own
+ * timestamp — so a movement that HAPPENED before the freeze is let through for
+ * the count to reconcile, and one that happened inside it is still refused.
+ *
+ * ── Stock → accounts ───────────────────────────────────────────────────────
+ *
+ * Under PERPETUAL a stock document that posts also writes its accounts voucher
+ * (§1.9), in the same transaction, from the ledger rows the post just wrote.
+ * A sales document's shadow voucher (`ledgerSource` set) does NOT: the sales
+ * document posts its own COGS pair, and posting here too would count it twice.
+ *
+ * A transfer writes no stock leg, but since notes 153 / 156 both halves post
+ * their labour here (postTransferCharges), under PERIODIC too: labour is an
+ * expense, not a stock value.
+ */
+@Injectable()
+export class StockPostingService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accounts: StockAccountsPostingService,
+  ) {}
+
+  /**
+   * Post one document's stock movement.
+   *
+   * Runs inside the CALLER's transaction — a document that says POSTED with no
+   * ledger rows behind it is the inconsistency this prevents.
+   *
+   * `rowsPosted` is the number of LEDGER ROWS written, which is not always the
+   * line count: a count line whose variance is zero moves nothing and posts no
+   * row; a same-branch transfer posts two per line.
+   */
+  async post(
+    tx: Prisma.TransactionClient,
+    source: StockVoucherSource,
+    opts: { actor: string; postedOn: Date; ledgerSource?: StockLedgerSourceLabel },
+  ): Promise<StockPostOutcome> {
+    await this.assertNotFrozen(tx, source);
+
+    const result = await postStockVoucher(tx, {
+      rules: source.rules,
+      svhId: source.svhId,
+      accYear: source.accYear,
+      actor: opts.actor,
+      postedOn: opts.postedOn,
+      ledgerSource: opts.ledgerSource,
+    });
+
+    let accountsVoucherId: string | null = null;
+    if (!opts.ledgerSource && result.status === 'POSTED') {
+      const posted = await this.accounts.postForVoucher(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        branchId: source.branchId,
+        voucherType: source.rules.voucherType,
+        displayName: source.rules.displayName,
+        actor: opts.actor,
+        postedOn: opts.postedOn,
+      });
+      accountsVoucherId = posted?.voucherId ?? null;
+    }
+    // Notes 153 / 156 — a transfer document posts the labour it carries,
+    // whatever cogs_mode says: a godown transfer (ends POSTED) its loading +
+    // unloading, a branch despatch (ends IN_TRANSIT) its loading at the
+    // sending branch, a receipt (POSTED) its unloading at the receiving
+    // branch. A transfer writes no stock leg, so this is its only voucher.
+    if (
+      !opts.ledgerSource &&
+      source.rules.allowsLoading &&
+      (result.status === 'POSTED' || result.status === 'IN_TRANSIT')
+    ) {
+      const charges = await this.accounts.postTransferCharges(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        branchId: source.branchId,
+        voucherType: source.rules.voucherType,
+        displayName: source.rules.displayName,
+        actor: opts.actor,
+        postedOn: opts.postedOn,
+      });
+      accountsVoucherId = charges?.voucherId ?? accountsVoucherId;
+    }
+    return { ...result, accountsVoucherId };
+  }
+
+  /**
+   * Cancel by REVERSAL, never by delete: every ledger row the post wrote gets
+   * a mirror with the opposite direction, and the balance, the moving average,
+   * the negative-stock policy and the lot totals are then applied over those
+   * mirrors exactly as they were over the originals. The accounts voucher, if
+   * one was written, gets its `Rev` mirror in the same transaction.
+   */
+  async cancel(
+    tx: Prisma.TransactionClient,
+    source: StockVoucherSource,
+    opts: {
+      actor: string;
+      reason: string;
+      cancelledOn: Date;
+      ledgerSource?: StockLedgerSourceLabel;
+      /** Notes 143 #4 — see CancelStockVoucherParams.refuseNegative. */
+      refuseNegative?: boolean;
+    },
+  ): Promise<number> {
+    await this.assertNotFrozen(tx, source);
+
+    const reversed = await cancelStockVoucher(tx, {
+      rules: source.rules,
+      svhId: source.svhId,
+      accYear: source.accYear,
+      actor: opts.actor,
+      reason: opts.reason,
+      cancelledOn: opts.cancelledOn,
+      refuseNegative: opts.refuseNegative,
+    });
+    // A transfer's loading-charges voucher (notes 153) reverses the same way;
+    // reverseForVoucher is a no-op for a transfer that charged nothing.
+    if (
+      !opts.ledgerSource &&
+      (StockAccountsPostingService.postsAccounts(source.rules.voucherType) ||
+        source.rules.allowsLoading)
+    ) {
+      await this.accounts.reverseForVoucher(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        voucherType: source.rules.voucherType,
+        reason: opts.reason,
+        actor: opts.actor,
+      });
+    }
+    return reversed;
+  }
+
+  /**
+   * Notes 160 B — recall an untouched branch despatch (see
+   * `recallTransferOut`): the OUT rows reversed, the transit rows closed, the
+   * header CANCELLED, and the despatch's loading voucher (notes 156) given its
+   * `Rev` mirror — the one place a despatch's labour is reversed, because the
+   * goods never went. Same freeze guard as a cancel: the mirrors land in the
+   * From godown.
+   */
+  async recall(
+    tx: Prisma.TransactionClient,
+    source: StockVoucherSource,
+    opts: { actor: string; reason: string; cancelledOn: Date },
+  ): Promise<RecallTransferOutResult> {
+    await this.assertNotFrozen(tx, source);
+    const result = await recallTransferOut(tx, {
+      rules: source.rules,
+      svhId: source.svhId,
+      accYear: source.accYear,
+      actor: opts.actor,
+      reason: opts.reason,
+      cancelledOn: opts.cancelledOn,
+      refuseNegative: true,
+    });
+    await this.accounts.reverseForVoucher(tx, {
+      svhId: source.svhId,
+      accYear: source.accYear,
+      companyId: source.companyId,
+      voucherType: source.rules.voucherType,
+      reason: opts.reason,
+      actor: opts.actor,
+    });
+    return result;
+  }
+
+  /**
+   * The freeze guard, in the service, testing the movement's OWN timestamp.
+   *
+   * While a DRAFT PHYSICAL count with `svh_freeze_stock` is inside its window,
+   * no ledger row may touch the godown being counted — except the count's own
+   * posting, which is what lifts the freeze.
+   *
+   * Four details that all matter, and each was in the dropped trigger:
+   *
+   *  * the counted godown is `COALESCE(svh_from_godown_id, svh_to_godown_id)`
+   *    on the PHYSICAL header — counts fill `from`;
+   *  * DRAFT only. Posting or cancelling the count lifts the freeze by itself,
+   *    even mid-window. Nothing to unlock and nothing to forget at 2 a.m.;
+   *  * a freeze is per GODOWN. Other godowns of the same branch keep trading;
+   *  * the document's own posting is excluded, or a count could never post.
+   *
+   * And the one detail that is DIFFERENT, deliberately: the window is tested
+   * against the MOVEMENT's timestamp, not against `now()`.
+   */
+  private async assertNotFrozen(
+    tx: Prisma.TransactionClient,
+    source: StockVoucherSource,
+  ): Promise<void> {
+    const movedAt = await source.docDatetime(tx);
+    if (!movedAt) {
+      return;
+    }
+
+    const godowns = await source.godownIds(tx);
+    if (godowns.length === 0) {
+      return;
+    }
+
+    const blocking = await tx.$queryRaw<
+      {
+        svh_id: string;
+        svh_refno: string | null;
+        godown_id: string;
+        svh_freeze_from: Date;
+        svh_freeze_to: Date;
+      }[]
+    >`
+      SELECT c.svh_id, c.svh_refno,
+             COALESCE(c.svh_from_godown_id, c.svh_to_godown_id) AS godown_id,
+             c.svh_freeze_from, c.svh_freeze_to
+        FROM stock.stock_voucher c
+       WHERE c.svh_company_id = ${source.companyId}::uuid
+         AND c.svh_branch_id  = ${source.branchId}::uuid
+         -- ix_svh_freeze_open covers exactly these four predicates.
+         AND c.svh_voucher_type = 'PHYSICAL'
+         AND c.svh_freeze_stock = true
+         AND c.svh_status       = 'DRAFT'
+         AND c.svh_is_deleted   = false
+         -- The count's own posting must not be blocked by its own freeze.
+         AND c.svh_id <> ${source.srcDocId}::uuid
+         AND COALESCE(c.svh_from_godown_id, c.svh_to_godown_id) = ANY(${godowns}::uuid[])
+         -- sml_doc_datetime, NOT now(). See the class note.
+         AND ${movedAt}::timestamptz BETWEEN c.svh_freeze_from AND c.svh_freeze_to
+       LIMIT 1`;
+
+    if (blocking.length > 0) {
+      const b = blocking[0];
+      // Notes 150 (minor) — times as a person reads them, and a code the
+      // client can word its box by (notes 119) rather than a bare 409.
+      const message =
+        `Godown ${b.godown_id} is frozen for physical count ${b.svh_refno ?? b.svh_id} ` +
+        `from ${istClockText(b.svh_freeze_from)} to ${istClockText(b.svh_freeze_to)}, ` +
+        `and this movement is timed ${istClockText(movedAt)}, inside that window. ` +
+        `Post or cancel the count first.`;
+      throwStockConflict<StockErrorDetail, StockErrorResponse>(message, [
+        { field: 'docDatetime', code: StockErrorCode.GODOWN_FROZEN, message },
+      ]);
+    }
+  }
+}

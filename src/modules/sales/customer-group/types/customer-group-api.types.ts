@@ -1,21 +1,12 @@
-export interface CustomerGroupErrorDetail {
-  field: string;
-  message: string;
-}
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { CustomerGroupErrorCode } from './customer-group-error-codes';
 
-export interface CustomerGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: CustomerGroupErrorDetail[];
+/** Notes 119: every refusal names its code — see customer-group-error-codes.ts. */
+export interface CustomerGroupErrorDetail extends SalesErrorDetail {
+  code: CustomerGroupErrorCode;
 }
-
-export interface CustomerGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type CustomerGroupErrorResponse = SalesErrorResponse<CustomerGroupErrorDetail>;
+export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface CustomerGroupPayload {
   cgrId: string;
@@ -37,13 +28,4 @@ export interface CustomerGroupPayload {
   cgrIsDeleted: boolean;
   cgrCreatedOn: string;
   cgrModifiedOn: string;
-}
-
-export type CustomerGroupListItem = CustomerGroupPayload | Record<string, unknown>;
-
-export interface CustomerGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

@@ -1,0 +1,37 @@
+/// TILL APPROVAL AUTHORITY — who may approve what, up to how much (share file
+/// 47 §1.7, migration 20261008100000).
+///
+/// Branch NULL = every branch of the company (area manager / HO).
+/// Company NULL = every company (group finance). taaUserId is a
+/// user_master.usr_id, FK-less like every till person column.
+model TillApprovalAuthority {
+  taaId               String    @id(map: "pk_till_approval_authority") @default(dbgenerated("uuidv7()")) @db.Uuid @map("taa_id")
+  taaUserId           String    @db.Uuid                             @map("taa_user_id")
+  taaCompanyId        String?   @db.Uuid                             @map("taa_company_id")
+  taaBranchId         String?   @db.Uuid                             @map("taa_branch_id")
+  /// The level this grant confers: SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  taaRole             String    @db.VarChar(20)                      @map("taa_role")
+  /// NULL = every event.
+  taaEventCode        String?   @db.VarChar(30)                      @map("taa_event_code")
+  /// NULL = no ceiling.
+  taaMaxAmount        Decimal?  @db.Decimal(15, 2)                   @map("taa_max_amount")
+  /// May approve from outside the counter (inbox / mobile).
+  taaCanRemote        Boolean   @default(false)                      @map("taa_can_remote")
+  taaValidFrom        DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("taa_valid_from")
+  taaValidTo          DateTime? @db.Date                             @map("taa_valid_to")
+  taaRemarks          String?   @db.VarChar(250)                     @map("taa_remarks")
+  taaIsActive         Boolean   @default(true)                       @map("taa_is_active")
+  taaIsDeleted        Boolean   @default(false)                      @map("taa_is_deleted")
+  taaSyncDate         DateTime? @db.Timestamptz(6)                   @map("taa_sync_date")
+  taaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("taa_created_on")
+  taaCreatedBy        String?   @db.VarChar(50)                      @map("taa_created_by")
+  taaModifiedOn       DateTime? @db.Timestamptz(6)                   @map("taa_modified_on")
+  taaModifiedBy       String?   @db.VarChar(50)                      @map("taa_modified_by")
+
+  // DB-only:
+  //   CREATE INDEX ix_taa_lookup ON accounts.till_approval_authority (taa_user_id, taa_company_id, taa_branch_id)
+  //       WHERE taa_is_deleted = false AND taa_is_active;
+  // CHECKs: ck_taa_role, ck_taa_amount, ck_taa_dates, ck_taa_scope.
+  @@map("till_approval_authority")
+  @@schema("accounts")
+}

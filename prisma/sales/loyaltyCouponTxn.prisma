@@ -1,0 +1,145 @@
+/// One movement against one coupon.
+///
+/// LIST-partitioned by lctAccYear — the year of the MOVEMENT, not of the
+/// issue: a 2027 spend of a 2025 voucher lands in 2027 and the voucher row
+/// never moves. Hence the composite PK. Partitions
+/// (sales.loyalty_coupon_txn_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921160000_add_coupon_voucher_engine taught about this table.
+///
+/// lctAmount is SIGNED and always means "what this event does to the
+/// voucher": REDEEM / EXPIRE / CANCEL consume it, TOPUP adds to it (into its
+/// own bucket). A reversal repeats its TYPE with the opposite sign and names
+/// the row it undoes — there is no REVERSAL type, so each bucket needs one
+/// summing rule rather than two.
+///
+/// BEWARE, because it is the opposite of the points ledger and the two live in
+/// the same schema: HERE a spend is POSITIVE and the type carries the
+/// direction. In LoyaltyLedger a spend is NEGATIVE. Do not copy one recompute
+/// into the other.
+///
+/// WRITE RULE: exactly one private method of LoyaltyCouponService may write
+/// this table. It writes the rows, then recomputes the touched COUPONS and
+/// then their BATCHES, in that order, before returning — lcbRedeemedCount
+/// counts vouchers by STATUS, so a batch re-counted first counts a status
+/// that is about to change.
+model LoyaltyCouponTxn {
+  lctId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lct_id")
+  lctCompId             String    @db.Uuid                               @map("lct_comp_id")
+  /// Where it was presented. NOT NULL — the expiry sweep must therefore fall
+  /// back to the batch's branch when the voucher has none.
+  lctBranchId           String    @db.Uuid                               @map("lct_branch_id")
+  lctTenantId           String?   @db.Uuid                               @map("lct_tenant_id")
+  lctAccYear            String    @db.Char(9)                            @map("lct_acc_year")
+
+  // Single-column FK: LoyaltyCoupon is not partitioned, which is what makes
+  // redeeming a two-year-old voucher a plain foreign key.
+  lctLcpId              String    @db.Uuid                               @map("lct_lcp_id")
+  /// Snapshot, so batch reports need no hop through the coupon.
+  lctLcbId              String    @db.Uuid                               @map("lct_lcb_id")
+  lctCustId             String?   @db.Uuid                               @map("lct_cust_id")
+  lctMemberId           String?   @db.Uuid                               @map("lct_member_id")
+
+  /// REDEEM | TOPUP | CANCEL | EXPIRE
+  lctTxnType            String    @db.VarChar(20)                        @map("lct_txn_type")
+  lctRowNo              Int       @default(1)                            @map("lct_row_no")
+  /// Positive unless it is a reversal, whatever the type (ck_lct_sign).
+  lctAmount             Decimal   @db.Decimal(18, 2)                     @map("lct_amount")
+  lctTxnDate            DateTime  @db.Date                               @map("lct_txn_date")
+
+  /// For a PERCENT batch: the bill it was measured against, and the rate that
+  /// produced lctAmount. Without these the resolved figure is unexplainable
+  /// afterwards.
+  lctBillAmount         Decimal   @default(0) @db.Decimal(18, 2)         @map("lct_bill_amount")
+  lctPercentApplied     Decimal   @default(0) @db.Decimal(6, 3)          @map("lct_percent_applied")
+
+  // All three of module/type/id or none (ck_lct_src_doc). No relation field:
+  // polymorphic by design.
+  lctSrcModule          String?   @db.VarChar(20)                        @map("lct_src_module")
+  lctSrcDocType         String?   @db.VarChar(30)                        @map("lct_src_doc_type")
+  lctSrcDocId           String?   @db.Uuid                               @map("lct_src_doc_id")
+  lctSrcAccYear         String?   @db.Char(9)                            @map("lct_src_acc_year")
+  lctSrcDocRefno        String?   @db.VarChar(100)                       @map("lct_src_doc_refno")
+
+  /// The tender line (type 11, VOUCHER) the money went out on. Required on a
+  /// REDEEM (ck_lct_redeem_tender) and forbidden on EXPIRE or CANCEL
+  /// (ck_lct_no_tender) — nothing was paid out. This is also the only route by
+  /// which a redemption reaches the GL and then Tally.
+  lctTenderId           String?   @db.Uuid                               @map("lct_tender_id")
+  lctTenderAccYear      String?   @db.Char(9)                            @map("lct_tender_acc_year")
+
+  lctReversalOfId       String?   @db.Uuid                               @map("lct_reversal_of_id")
+  lctReversalOfAccYear  String?   @db.Char(9)                            @map("lct_reversal_of_acc_year")
+  lctReversalReason     String?   @db.VarChar(250)                       @map("lct_reversal_reason")
+
+  /// Voiding a live voucher is somebody's decision — ck_lct_cancel_approval
+  /// makes CANCEL require this.
+  lctApprovedBy         String?   @db.Uuid                               @map("lct_approved_by")
+  lctUserId             String?   @db.Uuid                               @map("lct_user_id")
+  lctSessionId          String?   @db.Uuid                               @map("lct_session_id")
+  lctDeviceId           String?   @db.Uuid                               @map("lct_device_id")
+
+  lctRemarks            String?   @db.VarChar(250)                       @map("lct_remarks")
+  lctIsDeleted          Boolean   @default(false)                        @map("lct_is_deleted")
+
+  lctSyncDate           DateTime? @db.Timestamptz(6)                     @map("lct_sync_date")
+  lctCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)     @map("lct_created_on")
+  lctCreatedBy          String?   @db.VarChar(50)                        @map("lct_created_by")
+  lctModifiedOn         DateTime? @db.Timestamptz(6)                     @map("lct_modified_on")
+  lctModifiedBy         String?   @db.VarChar(50)                        @map("lct_modified_by")
+
+  // Relations
+  coupon                LoyaltyCoupon      @relation("CouponTxnCoupon",   fields: [lctLcpId],     references: [lcpId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_coupon")
+  batch                 LoyaltyCouponBatch @relation("CouponTxnBatch",    fields: [lctLcbId],     references: [lcbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_batch")
+  customer              Customer?          @relation("CouponTxnCustomer", fields: [lctCustId],    references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_cust")
+  member                LoyaltyMember?     @relation("CouponTxnMember",   fields: [lctMemberId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_member")
+  company               Company            @relation("CouponTxnCompany",  fields: [lctCompId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_company")
+  branch                BranchMaster       @relation("CouponTxnBranch",   fields: [lctBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_branch")
+  user                  UserMaster?        @relation("CouponTxnUser",     fields: [lctUserId],    references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_user")
+  approver              UserMaster?        @relation("CouponTxnApprover", fields: [lctApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_approved_by")
+  device                DeviceMaster?      @relation("CouponTxnDevice",   fields: [lctDeviceId],  references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_device")
+
+  tender                AccTenderDetail?   @relation("CouponTxnTender",   fields: [lctTenderId, lctTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_tender")
+
+  reversalOf            LoyaltyCouponTxn?  @relation("CouponTxnReversal", fields: [lctReversalOfId, lctReversalOfAccYear], references: [lctId, lctAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_reversal")
+  reversedBy            LoyaltyCouponTxn[] @relation("CouponTxnReversal")
+
+  @@id([lctId, lctAccYear], map: "pk_loyalty_coupon_txn")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- one voucher cannot be spent twice on the same bill by an offline
+  //   -- re-sync. This is also what makes couponExpiryRun() safe to re-run on
+  //   -- the same date: its deterministic runId lands here as lct_src_doc_id,
+  //   -- and that runId must carry a '|coupon|' segment so it cannot collide
+  //   -- with the points sweep's.
+  //   CREATE UNIQUE INDEX ux_lct_src_row ON sales.loyalty_coupon_txn
+  //       (lct_lcp_id, lct_src_doc_type, lct_src_doc_id, lct_acc_year, lct_row_no)
+  //       WHERE lct_src_doc_id IS NOT NULL AND lct_is_deleted = false;
+  //
+  //   -- unique per YEAR only, the usual partition-key caveat. A cross-year
+  //   -- double reversal is the posting code's job to prevent.
+  //   CREATE UNIQUE INDEX ux_lct_reversal ON sales.loyalty_coupon_txn
+  //       (lct_reversal_of_id, lct_acc_year)
+  //       WHERE lct_reversal_of_id IS NOT NULL AND lct_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lct_coupon ON sales.loyalty_coupon_txn (lct_lcp_id, lct_txn_date) …
+  //   CREATE INDEX ix_lct_batch_period ON sales.loyalty_coupon_txn
+  //       (lct_comp_id, lct_lcb_id, lct_txn_date)
+  //       INCLUDE (lct_amount, lct_txn_type) WHERE lct_is_deleted = false;
+  //   CREATE INDEX ix_lct_src_doc, ix_lct_tender …
+  //
+  //   -- FK-covering: ix_lct_member, ix_lct_cust, ix_lct_user, ix_lct_device,
+  //   -- ix_lct_batch_fk, ix_lct_branch, ix_lct_approved_by,
+  //   -- ix_lct_reversal_fk. ux_lct_reversal does NOT cover fk_lct_reversal —
+  //   -- different second column — which is why ix_lct_reversal_fk exists.
+  //
+  // CHECK constraints (DB-only): ck_lct_acc_year, ck_lct_src_acc_year,
+  //   ck_lct_src_doc, ck_lct_txn_type, ck_lct_amount_nonzero, ck_lct_sign,
+  //   ck_lct_percent, ck_lct_bill_amount, ck_lct_tender_pair,
+  //   ck_lct_reversal_pair, ck_lct_no_self_reversal, ck_lct_redeem_tender,
+  //   ck_lct_no_tender, ck_lct_cancel_approval, ck_lct_row_no
+
+  @@map("loyalty_coupon_txn")
+  @@schema("sales")
+}

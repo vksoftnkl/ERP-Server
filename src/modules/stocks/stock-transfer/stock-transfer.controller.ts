@@ -1,0 +1,371 @@
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
+import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
+} from '@nestjs/swagger';
+import { API_VERSION } from 'src/common/constants/api-version';
+import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
+import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { PrismaService } from 'src/database/prisma/prisma.service';
+import { StockVoucherExceptionFilter } from '../stock-voucher/stock-voucher-exception.filter';
+import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
+import type {
+  StockTransferRecallResult,
+  StockVoucherCancelResult,
+  StockVoucherDeleteResult,
+  StockVoucherLineProblem,
+  StockVoucherListResult,
+  StockVoucherPayload,
+  StockVoucherSuccessResponse,
+  StockVoucherTypeRules,
+} from '../stock-voucher/types/stock-voucher.types';
+import { StockTransferService } from './stock-transfer.service';
+import { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
+import {
+  GetStockTransferQueryDto,
+  StockTransferRefQueryDto,
+} from './dto/list-stock-transfer-query.dto';
+import {
+  CancelStockTransferDto,
+  DespatchStockTransferDto,
+  RecallStockTransferDto,
+} from './dto/post-stock-transfer.dto';
+import type { StockTransferDespatchResult, StockTransitRow } from './types/stock-transfer.types';
+import {
+  StockTransferCancelSuccessDto,
+  StockTransferDeleteSuccessDto,
+  StockTransferDespatchSuccessDto,
+  StockTransferDocumentSuccessDto,
+  StockTransferErrorResponseDto,
+  StockTransferListSuccessDto,
+  StockTransferLoadSuccessDto,
+  StockTransferRecallSuccessDto,
+  StockTransferValidateSuccessDto,
+} from './dto/stock-transfer-response.dto';
+
+/**
+ * THE ROUTE PINS THE VOUCHER TYPE, as on every other screen over this engine.
+ *
+ * ONE RECORD SERVES BOTH FORMS. Form 3 (godown → godown) and form 4 (branch →
+ * branch) are the same document with and without a `toBranchId`, and the ENGINE
+ * chooses the shape. A second rule record for "branch transfer" would be a
+ * second definition of the same thing, and the two would drift.
+ *
+ * The fields that say something the other screens do not:
+ *
+ *   postShape           TRANSFER_OUT, NOT SIMPLE. The engine writes the OUT
+ *                       row and, same branch, the IN row as a pair — or the
+ *                       transit rows and IN_TRANSIT for another branch. A
+ *                       record that said SIMPLE would move stock out with
+ *                       nothing recording that it is on a lorry.
+ *   requiresLot         a transfer MOVES existing stock. The lot is never
+ *                       re-resolved — the destination keeps the same slt_id,
+ *                       so ageing does not reset. That is the point of the
+ *                       rule, not a side effect.
+ *   zeroesLineCost      the cost is stamped by the engine and TRAVELS: what
+ *                       the stock cost at the moment it left — the lot's own
+ *                       cost for a tracked item, the branch's moving average
+ *                       for plain stock (notes 92; defaultRateSource
+ *                       AVG_COST). A typed rate is stripped.
+ *                       See MUST-FIX 5.
+ *   allowsToBranch      the only type that may leave the branch.
+ *   allowsLoading       notes 153 — the Loading / Unloading boxes, and the
+ *                       charges that post on despatch of a godown transfer.
+ *   requiresFromGodown  both godowns, both mandatory (ck_svh_transfer_godowns).
+ *   + requiresToGodown  svi_godown_id on the LINE is the source; the header's
+ *                       to-godown is the destination.
+ */
+const TRANSFER_OUT_RULES: StockVoucherTypeRules = {
+  voucherType: 'TRANSFER_OUT',
+  typeCode: 'TRF',
+  displayName: 'Stock transfer',
+  requiresToGodown: true,
+  requiresFromGodown: true,
+  isInward: false,
+  ledgerTxnTypes: ['TRANSFER_OUT'],
+  quantityMode: 'QTY',
+  requiresLot: true,
+  zeroesLineCost: true,
+  defaultRateSource: 'AVG_COST',
+  // A transfer MOVES an opened holding; the "already opened this year" preflight
+  // is an OPENING's rule and must not refuse it.
+  allowsRepeatHolding: true,
+  allowsCount: false,
+  allowsToBranch: true,
+  allowsLoading: true,
+  postShape: 'TRANSFER_OUT',
+  auditScreenName: 'Stock Transfer',
+  statusDocType: TxnStatusDocType.STOCK_TRANSFER,
+  refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
+};
+
+/**
+ * Notes 153 E3 (as notes 151 #1 for menu 264) — every /stock/transfer route
+ * is judged on the caller's public.user_menus row for menu 41 (Stock Transfer,
+ * shown as "Godown Transfer"): 403 TRF_RIGHT_<RIGHT>, no SUPER ADMIN bypass.
+ * The route serves the branch-to-branch form too, which has no screen yet;
+ * when Branch Outward (192) gets one, its form wants its own menu here. The
+ * receipt routes (/stock/transfer/receive) are not gated yet — Branch Inward
+ * (193). Company and branch are not compared with the token's (memory
+ * token-scope-is-home-company-and-device-branch).
+ */
+export const STOCK_TRANSFER_MENU_ID = 41;
+
+/**
+ * Notes 160 B — Branch Outward. Only the recall is judged on it (CANCEL, 403
+ * TRF_RIGHT_CANCEL naming menu 192); the despatch's other routes still go by
+ * menu 41, as above.
+ */
+export const BRANCH_OUTWARD_MENU_ID = 192;
+
+/**
+ * NO @CacheTTL ANYWHERE. Every read here is a live balance, a live transit row
+ * or a live document status. A cached inbound worklist tells a branch stock is
+ * coming that it has already received.
+ */
+@ApiTags('Stock Transfer')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@Controller('stock/transfer')
+@UseFilters(StockVoucherExceptionFilter)
+export class StockTransferController {
+  constructor(
+    private readonly stockTransferService: StockTransferService,
+    private readonly stockVoucherService: StockVoucherService,
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
+
+  @Post()
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Create or update a stock transfer draft (godown → godown or branch → branch)',
+    description:
+      'One endpoint for both forms — omit toBranchId, or send this branch, for a godown-to-godown move. Every line names the lot it moves and the SOURCE godown; the destination is on the header. Never send a cost: the engine stamps it and it travels with the stock.',
+  })
+  @ApiCreatedResponse({ type: StockTransferDocumentSuccessDto })
+  @ApiBadRequestResponse({ type: StockTransferErrorResponseDto })
+  @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async save(
+    @Body() dto: SaveStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockVoucherPayload>> {
+    await this.requireRight(dto.header.svhId ? 'edit' : 'create', 'save a stock transfer');
+    if (dto.header.post === true || dto.header.status === 'POSTED') {
+      await this.requireRight('post', 'despatch a stock transfer');
+    }
+    const data = await this.stockTransferService.save(TRANSFER_OUT_RULES, dto);
+    return {
+      success: true,
+      message: dto.header.svhId
+        ? 'Stock transfer updated successfully'
+        : 'Stock transfer created successfully',
+      data,
+    };
+  }
+
+  @Get()
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'List stock transfers, or load one with its transit rows when svhId is given',
+    description:
+      'The status filter offers all five: an inter-branch despatch is IN_TRANSIT, never POSTED, so filtering to POSTED hides every transfer on a lorry. Loading one returns its transit rows so the sender can see what has been received against each line.',
+  })
+  // Two shapes on one route, as the Qt screen sends the same query object
+  // either way. The list is the default; svhId switches it to the document.
+  @ApiOkResponse({ type: StockTransferListSuccessDto })
+  @ApiExtraModels(StockTransferLoadSuccessDto)
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async listOrLoad(
+    @Query() query: GetStockTransferQueryDto,
+  ): Promise<
+    StockVoucherSuccessResponse<
+      (StockVoucherPayload & { transit: StockTransitRow[] }) | StockVoucherListResult
+    >
+  > {
+    await this.requireRight('view', 'view stock transfers');
+    if (query.svhId) {
+      const data = await this.stockTransferService.getOne(
+        TRANSFER_OUT_RULES,
+        query.svhId,
+        query.accYear,
+        query.companyId,
+        query.branchId,
+      );
+      return { success: true, message: 'Stock transfer fetched successfully', data };
+    }
+    const data = await this.stockVoucherService.list(TRANSFER_OUT_RULES, query);
+    return { success: true, message: 'Stock transfer list fetched successfully', data };
+  }
+
+  @Get('validate')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Preflight one transfer, line by line',
+    description:
+      'Advisory: another till can move the same holding between this call and the despatch.',
+  })
+  @ApiOkResponse({ type: StockTransferValidateSuccessDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async validate(
+    @Query() query: StockTransferRefQueryDto,
+  ): Promise<StockVoucherSuccessResponse<StockVoucherLineProblem[]>> {
+    await this.requireRight('view', 'validate a stock transfer');
+    const data = await this.stockVoucherService.validate(
+      TRANSFER_OUT_RULES,
+      query.svhId,
+      query.accYear,
+      query.companyId,
+      query.branchId,
+    );
+    const failing = data.filter((row) => row.problem !== null).length;
+    return {
+      success: true,
+      message: failing
+        ? `${failing} of ${data.length} lines have problems`
+        : `All ${data.length} lines are clean`,
+      data,
+    };
+  }
+
+  @Post('despatch')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Despatch the transfer',
+    description:
+      'The engine chooses the shape. A same-branch transfer writes the OUT and IN ledger rows as a pair and ends POSTED; an inter-branch despatch writes the OUT row plus one stock_transit row per line and ends IN_TRANSIT. The response says which happened — read from the row, not from the request. LR, vehicle and expected date are written to the transit rows in the same transaction.',
+  })
+  @ApiOkResponse({ type: StockTransferDespatchSuccessDto })
+  @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async despatch(
+    @Body() dto: DespatchStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockTransferDespatchResult>> {
+    await this.requireRight('post', 'despatch a stock transfer');
+    const data = await this.stockTransferService.despatch(TRANSFER_OUT_RULES, dto);
+    return {
+      success: true,
+      message: data.sameBranch
+        ? `Stock moved between godowns — ${data.ledgerRows} ledger rows, transfer POSTED`
+        : `Transfer despatched — ${data.transitRows} lines in transit`,
+      data,
+    };
+  }
+
+  @Post('cancel')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Cancel a same-branch POSTED transfer — reversal rows, never a delete',
+    description:
+      "Only a same-branch transfer can be cancelled. An IN_TRANSIT or RECEIVED despatch is refused with 409 — goods that left cannot be cancelled on paper; the fix is to receive them and transfer them back, or to short-settle what never arrived.",
+  })
+  @ApiOkResponse({ type: StockTransferCancelSuccessDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async cancel(
+    @Body() dto: CancelStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockVoucherCancelResult>> {
+    await this.requireRight('cancel', 'cancel a stock transfer');
+    const data = await this.stockVoucherService.cancel(
+      TRANSFER_OUT_RULES,
+      dto.svhId,
+      dto.accYear,
+      dto.reason,
+      dto.companyId,
+      dto.branchId,
+      dto.userId,
+    );
+    return {
+      success: true,
+      message: `Stock transfer cancelled — ${data.rowsReversed} reversal rows`,
+      data,
+    };
+  }
+
+  @Post('recall')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Recall a branch despatch that nobody received (notes 160 B)',
+    description:
+      'For a lorry that never left, or came straight back. Allowed only while the despatch is IN_TRANSIT and untouched: every transit row with nothing received and nothing damaged, and no receipt against it — a DRAFT one included (409 STOCK_TRANSFER_RECALL_RECEIVED otherwise). Reverses the OUT ledger rows (the stock is back in the From godown at the same lot and cost), closes the transit rows (CANCELLED — /stock/transfer/receive/inbound stops listing it at once), reverses the loading voucher, and sets the despatch CANCELLED with the reason on its trail. Rights: menu 192 (Branch Outward), CANCEL.',
+  })
+  @ApiOkResponse({ type: StockTransferRecallSuccessDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
+  async recall(
+    @Body() dto: RecallStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockTransferRecallResult>> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: BRANCH_OUTWARD_MENU_ID,
+      right: 'cancel',
+      codePrefix: 'TRF',
+      action: 'recall a branch despatch',
+    });
+    const data = await this.stockVoucherService.recall(
+      TRANSFER_OUT_RULES,
+      dto.svhId,
+      dto.accYear,
+      dto.reason,
+      dto.companyId,
+      dto.branchId,
+      dto.userId,
+    );
+    return {
+      success: true,
+      message: `${data.header.refno} recalled — ${data.rowsReversed} reversal rows, ${data.transitRowsClosed} transit rows closed`,
+      data,
+    };
+  }
+
+  @Delete()
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Soft delete a DRAFT transfer',
+    description:
+      'Drafts are DELETED, never cancelled. The cancel guard refuses cancelling any linked TRANSFER_IN, a draft one included, and the link is mandatory on all of them.',
+  })
+  @ApiOkResponse({ type: StockTransferDeleteSuccessDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  @ApiNotFoundResponse({ type: StockTransferErrorResponseDto })
+  async remove(
+    @Query() query: StockTransferRefQueryDto,
+  ): Promise<StockVoucherSuccessResponse<StockVoucherDeleteResult>> {
+    await this.requireRight('delete', 'delete a stock transfer draft');
+    const data = await this.stockVoucherService.softDelete(
+      TRANSFER_OUT_RULES,
+      query.svhId,
+      query.accYear,
+      query.companyId,
+      query.branchId,
+    );
+    return { success: true, message: 'Stock transfer deleted successfully', data };
+  }
+
+  /** Notes 153 E3 — the caller's `user_menus` row for menu 41, one right per route. 403 TRF_RIGHT_<RIGHT>. */
+  private async requireRight(right: MenuRight, action: string): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: STOCK_TRANSFER_MENU_ID,
+      right,
+      codePrefix: 'TRF',
+      action,
+    });
+  }
+}
+
+export { TRANSFER_OUT_RULES };

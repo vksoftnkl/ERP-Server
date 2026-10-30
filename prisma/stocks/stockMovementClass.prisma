@@ -1,0 +1,119 @@
+/// stock.stock_movement_class — fast, slow, dead.
+///
+/// THREE ORTHOGONAL CLASSIFICATIONS, because they answer different questions
+/// and a single "category A" hides two of them:
+///
+///   ABC  by VALUE        where the money is. 20% of items, 80% of value.
+///   XYZ  by VARIABILITY  how predictable. An X item can be FORECAST; a Z item
+///                        can only be BUFFERED.
+///   FSN  by FREQUENCY    how often it moves at all. Fast, Slow, Non-moving.
+///
+/// An A-Z item — high value, wildly unpredictable — is the one that ties up
+/// capital and STILL stocks out, and it is invisible to any single ranking.
+/// That combination is the whole reason there are three columns and not one.
+///
+/// COMPUTED PER PERIOD AND STORED, not derived on read. The classification of
+/// March must not change when April's sales arrive: a buyer who was told an
+/// item was dead in March needs that to still be what the system said in
+/// March. Period bounds are explicit — smcPeriodFrom / smcPeriodTo — and are
+/// part of the unique key, so monthly and quarterly runs coexist.
+///
+/// smcTurnRatio is cost of goods sold in the period over average stock held:
+/// how many times the shelf turned over, and the number a retailer actually
+/// manages by. smcDemandCv is the coefficient of variation the XYZ class is
+/// cut from, kept beside the letter so the cut can be re-examined without
+/// recomputing the period.
+///
+/// DEAD STOCK NEEDS A DATE. "Dead since November" is actionable — it dates the
+/// buying mistake and prices the liquidation; "dead" alone is not.
+/// ck_smc_dead therefore refuses a dead flag with no smcDeadSinceDate, and
+/// smcDeadValue is what is tied up, which is what makes the worklist sortable
+/// by how much it hurts.
+///
+/// smcRankInBranch and smcCumValuePerc are the working of the ABC cut, stored
+/// so the boundary between A and B can be audited rather than reproduced.
+///
+/// WRITE RULES:
+///   * This table is DERIVED, from [[StockLedger]] and [[StockValuationSnap]].
+///     Do not patch a row to change a class; fix the inputs and recompute.
+///   * The three class columns are NULLABLE — an item with no movement in the
+///     period has no honest class, and NULL says that where 'N' would be a
+///     claim.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   smcAbcClass  A | B | C     (by value)
+///   smcXyzClass  X | Y | Z     (by variability)
+///   smcFsnClass  F | S | N     (by frequency)
+/// each nullable, plus ck_smc_period (to >= from) and ck_smc_dead.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (all three carry a WHERE):
+///   ux_smc_scope  one row per (company, branch, item, period)
+///   ix_smc_class  the classification report, and the A-Z drilldown
+///   ix_smc_dead   dead stock, worst first — the liquidation worklist
+model StockMovementClass {
+  smcId                  String    @id(map: "pk_stock_movement_class") @default(dbgenerated("uuidv7()")) @db.Uuid @map("smc_id")
+  smcCompanyId           String    @db.Uuid                          @map("smc_company_id")
+  smcBranchId            String    @db.Uuid                          @map("smc_branch_id")
+  smcTenantId            String?   @db.Uuid                          @map("smc_tenant_id")
+  smcItemId              String    @db.Uuid                          @map("smc_item_id")
+
+  /// Explicit, and part of the unique key, so monthly and quarterly runs
+  /// coexist without overwriting each other.
+  smcPeriodFrom          DateTime  @db.Date                          @map("smc_period_from")
+  smcPeriodTo            DateTime  @db.Date                          @map("smc_period_to")
+
+  /// By VALUE. NULL = no movement in the period, which is not the same claim
+  /// as a 'C'.
+  smcAbcClass            String?   @db.Char(1)                       @map("smc_abc_class")
+  /// By VARIABILITY — an X can be forecast, a Z can only be buffered.
+  smcXyzClass            String?   @db.Char(1)                       @map("smc_xyz_class")
+  /// By FREQUENCY — Fast, Slow, Non-moving.
+  smcFsnClass            String?   @db.Char(1)                       @map("smc_fsn_class")
+
+  smcVelocityQtyPerDay   Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_velocity_qty_per_day")
+  smcMovementCount       Int       @default(0)                       @map("smc_movement_count")
+  smcDaysSinceLastSale   Int?                                        @map("smc_days_since_last_sale")
+  smcDaysOfCover         Decimal?  @db.Decimal(9, 2)                 @map("smc_days_of_cover")
+  /// COGS in the period over average stock held: how many times the shelf
+  /// turned over. The number a retailer actually manages by.
+  smcTurnRatio           Decimal?  @db.Decimal(9, 3)                 @map("smc_turn_ratio")
+  /// Coefficient of variation — the figure the XYZ class is cut from, kept
+  /// beside the letter so the cut can be re-examined.
+  smcDemandCv            Decimal?  @db.Decimal(9, 4)                 @map("smc_demand_cv")
+
+  smcPeriodQty           Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_period_qty")
+  smcPeriodValueWot      Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_period_value_wot")
+  smcAvgStockQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_avg_stock_qty")
+  smcAvgStockValue       Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_avg_stock_value")
+  smcClosingQty          Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_closing_qty")
+  smcClosingValue        Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_closing_value")
+
+  /// The working of the ABC cut, stored so the A/B boundary can be audited
+  /// rather than reproduced.
+  smcRankInBranch        Int?                                        @map("smc_rank_in_branch")
+  smcCumValuePerc        Decimal?  @db.Decimal(9, 3)                 @map("smc_cum_value_perc")
+
+  /// Held, not sold, for long enough to be a decision.
+  smcDeadStockFlag       Boolean   @default(false)                   @map("smc_dead_stock_flag")
+  /// Required whenever the flag is set — "dead since November" is actionable,
+  /// "dead" is not.
+  smcDeadSinceDate       DateTime? @db.Date                          @map("smc_dead_since_date")
+  /// What is tied up. Makes the liquidation worklist sortable by how much it
+  /// hurts.
+  smcDeadValue           Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_dead_value")
+
+  smcComputedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("smc_computed_on")
+  smcIsDeleted           Boolean   @default(false)                   @map("smc_is_deleted")
+  smcSyncDate            DateTime? @db.Timestamptz(6)                @map("smc_sync_date")
+  smcCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("smc_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // A derived table: there is no created/modified-by pair to relate.
+  company                Company      @relation("StockMovementClassCompany", fields: [smcCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_company")
+  branch                 BranchMaster @relation("StockMovementClassBranch",  fields: [smcBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_branch")
+  item                   ItemMaster   @relation("StockMovementClassItem",    fields: [smcItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_item")
+
+  @@map("stock_movement_class")
+  @@schema("stock")
+}

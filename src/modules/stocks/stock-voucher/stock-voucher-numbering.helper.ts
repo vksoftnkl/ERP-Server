@@ -1,0 +1,286 @@
+import { Prisma } from '@prisma/client';
+import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import { ensureDeviceCode } from 'src/modules/fixed/device-list-master/device-code.helper';
+import { throwStockConflict, throwStockNotFound } from 'src/common/utils/module-service.utils';
+import { StockErrorCode } from '../types/stock-error-codes';
+import type {
+  StockErrorDetail,
+  StockErrorResponse,
+  StockVoucherType,
+} from './types/stock-voucher.types';
+/**
+ * THE SERIAL IS SELF-CONTAINED; THE PRINTED NUMBER MAY NOT BE.
+ *
+ * svh_slno never touches SequenceService / accounts.acc_voucher_seq, and
+ * nothing here creates an accounts.acc_voucher_header row. A stock voucher
+ * moves quantity and cost, posts no debit and no credit, and stock_voucher has
+ * no column pointing at an accounting document.
+ *
+ * svh_refno has two sources. A type with no `refnoVchrTypeId` in its rules
+ * builds `{typeCode}/{accYear}/{deviceCode}/{slno:00000}` here. A type that names
+ * one — OPENING names accounts.acc_voucher_types row 1, "Opening Stock" —
+ * draws the printed number from accounts.acc_voucher_seq under that row's
+ * prefix / suffix / width / reset frequency, exactly as a sale bill does. That
+ * row already exists in the accounting master (category INVENTORY, nature
+ * STOCK_JOURNAL); it is not invented here to satisfy the FK.
+ *
+ * THE DEVICE IS THE COUNTER. svh_slno is unique per
+ * (company, branch, acc_year, voucher_type, DEVICE) — ux_svh_slno — because a
+ * warehouse tablet must be able to number its own document while offline and
+ * sync it later. That is also why a client-supplied slno/refno is ACCEPTED
+ * rather than overwritten: the device's copy is already printed.
+ */
+/** Namespace half of the advisory lock key. */
+const SLNO_LOCK_NAMESPACE = 'stock.stock_voucher.slno';
+/** svh_refno is varchar(100). */
+const REFNO_MAX_LENGTH = 100;
+export interface StockVoucherNumberScope {
+  companyId: string;
+  branchId: string;
+  accYear: string;
+  voucherType: StockVoucherType;
+  deviceId: string;
+}
+export interface AllocatedStockVoucherNumber {
+  slno: bigint;
+  refno: string;
+}
+/**
+ * Reads the device's printable code: `dev_code` (notes 160 C) — `D1`, never
+ * the machine id. Until then this returned `dev_device_uid`, so the office PC
+ * printed `TRF/2026-2027/44c01ccc-a162-8314-34b0-1dbf2f5c7bab/16`. A device
+ * with no code yet (registered before notes 160, or inserted by something
+ * other than the device master) is given the next one here, in the caller's
+ * transaction — see device-code.helper.
+ *
+ * Also the point at which a blocked or deleted device is refused. svh_device_id
+ * is NOT NULL and the FK is RESTRICT, so a bad id would otherwise surface as a
+ * foreign-key violation with no indication of which of the six uuids on the
+ * header was wrong.
+ */
+export async function resolveDeviceCode(
+  tx: Prisma.TransactionClient,
+  deviceId: string,
+): Promise<string> {
+  const device = await tx.deviceMaster.findFirst({
+    where: { devId: deviceId, devIsDeleted: false },
+    select: {
+      devCode: true,
+      devIsActive: true,
+      devIsBlocked: true,
+      devBlockReason: true,
+    },
+  });
+  if (!device) {
+    throwStockNotFound<StockErrorDetail, StockErrorResponse>(
+      'Device not found',
+      'deviceId',
+      `No device master row ${deviceId}. svh_device_id is NOT NULL and the device is the number series — register the device before raising documents on it.`,
+      StockErrorCode.DEVICE_NOT_FOUND,
+    );
+  }
+  if (device.devIsBlocked || !device.devIsActive) {
+    throwStockNotFound<StockErrorDetail, StockErrorResponse>(
+      'Device unavailable',
+      'deviceId',
+      device.devBlockReason?.trim()
+        ? `Device ${deviceId} is blocked: ${device.devBlockReason.trim()}`
+        : `Device ${deviceId} is blocked or inactive.`,
+      StockErrorCode.DEVICE_BLOCKED,
+    );
+  }
+  return device.devCode?.trim() || ((await ensureDeviceCode(tx, deviceId)) as string);
+}
+/**
+ * Takes the transaction-scoped advisory lock that serialises two devices — or
+ * two tabs on one device — racing for the same next serial.
+ *
+ * pg_advisory_xact_lock, never pg_advisory_lock: it is released when the
+ * caller's transaction ends, whether that is a commit or a rollback, so a
+ * failed save cannot leave the counter wedged.
+ *
+ * THE CALL SITS INSIDE count() FOR A REASON. pg_advisory_xact_lock returns
+ * void, which Prisma's $queryRaw cannot deserialise ("Failed to deserialize
+ * column of type 'void'"), and an earlier shape of this statement hid the call
+ * in a CTE that nothing referenced — which PostgreSQL never executes, so NO
+ * LOCK WAS EVER TAKEN and two tills could draw one serial (verified against
+ * pg_locks on PG 18). count() over the void value is evaluated, returns 1, and
+ * is a type Prisma can read back. Do not move the call back into a CTE.
+ */
+async function lockSlnoScope(
+  tx: Prisma.TransactionClient,
+  scope: StockVoucherNumberScope,
+): Promise<void> {
+  const lockKey = [
+    scope.companyId,
+    scope.branchId,
+    scope.accYear,
+    scope.voucherType,
+    scope.deviceId,
+  ].join('|');
+  await tx.$queryRaw<Array<{ locked: number }>>`
+    SELECT count(pg_advisory_xact_lock(
+             hashtext(${SLNO_LOCK_NAMESPACE}),
+             hashtext(${lockKey})
+           ))::int AS locked
+  `;
+}
+/**
+ * MAX(svh_slno) + 1 within the ux_svh_slno scope, under the lock above.
+ *
+ * MAX rather than a counter table because ux_svh_slno already is the counter:
+ * a device that numbered 1..40 offline and syncs them later leaves MAX at 40,
+ * and the next server-side allocation continues from 41 without anybody
+ * reconciling anything. A separate counter row would have to be taught about
+ * every one of those forty inserts.
+ */
+export async function nextStockVoucherSlno(
+  tx: Prisma.TransactionClient,
+  scope: StockVoucherNumberScope,
+): Promise<bigint> {
+  await lockSlnoScope(tx, scope);
+  const rows = await tx.$queryRaw<Array<{ next_slno: bigint }>>`
+    SELECT COALESCE(MAX(svh_slno), 0) + 1 AS next_slno
+    FROM stock.stock_voucher
+    WHERE svh_company_id  = ${scope.companyId}::uuid
+      AND svh_branch_id   = ${scope.branchId}::uuid
+      AND svh_acc_year    = ${scope.accYear}::bpchar
+      AND svh_voucher_type = ${scope.voucherType}
+      AND svh_device_id   = ${scope.deviceId}::uuid
+  `;
+  return rows[0]?.next_slno ?? BigInt(1);
+}
+/** Notes 160 C — the serial is printed zero-padded to this many digits (more when it outgrows them). */
+const REFNO_SLNO_DIGITS = 5;
+/**
+ * `{typeCode}/{accYear}/{deviceCode}/{slno:00000}` — `TRF/2026-2027/D1/00016`.
+ *
+ * Notes 160 C: the serial is zero-padded to five digits. A number already on a
+ * document keeps its old form — only new ones are built this way, because a
+ * renumber would break printed slips and links.
+ *
+ * The device code is in the printed number on purpose: svh_refno is unique per
+ * (company, branch, acc_year) on its own — ux_svh_refno — while the serial is
+ * per device, so without the device segment two tills that both reached 41
+ * would collide on the refno while their serials were perfectly legal.
+ */
+export function buildStockVoucherRefno(
+  typeCode: string,
+  accYear: string,
+  deviceCode: string,
+  slno: bigint,
+): string {
+  const refno = [
+    typeCode,
+    accYear.trim(),
+    deviceCode,
+    slno.toString().padStart(REFNO_SLNO_DIGITS, '0'),
+  ].join('/');
+  if (refno.length > REFNO_MAX_LENGTH) {
+    // Truncating would produce a number that has already been issued to some
+    // other device, so this fails loudly instead.
+    throw new Error(
+      `Generated stock voucher reference "${refno}" exceeds ${REFNO_MAX_LENGTH} characters. Shorten the device code on device_master.`,
+    );
+  }
+  return refno;
+}
+/**
+ * Allocates the pair, honouring anything the client already decided.
+ *
+ * A device that numbered its document offline sends both, and both are used
+ * verbatim — a collision then surfaces as 23505 on ux_svh_slno / ux_svh_refno
+ * and is answered with a 409 naming the refno. It is NOT "fixed" by silently
+ * renumbering: the device's copy of that document is already printed, and a
+ * server that quietly hands it a different number has created a second
+ * document rather than accepted the one it was sent.
+ *
+ * A client that sends only one of the two gets the other generated around it,
+ * which is what a screen that lets a user type their own reference does.
+ */
+export async function allocateStockVoucherNumber(
+  tx: Prisma.TransactionClient,
+  scope: StockVoucherNumberScope,
+  typeCode: string,
+  supplied: { slno?: string | number | bigint | null; refno?: string | null } = {},
+  refnoVchrTypeId?: number,
+): Promise<AllocatedStockVoucherNumber> {
+  const suppliedRefno = supplied.refno?.trim() || null;
+  const suppliedSlno =
+    supplied.slno === undefined || supplied.slno === null || supplied.slno === ''
+      ? null
+      : BigInt(supplied.slno);
+  if (suppliedSlno !== null && suppliedRefno !== null) {
+    return { slno: suppliedSlno, refno: suppliedRefno };
+  }
+  const slno = suppliedSlno ?? (await nextStockVoucherSlno(tx, scope));
+  if (suppliedRefno !== null) {
+    return { slno, refno: suppliedRefno };
+  }
+  if (refnoVchrTypeId !== undefined) {
+    return { slno, refno: await nextAccountsRefno(tx, scope, refnoVchrTypeId) };
+  }
+  const deviceCode = await resolveDeviceCode(tx, scope.deviceId);
+  return { slno, refno: buildStockVoucherRefno(typeCode, scope.accYear, deviceCode, slno) };
+}
+
+/**
+ * The printed number from accounts.acc_voucher_seq, formatted by the named
+ * acc_voucher_types row — `OPN0001` for row 1.
+ *
+ * NO deviceCode is passed, so every device in the branch shares the 'MAIN'
+ * counter. That is deliberate: ux_svh_refno is unique per (company, branch,
+ * acc_year) with no device in it, so a per-device counter would hand two tills
+ * the same printed number and the second save would 409. The serial keeps its
+ * per-device scope alongside; the two numbers are allowed to differ.
+ *
+ * The device is still validated first, because svh_device_id is NOT NULL and
+ * a bad id would otherwise surface as an FK violation after the accounts
+ * counter had already been consumed inside the same transaction.
+ *
+ * A NUMBER ALREADY ON A DOCUMENT IS SKIPPED (notes 143 #10). A device that
+ * numbered offline sends its own refno, and one that reached OPN0042 while the
+ * counter stood at 40 left the series pointing at a taken number: the next
+ * server-numbered save drew 42, hit ux_svh_refno, and rolled the counter back
+ * with it — so every save after it drew 42 again. The counter is consumed past
+ * each taken number instead, under the counter's own lock, and those
+ * consumptions commit with the save.
+ */
+async function nextAccountsRefno(
+  tx: Prisma.TransactionClient,
+  scope: StockVoucherNumberScope,
+  vchrTypeId: number,
+): Promise<string> {
+  await resolveDeviceCode(tx, scope.deviceId);
+  for (let attempt = 0; attempt < MAX_TAKEN_REFNO_SKIPS; attempt += 1) {
+    const { refno } = await allocateVoucherNumber(tx, {
+      vchrTypeId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      accYear: scope.accYear,
+    });
+    // ux_svh_refno's own scope: live documents of this company, branch and year.
+    const [taken] = await tx.$queryRaw<Array<{ taken: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM stock.stock_voucher
+         WHERE svh_acc_year   = ${scope.accYear}::bpchar
+           AND svh_company_id = ${scope.companyId}::uuid
+           AND svh_branch_id  = ${scope.branchId}::uuid
+           AND svh_refno      = ${refno}
+           AND svh_is_deleted = false
+      ) AS taken`;
+    if (!taken?.taken) {
+      return refno;
+    }
+  }
+  throwStockConflict<StockErrorDetail, StockErrorResponse>('No free voucher number', [
+    {
+      field: 'refno',
+      code: StockErrorCode.REFNO_SERIES_EXHAUSTED,
+      message: `The next ${MAX_TAKEN_REFNO_SKIPS} numbers of this series are all on documents already. Move the series past them (Voucher Sequence) and save again.`,
+    },
+  ]);
+}
+/** How many taken numbers one allocation steps over before it gives up. */
+const MAX_TAKEN_REFNO_SKIPS = 1000;

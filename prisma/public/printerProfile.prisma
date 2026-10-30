@@ -1,0 +1,102 @@
+/// public.printer_profile — §6, the physical device.
+///
+/// ┌─────────────────────────────────────────────────────────────────────────┐
+/// │ RECONSTRUCTED, NOT TRANSCRIBED. §6 of 17_printing.sql has not reached   │
+/// │ me — both pastes of the file hit the 50,000-character message limit     │
+/// │ before it. This model is derived from what the rest of the file states  │
+/// │ about printer_profile plus the house conventions, so the field list is  │
+/// │ a proposal. RECONCILE IT AGAINST §6 BEFORE GENERATING A CLIENT.         │
+/// │                                                                         │
+/// │ Load-bearing and safe (the file says so directly):                     │
+/// │   * prefix prf_, table public.printer_profile                          │
+/// │   * FK to fixed.device_master(dev_id) — "the counter, and its printer"  │
+/// │   * it "asserts compatibility against" §3's page geometry, so it must   │
+/// │     carry a paper code and dimensions of its own to assert with         │
+/// │   * the full audit block, _is_active included (it is a master)          │
+/// │   * NO is_default boolean — §5 owns that question, and the file is      │
+/// │     emphatic that a second place to say which one wins is one too many  │
+/// │                                                                         │
+/// │ Inferred, most likely to differ from §6: everything from prfConnKind    │
+/// │ down to prfCutSequence — the connection and capability block. The       │
+/// │ vocabularies below are guesses at the CHECK lists.                      │
+/// └─────────────────────────────────────────────────────────────────────────┘
+///
+/// Declared here WITHOUT any CHECK constraint, as every other model in this
+/// module is: the vocabularies live in the migration and in
+/// PrinterProfileService.
+///   prfConnKind     LOCAL | NETWORK | CUPS | WINDOWS | RAW_TCP | FILE
+///   prfEmulation    ESCPOS | ESCP2 | PCL | PDF | RAW
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_prf_code    UNIQUE (prf_company_id, lower(prf_code)) WHERE NOT deleted
+///   ix_prf_device  (prf_device_id) — "which printers hang off this counter"
+///   ix_prf_company / ix_prf_branch / ix_prf_created_by / ix_prf_modified_by
+///                  FK-covering, all partial
+model PrinterProfile {
+  prfId               String    @id(map: "pk_printer_profile") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prf_id")
+  prfCompanyId        String    @db.Uuid                                     @map("prf_company_id")
+  /// NULL = available at every branch.
+  prfBranchId         String?   @db.Uuid                                     @map("prf_branch_id")
+  /// The counter this printer hangs off. NULL = a shared/server-side queue.
+  prfDeviceId         String?   @db.Uuid                                     @map("prf_device_id")
+
+  prfCode             String    @db.VarChar(40)                              @map("prf_code")
+  prfName             String    @db.VarChar(120)                             @map("prf_name")
+
+  // ── How the server reaches it ───────────────────────────────────────────
+  prfConnKind         String    @default("CUPS") @db.VarChar(15)             @map("prf_conn_kind")
+  /// The OS print queue, share name, or device path.
+  prfQueueName        String?   @db.VarChar(120)                             @map("prf_queue_name")
+  prfHost             String?   @db.VarChar(120)                             @map("prf_host")
+  prfPort             Int?                                                   @map("prf_port")
+
+  // ── What it understands ─────────────────────────────────────────────────
+  // ptv_engine says what a template body IS; this says what the hardware can
+  // consume. The renderer is what reconciles the two.
+  prfEmulation        String    @default("ESCPOS") @db.VarChar(20)           @map("prf_emulation")
+  prfCodepage         String?   @db.VarChar(20)                              @map("prf_codepage")
+
+  // ── The paper actually loaded ───────────────────────────────────────────
+  // Asserted against ptv_paper_code / ptv_width_mm / ptv_columns at render
+  // time. This is the check §5 deliberately does NOT put in the assignment
+  // key: paper is a property of the version and of the device, never a
+  // resolution axis.
+  prfPaperCode        String    @default("A4") @db.VarChar(20)               @map("prf_paper_code")
+  prfWidthMm          Decimal?  @db.Decimal(8, 2)                            @map("prf_width_mm")
+  prfHeightMm         Decimal?  @db.Decimal(8, 2)                            @map("prf_height_mm")
+  /// Characters per line. The text-engine counterpart of ptv_columns.
+  prfColumns          Int?      @db.SmallInt                                 @map("prf_columns")
+  prfDpi              Int?      @db.SmallInt                                 @map("prf_dpi")
+
+  // ── Capabilities ────────────────────────────────────────────────────────
+  prfSupportsCut      Boolean   @default(false)                              @map("prf_supports_cut")
+  prfSupportsDrawer   Boolean   @default(false)                              @map("prf_supports_drawer")
+  prfSupportsColor    Boolean   @default(false)                              @map("prf_supports_color")
+  /// Raw escape sequences, hex or the printer's own notation.
+  prfInitSequence     String?   @db.Text                                     @map("prf_init_sequence")
+  prfCutSequence      String?   @db.Text                                     @map("prf_cut_sequence")
+
+  prfSortOrder        Int       @default(100) @db.SmallInt                   @map("prf_sort_order")
+  prfRemarks          String?   @db.VarChar(250)                             @map("prf_remarks")
+
+  prfIsActive         Boolean   @default(true)                               @map("prf_is_active")
+  prfIsDeleted        Boolean   @default(false)                              @map("prf_is_deleted")
+  prfSyncDate         DateTime? @db.Timestamptz(6)                           @map("prf_sync_date")
+  prfCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("prf_created_on")
+  prfCreatedBy        String?   @db.Uuid                                     @map("prf_created_by")
+  prfModifiedOn       DateTime? @db.Timestamptz(6)                           @map("prf_modified_on")
+  prfModifiedBy       String?   @db.Uuid                                     @map("prf_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company       @relation("PrinterProfileCompany",    fields: [prfCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_company")
+  branch              BranchMaster? @relation("PrinterProfileBranch",     fields: [prfBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_branch")
+  device              DeviceMaster? @relation("PrinterProfileDevice",     fields: [prfDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_device")
+  createdByUser       UserMaster?   @relation("PrinterProfileCreatedBy",  fields: [prfCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_created_by")
+  modifiedByUser      UserMaster?   @relation("PrinterProfileModifiedBy", fields: [prfModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_modified_by")
+
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPrinter")
+  printLogs           PrintLog[]                @relation("PrintLogPrinter")
+
+  @@map("printer_profile")
+  @@schema("public")
+}

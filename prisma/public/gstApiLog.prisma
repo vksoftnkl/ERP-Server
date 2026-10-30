@@ -1,0 +1,116 @@
+/// Append-only call log: one row per HTTP attempt at a GSP, including the
+/// ones that failed.
+///
+/// This is a transaction table, not configuration, so it lives in `public`
+/// (like TxnStatusLog) and is LIST-partitioned by galAccYear — which is why
+/// the primary key is the composite (galId, galAccYear). Partitions
+/// (public.gst_api_log_2026_2027) are created by
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921120000_add_gst_provider_integration taught about this table. Run
+/// it whenever a fiscal year is opened, or every insert fails with
+/// "no partition of relation ...".
+///
+/// This is the only record of what crossed the wire. It holds EVERY exchange,
+/// for every document and for the calls that belong to no document at all
+/// (auth, GSTIN lookup). The per-document summary lives on
+/// acc_voucher_doc_register itself; accounts.acc_voucher_doc_api_log, which
+/// used to hold the LAST exchange per document, was dropped unused by
+/// 20260922080000.
+///
+/// Rows are written once — no modifiedOn/By, same as TxnStatusLog.
+model GstApiLog {
+  galId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("gal_id")
+  galCompanyId        String    @db.Uuid                             @map("gal_company_id")
+  galBranchId         String?   @db.Uuid                             @map("gal_branch_id")
+  galTenantId         String?   @db.Uuid                             @map("gal_tenant_id")
+  galAccYear          String    @db.Char(9)                          @map("gal_acc_year")
+
+  /// Which credential (hence which provider) served the attempt. Nullable
+  /// because a call can fail before a credential is even resolved.
+  galGccId            String?   @db.Uuid                             @map("gal_gcc_id")
+  galGpvId            String?   @db.Uuid                             @map("gal_gpv_id")
+
+  galService          String    @db.VarChar(20)                      @map("gal_service")
+  galAction           String    @db.VarChar(30)                      @map("gal_action")
+  galEnvironment      String    @db.VarChar(10)                      @map("gal_environment")
+
+  // ── What it was for ──────────────────────────────────────────────────
+  // Same src-doc pattern as AccTenderDetail and TxnStatusLog.
+  galSrcModule        String?   @db.VarChar(20)                      @map("gal_src_module")
+  galSrcDocType       String?   @db.VarChar(30)                      @map("gal_src_doc_type")
+  galSrcDocId         String?   @db.Uuid                             @map("gal_src_doc_id")
+  galGdrId            String?   @db.Uuid                             @map("gal_gdr_id")
+
+  /// Our key for the attempt. A retry after a timeout reuses it, so a
+  /// generate that already succeeded upstream cannot mint a second IRN.
+  galIdempotencyKey   String?   @db.VarChar(100)                     @map("gal_idempotency_key")
+  galAttemptNo        Int       @default(1) @db.SmallInt             @map("gal_attempt_no")
+
+  // ── The exchange ─────────────────────────────────────────────────────
+  /// Headers are stored REDACTED per gpeRedactPaths: an auth token in a log
+  /// is a credential with a longer life than the session that issued it.
+  galRequestUrl       String?                                        @map("gal_request_url")
+  galRequestHeaders   Json?                                          @map("gal_request_headers")
+  galRequestPayload   Json?                                          @map("gal_request_payload")
+
+  galHttpStatus       Int?      @db.SmallInt                         @map("gal_http_status")
+  galResponsePayload  Json?                                          @map("gal_response_payload")
+
+  /// Their code, and what GstProviderErrorMap turned it into.
+  galProviderCode     String?   @db.VarChar(50)                      @map("gal_provider_code")
+  galOurCode          String?   @db.VarChar(30)                      @map("gal_our_code")
+
+  galIsSuccess        Boolean                                        @map("gal_is_success")
+  galMessage          String?   @db.VarChar(500)                     @map("gal_message")
+
+  galStartedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gal_started_on")
+  galFinishedOn       DateTime? @db.Timestamptz(6)                   @map("gal_finished_on")
+  galDurationMs       Int?                                           @map("gal_duration_ms")
+
+  // ── Audit (write-once) ───────────────────────────────────────────────
+  galIsDeleted        Boolean   @default(false)                      @map("gal_is_deleted")
+  galSyncDate         DateTime? @db.Timestamptz(6)                   @map("gal_sync_date")
+  galCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gal_created_on")
+  galCreatedBy        String?   @db.VarChar(50)                      @map("gal_created_by")
+
+  // No relation fields. The DDL declares no FKs here, deliberately:
+  //   galCompanyId / galBranchId — a log row must survive a reorganisation of
+  //                                the masters it names.
+  //   galGccId / galGpvId        — the credential or provider may legitimately
+  //                                be retired while the attempt it served is
+  //                                still the answer to a support question.
+  //   galSrcDocId                — polymorphic; the target table varies by
+  //                                galSrcModule / galSrcDocType.
+  //   galTenantId                — no Tenant model exists in this schema.
+
+  @@id([galId, galAccYear], map: "pk_gst_api_log")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- one row per idempotency key per year: the guard that makes a retry safe
+  //   CREATE UNIQUE INDEX ux_gal_idempotency
+  //       ON public.gst_api_log (gal_idempotency_key, gal_acc_year)
+  //       WHERE gal_idempotency_key IS NOT NULL AND gal_is_deleted = false;
+  //
+  //   -- "what happened to this bill" — the support question
+  //   CREATE INDEX ix_gal_src_doc
+  //       ON public.gst_api_log (gal_src_doc_type, gal_src_doc_id, gal_acc_year)
+  //       WHERE gal_is_deleted = false;
+  //
+  //   -- "what is this provider doing today" — the monitoring question
+  //   CREATE INDEX ix_gal_activity
+  //       ON public.gst_api_log (gal_company_id, gal_service, gal_action, gal_started_on)
+  //       WHERE gal_is_deleted = false;
+  //
+  //   -- the failure queue
+  //   CREATE INDEX ix_gal_failures
+  //       ON public.gst_api_log (gal_company_id, gal_started_on)
+  //       WHERE gal_is_success = false AND gal_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gal_acc_year, ck_gal_service,
+  //   ck_gal_environment, ck_gal_src_module, ck_gal_headers, ck_gal_attempt,
+  //   ck_gal_duration
+
+  @@map("gst_api_log")
+  @@schema("public")
+}

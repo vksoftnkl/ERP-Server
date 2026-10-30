@@ -4,6 +4,8 @@ import {
   ItemCustRateErrorDetail,
   ItemCustRateErrorResponse,
 } from './types/item-cust-rate-api.types';
+import { wordedResponse } from '../../common/error-wording/error-wording';
+import { frameworkValidationCode } from '../../common/validation/house-validation';
 
 type ValidationExceptionPayload = {
   message?: string | string[];
@@ -12,7 +14,11 @@ type ValidationExceptionPayload = {
 @Catch()
 export class ItemCustRateExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    // Notes 120: every coded error goes out with its plain words (`user`).
+    const response = wordedResponse(
+      host.switchToHttp().getResponse<Response>(),
+      host.switchToHttp().getRequest<unknown>(),
+    );
 
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
@@ -28,10 +34,12 @@ export class ItemCustRateExceptionFilter implements ExceptionFilter {
         return;
       }
 
+      // Notes 127 §5: a plain Nest exception still goes out coded, by its status.
+      const message = this.resolveErrorMessage(rawResponse, exception.message);
       response.status(statusCode).json({
         success: false,
-        message: this.resolveErrorMessage(rawResponse, exception.message),
-        errors: [],
+        message,
+        errors: [{ field: 'request', code: `HTTP_${statusCode}`, message }],
       });
       return;
     }
@@ -39,7 +47,7 @@ export class ItemCustRateExceptionFilter implements ExceptionFilter {
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Internal server error',
-      errors: [],
+      errors: [{ field: 'request', code: 'INTERNAL_ERROR', message: 'Internal server error' }],
     });
   }
 
@@ -74,6 +82,8 @@ export class ItemCustRateExceptionFilter implements ExceptionFilter {
 
     const errors: ItemCustRateErrorDetail[] = messages.map((message) => ({
       field: this.inferFieldName(message),
+      // Notes 119: an old `{ message: [...] }` 400 still gets the nearest VALIDATION_* code.
+      code: frameworkValidationCode(message),
       message,
     }));
 

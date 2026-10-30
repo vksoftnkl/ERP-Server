@@ -1,0 +1,162 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  app_setting_def / app_setting_value  —  Prisma models
+//
+//  Everything Prisma cannot express stays in the raw migration
+//  (20260812120000_add_app_settings — see NOTES at the foot of this file):
+//    · CHECK constraints (ck_asd_*, ck_asv_*)
+//    · partial indexes (ix_asd_module, ix_asv_company, ux_asv_scope_target)
+//    · NULLS NOT DISTINCT on ux_asv_scope_target
+//    · tr_asv_check_scope trigger + fn_asv_check_scope()
+//    · fn_app_settings() / fn_app_setting()
+//    · the catalog seed
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Catalog — one row per configurable setting, forever.
+/// A new setting is an INSERT here; no DDL, no client release.
+model AppSettingDef {
+  asdId String @id @default(dbgenerated("uuidv7()")) @map("asd_id") @db.Uuid
+
+  // ── Identity ─────────────────────────────────────────────────────────
+  /// Dotted, lowercase, module-prefixed: 'sales.allow_bill_over_order_qty'.
+  /// Never renamed — retire the row (asdIsActive = false) and add a new key.
+  asdKey String @unique(map: "ux_app_setting_def_key") @map("asd_key") @db.VarChar(80)
+
+  // ── Where it belongs (draws the settings-screen tree) ────────────────
+  asdModule String @map("asd_module") @db.VarChar(30)
+  asdGroup  String @default("General") @map("asd_group") @db.VarChar(40)
+
+  // ── Shape ────────────────────────────────────────────────────────────
+  /// BOOL | INT | DECIMAL | TEXT | UUID | DATE | JSON  (ck_asd_data_type)
+  asdDataType     String   @map("asd_data_type") @db.VarChar(10)
+  /// NULL = no value; fn_app_settings omits the key entirely.
+  asdDefaultValue String?  @map("asd_default_value")
+  /// JSON array of legal values for an enum-ish TEXT setting. NULL = free text.
+  asdAllowedValues Json?   @map("asd_allowed_values")
+  asdMinValue     Decimal? @map("asd_min_value") @db.Decimal(18, 6)
+  asdMaxValue     Decimal? @map("asd_max_value") @db.Decimal(18, 6)
+
+  // ── How deep it may be overridden ────────────────────────────────────
+  /// GLOBAL | COMPANY | BRANCH | DEVICE | USER  (ck_asd_max_scope)
+  asdMaxScope String @default("COMPANY") @map("asd_max_scope") @db.VarChar(10)
+
+  // ── How it reads on screen ───────────────────────────────────────────
+  asdLabel       String  @map("asd_label") @db.VarChar(120)
+  asdDescription String? @map("asd_description")
+  asdSortOrder   Int     @default(0) @map("asd_sort_order") @db.SmallInt
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  asdIsActive     Boolean @default(true) @map("asd_is_active")
+  asdNeedsRelogin Boolean @default(false) @map("asd_needs_relogin")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  asdIsDeleted  Boolean   @default(false) @map("asd_is_deleted")
+  asdSyncDate   DateTime? @map("asd_sync_date") @db.Timestamptz(6)
+  asdCreatedOn  DateTime  @default(now()) @map("asd_created_on") @db.Timestamptz(6)
+  asdCreatedBy  String    @map("asd_created_by") @db.VarChar(50)
+  asdModifiedOn DateTime? @map("asd_modified_on") @db.Timestamptz(6)
+  asdModifiedBy String?   @map("asd_modified_by") @db.VarChar(50)
+
+  values AppSettingValue[]
+
+  @@map("app_setting_def")
+  @@schema("public")
+}
+
+/// Overrides — one row per (setting, scope target).
+/// A row exists only where somebody changed something. "Reset to default" is a
+/// DELETE, never a write of the default value.
+model AppSettingValue {
+  asvId String @id @default(dbgenerated("uuidv7()")) @map("asv_id") @db.Uuid
+
+  asvSettingKey String @map("asv_setting_key") @db.VarChar(80)
+
+  /// GLOBAL | COMPANY | BRANCH | DEVICE | USER  (ck_asv_scope);
+  /// the id columns below must agree with it (ck_asv_scope_ids).
+  asvScope String @map("asv_scope") @db.VarChar(10)
+
+  asvCompanyId String? @map("asv_company_id") @db.Uuid
+  asvBranchId  String? @map("asv_branch_id") @db.Uuid
+  asvDeviceId  String? @map("asv_device_id") @db.Uuid
+  asvUserId    String? @map("asv_user_id") @db.Uuid
+
+  /// Stored as text for every type; fn_app_settings casts on the way out.
+  /// NULL = "explicitly nothing", distinct from no row at all ("inherit").
+  asvValue   String? @map("asv_value")
+  asvRemarks String? @map("asv_remarks") @db.VarChar(250)
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  asvIsDeleted  Boolean   @default(false) @map("asv_is_deleted")
+  asvSyncDate   DateTime? @map("asv_sync_date") @db.Timestamptz(6)
+  asvCreatedOn  DateTime  @default(now()) @map("asv_created_on") @db.Timestamptz(6)
+  asvCreatedBy  String    @map("asv_created_by") @db.VarChar(50)
+  asvModifiedOn DateTime? @map("asv_modified_on") @db.Timestamptz(6)
+  asvModifiedBy String?   @map("asv_modified_by") @db.VarChar(50)
+
+  // ── Relations ────────────────────────────────────────────────────────
+  // RESTRICT: a catalog row with overrides is retired, never deleted.
+  setting AppSettingDef @relation(fields: [asvSettingKey], references: [asdKey], onUpdate: Cascade, onDelete: Restrict, map: "fk_asv_setting")
+
+  // CASCADE: a branch that is gone cannot keep outvoting its company.
+  company Company?      @relation(fields: [asvCompanyId], references: [compId], onUpdate: Cascade, onDelete: Cascade, map: "fk_asv_company")
+  branch  BranchMaster? @relation(fields: [asvBranchId], references: [brId], onUpdate: Cascade, onDelete: Cascade, map: "fk_asv_branch")
+  device  DeviceMaster? @relation(fields: [asvDeviceId], references: [devId], onUpdate: Cascade, onDelete: Cascade, map: "fk_asv_device")
+  user    UserMaster?   @relation(fields: [asvUserId], references: [usrId], onUpdate: Cascade, onDelete: Cascade, map: "fk_asv_user")
+
+  @@map("app_setting_value")
+  @@schema("public")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  NOTES — what stays in raw SQL (DB-only, never declared above)
+//
+//  1. Indexes. Both partial, and ux_asv_scope_target additionally needs
+//     NULLS NOT DISTINCT — neither is expressible in Prisma, so they are
+//     declared ONLY in the migration and never in this file (same rule as
+//     ux_sqi_quote_line). Prisma ignores indexes with a WHERE predicate, so
+//     declaring them here would produce phantom drift on every migrate dev:
+//
+//       CREATE INDEX IF NOT EXISTS ix_asd_module
+//           ON public.app_setting_def USING btree
+//           (asd_module, asd_group, asd_sort_order)
+//           WITH (fillfactor=100, deduplicate_items=True)
+//           WHERE asd_is_deleted = false AND asd_is_active = true;
+//
+//       CREATE UNIQUE INDEX IF NOT EXISTS ux_asv_scope_target
+//           ON public.app_setting_value USING btree
+//           (asv_setting_key, asv_company_id, asv_branch_id,
+//            asv_device_id, asv_user_id)
+//           NULLS NOT DISTINCT
+//           WITH (fillfactor=100, deduplicate_items=True)
+//           WHERE asv_is_deleted = false;
+//
+//       CREATE INDEX IF NOT EXISTS ix_asv_company
+//           ON public.app_setting_value USING btree
+//           (asv_company_id, asv_setting_key)
+//           WITH (fillfactor=100, deduplicate_items=True)
+//           WHERE asv_is_deleted = false;
+//
+//  2. CHECK constraints (ck_asd_data_type, ck_asd_max_scope, ck_asd_range,
+//     ck_asv_scope, ck_asv_scope_ids), fn_asv_check_scope() +
+//     tr_asv_check_scope, fn_app_settings(), fn_app_setting(), and the catalog
+//     seed all live in the migration.
+//
+//  3. Back-relations added on the existing models:
+//
+//       model Company      { appSettingValues AppSettingValue[] }
+//       model BranchMaster { appSettingValues AppSettingValue[] }
+//       model DeviceMaster { appSettingValues AppSettingValue[] }   // @@schema("fixed")
+//       model UserMaster   { appSettingValues AppSettingValue[] }
+//
+//  4. asvSettingKey points at AppSettingDef.asdKey, a non-PK unique column.
+//     That is legal in Prisma only because asdKey carries @unique — keep it.
+//
+//  5. Reading a resolved settings object from NestJS:
+//
+//       const [{ data }] = await this.prisma.$queryRaw<[{ data: unknown }]>`
+//         SELECT public.fn_app_settings(
+//           ${companyId}::uuid, ${branchId}::uuid,
+//           ${deviceId}::uuid,  ${userId}::uuid) AS data`;
+//
+//     Do not rebuild the five-layer merge in TypeScript; the resolver is the
+//     single source of precedence for both client and server-side rules.
+// ═══════════════════════════════════════════════════════════════════════════

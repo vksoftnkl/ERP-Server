@@ -1,0 +1,382 @@
+import { Transform } from 'class-transformer';
+import {
+  IsArray,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  Max,
+  Min,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  NullableInteger,
+  NullableString,
+  NullableUuid,
+  OptionalInteger,
+  OptionalNotNullBoolean,
+  OptionalTrimmedString,
+  OptionalUuid,
+  toTrimmedString,
+} from 'src/common/dto/dtoDecorators';
+
+const toUuidArray = (value: unknown): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)))
+      .filter((entry) => entry.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)))
+            .filter((entry) => entry.length > 0);
+        }
+      } catch {
+        return [trimmed];
+      }
+    }
+
+    return trimmed
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  return [value as string];
+};
+
+export class SaveItemDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'When provided, request updates the existing item row',
+  })
+  @OptionalUuid()
+  item_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Company UUID this item belongs to. null (or "") makes the item SHARED by every company; omitted keeps the stored company (notes 137 A2).',
+  })
+  @NullableUuid()
+  item_company_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_branch_id?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @NullableString(50)
+  item_code?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 60, nullable: true })
+  @NullableString(60)
+  item_sku?: string | null;
+
+  @ApiProperty({ maxLength: 200 })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  item_name_en!: string;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  item_name_ta?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  item_alias?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, default: 'FG' })
+  @OptionalTrimmedString(20)
+  item_stock_type?: string;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  item_default_barcode?: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @IsNotEmpty()
+  @IsUUID('all')
+  item_group_id!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_category_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_brand_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_section_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_company_category_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_mfgr_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_supplier_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_cust_group?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "Taken from the item's base unit conversion row whenever it has one (notes 138 A2): a " +
+      'different unit is refused — 409 ITEM_BASE_UNIT_LOCKED on an item that already had a ' +
+      "base row, 400 ITEM_BASE_UNIT_MISMATCH against this save's own base row — and null is " +
+      'ignored. Only an item with no unit rows keeps the value sent here.',
+  })
+  @NullableUuid()
+  item_base_unit_id?: string | null;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_is_service?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_is_batch_based?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_is_expiry_item?: boolean;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
+  item_expiry_days?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
+  item_intimate_before_days?: number | null;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_sales?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_sales_return?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_purchase?: boolean;
+
+  // MST-03 purchase fields (plan-purchase-phase1 §2.5)
+  @ApiPropertyOptional({ nullable: true, description: 'The unit a purchase line opens in (item_unit_conversion.iuc_id of this item).' })
+  @NullableUuid()
+  item_purchase_uom_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 100, description: 'Minimum shelf life left at receipt, % (blank = the company default).' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  item_min_shelf_life_pct?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: ['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5'], description: 'Input tax credit class on purchase (blank = eligible).' })
+  @IsOptional()
+  @IsIn(['ELIGIBLE', 'INELIGIBLE', 'BLOCKED_17_5', null])
+  item_itc_class?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, maximum: 100, description: 'Normal shortage % (transit loss) accepted without a claim.' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  item_shortage_pct?: number | null;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_po?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_so?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_neg_stock?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_allow_negative_so?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_price_list?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_weigh_scale?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_retail_item?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_is_kit?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_auto_break?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_auto_make?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_allow_loyalty?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_allow_promo?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_has_offer?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_damagable_product?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_is_demand?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_allow_loading?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_allow_freight?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_random_stock?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalNotNullBoolean()
+  item_barcode_sticker?: boolean;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_barcode_sticker_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  item_default_tax_id?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true, pattern: '^[0-9]+$' })
+  @NullableString(10)
+  @Matches(/^[0-9]+$/, { message: 'item_hsn_code must hold digits only (an HSN or SAC code)' })
+  item_hsn_code?: string | null;
+
+  @ApiPropertyOptional({ default: 0 })
+  @OptionalInteger()
+  item_batch_config?: number;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "stock.stock_track_preset.spt_id, from /stock-track-presets/get. Supplies every column of the ITEM-scope stock track policy — the ONLY item-level tracking choice (NONE included). Send null to clear it: the item then follows its group's policy, then the company's; item_batch_config / item_is_batch_based / item_is_expiry_item / item_allow_neg_stock no longer derive one (notes 68).",
+  })
+  @NullableUuid()
+  item_track_preset_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableInteger()
+  item_sort_order?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Base64-encoded image bytes' })
+  @NullableString()
+  item_photo?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString()
+  item_image_url?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableString(250)
+  item_notes?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableString(250)
+  item_storage_location?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    nullable: true,
+    description: 'Can be UUID array, JSON array string, or comma-separated string',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toUuidArray(value))
+  @IsArray()
+  @IsUUID('all', { each: true })
+  item_packing_item_ids?: string[];
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_incl_tax?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalNotNullBoolean()
+  item_is_active?: boolean;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
+  @NullableString(100)
+  item_created_by?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored: the actor is always the signed-in user (notes 137 C2).',
+  })
+  @NullableString(100)
+  item_modified_by?: string | null;
+}

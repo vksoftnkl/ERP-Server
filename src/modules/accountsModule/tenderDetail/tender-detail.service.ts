@@ -1,0 +1,1480 @@
+import { HttpException, Injectable, Optional } from '@nestjs/common';
+import { AccTenderDetail, Prisma } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
+import { TillEventService } from '../../till/services/till-event.service';
+import { TillEventCode } from '../../till/types/till-enum';
+import { buildErrorResponse } from 'src/common/utils/module-shared.utils';
+import { readTenderSettings } from '../tenderSettlement/tender-settlement.settings';
+import { GetTenderDetailQueryDto } from './dto/get-tender-detail-query.dto';
+import { SaveTenderDetailDto } from './dto/save-tender-detail.dto';
+import {
+  TENDER_DETAIL_VALUE_GUARDS,
+  TenderDetailDeleteResult,
+  TenderDetailErrorCode,
+  TenderDetailErrorDetail,
+  TenderDetailGuardedValues,
+  TenderDetailPayload,
+  TenderDocumentAudit,
+  TenderDocumentScope,
+  TenderDrCr,
+  TenderSettleStatus,
+  TenderSrcDocType,
+  TenderSrcModule,
+} from './types/tender-detail-api.types';
+import {
+  AccountsWriteClient,
+  DEFAULT_ACTOR,
+  PresentFieldTransform,
+  applyPresentFields,
+  isForeignKeyConstraintError,
+  normalizeRequiredText,
+  resolveActor,
+  throwAccountsBadRequest,
+  throwAccountsConflict,
+  throwAccountsNotFound,
+  toNumber,
+  toNullableNumber,
+} from 'src/common/utils/module-service.utils';
+const TENDER_DETAIL_TABLE_NAME = 'account tender detail';
+const TENDER_DETAIL_AUDIT_SCREEN_NAME = 'Tender Detail';
+// How this module labels the audit rows it writes on its own endpoints. A
+// document reconciling its tenders through syncDocumentTenders passes its own
+// labels instead, so a tender captured with a bill stays on the bill's screen.
+const TENDER_DETAIL_AUDIT: TenderDocumentAudit = {
+  tableName: TENDER_DETAIL_TABLE_NAME,
+  screenName: TENDER_DETAIL_AUDIT_SCREEN_NAME,
+  entityName: 'Tender line',
+};
+// Amount / instrument / settlement columns copied verbatim from the DTO
+// (already normalized by its decorators) onto the create/update payload; only
+// keys present on the request are applied, so a partial update stays partial.
+// The document scope, the tender snapshot (tdTenderId / tdTenderTypeId /
+// tdTenderLedgerId / tdDrCr) and tdTotalAmt — which is derived — are set
+// explicitly, so they are intentionally excluded here.
+const TENDER_DETAIL_OPTIONAL_FIELDS = [
+  'tdVoucherId',
+  'tdAmount',
+  'tdSurchargePerc',
+  'tdSurchargeAmt',
+  'tdSurchargeLedgerId',
+  'tdReceivedAmt',
+  'tdChangeAmt',
+  'tdUnitsUsed',
+  'tdConversionRate',
+  'tdRefNo',
+  'tdAuthCode',
+  'tdCardLast4',
+  'tdBankName',
+  'tdPayerVpa',
+  'tdInstrumentDate',
+  'tdIsPdc',
+  'tdSettleStatus',
+  'tdSettleLedgerId',
+  'tdExpectedSettleOn',
+  'tdSettledOn',
+  'tdSettleAmount',
+  'tdMdrAmt',
+  'tdSettleRefNo',
+  'tdSettleVoucherId',
+  'tdSessionId',
+  'tdDeviceId',
+  'tdNotes',
+];
+// NOT NULL columns carrying a DB default: an explicit null is dropped rather
+// than written, so the default (or the stored value on update) survives instead
+// of the insert failing on a 23502.
+const TENDER_DETAIL_DEFAULTED_FIELDS = [
+  'tdAmount',
+  'tdSurchargePerc',
+  'tdSurchargeAmt',
+  'tdReceivedAmt',
+  'tdChangeAmt',
+  'tdUnitsUsed',
+  'tdConversionRate',
+  'tdIsPdc',
+  'tdSettleStatus',
+  'tdMdrAmt',
+];
+// Date-only columns reachable from the payload. JSON carries them as strings,
+// Prisma wants Date objects, so each is converted on the way in.
+const TENDER_DETAIL_DATE_FIELDS = ['tdInstrumentDate', 'tdExpectedSettleOn', 'tdSettledOn'];
+function dropNullish(value: unknown): unknown {
+  return value === null ? undefined : value;
+}
+const CARD_LAST4_PATTERN = /^[0-9]{4}$/;
+function toDateOrNull(value: unknown, field: string): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === '') {
+    return null;
+  }
+  const parsed = new Date(value as string);
+  if (Number.isNaN(parsed.getTime())) {
+    throwAccountsBadRequest<TenderDetailErrorDetail>('Validation failed', [
+      {
+        field,
+        code: TenderDetailErrorCode.DATE_INVALID,
+        message: `${field} must be a valid ISO date`,
+      },
+    ]);
+  }
+  return parsed;
+}
+const TENDER_DETAIL_FIELD_TRANSFORMS: Partial<Record<string, PresentFieldTransform>> = {
+  ...Object.fromEntries(TENDER_DETAIL_DEFAULTED_FIELDS.map((field) => [field, dropNullish])),
+  ...Object.fromEntries(
+    TENDER_DETAIL_DATE_FIELDS.map((field) => [
+      field,
+      (value: unknown) => toDateOrNull(value, field),
+    ]),
+  ),
+};
+type TenderDetailWriteClient = AccountsWriteClient;
+type TenderDetailRecord = AccTenderDetail & {
+  tender?: { tndName: string } | null;
+  ledger?: { ledName: string } | null;
+};
+// The tender master values a line snapshots when it does not carry its own.
+interface TenderMasterSnapshot {
+  tndName: string;
+  tndTypeId: number;
+  /** Null on TEMP_CR / CREDIT / LOYALTY, which post no tender leg (notes 126 §5). */
+  tndLedgerId: string | null;
+  tndSettlementLedgerId: string | null;
+  tndSettlementDays: number;
+  tndNeedsRef: boolean | null;
+}
+
+/** What the reference guard reads of a row about to be written (insert, or update merged). */
+interface TenderRefRow {
+  tdId: string | null;
+  tdTenderId: string;
+  tdTenderTypeId: number;
+  tdDrCr: string;
+  tdRefNo: string | null;
+  tdAuthCode: string | null;
+  tdCardLast4: string | null;
+  tdTotalAmt: Prisma.Decimal;
+  tdCompanyId: string;
+  tdBranchId: string;
+  tdAccYear: string;
+  tdSrcDocType: string;
+  tdSrcDocId: string;
+  tdSessionId: string | null;
+}
+
+/** Non-cash plan §3 codes. */
+export const TENDER_REF_REQUIRED = 'TENDER_REF_REQUIRED';
+export const TENDER_REF_DUPLICATE = 'TENDER_REF_DUPLICATE';
+/**
+ * The tender TYPES whose money a provider statement proves (till REV 2 §2.4):
+ * card, UPI and wallet. A cheque keeps its PDC flow and a bank transfer is
+ * reconciled as bank, so neither waits on the Not-received list.
+ */
+const STATEMENT_SETTLED_TYPES = ['CARD', 'UPI', 'WALLET'];
+/**
+ * CRUD over `accounts.acc_tender_detail` — the money tendered against a
+ * document (cash, card, UPI, loyalty points, …), captured while the document is
+ * still a draft and carried through to posting.
+ *
+ * The table is polymorphic: a row belongs to whichever document the
+ * (tdSrcModule, tdSrcDocType, tdSrcDocId) triple names, and every td_* column
+ * except the amounts is a SNAPSHOT of the tender master taken at tender time,
+ * so this service stores what the client sends rather than re-reading the
+ * master — the two identity snapshots (tdTenderTypeId / tdTenderLedgerId) being
+ * filled from it only when the payload leaves them out.
+ *
+ * A document that owns its tender lines as part of one save (a bill) reconciles
+ * them through `syncDocumentTenders`, which takes the caller's transaction so
+ * the header, its lines and its tenders stay all-or-nothing — the same writers,
+ * guards and audit trail as the endpoints here.
+ *
+ * `acc_tender_detail` is LIST-partitioned by `td_acc_year` with a composite
+ * `(tdId, tdAccYear)` primary key, so every single-row `.update()` addresses the
+ * `tdId_tdAccYear` compound key, exactly as `sale_bill` does.
+ */
+@Injectable()
+export class TenderDetailService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
+    // Optional so the unit specs that build this service by hand keep compiling;
+    // without them a duplicate reference is refused (BLOCK) and not journalled.
+    @Optional() private readonly appSettings?: AppSettingValueService,
+    @Optional() private readonly tillEvents?: TillEventService,
+  ) {}
+  async save(saveTenderDetailDto: SaveTenderDetailDto): Promise<TenderDetailPayload> {
+    if (saveTenderDetailDto.tdId) {
+      return this.updateTenderDetail(saveTenderDetailDto);
+    }
+    return this.createTenderDetail(saveTenderDetailDto);
+  }
+  // Single endpoint, two lookups: by id it answers with one tender line, by the
+  // document triple with every tender line on that document.
+  async get(
+    getTenderDetailQueryDto: GetTenderDetailQueryDto,
+  ): Promise<TenderDetailPayload | TenderDetailPayload[]> {
+    const { tdId, tdSrcModule, tdSrcDocType, tdSrcDocId } = getTenderDetailQueryDto;
+    if (tdId && (tdSrcModule || tdSrcDocType || tdSrcDocId)) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Ambiguous tender line lookup', [
+        {
+          field: 'tdId',
+          code: TenderDetailErrorCode.LOOKUP_AMBIGUOUS,
+          message:
+            'Send either tdId or the tdSrcModule + tdSrcDocType + tdSrcDocId triple, not both',
+        },
+      ]);
+    }
+    if (tdId) {
+      return this.getById(tdId);
+    }
+    if (tdSrcModule && tdSrcDocType && tdSrcDocId) {
+      return this.getByDocument(tdSrcModule, tdSrcDocType, tdSrcDocId);
+    }
+    throwAccountsBadRequest<TenderDetailErrorDetail>('Missing tender line lookup', [
+      {
+        field: 'tdId',
+        code: TenderDetailErrorCode.LOOKUP_MISSING,
+        message: 'Either tdId, or all of tdSrcModule, tdSrcDocType and tdSrcDocId, is required',
+      },
+    ]);
+  }
+  async getById(tdId: string): Promise<TenderDetailPayload> {
+    const record = await this.prisma.accTenderDetail.findFirst({
+      where: { tdId, tdIsDeleted: false },
+      include: this.displayJoins(),
+    });
+    if (!record) {
+      this.throwNotFound(tdId);
+    }
+    return this.toPayload(record);
+  }
+  // The tender lines of one document, in the order the tender screen shows them.
+  // A caller inside a transaction passes its client, or it reads the rows as
+  // last committed.
+  async getByDocument(
+    tdSrcModule: TenderSrcModule,
+    tdSrcDocType: TenderSrcDocType,
+    tdSrcDocId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<TenderDetailPayload[]> {
+    const records = await this.findDocumentTenders(client, tdSrcModule, tdSrcDocType, tdSrcDocId);
+    return records.map((record) => this.toPayload(record));
+  }
+  async softDelete(tdId: string): Promise<TenderDetailDeleteResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.accTenderDetail.findFirst({
+        where: { tdId, tdIsDeleted: false },
+      });
+      if (!existing) {
+        this.throwNotFound(tdId);
+      }
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      const modifiedOn = new Date();
+      await this.softDeleteTenderLine(tx, existing, actor, modifiedOn, TENDER_DETAIL_AUDIT);
+      return { tdId, deleted: true };
+    });
+  }
+  // ---------------------------------------------------------------------
+  // Document-owned tender lines
+  //
+  // What an owning module (a bill) calls instead of writing acc_tender_detail
+  // itself. All three take the caller's transaction, so the parent header, its
+  // lines and its tenders commit or roll back together.
+  // ---------------------------------------------------------------------
+  // Reconciles one document's tender lines against the payload array:
+  //   - a line carrying tdId updates that existing line
+  //   - a line without tdId is created under the parent's scope
+  //   - an existing line absent from the array is soft deleted
+  // Passing `undefined` (property omitted on the parent payload) leaves the
+  // stored lines untouched and just reads them back.
+  async syncDocumentTenders(
+    tx: TenderDetailWriteClient,
+    scope: TenderDocumentScope,
+    inputTenders: SaveTenderDetailDto[] | undefined,
+    actorId: string,
+    audit: TenderDocumentAudit = TENDER_DETAIL_AUDIT,
+  ): Promise<TenderDetailPayload[]> {
+    const existing = await this.findDocumentTenders(
+      tx,
+      scope.tdSrcModule,
+      scope.tdSrcDocType,
+      scope.tdSrcDocId,
+    );
+    if (inputTenders === undefined) {
+      return existing.map((record) => this.toPayload(record));
+    }
+    const existingMap = new Map(existing.map((tender) => [tender.tdId, tender]));
+    const keptIds = new Set<string>();
+    const seenRowNos = new Set<number>();
+    const now = new Date();
+    const persisted: TenderDetailPayload[] = [];
+    for (const [index, inputTender] of inputTenders.entries()) {
+      // td_row_no carries no DB uniqueness (the table's only index is its PK),
+      // so a duplicate within one payload is rejected here; an omitted number
+      // takes the line's position in the array.
+      const rowNo = inputTender.tdRowNo ?? index + 1;
+      if (seenRowNos.has(rowNo)) {
+        throwAccountsConflict<TenderDetailErrorDetail>('Duplicate tender line number', [
+          {
+            field: 'tdRowNo',
+            code: TenderDetailErrorCode.ROW_NO_DUPLICATE,
+            message: `A tender line with number ${rowNo} already exists on this document`,
+          },
+        ]);
+      }
+      seenRowNos.add(rowNo);
+      const existingTender = inputTender.tdId ? existingMap.get(inputTender.tdId) : undefined;
+      if (inputTender.tdId && !existingTender) {
+        this.throwNotFound(inputTender.tdId);
+      }
+      this.ensureDocumentMatchesScope(inputTender, scope);
+      if (existingTender) {
+        persisted.push(
+          await this.updateTenderLine(tx, existingTender, inputTender, rowNo, actorId, now, audit),
+        );
+        keptIds.add(existingTender.tdId);
+        continue;
+      }
+      const created = await this.insertTenderLine(
+        tx,
+        scope,
+        inputTender,
+        rowNo,
+        actorId,
+        now,
+        audit,
+      );
+      keptIds.add(created.tdId);
+      persisted.push(created);
+    }
+    for (const removed of existing.filter((tender) => !keptIds.has(tender.tdId))) {
+      await this.softDeleteTenderLine(tx, removed, actorId, now, audit);
+    }
+    return persisted.sort((left, right) => left.tdRowNo - right.tdRowNo);
+  }
+  // The stored tender lines of one document, in row order. Takes the caller's
+  // client so an owning module can read them inside its own transaction.
+  //
+  // A VOIDED row is left out (T-VOID). A re-tender (/bills/retender) voids the
+  // rows that did not happen and writes the ones that did, each pointing at
+  // what it replaces; the voided row stays as the audit trail and must not be
+  // counted, kept or soft-deleted by anything that reads a document's tenders
+  // afterwards — /get, a post, an amend, a re-save. The re-tender screen reads
+  // them flagged through /bills/get (bill-read), and getById still answers for
+  // one by id, with the void columns on the payload.
+  findDocumentTenders(
+    client: TenderDetailWriteClient,
+    tdSrcModule: TenderSrcModule,
+    tdSrcDocType: TenderSrcDocType,
+    tdSrcDocId: string,
+  ): Promise<TenderDetailRecord[]> {
+    return client.accTenderDetail.findMany({
+      where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false, tdIsVoided: false },
+      include: this.displayJoins(),
+      orderBy: { tdRowNo: 'asc' },
+    });
+  }
+  // Retires every tender line of a document in one statement — what an owning
+  // module calls when its header is soft deleted, since tendered money must
+  // never stay active under a logically deleted document.
+  async softDeleteDocumentTenders(
+    tx: TenderDetailWriteClient,
+    tdSrcModule: TenderSrcModule,
+    tdSrcDocType: TenderSrcDocType,
+    tdSrcDocId: string,
+    actorId: string,
+    modifiedOn: Date = new Date(),
+  ): Promise<void> {
+    await tx.accTenderDetail.updateMany({
+      where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false },
+      data: {
+        tdIsDeleted: true,
+        tdModifiedOn: modifiedOn,
+        tdModifiedBy: actorId,
+      },
+    });
+  }
+  private async createTenderDetail(
+    saveTenderDetailDto: SaveTenderDetailDto,
+  ): Promise<TenderDetailPayload> {
+    const now = new Date();
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    // Standalone create: the request carries the scope an owning module would
+    // otherwise inherit from its header, so it is assembled from the payload and
+    // every part of it is required.
+    const scope: TenderDocumentScope = {
+      tdSrcModule: this.requireField(saveTenderDetailDto.tdSrcModule, 'tdSrcModule'),
+      tdSrcDocType: this.requireField(saveTenderDetailDto.tdSrcDocType, 'tdSrcDocType'),
+      tdSrcDocId: this.requireField(saveTenderDetailDto.tdSrcDocId, 'tdSrcDocId'),
+      tdCompanyId: this.requireField(saveTenderDetailDto.tdCompanyId, 'tdCompanyId'),
+      tdBranchId: this.requireField(saveTenderDetailDto.tdBranchId, 'tdBranchId'),
+      tdTenantId: saveTenderDetailDto.tdTenantId ?? null,
+      tdAccYear: normalizeRequiredText<TenderDetailErrorDetail>(
+        this.requireField(saveTenderDetailDto.tdAccYear, 'tdAccYear'),
+        'tdAccYear',
+        undefined,
+        TenderDetailErrorCode.FIELD_REQUIRED,
+      ),
+      tdDocDate: toDateOrNull(
+        this.requireField(saveTenderDetailDto.tdDocDate, 'tdDocDate'),
+        'tdDocDate',
+      ) as Date,
+      tdPartyLedgerId: this.requireField(saveTenderDetailDto.tdPartyLedgerId, 'tdPartyLedgerId'),
+      tdUserId: this.requireField(saveTenderDetailDto.tdUserId, 'tdUserId'),
+      tdSessionId: saveTenderDetailDto.tdSessionId ?? null,
+      tdDeviceId: saveTenderDetailDto.tdDeviceId ?? null,
+      tdDrCr: this.requireField(saveTenderDetailDto.tdDrCr, 'tdDrCr'),
+    };
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const rowNo = await this.resolveRowNo(tx, scope, saveTenderDetailDto.tdRowNo ?? null);
+        return this.insertTenderLine(
+          tx,
+          scope,
+          saveTenderDetailDto,
+          rowNo,
+          actor,
+          now,
+          TENDER_DETAIL_AUDIT,
+        );
+      });
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
+  }
+  private async updateTenderDetail(
+    saveTenderDetailDto: SaveTenderDetailDto,
+  ): Promise<TenderDetailPayload> {
+    const tdId = saveTenderDetailDto.tdId!;
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.accTenderDetail.findFirst({
+          where: { tdId, tdIsDeleted: false },
+        });
+        if (!existing) {
+          this.throwNotFound(tdId);
+        }
+        this.ensureDocumentIsUnchanged(saveTenderDetailDto, existing);
+        const rowNo =
+          saveTenderDetailDto.tdRowNo === undefined
+            ? existing.tdRowNo
+            : await this.resolveRowNo(
+                tx,
+                {
+                  tdSrcModule: existing.tdSrcModule as TenderSrcModule,
+                  tdSrcDocType: existing.tdSrcDocType as TenderSrcDocType,
+                  tdSrcDocId: existing.tdSrcDocId,
+                } as TenderDocumentScope,
+                saveTenderDetailDto.tdRowNo,
+                tdId,
+              );
+        return this.updateTenderLine(
+          tx,
+          existing,
+          saveTenderDetailDto,
+          rowNo,
+          actor,
+          new Date(),
+          TENDER_DETAIL_AUDIT,
+        );
+      });
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
+  }
+  // Inserts one tender line under `scope`. Anything the payload sends for the
+  // scope wins over the parent's value; tdTenderId is the one reference a new
+  // line cannot be created without, and the tender master fills the two
+  // identity snapshots the payload leaves out.
+  private async insertTenderLine(
+    tx: TenderDetailWriteClient,
+    scope: TenderDocumentScope,
+    saveTenderDetailDto: SaveTenderDetailDto,
+    rowNo: number,
+    actorId: string,
+    now: Date,
+    audit: TenderDocumentAudit,
+  ): Promise<TenderDetailPayload> {
+    const tenderId = this.requireField(saveTenderDetailDto.tdTenderId, 'tdTenderId');
+    const tender = await this.ensureTenderExists(tx, tenderId);
+    const tenderTypeId =
+      saveTenderDetailDto.tdTenderTypeId === undefined
+        ? tender.tndTypeId
+        : this.toTenderTypeId(saveTenderDetailDto.tdTenderTypeId);
+    if (tenderTypeId !== tender.tndTypeId) {
+      await this.ensureTenderTypeExists(tx, tenderTypeId);
+    }
+    // The line's own party wins; otherwise the document's. Required here rather
+    // than on the scope: the scope is built once per save, and a document with
+    // no party of its own is legal right up until it tries to file a tender.
+    const partyLedgerId = this.requireField(
+      saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId,
+      'tdPartyLedgerId',
+    );
+    // A tender that posts no leg (TEMP_CR / CREDIT / LOYALTY, notes 126 §5)
+    // has no ledger of its own: the row names the party it is owed by.
+    const tenderLedgerId =
+      saveTenderDetailDto.tdTenderLedgerId ?? tender.tndLedgerId ?? partyLedgerId;
+    const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
+    await this.ensureLedgerExists(tx, partyLedgerId, 'tdPartyLedgerId');
+    if (saveTenderDetailDto.tdSettleLedgerId) {
+      await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
+    }
+    if (saveTenderDetailDto.tdSurchargeLedgerId) {
+      await this.ensureLedgerExists(
+        tx,
+        saveTenderDetailDto.tdSurchargeLedgerId,
+        'tdSurchargeLedgerId',
+      );
+    }
+    const data: Prisma.AccTenderDetailUncheckedCreateInput = {
+      tdSrcModule: scope.tdSrcModule,
+      tdSrcDocType: scope.tdSrcDocType,
+      tdSrcDocId: scope.tdSrcDocId,
+      tdRowNo: rowNo,
+      tdCompanyId: saveTenderDetailDto.tdCompanyId ?? scope.tdCompanyId,
+      tdBranchId: saveTenderDetailDto.tdBranchId ?? scope.tdBranchId,
+      tdTenantId:
+        saveTenderDetailDto.tdTenantId === undefined
+          ? scope.tdTenantId
+          : saveTenderDetailDto.tdTenantId,
+      tdAccYear:
+        saveTenderDetailDto.tdAccYear === undefined
+          ? scope.tdAccYear
+          : normalizeRequiredText<TenderDetailErrorDetail>(
+              saveTenderDetailDto.tdAccYear,
+              'tdAccYear',
+              undefined,
+              TenderDetailErrorCode.FIELD_REQUIRED,
+            ),
+      tdDocDate:
+        saveTenderDetailDto.tdDocDate === undefined
+          ? scope.tdDocDate
+          : (toDateOrNull(saveTenderDetailDto.tdDocDate, 'tdDocDate') as Date),
+      tdPartyLedgerId: partyLedgerId,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdTenderLedgerId: tenderLedgerId,
+      tdDrCr: saveTenderDetailDto.tdDrCr ?? scope.tdDrCr,
+      tdUserId: saveTenderDetailDto.tdUserId ?? scope.tdUserId,
+      tdSessionId:
+        saveTenderDetailDto.tdSessionId === undefined
+          ? scope.tdSessionId
+          : saveTenderDetailDto.tdSessionId,
+      tdDeviceId:
+        saveTenderDetailDto.tdDeviceId === undefined
+          ? scope.tdDeviceId
+          : saveTenderDetailDto.tdDeviceId,
+      tdCreatedOn: now,
+      tdCreatedBy: resolveActor(saveTenderDetailDto.tdCreatedBy, actorId),
+    };
+    applyPresentFields(
+      data,
+      saveTenderDetailDto,
+      TENDER_DETAIL_OPTIONAL_FIELDS,
+      TENDER_DETAIL_FIELD_TRANSFORMS,
+    );
+    const totalAmt = this.resolveTotalAmt(saveTenderDetailDto, undefined);
+    data.tdTotalAmt = totalAmt;
+    const last4 = await this.guardReference(tx, tender, {
+      tdId: null,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdDrCr: data.tdDrCr,
+      tdRefNo: data.tdRefNo ?? null,
+      tdAuthCode: data.tdAuthCode ?? null,
+      tdCardLast4: data.tdCardLast4 ?? null,
+      tdTotalAmt: totalAmt,
+      tdCompanyId: data.tdCompanyId,
+      tdBranchId: data.tdBranchId,
+      tdAccYear: data.tdAccYear,
+      tdSrcDocType: data.tdSrcDocType,
+      tdSrcDocId: data.tdSrcDocId,
+      tdSessionId: data.tdSessionId ?? null,
+    });
+    if (last4 && !data.tdCardLast4) {
+      data.tdCardLast4 = last4;
+    }
+    await this.defaultSettlement(tx, data, tender, saveTenderDetailDto);
+    this.ensureValuesAreAllowed(saveTenderDetailDto, undefined, data);
+    const created = await tx.accTenderDetail.create({ data });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: audit.tableName,
+        screenName: audit.screenName,
+        screenType: 'transaction',
+        pk: created.tdId,
+        displayName: this.displayName(created, tender.tndName),
+        originalRecord: null,
+        // Audit tracks stored columns only; the two display names are read from
+        // the masters, so they are left out of both snapshots to avoid a
+        // spurious "changed" diff.
+        modifiedRecord: this.toPayload(created),
+        userId: created.tdCreatedBy,
+        notes: `${audit.entityName} created`,
+      },
+      tx,
+    );
+    return this.toPayload(created, tender.tndName, ledgerName);
+  }
+  // Updates one stored tender line from a partial payload: only the keys the
+  // request actually carries are written, the rest of the row stands.
+  private async updateTenderLine(
+    tx: TenderDetailWriteClient,
+    existing: AccTenderDetail,
+    saveTenderDetailDto: SaveTenderDetailDto,
+    rowNo: number,
+    actorId: string,
+    now: Date,
+    audit: TenderDocumentAudit,
+  ): Promise<TenderDetailPayload> {
+    const tenderId = saveTenderDetailDto.tdTenderId ?? existing.tdTenderId;
+    const tender = await this.ensureTenderExists(tx, tenderId);
+    // Re-picking the tender re-snapshots its type and ledger unless the payload
+    // names its own; keeping the tender keeps whatever is stored.
+    const tenderChanged = tenderId !== existing.tdTenderId;
+    const tenderTypeId =
+      saveTenderDetailDto.tdTenderTypeId === undefined
+        ? tenderChanged
+          ? tender.tndTypeId
+          : existing.tdTenderTypeId
+        : this.toTenderTypeId(saveTenderDetailDto.tdTenderTypeId);
+    if (tenderTypeId !== tender.tndTypeId && tenderTypeId !== existing.tdTenderTypeId) {
+      await this.ensureTenderTypeExists(tx, tenderTypeId);
+    }
+    const tenderLedgerId =
+      saveTenderDetailDto.tdTenderLedgerId ??
+      (tenderChanged
+        ? (tender.tndLedgerId ?? saveTenderDetailDto.tdPartyLedgerId ?? existing.tdPartyLedgerId)
+        : existing.tdTenderLedgerId);
+    const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
+    if (
+      saveTenderDetailDto.tdPartyLedgerId &&
+      saveTenderDetailDto.tdPartyLedgerId !== existing.tdPartyLedgerId
+    ) {
+      await this.ensureLedgerExists(tx, saveTenderDetailDto.tdPartyLedgerId, 'tdPartyLedgerId');
+    }
+    if (
+      saveTenderDetailDto.tdSettleLedgerId &&
+      saveTenderDetailDto.tdSettleLedgerId !== existing.tdSettleLedgerId
+    ) {
+      await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
+    }
+    if (
+      saveTenderDetailDto.tdSurchargeLedgerId &&
+      saveTenderDetailDto.tdSurchargeLedgerId !== existing.tdSurchargeLedgerId
+    ) {
+      await this.ensureLedgerExists(
+        tx,
+        saveTenderDetailDto.tdSurchargeLedgerId,
+        'tdSurchargeLedgerId',
+      );
+    }
+    const data: Prisma.AccTenderDetailUncheckedUpdateInput = {
+      tdRowNo: rowNo,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdTenderLedgerId: tenderLedgerId,
+      tdDrCr: saveTenderDetailDto.tdDrCr ?? existing.tdDrCr,
+      tdModifiedOn: now,
+      tdModifiedBy: resolveActor(saveTenderDetailDto.tdModifiedBy, actorId),
+    };
+    applyPresentFields(
+      data,
+      saveTenderDetailDto,
+      TENDER_DETAIL_OPTIONAL_FIELDS,
+      TENDER_DETAIL_FIELD_TRANSFORMS,
+    );
+    if (saveTenderDetailDto.tdCompanyId !== undefined) {
+      data.tdCompanyId = saveTenderDetailDto.tdCompanyId;
+    }
+    if (saveTenderDetailDto.tdBranchId !== undefined) {
+      data.tdBranchId = saveTenderDetailDto.tdBranchId;
+    }
+    if (saveTenderDetailDto.tdTenantId !== undefined) {
+      data.tdTenantId = saveTenderDetailDto.tdTenantId;
+    }
+    if (saveTenderDetailDto.tdDocDate !== undefined) {
+      data.tdDocDate = toDateOrNull(saveTenderDetailDto.tdDocDate, 'tdDocDate') as Date;
+    }
+    if (saveTenderDetailDto.tdPartyLedgerId !== undefined) {
+      data.tdPartyLedgerId = saveTenderDetailDto.tdPartyLedgerId;
+    }
+    if (saveTenderDetailDto.tdUserId !== undefined) {
+      data.tdUserId = saveTenderDetailDto.tdUserId;
+    }
+    data.tdTotalAmt = this.resolveTotalAmt(saveTenderDetailDto, existing);
+    const pick = <T>(value: unknown, stored: T): T => (value === undefined ? stored : (value as T));
+    const merged: TenderRefRow = {
+      tdId: existing.tdId,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdDrCr: String(pick(data.tdDrCr, existing.tdDrCr)),
+      tdRefNo: pick(data.tdRefNo, existing.tdRefNo),
+      tdAuthCode: pick(data.tdAuthCode, existing.tdAuthCode),
+      tdCardLast4: pick(data.tdCardLast4, existing.tdCardLast4),
+      tdTotalAmt: new Prisma.Decimal(String(pick(data.tdTotalAmt, existing.tdTotalAmt) ?? 0)),
+      tdCompanyId: String(pick(data.tdCompanyId, existing.tdCompanyId)),
+      tdBranchId: String(pick(data.tdBranchId, existing.tdBranchId)),
+      tdAccYear: existing.tdAccYear,
+      tdSrcDocType: existing.tdSrcDocType,
+      tdSrcDocId: existing.tdSrcDocId,
+      tdSessionId: existing.tdSessionId,
+    };
+    // A row keyed before the rule is not refused for being re-saved as it was:
+    // only a change to its tender, side, reference or amount is judged again.
+    const touched =
+      tenderChanged ||
+      merged.tdDrCr !== existing.tdDrCr ||
+      merged.tdRefNo !== existing.tdRefNo ||
+      merged.tdAuthCode !== existing.tdAuthCode ||
+      merged.tdCardLast4 !== existing.tdCardLast4 ||
+      !merged.tdTotalAmt.equals(existing.tdTotalAmt);
+    if (touched) {
+      const last4 = await this.guardReference(tx, tender, merged);
+      if (last4 && !merged.tdCardLast4) {
+        data.tdCardLast4 = last4;
+      }
+    }
+    this.ensureValuesAreAllowed(saveTenderDetailDto, existing, data);
+    const updated = await tx.accTenderDetail.update({
+      where: { tdId_tdAccYear: { tdId: existing.tdId, tdAccYear: existing.tdAccYear } },
+      data,
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: audit.tableName,
+        screenName: audit.screenName,
+        screenType: 'transaction',
+        pk: existing.tdId,
+        displayName: this.displayName(updated, tender.tndName),
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: this.toPayload(updated),
+        userId: resolveActor(saveTenderDetailDto.tdModifiedBy, actorId),
+        notes: `${audit.entityName} updated`,
+      },
+      tx,
+    );
+    return this.toPayload(updated, tender.tndName, ledgerName);
+  }
+  // Retires a single line — the one the reconciliation dropped, or the one the
+  // delete endpoint named. acc_tender_detail has no is_active column, so a soft
+  // delete is the only retirement there is.
+  private async softDeleteTenderLine(
+    tx: TenderDetailWriteClient,
+    existing: AccTenderDetail,
+    actorId: string,
+    now: Date,
+    audit: TenderDocumentAudit,
+  ): Promise<void> {
+    const deleted = await tx.accTenderDetail.update({
+      where: { tdId_tdAccYear: { tdId: existing.tdId, tdAccYear: existing.tdAccYear } },
+      data: {
+        tdIsDeleted: true,
+        tdModifiedOn: now,
+        tdModifiedBy: actorId,
+      },
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: audit.tableName,
+        screenName: audit.screenName,
+        screenType: 'transaction',
+        pk: existing.tdId,
+        displayName: this.displayName(existing),
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: this.toPayload(deleted),
+        userId: actorId,
+        notes: `${audit.entityName} soft deleted`,
+      },
+      tx,
+    );
+  }
+  // A tender line belongs to the document it was tendered against: re-pointing
+  // it at another one would silently move money between documents, so an update
+  // may resend the triple but never change it.
+  private ensureDocumentIsUnchanged(
+    saveTenderDetailDto: SaveTenderDetailDto,
+    existing: AccTenderDetail,
+  ): void {
+    const details: TenderDetailErrorDetail[] = [];
+    if (
+      saveTenderDetailDto.tdSrcModule &&
+      saveTenderDetailDto.tdSrcModule !== (existing.tdSrcModule as TenderSrcModule)
+    ) {
+      details.push({
+        field: 'tdSrcModule',
+        code: TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
+        message: `tdSrcModule cannot be changed (stored value is ${existing.tdSrcModule})`,
+      });
+    }
+    if (
+      saveTenderDetailDto.tdSrcDocType &&
+      saveTenderDetailDto.tdSrcDocType !== (existing.tdSrcDocType as TenderSrcDocType)
+    ) {
+      details.push({
+        field: 'tdSrcDocType',
+        code: TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
+        message: `tdSrcDocType cannot be changed (stored value is ${existing.tdSrcDocType})`,
+      });
+    }
+    if (saveTenderDetailDto.tdSrcDocId && saveTenderDetailDto.tdSrcDocId !== existing.tdSrcDocId) {
+      details.push({
+        field: 'tdSrcDocId',
+        code: TenderDetailErrorCode.DOCUMENT_IMMUTABLE,
+        message:
+          'tdSrcDocId cannot be changed; delete the line and create it on the other document',
+      });
+    }
+    if (details.length > 0) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>(
+        'Tender line document is immutable',
+        details,
+      );
+    }
+  }
+  // Same rule seen from the owning document's side: a tender reconciled as part
+  // of a bill save belongs to that bill, so the triple may be echoed on the line
+  // but never point somewhere else.
+  private ensureDocumentMatchesScope(
+    saveTenderDetailDto: SaveTenderDetailDto,
+    scope: TenderDocumentScope,
+  ): void {
+    const details: TenderDetailErrorDetail[] = [];
+    if (saveTenderDetailDto.tdSrcModule && saveTenderDetailDto.tdSrcModule !== scope.tdSrcModule) {
+      details.push({
+        field: 'tdSrcModule',
+        code: TenderDetailErrorCode.DOCUMENT_MISMATCH,
+        message: `tdSrcModule must be ${scope.tdSrcModule} on this document`,
+      });
+    }
+    if (
+      saveTenderDetailDto.tdSrcDocType &&
+      saveTenderDetailDto.tdSrcDocType !== scope.tdSrcDocType
+    ) {
+      details.push({
+        field: 'tdSrcDocType',
+        code: TenderDetailErrorCode.DOCUMENT_MISMATCH,
+        message: `tdSrcDocType must be ${scope.tdSrcDocType} on this document`,
+      });
+    }
+    if (saveTenderDetailDto.tdSrcDocId && saveTenderDetailDto.tdSrcDocId !== scope.tdSrcDocId) {
+      details.push({
+        field: 'tdSrcDocId',
+        code: TenderDetailErrorCode.DOCUMENT_MISMATCH,
+        message: 'tdSrcDocId must be the parent document; a tender line cannot be moved off it',
+      });
+    }
+    if (details.length > 0) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>(
+        'Tender line document is immutable',
+        details,
+      );
+    }
+  }
+  // td_tender_id has a DB foreign key to acc_tender_master, but that only
+  // guarantees the row exists — not that it is usable. Verify it is neither
+  // soft-deleted nor inactive, and hand back the snapshot values a line inherits.
+  /**
+   * Non-cash plan §3.1–§3.2, as the user set it on 2026-10-08:
+   *
+   *   · a money-in CARD row on a tender that needs a reference (tnd_needs_ref,
+   *     else the type's) carries the card's LAST 4 digits — td_card_last4, or a
+   *     4-digit td_ref_no, which is what today's client keys and which is
+   *     copied across (the answer); missing → 422 TENDER_REF_REQUIRED;
+   *   · UPI and wallet are not asked for a reference yet (rush hours);
+   *   · an approval code, when sent, is 6 letters / digits; a card row that
+   *     repeats another live row's code + last 4 + amount on the same tender
+   *     is a duplicate (tender.duplicate_ref): BLOCK → 409 TENDER_REF_DUPLICATE,
+   *     journalled DUPLICATE_REF_BLOCKED outside the refused transaction; WARN
+   *     lets it through (the duplicate-references grid lists it).
+   *
+   * Money out (a refund, a payment, an expense) is never asked.
+   */
+  private async guardReference(
+    tx: TenderDetailWriteClient,
+    tender: TenderMasterSnapshot,
+    row: TenderRefRow,
+  ): Promise<string | null> {
+    if (row.tdDrCr.trim() !== String(TenderDrCr.DR)) {
+      return null;
+    }
+    const type = await tx.accTenderType.findFirst({
+      where: { ttmTypeId: row.tdTenderTypeId },
+      select: { ttmTypeName: true, ttmNeedsRef: true },
+    });
+    if (type?.ttmTypeName !== 'CARD') {
+      return null;
+    }
+    const field = 'tdCardLast4';
+    const refuse = (message: string, code: string, status: number, f = field): never => {
+      throw new HttpException(buildErrorResponse(message, [{ field: f, message, code }]), status);
+    };
+    const ref = row.tdRefNo?.trim() ?? '';
+    const last4 = row.tdCardLast4?.trim() || (/^\d{4}$/.test(ref) ? ref : null);
+    if (row.tdCardLast4 && !/^\d{4}$/.test(row.tdCardLast4.trim())) {
+      refuse('The card’s last 4 must be four digits', TENDER_REF_REQUIRED, 422);
+    }
+    if ((tender.tndNeedsRef ?? type.ttmNeedsRef) && !last4) {
+      refuse(
+        `${tender.tndName}: key the last 4 digits of the card (in the reference)`,
+        TENDER_REF_REQUIRED,
+        422,
+      );
+    }
+    const auth = row.tdAuthCode?.trim().toUpperCase() ?? '';
+    if (auth && !/^[A-Z0-9]{6}$/.test(auth)) {
+      refuse(
+        'The approval code on the slip is 6 letters / digits',
+        TENDER_REF_REQUIRED,
+        422,
+        'tdAuthCode',
+      );
+    }
+    if (!auth || !last4) {
+      return last4;
+    }
+    const [twin] = await tx.$queryRaw<
+      { td_id: string; td_src_doc_type: string; td_src_doc_id: string }[]
+    >`
+      SELECT t.td_id::text, t.td_src_doc_type, t.td_src_doc_id::text
+        FROM accounts.acc_tender_detail t
+       WHERE t.td_company_id = ${row.tdCompanyId}::uuid
+         AND t.td_tender_id  = ${row.tdTenderId}::uuid
+         AND t.td_is_deleted = false AND t.td_is_voided = false
+         AND trim(t.td_dr_cr) = 'DR'
+         AND upper(t.td_auth_code) = ${auth}
+         AND t.td_card_last4 = ${last4}
+         AND t.td_total_amt  = ${row.tdTotalAmt}::numeric
+         AND t.td_src_doc_id <> ${row.tdSrcDocId}::uuid
+         AND (${row.tdId}::uuid IS NULL OR t.td_id <> ${row.tdId}::uuid)
+       LIMIT 1`;
+    if (!twin) {
+      return last4;
+    }
+    const mode = this.appSettings
+      ? readTenderSettings(
+          await this.appSettings.resolveEffective({
+            companyId: row.tdCompanyId,
+            branchId: row.tdBranchId,
+            deviceId: null,
+            userId: null,
+          }),
+        ).duplicateRef
+      : 'BLOCK';
+    if (mode === 'WARN') {
+      return last4;
+    }
+    await this.logDuplicate(row, { auth, last4, twin });
+    return refuse(
+      `Approval code ${auth} on card …${last4} for ${row.tdTotalAmt.toFixed(2)} is already on another ${twin.td_src_doc_type.toLowerCase().replace('_', ' ')}`,
+      TENDER_REF_DUPLICATE,
+      409,
+      'tdAuthCode',
+    );
+  }
+
+  /** DUPLICATE_REF_BLOCKED on its own connection: the refusal rolls the caller's transaction back. */
+  private async logDuplicate(
+    row: TenderRefRow,
+    hit: {
+      auth: string;
+      last4: string;
+      twin: { td_id: string; td_src_doc_type: string; td_src_doc_id: string };
+    },
+  ): Promise<void> {
+    if (!this.tillEvents) {
+      return;
+    }
+    try {
+      const session = row.tdSessionId
+        ? await this.prisma.tillSession.findFirst({
+            where: { tssId: row.tdSessionId, tssIsDeleted: false },
+            select: { tssId: true, tssDayId: true, tssCounterId: true },
+          })
+        : null;
+      await this.tillEvents.log(this.prisma, {
+        companyId: row.tdCompanyId,
+        branchId: row.tdBranchId,
+        accYear: row.tdAccYear,
+        code: TillEventCode.DUPLICATE_REF_BLOCKED,
+        sessionId: session?.tssId ?? null,
+        dayId: session?.tssDayId ?? null,
+        counterId: session?.tssCounterId ?? null,
+        deviceId: this.requestContextService.getDeviceId() ?? null,
+        userId: this.requestContextService.getUserId() ?? null,
+        srcDocType: row.tdSrcDocType,
+        srcDocId: row.tdSrcDocId,
+        amount: row.tdTotalAmt,
+        payload: {
+          tenderId: row.tdTenderId,
+          authCode: hit.auth,
+          cardLast4: hit.last4,
+          otherTdId: hit.twin.td_id,
+          otherDocType: hit.twin.td_src_doc_type,
+          otherDocId: hit.twin.td_src_doc_id,
+        },
+      });
+    } catch {
+      // The journal line is evidence, not the refusal: never let it mask the 409.
+    }
+  }
+
+  /**
+   * Which new rows wait for a statement (till REV 2 §2.4, the non-cash plan's
+   * §3.3): td_settle_status = PENDING — and td_expected_settle_on = the
+   * document date + tnd_settlement_days — only when the tender TYPE is CARD,
+   * UPI or WALLET, its close mode is SLIPS or STATEMENT, and the tender master
+   * names a settlement ledger. Anything else stays NA, so the Not-received list
+   * is not flooded with cheques and transfers. A status (or date) the caller
+   * sends is kept as sent.
+   */
+  private async defaultSettlement(
+    tx: TenderDetailWriteClient,
+    data: Prisma.AccTenderDetailUncheckedCreateInput,
+    tender: TenderMasterSnapshot,
+    saveTenderDetailDto: SaveTenderDetailDto,
+  ): Promise<void> {
+    if (saveTenderDetailDto.tdSettleStatus !== undefined || !tender.tndSettlementLedgerId) {
+      return;
+    }
+    const type = await tx.accTenderType.findFirst({
+      where: { ttmTypeId: data.tdTenderTypeId },
+      select: { ttmTypeName: true, ttmCloseMode: true },
+    });
+    if (
+      !type ||
+      !STATEMENT_SETTLED_TYPES.includes(type.ttmTypeName) ||
+      !['SLIPS', 'STATEMENT'].includes(type.ttmCloseMode)
+    ) {
+      return;
+    }
+    data.tdSettleStatus = TenderSettleStatus.PENDING;
+    if (data.tdExpectedSettleOn === undefined || data.tdExpectedSettleOn === null) {
+      const docDate = new Date(data.tdDocDate as Date);
+      docDate.setUTCDate(docDate.getUTCDate() + Math.max(0, tender.tndSettlementDays));
+      data.tdExpectedSettleOn = docDate;
+    }
+  }
+
+  private async ensureTenderExists(
+    tx: TenderDetailWriteClient,
+    tenderId: string,
+  ): Promise<TenderMasterSnapshot> {
+    const tender = await tx.accTenderMaster.findFirst({
+      where: { tndId: tenderId, tndIsDeleted: false, tndIsActive: true },
+      select: {
+        tndName: true,
+        tndTypeId: true,
+        tndLedgerId: true,
+        tndSettlementLedgerId: true,
+        tndSettlementDays: true,
+        tndNeedsRef: true,
+      },
+    });
+    if (!tender) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Tender does not exist', [
+        {
+          field: 'tdTenderId',
+          code: TenderDetailErrorCode.TENDER_NOT_FOUND,
+          message: `No active tender found with id ${tenderId}`,
+        },
+      ]);
+    }
+    return tender;
+  }
+  private async ensureTenderTypeExists(
+    tx: TenderDetailWriteClient,
+    tenderTypeId: number,
+  ): Promise<void> {
+    const tenderType = await tx.accTenderType.findFirst({
+      where: { ttmTypeId: tenderTypeId, ttmIsDeleted: false },
+      select: { ttmTypeId: true },
+    });
+    if (!tenderType) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Tender type does not exist', [
+        {
+          field: 'tdTenderTypeId',
+          code: TenderDetailErrorCode.TENDER_TYPE_NOT_FOUND,
+          message: `No active tender type found with id ${tenderTypeId.toString()}`,
+        },
+      ]);
+    }
+  }
+  // Shared by the posting, party and settlement ledgers — the error is reported
+  // against whichever field carried the id, and the name is returned so the
+  // payload can echo the posting ledger's.
+  private async ensureLedgerExists(
+    tx: TenderDetailWriteClient,
+    ledgerId: string,
+    field: string,
+  ): Promise<string> {
+    const ledger = await tx.accLedgerMaster.findFirst({
+      where: { ledId: ledgerId, ledIsDeleted: false },
+      select: { ledName: true },
+    });
+    if (!ledger) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Ledger does not exist', [
+        {
+          field,
+          code: TenderDetailErrorCode.LEDGER_NOT_FOUND,
+          message: `No active account ledger found with id ${ledgerId}`,
+        },
+      ]);
+    }
+    return ledger.ledName;
+  }
+  // td_row_no is the line order within one document. It carries no DB
+  // uniqueness, so a duplicate is rejected here; an omitted value gets the next
+  // free number.
+  private async resolveRowNo(
+    tx: TenderDetailWriteClient,
+    scope: Pick<TenderDocumentScope, 'tdSrcModule' | 'tdSrcDocType' | 'tdSrcDocId'>,
+    requested: number | null,
+    excludeId?: string,
+  ): Promise<number> {
+    const document = {
+      tdSrcModule: scope.tdSrcModule,
+      tdSrcDocType: scope.tdSrcDocType,
+      tdSrcDocId: scope.tdSrcDocId,
+      tdIsDeleted: false,
+    };
+    if (requested === null) {
+      const highest = await tx.accTenderDetail.aggregate({
+        where: document,
+        _max: { tdRowNo: true },
+      });
+      return (highest._max.tdRowNo ?? 0) + 1;
+    }
+    const clash = await tx.accTenderDetail.findFirst({
+      where: {
+        ...document,
+        tdRowNo: requested,
+        ...(excludeId ? { tdId: { not: excludeId } } : {}),
+      },
+      select: { tdId: true },
+    });
+    if (clash) {
+      throwAccountsConflict<TenderDetailErrorDetail>('Duplicate tender line number', [
+        {
+          field: 'tdRowNo',
+          code: TenderDetailErrorCode.ROW_NO_DUPLICATE,
+          message: `A tender line with number ${requested} already exists on this document`,
+        },
+      ]);
+    }
+    return requested;
+  }
+  // td_total_amt is derived: ck_td_total_amt requires it to equal
+  // round(td_amount + td_surcharge_amt, 2), so it is computed from the merged
+  // row rather than trusted, and a value the client did send is checked against
+  // that same sum.
+  private resolveTotalAmt(
+    saveTenderDetailDto: SaveTenderDetailDto,
+    existing: AccTenderDetail | undefined,
+  ): Prisma.Decimal {
+    const amount = this.mergedDecimal(saveTenderDetailDto.tdAmount, existing?.tdAmount);
+    const surcharge = this.mergedDecimal(
+      saveTenderDetailDto.tdSurchargeAmt,
+      existing?.tdSurchargeAmt,
+    );
+    const computed = amount.plus(surcharge).toDecimalPlaces(2);
+    if (saveTenderDetailDto.tdTotalAmt === undefined) {
+      return computed;
+    }
+    const requested = this.toDecimal(saveTenderDetailDto.tdTotalAmt, 'tdTotalAmt');
+    if (!requested.equals(computed)) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Invalid tender line value', [
+        {
+          field: 'tdTotalAmt',
+          code: TenderDetailErrorCode.TOTAL_MISMATCH,
+          message: `tdTotalAmt must equal tdAmount + tdSurchargeAmt (${computed.toString()})`,
+        },
+      ]);
+    }
+    return requested;
+  }
+  // Mirrors the DB CHECK constraints on acc_tender_detail (ck_td_src_module /
+  // ck_td_src_doc_type / ck_td_dr_cr / ck_td_settle_status / ck_td_amounts /
+  // ck_td_cash_change / ck_td_units / ck_td_settle_amount / ck_td_mdr /
+  // ck_td_settled_on / ck_td_pdc / ck_td_card_last4, migration 20260731090000)
+  // so a bad value comes back as a 400 naming the field instead of a raw
+  // Postgres 23514. Judged on the MERGED row — `data` already carries the
+  // payload's values resolved against the parent scope, and the stored row
+  // supplies whatever neither of them set, since a constraint judges the row
+  // that will actually be written.
+  private ensureValuesAreAllowed(
+    saveTenderDetailDto: SaveTenderDetailDto,
+    existing: AccTenderDetail | undefined,
+    data: Prisma.AccTenderDetailUncheckedCreateInput | Prisma.AccTenderDetailUncheckedUpdateInput,
+  ): void {
+    const details: TenderDetailErrorDetail[] = [];
+    const values: TenderDetailGuardedValues = {
+      tdSrcModule: (data.tdSrcModule as string | undefined) ?? existing?.tdSrcModule,
+      tdSrcDocType: (data.tdSrcDocType as string | undefined) ?? existing?.tdSrcDocType,
+      tdDrCr: (data.tdDrCr as string | undefined) ?? existing?.tdDrCr,
+      tdSettleStatus:
+        (data.tdSettleStatus as string | undefined) ?? existing?.tdSettleStatus ?? undefined,
+    };
+    for (const guard of TENDER_DETAIL_VALUE_GUARDS) {
+      const value = values[guard.field];
+      if (value === undefined) {
+        continue;
+      }
+      if (value === null) {
+        details.push({
+          field: guard.field,
+          code: TenderDetailErrorCode.VALUE_REQUIRED,
+          message: `${guard.field} is required`,
+        });
+        continue;
+      }
+      if (!(guard.allowed as readonly string[]).includes(value)) {
+        details.push({
+          field: guard.field,
+          code: TenderDetailErrorCode.VALUE_NOT_ALLOWED,
+          message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+        });
+      }
+    }
+    const received = this.mergedDecimal(saveTenderDetailDto.tdReceivedAmt, existing?.tdReceivedAmt);
+    const change = this.mergedDecimal(saveTenderDetailDto.tdChangeAmt, existing?.tdChangeAmt);
+    // ck_td_cash_change: change is only meaningful against cash actually taken —
+    // a zero received amount is the "no drawer movement" case and is allowed.
+    if (!received.isZero() && received.lessThan(change)) {
+      details.push({
+        field: 'tdChangeAmt',
+        code: TenderDetailErrorCode.CHANGE_EXCEEDS_RECEIVED,
+        message: 'tdChangeAmt cannot exceed tdReceivedAmt',
+      });
+    }
+    const conversionRate = this.mergedDecimal(
+      saveTenderDetailDto.tdConversionRate,
+      existing?.tdConversionRate,
+      1,
+    );
+    if (conversionRate.lessThanOrEqualTo(0)) {
+      details.push({
+        field: 'tdConversionRate',
+        code: TenderDetailErrorCode.CONVERSION_RATE_INVALID,
+        message: 'tdConversionRate must be greater than 0',
+      });
+    }
+    // td_settle_status is varchar, so the merged value is a plain string —
+    // compared against the enum's own value rather than the member.
+    const settleStatus: string = values.tdSettleStatus ?? TenderSettleStatus.NA;
+    const settledOn =
+      saveTenderDetailDto.tdSettledOn === undefined
+        ? (existing?.tdSettledOn ?? null)
+        : saveTenderDetailDto.tdSettledOn;
+    if (settleStatus === String(TenderSettleStatus.SETTLED) && !settledOn) {
+      details.push({
+        field: 'tdSettledOn',
+        code: TenderDetailErrorCode.SETTLED_ON_REQUIRED,
+        message: 'tdSettledOn is required when tdSettleStatus is SETTLED',
+      });
+    }
+    const isPdc = saveTenderDetailDto.tdIsPdc ?? existing?.tdIsPdc ?? false;
+    const instrumentDate =
+      saveTenderDetailDto.tdInstrumentDate === undefined
+        ? (existing?.tdInstrumentDate ?? null)
+        : saveTenderDetailDto.tdInstrumentDate;
+    if (isPdc && !instrumentDate) {
+      details.push({
+        field: 'tdInstrumentDate',
+        code: TenderDetailErrorCode.INSTRUMENT_DATE_REQUIRED,
+        message: 'tdInstrumentDate is required when tdIsPdc is true',
+      });
+    }
+    const cardLast4 =
+      saveTenderDetailDto.tdCardLast4 === undefined
+        ? (existing?.tdCardLast4 ?? null)
+        : saveTenderDetailDto.tdCardLast4;
+    if (cardLast4 && !CARD_LAST4_PATTERN.test(cardLast4)) {
+      details.push({
+        field: 'tdCardLast4',
+        code: TenderDetailErrorCode.CARD_LAST4_INVALID,
+        message: 'tdCardLast4 must be exactly 4 digits',
+      });
+    }
+    if (details.length > 0) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Invalid tender line value', details);
+    }
+  }
+  // The value a column will hold once the write lands: the payload's when it
+  // sent one, the stored row's otherwise, and the column default for a new line.
+  private mergedDecimal(
+    sent: string | number | null | undefined,
+    stored: Prisma.Decimal | null | undefined,
+    columnDefault = 0,
+  ): Prisma.Decimal {
+    if (sent !== undefined && sent !== null) {
+      return this.toDecimal(sent, 'amount');
+    }
+    if (stored !== undefined && stored !== null) {
+      return new Prisma.Decimal(stored);
+    }
+    return new Prisma.Decimal(columnDefault);
+  }
+  private toDecimal(value: string | number, field: string): Prisma.Decimal {
+    try {
+      return new Prisma.Decimal(value);
+    } catch {
+      return throwAccountsBadRequest<TenderDetailErrorDetail>('Validation failed', [
+        {
+          field,
+          code: TenderDetailErrorCode.NUMBER_INVALID,
+          message: `${field} must be a valid number`,
+        },
+      ]);
+    }
+  }
+  // acc_tender_types.ttm_type_id is an integer; the API carries it as a string,
+  // the way the tender master module carries tndTypeId.
+  private toTenderTypeId(value: string | number): number {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(parsed)) {
+      return throwAccountsBadRequest<TenderDetailErrorDetail>('Validation failed', [
+        {
+          field: 'tdTenderTypeId',
+          code: TenderDetailErrorCode.TENDER_TYPE_INVALID,
+          message: 'tdTenderTypeId must be an integer',
+        },
+      ]);
+    }
+    return parsed;
+  }
+  // Generic in the value so an enum-typed DTO field survives the check as its
+  // enum rather than widening to string.
+  private requireField<T extends string>(value: T | null | undefined, field: string): T {
+    if (!value) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>(`${field} is required`, [
+        {
+          field,
+          code: TenderDetailErrorCode.FIELD_REQUIRED,
+          message: `${field} must be provided when creating a tender line`,
+        },
+      ]);
+    }
+    return value;
+  }
+  private displayJoins() {
+    return {
+      tender: { select: { tndName: true } },
+      ledger: { select: { ledName: true } },
+    };
+  }
+  private handleWriteError(error: unknown): void {
+    if (isForeignKeyConstraintError(error)) {
+      throwAccountsBadRequest<TenderDetailErrorDetail>('Invalid relation reference', [
+        {
+          field: 'request',
+          code: TenderDetailErrorCode.REFERENCE_INVALID,
+          message:
+            'One of the referenced tender / ledger / company / branch / user records does not exist',
+        },
+      ]);
+    }
+  }
+  private throwNotFound(tdId: string): never {
+    throwAccountsNotFound<TenderDetailErrorDetail>(
+      'Tender line not found',
+      'tdId',
+      `No active tender line found with id ${tdId}`,
+      TenderDetailErrorCode.NOT_FOUND,
+    );
+  }
+  private displayName(record: AccTenderDetail, tenderName?: string): string {
+    return tenderName || `Tender ${record.tdRowNo}`;
+  }
+  // td_doc_date / td_instrument_date / td_expected_settle_on / td_settled_on are
+  // DATE columns — emitting the full ISO timestamp would hand clients a UTC
+  // midnight they have to strip again.
+  private toOutputDateOnly(value: Date | null): string | null {
+    return value === null ? null : value.toISOString().slice(0, 10);
+  }
+  // The td_* enum columns are varchar in Postgres, so Prisma reads them back as
+  // plain strings and they are asserted to their enum here. Every write path
+  // (this module's DTO + ensureValuesAreAllowed) and the ck_td_* CHECK
+  // constraints keep the stored values inside the sets, so the assertion cannot
+  // invent a member that isn't there.
+  //
+  // Public so an owning module can shape a tender row it read itself into the
+  // one payload every module answers with.
+  toPayload(
+    record: TenderDetailRecord,
+    tenderName: string | null = null,
+    tenderLedgerName: string | null = null,
+  ): TenderDetailPayload {
+    return {
+      tdId: record.tdId,
+      tdCompanyId: record.tdCompanyId,
+      tdBranchId: record.tdBranchId,
+      tdTenantId: record.tdTenantId,
+      tdAccYear: record.tdAccYear,
+      tdSrcModule: record.tdSrcModule as TenderSrcModule,
+      tdSrcDocType: record.tdSrcDocType as TenderSrcDocType,
+      tdSrcDocId: record.tdSrcDocId,
+      tdRowNo: record.tdRowNo,
+      tdDocDate: this.toOutputDateOnly(record.tdDocDate) as string,
+      tdPartyLedgerId: record.tdPartyLedgerId,
+      tdVoucherId: record.tdVoucherId,
+      tdTenderId: record.tdTenderId,
+      tdTenderName: record.tender?.tndName ?? tenderName,
+      tdTenderTypeId: record.tdTenderTypeId.toString(),
+      tdTenderLedgerId: record.tdTenderLedgerId,
+      tdTenderLedgerName: record.ledger?.ledName ?? tenderLedgerName,
+      tdDrCr: record.tdDrCr as TenderDrCr,
+      tdAmount: toNumber(record.tdAmount),
+      tdSurchargePerc: toNumber(record.tdSurchargePerc),
+      tdSurchargeAmt: toNumber(record.tdSurchargeAmt),
+      tdSurchargeLedgerId: record.tdSurchargeLedgerId,
+      tdTotalAmt: toNumber(record.tdTotalAmt),
+      tdReceivedAmt: toNumber(record.tdReceivedAmt),
+      tdChangeAmt: toNumber(record.tdChangeAmt),
+      tdUnitsUsed: toNumber(record.tdUnitsUsed),
+      tdConversionRate: toNumber(record.tdConversionRate),
+      tdRefNo: record.tdRefNo,
+      tdAuthCode: record.tdAuthCode,
+      tdCardLast4: record.tdCardLast4,
+      tdBankName: record.tdBankName,
+      tdPayerVpa: record.tdPayerVpa,
+      tdInstrumentDate: this.toOutputDateOnly(record.tdInstrumentDate),
+      tdIsPdc: record.tdIsPdc,
+      tdSettleStatus: record.tdSettleStatus as TenderSettleStatus,
+      tdSettleLedgerId: record.tdSettleLedgerId,
+      tdExpectedSettleOn: this.toOutputDateOnly(record.tdExpectedSettleOn),
+      tdSettledOn: this.toOutputDateOnly(record.tdSettledOn),
+      tdSettleAmount: toNullableNumber(record.tdSettleAmount),
+      tdMdrAmt: toNumber(record.tdMdrAmt),
+      tdSettleRefNo: record.tdSettleRefNo,
+      tdSettleVoucherId: record.tdSettleVoucherId,
+      tdSessionId: record.tdSessionId,
+      tdDeviceId: record.tdDeviceId,
+      tdUserId: record.tdUserId,
+      tdNotes: record.tdNotes,
+      tdIsVoided: record.tdIsVoided,
+      tdVoidReason: record.tdVoidReason,
+      tdVoidedOn: record.tdVoidedOn ? record.tdVoidedOn.toISOString() : null,
+      tdVoidedBy: record.tdVoidedBy,
+      tdIsDeleted: record.tdIsDeleted,
+      tdSyncDate: record.tdSyncDate ? record.tdSyncDate.toISOString() : null,
+      tdCreatedOn: record.tdCreatedOn.toISOString(),
+      tdCreatedBy: record.tdCreatedBy,
+      tdModifiedOn: record.tdModifiedOn ? record.tdModifiedOn.toISOString() : null,
+      tdModifiedBy: record.tdModifiedBy,
+    };
+  }
+}

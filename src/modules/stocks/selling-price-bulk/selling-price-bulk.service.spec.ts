@@ -1,0 +1,1329 @@
+import { ArgumentsHost, HttpException, Logger } from '@nestjs/common';
+import { exclusiveOfTax } from './selling-price-math.helper';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
+import { SellingPriceBulkService } from './selling-price-bulk.service';
+import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.filter';
+import {
+  PriceBucketGateway,
+  type BucketPriceCandidate,
+  type RowCost,
+} from './price-bucket.gateway';
+import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
+import type { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
+import { recomputeLevel } from './selling-price-math.helper';
+import type { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
+import type {
+  BelowCostPolicy,
+  SellingPriceProblem,
+  SellingPriceSavedRow,
+} from './types/selling-price-bulk.types';
+
+const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
+const BRANCH_ID = '01000000-0000-7000-8000-0000000000b1';
+const USER_ID = '01000000-0000-7000-8000-0000000000a1';
+/** An item whose stock track policy tracks MRP. */
+const BUCKET_ITEM = '01000000-0000-7000-8000-000000000001';
+/** An item whose policy tracks neither dimension: its only price is the headline. */
+const HEADLINE_ITEM = '01000000-0000-7000-8000-000000000002';
+const UOM_ID = '01000000-0000-7000-8000-000000000011';
+const TAX_ID = '01000000-0000-7000-8000-000000000031';
+const OLD_TAX_ID = '01000000-0000-7000-8000-000000000032';
+const IPM_ID = '01000000-0000-7000-8000-000000000041';
+/** The database's calendar (notes 140 A): today and the latest day a price may start. */
+const TODAY = '2026-06-15';
+const LATEST = '2027-06-15';
+
+/** 118 at 18% is exactly 100 without tax, so nothing here rests on rounding. */
+const PRICE = 118;
+const TAX_PERC = 18;
+const COST = 95;
+
+const engineError = (sqlState: string, message: string) =>
+  Object.assign(new Error('Raw query failed'), {
+    code: 'P2010',
+    meta: { code: sqlState, message },
+  });
+
+const problem = (
+  overrides: Partial<SellingPriceProblem> & Pick<SellingPriceProblem, 'verdict'>,
+): SellingPriceProblem => ({
+  lineNo: 1,
+  itemId: BUCKET_ITEM,
+  itemCode: 'SALT',
+  itemName: 'Salt 1 Kg',
+  uomId: UOM_ID,
+  bucketId: null,
+  level: 1,
+  message: 'Q26 said so',
+  ...overrides,
+});
+
+describe('SellingPriceBulkService', () => {
+  let service: SellingPriceBulkService;
+  let tx: {
+    itemMaster: { findMany: jest.Mock };
+    itemTaxHistory: { findMany: jest.Mock };
+    taxRateMaster: { findMany: jest.Mock };
+  };
+  let prisma: { $transaction: jest.Mock; $queryRaw: jest.Mock };
+  let auditLogService: { logEntityChange: jest.Mock };
+  let requestContext: {
+    getUserId: jest.Mock;
+    getUserType: jest.Mock;
+    getDeviceId: jest.Mock;
+  };
+  let appSettingValueService: { resolveEffective: jest.Mock };
+  let gateway: {
+    listPrices: jest.Mock;
+    listBuckets: jest.Mock;
+    loadRowCosts: jest.Mock;
+    snapshotRows: jest.Mock;
+    validateRows: jest.Mock;
+    findBucketRowForUpdate: jest.Mock;
+    listNoStock: jest.Mock;
+    calendar: jest.Mock;
+  };
+  /** Notes 144 — S2 / S3 and the period writes live on the price writer now. */
+  let writer: {
+    updateBucketPrice: jest.Mock;
+    insertBucketPrice: jest.Mock;
+    closePriceRowBefore: jest.Mock;
+    insertSplitPrice: jest.Mock;
+    softDeletePriceRow: jest.Mock;
+    extendPriceRowTo: jest.Mock;
+  };
+
+  /** The setting, as resolveEffective hands the whole catalog back. */
+  const settingIs = (value: string | null) =>
+    appSettingValueService.resolveEffective.mockResolvedValue([
+      { asdKey: 'sales.something_else', value: 'x' },
+      { asdKey: 'inventory.below_cost_price', value },
+    ]);
+
+  beforeEach(() => {
+    tx = {
+      itemMaster: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            itemId: BUCKET_ITEM,
+            itemCode: 'SALT',
+            itemNameEn: 'Salt 1 Kg',
+            itemDefaultTaxId: TAX_ID,
+            itemInclTax: true,
+          },
+          {
+            itemId: HEADLINE_ITEM,
+            itemCode: 'RICE',
+            itemNameEn: 'Rice 25 Kg',
+            itemDefaultTaxId: TAX_ID,
+            itemInclTax: true,
+          },
+        ]),
+      },
+      itemTaxHistory: { findMany: jest.fn().mockResolvedValue([]) },
+      taxRateMaster: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            taxId: TAX_ID,
+            taxRatePerc: TAX_PERC,
+            taxCessBasis: 'NONE',
+            taxAcessBasis: 'NONE',
+          },
+        ]),
+      },
+    };
+    prisma = {
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (client: unknown) => unknown) => callback(tx)),
+      // The rights read (Edit on menu 30) and the origin menu's name.
+      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('fixed.menu_master')
+            ? [{ menu_name: 'Sales Entry' }]
+            : [{ um_can_view: true, um_can_edit: true }],
+        ),
+      ),
+    };
+    auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    requestContext = {
+      getUserId: jest.fn().mockReturnValue(USER_ID),
+      // HQ by default; the 403 tests set it back to the seeded 'USER'.
+      getUserType: jest.fn().mockReturnValue('ADMIN'),
+      getDeviceId: jest.fn().mockReturnValue(null),
+    };
+    appSettingValueService = { resolveEffective: jest.fn() };
+    settingIs('warning');
+    gateway = {
+      listPrices: jest.fn(),
+      listBuckets: jest.fn(),
+      // One RowCost per payload row: BUCKET_ITEM tracks MRP, HEADLINE_ITEM
+      // tracks nothing; both cost COST, both units are the item's own.
+      loadRowCosts: jest.fn(
+        (_tx: unknown, rows: Array<{ itemId: string }>): Promise<RowCost[]> =>
+          Promise.resolve(
+            rows.map((row) => ({
+              itemCode: row.itemId === BUCKET_ITEM ? 'SALT' : 'RICE',
+              itemName: row.itemId === BUCKET_ITEM ? 'Salt 1 Kg' : 'Rice 25 Kg',
+              uomBelongs: true,
+              trackMrp: row.itemId === BUCKET_ITEM,
+              trackSalePrice: false,
+              costRate: COST,
+              costWot: COST / 1.18,
+              costBasis: 'ITEM',
+              minPrice: 0,
+            })),
+          ),
+      ),
+      // Every snapshot is the stored row, as to_jsonb would give it.
+      snapshotRows: jest.fn((_tx: unknown, ids: string[]) =>
+        Promise.resolve(
+          new Map(
+            ids.map((id) => [
+              id,
+              { ipm_id: id, ipm_item_id: BUCKET_ITEM, ipm_bucket_mrp: 120, ipm_bucket_sp: null },
+            ]),
+          ),
+        ),
+      ),
+      validateRows: jest.fn().mockReturnValue([]),
+      // A FAITHFUL fake of S1: it searches AT THE TARGET SCOPE, so a search at
+      // BRANCH scope cannot find a chain row. Everything the scope tests assert
+      // about S2-vs-S3 rests on this being the real predicate.
+      findBucketRowForUpdate: jest
+        .fn()
+        .mockImplementation(
+          (_tx, candidate: { loadedScope?: string }, scope: { targetScope: string }) =>
+            Promise.resolve(scope.targetScope === candidate.loadedScope ? { ipmId: IPM_ID } : null),
+        ),
+      listNoStock: jest.fn().mockResolvedValue([]),
+      // A save with no effectiveFrom starts today, and runs exactly as before.
+      calendar: jest.fn().mockResolvedValue({ today: TODAY, latest: LATEST }),
+    };
+    writer = {
+      updateBucketPrice: jest.fn().mockResolvedValue(IPM_ID),
+      insertBucketPrice: jest.fn().mockResolvedValue(IPM_ID),
+      closePriceRowBefore: jest.fn().mockResolvedValue(undefined),
+      insertSplitPrice: jest.fn().mockResolvedValue(IPM_ID),
+      softDeletePriceRow: jest.fn().mockResolvedValue(undefined),
+      extendPriceRowTo: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new SellingPriceBulkService(
+      prisma as unknown as PrismaService,
+      auditLogService as unknown as AuditLogService,
+      requestContext as unknown as RequestContextService,
+      appSettingValueService as unknown as AppSettingValueService,
+      gateway as unknown as PriceBucketGateway,
+      writer as unknown as PriceMasterWriter,
+    );
+  });
+
+  /**
+   * The fake S1 above matches on `loadedScope`, which the service does not put
+   * on the candidate — so the test payload smuggles it through the row and the
+   * service copies nothing of the sort. Instead the fake is re-armed per test
+   * with the scope the row was loaded at.
+   */
+  const s1Finds = (loadedScope: 'BRANCH' | 'CHAIN' | null) =>
+    gateway.findBucketRowForUpdate.mockImplementation(
+      (_tx, _candidate, scope: { targetScope: string }) =>
+        Promise.resolve(scope.targetScope === loadedScope ? { ipmId: IPM_ID } : null),
+    );
+
+  const bucketRow = (overrides: Record<string, unknown> = {}) => ({
+    lineNo: 1,
+    itemId: BUCKET_ITEM,
+    uomId: UOM_ID,
+    // An MRP on an MRP-tracked item is what makes this a bucket row.
+    mrp: 120,
+    salePrice: null,
+    levels: [{ level: 1, price: PRICE }],
+    ...overrides,
+  });
+
+  const headlineRow = (overrides: Record<string, unknown> = {}) => ({
+    lineNo: 2,
+    itemId: HEADLINE_ITEM,
+    uomId: UOM_ID,
+    // Neither dimension: the headline row, key (-1, -1) of the same table.
+    mrp: null,
+    salePrice: null,
+    levels: [{ level: 1, price: PRICE }],
+    ...overrides,
+  });
+
+  const payload = (overrides: Partial<SaveSellingPriceBulkDto> = {}): SaveSellingPriceBulkDto =>
+    ({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      scope: 'BRANCH',
+      rows: [bucketRow()],
+      userId: USER_ID,
+      ...overrides,
+    }) as unknown as SaveSellingPriceBulkDto;
+
+  // ── one price table: no fan-out ─────────────────────────────────────────
+  describe('one price table — plan-nestjs-one-price-table.md §5', () => {
+    it('saves a bucket row and a headline row through the SAME statements', async () => {
+      const result = await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
+
+      expect(writer.insertBucketPrice).toHaveBeenCalledTimes(2);
+      const [bucket, headline] = writer.insertBucketPrice.mock.calls.map(
+        (call) => call[1] as BucketPriceCandidate,
+      );
+      expect(bucket).toMatchObject({ itemId: BUCKET_ITEM, mrp: 120, salePrice: null });
+      expect(headline).toMatchObject({ itemId: HEADLINE_ITEM, mrp: null, salePrice: null });
+      // The key is kept for one release and is always 0: there is no fan-out.
+      expect(result).toMatchObject({ saved: 2, masterRowsSaved: 0 });
+    });
+
+    it("blanks an MRP the item's policy does not track — the row is the headline", async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ mrp: 45 })] }));
+
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({
+        itemId: HEADLINE_ITEM,
+        mrp: null,
+      });
+    });
+
+    it('treats an MRP of 0 on a tracked item as no MRP, never a bucket of its own', async () => {
+      await service.saveBulk(payload({ rows: [bucketRow({ mrp: 0 })] }));
+
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ mrp: null });
+    });
+
+    it('costs every row in the transaction before its levels are recomputed', async () => {
+      await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
+
+      expect(gateway.loadRowCosts).toHaveBeenCalledWith(
+        tx,
+        [
+          { itemId: BUCKET_ITEM, uomId: UOM_ID, mrp: 120, salePrice: null },
+          { itemId: HEADLINE_ITEM, uomId: UOM_ID, mrp: null, salePrice: null },
+        ],
+        COMPANY_ID,
+        BRANCH_ID,
+        // Starts today: no scheduled day to cost as of (notes 140 A).
+        undefined,
+      );
+      // S2 / S3 store the cost the row was priced against.
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
+    });
+
+    it('notes 147 B — a keyed costPrice is the row cost: stored, w/o tax by its tax, and the markup base', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: 100 })] }));
+
+      const candidate = writer.insertBucketPrice.mock.calls[0][1] as BucketPriceCandidate;
+      expect(candidate).toMatchObject({ costRate: 100, costWot: exclusiveOfTax(100, TAX_PERC) });
+      // 118 on a cost of 100 is 18 % — not against the grid's COST.
+      expect(candidate.levels[0]).toMatchObject({ price: PRICE, markupPerc: 18 });
+    });
+
+    it('notes 147 B — a null costPrice is no costPrice: the cost the grid showed, as before', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: null })] }));
+
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
+    });
+
+    it('notes 147 B — judges below cost against the keyed cost', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ costPrice: PRICE + 10 })] }));
+
+      // Q26's verdicts read candidate.costRate (price-bucket.gateway validateRows).
+      const [candidates] = gateway.validateRows.mock.calls[0] as [BucketPriceCandidate[]];
+      expect(candidates[0].costRate).toBe(PRICE + 10);
+    });
+
+    it('notes 147 B — each saved row says what its cost reads as now, re-read after the write', async () => {
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: Array<{ itemId: string }>) =>
+        Promise.resolve(
+          rows.map(() => ({
+            itemCode: 'RICE',
+            itemName: 'Rice 25 Kg',
+            uomBelongs: true,
+            trackMrp: false,
+            trackSalePrice: false,
+            costRate: COST,
+            costWot: COST / 1.18,
+            costBasis: 'ITEM',
+            minPrice: 0,
+          })),
+        ),
+      );
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: Array<{ itemId: string }>) =>
+        Promise.resolve(
+          rows.map(() => ({
+            itemCode: 'RICE',
+            itemName: 'Rice 25 Kg',
+            uomBelongs: true,
+            trackMrp: false,
+            trackSalePrice: false,
+            costRate: 100,
+            costWot: 84.745763,
+            costBasis: 'PRICE_ROW',
+            minPrice: 0,
+          })),
+        ),
+      );
+
+      const result = await service.saveBulk(payload({ rows: [headlineRow({ costPrice: 100 })] }));
+
+      expect(gateway.loadRowCosts).toHaveBeenCalledTimes(2);
+      expect(result.rows[0]).toMatchObject({
+        costRate: 100,
+        costWot: 84.745763,
+        costBasis: 'PRICE_ROW',
+      });
+    });
+
+    it('refuses two rows that price one bucket at one scope, naming both lines', async () => {
+      // Two MRPs of an untracked item ARE one price once blanked.
+      const attempt = service.saveBulk(
+        payload({
+          rows: [headlineRow({ lineNo: 1, mrp: 40 }), headlineRow({ lineNo: 2, mrp: 45 })],
+        }),
+      );
+
+      await expect(attempt).rejects.toMatchObject({ status: 422 });
+      await attempt.catch((error: HttpException) => {
+        const body = error.getResponse() as { errors: { message: string }[] };
+        expect(body.errors[0].message).toContain('Lines 1 and 2');
+      });
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it("refuses a unit that is not one of the item's, before any write", async () => {
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: unknown[]) =>
+        Promise.resolve(rows.map(() => ({ uomBelongs: false }))),
+      );
+
+      await expect(service.saveBulk(payload())).rejects.toMatchObject({ status: 422 });
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it('addresses the row by key and scope, not by bucketId — a stale id cannot redirect a save', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ bucketId: IPM_ID })] }));
+
+      expect(gateway.findBucketRowForUpdate).toHaveBeenCalledTimes(1);
+      expect(writer.insertBucketPrice).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── §5.5 the scope switch ─────────────────────────────────────────────────
+  describe('scope resolution — §5.5, one case per row of the table', () => {
+    it('row 1 · This branch over a BRANCH row issues S2', async () => {
+      s1Finds('BRANCH');
+
+      await service.saveBulk(payload({ rows: [bucketRow({ priceScope: 'BRANCH' })] }));
+
+      expect(writer.updateBucketPrice).toHaveBeenCalledTimes(1);
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it('row 2 · This branch over a CHAIN row issues S3, and says it created an override', async () => {
+      s1Finds('CHAIN');
+
+      await service.saveBulk(payload({ rows: [bucketRow({ priceScope: 'CHAIN' })] }));
+
+      // The chain row exists and S1 would have found it at CHAIN scope. It was
+      // searched for at BRANCH scope instead, found nothing, and inserted —
+      // which is the whole of "the chain row is untouched and other branches
+      // keep it".
+      expect(writer.updateBucketPrice).not.toHaveBeenCalled();
+      expect(writer.insertBucketPrice).toHaveBeenCalledTimes(1);
+      expect(writer.insertBucketPrice.mock.calls[0][2]).toMatchObject({
+        targetScope: 'BRANCH',
+        targetBranchId: BRANCH_ID,
+        createsBranchOverride: true,
+      });
+    });
+
+    it('row 3 · All branches over a CHAIN row issues S2 against the chain row', async () => {
+      s1Finds('CHAIN');
+
+      await service.saveBulk(
+        payload({ scope: 'CHAIN', rows: [bucketRow({ priceScope: 'CHAIN' })] }),
+      );
+
+      expect(writer.updateBucketPrice).toHaveBeenCalledTimes(1);
+      expect(gateway.findBucketRowForUpdate.mock.calls[0][2]).toMatchObject({
+        targetScope: 'CHAIN',
+        targetBranchId: null,
+      });
+    });
+
+    it('row 4 · All branches over a BRANCH row updates the override and does not promote it', async () => {
+      s1Finds('BRANCH');
+
+      await service.saveBulk(
+        payload({ scope: 'CHAIN', rows: [bucketRow({ priceScope: 'BRANCH' })] }),
+      );
+
+      expect(writer.updateBucketPrice).toHaveBeenCalledTimes(1);
+      expect(gateway.findBucketRowForUpdate.mock.calls[0][2]).toMatchObject({
+        targetScope: 'BRANCH',
+        switchIgnored: true,
+      });
+    });
+  });
+
+  // ── §5.5 the HQ check ─────────────────────────────────────────────────────
+  describe('the HQ check — §5.5', () => {
+    it('refuses CHAIN from a non-HQ caller with 403 and attempts no write at all', async () => {
+      requestContext.getUserType.mockReturnValue('USER');
+
+      await expect(service.saveBulk(payload({ scope: 'CHAIN' }))).rejects.toMatchObject({
+        status: 403,
+      });
+      // Not merely "no write": no transaction, no setting read, nothing. A
+      // downgraded save would look like success and produce a different row.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it('refuses CHAIN when the caller has no user type at all', async () => {
+      requestContext.getUserType.mockReturnValue(null);
+
+      await expect(service.saveBulk(payload({ scope: 'CHAIN' }))).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('lets a non-HQ caller save at BRANCH scope', async () => {
+      requestContext.getUserType.mockReturnValue('USER');
+
+      await expect(service.saveBulk(payload())).resolves.toMatchObject({ saved: 1 });
+    });
+
+    it('matches the HQ list case- and space-insensitively', async () => {
+      requestContext.getUserType.mockReturnValue('  admin ');
+
+      await expect(service.saveBulk(payload({ scope: 'CHAIN' }))).resolves.toMatchObject({
+        saved: 1,
+      });
+    });
+  });
+
+  // ── §0.3 / §5.3 below cost ────────────────────────────────────────────────
+  describe('the below-cost setting and its round trip — §0.3, §5.3', () => {
+    const belowCost = () =>
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_COST' })]);
+
+    it('restrict aborts with 422 and the row list, before any write', async () => {
+      settingIs('restrict');
+      belowCost();
+
+      await expect(service.saveBulk(payload())).rejects.toMatchObject({ status: 422 });
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it('restrict still aborts a payload that arrives already confirmed', async () => {
+      settingIs('restrict');
+      belowCost();
+
+      // Otherwise `restrict` and `warning` would be one setting with two names.
+      await expect(service.saveBulk(payload({ confirmed: true }))).rejects.toMatchObject({
+        status: 422,
+      });
+    });
+
+    it('warning answers needsConfirm with the rows, and writes nothing', async () => {
+      settingIs('warning');
+      belowCost();
+
+      const result = await service.saveBulk(payload());
+
+      expect(result).toMatchObject({ needsConfirm: true, saved: 0, masterRowsSaved: 0 });
+      expect(result.problems).toHaveLength(1);
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+      expect(writer.updateBucketPrice).not.toHaveBeenCalled();
+    });
+
+    it('the confirmed re-post writes', async () => {
+      settingIs('warning');
+      belowCost();
+
+      const result = await service.saveBulk(payload({ confirmed: true }));
+
+      expect(result).toMatchObject({ needsConfirm: false, saved: 1 });
+      expect(writer.insertBucketPrice).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-runs the validation on the confirmed post — the first verdicts are stale by definition', async () => {
+      settingIs('warning');
+      belowCost();
+
+      await service.saveBulk(payload());
+      await service.saveBulk(payload({ confirmed: true }));
+
+      // Cost moves when a purchase posts, and the confirm is the user agreeing
+      // to the PRICE, not to a particular cost figure.
+      expect(gateway.validateRows).toHaveBeenCalledTimes(2);
+    });
+
+    it('allow writes and STILL reports the rows', async () => {
+      settingIs('allow');
+      belowCost();
+
+      const result = await service.saveBulk(payload());
+
+      expect(result).toMatchObject({ needsConfirm: false, saved: 1, belowCostPolicy: 'allow' });
+      expect(result.problems).toHaveLength(1);
+    });
+
+    it('records a confirmed below-cost save in the audit row, with the rows', async () => {
+      settingIs('warning');
+      belowCost();
+
+      await service.saveBulk(payload({ confirmed: true }));
+
+      const [entry] = auditLogService.logEntityChange.mock.calls[0] as [{ notes: string }];
+      expect(entry.notes).toContain('confirmed below cost');
+      expect(entry.notes).toContain('Q26 said so');
+      // Inside the transaction, like every other module here.
+      expect(auditLogService.logEntityChange.mock.calls[0][1]).toBe(tx);
+    });
+
+    it('audits each row: an update with the row before AND after, an insert with the row after (notes 71 B1)', async () => {
+      // Row 1 is found by S1 (an update), row 2 is not (an insert).
+      gateway.findBucketRowForUpdate
+        .mockResolvedValueOnce({ ipmId: IPM_ID })
+        .mockResolvedValueOnce(null);
+
+      await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
+
+      const entries = auditLogService.logEntityChange.mock.calls.map(
+        (call) =>
+          call[0] as {
+            action: string;
+            screenName: string;
+            originalRecord: unknown;
+            modifiedRecord: unknown;
+          },
+      );
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({ action: 'update', screenName: 'Item Price Master' });
+      // The audit service refuses an update without both — that refusal was
+      // every valid menu 30 save answering 400.
+      expect(entries[0].originalRecord).not.toBeNull();
+      expect(entries[0].modifiedRecord).not.toBeNull();
+      expect(entries[1]).toMatchObject({ action: 'New', originalRecord: null });
+    });
+
+    it('reads the setting through the resolver, with the caller as the scope', async () => {
+      await service.saveBulk(payload());
+
+      expect(appSettingValueService.resolveEffective).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        deviceId: undefined,
+        userId: USER_ID,
+      });
+    });
+  });
+
+  describe('confirmed suppresses below-cost ONLY — §5.3', () => {
+    it.each([['ABOVE_MRP'], ['BELOW_MIN']] as const)(
+      'still aborts a %s verdict on a confirmed post',
+      async (verdict) => {
+        settingIs('warning');
+        gateway.validateRows.mockReturnValue([
+          problem({ verdict }),
+          problem({ verdict: 'BELOW_COST', lineNo: 2 }),
+        ]);
+
+        await expect(service.saveBulk(payload({ confirmed: true }))).rejects.toMatchObject({
+          status: 422,
+        });
+        expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+      },
+    );
+
+    it('aborts a below-min verdict even under `allow`, because min has no constraint behind it', async () => {
+      settingIs('allow');
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_MIN' })]);
+
+      await expect(service.saveBulk(payload())).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  // ── §5.1 the recompute ────────────────────────────────────────────────────
+  describe('price wins, the other three are derived — §5.1', () => {
+    it('discards the priceWot and markupPerc the client sent and recomputes both', async () => {
+      await service.saveBulk(
+        payload({
+          rows: [
+            bucketRow({
+              levels: [{ level: 1, price: PRICE, priceWot: 999, markupPerc: 999 }],
+            }),
+          ],
+        }),
+      );
+
+      // 118 at 18% is 100 without tax; markup is on the tax-INCLUSIVE pair,
+      // (118 - 95) / 95.
+      expect(writer.insertBucketPrice.mock.calls[0][1].levels[0]).toMatchObject({
+        level: 1,
+        price: 118,
+        priceWot: 100,
+        markupPerc: 24.210526,
+      });
+    });
+
+    it("recomputes the headline row's numbers the same way", async () => {
+      await service.saveBulk(
+        payload({
+          rows: [headlineRow({ levels: [{ level: 1, price: PRICE, priceWot: 999 }] })],
+        }),
+      );
+
+      expect(writer.insertBucketPrice.mock.calls[0][1].levels[0]).toMatchObject({
+        price: 118,
+        priceWot: 100,
+      });
+    });
+
+    it('answers 0 rather than Infinity when nothing is known about the cost', () => {
+      expect(recomputeLevel(1, 118, 18, 0)).toMatchObject({
+        price: 118,
+        priceWot: 100,
+        markupPerc: 0,
+        marginPerc: 0,
+      });
+    });
+
+    it('puts markup on the inclusive pair and margin on the exclusive pair', () => {
+      const level = recomputeLevel(1, 118, 18, 95);
+
+      expect(level.markupPerc).toBeCloseTo(((118 - 95) / 95) * 100, 4);
+      expect(level.marginPerc).toBeCloseTo(((100 - 95 / 1.18) / 100) * 100, 4);
+    });
+  });
+
+  // ── §4.3 the tax date ─────────────────────────────────────────────────────
+  describe('taxPerc resolved as of today, through item_tax_history — §4.3', () => {
+    it('prefers the history window that covers the date over the item default', async () => {
+      tx.itemTaxHistory.findMany.mockResolvedValue([
+        { ithItemId: BUCKET_ITEM, ithTaxId: OLD_TAX_ID },
+      ]);
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: OLD_TAX_ID, taxRatePerc: 5, taxCessBasis: 'NONE', taxAcessBasis: 'NONE' },
+        { taxId: TAX_ID, taxRatePerc: 18, taxCessBasis: 'NONE', taxAcessBasis: 'NONE' },
+      ]);
+
+      const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM, HEADLINE_ITEM]);
+
+      expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxId: OLD_TAX_ID, taxPerc: 5 });
+      // The item with no history row still falls back to its own default.
+      expect(rates.get(HEADLINE_ITEM)).toMatchObject({ taxId: TAX_ID, taxPerc: 18 });
+    });
+
+    it('bounds the history read to windows that are open on the date asked for', async () => {
+      const asOf = new Date('2026-09-07T11:00:00Z');
+
+      await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM], asOf);
+
+      const where = tx.itemTaxHistory.findMany.mock.calls[0][0].where as {
+        ithEffectiveFrom: { lte: Date };
+        OR: [{ ithEffectiveTo: null }, { ithEffectiveTo: { gte: Date } }];
+      };
+      expect(where.ithEffectiveFrom.lte.toISOString()).toBe('2026-09-07T00:00:00.000Z');
+      expect(where.OR[0]).toEqual({ ithEffectiveTo: null });
+    });
+
+    it('flags a cess item, because the four-number panel is only approximate for it', async () => {
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: TAX_ID, taxRatePerc: 28, taxCessBasis: 'PER_UNIT', taxAcessBasis: 'NONE' },
+      ]);
+
+      const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxPerc: 28, hasCess: true });
+    });
+
+    it('flags an additional (state) cess the same way — it is just as missing from taxPerc', async () => {
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: TAX_ID, taxRatePerc: 12, taxCessBasis: 'NONE', taxAcessBasis: 'PERCENT' },
+      ]);
+
+      const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxPerc: 12, hasCess: true });
+    });
+
+    it('reads the rate from tax_rate_master, where item_default_tax_id points', async () => {
+      await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(tx.taxRateMaster.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { taxId: { in: [TAX_ID] } } }),
+      );
+    });
+
+    it('answers 0% for an item with no tax at all rather than failing the save', async () => {
+      tx.itemMaster.findMany.mockResolvedValue([
+        {
+          itemId: BUCKET_ITEM,
+          itemCode: null,
+          itemNameEn: 'X',
+          itemDefaultTaxId: null,
+          itemInclTax: false,
+        },
+      ]);
+
+      const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxPerc: 0, taxId: null, hasCess: false });
+    });
+  });
+
+  // ── §5.4 the message ──────────────────────────────────────────────────────
+  // ── the quick rate popup (plan 2026-10-23) ───────────────────────────────
+  describe('who may save, and from where', () => {
+    it('refuses a user without Edit on menu 30 before anything is read or written', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([{ um_can_view: true, um_can_edit: false }]);
+
+      await expect(service.saveBulk(payload())).rejects.toMatchObject({
+        status: 403,
+        response: { errors: [{ code: 'STOCK_PRICE_RIGHT_EDIT' }] },
+      });
+      const [, ...values] = prisma.$queryRaw.mock.calls[0] as unknown[];
+      expect(values).toEqual([USER_ID, 30]);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a schedule cancel the same way', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+
+      await expect(service.cancelSchedule(IPM_ID)).rejects.toMatchObject({ status: 403 });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('names the screen a popup save came from in the price log reason (§3.3)', async () => {
+      await service.saveBulk({ ...payload(), originMenuId: 12 });
+
+      expect(writer.insertBucketPrice.mock.calls[0][4]).toEqual({
+        source: 'CHANGE_SELLING_PRICE',
+        menuId: 30,
+        reason: 'via Sales Entry (menu 12)',
+      });
+    });
+
+    it('logs a menu 30 save with no reason of its own', async () => {
+      await service.saveBulk(payload());
+
+      expect(writer.insertBucketPrice.mock.calls[0][4]).toEqual({
+        source: 'CHANGE_SELLING_PRICE',
+        menuId: 30,
+      });
+    });
+  });
+
+  describe('the response message — §5.4', () => {
+    const base = {
+      saved: 12,
+      effectiveFrom: TODAY,
+      rows: [] as SellingPriceSavedRow[],
+      masterRowsSaved: 0,
+      noStock: [],
+      needsConfirm: false,
+      problems: [],
+      belowCostPolicy: 'warning' as BelowCostPolicy,
+    };
+
+    it('says a scheduled save is scheduled from its day, not saved — notes 140 A', () => {
+      const message = service.buildSaveMessage({
+        ...base,
+        saved: 1,
+        effectiveFrom: '2026-07-01',
+        rows: [
+          {
+            lineNo: 1,
+            bucketId: IPM_ID,
+            scheduled: true,
+            effectiveFrom: '2026-07-01',
+            effectiveTo: '9999-12-31',
+            costRate: COST,
+            costWot: COST / 1.18,
+            costBasis: 'ITEM',
+          },
+        ],
+      });
+
+      expect(message).toBe('1 price scheduled from 01-07-2026.');
+    });
+
+    it('never says a plain "Saved" when noStock is non-empty — legacy fault #2', () => {
+      const message = service.buildSaveMessage({
+        ...base,
+        noStock: [{ bucketId: IPM_ID }, { bucketId: IPM_ID }] as never,
+      });
+
+      expect(message).not.toBe('Saved');
+      expect(message).toContain('12 prices saved');
+      expect(message).toContain('2 have no stock on hand');
+      expect(message).toContain('the price applies when stock arrives');
+    });
+
+    it('says nothing about stock when every priced bucket has some', () => {
+      expect(service.buildSaveMessage(base)).toBe('12 prices saved.');
+    });
+
+    it('asks rather than reports when the save needs confirming', () => {
+      const message = service.buildSaveMessage({
+        ...base,
+        saved: 0,
+        masterRowsSaved: 0,
+        needsConfirm: true,
+        problems: [problem({ verdict: 'BELOW_COST' })],
+      });
+
+      expect(message).toContain('below cost');
+      expect(message).toContain('Confirm');
+    });
+
+    it('carries the no-stock list into the save result', async () => {
+      gateway.listNoStock.mockResolvedValue([{ bucketId: IPM_ID, itemId: BUCKET_ITEM }]);
+
+      const result = await service.saveBulk(payload());
+
+      expect(result.noStock).toHaveLength(1);
+      expect(service.buildSaveMessage(result)).toContain('no stock on hand');
+    });
+
+    it('speaks of one price and one row in the singular', () => {
+      expect(
+        service.buildSaveMessage({ ...base, saved: 1, noStock: [{ bucketId: IPM_ID }] as never }),
+      ).toBe('1 price saved · 1 has no stock on hand — the price applies when stock arrives.');
+    });
+
+    it('says "Nothing to save" when nothing was written', () => {
+      expect(service.buildSaveMessage({ ...base, saved: 0 })).toBe('Nothing to save.');
+    });
+  });
+
+  // ── §3 / §4 the grid and the bucket list ─────────────────────────────────
+  describe('the grid rows — §3, §4', () => {
+    /** A Q25 row as the gateway answers it: MRP 120 stock, priced 118 at level A. */
+    const record = (overrides: Record<string, unknown> = {}) => ({
+      itemId: BUCKET_ITEM,
+      itemCode: 'SALT',
+      barcode: '8901234567890',
+      itemName: 'Salt 1 Kg',
+      uomId: UOM_ID,
+      unitName: 'PCS',
+      stockQty: 12,
+      mrp: 120,
+      salePrice: null,
+      maxPrice: 120,
+      priceSource: 'BUCKET',
+      priceScope: 'BRANCH',
+      bucketId: IPM_ID,
+      costRate: COST,
+      costWot: 80.508475,
+      costBasis: 'MRP',
+      minPrice: 100,
+      roundOff: 0,
+      prices: [PRICE, 0, 0, 0],
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      // The grid resolves tax outside any transaction, on the service's own client.
+      Object.assign(prisma, tx);
+      gateway.listPrices.mockResolvedValue({
+        items: [record(), record({ itemId: '01000000-0000-7000-8000-0000000000ff' })],
+        meta: { limit: 200, offset: 0, count: 2 },
+      });
+      gateway.listBuckets.mockResolvedValue([record()]);
+    });
+
+    it('pages at 200 by default, from the top, active items only', async () => {
+      await service.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID });
+
+      expect(gateway.listPrices).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        itemGroupId: undefined,
+        itemBrandId: undefined,
+        itemSectionId: undefined,
+        supplierId: undefined,
+        itemId: undefined,
+        search: undefined,
+        itemCategoryId: undefined,
+        trackPresetId: undefined,
+        taxId: undefined,
+        activeOnly: true,
+        limit: 200,
+        offset: 0,
+      });
+    });
+
+    it('caps the page at 1000, never reads before the first row, and passes every filter on', async () => {
+      await service.listPrices({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        itemGroupId: TAX_ID,
+        search: 'salt',
+        activeOnly: false,
+        limit: 5000,
+        offset: -10,
+      });
+
+      expect(gateway.listPrices).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemGroupId: TAX_ID,
+          search: 'salt',
+          activeOnly: false,
+          limit: 1000,
+          offset: 0,
+        }),
+      );
+    });
+
+    it('numbers the rows from the page offset and adds the tax and the four-number levels', async () => {
+      gateway.listPrices.mockResolvedValue({
+        items: [record()],
+        meta: { limit: 50, offset: 100, count: 1 },
+      });
+
+      const page = await service.listPrices({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        limit: 50,
+        offset: 100,
+      });
+
+      expect(page.meta).toEqual({ limit: 50, offset: 100, count: 1 });
+      expect(page.items[0]).toEqual({
+        lineNo: 101,
+        itemId: BUCKET_ITEM,
+        itemCode: 'SALT',
+        barcode: '8901234567890',
+        itemName: 'Salt 1 Kg',
+        uomId: UOM_ID,
+        unitName: 'PCS',
+        stockQty: 12,
+        mrp: 120,
+        salePrice: null,
+        maxPrice: 120,
+        priceSource: 'BUCKET',
+        priceScope: 'BRANCH',
+        bucketId: IPM_ID,
+        costRate: COST,
+        costWot: 80.508475,
+        costBasis: 'MRP',
+        minPrice: 100,
+        roundOff: 0,
+        taxPerc: TAX_PERC,
+        inclTax: true,
+        hasCess: false,
+        levels: [
+          recomputeLevel(1, PRICE, TAX_PERC, COST),
+          recomputeLevel(2, 0, TAX_PERC, COST),
+          recomputeLevel(3, 0, TAX_PERC, COST),
+          recomputeLevel(4, 0, TAX_PERC, COST),
+        ],
+      });
+      expect(page.items[0].levels[0]).toMatchObject({ price: 118, priceWot: 100 });
+    });
+
+    it('answers 0% tax, exclusive and no cess for an item the tax resolver does not know', async () => {
+      const page = await service.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID });
+
+      expect(page.items[1]).toMatchObject({
+        lineNo: 2,
+        taxPerc: 0,
+        inclTax: false,
+        hasCess: false,
+      });
+      expect(page.items[1].levels[0]).toMatchObject({ price: PRICE, priceWot: PRICE });
+    });
+
+    it("lists one item's buckets at the company and branch asked for, numbered from 1", async () => {
+      const rows = await service.listBuckets(BUCKET_ITEM, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+      });
+
+      expect(gateway.listBuckets).toHaveBeenCalledWith(BUCKET_ITEM, COMPANY_ID, BRANCH_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ lineNo: 1, taxPerc: TAX_PERC, bucketId: IPM_ID });
+    });
+  });
+
+  // ── the audit row's wording, and the refusals' line numbers ─────────────
+  describe('what the audit row and the refusals say', () => {
+    const auditEntry = () =>
+      auditLogService.logEntityChange.mock.calls[0][0] as {
+        displayName: string;
+        notes: string;
+        modifiedRecord: unknown;
+      };
+
+    it('names a bucket by its MRP and sale price, and the scope it was saved at', async () => {
+      gateway.snapshotRows.mockResolvedValue(
+        new Map([[IPM_ID, { ipm_id: IPM_ID, ipm_bucket_mrp: 120, ipm_bucket_sp: 110 }]]),
+      );
+
+      await service.saveBulk(payload({ scope: 'CHAIN' }));
+
+      expect(auditEntry().displayName).toBe('Salt 1 Kg · MRP 120, sale price 110');
+      expect(auditEntry().notes).toBe('Change Selling Price (menu 30), all branches');
+    });
+
+    it('names a row with no bucket the headline, at this branch', async () => {
+      gateway.snapshotRows.mockResolvedValue(
+        new Map([[IPM_ID, { ipm_id: IPM_ID, ipm_bucket_mrp: null, ipm_bucket_sp: null }]]),
+      );
+
+      await service.saveBulk(payload({ rows: [headlineRow()] }));
+
+      expect(auditEntry().displayName).toBe('Rice 25 Kg · headline');
+      expect(auditEntry().notes).toBe('Change Selling Price (menu 30), this branch');
+    });
+
+    it('audits a row it could not read back with no after-image', async () => {
+      gateway.snapshotRows.mockResolvedValue(new Map());
+
+      await service.saveBulk(payload());
+
+      expect(auditEntry()).toMatchObject({
+        modifiedRecord: null,
+        displayName: 'Salt 1 Kg · headline',
+      });
+    });
+
+    it('numbers a foreign unit by its position when the row sent no line number', async () => {
+      gateway.loadRowCosts.mockResolvedValueOnce([
+        {
+          itemCode: 'SALT',
+          itemName: 'Salt 1 Kg',
+          uomBelongs: false,
+          trackMrp: true,
+          trackSalePrice: false,
+          costRate: COST,
+          costWot: 80.508475,
+          minPrice: 0,
+        },
+      ]);
+
+      const error = await service
+        .saveBulk(payload({ rows: [bucketRow({ lineNo: undefined })] }))
+        .catch((caught: unknown) => caught as HttpException);
+
+      expect((error as HttpException).getStatus()).toBe(422);
+      expect((error as HttpException).getResponse()).toMatchObject({
+        errors: [
+          {
+            field: 'rows.1',
+            code: 'STOCK_PRICE_UNIT_NOT_OF_ITEM',
+            message: `Line 1: unit ${UOM_ID} is not one of item ${BUCKET_ITEM}'s units.`,
+          },
+        ],
+      });
+    });
+
+    it('names a duplicate bucket by its item id when the item has no name', async () => {
+      const nameless: RowCost = {
+        itemCode: null,
+        itemName: '',
+        uomBelongs: true,
+        trackMrp: true,
+        trackSalePrice: false,
+        costRate: COST,
+        costWot: 80.508475,
+        costBasis: 'ITEM',
+        minPrice: 0,
+      };
+      gateway.loadRowCosts.mockResolvedValueOnce([nameless, nameless]);
+
+      const error = await service
+        .saveBulk(payload({ rows: [bucketRow({ lineNo: 4 }), bucketRow({ lineNo: 9 })] }))
+        .catch((caught: unknown) => caught as HttpException);
+
+      expect((error as HttpException).getResponse()).toMatchObject({
+        errors: [
+          {
+            field: 'rows.9',
+            code: 'STOCK_PRICE_DUPLICATE_BUCKET',
+            message: `Lines 4 and 9 price the same bucket of ${BUCKET_ITEM} at the same scope. Keep one of them.`,
+          },
+        ],
+      });
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('the below-cost policy helpers — §0.3', () => {
+  it('reads the key out of the resolved catalog', () => {
+    expect(
+      resolveBelowCostPolicy([
+        { asdKey: 'inventory.below_cost_price', value: 'restrict' },
+      ] as never),
+    ).toBe('restrict');
+  });
+
+  it.each([
+    ['an absent key', []],
+    ['a blank value', [{ asdKey: 'inventory.below_cost_price', value: '   ' }]],
+    ['a null value', [{ asdKey: 'inventory.below_cost_price', value: null }]],
+    // The screen plan's vocabulary. `block` is not in the catalog and never
+    // was — §13.4 — so it must not silently become `restrict`.
+    ['the screen plan\'s "block"', [{ asdKey: 'inventory.below_cost_price', value: 'block' }]],
+  ])('falls back to the seeded default on %s', (_label, effective) => {
+    expect(resolveBelowCostPolicy(effective as never)).toBe('warning');
+  });
+
+  it.each([
+    ['restrict', false, 'ABORT'],
+    ['restrict', true, 'ABORT'],
+    ['warning', false, 'CONFIRM'],
+    ['warning', true, 'PROCEED'],
+    ['allow', false, 'PROCEED'],
+    ['allow', true, 'PROCEED'],
+  ] as const)('%s + confirmed=%s is %s', (policy, confirmed, expected) => {
+    expect(resolveBelowCostAction(policy, confirmed)).toBe(expected);
+  });
+});
+
+describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
+  let filter: SellingPriceBulkExceptionFilter;
+  let status: jest.Mock;
+  let json: jest.Mock;
+  let host: ArgumentsHost;
+
+  beforeEach(() => {
+    filter = new SellingPriceBulkExceptionFilter();
+    json = jest.fn();
+    status = jest.fn().mockReturnValue({ json });
+    host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({ method: 'POST', url: '/api/v1/stock/price-bulk' }),
+      }),
+    } as unknown as ArgumentsHost;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  // Every one of these arrives from Prisma as code P2010 with the real SQLSTATE
+  // in meta.code — a filter switching on error.code answers 500 to all of them.
+  it.each([
+    ['23514', 'new row violates check constraint "ck_ipm_not_above_mrp"', 422],
+    ['23P01', 'conflicting key value violates exclusion constraint "ex_ipm_overlap"', 409],
+    ['23505', 'duplicate key value violates unique constraint "item_price_master_pkey"', 409],
+    ['23503', 'insert violates foreign key constraint "fk_ipm_item"', 422],
+    ['P0002', 'bucket vanished between load and save', 404],
+  ])('maps meta.code %s to HTTP %i', (sqlState, message, expected) => {
+    filter.catch(engineError(sqlState, message), host);
+
+    expect(status).toHaveBeenCalledWith(expected);
+  });
+
+  it('says what ex_ipm_overlap MEANS, and still carries the engine text', () => {
+    filter.catch(
+      engineError('23P01', 'conflicting key value violates exclusion constraint "ex_ipm_overlap"'),
+      host,
+    );
+
+    const [body] = json.mock.calls[0] as [{ message: string; errors: { message: string }[] }];
+    expect(body.message).toContain('Another price already covers this bucket');
+    expect(body.message).toContain('period');
+    // "conflicting key value violates exclusion constraint" tells a shopkeeper
+    // nothing, but it is what the log will be searched for.
+    expect(body.errors[0].message).toContain('ex_ipm_overlap');
+  });
+
+  it('names the constraint behind an above-MRP refusal', () => {
+    filter.catch(
+      engineError('23514', 'new row violates check constraint "ck_ipm_not_above_mrp"'),
+      host,
+    );
+
+    const [body] = json.mock.calls[0] as [{ message: string }];
+    expect(body.message).toContain('cannot be above the MRP');
+  });
+
+  it('lets an unrecognised SQLSTATE fall through to 500 rather than dressing it up', () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    filter.catch(engineError('42P01', 'relation "stock.nowhere" does not exist'), host);
+
+    expect(status).toHaveBeenCalledWith(500);
+    // The stack goes to the server log, never to the client.
+    expect(logged).toHaveBeenCalledWith(
+      'POST /api/v1/stock/price-bulk',
+      expect.stringContaining('Raw query failed'),
+    );
+  });
+
+  it('passes an HttpException the service already built through untouched', () => {
+    filter.catch(new HttpException({ success: false, message: 'nope', errors: [] }, 403), host);
+
+    expect(status).toHaveBeenCalledWith(403);
+    expect(json).toHaveBeenCalledWith({ success: false, message: 'nope', errors: [] });
+  });
+});
+
+describe('PriceBucketGateway.validateRows — Q26, §5.2', () => {
+  const gateway = new PriceBucketGateway(null as never);
+  const candidate = (overrides: Partial<BucketPriceCandidate> = {}): BucketPriceCandidate => ({
+    lineNo: 1,
+    companyId: COMPANY_ID,
+    itemId: BUCKET_ITEM,
+    uomId: UOM_ID,
+    itemCode: 'SALT',
+    itemName: 'Salt 1 Kg',
+    bucketId: null,
+    mrp: 120,
+    salePrice: null,
+    levels: [{ level: 1, price: PRICE, priceWot: 100, markupPerc: 0 }],
+    minPrice: null,
+    roundOff: null,
+    costRate: COST,
+    costWot: COST / 1.18,
+    actor: USER_ID,
+    ...overrides,
+  });
+
+  it('says nothing about a price between cost and MRP', () => {
+    expect(gateway.validateRows([candidate()], [0])).toEqual([]);
+  });
+
+  it('refuses a bucket row priced above its MRP', () => {
+    const [found] = gateway.validateRows(
+      [candidate({ levels: [{ level: 1, price: 125, priceWot: 0, markupPerc: 0 }] })],
+      [0],
+    );
+    expect(found).toMatchObject({ verdict: 'ABOVE_MRP', level: 1 });
+    expect(found.message).toContain('Salt 1 Kg');
+  });
+
+  it('never checks a headline row against an MRP — it has none to be above', () => {
+    expect(
+      gateway.validateRows(
+        [candidate({ mrp: null, levels: [{ level: 1, price: 500, priceWot: 0, markupPerc: 0 }] })],
+        [0],
+      ),
+    ).toEqual([]);
+  });
+
+  it('uses the stored min price when the row sends none', () => {
+    const [found] = gateway.validateRows([candidate()], [119]);
+    expect(found).toMatchObject({ verdict: 'BELOW_MIN' });
+  });
+
+  it('prefers the min price the row sends over the stored one', () => {
+    expect(gateway.validateRows([candidate({ minPrice: 100 })], [119])).toEqual([]);
+  });
+
+  it('reports below cost only when a cost is known', () => {
+    expect(gateway.validateRows([candidate({ costRate: 130 })], [0])[0]).toMatchObject({
+      verdict: 'BELOW_COST',
+    });
+    expect(gateway.validateRows([candidate({ costRate: 0 })], [0])).toEqual([]);
+  });
+});

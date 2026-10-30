@@ -1,0 +1,90 @@
+/// SETTLEMENT LINE — one provider statement line, and what it was matched to
+/// (share file 49 §3, migration 20261008130000).
+///
+/// Matching (TenderSettlementService): REF (RRN / UTR) → AUTH → AMOUNT_TIME
+/// (SUGGESTED only — exactly one tender row of that amount on that terminal
+/// inside tender.match_window_minutes; a person confirms) → MANUAL.
+/// A SALE line nothing of ours explains is RESOLVED as LINKED (it was a bill
+/// after all — to a CLOSED session, asl_tvr_* names the close variance it
+/// explains), REFUNDED, INCOME or SUSPENSE, behind SETTLEMENT_RESOLVE.
+///
+/// aslTdId is FK-less: acc_tender_detail is partitioned and may be another
+/// year. ux_asl_td_matched keeps one MATCHED sale line per tender row within a
+/// statement year; across 31 March the service refuses a td already MATCHED.
+model AccSettlementLine {
+  aslId                   String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("asl_id")
+  aslAccYear              String    @db.Char(9)                          @map("asl_acc_year")
+  aslImportId             String    @db.Uuid                             @map("asl_import_id")
+  aslRowNo                Int                                            @map("asl_row_no")
+  /// SALE | REFUND | CHARGEBACK | FEE | ADJUSTMENT — the direction; amounts stay positive.
+  aslKind                 String    @db.VarChar(12)                      @map("asl_kind")
+  /// When the customer paid, as the provider says.
+  aslTxnOn                DateTime? @db.Timestamptz(6)                   @map("asl_txn_on")
+  /// TID; matched to acc_tender_master.tnd_terminal_id.
+  aslTerminalId           String?   @db.VarChar(40)                      @map("asl_terminal_id")
+  /// UPI: the payee VPA.
+  aslVpa                  String?   @db.VarChar(100)                     @map("asl_vpa")
+  /// Resolved from TID / VPA / the import. FK-less.
+  aslTenderId             String?   @db.Uuid                             @map("asl_tender_id")
+  /// RRN / UTR.
+  aslRefNo                String?   @db.VarChar(60)                      @map("asl_ref_no")
+  aslAuthCode             String?   @db.VarChar(20)                      @map("asl_auth_code")
+  aslCardLast4            String?   @db.Char(4)                          @map("asl_card_last4")
+  /// Payer VPA / card network, as given.
+  aslPayer                String?   @db.VarChar(150)                     @map("asl_payer")
+  aslGrossAmount          Decimal   @db.Decimal(15, 2)                   @map("asl_gross_amount")
+  aslFeeAmount            Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_fee_amount")
+  aslTaxAmount            Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_tax_amount")
+  /// = gross - fee - tax (ck_asl_net).
+  aslNetAmount            Decimal   @db.Decimal(15, 2)                   @map("asl_net_amount")
+
+  // ── What it was matched to ───────────────────────────────────────────
+  /// UNMATCHED | SUGGESTED | MATCHED | IGNORED | RESOLVED
+  aslMatchStatus          String    @default("UNMATCHED") @db.VarChar(10) @map("asl_match_status")
+  /// REF | AUTH | AMOUNT_TIME | MANUAL — set exactly when SUGGESTED / MATCHED (ck_asl_rule_set).
+  aslMatchRule            String?   @db.VarChar(12)                      @map("asl_match_rule")
+  /// acc_tender_detail row (ck_asl_linked: set for SUGGESTED / MATCHED / RESOLVED-LINKED only).
+  aslTdId                 String?   @db.Uuid                             @map("asl_td_id")
+  aslTdAccYear            String?   @db.Char(9)                          @map("asl_td_acc_year")
+  /// gross − the tender row's amount (signed; 0 = exact).
+  aslAmountDiff           Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_amount_diff")
+  aslMatchedBy            String?   @db.Uuid                             @map("asl_matched_by")
+  aslMatchedOn            DateTime? @db.Timestamptz(6)                   @map("asl_matched_on")
+
+  // ── A line nothing of ours explains ──────────────────────────────────
+  /// LINKED | REFUNDED | INCOME | SUSPENSE — set exactly when RESOLVED (ck_asl_resolved).
+  aslResolution           String?   @db.VarChar(12)                      @map("asl_resolution")
+  aslReasonId             String?   @db.Uuid                             @map("asl_reason_id")
+  /// SETTLEMENT_RESOLVE.
+  aslApprovalId           String?   @db.Uuid                             @map("asl_approval_id")
+  aslResolutionVoucherId  String?   @db.Uuid                             @map("asl_resolution_voucher_id")
+  aslResolutionAccYear    String?   @db.Char(9)                          @map("asl_resolution_acc_year")
+  /// LINKED to a CLOSED session: the close variance this money explains.
+  aslTvrId                String?   @db.Uuid                             @map("asl_tvr_id")
+  aslTvrAccYear           String?   @db.Char(9)                          @map("asl_tvr_acc_year")
+  /// The provider's row as read, for audit.
+  aslRaw                  Json?     @db.JsonB                            @map("asl_raw")
+  aslNotes                String?   @db.VarChar(500)                     @map("asl_notes")
+  aslSyncDate             DateTime? @db.Timestamptz(6)                   @map("asl_sync_date")
+  aslCreatedOn            DateTime  @default(now()) @db.Timestamptz(6)   @map("asl_created_on")
+  aslModifiedOn           DateTime? @db.Timestamptz(6)                   @map("asl_modified_on")
+
+  // Relations
+  import                  AccSettlementImport @relation("SettlementLineImport", fields: [aslImportId, aslAccYear], references: [asiId, asiAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_asl_import")
+  reason                  TillReason?         @relation("SettlementLineReason", fields: [aslReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_asl_reason")
+
+  @@id([aslId, aslAccYear], map: "pk_acc_settlement_line")
+  @@unique([aslImportId, aslRowNo, aslAccYear], map: "ux_asl_row")
+  @@index([aslImportId, aslAccYear, aslMatchStatus], map: "ix_asl_import")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_asl_td_matched ON accounts.acc_settlement_line (asl_td_id, asl_td_acc_year, asl_acc_year)
+  //       WHERE asl_match_status = 'MATCHED' AND asl_kind = 'SALE';
+  //   ix_asl_ref (asl_tender_id, upper(asl_ref_no)) WHERE asl_ref_no IS NOT NULL;
+  //   ix_asl_unexplained (asl_tender_id, asl_txn_on) WHERE UNMATCHED SALE — "money arrived, nothing billed".
+  // CHECKs: ck_asl_kind, ck_asl_status, ck_asl_rule, ck_asl_resolution, ck_asl_amounts, ck_asl_net,
+  //         ck_asl_td_pair, ck_asl_linked, ck_asl_rule_set, ck_asl_tvr_pair, ck_asl_tvr_linked,
+  //         ck_asl_matched, ck_asl_resolved, ck_asl_resolution_voucher.
+  @@map("acc_settlement_line")
+  @@schema("accounts")
+}

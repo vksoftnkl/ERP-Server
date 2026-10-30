@@ -1,0 +1,43 @@
+/// notes (55) — our cheque books (migration 20260926190000_payment_cheques).
+///
+/// A Payment Voucher's cheque names a BOOK, never a leaf: `/vouchers/post`
+/// takes `acbNextLeaf` under FOR UPDATE, writes it as the cheque number and
+/// moves the book on. A leaf once taken stays taken — a cancelled payment, a
+/// stopped or voided cheque does not hand it back, so the leaf series has no
+/// silent gaps (every leaf is a row in acc_pdc_register).
+///
+/// Status (ck_acb_status): ACTIVE → FINISHED (the last leaf went, set by the
+/// server) | CLOSED (put away by hand, /cheque-books/close).
+model AccChequeBook {
+  acbId           String    @id(map: "pk_acc_cheque_book") @default(dbgenerated("uuidv7()")) @db.Uuid @map("acb_id")
+  acbCompanyId    String    @db.Uuid @map("acb_company_id")
+  // NULL = usable from every branch
+  acbBranchId     String?   @db.Uuid @map("acb_branch_id")
+  // The bank account the leaves are drawn on
+  acbBankLedgerId String    @db.Uuid @map("acb_bank_ledger_id")
+  acbBookNo       String    @db.VarChar(30) @map("acb_book_no")
+  acbLeafFrom     BigInt    @map("acb_leaf_from")
+  acbLeafTo       BigInt    @map("acb_leaf_to")
+  // The next leaf handed out; acbLeafTo + 1 = finished
+  acbNextLeaf     BigInt    @map("acb_next_leaf")
+  // Leaves print zero-padded to this many digits
+  acbLeafWidth    Int       @default(6) @db.SmallInt @map("acb_leaf_width")
+  acbFormat       String?   @db.VarChar(30) @map("acb_format")
+  acbStatus       String    @default("ACTIVE") @db.VarChar(10) @map("acb_status")
+  acbClosedOn     DateTime? @db.Timestamptz(6) @map("acb_closed_on")
+  acbCloseReason  String?   @db.VarChar(250) @map("acb_close_reason")
+  acbRemarks      String?   @db.VarChar(250) @map("acb_remarks")
+  acbIsActive     Boolean   @default(true) @map("acb_is_active")
+  acbIsDeleted    Boolean   @default(false) @map("acb_is_deleted")
+  acbCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("acb_created_on")
+  acbCreatedBy    String?   @db.VarChar(50) @map("acb_created_by")
+  acbModifiedOn   DateTime? @db.Timestamptz(6) @map("acb_modified_on")
+  acbModifiedBy   String?   @db.VarChar(50) @map("acb_modified_by")
+  bankLedger      AccLedgerMaster @relation("ChequeBookBank", fields: [acbBankLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_acb_bank_ledger")
+
+  @@map("acc_cheque_book")
+  @@schema("accounts")
+  // DB-only: ux_acb_book_no (company, bank, book no) and ix_acb_open, both
+  // partial on NOT deleted; CHECKs ck_acb_range, ck_acb_next, ck_acb_width,
+  // ck_acb_status, ck_acb_finished, ck_acb_closed.
+}

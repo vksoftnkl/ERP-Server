@@ -1,6 +1,6 @@
 model ItemMaster {
   itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
-  itemCompanyId        String   @db.Uuid @map("item_company_id")
+  itemCompanyId        String?  @db.Uuid @map("item_company_id")
   itemBranchId         String?  @db.Uuid @map("item_branch_id")
   // Names / Codes
   itemCode             String?  @db.VarChar(50)  @map("item_code")
@@ -18,6 +18,12 @@ model ItemMaster {
   itemCompanyCategoryId String? @db.Uuid @map("item_company_category_id")
   itemMfgrId           String?  @db.Uuid @map("item_mfgr_id")
   itemSupplierId       String?  @db.Uuid @map("item_supplier_id")
+  // Purchase (migration 20261028110000)
+  itemPurchaseUomId    String?  @db.Uuid @map("item_purchase_uom_id")               // FK fk_item_purchase_uom (DB only)
+  itemMinShelfLifePct  Decimal? @db.Decimal(5, 2) @map("item_min_shelf_life_pct")
+  itemItcClass         String?  @db.VarChar(15) @map("item_itc_class")             // ELIGIBLE | INELIGIBLE | BLOCKED_17_5
+  itemShortagePct      Decimal? @db.Decimal(5, 2) @map("item_shortage_pct")
+  itemDefaultMarkupPct Decimal? @db.Decimal(7, 3) @map("item_default_markup_pct")
   itemCustGroup        String?  @db.Uuid @map("item_cust_group")
   // Units / Batch / Expiry
   itemBaseUnitId       String?  @db.Uuid @map("item_base_unit_id")
@@ -56,12 +62,26 @@ model ItemMaster {
   itemHsnCode          String?  @db.VarChar(10) @map("item_hsn_code")
   // UI / misc
   itemBatchConfig      Int      @default(0) @map("item_batch_config")
+  /// The stock.stock_track_preset the ITEM-scope stock_track_policy row is
+  /// derived from. NULL = derive from itemBatchConfig / itemIsBatchBased /
+  /// itemIsExpiryItem instead. The link is on the MASTER, never on the policy:
+  /// the policy row still owns its own thirteen columns, so editing a preset
+  /// changes nothing until this item is explicitly re-saved.
+  itemTrackPresetId    String?  @db.Uuid @map("item_track_preset_id")
   itemSortOrder        Int?     @map("item_sort_order")
   itemPhoto            Bytes?   @map("item_photo")
   itemImageUrl         String?  @db.Text @map("item_image_url")
   itemNotes            String?  @db.VarChar(250) @map("item_notes")
   itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
   itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
+  itemInclTax   Boolean  @default(true) @map("item_incl_tax")
+  // Tally identity — mirrors led_tally_* on AccLedgerMaster.
+  // itemTallyGuid is uniquely indexed in the DB (ux_item_tally_guid,
+  // partial on NOT NULL AND NOT deleted), so it is not @unique here.
+  itemTallyName        String?  @db.VarChar(200) @map("item_tally_name")
+  itemTallyGuid        String?  @db.VarChar(64) @map("item_tally_guid")
+  itemTallyMasterId    BigInt?  @db.BigInt @map("item_tally_master_id")
+  itemTallyAlterId     BigInt?  @db.BigInt @map("item_tally_alter_id")
   // Status / Audit
   itemIsActive         Boolean  @default(true)  @map("item_is_active")
   itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")
@@ -71,19 +91,61 @@ model ItemMaster {
   itemModifiedBy       String?  @db.VarChar(100) @map("item_modified_by")
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
+  trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  // Repointed at inventory.tax_rate_master by migration
+  // 20260912110000_repoint_items_to_tax_rate_master. The FK keeps its
+  // Prisma-default name, so only the table it references changed.
+  defaultTax           TaxRateMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
+  qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
-  openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
-  company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  saleQuotationItems   SaleQuotationItem[]
+  saleBillItems        SaleBillItem[]
+  saleOrderItems       SaleOrderItem[]
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemItem")
+  promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeItem")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemItem")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
+  stockLots            StockLot[]            @relation("StockLotItem")
+  stockLedgerEntries   StockLedger[]         @relation("StockLedgerItem")
+  stockCostRevaluations StockCostRevaluation[] @relation("StockCostRevaluationItem")
+  stockBalances        StockBalance[]        @relation("StockBalanceItem")
+  stockItemCosts       StockItemCost[]       @relation("StockItemCostItem")
+  stockVoucherItems    StockVoucherItem[]    @relation("StockVoucherItemItem")
+  stockReservations    StockReservation[]    @relation("StockReservationItem")
+  stockTransits        StockTransit[]        @relation("StockTransitItem")
+  stockBatchDetails    StockBatchDetail[]    @relation("StockBatchDetailItem")
+  stockValuationSnaps  StockValuationSnap[]  @relation("StockValuationSnapItem")
+  stockDemandDaily     StockDemandDaily[]    @relation("StockDemandDailyItem")
+  stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")
+  stockForecasts       StockForecast[]       @relation("StockForecastItem")
+  stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemItem")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  itemSyncDate DateTime? @db.Timestamptz(6) @map("item_sync_date")
+
   @@map("item_master")
   @@schema("inventory")
-  // UNIQUE item_name_en globally (since company removed)
-  @@unique([itemNameEn], map: "uq_item_name_en_global")
+  // uq_item_name_en_company_ci / uq_item_code_company_ci / uq_item_sku_company_ci
+  // UNIQUE (lower(<key>), COALESCE(item_company_id)) WHERE item_is_deleted =
+  // false — DB-only (a partial / expression index cannot be declared here).
+  // Unique per company in any case since 20261021100000 (notes 137 B5 / B6);
+  // a shared item clashing with a company's is checked in the service.
+  // ix_item_default_barcode_ci (lower(item_default_barcode)) serves the
+  // barcode lookups.
   @@index([itemGroupId], map: "idx_item_group")
   @@index([itemNameEn], map: "idx_item_name_en")
   @@index([itemDefaultBarcode], map: "idx_item_barcode")

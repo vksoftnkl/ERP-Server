@@ -1,0 +1,93 @@
+/// Field mapping — the half that fills our columns.
+///
+/// RESPONSE rows are the point of this model. They say: whatever this
+/// provider calls the IRN, and wherever it buries it, put it in gde_irn. That
+/// is what makes provider #2 an INSERT.
+///
+/// REQUEST rows exist but are deliberately narrow — headers, auth
+/// substitution, per-provider wrapper quirks. The invoice body itself is
+/// built in code from one canonical DTO, because the NIC schema is ~140
+/// nested, conditional, arithmetic-checked fields; expressing that as a flat
+/// path map would move a validation problem into data, where nothing can
+/// type-check it. Providers differ in how they wrap and encrypt the body.
+/// They do not differ in the body: that one belongs to the government.
+///
+/// gfmTargetColumn is what closes the loop to the ERP. It names the actual
+/// destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
+/// back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
+/// too, not a switch statement that has to be edited per provider. It is a
+/// physical column name, spelled exactly as the table spells it. A schema
+/// rename is therefore a DATA change here too — see
+/// 20260922020000_reconcile_doc_einvoice_ewaybill, which renamed
+/// gde_canceled_on to gde_cancelled_on and repointed the seeded rows.
+model GstProviderFieldMap {
+  gfmId             String    @id(map: "pk_gst_provider_field_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gfm_id")
+  gfmGpeId          String    @db.Uuid                                 @map("gfm_gpe_id")
+
+  /// REQUEST | RESPONSE
+  gfmDirection      String    @db.VarChar(10)                          @map("gfm_direction")
+
+  /// Our canonical name, the contract between the mapping engine and the rest
+  /// of the server: 'irn', 'ack_no', 'ack_on', 'signed_invoice',
+  /// 'signed_qrcode', 'ewb_no', 'ewb_valid_upto', 'auth_token',
+  /// 'session_key', 'expires_on', 'legal_name', 'state_code'.
+  gfmOurField       String    @db.VarChar(60)                          @map("gfm_our_field")
+
+  /// JSONPath into the reply, evaluated from gpeResponseRootPath when that is
+  /// set: '$.Irn', '$.AckDt', '$.data.result.irn'.
+  gfmTheirPath      String                                             @map("gfm_their_path")
+
+  /// TEXT | INT | DECIMAL | BOOL | DATE | DATETIME | JSON
+  gfmDataType       String    @default("TEXT") @db.VarChar(10)         @map("gfm_data_type")
+
+  /// Applied after extraction. NIC dates arrive as 'dd/MM/yyyy HH:mm:ss', the
+  /// signed invoice is a JWT whose payload holds the real object, and the QR
+  /// is base64 — none of which a path expression can undo. DATETIME_MASK
+  /// parses using gfmFormatMask, which exists because one provider is not
+  /// internally consistent: Chartered's e-invoice returns AckDt on a 24-hour
+  /// clock while its e-way bill returns '16/09/2017 10:30:00 AM'.
+  gfmTransform      String    @default("NONE") @db.VarChar(30)         @map("gfm_transform")
+  gfmFormatMask     String?   @db.VarChar(40)                          @map("gfm_format_mask")
+
+  /// A required field that does not arrive fails the call loudly rather than
+  /// writing a half-populated e-invoice row — which is why a required field
+  /// may not also carry a default (ck_gfm_required_default): the default
+  /// would silence exactly the absence the flag exists to catch.
+  gfmIsRequired     Boolean   @default(false)                          @map("gfm_is_required")
+  gfmDefaultValue   String?                                            @map("gfm_default_value")
+
+  /// The physical destination, when this field is persisted: 'gde_irn',
+  /// 'gde_ack_no', 'gdw_no', … NULL for values that are only used in-flight
+  /// (auth_token, session_key).
+  gfmTargetColumn   String?   @db.VarChar(64)                          @map("gfm_target_column")
+
+  gfmSortOrder      Int       @default(0) @db.SmallInt                 @map("gfm_sort_order")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gfmIsDeleted      Boolean   @default(false)                          @map("gfm_is_deleted")
+  gfmSyncDate       DateTime? @db.Timestamptz(6)                       @map("gfm_sync_date")
+  gfmCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("gfm_created_on")
+  gfmCreatedBy      String    @db.VarChar(50)                          @map("gfm_created_by")
+  gfmModifiedOn     DateTime? @db.Timestamptz(6)                       @map("gfm_modified_on")
+  gfmModifiedBy     String?   @db.VarChar(50)                          @map("gfm_modified_by")
+
+  // Relations
+  endpoint          GstProviderEndpoint @relation("GstEndpointFieldMaps", fields: [gfmGpeId], references: [gpeId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gfm_endpoint")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gfm_endpoint_field
+  //       ON public.gst_provider_field_map (gfm_gpe_id, gfm_direction, gfm_our_field)
+  //       WHERE gfm_is_deleted = false;
+  //
+  //   -- the mapping engine's own read: one endpoint's rows, in order
+  //   CREATE INDEX ix_gfm_endpoint
+  //       ON public.gst_provider_field_map (gfm_gpe_id, gfm_direction, gfm_sort_order)
+  //       WHERE gfm_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gfm_direction, ck_gfm_data_type,
+  //   ck_gfm_transform, ck_gfm_path, ck_gfm_required_default
+
+  @@map("gst_provider_field_map")
+  @@schema("public")
+}

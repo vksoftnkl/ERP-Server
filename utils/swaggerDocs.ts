@@ -1,6 +1,6 @@
 import { AuditLogModule } from '../src/modules/audit-log/audit-log.module';
 import { AccountLedgerMastersModule } from '../src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
-import { AccountsGroupModule } from '../src/modules/accountsModule/accountsGroup/accounts-group.module';
+import { AccGroupMasterModule } from '../src/modules/accountsModule/accGroupMaster/acc-group-master.module';
 import { BranchMasterModule } from '../src/modules/accountsModule/branchMaster/branch-master.module';
 import { CompanyGroupMasterModule } from '../src/modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { CompanyMasterModule } from '../src/modules/accountsModule/companyMaster/company-master.module';
@@ -79,7 +79,7 @@ import { MasterLookupModule } from '../src/modules/master-lookup/master-lookup.m
       path: 'accounts-group',
       title: 'Account Group API',
       description: 'Account group module endpoints',
-      include: [AccountsGroupModule],
+      include: [AccGroupMasterModule],
     },
     {
       path: 'account-ledger-masters',
@@ -148,7 +148,7 @@ import { MasterLookupModule } from '../src/modules/master-lookup/master-lookup.m
       include: [MasterLookupModule],
     },
     {
-      path: 'audit-log',
+      path: 'audit-logs',
       title: 'Audit Log API',
       description: 'Audit log module endpoints',
       include: [AuditLogModule],

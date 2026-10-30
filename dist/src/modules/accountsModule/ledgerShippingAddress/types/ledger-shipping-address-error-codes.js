@@ -1,0 +1,17 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LedgerShippingAddressErrorCode = void 0;
+exports.LedgerShippingAddressErrorCode = {
+    NOT_FOUND: 'SHIPPING_NOT_FOUND',
+    ID_REQUIRED: 'SHIPPING_ID_REQUIRED',
+    DUPLICATE: 'SHIPPING_DUPLICATE',
+    LEDGER_NOT_FOUND: 'SHIPPING_LEDGER_NOT_FOUND',
+    COMPANY_NOT_FOUND: 'SHIPPING_COMPANY_NOT_FOUND',
+    BRANCH_NOT_FOUND: 'SHIPPING_BRANCH_NOT_FOUND',
+    ADDR_TYPE_INVALID: 'SHIPPING_ADDR_TYPE_INVALID',
+    STATE_CODE_INVALID: 'SHIPPING_STATE_CODE_INVALID',
+    PIN_INVALID: 'SHIPPING_PIN_INVALID',
+    GSTIN_REQUIRED: 'SHIPPING_GSTIN_REQUIRED',
+    GSTIN_INVALID: 'SHIPPING_GSTIN_INVALID',
+};
+//# sourceMappingURL=ledger-shipping-address-error-codes.js.map

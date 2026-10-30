@@ -1,0 +1,30 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
+import { VoucherRegisterService } from '../vouchers/voucher-register.service';
+import type { IssuedChequeKeysDto, PresentedChequeDto, ReplaceChequeDto, ReverseChequeDto, VoidChequeDto } from './dto/issued-cheques.dto';
+import type { IssuedChequeHistoryPayload, IssuedChequePayload, ReplacedChequePayload } from './types/issued-cheques-api.types';
+export declare const ISSUED_CHEQUES_MENU_ID = 52;
+export declare class IssuedChequesService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly recompute;
+    private readonly register;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, recompute: BillBalanceRecomputeService, register: VoucherRegisterService);
+    private caller;
+    private rights;
+    private requireRight;
+    get(keys: IssuedChequeKeysDto): Promise<IssuedChequePayload>;
+    history(keys: IssuedChequeKeysDto): Promise<IssuedChequeHistoryPayload>;
+    presented(dto: PresentedChequeDto): Promise<IssuedChequePayload>;
+    returned(dto: ReverseChequeDto): Promise<IssuedChequePayload>;
+    stop(dto: ReverseChequeDto): Promise<IssuedChequePayload>;
+    void(dto: VoidChequeDto): Promise<IssuedChequePayload>;
+    private unwindRoute;
+    private unwind;
+    replace(dto: ReplaceChequeDto): Promise<ReplacedChequePayload>;
+    private lock;
+    private onAccountShare;
+    private assertHeld;
+    private load;
+}

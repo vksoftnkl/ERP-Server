@@ -1,0 +1,91 @@
+/// Error mapping.
+///
+/// Provider error codes are the other thing that changes when the provider
+/// does, and the one place where guessing is expensive. NIC's 2150 means
+/// "duplicate IRN" and carries the EXISTING IRN in the error payload — the
+/// correct response is to store that IRN and carry on, not to show a red
+/// dialog to a person holding a printed bill.
+///
+/// gemShouldReauth is what turns an expired token into a silent retry.
+/// gemIsRetryable is what keeps a validation error from being retried three
+/// times before failing anyway.
+model GstProviderErrorMap {
+  gemId                 String    @id(map: "pk_gst_provider_error_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gem_id")
+  gemGpvId              String    @db.Uuid                             @map("gem_gpv_id")
+
+  /// NULL = applies to every service of this provider.
+  gemService            String?   @db.VarChar(20)                      @map("gem_service")
+
+  /// The provider's own code: '2150', 'GSP022', '429'.
+  gemTheirCode          String    @db.VarChar(50)                      @map("gem_their_code")
+
+  /// Our vocabulary — DUPLICATE_IRN, TOKEN_EXPIRED, CREDIT_EXHAUSTED,
+  /// ENV_MISMATCH, … The application branches on THESE, never on a
+  /// provider's number.
+  gemOurCode            String    @db.VarChar(30)                      @map("gem_our_code")
+
+  /// Shown to the counter operator. Deliberately not the provider's text,
+  /// which is written for a developer.
+  gemMessage            String?   @db.VarChar(500)                     @map("gem_message")
+
+  /// ERROR | SUCCESS | WARNING — what this code MEANS to us, which is not
+  /// always "a failure". NIC's 2150 refuses a duplicate and hands back the
+  /// IRN it issued the first time: treated as an error it strands a printed
+  /// bill at the counter, treated as SUCCESS it completes the document with
+  /// the IRN that already exists.
+  gemTreatAs            String    @default("ERROR") @db.VarChar(10)    @map("gem_treat_as")
+
+  /// Where that already-issued value hides in the ERROR payload, and which
+  /// canonical field it becomes. Without these, gemTreatAs = 'SUCCESS' would
+  /// complete a document with no IRN at all — which ck_gem_extract_pair
+  /// refuses outright.
+  gemExtractPath        String?                                        @map("gem_extract_path")
+  gemCanonicalField     String?   @db.VarChar(60)                      @map("gem_canonical_field")
+
+  gemIsRetryable        Boolean   @default(false)                      @map("gem_is_retryable")
+  gemRetryAfterSeconds  Int?                                           @map("gem_retry_after_seconds")
+
+  /// Open a fresh session and replay once. Distinct from retryable: the same
+  /// request with the same dead token will fail forever.
+  gemShouldReauth       Boolean   @default(false)                      @map("gem_should_reauth")
+
+  /// NONE | REAUTH | BACKOFF | FETCH_BY_DOC | FAILOVER | MANUAL — what to do
+  /// next, so the handler branches on our word and not on a provider's
+  /// number. FETCH_BY_DOC is the safe recovery after an ambiguous timeout on
+  /// a generate: ask what exists before making more.
+  gemRecoveryAction     String    @default("NONE") @db.VarChar(20)     @map("gem_recovery_action")
+
+  /// INFO | WARN | ERROR
+  gemSeverity           String    @default("ERROR") @db.VarChar(10)    @map("gem_severity")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gemIsDeleted          Boolean   @default(false)                      @map("gem_is_deleted")
+  gemSyncDate           DateTime? @db.Timestamptz(6)                   @map("gem_sync_date")
+  gemCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("gem_created_on")
+  gemCreatedBy          String    @db.VarChar(50)                      @map("gem_created_by")
+  gemModifiedOn         DateTime? @db.Timestamptz(6)                   @map("gem_modified_on")
+  gemModifiedBy         String?   @db.VarChar(50)                      @map("gem_modified_by")
+
+  // Relations
+  provider              GstProvider @relation("GstProviderErrorMaps", fields: [gemGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gem_provider")
+
+  @@index([gemGpvId], map: "ix_gem_provider")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gem_provider_code
+  //       ON public.gst_provider_error_map (gem_gpv_id, gem_service, gem_their_code)
+  //       NULLS NOT DISTINCT
+  //       WHERE gem_is_deleted = false;
+  //
+  // NULLS NOT DISTINCT: without it, two rows for the same code with a NULL
+  // service (the "all services" case) would both be accepted and the lookup
+  // would pick one at random.
+  //
+  // CHECK constraints (DB-only): ck_gem_service, ck_gem_our_code,
+  //   ck_gem_severity, ck_gem_treat_as, ck_gem_recovery_action,
+  //   ck_gem_extract_pair, ck_gem_extract_path, ck_gem_retry_after
+
+  @@map("gst_provider_error_map")
+  @@schema("public")
+}

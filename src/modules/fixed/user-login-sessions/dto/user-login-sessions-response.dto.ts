@@ -1,24 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-
-export class UserLoginSessionsErrorFieldDto {
-  @ApiProperty({ example: 'ulsId' })
-  field!: string;
-
-  @ApiProperty({ example: 'No active session found with id 0194df8e-5dc0-79d8-8539-d47a7b587f84' })
-  message!: string;
-}
-
-export class UserLoginSessionsErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: UserLoginSessionsErrorFieldDto, isArray: true })
-  errors!: UserLoginSessionsErrorFieldDto[];
-}
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
+} from 'src/common/utils/module-response.dto';
+export { FixedErrorFieldDto as UserLoginSessionsErrorFieldDto };
+export { FixedErrorResponseDto as UserLoginSessionsErrorResponseDto };
+export { FixedListMetaDto as UserLoginSessionsListMetaDto };
 
 export class UserLoginSessionsPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -94,20 +82,6 @@ export class UserLoginSessionsPayloadDto {
   ulsModifiedBy!: string | null;
 }
 
-export class UserLoginSessionsListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class UserLoginSessionsDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ulsId!: string;
@@ -137,11 +111,8 @@ export class UserLoginSessionsSuccessListDto {
   @ApiProperty({ type: UserLoginSessionsPayloadDto, isArray: true })
   data!: UserLoginSessionsPayloadDto[];
 
-  @ApiProperty({ type: UserLoginSessionsListMetaDto })
-  meta!: UserLoginSessionsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 }
 
 export class UserLoginSessionsSuccessDeleteDto {

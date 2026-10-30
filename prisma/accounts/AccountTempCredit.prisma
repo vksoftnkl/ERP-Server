@@ -1,0 +1,130 @@
+/// TEMP CREDIT — a small loan at the counter to somebody who is NOT a credit
+/// party.
+///
+/// A walk-in takes goods and pays part now, the rest "in a few days". The bill
+/// is raised on the party the sales screen chose — the walk-in ledger, usually
+/// — and the unpaid part is a TEMP_CR tender (acc_tender_types id 8). Like
+/// CREDIT, that tender writes NO leg and leaves the bill's AccBillBalance row
+/// OPEN for the amount.
+///
+/// So the OUTSTANDING is already where every receipt looks. What the ledger
+/// cannot tell you is WHO: the walk-in ledger has a thousand bills against it.
+/// THIS TABLE IS THE WHO — name, mobile, place, promise — one row per TEMP_CR
+/// tender, riding on the bill's balance row.
+///
+/// LIST-partitioned by atcAccYear, which fk_atc_bill also uses as the BILL's
+/// year: a temp credit belongs to the year of the bill that created it, so the
+/// two cannot diverge.
+model AccTempCredit {
+  atcId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("atc_id")
+  atcCompanyId        String    @db.Uuid                             @map("atc_company_id")
+  atcBranchId         String    @db.Uuid                             @map("atc_branch_id")
+  atcTenantId         String?   @db.Uuid                             @map("atc_tenant_id")
+  atcAccYear          String    @db.Char(9)                          @map("atc_acc_year")
+
+  // ── The bill, and the party it was raised on ─────────────────────────
+  /// The ledger the sales screen chose — the walk-in one, usually, which is
+  /// exactly why this table has to exist.
+  atcPartyId          String    @db.Uuid                             @map("atc_party_id")
+  atcSrcDocType       String    @default("SALE_BILL") @db.VarChar(30) @map("atc_src_doc_type")
+  atcSrcDocId         String    @db.Uuid                             @map("atc_src_doc_id")
+  atcBillRefno        String?   @db.VarChar(100)                     @map("atc_bill_refno")
+  atcBillDate         DateTime  @db.Date                             @map("atc_bill_date")
+  atcBillAmount       Decimal   @default(0) @db.Decimal(15, 2)       @map("atc_bill_amount")
+  /// The bill's AccBillBalance row: where the outstanding actually lives.
+  atcAblId            String    @db.Uuid                             @map("atc_abl_id")
+  atcAblAccYear       String    @db.Char(9)                          @map("atc_abl_acc_year")
+  /// The TEMP_CR AccTenderDetail row (tender type 8).
+  atcTenderId         String?   @db.Uuid                             @map("atc_tender_id")
+  atcTenderAccYear    String?   @db.Char(9)                          @map("atc_tender_acc_year")
+
+  // ── The borrower, typed at the counter (from BILL-TO by default) ─────
+  atcName             String    @db.VarChar(200)                     @map("atc_name")
+  /// How the counter finds them again (ix_atc_mobile). NOT NULL and
+  /// shape-checked: a loan to somebody you cannot ring is not a loan.
+  atcMobile           String    @db.VarChar(20)                      @map("atc_mobile")
+  atcPlace            String?   @db.VarChar(100)                     @map("atc_place")
+  atcAddr             String?   @db.VarChar(250)                     @map("atc_addr")
+  /// Any id shown at the counter. Optional.
+  atcIdRef            String?   @db.VarChar(50)                      @map("atc_id_ref")
+
+  // ── The promise ──────────────────────────────────────────────────────
+  atcDays             Int       @default(0)                          @map("atc_days")
+  atcDueDate          DateTime  @db.Date                             @map("atc_due_date")
+  /// What was lent. Set once, when the tender is taken, and guarded.
+  atcCreditAmount     Decimal   @db.Decimal(15, 2)                   @map("atc_credit_amount")
+  /// A MAINTAINED copy of AccBillBalance.ablPendingAmount — itself a GENERATED
+  /// column — refreshed by BillBalanceRecomputeService whenever the balance row
+  /// moves: a receipt allocation, a write-off, a credit-note set-off. Never
+  /// written by hand.
+  ///
+  /// It carries no non-negativity guard: a receipt raised on another device may
+  /// move the balance before this row syncs, so an over-draw is RECORDED and
+  /// found by ix_atc_overdrawn rather than refused.
+  atcBalanceAmount    Decimal   @db.Decimal(15, 2)                   @map("atc_balance_amount")
+  /// OPEN | PARTIAL | SETTLED | WRITTEN_OFF | CANCELLED. A cancelled bill sets
+  /// CANCELLED and KEEPS the row — a reversal, never a delete.
+  atcStatus           String    @default("OPEN") @db.VarChar(20)     @map("atc_status")
+  atcSettledOn        DateTime? @db.Date                             @map("atc_settled_on")
+  atcLastReceiptId    String?   @db.Uuid                             @map("atc_last_receipt_id")
+  /// Re-promised on a follow-up call.
+  atcPromiseDate      DateTime? @db.Date                             @map("atc_promise_date")
+  atcFollowupOn       DateTime? @db.Timestamptz(6)                   @map("atc_followup_on")
+  atcFollowupBy       String?   @db.Uuid                             @map("atc_followup_by")
+  atcReminderSentOn   DateTime? @db.Timestamptz(6)                   @map("atc_reminder_sent_on")
+  atcRemarks          String?   @db.VarChar(500)                     @map("atc_remarks")
+
+  // ── Who / where ──────────────────────────────────────────────────────
+  atcUserId           String?   @db.Uuid                             @map("atc_user_id")
+  atcCounterId        String?   @db.Uuid                             @map("atc_counter_id")
+  atcSessionId        String?   @db.Uuid                             @map("atc_session_id")
+
+  atcIsDeleted        Boolean   @default(false)                      @map("atc_is_deleted")
+  atcSyncDate         DateTime? @db.Timestamptz(6)                   @map("atc_sync_date")
+  atcCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("atc_created_on")
+  atcCreatedBy        String?   @db.VarChar(50)                      @map("atc_created_by")
+  atcModifiedOn       DateTime? @db.Timestamptz(6)                   @map("atc_modified_on")
+  atcModifiedBy       String?   @db.VarChar(50)                      @map("atc_modified_by")
+
+  // Relations
+  party               AccLedgerMaster  @relation("TempCreditParty",   fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
+  bill                SaleBill         @relation("TempCreditBill",    fields: [atcSrcDocId, atcAccYear],     references: [sbId, sbAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_bill")
+  billBalance         AccBillBalance   @relation("TempCreditBalance", fields: [atcAblId, atcAblAccYear],     references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_abl")
+  tender              AccTenderDetail? @relation("TempCreditTender",  fields: [atcTenderId, atcTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_tender")
+
+  @@id([atcId, atcAccYear], map: "pk_acc_temp_credit")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- the follow-up worklist: who owes, and by when
+  //   CREATE INDEX ix_atc_open ON accounts.acc_temp_credit
+  //       (atc_company_id, atc_branch_id, atc_status, atc_due_date)
+  //       WHERE atc_is_deleted = false AND atc_status IN ('OPEN','PARTIAL');
+  //
+  //   -- THE COUNTER LOOKUP: a receipt finds the borrower by the number given
+  //   CREATE INDEX ix_atc_mobile ON accounts.acc_temp_credit (atc_company_id, atc_mobile)
+  //       WHERE atc_is_deleted = false;
+  //
+  //   -- reconciliation: a balance below zero, or above the credit taken
+  //   CREATE INDEX ix_atc_overdrawn ON accounts.acc_temp_credit (atc_company_id, atc_branch_id)
+  //       WHERE atc_is_deleted = false
+  //         AND (atc_balance_amount < 0 OR atc_balance_amount > atc_credit_amount + 0.01);
+  //
+  //   -- one row per TEMP_CR tender; atc_acc_year is in the key because a
+  //   -- unique index on a partitioned table must carry the partition key
+  //   CREATE UNIQUE INDEX ux_atc_tender ON accounts.acc_temp_credit
+  //       (atc_tender_id, atc_tender_acc_year, atc_acc_year)
+  //       WHERE atc_is_deleted = false AND atc_tender_id IS NOT NULL;
+  //
+  //   -- ix_atc_abl, and FK-covering ix_atc_ledger / ix_atc_src_bill. Those
+  //   -- two are NOT called ix_atc_party / ix_atc_bill: accounts.acc_tcs_register
+  //   -- also uses the atc_ prefix and already owns both names, and INDEX names
+  //   -- are scoped to the SCHEMA rather than the table — so IF NOT EXISTS
+  //   -- matches the TCS register's index and skips SILENTLY.
+  //
+  // CHECK constraints (DB-only): ck_atc_status, ck_atc_amounts, ck_atc_due,
+  //   ck_atc_mobile, ck_atc_tender_pair
+
+  @@map("acc_temp_credit")
+  @@schema("accounts")
+}

@@ -1,0 +1,152 @@
+/// What a promotion campaign actually GAVE AWAY — one row per (document,
+/// scheme, direction).
+///
+/// The PromotionScheme masters say what a campaign PROMISES; nothing until now
+/// recorded what it DELIVERED. Without that, two questions have no answer, and
+/// both are asked at the till in the moment, before the benefit is applied:
+///
+///     the CAP     "has this customer already used this campaign twice?"
+///                 -> ix_pru_cust_scheme
+///     the BUDGET  "what has this campaign given away in total, everywhere?"
+///                 -> ix_pru_scheme_total
+///
+/// LIST-partitioned by pruAccYear, the year of the EVENT, like LoyaltyLedger
+/// and LoyaltyCouponTxn — hence the composite PK. Partitions
+/// (sales.promotion_usage_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921180000_add_promotion_usage taught about this table.
+///
+/// Scheme identity is SNAPSHOTTED (pruSchemeCode / _Name / _Benefit) so a
+/// campaign report does not change meaning when the scheme is renamed or
+/// retyped next season.
+///
+/// A reversal is a row of the same shape with NEGATIVE amounts and
+/// pruIsReversal = true, naming the row it undoes — the AccBillAdjustment and
+/// LoyaltyLedger discipline, and what makes every running total a plain SUM
+/// with no CASE in it.
+model PromotionUsage {
+  pruId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("pru_id")
+  /// FY of the EVENT, and the partition key.
+  pruAccYear            String    @db.Char(9)                            @map("pru_acc_year")
+  pruCompId             String    @db.Uuid                               @map("pru_comp_id")
+  pruBranchId           String?   @db.Uuid                               @map("pru_branch_id")
+  pruPrmId              String    @db.Uuid                               @map("pru_prm_id")
+  /// NULL = walk-in / cash sale, which is also why the per-customer cap index
+  /// is partial on this column: an anonymous sale has no cap to check.
+  pruCustId             String?   @db.Uuid                               @map("pru_cust_id")
+
+  // ── Snapshot of the campaign as it stood ─────────────────────────────
+  // Widths match promotion_scheme.prm_code (30) and prm_name (150).
+  pruSchemeCode         String?   @db.VarChar(30)                        @map("pru_scheme_code")
+  pruSchemeName         String?   @db.VarChar(150)                       @map("pru_scheme_name")
+  /// Snapshot of promotion_scheme.prmBenefit: FREE_ITEM | DISC_PERC |
+  /// DISC_AMT | DISC_PER_ITEM | FIXED_PRICE. ck_pru_benefit must cover every
+  /// value that column can hold — prmBenefit itself carries no CHECK, so a
+  /// new value added there needs one added here in the same migration.
+  pruBenefit            String?   @db.VarChar(20)                        @map("pru_benefit")
+
+  // ── Source document ──────────────────────────────────────────────────
+  // The same four-part polymorphic identifier AccTenderDetail,
+  // AccBillBalance, TxnStatusLog and LoyaltyLedger use. No relation field for
+  // pruSrcDocId: the target table varies by module/type.
+  pruSrcModule          String    @default("SALES") @db.VarChar(20)      @map("pru_src_module")
+  pruSrcDocType         String    @default("SALE_BILL") @db.VarChar(30)  @map("pru_src_doc_type")
+  pruSrcDocId           String    @db.Uuid                               @map("pru_src_doc_id")
+  /// The SOURCE's FY, not this row's.
+  pruSrcAccYear         String?   @db.Char(9)                            @map("pru_src_acc_year")
+  /// Snapshot, so a campaign report prints the bill number without joining a
+  /// partitioned table across every year the campaign ran.
+  pruSrcDocRefno        String?   @db.VarChar(100)                       @map("pru_src_doc_refno")
+  pruDocDate            DateTime  @db.Date                               @map("pru_doc_date")
+
+  // ── What it gave ─────────────────────────────────────────────────────
+  /// Value the benefit came off.
+  pruBaseAmount         Decimal   @default(0) @db.Decimal(18, 2)         @map("pru_base_amount")
+  pruBaseQty            Decimal   @default(0) @db.Decimal(18, 3)         @map("pru_base_qty")
+  /// Rupees given away. POSITIVE on a normal row, NEGATIVE on a reversal
+  /// (ck_pru_sign).
+  pruBenefitAmt         Decimal   @default(0) @db.Decimal(18, 2)         @map("pru_benefit_amt")
+  /// Units given away, same sign rule.
+  pruFreeQty            Decimal   @default(0) @db.Decimal(18, 3)         @map("pru_free_qty")
+  /// Lines the scheme touched.
+  pruLineCount          Int       @default(0)                            @map("pru_line_count")
+
+  /// The coupon presented, when the campaign was coupon-gated.
+  pruCouponId           String?   @db.Uuid                               @map("pru_coupon_id")
+
+  // ── Reversal ─────────────────────────────────────────────────────────
+  // Carries a real FK because this table has the year to complete the
+  // composite key with.
+  pruIsReversal         Boolean   @default(false)                        @map("pru_is_reversal")
+  pruReversalOfId       String?   @db.Uuid                               @map("pru_reversal_of_id")
+  pruReversalOfAccYear  String?   @db.Char(9)                            @map("pru_reversal_of_acc_year")
+  pruReversalReason     String?   @db.VarChar(250)                       @map("pru_reversal_reason")
+
+  pruUserId             String?   @db.Uuid                               @map("pru_user_id")
+  pruDeviceId           String?   @db.Uuid                               @map("pru_device_id")
+  pruRemarks            String?                                          @map("pru_remarks")
+
+  pruIsActive           Boolean   @default(true)                         @map("pru_is_active")
+  pruIsDeleted          Boolean   @default(false)                        @map("pru_is_deleted")
+  pruSyncDate           DateTime? @db.Timestamptz(6)                     @map("pru_sync_date")
+  pruCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)     @map("pru_created_on")
+  pruCreatedBy          String?   @db.VarChar(50)                        @map("pru_created_by")
+  pruModifiedOn         DateTime? @db.Timestamptz(6)                     @map("pru_modified_on")
+  pruModifiedBy         String?   @db.VarChar(50)                        @map("pru_modified_by")
+
+  // Relations
+  company               Company         @relation("PromotionUsageCompany",  fields: [pruCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_company")
+  branch                BranchMaster?   @relation("PromotionUsageBranch",   fields: [pruBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_branch")
+  /// Restrict, not Cascade: a campaign that has already given something away
+  /// must not be deletable. Close it instead.
+  scheme                PromotionScheme @relation("PromotionUsageScheme",   fields: [pruPrmId],    references: [prmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_scheme")
+  customer              Customer?       @relation("PromotionUsageCustomer", fields: [pruCustId],   references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_cust")
+  coupon                LoyaltyCoupon?  @relation("PromotionUsageCoupon",   fields: [pruCouponId], references: [lcpId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_coupon")
+  device                DeviceMaster?   @relation("PromotionUsageDevice",   fields: [pruDeviceId], references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_device")
+  user                  UserMaster?     @relation("PromotionUsageUser",     fields: [pruUserId],   references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_user")
+
+  reversalOf            PromotionUsage?  @relation("PromotionUsageReversal", fields: [pruReversalOfId, pruReversalOfAccYear], references: [pruId, pruAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_reversal")
+  reversedBy            PromotionUsage[] @relation("PromotionUsageReversal")
+
+  @@id([pruId, pruAccYear], map: "pk_promotion_usage")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // INCLUDE, so declaring them here would produce phantom drift on every
+  // migrate dev:
+  //
+  //   -- one usage row per document per scheme per DIRECTION. pru_is_reversal
+  //   -- is a key column, so a bill may carry the original and its reversal
+  //   -- and no more: two originals for one scheme on one bill collide, and a
+  //   -- replayed offline push therefore cannot double-count a campaign's
+  //   -- spend. All four key columns are NOT NULL.
+  //   CREATE UNIQUE INDEX ux_pru_doc_scheme ON sales.promotion_usage
+  //       (pru_src_doc_id, pru_prm_id, pru_is_reversal, pru_acc_year)
+  //       WHERE pru_is_deleted = false;
+  //
+  //   -- THE CAP CHECK, asked at the till before the benefit is applied
+  //   CREATE INDEX ix_pru_cust_scheme ON sales.promotion_usage
+  //       (pru_prm_id, pru_cust_id, pru_doc_date)
+  //       INCLUDE (pru_benefit_amt, pru_free_qty, pru_is_reversal)
+  //       WHERE pru_is_deleted = false AND pru_cust_id IS NOT NULL;
+  //
+  //   -- THE BUDGET CHECK and the campaign report
+  //   CREATE INDEX ix_pru_scheme_total ON sales.promotion_usage
+  //       (pru_prm_id, pru_doc_date)
+  //       INCLUDE (pru_branch_id, pru_benefit_amt, pru_free_qty, pru_is_reversal)
+  //       WHERE pru_is_deleted = false;
+  //
+  //   -- branch performance; reconciliation back to the document
+  //   CREATE INDEX ix_pru_branch  ON sales.promotion_usage (pru_branch_id, pru_doc_date) …
+  //   CREATE INDEX ix_pru_src_doc ON sales.promotion_usage (pru_src_doc_id, pru_src_acc_year) …
+  //
+  //   -- FK-covering: ix_pru_company, ix_pru_scheme, ix_pru_cust,
+  //   -- ix_pru_coupon, ix_pru_device, ix_pru_user, ix_pru_reversal
+  //
+  // CHECK constraints (DB-only): ck_pru_acc_year, ck_pru_src_acc_year,
+  //   ck_pru_src_module, ck_pru_src_doc_type, ck_pru_benefit,
+  //   ck_pru_gave_something, ck_pru_sign, ck_pru_reversal_pair,
+  //   ck_pru_line_count, ck_pru_base
+
+  @@map("promotion_usage")
+  @@schema("sales")
+}

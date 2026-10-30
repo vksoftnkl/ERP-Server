@@ -1,29 +1,21 @@
-export interface CityErrorDetail {
-  field: string;
-  message: string;
-}
+import type { SalesErrorDetail, SalesErrorResponse } from 'src/common/types/module-api.types';
+import type { CityErrorCode } from './city-error-codes';
 
-export interface CityErrorResponse {
-  success: false;
-  message: string;
-  errors: CityErrorDetail[];
+/** Notes 119: every refusal names its code — see city-error-codes.ts. */
+export interface CityErrorDetail extends SalesErrorDetail {
+  code: CityErrorCode;
 }
-
-export interface CitySuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type CityErrorResponse = SalesErrorResponse<CityErrorDetail>;
+export type { SalesSuccessResponse as CitySuccessResponse } from 'src/common/types/module-api.types';
 export interface CityPayload {
   ctmId: string;
   ctmName: string;
   ctmAlias: string | null;
   ctmShort: string | null;
   ctmStateId: string;
+  ctmStateName?: string | null;
   ctmOrder: number;
+  ctmDescription: string | null;
   ctmIsActive: boolean;
   ctmIsDeleted: boolean;
   ctmSyncDate: string | null;
@@ -33,11 +25,9 @@ export interface CityPayload {
   ctmModifiedBy: string | null;
 }
 
-export type CityListItem = CityPayload | Record<string, unknown>;
-
-export interface CityListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+// Result of createCityMaster: the created city master plus the linked account group id
+// (equal to ctmId, surfaced explicitly because the two rows are created together).
+export interface CityMasterCreateResult {
+  cityMaster: CityPayload;
+  accGroupId: string;
 }

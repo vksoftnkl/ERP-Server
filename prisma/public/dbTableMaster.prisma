@@ -1,0 +1,65 @@
+/// public.db_table_master — the table registry: what every table in the
+/// database IS (migration 20261023140000_db_table_master). Modelled on
+/// fixed.menu_master: int id, self-parent, name, active flag, dates.
+///
+/// One row per ordinary table and per partitioned PARENT, never a partition.
+/// Rows come from prisma/seed/Db_Table_Master.sql, ids written out.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   dtmKind       MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING |
+///                 METADATA | SYSTEM
+///   dtmWriteMode  EDITABLE | APPEND_ONLY | DERIVED
+/// plus ck_dtm_retention (> 0) and ck_dtm_parent (not itself).
+///
+/// DB-only, invisible to Prisma: the views public.v_db_table_master (the
+/// registry plus partitioning, row estimate and size from pg_catalog) and
+/// public.v_db_table_master_drift (UNREGISTERED / MISSING / PARTITION /
+/// SYNC_COLUMN), and
+/// the partial sync index ix_sync_pending_db_table_master (where the sync
+/// functions exist).
+model DbTableMaster {
+  dtmId            Int       @id(map: "pk_db_table_master") @default(autoincrement()) @map("dtm_id")
+  dtmSchema        String    @db.VarChar(63) @map("dtm_schema")
+  /// The partitioned PARENT, never a partition.
+  dtmTable         String    @db.VarChar(63) @map("dtm_table")
+  /// An item / line table points at its header, a child master at its master.
+  /// NULL for a table shared by several headers (txn_charge_detail,
+  /// acc_tender_detail, txn_transport_detail, txn_status_log).
+  dtmParentId      Int?      @map("dtm_parent_id")
+  parent           DbTableMaster?  @relation("DbTableHierarchy", fields: [dtmParentId], references: [dtmId], onDelete: SetNull, onUpdate: Cascade, map: "fk_dtm_parent")
+  children         DbTableMaster[] @relation("DbTableHierarchy")
+  dtmName          String    @db.VarChar(200) @map("dtm_name")
+  /// MASTER | TRANSACTION | LEDGER | BALANCE | LOG | SETTING | METADATA | SYSTEM
+  dtmKind          String    @db.VarChar(20) @map("dtm_kind")
+  /// CORE HR UI AUDIT SYSTEM ACCOUNTS TILL SALES LOYALTY PURCHASE INVENTORY STOCK GST PRINT TRANSPORT
+  dtmModule        String?   @db.VarChar(30) @map("dtm_module")
+  /// Column prefix ('sbi_'). Not unique: stl_, atc_, sdr_ and tax_ are each used twice.
+  dtmColPrefix     String?   @db.VarChar(30) @map("dtm_col_prefix")
+  /// The screen that maintains it.
+  dtmMenuId        Int?      @map("dtm_menu_id")
+  menu             Menu?     @relation(fields: [dtmMenuId], references: [menuId], onDelete: SetNull, onUpdate: Cascade, map: "fk_dtm_menu")
+  /// EDITABLE | APPEND_ONLY | DERIVED
+  dtmWriteMode     String    @default("EDITABLE") @db.VarChar(12) @map("dtm_write_mode")
+  /// NULL = kept forever.
+  dtmRetentionDays Int?      @map("dtm_retention_days")
+  dtmDescription   String?   @db.Text @map("dtm_description")
+  /// false = retired, table kept.
+  dtmIsActive      Boolean   @default(true) @map("dtm_is_active")
+  dtmCreatedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("dtm_created_on")
+  dtmModifiedOn    DateTime? @updatedAt @db.Timestamptz(6) @map("dtm_modified_on")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  dtmSyncDate      DateTime? @db.Timestamptz(6) @map("dtm_sync_date")
+  /// The table's sync-date column: the timestamp the offline -> cloud push
+  /// stamps, NULL in it = changed since the last push. Names are not uniform
+  /// ('item_sync_date', 'saa_synced_on', 'price_lvl_SyncDate'), hence the
+  /// registry. NULL = the table has none (acc_cheque_book, _prisma_migrations,
+  /// _erp_seed_history). From the seed like every other column; the drift view
+  /// reports SYNC_COLUMN where the catalogue disagrees (migration 20261024100000).
+  dtmSyncCol       String?   @db.VarChar(63) @map("dtm_sync_col")
+
+  @@unique([dtmSchema, dtmTable], map: "uq_dtm_table")
+  @@index([dtmParentId], map: "ix_dtm_parent")
+  @@index([dtmMenuId], map: "ix_dtm_menu")
+  @@map("db_table_master")
+  @@schema("public")
+}

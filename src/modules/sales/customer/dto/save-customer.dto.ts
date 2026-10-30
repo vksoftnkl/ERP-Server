@@ -1,687 +1,421 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { IsEmail, IsNotEmpty, Max, ValidateIf } from 'class-validator';
 import {
-  IsArray,
-  IsBoolean,
-  IsDateString,
-  IsInt,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-  MaxLength,
-  Min,
-  ValidateIf,
-  isUUID,
-} from 'class-validator';
+  NullableDateString,
+  NullableInteger,
+  NullableNumber,
+  NullableStringStrict,
+  NullableUuid,
+  OptionalBoolean,
+  OptionalIntegerArray,
+  OptionalUuid,
+  RequiredInteger,
+  RequiredUuid,
+  TrimmedString,
+  UpperString,
+} from 'src/common/dto/dtoDecorators';
+import {
+  NullableUpperPattern,
+  PARTY_GSTIN_PATTERN,
+  PARTY_GSTIN_PATTERNS,
+  PARTY_PAN_PATTERN,
+  gstinKindOf,
+  type PartyGstinKind,
+} from 'src/common/party/party-gstin';
 
-const toNullableString = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const toNullableUuid = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : value;
-};
-
-const toNullableInteger = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : value;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : value;
-  }
-
-  return value;
-};
-
-const toInteger = (value: unknown): unknown => {
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : value;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return value;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : value;
-  }
-
-  return value;
-};
-
-const toNullableNumber = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : value;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-
-  return value;
-};
-
-const toOptionalIntegerArray = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return [];
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => Number(entry));
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-    if (!normalized) {
-      return [];
-    }
-
-    const withoutBrackets =
-      normalized.startsWith('[') && normalized.endsWith(']')
-        ? normalized.slice(1, -1).trim()
-        : normalized;
-    const splitValues = withoutBrackets.includes(',')
-      ? withoutBrackets.split(',')
-      : withoutBrackets
-        ? [withoutBrackets]
-        : [];
-
-    return splitValues.map((entry) => Number(entry.trim()));
-  }
-
-  return value;
-};
-
-const toUpperTrimmed = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  return value.trim().toUpperCase();
-};
+// The GSTIN / PAN shapes live in src/common/party/party-gstin.ts (shared with the supplier).
+export const CUSTOMER_GSTIN_PATTERNS = PARTY_GSTIN_PATTERNS;
+export type CustomerGstinKind = PartyGstinKind;
+export const CUSTOMER_GSTIN_PATTERN = PARTY_GSTIN_PATTERN;
+export const CUSTOMER_PAN_PATTERN = PARTY_PAN_PATTERN;
+export { gstinKindOf };
 
 export class SaveCustomerDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing customer',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cusId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Create only: make this existing PARTY ledger a customer as well (e.g. a supplier that is ' +
+      'also sold to). No ledger is created; the customer takes the ledger id as its cusId, and ' +
+      'the ledger keeps its group (cusAreaId is still required, for beats and area filters). ' +
+      'Name, state, address, contact, GSTIN and PAN left out default from the ledger. 409 when ' +
+      'the ledger is already a customer.',
+  })
+  @OptionalUuid()
+  cusLinkLedId?: string;
+
   @ApiPropertyOptional({ maxLength: 5, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(5)
+  @NullableStringStrict(5)
   cusTitle?: string | null;
 
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(50)
+  @NullableStringStrict(50)
   cusShort?: string | null;
 
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(50)
+  @NullableStringStrict(50)
   cusCode?: string | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableStringStrict(200)
   cusName?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr1?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr2?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr3?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusCity?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusDistrict?: string | null;
 
-  @ApiProperty({ maxLength: 100 })
-  @IsString()
+  @ApiProperty({ maxLength: 100, description: 'May be left out when cusLinkLedId is set' })
+  @ValidateIf((o: SaveCustomerDto) => !o.cusLinkLedId || Boolean(o.cusStateName))
+  @TrimmedString(100)
   @IsNotEmpty()
-  @MaxLength(100)
   cusStateName!: string;
 
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableStringStrict(60)
   cusCountry?: string | null;
 
-  @ApiProperty({ minLength: 2, maxLength: 2 })
-  @Transform(({ value }) => toUpperTrimmed(value))
-  @IsString()
-  @Length(2, 2)
+  @ApiProperty({
+    minLength: 2,
+    maxLength: 2,
+    description: 'May be left out when cusLinkLedId is set',
+  })
+  @ValidateIf((o: SaveCustomerDto) => !o.cusLinkLedId || Boolean(o.cusStateCode))
+  @UpperString(2)
   cusStateCode!: string;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableStringStrict(200)
   cusLandmark?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @ApiPropertyOptional({ maxLength: 6, nullable: true })
+  @NullableStringStrict(6)
   cusPin?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableStringStrict(20)
   cusTel?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableStringStrict(20)
   cusPhone1?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableStringStrict(20)
   cusPhone2?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableStringStrict(20)
   cusWhatsappNo?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
+  @ApiPropertyOptional({ maxLength: 120, nullable: true, format: 'email' })
+  @NullableStringStrict(120)
+  @IsEmail()
   cusEmail?: string | null;
 
   @ApiPropertyOptional({ maxLength: 12, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(12)
+  @NullableStringStrict(12)
   cusAadharNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
+  @NullableStringStrict(150)
   cusContactPerson?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
+  @NullableInteger(0)
   cusDistanceKm?: number | null;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusCreditAllowed?: boolean;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  cusCreditBillLimit?: number;
+  // F3: on these NOT NULL columns an explicit null means "cleared" and is stored as the
+  // column default, 0 (the Qt blankAs(0) and React already send 0).
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableInteger(0)
+  cusCreditBillLimit?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsNumber()
-  cusCreditAmtLimit?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableNumber(0)
+  cusCreditAmtLimit?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  cusCreditDays?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableInteger(0)
+  cusCreditDays?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsNumber()
-  cusDebitBalance?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableNumber()
+  cusDebitBalance?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsNumber()
-  cusDiscPerc?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableNumber(0)
+  @Max(100)
+  cusDiscPerc?: number | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  cusDebitGraceDays?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableInteger(0)
+  cusDebitGraceDays?: number | null;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusEnableSms?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusOverdueSms?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusOverdueBilling?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusAllowPromotion?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusAllowLoyalty?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusAllowDiscount?: boolean;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  cusSortOrder?: number;
+  @ApiPropertyOptional({
+    type: Number,
+    default: 0,
+    minimum: 0,
+    nullable: true,
+    description: 'null = 0',
+  })
+  @NullableInteger(0)
+  cusSortOrder?: number | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableStringStrict(200)
   cusRegionName?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr1?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr2?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr3?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusRegionCity?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusRegionDistrict?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableStringStrict(100)
   cusRegionStateName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableStringStrict(60)
   cusRegionCountry?: string | null;
 
   @ApiPropertyOptional({ nullable: true, format: 'date' })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDateString()
+  @NullableDateString()
   cusBirthDate?: string | null;
 
   @ApiPropertyOptional({ nullable: true, format: 'date' })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDateString()
+  @NullableDateString()
   cusMarriageDate?: string | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableStringStrict(200)
   cusTransportName?: string | null;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusFreightCharge?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusLoadingCharge?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusUnloadingCharge?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
+  @ApiPropertyOptional({
+    maxLength: 15,
+    nullable: true,
+    pattern: CUSTOMER_GSTIN_PATTERN.source,
+    description:
+      'Upper-cased. Any GSTN shape (normal, TDS deductor, UIN, OIDAR, NRTP); a normal GSTIN must start with cusStateCode.',
+  })
+  @NullableUpperPattern(15, 'isGstin', CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN')
   cusGstNo?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    pattern: CUSTOMER_PAN_PATTERN.source,
+    description: 'Upper-cased.',
+  })
+  @NullableUpperPattern(10, 'isPan', CUSTOMER_PAN_PATTERN, 'a 10-character PAN (AAAAA9999A)')
   cusPanNo?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(30)
+  @ApiPropertyOptional({
+    maxLength: 30,
+    nullable: true,
+    enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+    description:
+      'Party rules D2. Old spellings (Regular, unregistered, SEZ Unit …) are mapped to the code. Blank = UNREGISTERED when there is no GSTIN. REGULAR / COMPOSITION / SEZ need cusGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs cusStateCode 96.',
+  })
+  @NullableStringStrict(30)
   cusGstType?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
+  @ApiPropertyOptional({
+    maxLength: 15,
+    nullable: true,
+    pattern: CUSTOMER_GSTIN_PATTERN.source,
+    description: 'Upper-cased.',
+  })
+  @NullableUpperPattern(15, 'isGstin', CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN')
   cusEcommerceGstin?: string | null;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusTcsApplicable?: boolean;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusItcollExempted?: boolean;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(30)
+  @NullableStringStrict(30)
   cusItcollType?: string | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableStringStrict(200)
   cusGeoLocation?: string | null;
 
   @ApiPropertyOptional({
     type: [Number],
     description: 'Collection days as integer array (JSON array or comma-separated values)',
   })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalIntegerArray(value))
-  @IsArray()
-  @IsInt({ each: true })
+  @OptionalIntegerArray()
   cusCollectionDays?: number[];
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   cusDefaultSalesman?: string | null;
 
   @ApiProperty({ minimum: 0 })
-  @Transform(({ value }) => toInteger(value))
-  @IsInt()
-  @Min(0)
+  @RequiredInteger(0)
   cusPriceLevelId!: number;
 
-  @ApiPropertyOptional({ nullable: true, format: 'date' })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDateString()
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date',
+    deprecated: true,
+    description: 'Ignored (party rules D3): last billed is read from the posted bills. Accepted for one release.',
+  })
+  @NullableDateString()
   cusBilledDate?: string | null;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
+  @ApiPropertyOptional({ default: 0, deprecated: true, description: 'Ignored (party rules D3), as cusBilledDate.' })
+  @NullableInteger(0)
   cusBilledCount?: number;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableStringStrict(250)
   cusNotes?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   cusCompanyId?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   cusBranchId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   cusAreaId!: string;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   cusGroupId!: string;
 
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cusIsActive?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  // F6: accepted (so an old client that echoes them does not 400 on the whitelist) but
+  // IGNORED. The created/modified stamps and the audit row always name the logged-in user.
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, deprecated: true, description: 'Ignored' })
+  @NullableStringStrict(100)
   cusCreatedBy?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, deprecated: true, description: 'Ignored' })
+  @NullableStringStrict(100)
   cusModifiedBy?: string | null;
 }

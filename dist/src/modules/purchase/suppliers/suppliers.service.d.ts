@@ -1,0 +1,42 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
+import { SaveSupplierDto } from './dto/save-supplier.dto';
+import { SupplierPayload } from './types/supplier-api.types';
+import type { SupplierSavePayload } from './types/supplier-api.types';
+import { PartyBalanceService, type PartyDeleteCheck } from '../../../common/party/party-balance.service';
+import { PartySyncService } from '../../../common/party/party-sync.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare class SuppliersService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    private readonly accountLedgerMastersService;
+    private readonly partyBalanceService;
+    private readonly partySyncService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, accountLedgerMastersService: AccountLedgerMastersService, partyBalanceService: PartyBalanceService, partySyncService: PartySyncService);
+    save(rawDto: SaveSupplierDto): Promise<SupplierSavePayload>;
+    getById(supId: string): Promise<SupplierPayload>;
+    deleteCheck(supId: string): Promise<PartyDeleteCheck>;
+    private assertDeleteRight;
+    private loadLiveSupplier;
+    softDelete(supId: string): Promise<{
+        supId: string;
+        deleted: true;
+    }>;
+    private createSupplier;
+    private createSupplierOnLedger;
+    private loadLedgerToLink;
+    private updateSupplier;
+    private resolveRelatedNames;
+    private findCustomerRole;
+    private withLinkedLedgerDefaults;
+    private ensureSupplierGroupExists;
+    private ensureNameIsUnique;
+    private buildLinkedLedgerDto;
+    private applyOptionalFields;
+    private resolveGstType;
+    private ensureCompanyChangeAllowed;
+    private normalizeStateCode;
+    private toPayload;
+}

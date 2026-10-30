@@ -1,0 +1,44 @@
+/// ERROR MESSAGE — the plain words for an error code (notes 120, migration
+/// 20261015130000). Every refusal carries a `code` (notes 119); the exception
+/// filters attach the matching row to each error as `user { title, line, todo }`,
+/// and GET /error-messages hands the whole catalogue to the apps to cache.
+///
+/// Rows are loaded from prisma/seed/Error_Messages.json by the TS seed
+/// `error-messages` (the user approves the wording in the share files).
+///
+/// ermCode: the exact code, or a prefix row ending in * (HOLD_*) for every code
+/// of it that has no row of its own. ermVariant: '' = the plain row;
+/// field=<name> · <key>=<value> · <key>=* — the same code worded by an extra
+/// field of the error. Resolution: field= first, then <key>=<value>, then
+/// <key>=*, then the plain row; the exact code before any prefix row.
+model ErrorMessage {
+  ermId          String    @id(map: "pk_error_message") @default(dbgenerated("uuidv7()")) @db.Uuid @map("erm_id")
+  ermCode        String    @db.VarChar(60)                     @map("erm_code")
+  ermVariant     String    @default("") @db.VarChar(60)        @map("erm_variant")
+  ermLang        String    @default("en") @db.VarChar(10)      @map("erm_lang")
+  ermTitle       String    @db.VarChar(60)                     @map("erm_title")
+  ermLine        String    @db.VarChar(200)                    @map("erm_line")
+  ermTodo        String    @db.VarChar(200)                    @map("erm_todo")
+  ermIsActive    Boolean   @default(true)                      @map("erm_is_active")
+  ermCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)  @map("erm_created_on")
+  ermModifiedOn  DateTime? @db.Timestamptz(6)                  @map("erm_modified_on")
+  ermSyncDate    DateTime? @db.Timestamptz(6)                  @map("erm_sync_date")
+
+  @@unique([ermCode, ermVariant, ermLang], map: "uq_error_message")
+  // CHECKs: ck_erm_code, ck_erm_variant, ck_erm_lang, ck_erm_words.
+  @@map("error_message")
+  @@schema("fixed")
+}
+
+/// ERROR MESSAGE CATALOGUE — the one version of fixed.error_message (the seed
+/// file's), which the apps send back as `since` (notes 120). ck_emc_one_row.
+model ErrorMessageCatalogue {
+  emcId        Int       @id(map: "pk_error_message_catalogue") @default(1) @db.SmallInt @map("emc_id")
+  emcVersion   String    @db.VarChar(40)                     @map("emc_version")
+  emcRowCount  Int       @default(0)                         @map("emc_row_count")
+  emcLoadedOn  DateTime  @default(now()) @db.Timestamptz(6)  @map("emc_loaded_on")
+  emcSyncDate  DateTime? @db.Timestamptz(6)                  @map("emc_sync_date")
+
+  @@map("error_message_catalogue")
+  @@schema("fixed")
+}

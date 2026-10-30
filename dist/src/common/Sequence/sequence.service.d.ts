@@ -1,0 +1,56 @@
+import { PrismaService } from '../../database/prisma/prisma.service';
+import { CreateSequenceDto } from './dto/create-sequence.dto';
+import { ListSequenceQueryDto } from './dto/list-sequence-query.dto';
+import { SaveSequenceDto } from './dto/save-sequence.dto';
+import { UpdateSequenceDto } from './dto/update-sequence.dto';
+import { SequenceListResult, SequencePayload } from './types/sequence-api.types';
+export declare class SequenceService {
+    private readonly prisma;
+    constructor(prisma: PrismaService);
+    save(saveSequenceDto: SaveSequenceDto): Promise<SequencePayload>;
+    create(createSequenceDto: CreateSequenceDto): Promise<SequencePayload>;
+    findAll(queryDto?: ListSequenceQueryDto): Promise<SequenceListResult>;
+    list(queryDto?: ListSequenceQueryDto): Promise<SequenceListResult>;
+    findOne(id: string): Promise<SequencePayload>;
+    getById(id: string): Promise<SequencePayload>;
+    update(id: string, updateSequenceDto: UpdateSequenceDto): Promise<SequencePayload>;
+    softDelete(id: string, modifiedBy?: string | null): Promise<{
+        id: string;
+        deleted: true;
+    }>;
+    remove(id: string, modifiedBy?: string | null): Promise<{
+        id: string;
+        deleted: true;
+    }>;
+    private buildCreateScope;
+    private resolveUpdateScope;
+    private buildUpdateData;
+    private buildDuplicateScopeUpdateData;
+    private buildListWhere;
+    private assignOptionalCreateFields;
+    private assignOptionalUpdateFields;
+    private assignOptionalTextFields;
+    private ensureReferencesExist;
+    private ensureScopeIsUnique;
+    private findSequenceByScope;
+    private resolveLastNoScope;
+    private hasLastNoScopeChanged;
+    private acquireLastNoScopeLock;
+    private getNextLastNo;
+    private buildLastNoScopeKey;
+    private toPayload;
+    private normalizeUuid;
+    private normalizeOptionalNullableUuid;
+    private normalizeRequiredString;
+    private normalizeOptionalString;
+    private normalizeNullableString;
+    private normalizeRequiredInteger;
+    private normalizeOptionalInteger;
+    private parseInteger;
+    private normalizeRequiredBigInt;
+    private normalizeOptionalBigInt;
+    private throwBigIntRangeError;
+    private normalizeOptionalBoolean;
+    private isUuid;
+    private handleWriteError;
+}
