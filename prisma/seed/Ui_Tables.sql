@@ -1,4 +1,7 @@
--- Seed: fixed.ui_tables -- the registry of entry-screen item grids (50 rows).
+-- Seed: fixed.ui_tables -- the registry of entry-screen item grids (57 rows).
+--
+-- 56-59 / 62 / 65 / 66: the purchase screens and Supplier Dues (migration 20261029140000).
+-- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
 -- row here, and fixed.ui_table_columns hangs off it (fk_ui_tables). The client asks
@@ -67,6 +70,13 @@ VALUES
     ,(48, 'LOYALTY STATUS - EXPIRING'    , false, NULL     , true , false, 'system')
     ,(49, 'LOYALTY STATUS - SCHEMES'     , false, NULL     , true , false, 'system')
     ,(50, 'LOYALTY STATUS - GIFTS'       , false, NULL     , true , false, 'system')
+    ,(56, 'PURCHASE INVOICE - LINES'    , true , 'Desktop', true , false, 'system')
+    ,(57, 'PURCHASE ORDER - LINES'      , true , 'Desktop', true , false, 'system')
+    ,(58, 'GRN - LINES'                 , true , 'Desktop', true , false, 'system')
+    ,(59, 'PURCHASE RETURN - LINES'     , true , 'Desktop', true , false, 'system')
+    ,(62, 'PURCHASE INVOICE - CHARGES'  , true , 'Desktop', true , false, 'system')
+    ,(65, 'SUPPLIER DUES - CLAIMS'      , false, 'Desktop', true , false, 'system')
+    ,(66, 'SUPPLIER DUES - SHORTAGES'   , false, 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

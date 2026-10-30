@@ -21,6 +21,7 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
+  isPresentField,
   isExclusionConstraintError,
   isForeignKeyConstraintError,
   isUniqueConstraintError,
@@ -1687,16 +1688,16 @@ export class ItemsMasterService {
       data.itemAllowPurchase = saveItemDto.item_allow_purchase;
     }
     // MST-03 purchase fields
-    if (hasOwnProperty(saveItemDto, 'item_purchase_uom_id')) {
+    if (isPresentField(saveItemDto, 'item_purchase_uom_id')) {
       data.itemPurchaseUomId = saveItemDto.item_purchase_uom_id ?? null;
     }
-    if (hasOwnProperty(saveItemDto, 'item_min_shelf_life_pct')) {
+    if (isPresentField(saveItemDto, 'item_min_shelf_life_pct')) {
       data.itemMinShelfLifePct = saveItemDto.item_min_shelf_life_pct ?? null;
     }
-    if (hasOwnProperty(saveItemDto, 'item_itc_class')) {
+    if (isPresentField(saveItemDto, 'item_itc_class')) {
       data.itemItcClass = saveItemDto.item_itc_class ?? null;
     }
-    if (hasOwnProperty(saveItemDto, 'item_shortage_pct')) {
+    if (isPresentField(saveItemDto, 'item_shortage_pct')) {
       data.itemShortagePct = saveItemDto.item_shortage_pct ?? null;
     }
     if (hasOwnProperty(saveItemDto, 'item_allow_po')) {

@@ -233,19 +233,14 @@ describe('StaffAdvanceLedgerService', () => {
       expect(createdLedger()).not.toHaveProperty('ledAddr2');
     });
 
-    it('looks for a free name among live ledgers of the company or shared, and the per-company key', async () => {
+    it('looks for a free name among live ledgers of the company or shared (a deleted ledger holds no name)', async () => {
       await settle(employeeRow(), null, undefined);
 
       expect(tx.accLedgerMaster.findFirst).toHaveBeenCalledWith({
         where: {
-          OR: [
-            {
-              ledIsDeleted: false,
-              ledName: { equals: 'Ravi Kumar - Staff Advance', mode: 'insensitive' },
-              OR: [{ ledCompanyId: COMPANY_ID }, { ledCompanyId: null }],
-            },
-            { ledCompanyId: COMPANY_ID, ledName: 'Ravi Kumar - Staff Advance' },
-          ],
+          ledIsDeleted: false,
+          ledName: { equals: 'Ravi Kumar - Staff Advance', mode: 'insensitive' },
+          OR: [{ ledCompanyId: COMPANY_ID }, { ledCompanyId: null }],
         },
         select: { ledId: true },
       });

@@ -11,6 +11,8 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { BatchPrefixService } from './batch-prefix.service';
+import { SaveBatchPrefixDto } from './dto/save-batch-prefix.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { BATCH_PREFIX_ERROR } from './types/batch-prefix-error-codes';
 
 const PREFIX_ID = '019c6f6c-be87-7a11-8905-36092c46b001';
@@ -316,6 +318,18 @@ describe('BatchPrefixService', () => {
 
     it('leaves the sync date alone when the body does not carry it', async () => {
       await service.save({ id: PREFIX_ID, prefixUsed: 'KR' });
+
+      expect(prisma.batchPrefix.update.mock.calls[0][0].data).not.toHaveProperty('syncDate');
+    });
+
+    it('leaves the sync date alone when a piped body leaves it out', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        { id: PREFIX_ID, prefixUsed: 'KR' },
+        { type: 'body', metatype: SaveBatchPrefixDto },
+      )) as SaveBatchPrefixDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'syncDate')).toBe(true);
+
+      await service.save(dto);
 
       expect(prisma.batchPrefix.update.mock.calls[0][0].data).not.toHaveProperty('syncDate');
     });

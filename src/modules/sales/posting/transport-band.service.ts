@@ -17,7 +17,12 @@ export type TransportDocType =
   | 'DELIVERY_CHALLAN'
   | 'SALE_RETURN'
   | 'DC_RETURN'
-  | 'STOCK_TRANSFER';
+  | 'STOCK_TRANSFER'
+  // Purchase Invoice (menu 24): INWARD, FROM = the supplier, TO = our godown (ck_ttd_doc_type admits it)
+  | 'PURCHASE_BILL'
+  // GRN (menu 196, INWARD) and Purchase Return (menu 25, OUTWARD — goods back to the supplier)
+  | 'GRN'
+  | 'PURCHASE_RETURN';
 
 export interface TransportEnd {
   godownId?: string | null;

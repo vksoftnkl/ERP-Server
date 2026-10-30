@@ -73,7 +73,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'Owning branch. Omit or send null to make the tender company-wide.',
+        description: 'Owning branch. null = company-wide. On create an omitted key also means company-wide; on update an omitted key keeps the stored branch.',
     }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)

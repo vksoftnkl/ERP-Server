@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PurchaseLabelsController = exports.PurchaseGrnController = exports.PurchaseGrnService = exports.GrnCancelDto = exports.LabelsFromDocDto = exports.GrnRefDto = exports.SaveGrnDto = exports.GrnHeaderDto = exports.GrnLineDto = exports.GRN_MENU_ID = void 0;
+exports.PurchaseLabelsController = exports.PurchaseGrnController = exports.PurchaseGrnService = exports.GrnCancelDto = exports.LabelsFromDocDto = exports.GrnPostDto = exports.GrnRefDto = exports.SaveGrnDto = exports.GrnHeaderDto = exports.GrnLineDto = exports.GRN_MENU_ID = void 0;
 const common_1 = require("@nestjs/common");
 const purchase_order_1 = require("../order/purchase-order");
 const swagger_1 = require("@nestjs/swagger");
@@ -31,8 +31,15 @@ const purchase_calc_1 = require("../common/purchase-calc");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 const save_purchase_invoice_dto_1 = require("../invoice/dto/save-purchase-invoice.dto");
+const purchase_invoice_checks_1 = require("../invoice/purchase-invoice-checks");
+const transport_band_service_1 = require("../../sales/posting/transport-band.service");
+const purchase_grn_checks_1 = require("./purchase-grn-checks");
 exports.GRN_MENU_ID = 196;
 const DOC = 'GRN';
+const lineNoOf = (dto, field) => {
+    const m = /^lines\.(\d+)/.exec(field);
+    return m ? dto.lines[Number(m[1])]?.lineNo ?? null : null;
+};
 class GrnLineDto {
     lineNo;
     itemId;
@@ -208,6 +215,10 @@ class GrnHeaderDto {
     vehicleNo;
     driverName;
     ewbNo;
+    ewbDate;
+    transport;
+    overrideWarnings;
+    overrideReason;
     packagesSent;
     packagesReceived;
     remarks;
@@ -257,9 +268,9 @@ __decorate([
     __metadata("design:type", String)
 ], GrnHeaderDto.prototype, "docDate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'When the goods came in (date-time, ISO 8601 with offset, e.g. 2026-10-24T16:35:00+05:30). Default: now on the first save, then kept.' }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], GrnHeaderDto.prototype, "receivedAt", void 0);
 __decorate([
@@ -322,6 +333,32 @@ __decorate([
     (0, class_validator_1.MaxLength)(15),
     __metadata("design:type", String)
 ], GrnHeaderDto.prototype, "ewbNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], GrnHeaderDto.prototype, "ewbDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: save_purchase_invoice_dto_1.PurchaseTransportDto, nullable: true, description: 'The shared transport band (txn_transport_detail, INWARD: FROM the supplier, TO this godown) — LR no / date, transporter. Omit = keep the saved band; null = remove it.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => save_purchase_invoice_dto_1.PurchaseTransportDto),
+    __metadata("design:type", Object)
+], GrnHeaderDto.prototype, "transport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'With post: go past the strip entries that need a right (needsRight = OVERRIDE: PUR_SHELF_LIFE when purchase.shelf_life_mode = REFUSE). Needs the Override right on menu 196; every WARN gone past is logged (WARN_OVERRIDE).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], GrnHeaderDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Why — kept in the trail.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], GrnHeaderDto.prototype, "overrideReason", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -393,6 +430,24 @@ __decorate([
     (0, class_validator_1.MaxLength)(9),
     __metadata("design:type", String)
 ], GrnRefDto.prototype, "accYear", void 0);
+class GrnPostDto extends GrnRefDto {
+    overrideWarnings;
+    overrideReason;
+}
+exports.GrnPostDto = GrnPostDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Go past PUR_SHELF_LIFE (REFUSE mode) — Override right on menu 196; logged.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], GrnPostDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], GrnPostDto.prototype, "overrideReason", void 0);
 class LabelsFromDocDto {
     docType;
     docId;
@@ -431,12 +486,14 @@ let PurchaseGrnService = class PurchaseGrnService {
     vouchers;
     stockPosting;
     prices;
-    constructor(prisma, ctx, vouchers, stockPosting, prices) {
+    transportBand;
+    constructor(prisma, ctx, vouchers, stockPosting, prices, transportBand) {
         this.prisma = prisma;
         this.ctx = ctx;
         this.vouchers = vouchers;
         this.stockPosting = stockPosting;
         this.prices = prices;
+        this.transportBand = transportBand;
     }
     actor() {
         const u = this.ctx.getUserId();
@@ -445,87 +502,203 @@ let PurchaseGrnService = class PurchaseGrnService {
         return u;
     }
     rules() { return (0, purchase_doc_helpers_1.stockRules)('IN', DOC, 'GRN', 'PURCHASE', purchase_doc_helpers_1.TxnStatusDocType.GRN); }
+    async prepare(tx, dto) {
+        const h = dto.header;
+        const db = tx;
+        const sup = await (0, purchase_doc_helpers_1.supplierRow)(db, h.supplierId);
+        const units = await (0, purchase_doc_helpers_1.loadUnits)(db, dto.lines.map((l) => l.uomId));
+        const problems = [];
+        const warnings = [];
+        dto.lines.forEach((l, i) => {
+            const u = units.get(l.uomId);
+            if (!u || u.iuc_item_id !== l.itemId)
+                problems.push({ field: `lines.${i}.uomId`, code: purchase_errors_1.PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit not found for the item` });
+            if ((0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)).plus((0, purchase_doc_helpers_1.D)(l.freeQty)).isZero())
+                problems.push({ field: `lines.${i}.receivedQty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing received` });
+        });
+        if (problems.length)
+            return { problems, warnings, sup, units, excessOf: [], settings: null, priceAtGrn: false, calc: null, issues: [], checks: new Map() };
+        if (h.supervisorId) {
+            const [e] = await db.$queryRaw `SELECT count(*) AS n FROM public.employee_master WHERE emp_id = ${h.supervisorId}::uuid`;
+            if (!Number(e?.n))
+                problems.push({ field: 'header.supervisorId', code: 'PUR_SUPERVISOR_NOT_FOUND', message: 'That supervisor is not an employee' });
+        }
+        const reasonIds = [...new Set(dto.lines.map((l) => l.damageReasonId).filter((x) => !!x))];
+        if (reasonIds.length) {
+            const found = await db.$queryRaw `SELECT srm_id FROM stock.stock_reason_master WHERE srm_id = ANY(${reasonIds}::uuid[]) AND NOT srm_is_deleted`;
+            const ok = new Set(found.map((r) => r.srm_id));
+            dto.lines.forEach((l, i) => { if (l.damageReasonId && !ok.has(l.damageReasonId))
+                problems.push({ field: `lines.${i}.damageReasonId`, code: 'PUR_REASON_NOT_FOUND', message: `Line ${l.lineNo}: that damage reason is not in Stock Reasons` }); });
+        }
+        const settings = await (0, purchase_settings_1.loadPurchaseSettings)(db, h.companyId, h.branchId);
+        const priceAtGrn = settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN';
+        const excessOf = [];
+        for (let i = 0; i < dto.lines.length; i++) {
+            const l = dto.lines[i];
+            let excess = purchase_doc_helpers_1.ZERO;
+            if (l.poItemId) {
+                const pendingBase = await this.poPendingBase(db, l.poItemId, h.grnId ?? null);
+                const f = units.get(l.uomId).iuc_to_base_factor;
+                const inBase = (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)).times(f);
+                if (pendingBase != null && inBase.greaterThan(pendingBase))
+                    excess = inBase.minus(client_1.Prisma.Decimal.max(pendingBase, 0)).dividedBy(f).toDecimalPlaces(4);
+            }
+            const action = l.excessAction ?? (excess.greaterThan(0) ? 'HOLD_FOR_BILL' : null);
+            if (action === 'RETURN') {
+                if (excess.greaterThan(0))
+                    problems.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_IN_RECEIVED',
+                        message: `Line ${l.lineNo}: ${excess.toString()} over the PO is still in Received — what goes back at the gate is not received (key it as Excess).` });
+                excessOf.push((0, purchase_doc_helpers_1.D)(l.excessQty));
+            }
+            else if (excess.greaterThan(0) && action === 'KEEP_FREE') {
+                const take = client_1.Prisma.Decimal.min(excess, (0, purchase_doc_helpers_1.D)(l.receivedQty));
+                l.receivedQty = Number((0, purchase_doc_helpers_1.D)(l.receivedQty).minus(take));
+                l.freeQty = Number((0, purchase_doc_helpers_1.D)(l.freeQty).plus(take));
+                let left = take;
+                for (const a of l.allocs ?? []) {
+                    if ((a.bucket ?? 'SALEABLE') !== 'SALEABLE' || !left.greaterThan(0))
+                        continue;
+                    const m = client_1.Prisma.Decimal.min(left, (0, purchase_doc_helpers_1.D)(a.qty));
+                    a.qty = Number((0, purchase_doc_helpers_1.D)(a.qty).minus(m));
+                    a.freeQty = Number((0, purchase_doc_helpers_1.D)(a.freeQty).plus(m));
+                    left = left.minus(m);
+                }
+                warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_KEPT_FREE', message: `Line ${l.lineNo}: ${take.toString()} over the PO taken as free goods (no value).` });
+                excessOf.push(take);
+            }
+            else {
+                if (excess.greaterThan(0))
+                    warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_HELD',
+                        message: `Line ${l.lineNo}: ${excess.toString()} over the PO — received at the provisional rate; the bill must cover it.` });
+                excessOf.push(excess);
+            }
+            l.excessAction = excessOf[i].greaterThan(0) ? (action ?? undefined) : undefined;
+        }
+        if (!dto.charges?.length && h.receivedBy?.length && h.payCoolie !== false)
+            dto.charges = await this.coolieFor(db, h.receivedBy);
+        for (const c of dto.charges ?? [])
+            if (c.payees?.length)
+                c.payees = await (0, purchase_doc_helpers_1.payeeLedgers)(db, c.payees, 'header.receivedBy');
+        const chg = await this.loadCharges(db, dto.charges ?? []);
+        const calc = (0, purchase_calc_1.calcPurchase)({
+            interState: false, roundOffStep: 0, charges: chg,
+            lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)), damagedQty: l.damagedQty ?? 0,
+                receivedQty: l.receivedQty, freeQty: l.freeQty ?? 0, rate: l.rate, gstPct: 0, toBaseFactor: units.get(l.uomId).iuc_to_base_factor, weight: l.weight ?? 0 })),
+        });
+        const facts = dto.lines.map((l, i) => {
+            const rows = l.allocs?.length
+                ? l.allocs.map((a) => ({ bucket: a.bucket ?? 'SALEABLE', qty: (0, purchase_doc_helpers_1.D)(a.qty).plus((0, purchase_doc_helpers_1.D)(a.freeQty)), mfgDate: (0, purchase_doc_helpers_1.dateOf)(a.mfgDate), expiryDate: (0, purchase_doc_helpers_1.dateOf)(a.expiryDate), serialNo: a.serialNo ?? null }))
+                : [{ bucket: 'SALEABLE', qty: (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.freeQty)), mfgDate: null, expiryDate: null, serialNo: null },
+                    { bucket: 'DAMAGED', qty: (0, purchase_doc_helpers_1.D)(l.damagedQty), mfgDate: null, expiryDate: null, serialNo: null }].filter((r) => r.qty.greaterThan(0));
+            return { index: i, lineNo: l.lineNo, itemId: l.itemId, itemName: units.get(l.uomId)?.item_name ?? null,
+                challan: (0, purchase_doc_helpers_1.D)(l.challanQty ?? (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty))), received: (0, purchase_doc_helpers_1.D)(l.receivedQty), damaged: (0, purchase_doc_helpers_1.D)(l.damagedQty), free: (0, purchase_doc_helpers_1.D)(l.freeQty),
+                damageReasonId: l.damageReasonId ?? null, excess: excessOf[i], excessAction: l.excessAction ?? null, rows };
+        });
+        const { issues, checks } = await this.judge(db, h.companyId, h.branchId, h.docDate, settings, facts);
+        return { problems, warnings, sup, units, excessOf, settings, priceAtGrn, calc, issues, checks };
+    }
+    async judge(db, companyId, branchId, docDate, settings, facts) {
+        const tx = db;
+        const [shelf, serial] = await Promise.all([
+            (0, purchase_grn_checks_1.grnShelfLife)(tx, settings.minShelfLifePct, docDate, facts),
+            (0, purchase_invoice_checks_1.serialFacts)(tx, companyId, branchId, docDate, facts.map((f) => ({ itemId: f.itemId, serials: [] }))),
+        ]);
+        return (0, purchase_grn_checks_1.judgeGrnLines)(facts, shelf, settings.shelfLifeMode, serial.tracked);
+    }
+    async validate(dto) {
+        const p = await this.prepare(this.prisma, dto);
+        const issues = [
+            ...p.problems.map((x) => ({ ...x, level: 'REFUSE', lineNo: lineNoOf(dto, x.field), needsRight: null })),
+            ...p.warnings.map((x) => ({ ...x, level: 'WARN', lineNo: lineNoOf(dto, x.field), needsRight: null })),
+            ...p.issues,
+        ];
+        const poRefs = await this.poRefsOf(this.prisma, dto.lines.map((l) => l.poItemId).filter((x) => !!x), 'poi');
+        const godown = await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${dto.header.godownId}::uuid`;
+        const c = p.calc;
+        const lines = dto.lines.map((l, i) => ({
+            lineNo: l.lineNo, receivedQty: String(l.receivedQty), freeQty: String(l.freeQty ?? 0), excessQty: (p.excessOf[i] ?? purchase_doc_helpers_1.ZERO).toString(), excessAction: l.excessAction ?? null,
+            value: c ? c.lines[i].netGross.toFixed(2) : null, offbillShare: c ? c.lines[i].offbillShare.toFixed(2) : null, check: p.checks.get(l.lineNo) ?? null,
+        }));
+        const charges = c ? c.charges.map((ch, i) => ({ chgId: dto.charges[i].chgId, amount: ch.amount.abs().toFixed(2), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.abs().toFixed(2) })) })) : [];
+        return (0, purchase_doc_helpers_1.jsonSafe)({
+            header: { supplierName: p.sup.sup_name, godownName: godown[0]?.gdl_name ?? null, poRefs, transport: dto.header.transport ? this.bandInput(dto.header.transport, dto.header, p.sup.sup_name) : null },
+            lines, charges,
+            totals: c ? this.totalsOf(dto.lines.map((l, i) => ({ factor: p.units.get(l.uomId)?.iuc_to_base_factor ?? (0, purchase_doc_helpers_1.D)(1), challan: (0, purchase_doc_helpers_1.D)(l.challanQty ?? (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty))),
+                received: (0, purchase_doc_helpers_1.D)(l.receivedQty), damaged: (0, purchase_doc_helpers_1.D)(l.damagedQty), free: (0, purchase_doc_helpers_1.D)(l.freeQty), value: c.lines[i].netGross })), c.offbillCharges) : null,
+            warnings: issues.filter((x) => x.level === 'WARN'), refusals: issues.filter((x) => x.level === 'REFUSE'),
+        });
+    }
+    totalsOf(rows, offbill) {
+        let rec = purchase_doc_helpers_1.ZERO, dmg = purchase_doc_helpers_1.ZERO, free = purchase_doc_helpers_1.ZERO, short = purchase_doc_helpers_1.ZERO, val = purchase_doc_helpers_1.ZERO, shortLines = 0;
+        for (const r of rows) {
+            rec = rec.plus(r.received.times(r.factor));
+            dmg = dmg.plus(r.damaged.times(r.factor));
+            free = free.plus(r.free.times(r.factor));
+            val = val.plus(r.value);
+            const s = r.challan.minus(r.received).minus(r.damaged);
+            if (s.greaterThan(0)) {
+                short = short.plus(s.times(r.factor));
+                shortLines++;
+            }
+        }
+        return { lines: rows.length, receivedBase: rec.toString(), damagedBase: dmg.toString(), freeBase: free.toString(), shortBase: short.toString(), shortLines,
+            offbillCharges: offbill.abs().toFixed(2), provisionalValue: val.toFixed(2), total: val.plus(offbill.abs()).toFixed(2) };
+    }
+    async poRefsOf(db, ids, kind) {
+        if (!ids.length)
+            return [];
+        return kind === 'poi'
+            ? db.$queryRaw `
+          SELECT DISTINCT po.po_id AS "poId", po.po_acc_year AS "accYear", po.po_refno AS "refno" FROM purchase.pur_order_item poi
+            JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year WHERE poi.poi_id = ANY(${[...new Set(ids)]}::uuid[]) ORDER BY 3`
+            : db.$queryRaw `
+          SELECT po_id AS "poId", po_acc_year AS "accYear", po_refno AS "refno" FROM purchase.pur_order WHERE po_id = ANY(${[...new Set(ids)]}::uuid[]) ORDER BY 3`;
+    }
+    bandInput(t, h, supplierName) {
+        return {
+            direction: 'INWARD', from: { name: supplierName }, to: { godownId: h.godownId, branchId: h.branchId },
+            mode: t.mode ?? null, transporterId: t.transporterId ?? null, transporterName: t.transporterName?.trim() || null,
+            transporterGstin: t.transporterGstin?.trim() || null, lrNo: t.lrNo?.trim() || null, lrDate: t.lrDate?.slice(0, 10) ?? null,
+            distanceKm: t.distanceKm ?? null, remarks: t.remarks?.trim() || null,
+        };
+    }
+    async writeTransport(tx, h, supplierName, grnId, refno, actor) {
+        if (h.transport === undefined)
+            return;
+        const ref = { docType: 'GRN', docId: grnId, accYear: h.accYear, companyId: h.companyId, branchId: h.branchId, docRefno: refno };
+        const t = h.transport;
+        const carriage = t && (t.mode || t.transporterId || t.transporterName?.trim() || t.transporterGstin?.trim() || t.lrNo?.trim() || t.lrDate || t.distanceKm != null || t.remarks?.trim());
+        if (!t || !carriage) {
+            await this.transportBand.remove(tx, ref, actor);
+            return;
+        }
+        const input = this.bandInput(t, h, supplierName);
+        if (input.transporterId) {
+            const [m] = await tx.$queryRaw `SELECT trn_name, trn_gstin FROM public.transporter_master WHERE trn_id = ${input.transporterId}::uuid AND NOT trn_is_deleted`;
+            if (!m)
+                (0, purchase_errors_1.purNotFound)(`Transporter ${input.transporterId} not found`, 'PUR_TRANSPORTER_NOT_FOUND', 'header.transport.transporterId');
+            input.transporterName = input.transporterName ?? m.trn_name;
+            input.transporterGstin = input.transporterGstin ?? m.trn_gstin ?? null;
+        }
+        await this.transportBand.write(tx, ref, input, actor, { gdrId: null });
+    }
     async save(dto) {
         const actor = this.actor();
         const h = dto.header;
         const warnings = [];
         const id = await this.prisma.$transaction(async (tx) => {
-            await (0, purchase_doc_helpers_1.supplierRow)(tx, h.supplierId);
-            const units = await (0, purchase_doc_helpers_1.loadUnits)(tx, dto.lines.map((l) => l.uomId));
-            const problems = [];
-            dto.lines.forEach((l, i) => {
-                const u = units.get(l.uomId);
-                if (!u || u.iuc_item_id !== l.itemId)
-                    problems.push({ field: `lines.${i}.uomId`, code: purchase_errors_1.PUR.UNIT_NOT_FOUND, message: `Line ${l.lineNo}: unit not found for the item` });
-                if ((0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)).plus((0, purchase_doc_helpers_1.D)(l.freeQty)).isZero())
-                    problems.push({ field: `lines.${i}.receivedQty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing received` });
-            });
-            if (problems.length)
-                (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
-            const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
-            const priceAtGrn = settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN';
-            const excessOf = [];
-            for (let i = 0; i < dto.lines.length; i++) {
-                const l = dto.lines[i];
-                let excess = purchase_doc_helpers_1.ZERO;
-                if (l.poItemId) {
-                    const pendingBase = await this.poPendingBase(tx, l.poItemId, h.grnId ?? null);
-                    const f = units.get(l.uomId).iuc_to_base_factor;
-                    const inBase = (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)).times(f);
-                    if (pendingBase != null && inBase.greaterThan(pendingBase))
-                        excess = inBase.minus(client_1.Prisma.Decimal.max(pendingBase, 0)).dividedBy(f).toDecimalPlaces(4);
-                }
-                const action = l.excessAction ?? (excess.greaterThan(0) ? 'HOLD_FOR_BILL' : null);
-                if (action === 'RETURN') {
-                    if (excess.greaterThan(0))
-                        problems.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_IN_RECEIVED',
-                            message: `Line ${l.lineNo}: ${excess.toString()} over the PO is still in Received — what goes back at the gate is not received (key it as Excess).` });
-                    excessOf.push((0, purchase_doc_helpers_1.D)(l.excessQty));
-                }
-                else if (excess.greaterThan(0) && action === 'KEEP_FREE') {
-                    const take = client_1.Prisma.Decimal.min(excess, (0, purchase_doc_helpers_1.D)(l.receivedQty));
-                    l.receivedQty = Number((0, purchase_doc_helpers_1.D)(l.receivedQty).minus(take));
-                    l.freeQty = Number((0, purchase_doc_helpers_1.D)(l.freeQty).plus(take));
-                    let left = take;
-                    for (const a of l.allocs ?? []) {
-                        if ((a.bucket ?? 'SALEABLE') !== 'SALEABLE' || !left.greaterThan(0))
-                            continue;
-                        const m = client_1.Prisma.Decimal.min(left, (0, purchase_doc_helpers_1.D)(a.qty));
-                        a.qty = Number((0, purchase_doc_helpers_1.D)(a.qty).minus(m));
-                        a.freeQty = Number((0, purchase_doc_helpers_1.D)(a.freeQty).plus(m));
-                        left = left.minus(m);
-                    }
-                    warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_KEPT_FREE', message: `Line ${l.lineNo}: ${take.toString()} over the PO taken as free goods (no value).` });
-                    excessOf.push(take);
-                }
-                else {
-                    if (excess.greaterThan(0))
-                        warnings.push({ field: `lines.${i}.receivedQty`, code: 'PUR_EXCESS_HELD',
-                            message: `Line ${l.lineNo}: ${excess.toString()} over the PO — received at the provisional rate; the bill must cover it.` });
-                    excessOf.push(excess);
-                }
-                l.excessAction = excessOf[i].greaterThan(0) ? (action ?? undefined) : undefined;
-            }
-            if (problems.length)
-                (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
-            const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate, dto.lines.flatMap((l, i) => (l.allocs ?? []).map((a) => ({ lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: (0, purchase_doc_helpers_1.dateOf)(a.mfgDate), expiryDate: (0, purchase_doc_helpers_1.dateOf)(a.expiryDate) }))));
-            if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post)
-                (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
-            if (!h.post)
-                warnings.push(...shelf);
-            if (!dto.charges?.length && h.receivedBy?.length && h.payCoolie !== false)
-                dto.charges = await this.coolieFor(tx, h.receivedBy);
-            for (const c of dto.charges ?? [])
-                if (c.payees?.length)
-                    c.payees = await (0, purchase_doc_helpers_1.payeeLedgers)(tx, c.payees, 'header.receivedBy');
-            const chg = await this.loadCharges(tx, dto.charges ?? []);
-            const calc = (0, purchase_calc_1.calcPurchase)({
-                interState: false, roundOffStep: 0, charges: chg,
-                lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: (0, purchase_doc_helpers_1.D)(l.receivedQty).plus((0, purchase_doc_helpers_1.D)(l.damagedQty)), damagedQty: l.damagedQty ?? 0,
-                    receivedQty: l.receivedQty, freeQty: l.freeQty ?? 0, rate: l.rate, gstPct: 0, toBaseFactor: units.get(l.uomId).iuc_to_base_factor, weight: l.weight ?? 0 })),
-            });
+            const p = await this.prepare(tx, dto);
+            if (p.problems.length)
+                (0, purchase_errors_1.purRefuseMany)(p.problems[0].message, p.problems);
+            const { units, excessOf, priceAtGrn } = p;
+            const calc = p.calc;
+            const refusals = p.issues.filter((x) => x.level === 'REFUSE' && !(h.overrideWarnings && x.needsRight === 'OVERRIDE'));
+            if (h.post && refusals.length)
+                (0, purchase_errors_1.purRefuseMany)(refusals[0].message, refusals.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+            warnings.push(...p.warnings.map((x) => ({ ...x, level: 'WARN', lineNo: lineNoOf(dto, x.field), needsRight: null })), ...p.issues);
             let grnId = h.grnId ?? null;
             let slno, refno, isNew = false;
+            let receivedAt = h.receivedAt ? new Date(h.receivedAt) : new Date();
             if (grnId) {
                 const cur = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: h.accYear, grnIsDeleted: false } });
                 if (!cur)
@@ -534,6 +707,8 @@ let PurchaseGrnService = class PurchaseGrnService {
                     (0, purchase_errors_1.purConflict)(`${cur.grnRefno} is ${cur.grnStatus} — only a draft can be edited.`, purchase_errors_1.PUR.NOT_DRAFT, 'grnId');
                 slno = cur.grnSlno;
                 refno = cur.grnRefno;
+                if (!h.receivedAt && cur.grnReceivedAt)
+                    receivedAt = cur.grnReceivedAt;
                 await tx.purItemAlloc.deleteMany({ where: { piaDocType: DOC, piaDocId: grnId, piaAccYear: h.accYear } });
                 await tx.purGrnItem.deleteMany({ where: { griGrnId: grnId, griAccYear: h.accYear } });
                 await tx.$executeRaw `DELETE FROM public.txn_charge_detail WHERE cd_doc_type = ${DOC} AND cd_doc_id = ${grnId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
@@ -547,8 +722,8 @@ let PurchaseGrnService = class PurchaseGrnService {
                 grnCompanyId: h.companyId, grnBranchId: h.branchId, grnAccYear: h.accYear, grnDeviceId: h.deviceId, grnSlno: slno, grnRefno: refno,
                 grnDocDate: (0, purchase_doc_helpers_1.dateOf)(h.docDate), grnSupplierId: h.supplierId, grnGodownId: h.godownId, grnChallanNo: h.challanNo ?? null,
                 grnChallanDate: (0, purchase_doc_helpers_1.dateOf)(h.challanDate), grnSupplierInvNo: h.supplierInvNo ?? null,
-                grnReceivedAt: h.receivedAt ? new Date(h.receivedAt) : new Date(), grnReceivedBy: h.receivedBy ?? [], grnSupervisorId: h.supervisorId ?? null,
-                grnVehicleNo: h.vehicleNo ?? null, grnDriverName: h.driverName ?? null, grnEwbNo: h.ewbNo ?? null,
+                grnReceivedAt: receivedAt, grnReceivedBy: h.receivedBy ?? [], grnSupervisorId: h.supervisorId ?? null,
+                grnVehicleNo: h.vehicleNo ?? null, grnDriverName: h.driverName ?? null, grnEwbNo: h.ewbNo ?? null, grnEwbDate: (0, purchase_doc_helpers_1.dateOf)(h.ewbDate),
                 grnPackagesSent: h.packagesSent ?? null, grnPackagesReceived: h.packagesReceived ?? null,
                 grnProvisionalValue: provisional, grnOffbillCharges: calc.offbillCharges, grnRemarks: h.remarks ?? null, grnStatus: 'DRAFT',
             };
@@ -590,13 +765,16 @@ let PurchaseGrnService = class PurchaseGrnService {
                 }
             }
             await this.writeCharges(tx, dto, calc.charges, grnId, slno, h, actor);
+            await this.writeTransport(tx, h, p.sup.sup_name, grnId, refno, actor);
             if (isNew)
                 await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.GRN, docId: grnId, refno, event: purchase_doc_helpers_1.TxnStatusEvent.CREATED, from: null, to: 'DRAFT', actor, deviceId: h.deviceId });
-            if (h.post)
-                warnings.push(...await this.postInTx(tx, grnId, h.accYear, actor));
+            if (h.post) {
+                const notes = await this.postInTx(tx, grnId, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null });
+                warnings.push(...notes.filter((n) => n.code !== 'PUR_SHELF_LIFE').map((n) => ({ ...n, level: 'WARN', lineNo: lineNoOf(dto, n.field), needsRight: null })));
+            }
             return grnId;
         }, { timeout: 60000, maxWait: 10000 });
-        return { ...(await this.get(id, h.accYear)), warnings };
+        return { ...(await this.get(id, h.accYear)), warnings: warnings.filter((w) => w.level === 'WARN'), refusals: h.post ? [] : warnings.filter((w) => w.level === 'REFUSE') };
     }
     async poPendingBase(tx, poiId, exceptGrnId) {
         const [r] = await tx.$queryRaw `
@@ -664,12 +842,12 @@ let PurchaseGrnService = class PurchaseGrnService {
             }
         }
     }
-    async post(grnId, accYear) {
+    async post(grnId, accYear, ov = { override: false, reason: null }) {
         const actor = this.actor();
-        const warnings = await this.prisma.$transaction((tx) => this.postInTx(tx, grnId, accYear, actor), { timeout: 60000, maxWait: 10000 });
+        const warnings = await this.prisma.$transaction((tx) => this.postInTx(tx, grnId, accYear, actor, ov), { timeout: 60000, maxWait: 10000 });
         return { ...(await this.get(grnId, accYear)), warnings };
     }
-    async postInTx(tx, grnId, accYear, actor) {
+    async postInTx(tx, grnId, accYear, actor, ov = { override: false, reason: null }) {
         const notes = [];
         const g = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: accYear, grnIsDeleted: false } });
         if (!g)
@@ -683,8 +861,21 @@ let PurchaseGrnService = class PurchaseGrnService {
         const docDate = (0, purchase_doc_helpers_1.isoDate)(g.grnDocDate);
         const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, g.grnCompanyId, g.grnBranchId);
         const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, docDate, allocs.map((a) => { const l = byLine.get(a.piaLineId); return { lineNo: l.griLineNo, index: l.griLineNo - 1, itemId: l.griItemId, bucket: a.piaBucket, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate }; }));
-        if (shelf.length && settings.shelfLifeMode === 'REFUSE')
+        if (shelf.length && settings.shelfLifeMode === 'REFUSE' && !ov.override)
             (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
+        const facts = await this.factsOfSaved(tx, g.grnCompanyId, g.grnBranchId, lines, allocs);
+        const { issues } = await this.judge(tx, g.grnCompanyId, g.grnBranchId, docDate, settings, facts);
+        const serialShort = issues.filter((x) => x.code === 'PUR_SERIAL_COUNT');
+        if (serialShort.length)
+            (0, purchase_errors_1.purRefuseMany)(serialShort[0].message, serialShort.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+        if (ov.override) {
+            if (issues.length) {
+                const what = [...new Set(issues.map((x) => x.code))].join(', ');
+                await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno,
+                    event: purchase_doc_helpers_1.TxnStatusEvent.WARN_OVERRIDE, from: 'DRAFT', to: 'POSTED', actor, deviceId: g.grnDeviceId, remarks: `${what}${ov.reason ? ` — ${ov.reason}` : ''}`.slice(0, 250) });
+                notes.push({ field: 'header.overrideWarnings', code: 'PUR_WARN_OVERRIDDEN', message: `Posted past ${what} (override logged).` });
+            }
+        }
         const cost = (l) => {
             const inBase = l.griReceivedQty.plus(l.griDamagedQty).plus(l.griFreeQty).times(l.griToBaseFactor);
             return inBase.isZero() ? purchase_doc_helpers_1.ZERO : l.griValue.plus(l.griOffbillShare).dividedBy(inBase).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP);
@@ -797,6 +988,16 @@ let PurchaseGrnService = class PurchaseGrnService {
         }
         return (0, purchase_doc_helpers_1.jsonSafe)(rows.map((r) => ({ ...r, copies: Math.max(1, Math.ceil(Number(r.qty))), textile: !!(r.size || r.colour || r.model) })));
     }
+    async factsOfSaved(db, _companyId, _branchId, lines, allocs) {
+        const names = lines.length ? await db.$queryRaw `
+      SELECT item_id, item_name_en AS name FROM inventory.item_master WHERE item_id = ANY(${[...new Set(lines.map((l) => l.griItemId))]}::uuid[])` : [];
+        const nameOf = new Map(names.map((n) => [n.item_id, n.name]));
+        return lines.map((l, i) => ({
+            index: i, lineNo: l.griLineNo, itemId: l.griItemId, itemName: nameOf.get(l.griItemId) ?? null, challan: l.griChallanQty, received: l.griReceivedQty,
+            damaged: l.griDamagedQty, free: l.griFreeQty, damageReasonId: l.griDamageReasonId, excess: l.griExcessQty ?? purchase_doc_helpers_1.ZERO, excessAction: l.griExcessAction,
+            rows: allocs.filter((a) => a.piaLineId === l.griId).map((a) => ({ bucket: a.piaBucket, qty: a.piaQty.plus(a.piaFreeQty), mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate, serialNo: a.piaSerialNo })),
+        }));
+    }
     async get(grnId, accYear) {
         const header = await this.prisma.purGrn.findFirst({ where: { grnId, grnAccYear: accYear, grnIsDeleted: false } });
         if (!header)
@@ -806,20 +1007,56 @@ let PurchaseGrnService = class PurchaseGrnService {
             this.prisma.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: grnId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: { piaRowNo: 'asc' } }),
             this.prisma.$queryRaw `SELECT sup_name FROM purchase.suppliers WHERE sup_id = ${header.grnSupplierId}::uuid`,
         ]);
-        const billed = await this.prisma.$queryRaw `
-      SELECT count(*) AS n FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+        const billedRows = await this.prisma.$queryRaw `
+      SELECT pii.pii_src_item_id AS id, p.pi_refno AS refno FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
        WHERE pii.pii_src_doc_type = 'GRN' AND pii.pii_src_doc_id = ${grnId}::uuid AND NOT pii.pii_is_deleted AND p.pi_status <> 'CANCELLED' AND NOT p.pi_is_deleted`;
+        const billedBy = new Map(billedRows.map((r) => [r.id, r.refno]));
+        const nBilled = lines.filter((l) => billedBy.has(l.griId)).length;
+        const billStatus = !nBilled ? 'NOT_BILLED' : nBilled === lines.length ? 'BILLED' : 'PART';
         const names = await (0, purchase_doc_helpers_1.unitNames)(this.prisma, lines.map((l) => l.griUomId));
-        const poRefs = await this.prisma.$queryRaw `
-      SELECT po_id, po_refno FROM purchase.pur_order WHERE po_id = ANY(${[...new Set(lines.map((l) => l.griSrcDocId).filter((x) => !!x))]}::uuid[])`;
-        const poRef = new Map(poRefs.map((r) => [r.po_id, r.po_refno]));
-        const men = header.grnReceivedBy.length ? await this.prisma.$queryRaw `
-      SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${header.grnReceivedBy}::uuid[])` : [];
+        const poRefs = await this.poRefsOf(this.prisma, lines.map((l) => l.griSrcDocId).filter((x) => !!x), 'po');
+        const poRef = new Map(poRefs.map((r) => [r.poId, r.refno]));
+        const people = [...header.grnReceivedBy, ...(header.grnSupervisorId ? [header.grnSupervisorId] : [])];
+        const men = people.length ? await this.prisma.$queryRaw `
+      SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${people}::uuid[])` : [];
         const manName = new Map(men.map((m) => [m.id, m.name]));
+        const [gd] = await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.grnGodownId}::uuid`;
+        const reasons = await this.prisma.$queryRaw `
+      SELECT srm_id, srm_name FROM stock.stock_reason_master WHERE srm_id = ANY(${lines.map((l) => l.griDamageReasonId).filter((x) => !!x)}::uuid[])`;
+        const reasonName = new Map(reasons.map((r) => [r.srm_id, r.srm_name]));
+        const cds = await this.prisma.$queryRaw `
+      SELECT cd.cd_chg_id, cd.cd_chg_name, cd.cd_role, cd.cd_method, cd.cd_type, cd.cd_rate, cd.cd_amount, cd.cd_party_id, l.led_name
+        FROM public.txn_charge_detail cd LEFT JOIN accounts.acc_ledger_master l ON l.led_id = cd.cd_party_id
+       WHERE cd.cd_doc_type = ${DOC} AND cd.cd_doc_id = ${grnId}::uuid AND cd.cd_acc_year = ${accYear}::bpchar AND NOT cd.cd_is_deleted ORDER BY cd.cd_slno`;
+        const charges = [];
+        for (const c of cds) {
+            let row = charges.find((x) => x.chgId === c.cd_chg_id);
+            if (!row) {
+                row = { chgId: c.cd_chg_id, chgName: c.cd_chg_name, role: c.cd_role, method: c.cd_method, type: c.cd_type, rate: (0, purchase_doc_helpers_1.D)(c.cd_rate).toString(), amount: purchase_doc_helpers_1.ZERO, payees: [] };
+                charges.push(row);
+            }
+            row.amount = row.amount.plus(c.cd_amount);
+            if (c.cd_party_id)
+                row.payees.push({ partyId: c.cd_party_id, partyName: c.led_name, amount: (0, purchase_doc_helpers_1.D)(c.cd_amount).toFixed(2) });
+        }
+        const band = await this.transportBand.read({ docType: 'GRN', docId: grnId, accYear });
+        const settings = await (0, purchase_settings_1.loadPurchaseSettings)(this.prisma, header.grnCompanyId, header.grnBranchId);
+        const facts = await this.factsOfSaved(this.prisma, header.grnCompanyId, header.grnBranchId, lines, allocs);
+        const { checks } = await this.judge(this.prisma, header.grnCompanyId, header.grnBranchId, (0, purchase_doc_helpers_1.isoDate)(header.grnDocDate), settings, facts);
         return (0, purchase_doc_helpers_1.jsonSafe)({
-            header: { ...header, supplierName: sup[0]?.sup_name ?? null, receivedBy: header.grnReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })), billStatus: Number(billed[0]?.n ?? 0) > 0 ? 'BILLED' : 'NOT_BILLED' },
+            header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null,
+                receivedBy: header.grnReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })),
+                supervisorName: header.grnSupervisorId ? manName.get(header.grnSupervisorId) ?? null : null,
+                billStatus, poRefs,
+                transport: band ? { mode: band.mode ?? null, transporterId: band.transporterId ?? null, transporterName: band.transporterName ?? null,
+                    transporterGstin: band.transporterGstin ?? null, lrNo: band.lrNo ?? null, lrDate: band.lrDate ? String(band.lrDate).slice(0, 10) : null,
+                    distanceKm: band.distanceKm ?? null, remarks: band.remarks ?? null } : null },
             lines: lines.map((l) => ({ ...l, ...names.get(l.griUomId), poRefno: l.griSrcDocId ? poRef.get(l.griSrcDocId) ?? null : null,
+                damageReasonName: l.griDamageReasonId ? reasonName.get(l.griDamageReasonId) ?? null : null,
+                billed: billedBy.has(l.griId), billRefno: billedBy.get(l.griId) ?? null, check: checks.get(l.griLineNo) ?? null,
                 allocs: allocs.filter((a) => a.piaLineId === l.griId) })),
+            charges: charges.map((c) => ({ ...c, amount: c.amount.toFixed(2) })),
+            totals: this.totalsOf(lines.map((l) => ({ factor: l.griToBaseFactor, challan: l.griChallanQty, received: l.griReceivedQty, damaged: l.griDamagedQty, free: l.griFreeQty, value: l.griValue })), header.grnOffbillCharges ?? purchase_doc_helpers_1.ZERO),
         });
     }
     async cancel(dto) {
@@ -858,7 +1095,7 @@ exports.PurchaseGrnService = PurchaseGrnService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService, request_context_service_1.RequestContextService,
         voucher_posting_service_1.VoucherPostingService, stock_posting_service_1.StockPostingService,
-        selling_price_bulk_service_1.SellingPriceBulkService])
+        selling_price_bulk_service_1.SellingPriceBulkService, transport_band_service_1.TransportBandService])
 ], PurchaseGrnService);
 let PurchaseGrnController = class PurchaseGrnController {
     service;
@@ -876,12 +1113,20 @@ let PurchaseGrnController = class PurchaseGrnController {
         await this.right(dto.header.grnId ? 'edit' : 'create', 'save a GRN');
         if (dto.header.post)
             await this.right('post', 'post a GRN');
+        if (dto.header.post && dto.header.overrideWarnings)
+            await this.right('override', 'post a GRN past its warnings');
         const data = await this.service.save(dto);
         return { success: true, message: `GRN ${data.header.grnRefno} ${dto.header.post ? 'posted' : 'saved as draft'}`, data };
     }
+    async validate(dto) {
+        await this.right('view', 'check a GRN');
+        return { success: true, message: 'GRN checked', data: await this.service.validate(dto) };
+    }
     async post(dto) {
         await this.right('post', 'post a GRN');
-        const data = await this.service.post(dto.grnId, dto.accYear);
+        if (dto.overrideWarnings)
+            await this.right('override', 'post a GRN past its warnings');
+        const data = await this.service.post(dto.grnId, dto.accYear, { override: !!dto.overrideWarnings, reason: dto.overrideReason ?? null });
         return { success: true, message: `GRN ${data.header.grnRefno} posted`, data };
     }
     async get(q) {
@@ -905,12 +1150,21 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PurchaseGrnController.prototype, "save", null);
 __decorate([
-    (0, common_1.Post)('post'),
+    (0, common_1.Post)('validate'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Post a saved GRN draft.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'The server\'s figures for a GRN being keyed — line value / off-bill share / excess, the charges, the six totals, the WARN / REFUSE strip (warnings[] / refusals[]: code, level, lineNo, field, message, needsRight) and lines[].check (chips, shelf life %, labels, serials). Writes nothing.' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [GrnRefDto]),
+    __metadata("design:paramtypes", [SaveGrnDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseGrnController.prototype, "validate", null);
+__decorate([
+    (0, common_1.Post)('post'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Post a saved GRN draft. overrideWarnings (Override right on menu 196) posts past PUR_SHELF_LIFE in REFUSE mode; logged (WARN_OVERRIDE).' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [GrnPostDto]),
     __metadata("design:returntype", Promise)
 ], PurchaseGrnController.prototype, "post", null);
 __decorate([

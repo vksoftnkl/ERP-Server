@@ -21,5 +21,13 @@ var CustomerErrorCode;
     CustomerErrorCode["PRICE_LEVEL_NOT_FOUND"] = "CUSTOMER_PRICE_LEVEL_NOT_FOUND";
     CustomerErrorCode["BRANCH_NOT_FOUND"] = "CUSTOMER_BRANCH_NOT_FOUND";
     CustomerErrorCode["GSTIN_STATE_MISMATCH"] = "CUSTOMER_GSTIN_STATE_MISMATCH";
+    CustomerErrorCode["HAS_BALANCE"] = "CUSTOMER_HAS_BALANCE";
+    CustomerErrorCode["HAS_CHEQUE_IN_HAND"] = "CUSTOMER_HAS_CHEQUE_IN_HAND";
+    CustomerErrorCode["GST_TYPE_INVALID"] = "CUSTOMER_GST_TYPE_INVALID";
+    CustomerErrorCode["GST_TYPE_REQUIRED"] = "CUSTOMER_GST_TYPE_REQUIRED";
+    CustomerErrorCode["GSTIN_REQUIRED"] = "CUSTOMER_GSTIN_REQUIRED";
+    CustomerErrorCode["GSTIN_NOT_ALLOWED"] = "CUSTOMER_GSTIN_NOT_ALLOWED";
+    CustomerErrorCode["OVERSEAS_STATE"] = "CUSTOMER_OVERSEAS_STATE";
+    CustomerErrorCode["COMPANY_HAS_BOOKS"] = "CUSTOMER_COMPANY_HAS_BOOKS";
 })(CustomerErrorCode || (exports.CustomerErrorCode = CustomerErrorCode = {}));
 //# sourceMappingURL=customer-error-codes.js.map

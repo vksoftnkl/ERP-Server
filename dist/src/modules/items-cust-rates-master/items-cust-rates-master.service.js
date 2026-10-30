@@ -145,10 +145,10 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
                 if (!existing) {
                     this.throwNotFound(csrId);
                 }
-                const nextValidFrom = (0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_valid_from')
+                const nextValidFrom = (0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_valid_from')
                     ? (this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from') ?? null)
                     : existing.csrValidFrom;
-                const nextValidTo = (0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_valid_to')
+                const nextValidTo = (0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_valid_to')
                     ? (this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to') ?? null)
                     : existing.csrValidTo;
                 this.validateDateRange(nextValidFrom, nextValidTo);
@@ -206,34 +206,34 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
         return where;
     }
     applyOptionalFields(data, saveItemCustRateDto) {
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_branch_id'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_branch_id'))
             data.csrBranchId = saveItemCustRateDto.csr_branch_id;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_rate_type'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_rate_type'))
             data.csrRateType = saveItemCustRateDto.csr_rate_type;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_item_rate'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_item_rate'))
             data.csrItemRate = saveItemCustRateDto.csr_item_rate;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_disc_perc'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_disc_perc'))
             data.csrDiscPerc = saveItemCustRateDto.csr_disc_perc;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_disc_qty'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_disc_qty'))
             data.csrDiscQty = saveItemCustRateDto.csr_disc_qty;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_price_level'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_price_level'))
             data.csrPriceLevel = saveItemCustRateDto.csr_price_level;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_valid_from')) {
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_valid_from')) {
             data.csrValidFrom = this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from');
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_valid_to')) {
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_valid_to')) {
             data.csrValidTo = this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to');
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_priority'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_priority'))
             data.csrPriority = saveItemCustRateDto.csr_priority;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_is_active'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_is_active'))
             data.csrIsActive = saveItemCustRateDto.csr_is_active;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_uploaded_at')) {
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_uploaded_at')) {
             data.csrUploadedAt = this.parseOptionalDate(saveItemCustRateDto.csr_uploaded_at, 'csr_uploaded_at');
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_uploaded_by'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_uploaded_by'))
             data.csrUploadedBy = saveItemCustRateDto.csr_uploaded_by;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCustRateDto, 'csr_remarks'))
+        if ((0, module_service_utils_1.isPresentField)(saveItemCustRateDto, 'csr_remarks'))
             data.csrRemarks = saveItemCustRateDto.csr_remarks;
     }
     validateDateRange(validFrom, validTo) {

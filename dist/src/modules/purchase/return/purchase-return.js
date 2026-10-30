@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
+const client_1 = require("@prisma/client");
 const api_version_1 = require("../../../common/constants/api-version");
 const rights_1 = require("../../../common/posting/rights");
 const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
@@ -24,7 +25,11 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
 const purchase_errors_1 = require("../common/purchase.errors");
+const statutory_service_1 = require("../../../common/posting/statutory.service");
+const transport_band_service_1 = require("../../sales/posting/transport-band.service");
+const save_purchase_invoice_dto_1 = require("../invoice/dto/save-purchase-invoice.dto");
 const purchase_settings_1 = require("../common/purchase-settings");
+const purchase_claim_locks_1 = require("../common/purchase-claim-locks");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 exports.RETURN_MENU_ID = 25;
 const DOC = 'PURCHASE_RETURN';
@@ -126,6 +131,10 @@ class ReturnHeaderDto {
     vehicleNo;
     driverName;
     ewbNo;
+    ewbDate;
+    godownId;
+    transport;
+    ourRef;
     remarks;
     post;
 }
@@ -218,6 +227,32 @@ __decorate([
     (0, class_validator_1.MaxLength)(15),
     __metadata("design:type", String)
 ], ReturnHeaderDto.prototype, "ewbNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], ReturnHeaderDto.prototype, "ewbDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The godown the goods leave from: each row\'s lot is taken in this godown (refused when the source line brought nothing there). Default: the first row\'s lot\'s godown.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], ReturnHeaderDto.prototype, "godownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: save_purchase_invoice_dto_1.PurchaseTransportDto, nullable: true, description: 'The shared transport band (txn_transport_detail, OUTWARD: FROM this godown, TO the supplier) — transporter, LR no / date. Omit = keep; null = remove.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => save_purchase_invoice_dto_1.PurchaseTransportDto),
+    __metadata("design:type", Object)
+], ReturnHeaderDto.prototype, "transport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'The free-text "Our ref" typed on the return (pur_return.pr_memo_ref; get: header.prMemoRef). Omit = keep the saved one; null / blank = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(60),
+    __metadata("design:type", Object)
+], ReturnHeaderDto.prototype, "ourRef", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -458,16 +493,25 @@ __decorate([
     (0, class_validator_1.MaxLength)(250),
     __metadata("design:type", String)
 ], SettleUndoDto.prototype, "reason", void 0);
+const lineNoOf = (dto, field) => {
+    const m = /^lines\.(\d+)/.exec(field);
+    return m ? dto.lines[Number(m[1])]?.lineNo ?? null : null;
+};
+const OUTCOME_TEXT = { RETURN: 'Return (debit note)', CLAIM_SENT: 'Claim — goods sent', CLAIM_DESTROYED: 'Claim — destroyed here', REPLACE: 'Replace' };
 let PurchaseReturnService = class PurchaseReturnService {
     prisma;
     ctx;
     vouchers;
     stockPosting;
-    constructor(prisma, ctx, vouchers, stockPosting) {
+    transportBand;
+    statutory;
+    constructor(prisma, ctx, vouchers, stockPosting, transportBand, statutory) {
         this.prisma = prisma;
         this.ctx = ctx;
         this.vouchers = vouchers;
         this.stockPosting = stockPosting;
+        this.transportBand = transportBand;
+        this.statutory = statutory;
     }
     actor() {
         const u = this.ctx.getUserId();
@@ -481,12 +525,17 @@ let PurchaseReturnService = class PurchaseReturnService {
             const pi = await db.purInvoice.findFirst({ where: { piId: id, piAccYear: accYear, piIsDeleted: false } });
             if (!pi)
                 (0, purchase_errors_1.purNotFound)(`Purchase bill ${id} not found`);
-            return { id, accYear, refno: pi.piRefno, supplierId: pi.piSupplierId, supplierInvNo: pi.piSupplierInvNo, status: pi.piStatus, docType: 'PURCHASE_BILL' };
+            return { id, accYear, refno: pi.piRefno, supplierId: pi.piSupplierId, supplierInvNo: pi.piSupplierInvNo, status: pi.piStatus, docType: 'PURCHASE_BILL',
+                posStcd: pi.piPosStcd ?? null, branchId: pi.piBranchId, docDate: pi.piDocDate };
         }
         const g = await db.purGrn.findFirst({ where: { grnId: id, grnAccYear: accYear, grnIsDeleted: false } });
         if (!g)
             (0, purchase_errors_1.purNotFound)(`GRN ${id} not found`);
-        return { id, accYear, refno: g.grnRefno, supplierId: g.grnSupplierId, supplierInvNo: g.grnChallanNo, status: g.grnStatus, docType: 'GRN' };
+        const [st] = await db.$queryRaw `
+      SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
+        FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id WHERE b.br_id = ${g.grnBranchId}::uuid`;
+        return { id, accYear, refno: g.grnRefno, supplierId: g.grnSupplierId, supplierInvNo: g.grnChallanNo, status: g.grnStatus, docType: 'GRN',
+            posStcd: st?.state?.trim().slice(0, 2) || null, branchId: g.grnBranchId, docDate: g.grnDocDate };
     }
     async sourceLines(db, src) {
         const out = new Map();
@@ -595,54 +644,178 @@ let PurchaseReturnService = class PurchaseReturnService {
         const st = await (0, purchase_settings_1.loadPurchaseSettings)(tx, companyId, branchId);
         return st.returnSettlementDefault === 'ADVANCE' ? 'ADVANCE' : 'ADJUST';
     }
+    async prepare(db, dto) {
+        const h = dto.header;
+        const src = await this.sourceDoc(db, h.kind, h.srcDocId, h.srcAccYear);
+        const problems = [];
+        if (src.status !== 'POSTED')
+            problems.push({ field: 'header.srcDocId', code: purchase_errors_1.PUR.NOT_POSTED, message: `${src.refno} is ${src.status} — only a posted ${h.kind === 'AGAINST_GRN' ? 'GRN' : 'bill'} takes a return.` });
+        const lines = await this.sourceLines(db, src);
+        const lots = await this.sourceLots(db, src);
+        const returned = await this.returnedQty(db, src.id, h.prId);
+        const billed = src.docType === 'GRN' ? await this.billedGrnLines(db, src.id) : new Map();
+        const reasonIds = [...new Set(dto.lines.map((l) => l.reasonId).filter((x) => !!x))];
+        const reasonRows = reasonIds.length ? await db.$queryRaw `
+      SELECT srm_id, srm_name FROM stock.stock_reason_master WHERE srm_id = ANY(${reasonIds}::uuid[]) AND NOT srm_is_deleted` : [];
+        const reasonName = new Map(reasonRows.map((r) => [r.srm_id, r.srm_name]));
+        const want = new Map();
+        const resolved = dto.lines.map((l, i) => {
+            const s = lines.get(l.srcItemId);
+            if (!s) {
+                problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: that line is not on ${src.refno}` });
+                return null;
+            }
+            if (billed.has(l.srcItemId))
+                problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.GRN_LINE_BILLED, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} is billed in ${billed.get(l.srcItemId)} — return it against that bill` });
+            const q = (0, purchase_doc_helpers_1.D)(l.qty).plus((0, purchase_doc_helpers_1.D)(l.freeQty));
+            if (!q.greaterThan(0))
+                problems.push({ field: `lines.${i}.qty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing to return` });
+            want.set(l.srcItemId, (want.get(l.srcItemId) ?? purchase_doc_helpers_1.ZERO).plus(q));
+            if (h.kind === 'AGAINST_GRN' && l.outcome !== 'RETURN')
+                problems.push({ field: `lines.${i}.outcome`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: goods not yet billed can only be RETURNED — claim after the bill` });
+            if (l.reasonId && !reasonName.has(l.reasonId))
+                problems.push({ field: `lines.${i}.reasonId`, code: 'PUR_REASON_NOT_FOUND', message: `Line ${l.lineNo}: that reason is not in Stock Reasons` });
+            const claim = l.outcome === 'CLAIM_SENT' || l.outcome === 'CLAIM_DESTROYED';
+            const against = claim ? (l.claimAgainst ?? 'SUPPLIER') : null;
+            if (claim && against !== 'SUPPLIER' && !l.claimPartyId)
+                problems.push({ field: `lines.${i}.claimPartyId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: name the ${against?.toLowerCase()} the claim is on` });
+            const bucket = l.bucket ?? 'SALEABLE';
+            const mine = lots.filter((x) => x.line_id === l.srcItemId && x.bucket === bucket && (!h.godownId || x.godown_id === h.godownId));
+            const lot = l.lotId ? mine.find((x) => x.lot_id === l.lotId) : mine[0];
+            if (!lot) {
+                const elsewhere = h.godownId && lots.some((x) => x.line_id === l.srcItemId && x.bucket === bucket);
+                problems.push(elsewhere
+                    ? { field: `lines.${i}.lotId`, code: 'PUR_RETURN_LOT_NOT_IN_GODOWN', message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} brought nothing into this godown (${bucket.toLowerCase()}) — pick the godown it came into` }
+                    : { field: `lines.${i}.lotId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} brought nothing into ${bucket.toLowerCase()} to return from` });
+            }
+            return { l, s, bucket, lot, against, claimParty: claim ? (against === 'SUPPLIER' ? src.supplierId : l.claimPartyId) : null, reasonName: l.reasonId ? reasonName.get(l.reasonId) ?? null : null };
+        });
+        for (const [srcItemId, q] of want) {
+            const s = lines.get(srcItemId);
+            if (!s)
+                continue;
+            const left = s.inQty.minus(returned.get(srcItemId) ?? purchase_doc_helpers_1.ZERO);
+            if (q.greaterThan(left))
+                problems.push({ field: 'lines', code: 'PUR_RETURN_QTY_EXCEEDS', message: `${src.refno} line ${s.lineNo}: ${q} to return, only ${left.isNegative() ? 0 : left} left of what came in` });
+        }
+        const rows = resolved.filter((r) => !!r).map((r) => ({ ...r, m: this.money(r.s, (0, purchase_doc_helpers_1.D)(r.l.qty)) }));
+        let returnValue = purchase_doc_helpers_1.ZERO, claimValue = purchase_doc_helpers_1.ZERO, itcDestroyed = purchase_doc_helpers_1.ZERO, itcReversed = purchase_doc_helpers_1.ZERO, itcOnReplace = purchase_doc_helpers_1.ZERO, replaceBase = purchase_doc_helpers_1.ZERO, goodsValue = purchase_doc_helpers_1.ZERO;
+        for (const r of rows) {
+            const o = r.l.outcome;
+            goodsValue = goodsValue.plus(r.m.total);
+            if (h.kind === 'AGAINST_GRN')
+                continue;
+            if (o === 'RETURN') {
+                returnValue = returnValue.plus(r.m.total);
+                itcReversed = itcReversed.plus(r.m.tax);
+            }
+            if (o === 'CLAIM_SENT') {
+                claimValue = claimValue.plus(r.m.total);
+                itcReversed = itcReversed.plus(r.m.tax);
+            }
+            if (o === 'CLAIM_DESTROYED') {
+                claimValue = claimValue.plus(r.m.taxable);
+                itcDestroyed = itcDestroyed.plus(r.m.tax);
+                itcReversed = itcReversed.plus(r.m.tax);
+            }
+            if (o === 'REPLACE') {
+                replaceBase = replaceBase.plus((0, purchase_doc_helpers_1.D)(r.l.qty).plus((0, purchase_doc_helpers_1.D)(r.l.freeQty)).times(r.s.factor));
+                itcOnReplace = itcOnReplace.plus(r.m.tax);
+                itcReversed = itcReversed.plus(r.m.tax);
+            }
+        }
+        return { src, lines, returned, rows, problems, returnValue, claimValue, itcDestroyed, itcReversed, itcOnReplace, replaceBase, goodsValue,
+            godownId: h.godownId ?? rows[0]?.lot?.godown_id ?? null, posStcd: src.posStcd };
+    }
+    rowWrites(kind, outcome, m, claimAgainst, partyName, supplierName) {
+        const f = (v) => v.toFixed(2);
+        if (kind === 'AGAINST_GRN')
+            return { creditTo: { kind: 'GRNI', name: 'GRN clearing (no bill yet)' }, writes: [{ drCr: 'DR', head: 'GRNI', amount: f(m.taxable) }, { drCr: 'CR', head: 'Stock', amount: null }] };
+        const stock = { drCr: 'CR', head: 'Stock (lot cost)', amount: null };
+        const gst = { drCr: 'CR', head: 'Input GST', amount: f(m.tax) };
+        switch (outcome) {
+            case 'RETURN': return { creditTo: { kind: 'SUPPLIER', name: supplierName }, writes: [{ drCr: 'DR', head: 'Supplier (debit note)', amount: f(m.total) }, stock, gst] };
+            case 'CLAIM_SENT': return { creditTo: { kind: claimAgainst ?? 'SUPPLIER', name: partyName ?? supplierName }, writes: [{ drCr: 'DR', head: 'Claim receivable', amount: f(m.total) }, stock, gst] };
+            case 'CLAIM_DESTROYED': return { creditTo: { kind: claimAgainst ?? 'SUPPLIER', name: partyName ?? supplierName },
+                writes: [{ drCr: 'DR', head: 'Claim receivable', amount: f(m.taxable) }, { drCr: 'DR', head: 'ITC reversal', amount: f(m.tax) }, stock, gst] };
+            default: return { creditTo: { kind: 'REPLACEMENT', name: 'Replacement due (Shortage Receipt)' },
+                writes: [{ drCr: 'DR', head: 'Shortage receivable', amount: f(m.taxable) }, { drCr: 'DR', head: 'Input GST pending (re-claimed on receipt)', amount: f(m.tax) }, stock, gst] };
+        }
+    }
+    async supplierBalance(db, companyId, supplierId) {
+        const [b] = await db.$queryRaw `
+      SELECT SUM(abl_pending_amount) FILTER (WHERE abl_dr_cr = 'CR') AS cr, SUM(abl_pending_amount) FILTER (WHERE abl_dr_cr = 'DR') AS dr
+        FROM accounts.acc_bill_balance
+       WHERE abl_company_id = ${companyId}::uuid AND abl_party_id = ${supplierId}::uuid AND abl_is_active AND NOT abl_is_deleted AND abl_pending_amount > 0`;
+        return (0, purchase_doc_helpers_1.D)(b?.cr).minus((0, purchase_doc_helpers_1.D)(b?.dr));
+    }
+    async validate(dto) {
+        const h = dto.header;
+        const p = await this.prepare(this.prisma, dto);
+        const parties = await this.partyNames(this.prisma, [p.src.supplierId, ...p.rows.map((r) => r.claimParty).filter((x) => !!x)]);
+        const balance = await this.supplierBalance(this.prisma, h.companyId, p.src.supplierId);
+        const issues = p.problems.map((x) => ({ ...x, level: 'REFUSE', lineNo: lineNoOf(dto, x.field), needsRight: null }));
+        issues.push(...await this.ewbIssues(this.prisma, h, p));
+        const names = await (0, purchase_doc_helpers_1.unitNames)(this.prisma, p.rows.map((r) => r.s.uomId));
+        return (0, purchase_doc_helpers_1.jsonSafe)({
+            header: { supplierId: p.src.supplierId, supplierName: parties.get(p.src.supplierId) ?? null, srcRefno: p.src.refno, srcDocDate: p.src.docDate,
+                godownId: p.godownId, placeOfSupply: p.posStcd },
+            lines: p.rows.map((r) => ({
+                lineNo: r.l.lineNo, srcItemId: r.s.srcItemId, srcLineNo: r.s.lineNo, itemId: r.s.itemId, ...names.get(r.s.uomId), outcome: r.l.outcome, outcomeText: OUTCOME_TEXT[r.l.outcome],
+                reasonId: r.l.reasonId ?? null, reasonName: r.reasonName, billedQty: r.s.basisQty, inQty: r.s.inQty, returnedQty: p.returned.get(r.s.srcItemId) ?? purchase_doc_helpers_1.ZERO,
+                returnableQty: client_1.Prisma.Decimal.max(r.s.inQty.minus(p.returned.get(r.s.srcItemId) ?? purchase_doc_helpers_1.ZERO), 0),
+                lotId: r.lot?.lot_id ?? null, godownId: r.lot?.godown_id ?? null, batchNo: r.lot?.batch_no ?? null, expiryDate: r.lot?.expiry ?? null, mrp: r.lot?.mrp ?? null,
+                rate: r.s.rate, gstPct: r.s.gstPct, taxable: r.m.taxable, tax: r.m.tax, total: r.m.total,
+                ...this.rowWrites(h.kind, r.l.outcome, r.m, r.against, r.claimParty ? parties.get(r.claimParty) ?? null : null, parties.get(p.src.supplierId) ?? null),
+            })),
+            totals: this.totalsOf(p, balance, true),
+            warnings: issues.filter((x) => x.level === 'WARN'), refusals: issues.filter((x) => x.level === 'REFUSE'),
+        });
+    }
+    totalsOf(p, balance, beforePost) {
+        return {
+            rows: p.rows.length, returnNow: p.returnValue.toFixed(2), claimsRaised: p.claimValue.toFixed(2), replaceQtyBase: p.replaceBase.toString(),
+            itcReversed: p.itcReversed.toFixed(2), itcOnDestroyed: p.itcDestroyed.toFixed(2),
+            itcPendingOnReplace: p.itcOnReplace.toFixed(2),
+            goodsValue: p.goodsValue.toFixed(2),
+            supplierBalance: balance.toFixed(2),
+            supplierBalanceNow: (beforePost ? balance.minus(p.returnValue) : balance).toFixed(2),
+        };
+    }
+    async ewbIssues(db, h, p) {
+        if (h.ewbNo?.trim() || !p.rows.length)
+            return [];
+        const inter = p.rows.some((r) => !r.m.tax.isZero()) && (await db.$queryRaw `
+      SELECT count(*) AS n FROM purchase.pur_invoice_item WHERE pii_pi_id = ${p.src.id}::uuid AND pii_igst_amt > 0 AND NOT pii_is_deleted`)[0]?.n > 0n;
+        const e = await this.statutory.ewayApplicable(h.companyId, Number(p.goodsValue), h.docDate.slice(0, 10), { interState: !!inter, stateCode: p.posStcd }, db);
+        if (!e.applicable)
+            return [];
+        return [{ code: 'PUR_RETURN_EWB_NEEDED', level: 'WARN', lineNo: null, field: 'header.ewbNo', needsRight: null,
+                message: `Goods worth ${p.goodsValue.toFixed(2)} go back — above the e-way bill limit ${Number(e.limit?.value ?? 0).toFixed(2)}: record the e-way bill no.` }];
+    }
+    async partyNames(db, ids) {
+        const u = [...new Set(ids.filter(Boolean))];
+        if (!u.length)
+            return new Map();
+        const rows = await db.$queryRaw `SELECT led_id AS id, led_name AS name FROM accounts.acc_ledger_master WHERE led_id = ANY(${u}::uuid[])`;
+        return new Map(rows.map((r) => [r.id, r.name]));
+    }
+    bandInput(t, godownId, branchId, supplierName) {
+        return {
+            direction: 'OUTWARD', from: { godownId, branchId }, to: { name: supplierName },
+            mode: t.mode ?? null, transporterId: t.transporterId ?? null, transporterName: t.transporterName?.trim() || null,
+            transporterGstin: t.transporterGstin?.trim() || null, lrNo: t.lrNo?.trim() || null, lrDate: t.lrDate?.slice(0, 10) ?? null,
+            distanceKm: t.distanceKm ?? null, remarks: t.remarks?.trim() || null,
+        };
+    }
     async save(dto) {
         const actor = this.actor();
         const h = dto.header;
         const id = await this.prisma.$transaction(async (tx) => {
-            const src = await this.sourceDoc(tx, h.kind, h.srcDocId, h.srcAccYear);
-            if (src.status !== 'POSTED')
-                (0, purchase_errors_1.purConflict)(`${src.refno} is ${src.status} — only a posted ${h.kind === 'AGAINST_GRN' ? 'GRN' : 'bill'} takes a return.`, purchase_errors_1.PUR.NOT_POSTED, 'header.srcDocId');
-            const lines = await this.sourceLines(tx, src);
-            const lots = await this.sourceLots(tx, src);
-            const returned = await this.returnedQty(tx, src.id, h.prId);
-            const billed = src.docType === 'GRN' ? await this.billedGrnLines(tx, src.id) : new Map();
-            const problems = [];
-            const want = new Map();
-            const resolved = dto.lines.map((l, i) => {
-                const s = lines.get(l.srcItemId);
-                if (!s) {
-                    problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: that line is not on ${src.refno}` });
-                    return null;
-                }
-                if (billed.has(l.srcItemId))
-                    problems.push({ field: `lines.${i}.srcItemId`, code: purchase_errors_1.PUR.GRN_LINE_BILLED, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} is billed in ${billed.get(l.srcItemId)} — return it against that bill` });
-                const q = (0, purchase_doc_helpers_1.D)(l.qty).plus((0, purchase_doc_helpers_1.D)(l.freeQty));
-                if (!q.greaterThan(0))
-                    problems.push({ field: `lines.${i}.qty`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: nothing to return` });
-                want.set(l.srcItemId, (want.get(l.srcItemId) ?? purchase_doc_helpers_1.ZERO).plus(q));
-                if (h.kind === 'AGAINST_GRN' && l.outcome !== 'RETURN')
-                    problems.push({ field: `lines.${i}.outcome`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: goods not yet billed can only be RETURNED — claim after the bill` });
-                const claim = l.outcome === 'CLAIM_SENT' || l.outcome === 'CLAIM_DESTROYED';
-                const against = claim ? (l.claimAgainst ?? 'SUPPLIER') : null;
-                if (claim && against !== 'SUPPLIER' && !l.claimPartyId)
-                    problems.push({ field: `lines.${i}.claimPartyId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: name the ${against?.toLowerCase()} the claim is on` });
-                const bucket = l.bucket ?? 'SALEABLE';
-                const mine = lots.filter((x) => x.line_id === l.srcItemId && x.bucket === bucket);
-                const lot = l.lotId ? mine.find((x) => x.lot_id === l.lotId) : mine[0];
-                if (!lot)
-                    problems.push({ field: `lines.${i}.lotId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: ${src.refno} line ${s.lineNo} brought nothing into ${bucket.toLowerCase()} to return from` });
-                return { l, s, bucket, lot, against, claimParty: claim ? (against === 'SUPPLIER' ? src.supplierId : l.claimPartyId) : null };
-            });
-            for (const [srcItemId, q] of want) {
-                const s = lines.get(srcItemId);
-                if (!s)
-                    continue;
-                const left = s.inQty.minus(returned.get(srcItemId) ?? purchase_doc_helpers_1.ZERO);
-                if (q.greaterThan(left))
-                    problems.push({ field: 'lines', code: 'PUR_RETURN_QTY_EXCEEDS', message: `${src.refno} line ${s.lineNo}: ${q} to return, only ${left.isNegative() ? 0 : left} left of what came in` });
-            }
-            if (problems.length)
-                (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
+            const p = await this.prepare(tx, dto);
+            if (p.problems.length)
+                (0, purchase_errors_1.purRefuseMany)(p.problems[0].message, p.problems);
+            const { src, rows } = p;
             let prId = h.prId ?? null;
             let slno, refno, isNew = false;
             if (prId) {
@@ -660,30 +833,15 @@ let PurchaseReturnService = class PurchaseReturnService {
                 ({ slno, refno } = await (0, purchase_doc_helpers_1.allocateDocNumber)(tx, 'PRN', h.companyId, h.branchId, h.accYear, h.deviceId));
                 isNew = true;
             }
-            let returnValue = purchase_doc_helpers_1.ZERO, claimValue = purchase_doc_helpers_1.ZERO, itcReversed = purchase_doc_helpers_1.ZERO, replaceBase = purchase_doc_helpers_1.ZERO;
-            const rows = resolved.map((r) => {
-                const m = this.money(r.s, (0, purchase_doc_helpers_1.D)(r.l.qty));
-                const o = r.l.outcome;
-                if (o === 'RETURN')
-                    returnValue = returnValue.plus(m.total);
-                if (o === 'CLAIM_SENT')
-                    claimValue = claimValue.plus(m.total);
-                if (o === 'CLAIM_DESTROYED') {
-                    claimValue = claimValue.plus(m.taxable);
-                    itcReversed = itcReversed.plus(m.tax);
-                }
-                if (o === 'REPLACE')
-                    replaceBase = replaceBase.plus((0, purchase_doc_helpers_1.D)(r.l.qty).plus((0, purchase_doc_helpers_1.D)(r.l.freeQty)).times(r.s.factor));
-                return { ...r, m };
-            });
             const data = {
                 prCompanyId: h.companyId, prBranchId: h.branchId, prAccYear: h.accYear, prDeviceId: h.deviceId, prSlno: slno, prRefno: refno,
                 prDocDate: (0, purchase_doc_helpers_1.dateOf)(h.docDate), prKind: h.kind, prSrcDocId: src.id, prSrcAccYear: src.accYear, prSupplierId: src.supplierId,
-                prGodownId: rows[0]?.lot?.godown_id ?? null, prSettlement: h.settlement ?? await this.defaultSettlement(tx, h.companyId, h.branchId),
-                prSupplierCnNo: h.supplierCnNo ?? null, prSupplierCnDate: (0, purchase_doc_helpers_1.dateOf)(h.supplierCnDate), prEwbNo: h.ewbNo ?? null,
+                prGodownId: p.godownId, prPosStcd: p.posStcd, prSettlement: h.settlement ?? await this.defaultSettlement(tx, h.companyId, h.branchId),
+                prSupplierCnNo: h.supplierCnNo ?? null, prSupplierCnDate: (0, purchase_doc_helpers_1.dateOf)(h.supplierCnDate), prEwbNo: h.ewbNo ?? null, prEwbDate: (0, purchase_doc_helpers_1.dateOf)(h.ewbDate),
                 prVehicleNo: h.vehicleNo ?? null, prDriverName: h.driverName ?? null, prOurRef: src.refno,
-                prReturnValue: returnValue, prClaimValue: claimValue, prItcReversed: itcReversed, prReplaceQtyBase: replaceBase,
+                prReturnValue: p.returnValue, prClaimValue: p.claimValue, prItcReversed: p.itcDestroyed, prReplaceQtyBase: p.replaceBase,
                 prRemarks: h.remarks ?? null, prStatus: 'DRAFT',
+                ...(h.ourRef !== undefined ? { prMemoRef: h.ourRef?.trim() || null } : {}),
             };
             if (isNew)
                 prId = (await tx.purReturn.create({ data: { ...data, prCreatedBy: actor }, select: { prId: true } })).prId;
@@ -698,7 +856,7 @@ let PurchaseReturnService = class PurchaseReturnService {
                         priOutcome: l.outcome, priReasonId: l.reasonId ?? null, priQty: (0, purchase_doc_helpers_1.D)(l.qty), priFreeQty: (0, purchase_doc_helpers_1.D)(l.freeQty), priRate: s.rate,
                         priGrossAmt: m.taxable, priTaxableAmt: m.taxable, priTaxId: s.taxId, priGstPct: s.gstPct,
                         priCgstAmt: m.cgst, priSgstAmt: m.sgst, priIgstAmt: m.igst, priCessAmt: m.cess, priTotalAmt: m.total,
-                        priItcReversedInBooks: l.outcome !== 'REPLACE' && h.kind === 'AGAINST_INVOICE',
+                        priItcReversedInBooks: h.kind === 'AGAINST_INVOICE',
                         priSupplierCnStatus: l.outcome === 'RETURN' && h.kind === 'AGAINST_INVOICE' ? 'PENDING' : 'NONE',
                         priClaimAgainst: r.against, priClaimPartyId: r.claimParty, priRemarks: l.remarks ?? null, priCreatedBy: actor,
                     }, select: { priId: true } });
@@ -707,6 +865,25 @@ let PurchaseReturnService = class PurchaseReturnService {
                         piaGodownId: r.lot.godown_id, piaBucket: r.lot.bucket, piaLotId: r.lot.lot_id, piaBatchNo: r.lot.batch_no, piaExpiryDate: r.lot.expiry, piaMrp: r.lot.mrp,
                         piaQty: (0, purchase_doc_helpers_1.D)(l.qty), piaFreeQty: (0, purchase_doc_helpers_1.D)(l.freeQty), piaCreatedBy: actor,
                     } });
+            }
+            if (h.transport !== undefined) {
+                const ref = { docType: 'PURCHASE_RETURN', docId: prId, accYear: h.accYear, companyId: h.companyId, branchId: h.branchId, docRefno: refno };
+                const t = h.transport;
+                const carriage = t && (t.mode || t.transporterId || t.transporterName?.trim() || t.transporterGstin?.trim() || t.lrNo?.trim() || t.lrDate || t.distanceKm != null || t.remarks?.trim());
+                if (!t || !carriage)
+                    await this.transportBand.remove(tx, ref, actor);
+                else {
+                    const [sn] = await tx.$queryRaw `SELECT sup_name FROM purchase.suppliers WHERE sup_id = ${src.supplierId}::uuid`;
+                    const input = this.bandInput(t, p.godownId, h.branchId, sn?.sup_name ?? null);
+                    if (input.transporterId) {
+                        const [m] = await tx.$queryRaw `SELECT trn_name, trn_gstin FROM public.transporter_master WHERE trn_id = ${input.transporterId}::uuid AND NOT trn_is_deleted`;
+                        if (!m)
+                            (0, purchase_errors_1.purNotFound)(`Transporter ${input.transporterId} not found`, 'PUR_TRANSPORTER_NOT_FOUND', 'header.transport.transporterId');
+                        input.transporterName = input.transporterName ?? m.trn_name;
+                        input.transporterGstin = input.transporterGstin ?? m.trn_gstin ?? null;
+                    }
+                    await this.transportBand.write(tx, ref, input, actor, { gdrId: null });
+                }
             }
             if (isNew)
                 await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.PURCHASE_RETURN, docId: prId, refno, event: purchase_doc_helpers_1.TxnStatusEvent.CREATED, from: null, to: 'DRAFT', actor, deviceId: h.deviceId });
@@ -747,7 +924,8 @@ let PurchaseReturnService = class PurchaseReturnService {
         }), actor, postedOn);
         for (let i = 0; i < lines.length; i++) {
             const a = allocOf.get(lines[i].priId);
-            await tx.purReturnItem.update({ where: { priId_priAccYear: { priId: lines[i].priId, priAccYear: accYear } }, data: { priLotCostValue: perRow[i].cost } });
+            await tx.purReturnItem.update({ where: { priId_priAccYear: { priId: lines[i].priId, priAccYear: accYear } },
+                data: { priLotCostValue: perRow[i].cost, priItcReversedInBooks: pr.prKind === 'AGAINST_INVOICE' } });
             if (perRow[i].sviId)
                 await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaSviId: perRow[i].sviId, piaSviAccYear: accYear } });
         }
@@ -757,7 +935,7 @@ let PurchaseReturnService = class PurchaseReturnService {
         const add = (leg) => { if (leg.amount >= 0.005)
             legs.push(leg); };
         const claimByParty = new Map();
-        let supplierDr = purchase_doc_helpers_1.ZERO, grniDr = purchase_doc_helpers_1.ZERO, replaceDr = purchase_doc_helpers_1.ZERO, itcRev = purchase_doc_helpers_1.ZERO, stockCr = purchase_doc_helpers_1.ZERO;
+        let supplierDr = purchase_doc_helpers_1.ZERO, grniDr = purchase_doc_helpers_1.ZERO, replaceDr = purchase_doc_helpers_1.ZERO, replaceGst = purchase_doc_helpers_1.ZERO, itcRev = purchase_doc_helpers_1.ZERO, stockCr = purchase_doc_helpers_1.ZERO;
         const inputCr = new Map();
         const creditInput = (l) => {
             for (const [role, v] of [['INPUT_CGST', l.priCgstAmt], ['INPUT_SGST', l.priSgstAmt], ['INPUT_IGST', l.priIgstAmt], ['INPUT_CESS', l.priCessAmt]]) {
@@ -792,6 +970,8 @@ let PurchaseReturnService = class PurchaseReturnService {
                     break;
                 case 'REPLACE':
                     replaceDr = replaceDr.plus(l.priTaxableAmt);
+                    replaceGst = replaceGst.plus(tax);
+                    creditInput(l);
                     break;
             }
         });
@@ -801,6 +981,7 @@ let PurchaseReturnService = class PurchaseReturnService {
             add({ role: 'CLAIM_RECEIVABLE', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amt), roleTag: 'CLAIM_RECEIVABLE', remarks: `Claim · ${pr.prRefno}` });
         add({ role: 'SHORTAGE_RECEIVABLE', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(replaceDr), roleTag: 'SHORTAGE_RECEIVABLE', remarks: `Replacement due · ${pr.prRefno}` });
         add({ role: 'ITC_REVERSAL', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(itcRev), roleTag: 'ITC_REVERSAL', remarks: `GST on destroyed goods · ${pr.prRefno}` });
+        add({ role: 'INPUT_TAX_PENDING', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(replaceGst), roleTag: 'INPUT_TAX_PENDING', remarks: `GST on goods to be replaced · ${pr.prRefno}` });
         for (const v of inputCr.values())
             add({ role: v.role, drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(v.amt), taxId: v.taxId, supplyNature: nature, roleTag: v.role });
         add({ role: 'INVENTORY', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(stockCr), roleTag: 'INVENTORY', remarks: `Return ${pr.prRefno}` });
@@ -825,7 +1006,7 @@ let PurchaseReturnService = class PurchaseReturnService {
             await tx.purShortage.create({ data: {
                     pshCompanyId: pr.prCompanyId, pshBranchId: pr.prBranchId, pshAccYear: accYear, pshSupplierId: pr.prSupplierId, pshItemId: l.priItemId,
                     pshSrcDocType: DOC, pshSrcDocId: prId, pshSrcDocYear: accYear, pshSrcItemId: l.priId, pshSrcDocRefno: pr.prRefno,
-                    pshReason: 'REPLACE', pshQtyBase: base, pshValue: l.priTaxableAmt, pshGstPending: purchase_doc_helpers_1.ZERO,
+                    pshReason: 'REPLACE', pshQtyBase: base, pshValue: l.priTaxableAmt, pshGstPending: l.priCgstAmt.plus(l.priSgstAmt).plus(l.priIgstAmt).plus(l.priCessAmt),
                     pshOriginCostRate: base.isZero() ? purchase_doc_helpers_1.ZERO : l.priTaxableAmt.dividedBy(base).toDecimalPlaces(6), pshCreatedBy: actor,
                 } });
         }
@@ -843,15 +1024,54 @@ let PurchaseReturnService = class PurchaseReturnService {
         ]);
         const names = await (0, purchase_doc_helpers_1.unitNames)(this.prisma, lines.map((l) => l.priUomId));
         const settled = await this.settledByItem(this.prisma, lines.map((l) => l.priId));
+        const src = await this.sourceDoc(this.prisma, header.prKind, header.prSrcDocId, header.prSrcAccYear);
+        const [srcLines, returnedOthers] = await Promise.all([this.sourceLines(this.prisma, src), this.returnedQty(this.prisma, src.id, prId)]);
+        const reasons = await this.prisma.$queryRaw `
+      SELECT srm_id, srm_name FROM stock.stock_reason_master WHERE srm_id = ANY(${lines.map((l) => l.priReasonId).filter((x) => !!x)}::uuid[])`;
+        const reasonName = new Map(reasons.map((r) => [r.srm_id, r.srm_name]));
+        const parties = await this.partyNames(this.prisma, [header.prSupplierId, ...lines.map((l) => l.priClaimPartyId).filter((x) => !!x)]);
+        const [gd] = await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.prGodownId}::uuid`;
+        const band = await this.transportBand.read({ docType: 'PURCHASE_RETURN', docId: prId, accYear });
+        const balance = await this.supplierBalance(this.prisma, header.prCompanyId, header.prSupplierId);
+        let itcAll = purchase_doc_helpers_1.ZERO, itcReplace = purchase_doc_helpers_1.ZERO, goods = purchase_doc_helpers_1.ZERO;
+        for (const l of lines) {
+            const tax = l.priCgstAmt.plus(l.priSgstAmt).plus(l.priIgstAmt).plus(l.priCessAmt);
+            goods = goods.plus(l.priTotalAmt);
+            if (header.prKind === 'AGAINST_GRN')
+                continue;
+            if (l.priOutcome === 'REPLACE' && header.prStatus !== 'DRAFT' && !l.priItcReversedInBooks)
+                continue;
+            if (l.priOutcome === 'REPLACE')
+                itcReplace = itcReplace.plus(tax);
+            itcAll = itcAll.plus(tax);
+        }
+        const claimParty = lines.find((l) => l.priClaimAgainst && l.priClaimAgainst !== 'SUPPLIER' && l.priClaimPartyId);
         return (0, purchase_doc_helpers_1.jsonSafe)({
-            header: { ...header, supplierName: sup[0]?.sup_name ?? null },
+            header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null, placeOfSupply: header.prPosStcd ?? src.posStcd,
+                srcRefno: src.refno, srcDocDate: src.docDate,
+                claimPartyId: claimParty?.priClaimPartyId ?? null, claimPartyName: claimParty?.priClaimPartyId ? parties.get(claimParty.priClaimPartyId) ?? null : null,
+                claimAgainst: claimParty?.priClaimAgainst ?? null,
+                transport: band ? { mode: band.mode ?? null, transporterId: band.transporterId ?? null, transporterName: band.transporterName ?? null,
+                    transporterGstin: band.transporterGstin ?? null, lrNo: band.lrNo ?? null, lrDate: band.lrDate ? String(band.lrDate).slice(0, 10) : null,
+                    distanceKm: band.distanceKm ?? null, remarks: band.remarks ?? null } : null },
             lines: lines.map((l) => {
                 const a = allocs.find((x) => x.piaLineId === l.priId);
                 const claimValue = this.claimValueOf(l);
                 const done = settled.get(l.priId) ?? purchase_doc_helpers_1.ZERO;
+                const sl = l.priSrcItemId ? srcLines.get(l.priSrcItemId) : undefined;
+                const others = l.priSrcItemId ? returnedOthers.get(l.priSrcItemId) ?? purchase_doc_helpers_1.ZERO : purchase_doc_helpers_1.ZERO;
+                const tax = l.priCgstAmt.plus(l.priSgstAmt).plus(l.priIgstAmt).plus(l.priCessAmt);
                 return { ...l, ...names.get(l.priUomId), bucket: a?.piaBucket ?? null, lotId: a?.piaLotId ?? null, batchNo: a?.piaBatchNo ?? null, expiryDate: a?.piaExpiryDate ?? null,
-                    claimValue, claimSettled: done, claimOpen: claimValue.minus(done) };
+                    mrp: a?.piaMrp ?? null, godownId: a?.piaGodownId ?? null,
+                    claimValue, claimSettled: done, claimOpen: claimValue.minus(done),
+                    outcomeText: OUTCOME_TEXT[l.priOutcome] ?? l.priOutcome, reasonName: l.priReasonId ? reasonName.get(l.priReasonId) ?? null : null,
+                    claimPartyName: l.priClaimPartyId ? parties.get(l.priClaimPartyId) ?? null : null,
+                    billedQty: sl?.basisQty ?? null, inQty: sl?.inQty ?? null, returnedQty: others,
+                    returnableQty: sl ? client_1.Prisma.Decimal.max(sl.inQty.minus(others), 0) : null,
+                    ...this.rowWrites(header.prKind, l.priOutcome, { taxable: l.priTaxableAmt, tax, total: l.priTotalAmt }, l.priClaimAgainst, l.priClaimPartyId ? parties.get(l.priClaimPartyId) ?? null : null, sup[0]?.sup_name ?? null) };
             }),
+            totals: this.totalsOf({ rows: lines, returnValue: header.prReturnValue, claimValue: header.prClaimValue, replaceBase: header.prReplaceQtyBase,
+                itcReversed: itcAll, itcDestroyed: header.prItcReversed, itcOnReplace: itcReplace, goodsValue: goods }, balance, header.prStatus === 'DRAFT'),
         });
     }
     async cancel(dto) {
@@ -927,71 +1147,128 @@ let PurchaseReturnService = class PurchaseReturnService {
     }
     async settle(dto) {
         const actor = this.actor();
-        const out = await this.prisma.$transaction(async (tx) => {
-            const l = await tx.purReturnItem.findFirst({ where: { priId: dto.returnItemId, priAccYear: dto.accYear, priIsDeleted: false } });
-            if (!l)
-                (0, purchase_errors_1.purNotFound)(`Return row ${dto.returnItemId} not found`);
-            const pr = await tx.purReturn.findFirst({ where: { prId: l.priPrId, prAccYear: dto.accYear, prIsDeleted: false } });
-            if (!pr || pr.prStatus !== 'POSTED')
-                (0, purchase_errors_1.purConflict)('Only a claim on a posted return is settled.', purchase_errors_1.PUR.NOT_POSTED, 'returnItemId');
-            if (l.priOutcome !== 'CLAIM_SENT' && l.priOutcome !== 'CLAIM_DESTROYED')
-                (0, purchase_errors_1.purConflict)(`Line ${l.priLineNo} of ${pr.prRefno} is a ${l.priOutcome}, not a claim.`, purchase_errors_1.PUR.QTY_INVALID, 'returnItemId');
-            await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext('purchase_claim'), hashtext(${dto.returnItemId})))::int AS locked`;
-            const value = this.claimValueOf(l);
-            const open = value.minus((await this.settledByItem(tx, [l.priId])).get(l.priId) ?? purchase_doc_helpers_1.ZERO);
-            if (!open.greaterThan(0))
-                (0, purchase_errors_1.purConflict)(`The claim on ${pr.prRefno} line ${l.priLineNo} is fully settled.`, purchase_errors_1.PUR.EDIT_LOCKED_PAID, 'returnItemId');
-            const amount = dto.action === 'CREDIT' ? (0, purchase_doc_helpers_1.r2)((0, purchase_doc_helpers_1.D)(dto.amount ?? open)) : open;
-            if (!amount.greaterThan(0) || amount.greaterThan(open))
-                (0, purchase_errors_1.purRefuse)(`Amount must be more than 0 and at most the open ${open.toFixed(2)}.`, purchase_errors_1.PUR.QTY_INVALID, 'amount');
-            const accYear = dto.settleAccYear ?? dto.accYear;
-            const docDate = dto.docDate ?? (0, purchase_doc_helpers_1.isoDate)(new Date());
-            const party = l.priClaimPartyId;
-            const tax = l.priCgstAmt.plus(l.priSgstAmt).plus(l.priIgstAmt).plus(l.priCessAmt);
-            const reavail = dto.action === 'REJECTED' && l.priOutcome === 'CLAIM_SENT' && !l.priTotalAmt.isZero() ? (0, purchase_doc_helpers_1.r2)(tax.times(amount).dividedBy(l.priTotalAmt)) : purchase_doc_helpers_1.ZERO;
-            const [{ n: seq }] = await tx.$queryRaw `SELECT count(*) + 1 AS n FROM purchase.pur_claim_settlement WHERE pcs_return_item_id = ${l.priId}::uuid`;
-            const ref = `${pr.prRefno}/L${l.priLineNo}/S${seq}`;
-            const s = await tx.purClaimSettlement.create({ data: {
-                    pcsCompanyId: pr.prCompanyId, pcsBranchId: pr.prBranchId, pcsAccYear: accYear, pcsDeviceId: dto.deviceId,
-                    pcsReturnItemId: l.priId, pcsReturnItemAccYear: dto.accYear, pcsAction: dto.action, pcsReceivedAs: dto.action === 'CREDIT' ? (dto.receivedAs ?? 'CN') : null,
-                    pcsAmount: amount, pcsGstReavailed: reavail, pcsCnNo: dto.cnNo ?? null, pcsCnDate: (0, purchase_doc_helpers_1.dateOf)(dto.cnDate), pcsReason: dto.reason ?? null,
-                    pcsDocDate: (0, purchase_doc_helpers_1.dateOf)(docDate), pcsCreatedBy: actor,
-                }, select: { pcsId: true } });
-            const label = `Claim ${pr.prRefno}/L${l.priLineNo}`;
-            const legs = [{ role: 'CLAIM_RECEIVABLE', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(amount), roleTag: 'CLAIM_RECEIVABLE', remarks: label }];
-            if (dto.action === 'CREDIT')
-                legs.push({ ledgerId: party, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount), remarks: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, docRefno: pr.prRefno });
-            else {
-                if (reavail.greaterThan(0)) {
-                    const heads = [['INPUT_CGST', l.priCgstAmt], ['INPUT_SGST', l.priSgstAmt], ['INPUT_IGST', l.priIgstAmt], ['INPUT_CESS', l.priCessAmt]];
-                    let given = purchase_doc_helpers_1.ZERO;
-                    const live = heads.filter(([, v]) => !v.isZero());
-                    live.forEach(([role, v], k) => {
-                        const part = k === live.length - 1 ? reavail.minus(given) : (0, purchase_doc_helpers_1.r2)(reavail.times(v).dividedBy(tax));
-                        given = given.plus(part);
-                        legs.push({ role, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(part), taxId: l.priTaxId, supplyNature: (l.priIgstAmt.greaterThan(0) ? 'INTER' : 'INTRA'), roleTag: role, remarks: `${label} — GST re-availed` });
-                    });
-                }
-                legs.push({ role: 'WRITE_OFF', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount.minus(reavail)), roleTag: 'WRITE_OFF', remarks: `${label} — ${dto.action === 'REJECTED' ? 'rejected' : 'short-settled'}` });
+        const out = await this.prisma.$transaction((tx) => this.settleIn(tx, dto, actor), { timeout: 60000, maxWait: 10000 });
+        const { legs: _legs, ...rest } = out;
+        return (0, purchase_doc_helpers_1.jsonSafe)(rest);
+    }
+    async settleIn(tx, dto, actor, opts = {}) {
+        const l = await tx.purReturnItem.findFirst({ where: { priId: dto.returnItemId, priAccYear: dto.accYear, priIsDeleted: false } });
+        if (!l)
+            (0, purchase_errors_1.purNotFound)(`Return row ${dto.returnItemId} not found`);
+        const pr = await tx.purReturn.findFirst({ where: { prId: l.priPrId, prAccYear: dto.accYear, prIsDeleted: false } });
+        if (!pr || pr.prStatus !== 'POSTED')
+            (0, purchase_errors_1.purConflict)('Only a claim on a posted return is settled.', purchase_errors_1.PUR.NOT_POSTED, 'returnItemId');
+        if (l.priOutcome !== 'CLAIM_SENT' && l.priOutcome !== 'CLAIM_DESTROYED')
+            (0, purchase_errors_1.purConflict)(`Line ${l.priLineNo} of ${pr.prRefno} is a ${l.priOutcome}, not a claim.`, purchase_errors_1.PUR.QTY_INVALID, 'returnItemId');
+        await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext(${purchase_claim_locks_1.RETURN_CLAIM_LOCK}), hashtext(${l.priId})))::int AS locked`;
+        const value = this.claimValueOf(l);
+        const open = value.minus((await this.settledByItem(tx, [l.priId])).get(l.priId) ?? purchase_doc_helpers_1.ZERO).minus(opts.takenAlready ?? purchase_doc_helpers_1.ZERO);
+        if (!open.greaterThan(0))
+            (0, purchase_errors_1.purConflict)(`The claim on ${pr.prRefno} line ${l.priLineNo} is fully settled.`, purchase_errors_1.PUR.EDIT_LOCKED_PAID, 'returnItemId');
+        const amount = dto.action === 'CREDIT' ? (0, purchase_doc_helpers_1.r2)((0, purchase_doc_helpers_1.D)(dto.amount ?? open)) : open;
+        if (!amount.greaterThan(0) || amount.greaterThan(open))
+            (0, purchase_errors_1.purRefuse)(`Amount must be more than 0 and at most the open ${open.toFixed(2)}.`, purchase_errors_1.PUR.QTY_INVALID, 'amount');
+        const accYear = dto.settleAccYear ?? dto.accYear;
+        const docDate = dto.docDate ?? (0, purchase_doc_helpers_1.isoDate)(new Date());
+        const party = l.priClaimPartyId;
+        const tax = l.priCgstAmt.plus(l.priSgstAmt).plus(l.priIgstAmt).plus(l.priCessAmt);
+        const reavail = dto.action === 'REJECTED' && l.priOutcome === 'CLAIM_SENT' && !l.priTotalAmt.isZero() ? (0, purchase_doc_helpers_1.r2)(tax.times(amount).dividedBy(l.priTotalAmt)) : purchase_doc_helpers_1.ZERO;
+        const label = `Claim ${pr.prRefno}/L${l.priLineNo}`;
+        const legs = [{ role: 'CLAIM_RECEIVABLE', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(amount), roleTag: 'CLAIM_RECEIVABLE', remarks: label }];
+        if (dto.action === 'CREDIT')
+            legs.push({ ledgerId: party, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount), remarks: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, docRefno: pr.prRefno });
+        else {
+            if (reavail.greaterThan(0)) {
+                const heads = [['INPUT_CGST', l.priCgstAmt], ['INPUT_SGST', l.priSgstAmt], ['INPUT_IGST', l.priIgstAmt], ['INPUT_CESS', l.priCessAmt]];
+                let given = purchase_doc_helpers_1.ZERO;
+                const live = heads.filter(([, v]) => !v.isZero());
+                live.forEach(([role, v], k) => {
+                    const part = k === live.length - 1 ? reavail.minus(given) : (0, purchase_doc_helpers_1.r2)(reavail.times(v).dividedBy(tax));
+                    given = given.plus(part);
+                    legs.push({ role, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(part), taxId: l.priTaxId, supplyNature: (l.priIgstAmt.greaterThan(0) ? 'INTER' : 'INTRA'), roleTag: role, remarks: `${label} — GST re-availed` });
+                });
             }
-            const vt = await (0, purchase_doc_helpers_1.voucherTypeId)(tx, 'PCL');
-            const posted = await this.vouchers.postLegs(tx, {
-                header: { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: SETTLE_DOC, srcDocId: s.pcsId,
-                    docLabel: 'Claim settlement', docRefno: ref, docDate, usrRefno: dto.cnNo ?? null, docAmount: (0, purchase_doc_helpers_1.num2)(amount), partyId: party,
-                    userId: actor, deviceId: dto.deviceId, remarks: dto.reason ?? `${label} ${dto.action.toLowerCase()}`, createdBy: actor },
-                legs: legs.filter((g) => g.amount >= 0.005),
-            });
-            await tx.purClaimSettlement.update({ where: { pcsId_pcsAccYear: { pcsId: s.pcsId, pcsAccYear: accYear } }, data: { pcsVoucherId: posted.voucherId } });
-            if (dto.action === 'CREDIT') {
-                await (0, purchase_doc_helpers_1.raiseBillRow)(tx, { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, partyId: party, billType: 'PURCHASE_RETURN', drCr: 'DR', amount,
-                    docType: SETTLE_DOC, docId: s.pcsId, voucherId: posted.voucherId, voucherTypeId: vt, voucherNo: posted.voucherSlno, voucherDate: docDate,
-                    refno: posted.voucherRefno ?? ref, docDate: (0, purchase_doc_helpers_1.dateOf)(docDate), narration: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, actor });
-            }
-            await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.CLAIM_SETTLEMENT, docId: s.pcsId, refno: ref,
-                event: purchase_doc_helpers_1.TxnStatusEvent.POSTED, from: null, to: dto.action, actor, deviceId: dto.deviceId, remarks: dto.reason ?? null });
-            return { settlementId: s.pcsId, accYear, amount, open: open.minus(amount), voucherRefno: posted.voucherRefno };
-        }, { timeout: 60000, maxWait: 10000 });
-        return (0, purchase_doc_helpers_1.jsonSafe)(out);
+            legs.push({ role: 'WRITE_OFF', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount.minus(reavail)), roleTag: 'WRITE_OFF', remarks: `${label} — ${dto.action === 'REJECTED' ? 'rejected' : 'short-settled'}` });
+        }
+        const live = legs.filter((g) => g.amount >= 0.005);
+        const base = { returnItemId: l.priId, refno: pr.prRefno, lineNo: l.priLineNo, action: dto.action, receivedAs: dto.action === 'CREDIT' ? (dto.receivedAs ?? 'CN') : null,
+            amount, gstReavailed: reavail, open: open.minus(amount), companyId: pr.prCompanyId, branchId: pr.prBranchId, legs: live };
+        if (opts.dryRun)
+            return { ...base, dryRun: true, settlementId: null, accYear, voucherRefno: null };
+        const [{ n: seq }] = await tx.$queryRaw `SELECT count(*) + 1 AS n FROM purchase.pur_claim_settlement WHERE pcs_return_item_id = ${l.priId}::uuid AND pcs_shortage_close_id IS NULL`;
+        const ref = `${pr.prRefno}/L${l.priLineNo}/S${seq}`;
+        const s = await tx.purClaimSettlement.create({ data: {
+                pcsCompanyId: pr.prCompanyId, pcsBranchId: pr.prBranchId, pcsAccYear: accYear, pcsDeviceId: dto.deviceId,
+                pcsReturnItemId: l.priId, pcsReturnItemAccYear: dto.accYear, pcsAction: dto.action, pcsReceivedAs: base.receivedAs,
+                pcsAmount: amount, pcsGstReavailed: reavail, pcsCnNo: dto.cnNo ?? null, pcsCnDate: (0, purchase_doc_helpers_1.dateOf)(dto.cnDate), pcsReason: dto.reason ?? null,
+                pcsDocDate: (0, purchase_doc_helpers_1.dateOf)(docDate), pcsCreatedBy: actor,
+            }, select: { pcsId: true } });
+        const vt = await (0, purchase_doc_helpers_1.voucherTypeId)(tx, 'PCL');
+        const posted = await this.vouchers.postLegs(tx, {
+            header: { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: SETTLE_DOC, srcDocId: s.pcsId,
+                docLabel: 'Claim settlement', docRefno: ref, docDate, usrRefno: dto.cnNo ?? null, docAmount: (0, purchase_doc_helpers_1.num2)(amount), partyId: party,
+                userId: actor, deviceId: dto.deviceId, remarks: dto.reason ?? `${label} ${dto.action.toLowerCase()}`, createdBy: actor },
+            legs: live,
+        });
+        await tx.purClaimSettlement.update({ where: { pcsId_pcsAccYear: { pcsId: s.pcsId, pcsAccYear: accYear } }, data: { pcsVoucherId: posted.voucherId } });
+        if (dto.action === 'CREDIT') {
+            await (0, purchase_doc_helpers_1.raiseBillRow)(tx, { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, partyId: party, billType: 'PURCHASE_RETURN', drCr: 'DR', amount,
+                docType: SETTLE_DOC, docId: s.pcsId, voucherId: posted.voucherId, voucherTypeId: vt, voucherNo: posted.voucherSlno, voucherDate: docDate,
+                refno: posted.voucherRefno ?? ref, docDate: (0, purchase_doc_helpers_1.dateOf)(docDate), narration: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, actor });
+        }
+        await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.CLAIM_SETTLEMENT, docId: s.pcsId, refno: ref,
+            event: purchase_doc_helpers_1.TxnStatusEvent.POSTED, from: null, to: dto.action, actor, deviceId: dto.deviceId, remarks: dto.reason ?? null });
+        return { ...base, dryRun: false, settlementId: s.pcsId, accYear, voucherRefno: posted.voucherRefno ?? null };
+    }
+    async duesClaims(q) {
+        const rows = await this.prisma.$queryRaw `
+      SELECT pri.pri_id AS "returnItemId", pri.pri_acc_year AS "accYear", pr.pr_id AS "prId", pr.pr_refno AS "refno", pr.pr_doc_date AS "docDate",
+             (current_date - pr.pr_doc_date)::int AS "ageDays",
+             pri.pri_line_no AS "lineNo", pri.pri_src_doc_type AS "srcDocType", pri.pri_src_doc_id AS "srcDocId", pri.pri_src_doc_refno AS "srcRefno",
+             COALESCE(pi.pi_doc_date, g.grn_doc_date) AS "srcDocDate", pi.pi_supplier_inv_no AS "srcSupplierInvNo",
+             pri.pri_item_id AS "itemId", im.item_name_en AS "itemName", pri.pri_qty AS "qty", u.unit_name AS "unitName",
+             pri.pri_outcome AS "outcome", pri.pri_reason_id AS "reasonId", rs.srm_name AS "reasonName",
+             pri.pri_claim_against AS "claimAgainst", pri.pri_claim_party_id AS "claimPartyId", lm.led_name AS "partyName",
+             pr.pr_supplier_id AS "supplierId", sp.sup_name AS "supplierName",
+             CASE pri.pri_outcome WHEN 'CLAIM_SENT' THEN pri.pri_total_amt ELSE pri.pri_taxable_amt END AS "claimValue",
+             COALESCE(st.credited, 0) AS "credited", COALESCE(st.written_off, 0) AS "writtenOff", COALESCE(st.settled, 0) AS "settled",
+             la.pcs_id AS "lastSettlementId", la.pcs_acc_year AS "lastSettlementAccYear", la.pcs_action AS "lastAction", la.pcs_received_as AS "lastReceivedAs",
+             la.pcs_cn_no AS "lastCnNo", la.pcs_cn_date AS "lastCnDate", la.pcs_amount AS "lastAmount", la.pcs_doc_date AS "lastDate", la.pcs_reason AS "lastReason"
+        FROM purchase.pur_return_item pri
+        JOIN purchase.pur_return pr ON pr.pr_id = pri.pri_pr_id AND pr.pr_acc_year = pri.pri_acc_year
+        JOIN inventory.item_master im ON im.item_id = pri.pri_item_id
+        LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = pri.pri_uom_id
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN stock.stock_reason_master rs ON rs.srm_id = pri.pri_reason_id
+        LEFT JOIN accounts.acc_ledger_master lm ON lm.led_id = pri.pri_claim_party_id
+        LEFT JOIN purchase.suppliers sp ON sp.sup_id = pr.pr_supplier_id
+        LEFT JOIN purchase.pur_invoice pi ON pri.pri_src_doc_type = 'PURCHASE_BILL' AND pi.pi_id = pri.pri_src_doc_id AND pi.pi_acc_year = pri.pri_src_doc_year
+        LEFT JOIN purchase.pur_grn g ON pri.pri_src_doc_type = 'GRN' AND g.grn_id = pri.pri_src_doc_id AND g.grn_acc_year = pri.pri_src_doc_year
+        LEFT JOIN LATERAL (
+          SELECT SUM(s.pcs_amount) FILTER (WHERE s.pcs_action = 'CREDIT') AS credited,
+                 SUM(s.pcs_amount) FILTER (WHERE s.pcs_action <> 'CREDIT') AS written_off, SUM(s.pcs_amount) AS settled
+            FROM purchase.pur_claim_settlement s WHERE s.pcs_return_item_id = pri.pri_id AND NOT s.pcs_is_deleted) st ON true
+        LEFT JOIN LATERAL (
+          SELECT s.pcs_id, s.pcs_acc_year, s.pcs_action, s.pcs_received_as, s.pcs_cn_no, s.pcs_cn_date, s.pcs_amount, s.pcs_doc_date, s.pcs_reason
+            FROM purchase.pur_claim_settlement s
+           WHERE s.pcs_return_item_id = pri.pri_id AND NOT s.pcs_is_deleted AND s.pcs_reversal_of_id IS NULL
+             AND NOT EXISTS (SELECT 1 FROM purchase.pur_claim_settlement u2 WHERE u2.pcs_reversal_of_id = s.pcs_id AND NOT u2.pcs_is_deleted)
+           ORDER BY s.pcs_created_on DESC LIMIT 1) la ON true
+       WHERE pr.pr_company_id = ${q.companyId}::uuid AND pr.pr_branch_id = ${q.branchId}::uuid AND pr.pr_status = 'POSTED' AND NOT pr.pr_is_deleted
+         AND NOT pri.pri_is_deleted AND pri.pri_outcome IN ('CLAIM_SENT', 'CLAIM_DESTROYED')
+         AND (${q.supplierId ?? null}::uuid IS NULL OR pr.pr_supplier_id = ${q.supplierId ?? null}::uuid)
+       ORDER BY pr.pr_doc_date, pr.pr_refno, pri.pri_line_no`;
+        const out = rows.map((r) => {
+            const value = (0, purchase_doc_helpers_1.D)(r.claimValue), settled = (0, purchase_doc_helpers_1.D)(r.settled), credited = (0, purchase_doc_helpers_1.D)(r.credited), off = (0, purchase_doc_helpers_1.D)(r.writtenOff);
+            const open = value.minus(settled);
+            const status = !open.greaterThan(0) ? (credited.isZero() ? 'WRITTEN_OFF' : 'SETTLED') : settled.isZero() ? 'OPEN' : 'PART';
+            const last = r.lastSettlementId ? { settlementId: r.lastSettlementId, accYear: r.lastSettlementAccYear, action: r.lastAction, receivedAs: r.lastReceivedAs,
+                cnNo: r.lastCnNo, cnDate: r.lastCnDate, amount: r.lastAmount, on: r.lastDate, reason: r.lastReason } : null;
+            const { lastSettlementAccYear: _a, lastAction: _b, lastReceivedAs: _c, lastCnNo: _d, lastCnDate: _e, lastAmount: _f, lastDate: _g, lastReason: _h, ...keep } = r;
+            return { ...keep, claimRef: `${r.refno} · r${r.lineNo}`, kindText: OUTCOME_TEXT[String(r.outcome)] ?? r.outcome,
+                credited: credited.toFixed(2), writtenOff: off.toFixed(2), settled: settled.toFixed(2), open: open.toFixed(2), status, lastAction: last };
+        });
+        return q.all ? out : out.filter((r) => r.status === 'OPEN' || r.status === 'PART');
     }
     async settleUndo(dto) {
         const actor = this.actor();
@@ -1001,6 +1278,9 @@ let PurchaseReturnService = class PurchaseReturnService {
                 (0, purchase_errors_1.purNotFound)(`Settlement ${dto.settlementId} not found`);
             if (s.pcsReversalOfId)
                 (0, purchase_errors_1.purConflict)('That row is itself an undo.', purchase_errors_1.PUR.NOT_POSTED, 'settlementId');
+            if (!s.pcsReturnItemId || !s.pcsReturnItemAccYear)
+                (0, purchase_errors_1.purConflict)('That is a shortage-claim settlement — undo it on Supplier dues.', purchase_errors_1.PUR.NOT_POSTED, 'settlementId');
+            await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext(${purchase_claim_locks_1.RETURN_CLAIM_LOCK}), hashtext(${s.pcsReturnItemId})))::int AS locked`;
             const [undone] = await tx.$queryRaw `SELECT count(*) AS n FROM purchase.pur_claim_settlement WHERE pcs_reversal_of_id = ${dto.settlementId}::uuid AND NOT pcs_is_deleted`;
             if (Number(undone.n) > 0)
                 (0, purchase_errors_1.purConflict)('That settlement is already undone.', purchase_errors_1.PUR.NOT_POSTED, 'settlementId');
@@ -1023,7 +1303,8 @@ exports.PurchaseReturnService = PurchaseReturnService;
 exports.PurchaseReturnService = PurchaseReturnService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService, request_context_service_1.RequestContextService,
-        voucher_posting_service_1.VoucherPostingService, stock_posting_service_1.StockPostingService])
+        voucher_posting_service_1.VoucherPostingService, stock_posting_service_1.StockPostingService,
+        transport_band_service_1.TransportBandService, statutory_service_1.StatutoryService])
 ], PurchaseReturnService);
 let PurchaseReturnController = class PurchaseReturnController {
     service;
@@ -1043,6 +1324,10 @@ let PurchaseReturnController = class PurchaseReturnController {
             await this.right('post', 'post a purchase return');
         const data = await this.service.save(dto);
         return { success: true, message: `Return ${data.header.prRefno} ${dto.header.post ? 'posted' : 'saved as draft'}`, data };
+    }
+    async validate(dto) {
+        await this.right('view', 'check a purchase return');
+        return { success: true, message: 'Return checked', data: await this.service.validate(dto) };
     }
     async post(dto) {
         await this.right('post', 'post a purchase return');
@@ -1090,6 +1375,15 @@ __decorate([
     __metadata("design:paramtypes", [SaveReturnDto]),
     __metadata("design:returntype", Promise)
 ], PurchaseReturnController.prototype, "save", null);
+__decorate([
+    (0, common_1.Post)('returns/validate'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'The server\'s figures for a return being keyed — per row money, Credit to / Writes, billed / returned / returnable; the six totals (ITC reversed over every outcome, supplier balance now) and the strip (warnings[] / refusals[]). Writes nothing.' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [SaveReturnDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseReturnController.prototype, "validate", null);
 __decorate([
     (0, common_1.Post)('returns/post'),
     (0, common_1.Version)(api_version_1.API_VERSION),

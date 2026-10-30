@@ -4,6 +4,7 @@ exports.CustomerDetailLookup = void 0;
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const lookup_option_utils_1 = require("../utils/lookup-option.utils");
 const master_lookup_error_codes_1 = require("../types/master-lookup-error-codes");
+const party_billed_1 = require("../../../common/party/party-billed");
 class CustomerDetailLookup {
     prisma;
     constructor(prisma) {
@@ -19,7 +20,7 @@ class CustomerDetailLookup {
         if (!customer) {
             (0, module_service_utils_1.throwMasterNotFound)('Customer not found', 'cus_id', `No active customer found for id ${cus_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.CUSTOMER_NOT_FOUND);
         }
-        const [company, ledger, salesman] = await Promise.all([
+        const [company, ledger, salesman, billed] = await Promise.all([
             this.prisma.company.findFirst({
                 where: { compId: company_id, compIsDeleted: false },
                 select: { compTcsApplicable: true, compStateCode: true },
@@ -34,6 +35,7 @@ class CustomerDetailLookup {
                     select: { empName: true },
                 })
                 : Promise.resolve(null),
+            (0, party_billed_1.lastBilledOf)(this.prisma, customer.cusId),
         ]);
         if (!company) {
             (0, module_service_utils_1.throwMasterNotFound)('Company not found', 'company_id', `No active company found for id ${company_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.COMPANY_NOT_FOUND);
@@ -85,7 +87,7 @@ class CustomerDetailLookup {
             cust_pan: Boolean(customer.cusPanNo),
             local_sales: customer.cusStateCode === company.compStateCode,
             cust_points: null,
-            billed_date: (0, lookup_option_utils_1.formatBilledDate)(customer.cusBilledDate),
+            billed_date: (0, lookup_option_utils_1.formatBilledDate)(billed.date),
         };
     }
 }

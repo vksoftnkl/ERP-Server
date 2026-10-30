@@ -71,7 +71,7 @@ let PrintTemplateAssignmentService = class PrintTemplateAssignmentService {
         return this.createAssignment(dto, userId);
     }
     async createAssignment(dto, userId) {
-        if (!(0, module_service_utils_1.hasOwnProperty)(dto, 'ptaCompanyId')) {
+        if (!(0, module_service_utils_1.isPresentField)(dto, 'ptaCompanyId')) {
             (0, module_service_utils_1.throwSettingsBadRequest)('Invalid assignment scope', [
                 {
                     field: 'ptaCompanyId',
@@ -310,19 +310,19 @@ let PrintTemplateAssignmentService = class PrintTemplateAssignmentService {
                     (0, module_service_utils_1.throwSettingsNotFound)('Print template assignment not found', 'ptaId', `No active print template assignment found with id ${ptaId}`, print_template_assignment_error_codes_1.PrintTemplateAssignmentErrorCode.NOT_FOUND);
                 }
                 const merged = {
-                    companyId: (0, module_service_utils_1.hasOwnProperty)(dto, 'ptaCompanyId')
+                    companyId: (0, module_service_utils_1.isPresentField)(dto, 'ptaCompanyId')
                         ? (dto.ptaCompanyId ?? null)
                         : existing.ptaCompanyId,
-                    branchId: (0, module_service_utils_1.hasOwnProperty)(dto, 'ptaBranchId')
+                    branchId: (0, module_service_utils_1.isPresentField)(dto, 'ptaBranchId')
                         ? (dto.ptaBranchId ?? null)
                         : existing.ptaBranchId,
-                    deviceId: (0, module_service_utils_1.hasOwnProperty)(dto, 'ptaDeviceId')
+                    deviceId: (0, module_service_utils_1.isPresentField)(dto, 'ptaDeviceId')
                         ? (dto.ptaDeviceId ?? null)
                         : existing.ptaDeviceId,
-                    printerId: (0, module_service_utils_1.hasOwnProperty)(dto, 'ptaPrinterId')
+                    printerId: (0, module_service_utils_1.isPresentField)(dto, 'ptaPrinterId')
                         ? (dto.ptaPrinterId ?? null)
                         : existing.ptaPrinterId,
-                    printerName: (0, module_service_utils_1.hasOwnProperty)(dto, 'ptaPrinterName')
+                    printerName: (0, module_service_utils_1.isPresentField)(dto, 'ptaPrinterName')
                         ? (dto.ptaPrinterName ?? null)
                         : existing.ptaPrinterName,
                     templateId: dto.ptaTemplateId ?? existing.ptaTemplateId,

@@ -8,7 +8,7 @@ import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
   isForeignKeyConstraintError,
   resolveActor,
   throwOnUniqueConstraintError,
@@ -113,7 +113,9 @@ export class PrintTemplateAssignmentService {
   ): Promise<PrintTemplateAssignmentPayload> {
     // "Every company" must be asked for, not arrived at. An omitted company on
     // create would otherwise write the widest rung of the ladder by accident.
-    if (!hasOwnProperty(dto, 'ptaCompanyId')) {
+    // isPresentField, not hasOwnProperty: after the house ValidationPipe every
+    // declared DTO field is an own property (holding undefined when left out).
+    if (!isPresentField(dto, 'ptaCompanyId')) {
       throwSettingsBadRequest<
         PrintTemplateAssignmentErrorDetail,
         PrintTemplateAssignmentErrorResponse
@@ -462,19 +464,19 @@ export class PrintTemplateAssignmentService {
         // "every company" while a branch stays named — is only visible once the
         // two are combined.
         const merged = {
-          companyId: hasOwnProperty(dto, 'ptaCompanyId')
+          companyId: isPresentField(dto, 'ptaCompanyId')
             ? (dto.ptaCompanyId ?? null)
             : existing.ptaCompanyId,
-          branchId: hasOwnProperty(dto, 'ptaBranchId')
+          branchId: isPresentField(dto, 'ptaBranchId')
             ? (dto.ptaBranchId ?? null)
             : existing.ptaBranchId,
-          deviceId: hasOwnProperty(dto, 'ptaDeviceId')
+          deviceId: isPresentField(dto, 'ptaDeviceId')
             ? (dto.ptaDeviceId ?? null)
             : existing.ptaDeviceId,
-          printerId: hasOwnProperty(dto, 'ptaPrinterId')
+          printerId: isPresentField(dto, 'ptaPrinterId')
             ? (dto.ptaPrinterId ?? null)
             : existing.ptaPrinterId,
-          printerName: hasOwnProperty(dto, 'ptaPrinterName')
+          printerName: isPresentField(dto, 'ptaPrinterName')
             ? (dto.ptaPrinterName ?? null)
             : existing.ptaPrinterName,
           templateId: dto.ptaTemplateId ?? existing.ptaTemplateId,

@@ -1267,16 +1267,16 @@ let ItemsMasterService = class ItemsMasterService {
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_allow_purchase')) {
             data.itemAllowPurchase = saveItemDto.item_allow_purchase;
         }
-        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_purchase_uom_id')) {
+        if ((0, module_service_utils_2.isPresentField)(saveItemDto, 'item_purchase_uom_id')) {
             data.itemPurchaseUomId = saveItemDto.item_purchase_uom_id ?? null;
         }
-        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_min_shelf_life_pct')) {
+        if ((0, module_service_utils_2.isPresentField)(saveItemDto, 'item_min_shelf_life_pct')) {
             data.itemMinShelfLifePct = saveItemDto.item_min_shelf_life_pct ?? null;
         }
-        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_itc_class')) {
+        if ((0, module_service_utils_2.isPresentField)(saveItemDto, 'item_itc_class')) {
             data.itemItcClass = saveItemDto.item_itc_class ?? null;
         }
-        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_shortage_pct')) {
+        if ((0, module_service_utils_2.isPresentField)(saveItemDto, 'item_shortage_pct')) {
             data.itemShortagePct = saveItemDto.item_shortage_pct ?? null;
         }
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_allow_po')) {

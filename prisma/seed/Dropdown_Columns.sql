@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (184 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (188 rows).
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -263,6 +263,10 @@ SELECT v.* FROM (VALUES
     ,('01a1167a-d774-7411-909e-885e1ab3e261', 63, 1, 'Ledger'              , 'led_name'          , NULL                  , 'text'   , 65.00 , NULL    , true , true , 'system')
     ,('01a1167a-d774-7416-a5ad-7c583d156436', 63, 2, 'Group'               , 'group_name'        , NULL                  , 'text'   , 25.00 , NULL    , true , true , 'system')
     ,('01a1167a-d774-741a-8aa0-9bb0827f8dde', 63, 3, 'Short'               , 'led_short'         , NULL                  , 'text'   , 10.00 , NULL    , false, true , 'system')
+    ,('01a1b2c0-7300-7000-8000-000000000730', 73, 0, '#'                   , 'pte_id'            , '#'                   , 'text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a1b2c0-7300-7000-8000-000000000731', 73, 1, 'Terms'               , 'pte_name'          , 'Terms'               , 'text'   , 65.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7300-7000-8000-000000000732', 73, 2, 'Code'                , 'pte_code'          , 'Code'                , 'text'   , 25.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7300-7000-8000-000000000733', 73, 3, 'Text'                , 'pte_terms_text'    , 'Text'                , 'text'   , NULL  , 'Left'  , false, false, 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing

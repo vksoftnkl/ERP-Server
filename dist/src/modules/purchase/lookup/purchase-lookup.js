@@ -22,6 +22,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 const purchase_order_1 = require("../order/purchase-order");
+const purchase_bill_from_1 = require("../common/purchase-bill-from");
 class SupplierContextQueryDto {
     companyId;
     branchId;
@@ -164,6 +165,10 @@ let PurchaseLookupService = class PurchaseLookupService {
         if (fssaiTo && fssaiTo < onDate)
             warnings.push({ code: 'FSSAI_EXPIRED', message: `FSSAI licence ${s.sup_fssai_no ?? ''} expired on ${fssaiTo}.`.replace('  ', ' ') });
         const cr = (0, purchase_doc_helpers_1.D)(bal?.cr ?? 0), dr = (0, purchase_doc_helpers_1.D)(bal?.dr ?? 0);
+        const billFrom = (await (0, purchase_bill_from_1.supplierBillFrom)(this.prisma, q.supplierId)).map((b) => ({
+            addrId: b.addr_id, gstin: b.gstin, stateCode: b.state_code, stateName: b.state_name, name: b.name, addr: b.addr, place: b.place, pin: b.pin,
+            isDefault: b.is_default, source: b.source
+        }));
         return (0, purchase_doc_helpers_1.jsonSafe)({
             supplierId: s.sup_id, name: s.sup_name,
             gstNo: s.sup_gst_no ?? null, gstType: s.sup_gst_type ?? null, stateCode: s.sup_state_code ?? null, stateName: s.sup_state_name ?? null,
@@ -173,6 +178,7 @@ let PurchaseLookupService = class PurchaseLookupService {
             msme: category ? { category, activity, udyamNo: s.led_udyam_no ?? null, writtenAgreement: !!s.sup_msme_agreement,
                 agreedDays: s.sup_msme_agreed_days ?? null, dueDays, payBy: dueDays != null ? addDays(onDate, dueDays) : null } : null,
             licences: { drugLicenceNo: s.sup_drug_liscence_no ?? null, drugLicenceExpiry: drugExp, fssaiNo: s.sup_fssai_no ?? null, fssaiValidTo: fssaiTo },
+            billFrom,
             pendingPos: [...pos.values()],
             outstanding: { payable: cr, debits: dr, balance: cr.minus(dr), bills: Number(bal?.bills ?? 0), overdueBills: Number(bal?.overdue ?? 0),
                 oldestDue: day(bal?.oldest_due), billsOnHold: Number(held?.n ?? 0) },

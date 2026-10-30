@@ -2,6 +2,8 @@ import { HttpException } from '@nestjs/common';
 import { DeviceMaster } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DeviceListMasterService } from './device-list-master.service';
+import { SaveDeviceListMasterDto } from './dto/save-device-list-master.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import {
   DeviceListMasterErrorCode,
   DevicePlatform,
@@ -413,6 +415,26 @@ describe('DeviceListMasterService', () => {
       });
       expect(updatedData()).not.toHaveProperty('devDeviceUid');
       expect(updatedData()).toMatchObject({ devDeviceName: 'Phone', devModifiedBy: USER_ID });
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe devCompanyId is an own
+    // property even when left out; the uid check must run in the stored company.
+    it('checks the uid in the stored company when a piped update leaves the company out', async () => {
+      prisma.deviceMaster.findFirst
+        .mockResolvedValueOnce(
+          deviceRow({ devDeviceType: DeviceType.MOBILE, devDeviceUid: 'MOBILE-1' }),
+        )
+        .mockResolvedValueOnce(null);
+      const dto = (await createHouseValidationPipe().transform(
+        { devId: DEVICE_ID, devDeviceName: 'Phone', devDeviceType: DeviceType.MOBILE },
+        { type: 'body', metatype: SaveDeviceListMasterDto },
+      )) as SaveDeviceListMasterDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'devCompanyId')).toBe(true);
+
+      await service.save(dto);
+
+      expect(uniquenessWhere()).toMatchObject({ devCompanyId: COMPANY_ID });
+      expect(updatedData()).not.toHaveProperty('devCompanyId');
     });
 
     it('still wants the uid of a stored Desktop device', async () => {

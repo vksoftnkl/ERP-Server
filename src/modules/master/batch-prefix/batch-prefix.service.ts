@@ -24,7 +24,7 @@ import {
 import {
   DEFAULT_ACTOR,
   MasterWriteClient,
-  hasOwnProperty,
+  isPresentField,
   isPrismaErrorCode,
   throwOnUniqueConstraintError,
   throwMasterBadRequest,
@@ -190,7 +190,7 @@ export class BatchPrefixService {
           modifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           modifiedOn: new Date(),
         };
-        if (hasOwnProperty(saveBatchPrefixDto, 'syncDate')) {
+        if (isPresentField(saveBatchPrefixDto, 'syncDate')) {
           const syncDate = this.parseNullableDate(saveBatchPrefixDto.syncDate, 'syncDate');
           data.syncDate = syncDate ?? null;
         }

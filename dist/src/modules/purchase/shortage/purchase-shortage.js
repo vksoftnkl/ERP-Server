@@ -12,7 +12,8 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PurchaseShortageController = exports.PurchaseShortageService = exports.CloseUndoDto = exports.CloseShortageDto = exports.OpenShortagesQueryDto = exports.ShortageReceiptCancelDto = exports.ShortageReceiptRefDto = exports.SaveShortageReceiptDto = exports.ShortageReceiptHeaderDto = exports.ShortageReceiptLineDto = exports.SHORTAGE_MENU_ID = void 0;
+exports.PurchaseShortageController = exports.PurchaseShortageService = exports.CloseUndoDto = exports.CloseShortageDto = exports.OpenShortagesQueryDto = exports.ShortageReceiptCancelDto = exports.ShortageReceiptRefDto = exports.SaveShortageReceiptDto = exports.ShortageReceiptHeaderDto = exports.ShortageReceiptLineDto = exports.SHORTAGE_CLAIM_ACTIONS = exports.SHORTAGE_CLAIM_SETTLE_DOC = exports.SHORTAGE_MENU_ID = void 0;
+exports.nextShortageCloseRef = nextShortageCloseRef;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
@@ -25,10 +26,25 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
 const purchase_errors_1 = require("../common/purchase.errors");
+const purchase_claim_locks_1 = require("../common/purchase-claim-locks");
+const save_purchase_invoice_dto_1 = require("../invoice/dto/save-purchase-invoice.dto");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 exports.SHORTAGE_MENU_ID = 195;
 const DOC = 'SHORTAGE_RECEIPT';
 const CLOSE_DOC = 'SHORTAGE_CLOSE';
+exports.SHORTAGE_CLAIM_SETTLE_DOC = 'SHORTAGE_CLAIM_SETTLEMENT';
+function nextShortageCloseRef(prefix, taken) {
+    let max = 0;
+    for (const t of taken) {
+        if (!t.startsWith(`${prefix}/X`))
+            continue;
+        const m = /^(\d+)$/.exec(t.slice(prefix.length + 2));
+        if (m)
+            max = Math.max(max, Number(m[1]));
+    }
+    return `${prefix}/X${max + 1}`;
+}
+exports.SHORTAGE_CLAIM_ACTIONS = ['CREDIT', 'SHORT_SETTLED', 'REJECTED'];
 class ShortageReceiptLineDto {
     lineNo;
     shortageId;
@@ -38,6 +54,7 @@ class ShortageReceiptLineDto {
     expiryDate;
     mrp;
     remarks;
+    allocs;
 }
 exports.ShortageReceiptLineDto = ShortageReceiptLineDto;
 __decorate([
@@ -89,6 +106,14 @@ __decorate([
     (0, class_validator_1.MaxLength)(250),
     __metadata("design:type", String)
 ], ShortageReceiptLineDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: [save_purchase_invoice_dto_1.PurchaseAllocDto], description: 'F12: several batches / serials (qty in BASE units, Σ qty = the line qty; a serial row is qty 1). Bucket is always SALEABLE; godown default the header\'s. Omit = one row from batchNo / expiryDate / mrp.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_purchase_invoice_dto_1.PurchaseAllocDto),
+    __metadata("design:type", Array)
+], ShortageReceiptLineDto.prototype, "allocs", void 0);
 class ShortageReceiptHeaderDto {
     psrId;
     companyId;
@@ -98,8 +123,10 @@ class ShortageReceiptHeaderDto {
     supplierId;
     godownId;
     docDate;
+    receivedAt;
     challanNo;
     receivedBy;
+    supervisorId;
     remarks;
     post;
 }
@@ -147,6 +174,12 @@ __decorate([
     __metadata("design:type", String)
 ], ShortageReceiptHeaderDto.prototype, "docDate", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'When the goods came (date-time, ISO 8601 with offset). Default: now on the first save, then kept.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], ShortageReceiptHeaderDto.prototype, "receivedAt", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -154,12 +187,18 @@ __decorate([
     __metadata("design:type", String)
 ], ShortageReceiptHeaderDto.prototype, "challanNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The loadmen (employees, dd 72).' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.IsUUID)('all', { each: true }),
     __metadata("design:type", Array)
 ], ShortageReceiptHeaderDto.prototype, "receivedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'The supervisor (an employee, public.employee_master.emp_id → psr_supervisor_id; get: header.supervisorName). Omit = keep the saved one; null = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], ShortageReceiptHeaderDto.prototype, "supervisorId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -253,6 +292,8 @@ class CloseShortageDto {
     closeAccYear;
     deviceId;
     kind;
+    partyId;
+    claimAgainst;
     qty;
     cnNo;
     cnDate;
@@ -284,10 +325,22 @@ __decorate([
     __metadata("design:type", String)
 ], CloseShortageDto.prototype, "deviceId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: ['SUPPLIER_CN', 'WRITE_OFF'] }),
-    (0, class_validator_1.IsIn)(['SUPPLIER_CN', 'WRITE_OFF']),
+    (0, swagger_1.ApiProperty)({ enum: ['SUPPLIER_CN', 'CLAIM', 'WRITE_OFF'], description: 'CLAIM: on a transporter / insurer (partyId) — Dr Claim receivable / Cr Shortage receivable (+ the GST parked or claimed), like a supplier CN but the money is due from that party.' }),
+    (0, class_validator_1.IsIn)(['SUPPLIER_CN', 'CLAIM', 'WRITE_OFF']),
     __metadata("design:type", String)
 ], CloseShortageDto.prototype, "kind", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'CLAIM: the transporter / insurer ledger (acc_ledger_master.led_id).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], CloseShortageDto.prototype, "partyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['TRANSPORTER', 'INSURER'], description: 'CLAIM: who the party is (kept in the reason text).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['TRANSPORTER', 'INSURER']),
+    __metadata("design:type", String)
+], CloseShortageDto.prototype, "claimAgainst", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Base units; default the whole open qty.' }),
     (0, class_validator_1.IsOptional)(),
@@ -403,7 +456,9 @@ let PurchaseShortageService = class PurchaseShortageService {
             const raw = [['INPUT_CGST', r.cgst], ['INPUT_SGST', r.sgst], ['INPUT_IGST', r.igst], ['INPUT_CESS', r.cess]]
                 .map(([role, v]) => ({ role: role, amt: share(v), taxId: r.tax_id ?? null }))
                 .filter((h) => h.amt.greaterThan(0));
-            const gst = reason === 'SHORT_BILL' ? (0, purchase_doc_helpers_1.D)(r.gst) : reason === 'REPLACE' ? (0, purchase_doc_helpers_1.r2)(raw.reduce((s, h) => s.plus(h.amt), purchase_doc_helpers_1.ZERO)) : purchase_doc_helpers_1.ZERO;
+            const parked = (0, purchase_doc_helpers_1.D)(r.gst);
+            const gstPending = reason === 'SHORT_BILL' || (reason === 'REPLACE' && parked.greaterThan(0));
+            const gst = gstPending ? parked : reason === 'REPLACE' ? (0, purchase_doc_helpers_1.r2)(raw.reduce((s, h) => s.plus(h.amt), purchase_doc_helpers_1.ZERO)) : purchase_doc_helpers_1.ZERO;
             const rawTotal = raw.reduce((s, h) => s.plus(h.amt), purchase_doc_helpers_1.ZERO);
             let given = purchase_doc_helpers_1.ZERO;
             const heads = raw.map((h, k) => {
@@ -417,7 +472,7 @@ let PurchaseShortageService = class PurchaseShortageService {
             out.set(r.psh_id, {
                 id: r.psh_id, accYear: r.psh_acc_year, companyId: r.psh_company_id, branchId: r.psh_branch_id,
                 supplierId: r.psh_supplier_id, itemId: r.psh_item_id, reason, srcRefno: r.psh_src_doc_refno ?? null,
-                qtyBase, value, gst, heads, inter: heads.some((h) => h.role === 'INPUT_IGST'),
+                qtyBase, value, gst, heads, inter: heads.some((h) => h.role === 'INPUT_IGST'), gstPending,
                 costRate: value.greaterThan(0) && qtyBase.greaterThan(0) ? value.dividedBy(qtyBase).toDecimalPlaces(6) : (0, purchase_doc_helpers_1.D)(r.origin_rate),
                 baseUomId: r.base_uom, hsn: r.hsn ?? null,
                 received, closed, open: qtyBase.minus(received).minus(closed),
@@ -452,12 +507,47 @@ let PurchaseShortageService = class PurchaseShortageService {
         const sups = await this.prisma.$queryRaw `
       SELECT sup_id, sup_name FROM purchase.suppliers WHERE sup_id = ANY(${[...new Set(live.map((f) => f.supplierId))]}::uuid[])`;
         const supName = new Map(sups.map((s) => [s.sup_id, s.sup_name]));
-        return (0, purchase_doc_helpers_1.jsonSafe)(live.map((f) => ({
-            shortageId: f.id, accYear: f.accYear, supplierId: f.supplierId, supplierName: supName.get(f.supplierId) ?? null, itemId: f.itemId,
-            ...names.get(f.baseUomId), uomId: f.baseUomId, reason: f.reason, srcRefno: f.srcRefno, qtyBase: f.qtyBase, received: f.received, closed: f.closed,
-            openQty: f.open, value: f.value, gst: f.gst, openValue: f.value.minus(f.valueUsed), openGst: f.gst.minus(f.gstUsed), costRate: f.costRate,
-            batchNo: f.batchNo, expiryDate: f.expiry, mrp: f.mrp,
-        })));
+        const meta = live.length ? await this.prisma.$queryRaw `
+      SELECT s.psh_id AS id, s.psh_src_doc_type AS src_type, s.psh_src_doc_id AS src_id,
+             COALESCE(pi.pi_doc_date, g.grn_doc_date, pr.pr_doc_date) AS src_date,
+             COALESCE(sii.pii_line_no, sgi.gri_line_no, sri.pri_line_no) AS src_line_no,
+             (current_date - COALESCE(pi.pi_doc_date, g.grn_doc_date, pr.pr_doc_date))::int AS age,
+             COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND c.psc_kind = 'SUPPLIER_CN' AND NOT c.psc_is_deleted), 0) AS cn_qty,
+             COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND c.psc_kind = 'CLAIM' AND NOT c.psc_is_deleted), 0) AS claim_qty,
+             COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND c.psc_kind = 'WRITE_OFF' AND NOT c.psc_is_deleted), 0) AS wo_qty,
+             la.psc_id AS last_id, la.psc_acc_year AS last_year, la.psc_kind AS last_kind, la.psc_qty_base AS last_qty, la.psc_amount AS last_amount,
+             la.psc_cn_no AS last_cn, la.psc_party_id AS last_party, la.led_name AS last_party_name, la.psc_reason AS last_reason, la.psc_created_on AS last_on
+        FROM purchase.pur_shortage s
+        LEFT JOIN purchase.pur_invoice pi ON s.psh_src_doc_type = 'PURCHASE_BILL' AND pi.pi_id = s.psh_src_doc_id AND pi.pi_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_grn g ON s.psh_src_doc_type = 'GRN' AND g.grn_id = s.psh_src_doc_id AND g.grn_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_return pr ON s.psh_src_doc_type = 'PURCHASE_RETURN' AND pr.pr_id = s.psh_src_doc_id AND pr.pr_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_invoice_item sii ON s.psh_src_doc_type = 'PURCHASE_BILL' AND sii.pii_id = s.psh_src_item_id AND sii.pii_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_grn_item sgi ON s.psh_src_doc_type = 'GRN' AND sgi.gri_id = s.psh_src_item_id AND sgi.gri_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_return_item sri ON s.psh_src_doc_type = 'PURCHASE_RETURN' AND sri.pri_id = s.psh_src_item_id AND sri.pri_acc_year = s.psh_src_doc_year
+        LEFT JOIN LATERAL (
+          SELECT c.psc_id, c.psc_acc_year, c.psc_kind, c.psc_qty_base, c.psc_amount, c.psc_cn_no, c.psc_party_id, l.led_name, c.psc_reason, c.psc_created_on
+            FROM purchase.pur_shortage_close c LEFT JOIN accounts.acc_ledger_master l ON l.led_id = c.psc_party_id
+           WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted AND c.psc_reversal_of_id IS NULL
+             AND NOT EXISTS (SELECT 1 FROM purchase.pur_shortage_close u WHERE u.psc_reversal_of_id = c.psc_id AND NOT u.psc_is_deleted)
+           ORDER BY c.psc_created_on DESC LIMIT 1) la ON true
+       WHERE s.psh_id = ANY(${live.map((f) => f.id)}::uuid[])` : [];
+        const metaOf = new Map(meta.map((m) => [m.id, m]));
+        const WHY = { SHORT_BILL: 'Short on bill', SHORT_CHALLAN: 'Short vs challan', REPLACE: 'Replace' };
+        return (0, purchase_doc_helpers_1.jsonSafe)(live.map((f) => {
+            const m = metaOf.get(f.id) ?? {};
+            return {
+                shortageId: f.id, accYear: f.accYear, supplierId: f.supplierId, supplierName: supName.get(f.supplierId) ?? null, itemId: f.itemId,
+                ...names.get(f.baseUomId), uomId: f.baseUomId, reason: f.reason, reasonText: WHY[f.reason] ?? f.reason, srcRefno: f.srcRefno,
+                srcDocType: m.src_type ?? null, srcDocId: m.src_id ?? null, srcDocDate: m.src_date ?? null, srcLineNo: m.src_line_no ?? null, ageDays: m.age ?? null,
+                qtyBase: f.qtyBase, received: f.received, closed: f.closed, closedByCn: m.cn_qty ?? 0, closedByClaim: m.claim_qty ?? 0, writtenOffQty: m.wo_qty ?? 0,
+                openQty: f.open, value: f.value, gst: f.gst, openValue: f.value.minus(f.valueUsed), openGst: f.gst.minus(f.gstUsed), costRate: f.costRate,
+                gstPending: f.gstPending,
+                batchNo: f.batchNo, expiryDate: f.expiry, mrp: f.mrp,
+                status: !f.open.greaterThan(0) ? 'CLOSED' : f.received.plus(f.closed).greaterThan(0) ? 'PART' : 'OPEN',
+                lastAction: m.last_id ? { closeId: m.last_id, accYear: m.last_year, kind: m.last_kind, qty: m.last_qty, amount: m.last_amount, cnNo: m.last_cn,
+                    partyId: m.last_party, partyName: m.last_party_name, reason: m.last_reason, on: m.last_on } : null,
+            };
+        }));
     }
     async save(dto) {
         const actor = this.actor();
@@ -467,6 +557,17 @@ let PurchaseShortageService = class PurchaseShortageService {
             const want = new Map();
             const problems = [];
             dto.lines.forEach((l, i) => {
+                if (l.allocs?.length) {
+                    const sum = l.allocs.reduce((t, a) => t.plus((0, purchase_doc_helpers_1.D)(a.qty)).plus((0, purchase_doc_helpers_1.D)(a.freeQty)), purchase_doc_helpers_1.ZERO);
+                    if (!sum.equals((0, purchase_doc_helpers_1.D)(l.qty)))
+                        problems.push({ field: `lines.${i}.allocs`, code: purchase_errors_1.PUR.ALLOC_SUM_MISMATCH, message: `Line ${l.lineNo}: the batch / serial rows add up to ${sum}, it must be ${l.qty}` });
+                    l.allocs.forEach((a, k) => {
+                        if (a.bucket && a.bucket !== 'SALEABLE')
+                            problems.push({ field: `lines.${i}.allocs.${k}.bucket`, code: purchase_errors_1.PUR.QTY_INVALID, message: `Line ${l.lineNo}: a shortage comes in as saleable goods` });
+                        if (a.serialNo?.trim() && !(0, purchase_doc_helpers_1.D)(a.qty).plus((0, purchase_doc_helpers_1.D)(a.freeQty)).equals(1))
+                            problems.push({ field: `lines.${i}.allocs.${k}.qty`, code: purchase_errors_1.PUR.SERIAL_COUNT, message: `Line ${l.lineNo}: a serial row is one piece` });
+                    });
+                }
                 const f = facts.get(l.shortageId);
                 if (!f) {
                     problems.push({ field: `lines.${i}.shortageId`, code: purchase_errors_1.PUR.NOT_FOUND, message: `Line ${l.lineNo}: that shortage is not open` });
@@ -485,10 +586,16 @@ let PurchaseShortageService = class PurchaseShortageService {
                 if (f && q.greaterThan(f.open))
                     problems.push({ field: 'lines', code: 'PUR_SHORTAGE_QTY_EXCEEDS', message: `${f.srcRefno ?? 'Shortage'}: ${q} received, only ${f.open} is short` });
             }
+            if (h.supervisorId) {
+                const [e] = await tx.$queryRaw `SELECT count(*) AS n FROM public.employee_master WHERE emp_id = ${h.supervisorId}::uuid`;
+                if (!Number(e?.n))
+                    problems.push({ field: 'header.supervisorId', code: 'PUR_SUPERVISOR_NOT_FOUND', message: 'That supervisor is not an employee' });
+            }
             if (problems.length)
                 (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
             let psrId = h.psrId ?? null;
             let slno, refno, isNew = false;
+            let receivedAt = h.receivedAt ? new Date(h.receivedAt) : new Date();
             if (psrId) {
                 const cur = await tx.purShortageReceipt.findFirst({ where: { psrId, psrAccYear: h.accYear, psrIsDeleted: false } });
                 if (!cur)
@@ -497,6 +604,8 @@ let PurchaseShortageService = class PurchaseShortageService {
                     (0, purchase_errors_1.purConflict)(`${cur.psrRefno} is ${cur.psrStatus} — only a draft can be edited.`, purchase_errors_1.PUR.NOT_DRAFT, 'psrId');
                 slno = cur.psrSlno;
                 refno = cur.psrRefno;
+                if (!h.receivedAt && cur.psrReceivedAt)
+                    receivedAt = cur.psrReceivedAt;
                 await tx.purItemAlloc.deleteMany({ where: { piaDocType: DOC, piaDocId: psrId, piaAccYear: h.accYear } });
                 await tx.purShortageReceiptItem.deleteMany({ where: { psriPsrId: psrId, psriAccYear: h.accYear } });
             }
@@ -507,8 +616,9 @@ let PurchaseShortageService = class PurchaseShortageService {
             const total = dto.lines.reduce((s, l) => s.plus((0, purchase_doc_helpers_1.r2)((0, purchase_doc_helpers_1.D)(l.qty).times(facts.get(l.shortageId).costRate))), purchase_doc_helpers_1.ZERO);
             const data = {
                 psrCompanyId: h.companyId, psrBranchId: h.branchId, psrAccYear: h.accYear, psrDeviceId: h.deviceId, psrSlno: slno, psrRefno: refno,
-                psrDocDate: (0, purchase_doc_helpers_1.dateOf)(h.docDate), psrSupplierId: h.supplierId, psrGodownId: h.godownId, psrReceivedAt: new Date(), psrChallanNo: h.challanNo ?? null,
+                psrDocDate: (0, purchase_doc_helpers_1.dateOf)(h.docDate), psrSupplierId: h.supplierId, psrGodownId: h.godownId, psrReceivedAt: receivedAt, psrChallanNo: h.challanNo ?? null,
                 psrReceivedBy: h.receivedBy ?? [], psrValue: total, psrRemarks: h.remarks ?? null, psrStatus: 'DRAFT',
+                ...(h.supervisorId !== undefined ? { psrSupervisorId: h.supervisorId } : {}),
             };
             if (isNew)
                 psrId = (await tx.purShortageReceipt.create({ data: { ...data, psrCreatedBy: actor }, select: { psrId: true } })).psrId;
@@ -522,11 +632,17 @@ let PurchaseShortageService = class PurchaseShortageService {
                         psriHsnCode: f.hsn, psriQty: (0, purchase_doc_helpers_1.D)(l.qty), psriCostRate: f.costRate, psriValue: (0, purchase_doc_helpers_1.r2)((0, purchase_doc_helpers_1.D)(l.qty).times(f.costRate)), psriGstReleased: purchase_doc_helpers_1.ZERO,
                         psriRemarks: l.remarks ?? null, psriCreatedBy: actor,
                     }, select: { psriId: true } });
-                await tx.purItemAlloc.create({ data: {
-                        piaCompanyId: h.companyId, piaBranchId: h.branchId, piaAccYear: h.accYear, piaDocType: DOC, piaDocId: psrId, piaLineId: row.psriId, piaRowNo: 1,
-                        piaGodownId: h.godownId, piaBucket: 'SALEABLE', piaBatchNo: (l.batchNo ?? f.batchNo)?.trim() || null,
-                        piaExpiryDate: l.expiryDate ? (0, purchase_doc_helpers_1.dateOf)(l.expiryDate) : f.expiry, piaMrp: l.mrp ?? f.mrp, piaQty: (0, purchase_doc_helpers_1.D)(l.qty), piaFreeQty: purchase_doc_helpers_1.ZERO, piaCreatedBy: actor,
-                    } });
+                const rows = l.allocs?.length ? l.allocs : [{ batchNo: l.batchNo, expiryDate: l.expiryDate, mrp: l.mrp, qty: l.qty }];
+                let k = 0;
+                for (const a of rows) {
+                    await tx.purItemAlloc.create({ data: {
+                            piaCompanyId: h.companyId, piaBranchId: h.branchId, piaAccYear: h.accYear, piaDocType: DOC, piaDocId: psrId, piaLineId: row.psriId, piaRowNo: ++k,
+                            piaGodownId: a.godownId ?? h.godownId, piaBucket: 'SALEABLE', piaBatchNo: (a.batchNo ?? f.batchNo)?.trim() || null,
+                            piaMfgDate: (0, purchase_doc_helpers_1.dateOf)(a.mfgDate), piaExpiryDate: a.expiryDate ? (0, purchase_doc_helpers_1.dateOf)(a.expiryDate) : f.expiry, piaMrp: a.mrp ?? f.mrp,
+                            piaSerialNo: a.serialNo?.trim() || null, piaWarrantyTo: (0, purchase_doc_helpers_1.dateOf)(a.warrantyTo),
+                            piaQty: (0, purchase_doc_helpers_1.D)(a.qty).plus((0, purchase_doc_helpers_1.D)(a.freeQty)), piaFreeQty: purchase_doc_helpers_1.ZERO, piaCreatedBy: actor,
+                        } });
+                }
             }
             if (isNew)
                 await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.SHORTAGE_RECEIPT, docId: psrId, refno, event: purchase_doc_helpers_1.TxnStatusEvent.CREATED, from: null, to: 'DRAFT', actor, deviceId: h.deviceId });
@@ -548,8 +664,7 @@ let PurchaseShortageService = class PurchaseShortageService {
         if (r.psrStatus !== 'DRAFT')
             (0, purchase_errors_1.purConflict)(`${r.psrRefno} is ${r.psrStatus} — only a draft can be posted.`, purchase_errors_1.PUR.NOT_DRAFT, 'psrId');
         const lines = await tx.purShortageReceiptItem.findMany({ where: { psriPsrId: psrId, psriAccYear: accYear, psriIsDeleted: false }, orderBy: { psriLineNo: 'asc' } });
-        const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: psrId, piaAccYear: accYear, piaIsDeleted: false } });
-        const allocOf = new Map(allocs.map((a) => [a.piaLineId, a]));
+        const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: psrId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: { piaRowNo: 'asc' } });
         for (const l of lines)
             await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext('purchase_shortage'), hashtext(${l.psriShortageId})))::int AS locked`;
         const facts = await this.facts(tx, lines.map((l) => l.psriShortageId), psrId, true);
@@ -568,19 +683,19 @@ let PurchaseShortageService = class PurchaseShortageService {
         });
         const postedOn = new Date();
         const docDate = (0, purchase_doc_helpers_1.isoDate)(r.psrDocDate);
+        const stockRows = pieces.flatMap(({ l, q, p }) => {
+            const rate = q.isZero() ? purchase_doc_helpers_1.ZERO : p.value.dividedBy(q).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP);
+            return allocs.filter((a) => a.piaLineId === l.psriId).map((a) => ({ a, l, rate }));
+        });
         const { perRow } = await (0, purchase_doc_helpers_1.postShadowStock)(tx, this.stockPosting, { companyId: r.psrCompanyId, branchId: r.psrBranchId, accYear, deviceId: r.psrDeviceId, sessionId: r.psrSessionId, docType: DOC, docId: psrId,
-            refno: r.psrRefno, revision: r.psrRevisionNo, usrRefno: r.psrChallanNo, docDate, supplierId: r.psrSupplierId, remarks: `Shortage receipt ${r.psrRefno}` }, this.rules(), pieces.map(({ l, q, p }) => {
-            const a = allocOf.get(l.psriId);
-            return { itemId: l.psriItemId, uomId: l.psriUomId, baseUomId: l.psriBaseUomId, factor: l.psriToBaseFactor, godownId: a.piaGodownId, bucket: a.piaBucket,
-                batchNo: a.piaBatchNo, expiryDate: a.piaExpiryDate, mrp: a.piaMrp, supplierId: r.psrSupplierId, qty: l.psriQty, freeQty: purchase_doc_helpers_1.ZERO,
-                costRate: q.isZero() ? purchase_doc_helpers_1.ZERO : p.value.dividedBy(q).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP) };
-        }), actor, postedOn);
-        for (let i = 0; i < pieces.length; i++) {
-            const { l, p } = pieces[i];
-            const a = allocOf.get(l.psriId);
+            refno: r.psrRefno, revision: r.psrRevisionNo, usrRefno: r.psrChallanNo, docDate, supplierId: r.psrSupplierId, remarks: `Shortage receipt ${r.psrRefno}` }, this.rules(), stockRows.map(({ a, l, rate }) => ({ itemId: l.psriItemId, uomId: l.psriUomId, baseUomId: l.psriBaseUomId, factor: l.psriToBaseFactor, godownId: a.piaGodownId, bucket: a.piaBucket,
+            batchNo: a.piaBatchNo, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate, mrp: a.piaMrp, serialNo: a.piaSerialNo, supplierId: r.psrSupplierId,
+            qty: a.piaQty, freeQty: purchase_doc_helpers_1.ZERO, costRate: rate })), actor, postedOn);
+        for (const { l, p } of pieces)
             await tx.purShortageReceiptItem.update({ where: { psriId_psriAccYear: { psriId: l.psriId, psriAccYear: accYear } }, data: { psriValue: p.value, psriGstReleased: p.gst } });
+        for (let i = 0; i < stockRows.length; i++) {
             if (perRow[i]?.sviId)
-                await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: a.piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear } });
+                await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: stockRows[i].a.piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear } });
         }
         const legs = [];
         const add = (leg) => { if (leg.amount >= 0.005)
@@ -593,7 +708,7 @@ let PurchaseShortageService = class PurchaseShortageService {
                 grniCr = grniCr.plus(p.value);
             else
                 srCr = srCr.plus(p.value);
-            if (f.reason === 'SHORT_BILL') {
+            if (f.gstPending) {
                 pendingCr = pendingCr.plus(p.gst);
                 for (const hd of p.heads) {
                     const k = `${hd.role}|${hd.taxId ?? ''}`;
@@ -636,13 +751,23 @@ let PurchaseShortageService = class PurchaseShortageService {
         ]);
         const names = await (0, purchase_doc_helpers_1.unitNames)(this.prisma, lines.map((l) => l.psriUomId));
         const facts = await this.facts(this.prisma, lines.map((l) => l.psriShortageId), header.psrStatus === 'DRAFT' ? psrId : null);
+        const [gd] = await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.psrGodownId}::uuid`;
+        const people = [...header.psrReceivedBy, ...(header.psrSupervisorId ? [header.psrSupervisorId] : [])];
+        const men = people.length ? await this.prisma.$queryRaw `
+      SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${people}::uuid[])` : [];
+        const manName = new Map(men.map((m) => [m.id, m.name]));
         return (0, purchase_doc_helpers_1.jsonSafe)({
-            header: { ...header, supplierName: sup[0]?.sup_name ?? null },
+            header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null,
+                receivedBy: header.psrReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })),
+                supervisorName: header.psrSupervisorId ? manName.get(header.psrSupervisorId) ?? null : null },
             lines: lines.map((l) => {
-                const a = allocs.find((x) => x.piaLineId === l.psriId);
+                const mine = allocs.filter((x) => x.piaLineId === l.psriId).sort((x, y) => x.piaRowNo - y.piaRowNo);
+                const a = mine[0];
                 const f = facts.get(l.psriShortageId);
-                return { ...l, ...names.get(l.psriUomId), reason: f?.reason ?? null, srcRefno: f?.srcRefno ?? null, openQty: f?.open ?? null,
-                    batchNo: a?.piaBatchNo ?? null, expiryDate: a?.piaExpiryDate ?? null, mrp: a?.piaMrp ?? null };
+                return { ...l, ...names.get(l.psriUomId), reason: f?.reason ?? null, srcRefno: f?.srcRefno ?? null, openQty: f?.open ?? null, shortQty: f?.qtyBase ?? null,
+                    batchNo: a?.piaBatchNo ?? null, expiryDate: a?.piaExpiryDate ?? null, mrp: a?.piaMrp ?? null,
+                    allocs: mine.map((x) => ({ rowNo: x.piaRowNo, godownId: x.piaGodownId, batchNo: x.piaBatchNo, mfgDate: x.piaMfgDate, expiryDate: x.piaExpiryDate, mrp: x.piaMrp,
+                        serialNo: x.piaSerialNo, warrantyTo: x.piaWarrantyTo, qty: x.piaQty, lotId: x.piaLotId })) };
             }),
         });
     }
@@ -666,7 +791,16 @@ let PurchaseShortageService = class PurchaseShortageService {
     }
     async close(dto) {
         const actor = this.actor();
+        if (dto.kind === 'CLAIM' && !dto.partyId)
+            (0, purchase_errors_1.purRefuse)('Name the transporter / insurer the claim is on.', 'PUR_CLAIM_PARTY_REQUIRED', 'partyId');
         const out = await this.prisma.$transaction(async (tx) => {
+            let partyName = null;
+            if (dto.kind === 'CLAIM') {
+                const [pl] = await tx.$queryRaw `SELECT led_name FROM accounts.acc_ledger_master WHERE led_id = ${dto.partyId}::uuid AND NOT led_is_deleted`;
+                if (!pl)
+                    (0, purchase_errors_1.purNotFound)(`Ledger ${dto.partyId} not found`, 'PUR_CLAIM_PARTY_NOT_FOUND', 'partyId');
+                partyName = pl.led_name;
+            }
             await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext('purchase_shortage'), hashtext(${dto.shortageId})))::int AS locked`;
             const f = (await this.facts(tx, [dto.shortageId], null, true)).get(dto.shortageId);
             const reserved = (await this.facts(tx, [dto.shortageId])).get(dto.shortageId);
@@ -680,12 +814,19 @@ let PurchaseShortageService = class PurchaseShortageService {
             const p = f.value.greaterThan(0) ? this.piece(f, q) : { value: purchase_doc_helpers_1.ZERO, gst: purchase_doc_helpers_1.ZERO, heads: [] };
             const accYear = dto.closeAccYear ?? dto.accYear;
             const docDate = dto.docDate ?? (0, purchase_doc_helpers_1.isoDate)(new Date());
-            const [{ n: seq }] = await tx.$queryRaw `SELECT count(*) + 1 AS n FROM purchase.pur_shortage_close WHERE psc_shortage_id = ${f.id}::uuid`;
-            const ref = `${f.srcRefno ?? 'SHORT'}/X${seq}`;
+            const prefix = f.srcRefno ?? 'SHORT';
+            await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext('purchase_shortage_close_ref'), hashtext(${`${f.companyId}|${prefix}`})))::int AS locked`;
+            const taken = await tx.$queryRaw `
+        SELECT avh_doc_refno AS ref FROM accounts.acc_voucher_header
+         WHERE avh_company_id = ${f.companyId}::uuid AND avh_src_module = 'PURCHASE' AND avh_src_doc_type = ${CLOSE_DOC}
+           AND left(avh_doc_refno, ${prefix.length + 2}::int) = ${`${prefix}/X`}::text`;
+            const ref = nextShortageCloseRef(prefix, taken.map((t) => t.ref));
             const c = await tx.purShortageClose.create({ data: {
                     pscCompanyId: f.companyId, pscBranchId: f.branchId, pscAccYear: accYear, pscShortageId: f.id, pscShortageAccYear: f.accYear, pscKind: dto.kind,
-                    pscQtyBase: q, pscAmount: p.value.plus(p.gst), pscPartyId: dto.kind === 'SUPPLIER_CN' ? f.supplierId : null,
-                    pscCnNo: dto.cnNo ?? null, pscCnDate: (0, purchase_doc_helpers_1.dateOf)(dto.cnDate), pscReason: dto.reason ?? null, pscCreatedBy: actor,
+                    pscQtyBase: q, pscAmount: p.value.plus(p.gst), pscPartyId: dto.kind === 'SUPPLIER_CN' ? f.supplierId : dto.kind === 'CLAIM' ? dto.partyId : null,
+                    pscCnNo: dto.cnNo ?? null, pscCnDate: (0, purchase_doc_helpers_1.dateOf)(dto.cnDate),
+                    pscReason: (dto.kind === 'CLAIM' ? `${dto.claimAgainst === 'INSURER' ? 'Insurer' : 'Transporter'} claim on ${partyName}${dto.reason ? ` — ${dto.reason}` : ''}` : dto.reason ?? null)?.slice(0, 250) ?? null,
+                    pscCreatedBy: actor,
                 }, select: { pscId: true } });
             let voucherRefno = null;
             if (p.value.plus(p.gst).greaterThan(0)) {
@@ -693,10 +834,12 @@ let PurchaseShortageService = class PurchaseShortageService {
                 const legs = [];
                 if (dto.kind === 'SUPPLIER_CN')
                     legs.push({ ledgerId: f.supplierId, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(total), remarks: `Shortage ${ref} — supplier CN${dto.cnNo ? ` ${dto.cnNo}` : ''}`, docRefno: ref });
+                else if (dto.kind === 'CLAIM')
+                    legs.push({ role: 'CLAIM_RECEIVABLE', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(total), roleTag: 'CLAIM_RECEIVABLE', remarks: `Shortage ${ref} — claim on ${partyName}` });
                 else
                     legs.push({ role: 'WRITE_OFF', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(total), roleTag: 'WRITE_OFF', remarks: `Shortage ${ref} written off` });
                 legs.push({ role: 'SHORTAGE_RECEIVABLE', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(p.value), roleTag: 'SHORTAGE_RECEIVABLE', remarks: `Shortage ${ref}` });
-                if (f.reason === 'SHORT_BILL')
+                if (f.gstPending)
                     legs.push({ role: 'INPUT_TAX_PENDING', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(p.gst), roleTag: 'INPUT_TAX_PENDING' });
                 else
                     for (const hd of p.heads)
@@ -704,8 +847,9 @@ let PurchaseShortageService = class PurchaseShortageService {
                 const vt = await (0, purchase_doc_helpers_1.voucherTypeId)(tx, 'PCL');
                 const posted = await this.vouchers.postLegs(tx, {
                     header: { companyId: f.companyId, branchId: f.branchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: CLOSE_DOC, srcDocId: c.pscId,
-                        docLabel: 'Shortage close', docRefno: ref, docDate, usrRefno: dto.cnNo ?? null, docAmount: (0, purchase_doc_helpers_1.num2)(total), partyId: f.supplierId,
-                        userId: actor, deviceId: dto.deviceId, remarks: dto.reason ?? `Shortage ${ref} ${dto.kind === 'SUPPLIER_CN' ? 'credited by the supplier' : 'written off'}`, createdBy: actor },
+                        docLabel: 'Shortage close', docRefno: ref, docDate, usrRefno: dto.cnNo ?? null, docAmount: (0, purchase_doc_helpers_1.num2)(total), partyId: dto.kind === 'CLAIM' ? dto.partyId : f.supplierId,
+                        userId: actor, deviceId: dto.deviceId,
+                        remarks: dto.reason ?? `Shortage ${ref} ${dto.kind === 'SUPPLIER_CN' ? 'credited by the supplier' : dto.kind === 'CLAIM' ? `claimed on ${partyName}` : 'written off'}`, createdBy: actor },
                     legs: legs.filter((g) => g.amount >= 0.005),
                 });
                 voucherRefno = posted.voucherRefno;
@@ -716,7 +860,8 @@ let PurchaseShortageService = class PurchaseShortageService {
                         refno: posted.voucherRefno ?? ref, docDate: (0, purchase_doc_helpers_1.dateOf)(docDate), narration: `Shortage ${ref} — supplier CN${dto.cnNo ? ` ${dto.cnNo}` : ''}`, actor });
                 }
             }
-            return { closeId: c.pscId, accYear, qty: q, amount: p.value.plus(p.gst), openQty: f.open.minus(q), voucherRefno };
+            return { closeId: c.pscId, accYear, kind: dto.kind, partyId: dto.kind === 'CLAIM' ? dto.partyId : dto.kind === 'SUPPLIER_CN' ? f.supplierId : null, partyName,
+                qty: q, amount: p.value.plus(p.gst), openQty: f.open.minus(q), voucherRefno };
         }, { timeout: 60000, maxWait: 10000 });
         return (0, purchase_doc_helpers_1.jsonSafe)(out);
     }
@@ -728,10 +873,14 @@ let PurchaseShortageService = class PurchaseShortageService {
                 (0, purchase_errors_1.purNotFound)(`Shortage close ${dto.closeId} not found`);
             if (c.pscReversalOfId)
                 (0, purchase_errors_1.purConflict)('That row is itself an undo.', purchase_errors_1.PUR.NOT_POSTED, 'closeId');
+            await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext('purchase_shortage'), hashtext(${c.pscShortageId})))::int AS locked`;
+            await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext(${purchase_claim_locks_1.SHORTAGE_CLAIM_LOCK}), hashtext(${c.pscId})))::int AS locked`;
             const [undone] = await tx.$queryRaw `SELECT count(*) AS n FROM purchase.pur_shortage_close WHERE psc_reversal_of_id = ${dto.closeId}::uuid AND NOT psc_is_deleted`;
             if (Number(undone.n) > 0)
                 (0, purchase_errors_1.purConflict)('That close is already undone.', purchase_errors_1.PUR.NOT_POSTED, 'closeId');
             await (0, purchase_doc_helpers_1.assertBillsUnsettled)(tx, CLOSE_DOC, dto.closeId, 'The supplier credit');
+            if (c.pscKind === 'CLAIM' && (await this.claimSettled(tx, [c.pscId])).get(c.pscId)?.settled.greaterThan(0))
+                (0, purchase_errors_1.purConflict)('That claim is already part-settled on Supplier dues — undo the settlement first.', purchase_errors_1.PUR.EDIT_LOCKED_PAID, 'closeId');
             const rev = await tx.purShortageClose.create({ data: {
                     pscCompanyId: c.pscCompanyId, pscBranchId: c.pscBranchId, pscAccYear: c.pscAccYear, pscShortageId: c.pscShortageId, pscShortageAccYear: c.pscShortageAccYear,
                     pscKind: c.pscKind, pscQtyBase: c.pscQtyBase.negated(), pscAmount: c.pscAmount.negated(), pscPartyId: c.pscPartyId, pscCnNo: c.pscCnNo, pscCnDate: c.pscCnDate,
@@ -744,11 +893,168 @@ let PurchaseShortageService = class PurchaseShortageService {
         }, { timeout: 60000, maxWait: 10000 });
         return (0, purchase_doc_helpers_1.jsonSafe)(out);
     }
+    async claimSettled(db, closeIds) {
+        const out = new Map();
+        if (!closeIds.length)
+            return out;
+        const rows = await db.$queryRaw `
+      SELECT s.pcs_shortage_close_id AS close_id, s.pcs_id AS id, s.pcs_acc_year AS acc_year, s.pcs_amount AS amount, s.pcs_action AS action,
+             s.pcs_received_as AS received_as, s.pcs_reason AS reason, s.pcs_cn_no AS cn_no, s.pcs_cn_date AS cn_date, s.pcs_doc_date AS on_date,
+             h.avh_voucher_refno AS refno,
+             (s.pcs_reversal_of_id IS NULL AND NOT EXISTS (SELECT 1 FROM purchase.pur_claim_settlement u WHERE u.pcs_reversal_of_id = s.pcs_id AND NOT u.pcs_is_deleted)) AS standing
+        FROM purchase.pur_claim_settlement s
+        LEFT JOIN accounts.acc_voucher_header h ON h.avh_voucher_id = s.pcs_voucher_id AND h.avh_acc_year = s.pcs_acc_year
+       WHERE s.pcs_shortage_close_id = ANY(${closeIds}::uuid[]) AND NOT s.pcs_is_deleted
+       ORDER BY s.pcs_created_on`;
+        for (const r of rows) {
+            const cur = out.get(r.close_id) ?? { credited: purchase_doc_helpers_1.ZERO, writtenOff: purchase_doc_helpers_1.ZERO, settled: purchase_doc_helpers_1.ZERO, last: null };
+            const amt = (0, purchase_doc_helpers_1.D)(r.amount);
+            if (r.action === 'CREDIT')
+                cur.credited = cur.credited.plus(amt);
+            else
+                cur.writtenOff = cur.writtenOff.plus(amt);
+            cur.settled = cur.settled.plus(amt);
+            if (r.standing)
+                cur.last = { settlementId: r.id, accYear: r.acc_year, action: r.action, receivedAs: r.received_as,
+                    cnNo: r.cn_no, cnDate: r.cn_date, amount: amt, on: r.on_date, reason: r.reason, voucherRefno: r.refno };
+            out.set(r.close_id, cur);
+        }
+        return out;
+    }
+    async duesClaims(q) {
+        const rows = await this.prisma.$queryRaw `
+      SELECT c.psc_id AS "shortageCloseId", c.psc_acc_year AS "accYear", c.psc_shortage_id AS "shortageId", c.psc_shortage_acc_year AS "shortageAccYear",
+             COALESCE(v.avh_doc_refno, s.psh_src_doc_refno) AS "refno", COALESCE(v.avh_voucher_date, c.psc_created_on::date) AS "docDate",
+             (current_date - COALESCE(v.avh_voucher_date, c.psc_created_on::date))::int AS "ageDays",
+             s.psh_src_doc_type AS "srcDocType", s.psh_src_doc_id AS "srcDocId", s.psh_src_doc_refno AS "srcRefno",
+             COALESCE(pi.pi_doc_date, g.grn_doc_date, pr.pr_doc_date) AS "srcDocDate", pi.pi_supplier_inv_no AS "srcSupplierInvNo",
+             s.psh_item_id AS "itemId", im.item_name_en AS "itemName", c.psc_qty_base AS "qty", un.unit_name AS "unitName",
+             s.psh_reason AS "shortReason", c.psc_reason AS "reasonName",
+             CASE WHEN c.psc_reason LIKE 'Insurer%' THEN 'INSURER' ELSE 'TRANSPORTER' END AS "claimAgainst",
+             c.psc_party_id AS "claimPartyId", lm.led_name AS "partyName", s.psh_supplier_id AS "supplierId", sp.sup_name AS "supplierName",
+             c.psc_amount AS "claimValue"
+        FROM purchase.pur_shortage_close c
+        JOIN purchase.pur_shortage s ON s.psh_id = c.psc_shortage_id AND s.psh_acc_year = c.psc_shortage_acc_year
+        JOIN inventory.item_master im ON im.item_id = s.psh_item_id
+        LEFT JOIN LATERAL (SELECT u.unit_name FROM inventory.item_unit_conversion iuc JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+                            WHERE iuc.iuc_item_id = s.psh_item_id AND iuc.iuc_to_base_factor = 1 LIMIT 1) un ON true
+        LEFT JOIN accounts.acc_voucher_header v ON v.avh_voucher_id = c.psc_voucher_id AND v.avh_acc_year = c.psc_acc_year
+        LEFT JOIN accounts.acc_ledger_master lm ON lm.led_id = c.psc_party_id
+        LEFT JOIN purchase.suppliers sp ON sp.sup_id = s.psh_supplier_id
+        LEFT JOIN purchase.pur_invoice pi ON s.psh_src_doc_type = 'PURCHASE_BILL' AND pi.pi_id = s.psh_src_doc_id AND pi.pi_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_grn g ON s.psh_src_doc_type = 'GRN' AND g.grn_id = s.psh_src_doc_id AND g.grn_acc_year = s.psh_src_doc_year
+        LEFT JOIN purchase.pur_return pr ON s.psh_src_doc_type = 'PURCHASE_RETURN' AND pr.pr_id = s.psh_src_doc_id AND pr.pr_acc_year = s.psh_src_doc_year
+       WHERE c.psc_company_id = ${q.companyId}::uuid AND c.psc_branch_id = ${q.branchId}::uuid AND c.psc_kind = 'CLAIM'
+         AND NOT c.psc_is_deleted AND NOT s.psh_is_deleted AND c.psc_reversal_of_id IS NULL AND c.psc_amount > 0
+         AND NOT EXISTS (SELECT 1 FROM purchase.pur_shortage_close u WHERE u.psc_reversal_of_id = c.psc_id AND NOT u.psc_is_deleted)
+         AND (${q.supplierId ?? null}::uuid IS NULL OR s.psh_supplier_id = ${q.supplierId ?? null}::uuid)
+       ORDER BY 6, 5`;
+        const st = await this.claimSettled(this.prisma, rows.map((r) => r.shortageCloseId));
+        const out = rows.map((r) => {
+            const x = st.get(r.shortageCloseId);
+            const value = (0, purchase_doc_helpers_1.D)(r.claimValue), settled = x?.settled ?? purchase_doc_helpers_1.ZERO, credited = x?.credited ?? purchase_doc_helpers_1.ZERO, off = x?.writtenOff ?? purchase_doc_helpers_1.ZERO;
+            const open = value.minus(settled);
+            const status = !open.greaterThan(0) ? (credited.isZero() ? 'WRITTEN_OFF' : 'SETTLED') : settled.isZero() ? 'OPEN' : 'PART';
+            return { source: 'SHORTAGE', returnItemId: null, ...r, outcome: 'SHORTAGE_CLAIM', kindText: 'Shortage claim', claimRef: `${r.refno}`,
+                credited: credited.toFixed(2), writtenOff: off.toFixed(2), settled: settled.toFixed(2), open: open.toFixed(2), status,
+                lastSettlementId: x?.last?.settlementId ?? null, lastAction: x?.last ?? null };
+        });
+        return q.all ? out : out.filter((r) => r.status === 'OPEN' || r.status === 'PART');
+    }
+    async settleClaimIn(tx, dto, actor, opts = {}) {
+        const c = await tx.purShortageClose.findFirst({ where: { pscId: dto.shortageCloseId, pscAccYear: dto.accYear, pscIsDeleted: false } });
+        if (!c)
+            (0, purchase_errors_1.purNotFound)(`Shortage claim ${dto.shortageCloseId} not found`);
+        if (c.pscKind !== 'CLAIM' || c.pscReversalOfId || !c.pscPartyId)
+            (0, purchase_errors_1.purConflict)('Only a shortage closed as a claim (transporter / insurer) is settled here.', purchase_errors_1.PUR.QTY_INVALID, 'shortageCloseId');
+        await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext(${purchase_claim_locks_1.SHORTAGE_CLAIM_LOCK}), hashtext(${c.pscId})))::int AS locked`;
+        const [undone] = await tx.$queryRaw `SELECT count(*) AS n FROM purchase.pur_shortage_close WHERE psc_reversal_of_id = ${c.pscId}::uuid AND NOT psc_is_deleted`;
+        if (Number(undone.n) > 0)
+            (0, purchase_errors_1.purConflict)('That claim was undone on the shortage — nothing to settle.', purchase_errors_1.PUR.NOT_POSTED, 'shortageCloseId');
+        const [v] = c.pscVoucherId ? await tx.$queryRaw `
+      SELECT avh_doc_refno AS ref FROM accounts.acc_voucher_header WHERE avh_voucher_id = ${c.pscVoucherId}::uuid AND avh_acc_year = ${c.pscAccYear}::bpchar` : [];
+        const ref = v?.ref ?? `SHORT/${c.pscId.slice(-6)}`;
+        const open = c.pscAmount.minus((await this.claimSettled(tx, [c.pscId])).get(c.pscId)?.settled ?? purchase_doc_helpers_1.ZERO).minus(opts.takenAlready ?? purchase_doc_helpers_1.ZERO);
+        if (!open.greaterThan(0))
+            (0, purchase_errors_1.purConflict)(`The claim ${ref} is fully settled.`, purchase_errors_1.PUR.EDIT_LOCKED_PAID, 'shortageCloseId');
+        const amount = dto.action === 'CREDIT' ? (0, purchase_doc_helpers_1.r2)((0, purchase_doc_helpers_1.D)(dto.amount ?? open)) : open;
+        if (!amount.greaterThan(0) || amount.greaterThan(open))
+            (0, purchase_errors_1.purRefuse)(`Amount must be more than 0 and at most the open ${open.toFixed(2)}.`, purchase_errors_1.PUR.QTY_INVALID, 'amount');
+        const accYear = dto.settleAccYear ?? dto.accYear;
+        const docDate = dto.docDate ?? (0, purchase_doc_helpers_1.isoDate)(new Date());
+        const receivedAs = dto.action === 'CREDIT' ? (dto.receivedAs ?? 'CN') : null;
+        const label = `Shortage claim ${ref}`;
+        const legs = [{ role: 'CLAIM_RECEIVABLE', drCr: 'CR', amount: (0, purchase_doc_helpers_1.num2)(amount), roleTag: 'CLAIM_RECEIVABLE', remarks: label }];
+        if (dto.action === 'CREDIT')
+            legs.push({ ledgerId: c.pscPartyId, drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount), remarks: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, docRefno: ref });
+        else
+            legs.push({ role: 'WRITE_OFF', drCr: 'DR', amount: (0, purchase_doc_helpers_1.num2)(amount), roleTag: 'WRITE_OFF', remarks: `${label} — ${dto.action === 'REJECTED' ? 'rejected' : 'short-settled'}` });
+        const base = { shortageCloseId: c.pscId, refno: ref, action: dto.action, receivedAs, amount, open: open.minus(amount), companyId: c.pscCompanyId, branchId: c.pscBranchId, legs };
+        if (opts.dryRun)
+            return { ...base, dryRun: true, settlementId: null, accYear, voucherRefno: null };
+        const [{ n: seq }] = await tx.$queryRaw `
+      SELECT count(*) + 1 AS n FROM accounts.acc_voucher_header WHERE avh_src_doc_type = ${exports.SHORTAGE_CLAIM_SETTLE_DOC} AND avh_company_id = ${c.pscCompanyId}::uuid
+         AND avh_doc_refno LIKE ${`${ref}/S%`}`;
+        const sref = `${ref}/S${seq}`;
+        const cnDate = dto.cnDate?.slice(0, 10) ?? null;
+        const s = await tx.purClaimSettlement.create({ data: {
+                pcsCompanyId: c.pscCompanyId, pcsBranchId: c.pscBranchId, pcsAccYear: accYear, pcsDeviceId: dto.deviceId,
+                pcsShortageCloseId: c.pscId, pcsShortageCloseAccYear: c.pscAccYear, pcsAction: dto.action, pcsReceivedAs: receivedAs,
+                pcsAmount: amount, pcsCnNo: dto.cnNo ?? null, pcsCnDate: (0, purchase_doc_helpers_1.dateOf)(cnDate), pcsReason: dto.reason?.slice(0, 250) ?? null,
+                pcsDocDate: (0, purchase_doc_helpers_1.dateOf)(docDate), pcsCreatedBy: actor,
+            }, select: { pcsId: true } });
+        const id = s.pcsId;
+        const vt = await (0, purchase_doc_helpers_1.voucherTypeId)(tx, 'PCL');
+        const posted = await this.vouchers.postLegs(tx, {
+            header: { companyId: c.pscCompanyId, branchId: c.pscBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: exports.SHORTAGE_CLAIM_SETTLE_DOC, srcDocId: id,
+                docLabel: 'Shortage claim settlement', docRefno: sref, docDate: cnDate ?? docDate, usrRefno: dto.cnNo ?? null, docAmount: (0, purchase_doc_helpers_1.num2)(amount), partyId: c.pscPartyId,
+                userId: actor, deviceId: dto.deviceId, createdBy: actor,
+                remarks: dto.action === 'CREDIT' ? `${receivedAs === 'ADJUST' ? 'Adjust in the next bill' : `Credit note${dto.cnNo ? ` ${dto.cnNo}` : ''}`} — ${label}`
+                    : `${dto.action === 'REJECTED' ? 'Rejected' : 'Short-settled'} — ${label}` },
+            legs: legs.filter((g) => g.amount >= 0.005),
+        });
+        await tx.purClaimSettlement.update({ where: { pcsId_pcsAccYear: { pcsId: id, pcsAccYear: accYear } }, data: { pcsVoucherId: posted.voucherId } });
+        if (dto.action === 'CREDIT') {
+            await (0, purchase_doc_helpers_1.raiseBillRow)(tx, { companyId: c.pscCompanyId, branchId: c.pscBranchId, accYear, partyId: c.pscPartyId, billType: 'PURCHASE_RETURN', drCr: 'DR', amount,
+                docType: exports.SHORTAGE_CLAIM_SETTLE_DOC, docId: id, voucherId: posted.voucherId, voucherTypeId: vt, voucherNo: posted.voucherSlno, voucherDate: docDate,
+                refno: posted.voucherRefno ?? sref, docDate: (0, purchase_doc_helpers_1.dateOf)(docDate), narration: `${label} — credit${dto.cnNo ? ` CN ${dto.cnNo}` : ''}`, actor });
+        }
+        await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: c.pscCompanyId, branchId: c.pscBranchId, accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.CLAIM_SETTLEMENT, docId: id, refno: sref,
+            event: purchase_doc_helpers_1.TxnStatusEvent.POSTED, from: null, to: dto.action, actor, deviceId: dto.deviceId, remarks: dto.reason?.slice(0, 250) ?? null });
+        return { ...base, dryRun: false, settlementId: id, accYear, voucherRefno: posted.voucherRefno ?? null };
+    }
+    async settleClaimUndoIn(tx, settlementId, accYear, reason, actor) {
+        const s = await tx.purClaimSettlement.findFirst({ where: { pcsId: settlementId, pcsAccYear: accYear, pcsIsDeleted: false } });
+        if (!s || !s.pcsShortageCloseId)
+            return null;
+        if (s.pcsReversalOfId)
+            (0, purchase_errors_1.purConflict)('That row is itself an undo.', purchase_errors_1.PUR.NOT_POSTED, 'settlementId');
+        await tx.$queryRaw `SELECT count(pg_advisory_xact_lock(hashtext(${purchase_claim_locks_1.SHORTAGE_CLAIM_LOCK}), hashtext(${s.pcsShortageCloseId})))::int AS locked`;
+        const [undone] = await tx.$queryRaw `SELECT count(*) AS n FROM purchase.pur_claim_settlement WHERE pcs_reversal_of_id = ${settlementId}::uuid AND NOT pcs_is_deleted`;
+        if (Number(undone.n) > 0)
+            (0, purchase_errors_1.purConflict)('That settlement is already undone.', purchase_errors_1.PUR.NOT_POSTED, 'settlementId');
+        await (0, purchase_doc_helpers_1.assertBillsUnsettled)(tx, exports.SHORTAGE_CLAIM_SETTLE_DOC, settlementId, 'The credit');
+        const [v] = s.pcsVoucherId ? await tx.$queryRaw `
+      SELECT avh_doc_refno AS refno FROM accounts.acc_voucher_header WHERE avh_voucher_id = ${s.pcsVoucherId}::uuid AND avh_acc_year = ${s.pcsAccYear}::bpchar` : [];
+        const rev = await tx.purClaimSettlement.create({ data: {
+                pcsCompanyId: s.pcsCompanyId, pcsBranchId: s.pcsBranchId, pcsAccYear: s.pcsAccYear, pcsDeviceId: s.pcsDeviceId,
+                pcsShortageCloseId: s.pcsShortageCloseId, pcsShortageCloseAccYear: s.pcsShortageCloseAccYear, pcsAction: s.pcsAction, pcsReceivedAs: s.pcsReceivedAs,
+                pcsAmount: s.pcsAmount.negated(), pcsGstReavailed: s.pcsGstReavailed.negated(), pcsCnNo: s.pcsCnNo, pcsCnDate: s.pcsCnDate,
+                pcsReason: reason.slice(0, 250), pcsDocDate: (0, purchase_doc_helpers_1.dateOf)((0, purchase_doc_helpers_1.isoDate)(new Date())), pcsReversalOfId: s.pcsId, pcsCreatedBy: actor,
+            }, select: { pcsId: true } });
+        if (s.pcsVoucherId)
+            await this.vouchers.reverseLegs(tx, s.pcsVoucherId, s.pcsAccYear, `Shortage claim settlement undone: ${reason}`, actor);
+        await (0, purchase_doc_helpers_1.withdrawBillRows)(tx, exports.SHORTAGE_CLAIM_SETTLE_DOC, settlementId, actor);
+        const refno = v?.refno ?? settlementId;
+        await (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: s.pcsCompanyId, branchId: s.pcsBranchId, accYear: s.pcsAccYear, docType: purchase_doc_helpers_1.TxnStatusDocType.CLAIM_SETTLEMENT, docId: s.pcsId,
+            refno, event: purchase_doc_helpers_1.TxnStatusEvent.CANCELLED, from: 'POSTED', to: 'CANCELLED', actor, remarks: `Settlement ${v?.refno ?? ''} undone: ${reason}`.slice(0, 250) });
+        return { reversalId: rev.pcsId, shortageCloseId: s.pcsShortageCloseId };
+    }
     async closes(shortageId) {
         return (0, purchase_doc_helpers_1.jsonSafe)(await this.prisma.$queryRaw `
       SELECT c.psc_id AS "closeId", c.psc_acc_year AS "accYear", c.psc_kind AS "kind", c.psc_qty_base AS "qty", c.psc_amount AS "amount",
-             c.psc_cn_no AS "cnNo", c.psc_reason AS "reason", c.psc_created_on AS "createdOn"
-        FROM purchase.pur_shortage_close c
+             c.psc_cn_no AS "cnNo", c.psc_cn_date AS "cnDate", c.psc_party_id AS "partyId", l.led_name AS "partyName", c.psc_reason AS "reason", c.psc_created_on AS "createdOn"
+        FROM purchase.pur_shortage_close c LEFT JOIN accounts.acc_ledger_master l ON l.led_id = c.psc_party_id
        WHERE c.psc_shortage_id = ${shortageId}::uuid AND NOT c.psc_is_deleted AND c.psc_reversal_of_id IS NULL
          AND NOT EXISTS (SELECT 1 FROM purchase.pur_shortage_close u WHERE u.psc_reversal_of_id = c.psc_id AND NOT u.psc_is_deleted)
        ORDER BY c.psc_created_on DESC`);
@@ -860,7 +1166,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('close'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Close a shortage without goods: SUPPLIER_CN (bill-wise credit) or WRITE_OFF.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Close a shortage without goods: SUPPLIER_CN (bill-wise credit), CLAIM (on a transporter / insurer: claim receivable) or WRITE_OFF.' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [CloseShortageDto]),

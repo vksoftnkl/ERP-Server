@@ -12,7 +12,7 @@ import {
 import {
   applyPresentFields,
   DEFAULT_ACTOR,
-  hasOwnProperty,
+  isPresentField,
   normalizeNullableString,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -412,14 +412,14 @@ export class TenderMasterService {
         // tndBranchId is only re-scoped when the caller sends the key; omitting
         // it keeps the row on the branch it was created against rather than
         // silently promoting a branch tender to company-wide.
-        const tndBranchId = hasOwnProperty(saveTenderMasterDto, 'tndBranchId')
+        const tndBranchId = isPresentField(saveTenderMasterDto, 'tndBranchId')
           ? (saveTenderMasterDto.tndBranchId ?? null)
           : existing.tndBranchId;
         const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
         // Omitted keys keep the stored value, so the cross-field checks below
         // compare the merged result rather than the payload alone — otherwise a
         // request that only moves one end of a range could break the DB CHECK.
-        const tndMaxAmount = hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')
+        const tndMaxAmount = isPresentField(saveTenderMasterDto, 'tndMaxAmount')
           ? this.toInputNullableNumber(saveTenderMasterDto.tndMaxAmount, 'tndMaxAmount')
           : this.toOutputNullableNumber(existing.tndMaxAmount);
         this.validateAmountRange(tndMinAmount, tndMaxAmount);
@@ -454,7 +454,7 @@ export class TenderMasterService {
         await this.ensureNameIsUnique(tx, tndName, tndShortName, scope, tndId);
         await this.ensureHotkeyIsUnique(
           tx,
-          hasOwnProperty(saveTenderMasterDto, 'tndHotkey')
+          isPresentField(saveTenderMasterDto, 'tndHotkey')
             ? (saveTenderMasterDto.tndHotkey ?? null)
             : existing.tndHotkey,
           scope,
@@ -462,10 +462,10 @@ export class TenderMasterService {
         );
         await this.ensureSingleDefault(
           tx,
-          hasOwnProperty(saveTenderMasterDto, 'tndIsDefault')
+          isPresentField(saveTenderMasterDto, 'tndIsDefault')
             ? saveTenderMasterDto.tndIsDefault === true
             : existing.tndIsDefault,
-          hasOwnProperty(saveTenderMasterDto, 'tndIsActive')
+          isPresentField(saveTenderMasterDto, 'tndIsActive')
             ? saveTenderMasterDto.tndIsActive !== false
             : existing.tndIsActive,
           scope,
@@ -925,7 +925,7 @@ export class TenderMasterService {
     field: 'tndEffectiveFrom' | 'tndEffectiveTo',
     current: Date | null,
   ): Date | null {
-    if (!hasOwnProperty(saveTenderMasterDto, field)) {
+    if (!isPresentField(saveTenderMasterDto, field)) {
       return current;
     }
 

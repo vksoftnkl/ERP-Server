@@ -32,7 +32,8 @@ export class SaveTenderMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'Owning branch. Omit or send null to make the tender company-wide.',
+    description:
+      'Owning branch. null = company-wide. On create an omitted key also means company-wide; on update an omitted key keeps the stored branch.',
   })
   @NullableUuid()
   tndBranchId?: string | null;

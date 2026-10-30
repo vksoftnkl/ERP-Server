@@ -35,6 +35,8 @@ let PurchaseInvoiceController = class PurchaseInvoiceController {
         await this.right(dto.header.piId ? 'edit' : 'create', 'save a purchase invoice');
         if (dto.header.post)
             await this.right('post', 'post a purchase invoice');
+        if (dto.header.post && dto.header.overrideWarnings)
+            await this.right('override', 'post a purchase invoice past its warnings');
         const data = await this.service.save(dto);
         const base = dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`;
         return { success: true, message: data.warnings.length ? `${base} — ${data.warnings.map((w) => w.message).join(' ')}` : base, data };
@@ -45,7 +47,9 @@ let PurchaseInvoiceController = class PurchaseInvoiceController {
     }
     async post(dto) {
         await this.right('post', 'post a purchase invoice');
-        const data = await this.service.post(dto.piId, dto.accYear);
+        if (dto.overrideWarnings)
+            await this.right('override', 'post a purchase invoice past its warnings');
+        const data = await this.service.post(dto.piId, dto.accYear, { override: !!dto.overrideWarnings, reason: dto.overrideReason ?? null });
         return { success: true, message: `Purchase ${data.header.piRefno} posted`, data };
     }
     async get(q) {
@@ -90,7 +94,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('validate'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'The server calculation of a bill (lines, charges, ITC, short, landed cost, net payable) — nothing is written.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'The server calculation of a bill (lines, charges, ITC, short, landed cost, net payable) — nothing is written. Also the WARN / REFUSE strip (warnings[], refusals[]: code, level, lineNo, field, message, needsRight), the per-line check{} and the derived header (bill from, place of supply, reverse charge, agent, due dates).' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_purchase_invoice_dto_1.SavePurchaseInvoiceDto]),
@@ -99,10 +103,10 @@ __decorate([
 __decorate([
     (0, common_1.Post)('post'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Post a saved draft.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Post a saved draft. overrideWarnings (Override right on menu 24) posts past the WARN items that need it — PUR_RATE_ABOVE_PO: no payment hold — and logs it (WARN_OVERRIDE).' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GetPurchaseInvoiceQueryDto]),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PostPurchaseInvoiceDto]),
     __metadata("design:returntype", Promise)
 ], PurchaseInvoiceController.prototype, "post", null);
 __decorate([

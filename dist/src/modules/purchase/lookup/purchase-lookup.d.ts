@@ -49,6 +49,18 @@ export declare class PurchaseLookupService {
             fssaiNo: {} | null;
             fssaiValidTo: string | null;
         };
+        billFrom: {
+            addrId: string | null;
+            gstin: string;
+            stateCode: string | null;
+            stateName: string | null;
+            name: string | null;
+            addr: string | null;
+            place: string | null;
+            pin: string | null;
+            isDefault: boolean;
+            source: "MASTER" | "LEDGER_ADDRESS";
+        }[];
         pendingPos: {
             poId: string;
             accYear: string;
@@ -124,6 +136,18 @@ export declare class PurchaseLookupController {
                 fssaiNo: {} | null;
                 fssaiValidTo: string | null;
             };
+            billFrom: {
+                addrId: string | null;
+                gstin: string;
+                stateCode: string | null;
+                stateName: string | null;
+                name: string | null;
+                addr: string | null;
+                place: string | null;
+                pin: string | null;
+                isDefault: boolean;
+                source: "MASTER" | "LEDGER_ADDRESS";
+            }[];
             pendingPos: {
                 poId: string;
                 accYear: string;

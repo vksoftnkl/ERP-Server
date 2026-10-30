@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (61 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (62 rows).
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -483,6 +483,15 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
                  WHERE r.acc_group_name = 'Loans & Advances (Asset)'
                    AND r.acc_group_company_id IS NULL)
  ORDER BY l.led_name$seed$, NULL)
+    ,(73, 'PO TERMS'                 , 'Purchase order terms (purchase.pur_terms): live and active, this company''s and the shared ones, by sort then name. pte_terms_text (hidden) fills the PO terms box. Param icompany_id, always sent. Migration 20261029130000 inserts the same row.', NULL                  , 'Ascending', 12, true , 0   , 'Desktop', 'pte_name'          , 'system', $seed$SELECT pte_id,
+       pte_name,
+       pte_code,
+       pte_terms_text
+  FROM purchase.pur_terms
+ WHERE pte_is_deleted = false
+   AND pte_is_active = true
+   AND (pte_company_id IS NULL OR pte_company_id::text = 'icompany_id')
+ ORDER BY pte_sort, pte_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

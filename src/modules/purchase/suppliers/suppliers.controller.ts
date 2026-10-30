@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UseFilters,
   Version,
 } from '@nestjs/common';
@@ -21,17 +22,26 @@ import {
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiForbiddenResponse,
 } from '@nestjs/swagger';
+import { DataChangeService } from '../../../common/data-changes/data-change.service';
+import { PartyDeleteCheckSuccessDto } from '../../../common/party/party-response.dto';
+import type { PartyDeleteCheck } from '../../../common/party/party-balance.service';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
   SupplierErrorResponseDto,
   SupplierSuccessDeleteDto,
+  SupplierSuccessSaveDto,
   SupplierSuccessSingleDto,
 } from './dto/supplier-response.dto';
 import { SupplierExceptionFilter } from './supplier-exception.filter';
 import { SuppliersService } from './suppliers.service';
-import { SupplierPayload, SupplierSuccessResponse } from './types/supplier-api.types';
+import {
+  SupplierPayload,
+  SupplierSavePayload,
+  SupplierSuccessResponse,
+} from './types/supplier-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Suppliers')
@@ -41,19 +51,32 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('suppliers')
 @UseFilters(SupplierExceptionFilter)
 export class SuppliersController {
-  constructor(private readonly suppliersService: SuppliersService) {}
+  constructor(
+    private readonly suppliersService: SuppliersService,
+    private readonly dataChangeService: DataChangeService,
+  ) {}
 
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier (by supId presence)' })
-  @ApiCreatedResponse({ type: SupplierSuccessSingleDto })
+  @ApiCreatedResponse({ type: SupplierSuccessSaveDto })
   @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
   @ApiConflictResponse({ type: SupplierErrorResponseDto })
   @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
   async save(
     @Body() saveSupplierDto: SaveSupplierDto,
-  ): Promise<SupplierSuccessResponse<SupplierPayload>> {
+    @Req() request: { user?: { sid?: string | null } },
+  ): Promise<SupplierSuccessResponse<SupplierSavePayload>> {
     const data = await this.suppliersService.save(saveSupplierDto);
+    // D4-8: the customer row changed too, so open customer lists re-read.
+    if (data.partySync?.otherRoleUpdated) {
+      this.dataChangeService.publish({
+        resource: 'customers',
+        method: 'POST',
+        at: Date.now(),
+        originSessionId: request.user?.sid ?? null,
+      });
+    }
 
     return {
       success: true,
@@ -83,9 +106,33 @@ export class SuppliersController {
     };
   }
 
+  @Get('delete-check')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Would DELETE /suppliers/delete go through? (balance per company, cheques, drafts)',
+    description:
+      'Party rules D1-4. 200 even when the delete would be refused: canDelete / refusalCode / refusals[] say why. Needs the menu-22 delete right.',
+  })
+  @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: PartyDeleteCheckSuccessDto })
+  @ApiForbiddenResponse({ type: SupplierErrorResponseDto })
+  @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
+  async deleteCheck(
+    @Query('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
+  ): Promise<SupplierSuccessResponse<PartyDeleteCheck>> {
+    const data = await this.suppliersService.deleteCheck(supId);
+    return { success: true, message: 'Supplier delete check', data };
+  }
+
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete supplier by id' })
+  @ApiOperation({
+    summary: 'Soft delete supplier by id',
+    description:
+      'Menu-22 delete right. 409 PURCHASE_SUPPLIER_HAS_BALANCE / _HAS_CHEQUE_IN_HAND when the ledger goes with the supplier and is not settled.',
+  })
+  @ApiConflictResponse({ type: SupplierErrorResponseDto })
+  @ApiForbiddenResponse({ type: SupplierErrorResponseDto })
   @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierSuccessDeleteDto })
   @ApiBadRequestResponse({ type: SupplierErrorResponseDto })

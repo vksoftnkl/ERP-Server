@@ -8,6 +8,7 @@ import { ItemsPriceMasterService } from '../items-price-master/items-price-maste
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { ItemsMasterService } from './items-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
@@ -516,6 +517,58 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(data.itemCompanyId).toBeNull();
     expect(data.itemBaseUnitId).toBeNull();
     expect(data.itemPackingItemIds).toEqual([]);
+  });
+
+  // dto-own-undefined trap: through the house ValidationPipe every declared field is
+  // own (undefined when left out), so the MST-03 purchase fields must be "keep".
+  describe('MST-03 purchase fields through the house ValidationPipe', () => {
+    const piped = async (body: Record<string, unknown>) =>
+      (await createHouseValidationPipe().transform(body, {
+        type: 'body',
+        metatype: SaveItemCompositeDto,
+      })) as SaveItemCompositeDto;
+    const MST03 = [
+      'itemPurchaseUomId',
+      'itemMinShelfLifePct',
+      'itemItcClass',
+      'itemShortagePct',
+    ] as const;
+
+    beforeEach(() => {
+      prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+      prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
+    });
+
+    it('keeps them when an update leaves them out', async () => {
+      const dto = await piped({ item_id: ITEM_ID, item_name_en: 'Widget', item_group_id: GROUP_ID });
+      expect(Object.prototype.hasOwnProperty.call(dto, 'item_shortage_pct')).toBe(true);
+
+      await service.saveComposite(dto);
+
+      const data = prisma.itemMaster.update.mock.calls[0][0].data;
+      for (const column of MST03) {
+        expect(data).not.toHaveProperty(column);
+      }
+    });
+
+    it('clears them when the update sends null', async () => {
+      await service.saveComposite(
+        await piped({
+          item_id: ITEM_ID,
+          item_name_en: 'Widget',
+          item_group_id: GROUP_ID,
+          item_purchase_uom_id: null,
+          item_min_shelf_life_pct: null,
+          item_itc_class: null,
+          item_shortage_pct: null,
+        }),
+      );
+
+      const data = prisma.itemMaster.update.mock.calls[0][0].data;
+      for (const column of MST03) {
+        expect(data[column]).toBeNull();
+      }
+    });
   });
 
   describe('a saved base unit is locked (notes 138)', () => {

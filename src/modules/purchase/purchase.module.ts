@@ -16,17 +16,22 @@ import { PurchaseReorderController, PurchaseReorderService } from './reorder/pur
 import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { PurchaseReturnController, PurchaseReturnService } from './return/purchase-return';
 import { PurchaseShortageController, PurchaseShortageService } from './shortage/purchase-shortage';
+import { TransportBandService } from 'src/modules/sales/posting/transport-band.service';
+import { PurchaseSupplierDuesController, PurchaseSupplierDuesService } from './dues/purchase-supplier-dues';
+import { PurchaseTermsController, PurchaseTermsService } from './terms/purchase-terms';
 
 /**
  * Purchase — plan-purchase-backend.md. B2 calc (common/purchase-calc.ts), B6
  * Purchase Invoice (direct bill), B4 Purchase Order, B5 GRN, B8 Return / claim, B7 Shortages.
- * Masters: supplier–item map (MST-02, menu 295), agents (MST-05, menu 28). B9 lookups (supplier / item context).
+ * Masters: supplier–item map (MST-02, menu 295), agents (MST-05, menu 28), PO terms (pur_terms, rights on menu 23). B9 lookups (supplier / item context).
  */
 @Module({
   imports: [AuditLogModule, CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
   controllers: [PurchaseReorderController, PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseLabelsController, PurchaseReturnController, PurchaseShortageController,
-                PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController, PurchaseSisterController, PurchaseAttachmentController],
+                PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController, PurchaseSisterController, PurchaseAttachmentController, PurchaseSupplierDuesController,
+                PurchaseTermsController],
   providers: [PurchaseReorderService, PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,
-              PurchaseAgentService, PurchaseSupplierItemService, PurchaseLookupService, PurchaseSisterService, PurchaseAttachmentService],
+              PurchaseAgentService, PurchaseSupplierItemService, PurchaseLookupService, PurchaseSisterService, PurchaseAttachmentService,
+              TransportBandService, PurchaseSupplierDuesService, PurchaseTermsService],
 })
 export class PurchaseModule {}

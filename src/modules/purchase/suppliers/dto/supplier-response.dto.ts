@@ -1,3 +1,4 @@
+import { PartySyncDto } from 'src/common/party/party-response.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LedgerBankAccountPayloadDto } from '../../../accountsModule/ledgerBankAccount/dto/ledger-bank-account-response.dto';
 
@@ -48,15 +49,15 @@ export class SupplierPayloadDto {
   supName!: string;
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   supShort!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   supAddr1!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   supAddr2!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   supAddr3!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   supCity!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   supDistrict!: string | null;
   @ApiProperty({ maxLength: 100 })
   supStateName!: string;
@@ -156,6 +157,18 @@ export class SupplierSuccessSingleDto {
   message!: string;
   @ApiProperty({ type: SupplierPayloadDto })
   data!: SupplierPayloadDto;
+}
+export class SupplierSavePayloadDto extends SupplierPayloadDto {
+  @ApiProperty({ type: PartySyncDto, description: 'Party rules D4-6: what the save did to the customer of the same ledger.' })
+  partySync!: PartySyncDto;
+}
+export class SupplierSuccessSaveDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Supplier updated successfully' })
+  message!: string;
+  @ApiProperty({ type: SupplierSavePayloadDto })
+  data!: SupplierSavePayloadDto;
 }
 export class SupplierSuccessDeleteDto {
   @ApiProperty({ example: true })

@@ -3,6 +3,7 @@ import { Customer, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { CustomerService } from './customer.service';
+import { PartySyncService } from '../../../common/party/party-sync.service';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import { CustomerErrorCode } from './types/customer-error-codes';
 import { createHouseValidationPipe } from '../../../common/validation/house-validation';
@@ -124,6 +125,16 @@ const ledgerRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** supplier.findFirst for a shared ledger: the role probe, the sync's row read, the name check. */
+const supplierRoleMock =
+  (row: Record<string, unknown>, opts: { clash?: boolean } = {}) =>
+  async (args: { where?: Record<string, unknown>; select?: Record<string, unknown> }) => {
+    if (args.select?.supIsActive) return { supIsActive: true };
+    if (args.where?.supName) return opts.clash ? { supId: 'other' } : null;
+    if (args.select?.supGstType) return null;
+    return { supId: CUS_ID, supCompanyId: null, supIsActive: true, ...row };
+  };
+
 const createDto = (overrides: Partial<SaveCustomerDto> = {}): SaveCustomerDto => ({
   cusName: '  Ravi Stores  ',
   cusStateName: ' Tamil Nadu ',
@@ -163,22 +174,29 @@ type PrismaMock = {
     updateMany: jest.Mock;
   };
   accLedgerMaster: { findFirst: jest.Mock; updateMany: jest.Mock };
-  supplier: { findFirst: jest.Mock };
+  supplier: { findFirst: jest.Mock; update: jest.Mock };
   company: { findFirst: jest.Mock };
   branchMaster: { findFirst: jest.Mock };
   areaMaster: { findFirst: jest.Mock };
   custGroup: { findFirst: jest.Mock };
   itemPriceLevel: { findFirst: jest.Mock };
   stateCode: { findFirst: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
 
+const partyMock = () => ({
+  lockLedger: jest.fn().mockResolvedValue({ ledCompanyId: null, ledIsDeleted: false }),
+  companyWithBooks: jest.fn().mockResolvedValue(null),
+  deleteCheck: jest.fn().mockResolvedValue({ canDelete: true, refusals: [] }),
+});
 describe('CustomerService', () => {
   let prisma: PrismaMock;
   let audit: { logEntityChange: jest.Mock };
   let context: { getUserId: jest.Mock };
   let ledgers: { createLedgerWithinTx: jest.Mock; updateLedgerWithinTx: jest.Mock };
   let service: CustomerService;
+  let party: ReturnType<typeof partyMock>;
 
   beforeEach(() => {
     prisma = {
@@ -195,13 +213,17 @@ describe('CustomerService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      supplier: { findFirst: jest.fn().mockResolvedValue(null) },
+      supplier: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ supId: CUS_ID, ...data })),
+      },
       company: { findFirst: jest.fn().mockResolvedValue({ compId: COMPANY_ID, compName: 'Zeta' }) },
       branchMaster: { findFirst: jest.fn().mockResolvedValue({ brName: 'Main Branch' }) },
       areaMaster: { findFirst: jest.fn().mockResolvedValue({ armId: AREA_ID, armName: 'Beat 4' }) },
       custGroup: { findFirst: jest.fn().mockResolvedValue({ cgrId: GROUP_ID, cgrName: 'Retail' }) },
       itemPriceLevel: { findFirst: jest.fn().mockResolvedValue({ iplName: 'MRP' }) },
       stateCode: { findFirst: jest.fn().mockResolvedValue({ stateCode: '33' }) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
@@ -210,11 +232,14 @@ describe('CustomerService', () => {
       createLedgerWithinTx: jest.fn().mockResolvedValue({ ledId: LEDGER_ID }),
       updateLedgerWithinTx: jest.fn().mockResolvedValue({}),
     };
+    party = partyMock();
     service = new CustomerService(
       prisma as unknown as PrismaService,
       audit as never,
       context as never,
       ledgers as never,
+      party as never,
+      new PartySyncService(audit as never),
     );
   });
 
@@ -239,6 +264,8 @@ describe('CustomerService', () => {
           ledStateName: 'Tamil Nadu',
           ledStateCode: '33',
           ledIsBillByBill: true,
+          ledGstPartyRegType: 'UNREGISTERED',
+          ledIsSez: false,
         },
         prisma,
       );
@@ -252,15 +279,20 @@ describe('CustomerService', () => {
         cusGroupId: GROUP_ID,
         cusPriceLevelId: 1,
         cusCollectionDays: [],
-        cusBilledCount: 1,
+        cusGstType: 'UNREGISTERED',
         cusCreatedBy: USER_ID,
       });
+      // D3: a master save writes no billed column.
+      expect(createdData()).not.toHaveProperty('cusBilledDate');
+      expect(createdData()).not.toHaveProperty('cusBilledCount');
+      const { partySync, ...saved } = payload;
+      expect(partySync).toEqual({ otherRole: null, otherRoleUpdated: false, fields: [] });
       expect(auditEntry()).toMatchObject({
         action: 'New',
         tableName: 'customers',
         pk: LEDGER_ID,
         originalRecord: null,
-        modifiedRecord: payload,
+        modifiedRecord: saved,
         notes: 'Customer created',
       });
     });
@@ -272,6 +304,7 @@ describe('CustomerService', () => {
           cusBranchId: BRANCH_ID,
           cusPhone1: '9840000001',
           cusGstNo: '33ABCDE1234F1Z5',
+          cusGstType: 'Regular',
           cusNotes: 'Pays on Fridays',
           cusIsActive: false,
           cusSortOrder: 3,
@@ -284,6 +317,8 @@ describe('CustomerService', () => {
         ledStateName: 'Tamil Nadu',
         ledStateCode: '33',
         ledIsBillByBill: true,
+        ledGstPartyRegType: 'REGULAR',
+        ledIsSez: false,
         ledCompanyId: COMPANY_ID,
         ledBranchId: BRANCH_ID,
         ledPhone1: '9840000001',
@@ -294,18 +329,50 @@ describe('CustomerService', () => {
       });
     });
 
+    // Party rules D2: the five codes (old spellings mapped); SEZ = REGULAR + led_is_sez.
     it.each([
-      ['regular', 'REGULAR'],
-      ['Composition', 'COMPOSITION'],
-      ['un-registered', 'UNREGISTERED'],
-      ['Un Registered', 'UNREGISTERED'],
-      ['SEZ', null],
-      ['', null],
-      [null, null],
-    ])('maps a GST type of %p to the ledger vocabulary as %p', async (cusGstType, expected) => {
-      await service.save(createDto({ cusGstType }));
+      ['regular', '33ABCDE1234F1Z5', 'REGULAR', 'REGULAR', false],
+      ['Composition', '33ABCDE1234F1Z5', 'COMPOSITION', 'COMPOSITION', false],
+      [' sez ', '33ABCDE1234F1Z5', 'SEZ', 'REGULAR', true],
+      ['SEZ Unit', '33ABCDE1234F1Z5', 'SEZ', 'REGULAR', true],
+      ['un-registered', null, 'UNREGISTERED', 'UNREGISTERED', false],
+      ['Un Registered', null, 'UNREGISTERED', 'UNREGISTERED', false],
+      ['', null, 'UNREGISTERED', 'UNREGISTERED', false],
+      [null, null, 'UNREGISTERED', 'UNREGISTERED', false],
+    ])(
+      'stores a GST type of %p (GSTIN %p) as %p, ledger %p / SEZ %p',
+      async (cusGstType, cusGstNo, stored, regType, isSez) => {
+        await service.save(createDto({ cusGstType, cusGstNo }));
 
-      expect(ledgerCreateDto().ledGstPartyRegType).toBe(expected);
+        expect(createdData().cusGstType).toBe(stored);
+        expect(ledgerCreateDto()).toMatchObject({ ledGstPartyRegType: regType, ledIsSez: isSez });
+      },
+    );
+
+    it('stores OVERSEAS with state 96 and no GSTIN, the ledger UNREGISTERED', async () => {
+      await service.save(createDto({ cusGstType: 'Overseas', cusStateCode: '96' }));
+
+      expect(createdData().cusGstType).toBe('OVERSEAS');
+      expect(ledgerCreateDto()).toMatchObject({ ledGstPartyRegType: 'UNREGISTERED', ledIsSez: false });
+    });
+
+    it.each([
+      [{ cusGstType: 'test' }, 'cusGstType', CustomerErrorCode.GST_TYPE_INVALID],
+      [{ cusGstNo: '33ABCDE1234F1Z5' }, 'cusGstType', CustomerErrorCode.GST_TYPE_REQUIRED],
+      [{ cusGstType: 'REGULAR' }, 'cusGstNo', CustomerErrorCode.GSTIN_REQUIRED],
+      [{ cusGstType: 'SEZ' }, 'cusGstNo', CustomerErrorCode.GSTIN_REQUIRED],
+      [
+        { cusGstType: 'UNREGISTERED', cusGstNo: '33ABCDE1234F1Z5' },
+        'cusGstNo',
+        CustomerErrorCode.GSTIN_NOT_ALLOWED,
+      ],
+      [{ cusGstType: 'OVERSEAS', cusStateCode: '33' }, 'cusStateCode', CustomerErrorCode.OVERSEAS_STATE],
+    ])('refuses %p as %s / %s and writes nothing', async (overrides, field, code) => {
+      const refusal = await refusalOf(service.save(createDto(overrides as Partial<SaveCustomerDto>)));
+
+      expect(refusal).toMatchObject({ status: 400, body: { errors: [{ field, code }] } });
+      expect(ledgers.createLedgerWithinTx).not.toHaveBeenCalled();
+      expect(prisma.customer.create).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -535,7 +602,9 @@ describe('CustomerService', () => {
     });
 
     it('refuses a GSTIN of another state (F10)', async () => {
-      const refusal = await refusalOf(service.save(createDto({ cusGstNo: '32ABCDE1234F1Z5' })));
+      const refusal = await refusalOf(
+        service.save(createDto({ cusGstNo: '32ABCDE1234F1Z5', cusGstType: 'REGULAR' })),
+      );
 
       expect(refusal).toMatchObject({
         status: 400,
@@ -545,7 +614,7 @@ describe('CustomerService', () => {
     });
 
     it('accepts a GSTIN of the customer state', async () => {
-      await service.save(createDto({ cusGstNo: '33ABCDE1234F1Z5' }));
+      await service.save(createDto({ cusGstNo: '33ABCDE1234F1Z5', cusGstType: 'REGULAR' }));
 
       expect(createdData().cusGstNo).toBe('33ABCDE1234F1Z5');
     });
@@ -589,6 +658,8 @@ describe('CustomerService', () => {
         cusName: undefined,
         cusStateName: '',
         cusStateCode: '',
+        // The ledger carries a GSTIN, so the link create names a GSTIN type (party rules D2).
+        cusGstType: 'REGULAR',
         ...overrides,
       });
 
@@ -689,7 +760,8 @@ describe('CustomerService', () => {
     it('fills the blank fields from the ledger and writes no ledger at all', async () => {
       prisma.accLedgerMaster.findFirst.mockResolvedValue(ledgerRow());
 
-      const payload = await service.save(linkDto({ cusPhone1: '' }));
+      const { partySync: _sync, cusBilledDate: _d, cusBilledCount: _n, ...payload } =
+        await service.save(linkDto({ cusPhone1: '' }));
 
       expect(createdData()).toMatchObject({
         cusId: LEDGER_ID,
@@ -757,8 +829,10 @@ describe('CustomerService', () => {
 
       expect(prisma.customer.create).not.toHaveBeenCalled();
       const data = updatedData();
+      // D3: the revive touches no billed column.
+      expect(data).not.toHaveProperty('cusBilledCount');
+      expect(data).not.toHaveProperty('cusBilledDate');
       expect(data).toMatchObject({
-        cusBilledCount: { increment: 1 },
         cusIsDeleted: false,
         cusIsActive: true,
         cusModifiedOn: expect.any(Date),
@@ -839,10 +913,11 @@ describe('CustomerService', () => {
         cusStateCode: '33',
         cusAreaId: AREA_ID,
         cusGroupId: GROUP_ID,
-        cusBilledDate: expect.any(Date),
-        cusBilledCount: { increment: 1 },
         cusModifiedBy: USER_ID,
       });
+      // D3: an edit no longer counts as a bill.
+      expect(updatedData()).not.toHaveProperty('cusBilledDate');
+      expect(updatedData()).not.toHaveProperty('cusBilledCount');
     });
 
     it('syncs the linked ledger under the customer id, filed in the customer area', async () => {
@@ -950,10 +1025,11 @@ describe('CustomerService', () => {
           'ledIsTdsApplicable',
           'ledCompanyId',
           'ledSortOrder',
-          'ledGstPartyRegType',
         ]) {
           expect(ledgerDto).not.toHaveProperty(key);
         }
+        // D2: the ledger takes the stored type (null = UNREGISTERED) on every save.
+        expect(ledgerDto).toMatchObject({ ledGstPartyRegType: 'UNREGISTERED', ledIsSez: false });
       });
 
       it('still recomputes the TCS flag when the screen sends it', async () => {
@@ -982,7 +1058,9 @@ describe('CustomerService', () => {
     });
 
     it('refuses a GSTIN of another state on an update too (R5)', async () => {
-      const refusal = await refusalOf(service.save(updateDto({ cusGstNo: '32ABCDE1234F1Z5' })));
+      const refusal = await refusalOf(
+        service.save(updateDto({ cusGstNo: '32ABCDE1234F1Z5', cusGstType: 'REGULAR' })),
+      );
 
       expect(refusal).toMatchObject({
         status: 400,
@@ -997,7 +1075,7 @@ describe('CustomerService', () => {
       ['an OIDAR', '9917USA29012OSQ'],
       ['a non-resident', '0717USA29012NR5'],
     ])('does not check the state of %s GSTIN (U1)', async (_label, gstin) => {
-      await service.save(updateDto({ cusGstNo: gstin }));
+      await service.save(updateDto({ cusGstNo: gstin, cusGstType: 'REGULAR' }));
 
       expect(updatedData().cusGstNo).toBe(gstin);
     });
@@ -1046,7 +1124,7 @@ describe('CustomerService', () => {
         ledName: 'Ravi Stores',
         ledGroupId: SUPPLIERS_GROUP_ID,
       });
-      prisma.supplier.findFirst.mockResolvedValue({ supIsActive: true });
+      prisma.supplier.findFirst.mockImplementation(supplierRoleMock({ supName: 'Ravi Stores' }));
       prisma.customer.update.mockResolvedValue(customerRow({ cusIsActive: false }));
 
       await service.save(updateDto({ cusIsActive: false }));
@@ -1059,6 +1137,103 @@ describe('CustomerService', () => {
         ledGroupId: SUPPLIERS_GROUP_ID,
         ledIsActive: true,
       });
+    });
+
+    describe('party sync to the supplier of the same ledger (D4)', () => {
+      beforeEach(() => {
+        prisma.supplier.findFirst.mockImplementation(
+          supplierRoleMock({ supName: 'Ravi Stores', supPhone: '9000000000', supAddr1: 'Old St' }),
+        );
+      });
+
+      it('writes the changed party details onto the supplier and audits it', async () => {
+        const result = await service.save(
+          updateDto({ cusPhone1: '9840000002', cusAddr1: '4 New St', cusCreditDays: 9 }),
+        );
+
+        expect(prisma.supplier.update).toHaveBeenCalledTimes(1);
+        const { data } = prisma.supplier.update.mock.calls[0][0] as { data: Record<string, unknown> };
+        expect(data).toMatchObject({
+          supPhone: '9840000002',
+          supAddr1: '4 New St',
+          supGstType: 'UNREGISTERED',
+          supModifiedBy: USER_ID,
+        });
+        expect(data).not.toHaveProperty('supCreditDays');
+        expect(result.partySync).toEqual({
+          otherRole: 'SUPPLIER',
+          otherRoleUpdated: true,
+          fields: expect.arrayContaining(['supPhone', 'supAddr1']),
+        });
+        expect(audit.logEntityChange).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tableName: 'suppliers',
+            screenName: 'Supplier Master',
+            notes: 'Party details updated from Customer Master',
+          }),
+          prisma,
+        );
+      });
+
+      it('does not write the supplier when no synced value changes', async () => {
+        prisma.supplier.findFirst.mockImplementation(
+          supplierRoleMock({
+            supName: 'Ravi Stores',
+            supStateName: 'Tamil Nadu',
+            supStateCode: '33',
+            supGstType: 'UNREGISTERED',
+          }),
+        );
+        const result = await service.save(updateDto({ cusCreditDays: 9 }));
+
+        expect(prisma.supplier.update).not.toHaveBeenCalled();
+        expect(result.partySync).toEqual({ otherRole: 'SUPPLIER', otherRoleUpdated: false, fields: [] });
+      });
+
+      it('keeps the customer notes off a shared ledger', async () => {
+        await service.save(updateDto({ cusNotes: 'Pays on Fridays' }));
+
+        expect(ledgerUpdateDto()).not.toHaveProperty('ledRemarks');
+      });
+
+      it('refuses a rename another supplier of the company holds, as CUSTOMER_NAME_EXISTS', async () => {
+        prisma.supplier.findFirst.mockImplementation(
+          supplierRoleMock({ supName: 'Ravi Stores' }, { clash: true }),
+        );
+
+        const refusal = await refusalOf(service.save(updateDto({ cusName: 'Lakshmi Traders' })));
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'cusName', code: CustomerErrorCode.NAME_EXISTS }] },
+        });
+        expect(prisma.supplier.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a company change once the party has books (Q7 = a)', async () => {
+        party.companyWithBooks.mockResolvedValue({ companyId: COMPANY_ID, companyName: 'Zeta' });
+        prisma.accLedgerMaster.findFirst.mockResolvedValue({
+          ledId: CUS_ID,
+          ledName: 'Ravi Stores',
+          ledGroupId: AREA_ID,
+          ledCompanyId: null,
+        });
+
+        const refusal = await refusalOf(service.save(updateDto({ cusCompanyId: COMPANY_ID })));
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'cusCompanyId', code: CustomerErrorCode.COMPANY_HAS_BOOKS }] },
+        });
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+      });
+    });
+
+    it('answers partySync with no other role on a customer-only ledger', async () => {
+      const result = await service.save(updateDto({ cusPhone1: '9840000002' }));
+
+      expect(result.partySync).toEqual({ otherRole: null, otherRoleUpdated: false, fields: [] });
+      expect(prisma.supplier.update).not.toHaveBeenCalled();
     });
 
     it('leaves a legacy customer with no linked ledger alone', async () => {
@@ -1174,7 +1349,12 @@ describe('CustomerService', () => {
 
     it('carries the GST type and the collection flags it was sent to the ledger', async () => {
       await service.save(
-        updateDto({ cusGstType: 'Composition', cusTcsApplicable: true, cusItcollExempted: true }),
+        updateDto({
+          cusGstType: 'Composition',
+          cusGstNo: '33ABCDE1234F1Z5',
+          cusTcsApplicable: true,
+          cusItcollExempted: true,
+        }),
       );
 
       expect(ledgerUpdateDto()).toMatchObject({
@@ -1190,7 +1370,7 @@ describe('CustomerService', () => {
         customerRow({ cusPhone1: data.cusPhone1, cusModifiedBy: 'counter-3' }),
       );
 
-      const payload = await service.save(
+      const { partySync: _s, cusBilledDate: _d, cusBilledCount: _n, ...payload } = await service.save(
         updateDto({ cusPhone1: '9840000002', cusModifiedBy: 'counter-3' }),
       );
 
@@ -1255,6 +1435,49 @@ describe('CustomerService', () => {
   });
 
   describe('softDelete', () => {
+    beforeEach(() => {
+      // assertMenuRight: the user holds the menu-10 delete right.
+      prisma.$queryRaw.mockResolvedValue([{ um_can_delete: true }]);
+    });
+
+    it('refuses a user without the menu-10 delete right (D1-6)', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      prisma.customer.findFirst.mockResolvedValue(customerRow());
+
+      const refusal = await refusalOf(service.softDelete(CUS_ID));
+
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'CUSTOMER_RIGHT_DELETE' }] },
+      });
+      expect(prisma.customer.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses a ledger with a balance, with the delete-check refusal (D1)', async () => {
+      prisma.customer.findFirst.mockResolvedValue(customerRow());
+      const refusalDetail = {
+        field: 'cusId',
+        code: CustomerErrorCode.HAS_BALANCE,
+        message: 'balance',
+        user: { title: 'Cannot delete customer', line: 'This customer still has ₹1,250.00 Dr in Zeta.', todo: 'Settle it.' },
+      };
+      party.deleteCheck.mockResolvedValue({ canDelete: false, refusals: [refusalDetail] });
+
+      const refusal = await refusalOf(service.softDelete(CUS_ID));
+
+      expect(refusal).toMatchObject({ status: 409, body: { errors: [refusalDetail] } });
+      expect(prisma.customer.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('skips the balance guard while a live supplier keeps the ledger (Q2)', async () => {
+      prisma.customer.findFirst.mockResolvedValue(customerRow());
+      prisma.supplier.findFirst.mockResolvedValue({ supIsActive: true });
+      party.deleteCheck.mockResolvedValue({ canDelete: false, refusals: [{ code: 'X' }] });
+
+      await expect(service.softDelete(CUS_ID)).resolves.toEqual({ cusId: CUS_ID, deleted: true });
+      expect(party.deleteCheck).not.toHaveBeenCalled();
+    });
+
     it('refuses an id with no live customer', async () => {
       const refusal = await refusalOf(service.softDelete(CUS_ID));
 
@@ -1305,7 +1528,6 @@ describe('CustomerService', () => {
     it('keeps a ledger shared with a live supplier, at the supplier active flag', async () => {
       prisma.customer.findFirst.mockResolvedValue(customerRow());
       prisma.supplier.findFirst.mockResolvedValue({ supIsActive: false });
-      context.getUserId.mockReturnValue(null);
 
       await service.softDelete(CUS_ID);
 
@@ -1314,7 +1536,7 @@ describe('CustomerService', () => {
         data: {
           ledIsActive: false,
           ledModifiedOn: expect.any(Date),
-          ledModifiedBy: DEFAULT_ACTOR,
+          ledModifiedBy: USER_ID,
         },
       });
       expect(auditEntry()).toMatchObject({

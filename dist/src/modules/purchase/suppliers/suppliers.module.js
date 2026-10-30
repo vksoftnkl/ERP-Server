@@ -13,12 +13,13 @@ const account_ledger_masters_module_1 = require("../../accountsModule/accountLed
 const supplier_exception_filter_1 = require("./supplier-exception.filter");
 const suppliers_controller_1 = require("./suppliers.controller");
 const suppliers_service_1 = require("./suppliers.service");
+const party_module_1 = require("../../../common/party/party.module");
 let SuppliersModule = class SuppliersModule {
 };
 exports.SuppliersModule = SuppliersModule;
 exports.SuppliersModule = SuppliersModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule],
+        imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule, party_module_1.PartyModule],
         controllers: [suppliers_controller_1.SuppliersController],
         providers: [suppliers_service_1.SuppliersService, supplier_exception_filter_1.SupplierExceptionFilter],
     })

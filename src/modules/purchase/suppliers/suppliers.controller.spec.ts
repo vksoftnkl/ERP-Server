@@ -23,14 +23,14 @@ describe('SuppliersController', () => {
       getById: jest.fn().mockResolvedValue(SUPPLIER),
       softDelete: jest.fn().mockResolvedValue({ supId: SUP_ID, deleted: true }),
     };
-    controller = new SuppliersController(service as unknown as SuppliersService);
+    controller = new SuppliersController(service as unknown as SuppliersService, { publish: jest.fn() } as never);
   });
 
   it.each([
     ['created', BODY, 'Supplier created successfully'],
     ['updated', { ...BODY, supId: SUP_ID }, 'Supplier updated successfully'],
   ])('save says %s by whether the body names a supId', async (_label, dto, message) => {
-    await expect(controller.save(dto)).resolves.toEqual({ success: true, message, data: SUPPLIER });
+    await expect(controller.save(dto, {})).resolves.toEqual({ success: true, message, data: SUPPLIER });
     expect(service.save).toHaveBeenCalledWith(dto);
   });
 

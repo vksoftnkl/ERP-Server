@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PurchaseSettingsQueryDto = exports.PurchaseInvoiceHoldDto = exports.GrnLinesQueryDto = exports.CancelPurchaseInvoiceDto = exports.GetPurchaseInvoiceQueryDto = exports.SavePurchaseInvoiceDto = exports.PurchaseInvoiceHeaderDto = exports.PurchaseChargeDto = exports.PurchaseChargePayeeDto = exports.PurchaseInvoiceLineDto = exports.PurchaseAllocDto = void 0;
+exports.PurchaseSettingsQueryDto = exports.PurchaseInvoiceHoldDto = exports.GrnLinesQueryDto = exports.CancelPurchaseInvoiceDto = exports.PostPurchaseInvoiceDto = exports.GetPurchaseInvoiceQueryDto = exports.SavePurchaseInvoiceDto = exports.PurchaseInvoiceHeaderDto = exports.PurchaseTransportDto = exports.PurchaseChargeDto = exports.PurchaseChargePayeeDto = exports.PurchaseInvoiceLineDto = exports.PurchaseAllocDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -415,6 +415,86 @@ __decorate([
     (0, class_transformer_1.Type)(() => PurchaseChargePayeeDto),
     __metadata("design:type", Array)
 ], PurchaseChargeDto.prototype, "payees", void 0);
+class PurchaseTransportDto {
+    vehicleNo;
+    driverName;
+    mode;
+    transporterId;
+    transporterName;
+    transporterGstin;
+    lrNo;
+    lrDate;
+    distanceKm;
+    remarks;
+}
+exports.PurchaseTransportDto = PurchaseTransportDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'pur_invoice.pi_vehicle_no. Omit = keep the saved one; null / blank = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(20),
+    __metadata("design:type", Object)
+], PurchaseTransportDto.prototype, "vehicleNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'pur_invoice.pi_driver_name. Omit = keep the saved one; null / blank = clear.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", Object)
+], PurchaseTransportDto.prototype, "driverName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['ROAD', 'RAIL', 'AIR', 'SHIP'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['ROAD', 'RAIL', 'AIR', 'SHIP']),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "mode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'public.transporter_master.trn_id' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Typed name; default = the transporter master\'s name.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(200),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(15),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "transporterGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(50),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "lrNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "lrDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], PurchaseTransportDto.prototype, "distanceKm", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseTransportDto.prototype, "remarks", void 0);
 class PurchaseInvoiceHeaderDto {
     piId;
     companyId;
@@ -437,6 +517,11 @@ class PurchaseInvoiceHeaderDto {
     irn;
     ackNo;
     remarks;
+    agentId;
+    billFromGstin;
+    transport;
+    overrideWarnings;
+    overrideReason;
     post;
 }
 exports.PurchaseInvoiceHeaderDto = PurchaseInvoiceHeaderDto;
@@ -565,6 +650,39 @@ __decorate([
     __metadata("design:type", String)
 ], PurchaseInvoiceHeaderDto.prototype, "remarks", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'purchase.pur_agent.pag_id (= the agent\'s ledger, Agents master menu 28). Omit / null = no agent.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "agentId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: "Bill from: which of the supplier's GSTINs the bill is from (the master's, or one of its ledger's BILL_TO / BOTH addresses — see supplier-context billFrom[]). Default the master's. Its state against the place of supply decides CGST+SGST vs IGST." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(15),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "billFromGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: PurchaseTransportDto, nullable: true, description: 'Omit = keep the saved band and vehicle / driver; null = remove the band and clear vehicle / driver; an object = write the band (all blank = remove) — its vehicleNo / driverName are kept when absent.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => PurchaseTransportDto),
+    __metadata("design:type", Object)
+], PurchaseInvoiceHeaderDto.prototype, "transport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'With post: go past the WARN items that need a right (needsRight = OVERRIDE, e.g. PUR_RATE_ABOVE_PO: no payment hold). Needs the Override right on menu 24; logged on the bill\'s trail.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PurchaseInvoiceHeaderDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Why the warnings were overridden — kept in the trail.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PurchaseInvoiceHeaderDto.prototype, "overrideReason", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Save and post in one transaction.' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
@@ -614,6 +732,37 @@ __decorate([
     (0, class_validator_1.MaxLength)(9),
     __metadata("design:type", String)
 ], GetPurchaseInvoiceQueryDto.prototype, "accYear", void 0);
+class PostPurchaseInvoiceDto {
+    piId;
+    accYear;
+    overrideWarnings;
+    overrideReason;
+}
+exports.PostPurchaseInvoiceDto = PostPurchaseInvoiceDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "piId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(9),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Go past the WARN items that need a right (Override on menu 24); logged.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], PostPurchaseInvoiceDto.prototype, "overrideWarnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(250),
+    __metadata("design:type", String)
+], PostPurchaseInvoiceDto.prototype, "overrideReason", void 0);
 class CancelPurchaseInvoiceDto {
     piId;
     accYear;

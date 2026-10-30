@@ -103,7 +103,7 @@ let AreaService = class AreaService {
                     armCityId: dto.armCityId,
                     armSort: sort,
                     armDescription: dto.armDescription ?? null,
-                    armCollectionDays: (0, module_service_utils_1.hasOwnProperty)(dto, 'armCollectionDays')
+                    armCollectionDays: (0, module_service_utils_1.isPresentField)(dto, 'armCollectionDays')
                         ? (dto.armCollectionDays ?? [])
                         : [],
                     armIsActive: !isDeleted,
@@ -113,7 +113,7 @@ let AreaService = class AreaService {
                     armModifiedOn: now,
                     armModifiedBy: actor,
                 };
-                if ((0, module_service_utils_1.hasOwnProperty)(dto, 'armDistanceKm')) {
+                if ((0, module_service_utils_1.isPresentField)(dto, 'armDistanceKm')) {
                     areaData.armDistanceKm = dto.armDistanceKm ?? null;
                 }
                 const created = await tx.areaMaster.create({ data: areaData });
@@ -249,7 +249,7 @@ let AreaService = class AreaService {
                     (0, module_service_utils_1.throwSalesNotFound)('Area not found', 'armId', `No active area found with id ${armId}`, area_error_codes_1.AreaErrorCode.NOT_FOUND);
                 }
                 const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveAreaDto.armName, 'armName', undefined, area_error_codes_1.AreaErrorCode.NAME_REQUIRED);
-                const nextCityId = (0, module_service_utils_1.hasOwnProperty)(saveAreaDto, 'armCityId')
+                const nextCityId = (0, module_service_utils_1.isPresentField)(saveAreaDto, 'armCityId')
                     ? saveAreaDto.armCityId
                     : existing.armCityId;
                 await this.ensureCityExists(tx, nextCityId);

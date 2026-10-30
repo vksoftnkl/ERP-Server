@@ -9,46 +9,15 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveCustomerDto = exports.CUSTOMER_PAN_PATTERN = exports.CUSTOMER_GSTIN_PATTERN = exports.CUSTOMER_GSTIN_PATTERNS = void 0;
-exports.gstinKindOf = gstinKindOf;
-const common_1 = require("@nestjs/common");
+exports.SaveCustomerDto = exports.gstinKindOf = exports.CUSTOMER_PAN_PATTERN = exports.CUSTOMER_GSTIN_PATTERN = exports.CUSTOMER_GSTIN_PATTERNS = void 0;
 const swagger_1 = require("@nestjs/swagger");
-const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
-exports.CUSTOMER_GSTIN_PATTERNS = {
-    NORMAL: /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/,
-    TDS_DEDUCTOR: /^[0-9]{2}[A-Z]{4}[0-9]{5}[A-Z][1-9A-Z]D[0-9A-Z]$/,
-    UIN: /^[0-9]{4}[A-Z]{3}[0-9]{5}[UO]N[0-9A-Z]$/,
-    OIDAR: /^99[0-9]{2}[A-Z]{3}[0-9]{5}OS[0-9A-Z]$/,
-    NRTP: /^[0-9]{4}[A-Z]{3}[0-9]{5}NR[0-9A-Z]$/,
-};
-function gstinKindOf(gstin) {
-    for (const kind of Object.keys(exports.CUSTOMER_GSTIN_PATTERNS)) {
-        if (exports.CUSTOMER_GSTIN_PATTERNS[kind].test(gstin)) {
-            return kind;
-        }
-    }
-    return null;
-}
-exports.CUSTOMER_GSTIN_PATTERN = new RegExp(`^(?:${Object.values(exports.CUSTOMER_GSTIN_PATTERNS)
-    .map((pattern) => pattern.source.slice(1, -1))
-    .join('|')})$`);
-exports.CUSTOMER_PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const toNullableUpperStrict = (value) => {
-    if (value === undefined || value === null || typeof value !== 'string') {
-        return value;
-    }
-    const trimmed = value.trim().toUpperCase();
-    return trimmed ? trimmed : null;
-};
-const NullableUpperPattern = (maxLength, constraint, pattern, what) => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => toNullableUpperStrict(value)), (0, dtoDecorators_1.SkipOnNullish)(), (0, class_validator_1.IsString)(), (0, class_validator_1.MaxLength)(maxLength), (0, class_validator_1.ValidateBy)({
-    name: constraint,
-    validator: {
-        validate: (value) => typeof value === 'string' && pattern.test(value),
-        defaultMessage: (args) => `${args?.property ?? 'value'} must be ${what}`,
-    },
-}));
+const party_gstin_1 = require("../../../../common/party/party-gstin");
+Object.defineProperty(exports, "gstinKindOf", { enumerable: true, get: function () { return party_gstin_1.gstinKindOf; } });
+exports.CUSTOMER_GSTIN_PATTERNS = party_gstin_1.PARTY_GSTIN_PATTERNS;
+exports.CUSTOMER_GSTIN_PATTERN = party_gstin_1.PARTY_GSTIN_PATTERN;
+exports.CUSTOMER_PAN_PATTERN = party_gstin_1.PARTY_PAN_PATTERN;
 class SaveCustomerDto {
     cusId;
     cusLinkLedId;
@@ -166,28 +135,28 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusAddr1", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusAddr2", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusAddr3", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusCity", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusDistrict", void 0);
 __decorate([
@@ -382,28 +351,28 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionAddr1", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionAddr2", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionAddr3", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionCity", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusRegionDistrict", void 0);
 __decorate([
@@ -453,7 +422,7 @@ __decorate([
         pattern: exports.CUSTOMER_GSTIN_PATTERN.source,
         description: 'Upper-cased. Any GSTN shape (normal, TDS deductor, UIN, OIDAR, NRTP); a normal GSTIN must start with cusStateCode.',
     }),
-    NullableUpperPattern(15, 'isGstin', exports.CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN'),
+    (0, party_gstin_1.NullableUpperPattern)(15, 'isGstin', exports.CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN'),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusGstNo", void 0);
 __decorate([
@@ -463,11 +432,16 @@ __decorate([
         pattern: exports.CUSTOMER_PAN_PATTERN.source,
         description: 'Upper-cased.',
     }),
-    NullableUpperPattern(10, 'isPan', exports.CUSTOMER_PAN_PATTERN, 'a 10-character PAN (AAAAA9999A)'),
+    (0, party_gstin_1.NullableUpperPattern)(10, 'isPan', exports.CUSTOMER_PAN_PATTERN, 'a 10-character PAN (AAAAA9999A)'),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusPanNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 30,
+        nullable: true,
+        enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+        description: 'Party rules D2. Old spellings (Regular, unregistered, SEZ Unit …) are mapped to the code. Blank = UNREGISTERED when there is no GSTIN. REGULAR / COMPOSITION / SEZ need cusGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs cusStateCode 96.',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(30),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusGstType", void 0);
@@ -478,7 +452,7 @@ __decorate([
         pattern: exports.CUSTOMER_GSTIN_PATTERN.source,
         description: 'Upper-cased.',
     }),
-    NullableUpperPattern(15, 'isGstin', exports.CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN'),
+    (0, party_gstin_1.NullableUpperPattern)(15, 'isGstin', exports.CUSTOMER_GSTIN_PATTERN, 'a 15-character GSTIN'),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusEcommerceGstin", void 0);
 __decorate([
@@ -520,12 +494,17 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveCustomerDto.prototype, "cusPriceLevelId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'date' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        format: 'date',
+        deprecated: true,
+        description: 'Ignored (party rules D3): last billed is read from the posted bills. Accepted for one release.',
+    }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusBilledDate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({ default: 0, deprecated: true, description: 'Ignored (party rules D3), as cusBilledDate.' }),
     (0, dtoDecorators_1.NullableInteger)(0),
     __metadata("design:type", Number)
 ], SaveCustomerDto.prototype, "cusBilledCount", void 0);

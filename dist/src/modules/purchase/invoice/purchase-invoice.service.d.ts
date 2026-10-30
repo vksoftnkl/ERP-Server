@@ -6,18 +6,42 @@ import { StockPostingService } from "../../stocks/posting/stock-posting.service"
 import { SellingPriceBulkService } from "../../stocks/selling-price-bulk/selling-price-bulk.service";
 import { type PurchaseSettings } from '../common/purchase-settings';
 import type { SavePurchaseInvoiceDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto } from './dto/save-purchase-invoice.dto';
+import { type LineCheck, type PurIssue } from './purchase-invoice-checks';
+import { type BillFromRow } from '../common/purchase-bill-from';
+import { TransportBandService, type TransportBandInput } from "../../sales/posting/transport-band.service";
+type Tx = Prisma.TransactionClient;
 export declare class PurchaseInvoiceService {
     private readonly prisma;
     private readonly requestContext;
     private readonly vouchers;
     private readonly stockPosting;
     private readonly prices;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, prices: SellingPriceBulkService);
+    private readonly transportBand;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, prices: SellingPriceBulkService, transportBand: TransportBandService);
     preview(dto: SavePurchaseInvoiceDto): Promise<{
+        warnings: PurIssue[];
+        refusals: PurIssue[];
         interState: boolean;
         supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
+        header: {
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStcd: string | null;
+            isReverseCharge: boolean;
+            reverseChargeReason: string;
+            agentId: string | null;
+            agentName: string | null;
+            creditDays: number;
+            goodsReceivedOn: string;
+            creditDueDate: string;
+            msmeDueDate: string | null;
+            dueDate: string;
+            transport: TransportBandInput | null;
+        };
         lines: {
             poRefno: string | null;
+            check: LineCheck | null;
             rate: number;
             costIncl: string | null;
             sellA: number | null;
@@ -33,14 +57,45 @@ export declare class PurchaseInvoiceService {
             }[];
             chgId: string;
         }[];
-        totals: Record<string, unknown>;
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+        };
         invoiceAmountPrinted: number;
         difference: string;
     }>;
     setHold(dto: PurchaseInvoiceHoldDto): Promise<{
         header: {
             supplierName: string;
-            godownName: string;
+            godownName: string | null;
+            agentName: string | null;
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStateName: string | null;
+            interState: boolean;
+            reverseChargeReason: string;
+            transport: {
+                vehicleNo: string | null;
+                driverName: string | null;
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+                from: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+                to: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+            } | null;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -105,6 +160,8 @@ export declare class PurchaseInvoiceService {
             piCreatedBy: string;
             piModifiedOn: Date | null;
             piModifiedBy: string | null;
+            piVehicleNo: string | null;
+            piDriverName: string | null;
         };
         lines: {
             allocs: {
@@ -142,6 +199,7 @@ export declare class PurchaseInvoiceService {
                 piaModifiedOn: Date | null;
                 piaModifiedBy: string | null;
             }[];
+            check: LineCheck | null;
             piiId: string;
             piiPiId: string;
             piiCompanyId: string;
@@ -215,17 +273,63 @@ export declare class PurchaseInvoiceService {
             piiModifiedBy: string | null;
         }[];
         charges: Record<string, unknown>[];
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+            gross: string;
+            discount: string;
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            cess: string;
+            chargeTax: string;
+            chargesOnBill: string;
+            tcs: string;
+            roundOff: string;
+            netPayable: string;
+            offbillCharges: string;
+            shortValue: string;
+            itcEligible: string;
+            itcPending: string;
+            itcIneligible: string;
+        };
     }>;
     settings(companyId: string, branchId: string): Promise<PurchaseSettings>;
     save(dto: SavePurchaseInvoiceDto): Promise<{
-        warnings: {
-            code: string;
-            message: string;
-            field: string;
-        }[];
+        warnings: PurIssue[];
+        refusals: PurIssue[];
         header: {
             supplierName: string;
-            godownName: string;
+            godownName: string | null;
+            agentName: string | null;
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStateName: string | null;
+            interState: boolean;
+            reverseChargeReason: string;
+            transport: {
+                vehicleNo: string | null;
+                driverName: string | null;
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+                from: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+                to: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+            } | null;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -290,6 +394,8 @@ export declare class PurchaseInvoiceService {
             piCreatedBy: string;
             piModifiedOn: Date | null;
             piModifiedBy: string | null;
+            piVehicleNo: string | null;
+            piDriverName: string | null;
         };
         lines: {
             allocs: {
@@ -327,6 +433,7 @@ export declare class PurchaseInvoiceService {
                 piaModifiedOn: Date | null;
                 piaModifiedBy: string | null;
             }[];
+            check: LineCheck | null;
             piiId: string;
             piiPiId: string;
             piiCompanyId: string;
@@ -400,11 +507,65 @@ export declare class PurchaseInvoiceService {
             piiModifiedBy: string | null;
         }[];
         charges: Record<string, unknown>[];
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+            gross: string;
+            discount: string;
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            cess: string;
+            chargeTax: string;
+            chargesOnBill: string;
+            tcs: string;
+            roundOff: string;
+            netPayable: string;
+            offbillCharges: string;
+            shortValue: string;
+            itcEligible: string;
+            itcPending: string;
+            itcIneligible: string;
+        };
     }>;
-    post(piId: string, accYear: string): Promise<{
+    post(piId: string, accYear: string, opts?: {
+        override?: boolean;
+        reason?: string | null;
+    }): Promise<{
+        warnings: PurIssue[];
+        refusals: PurIssue[];
         header: {
             supplierName: string;
-            godownName: string;
+            godownName: string | null;
+            agentName: string | null;
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStateName: string | null;
+            interState: boolean;
+            reverseChargeReason: string;
+            transport: {
+                vehicleNo: string | null;
+                driverName: string | null;
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+                from: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+                to: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+            } | null;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -469,6 +630,8 @@ export declare class PurchaseInvoiceService {
             piCreatedBy: string;
             piModifiedOn: Date | null;
             piModifiedBy: string | null;
+            piVehicleNo: string | null;
+            piDriverName: string | null;
         };
         lines: {
             allocs: {
@@ -506,6 +669,7 @@ export declare class PurchaseInvoiceService {
                 piaModifiedOn: Date | null;
                 piaModifiedBy: string | null;
             }[];
+            check: LineCheck | null;
             piiId: string;
             piiPiId: string;
             piiCompanyId: string;
@@ -579,11 +743,65 @@ export declare class PurchaseInvoiceService {
             piiModifiedBy: string | null;
         }[];
         charges: Record<string, unknown>[];
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+            gross: string;
+            discount: string;
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            cess: string;
+            chargeTax: string;
+            chargesOnBill: string;
+            tcs: string;
+            roundOff: string;
+            netPayable: string;
+            offbillCharges: string;
+            shortValue: string;
+            itcEligible: string;
+            itcPending: string;
+            itcIneligible: string;
+        };
     }>;
+    private issueOf;
+    private collectIssues;
+    private factsFromDto;
+    private factsFromStored;
+    private itemNames;
     get(piId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
-            godownName: string;
+            godownName: string | null;
+            agentName: string | null;
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStateName: string | null;
+            interState: boolean;
+            reverseChargeReason: string;
+            transport: {
+                vehicleNo: string | null;
+                driverName: string | null;
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+                from: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+                to: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+            } | null;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -648,6 +866,8 @@ export declare class PurchaseInvoiceService {
             piCreatedBy: string;
             piModifiedOn: Date | null;
             piModifiedBy: string | null;
+            piVehicleNo: string | null;
+            piDriverName: string | null;
         };
         lines: {
             allocs: {
@@ -685,6 +905,7 @@ export declare class PurchaseInvoiceService {
                 piaModifiedOn: Date | null;
                 piaModifiedBy: string | null;
             }[];
+            check: LineCheck | null;
             piiId: string;
             piiPiId: string;
             piiCompanyId: string;
@@ -758,11 +979,60 @@ export declare class PurchaseInvoiceService {
             piiModifiedBy: string | null;
         }[];
         charges: Record<string, unknown>[];
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+            gross: string;
+            discount: string;
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            cess: string;
+            chargeTax: string;
+            chargesOnBill: string;
+            tcs: string;
+            roundOff: string;
+            netPayable: string;
+            offbillCharges: string;
+            shortValue: string;
+            itcEligible: string;
+            itcPending: string;
+            itcIneligible: string;
+        };
     }>;
     cancel(dto: CancelPurchaseInvoiceDto): Promise<{
         header: {
             supplierName: string;
-            godownName: string;
+            godownName: string | null;
+            agentName: string | null;
+            billFromGstin: string | null;
+            billFromAddrId: string | null;
+            billFromStateCode: string | null;
+            posStateName: string | null;
+            interState: boolean;
+            reverseChargeReason: string;
+            transport: {
+                vehicleNo: string | null;
+                driverName: string | null;
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+                from: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+                to: import("src/modules/sales/posting/transport-band.service").TransportEnd | null;
+            } | null;
             piId: string;
             piCompanyId: string;
             piBranchId: string;
@@ -827,6 +1097,8 @@ export declare class PurchaseInvoiceService {
             piCreatedBy: string;
             piModifiedOn: Date | null;
             piModifiedBy: string | null;
+            piVehicleNo: string | null;
+            piDriverName: string | null;
         };
         lines: {
             allocs: {
@@ -864,6 +1136,7 @@ export declare class PurchaseInvoiceService {
                 piaModifiedOn: Date | null;
                 piaModifiedBy: string | null;
             }[];
+            check: LineCheck | null;
             piiId: string;
             piiPiId: string;
             piiCompanyId: string;
@@ -937,9 +1210,39 @@ export declare class PurchaseInvoiceService {
             piiModifiedBy: string | null;
         }[];
         charges: Record<string, unknown>[];
+        totals: {
+            gstTotal: string;
+            invoiceAmountPrinted: string;
+            difference: string;
+            amountMatches: boolean;
+            shortQty: string;
+            shortLines: number;
+            gstOnShort: string;
+            mode: string;
+            cashTender: null;
+            gross: string;
+            discount: string;
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            cess: string;
+            chargeTax: string;
+            chargesOnBill: string;
+            tcs: string;
+            roundOff: string;
+            netPayable: string;
+            offbillCharges: string;
+            shortValue: string;
+            itcEligible: string;
+            itcPending: string;
+            itcIneligible: string;
+        };
     }>;
     private actor;
     private prepare;
+    billFromOptions(db: Tx, supplierId: string): Promise<BillFromRow[]>;
+    private resolveBillFrom;
     private loadPoLines;
     private loadGrnLines;
     private grnFacts;
@@ -976,10 +1279,15 @@ export declare class PurchaseInvoiceService {
         blocked: null;
     }[]>;
     private calcPayload;
+    private panelTotals;
     private assertNotDuplicate;
+    private duplicateOf;
     private assertPrintedAmount;
     private allocateNumber;
     private writeDocument;
+    private dueDates;
+    private bandInput;
+    private writeTransport;
     private stockRules;
     private postInTx;
     private rejectedMoney;
@@ -987,3 +1295,4 @@ export declare class PurchaseInvoiceService {
     private cancelRejectedDebitNotes;
     private log;
 }
+export {};

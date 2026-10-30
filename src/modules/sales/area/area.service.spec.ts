@@ -2,6 +2,8 @@ import { HttpException } from '@nestjs/common';
 import { AreaMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AreaService } from './area.service';
+import { SaveAreaDto } from './dto/save-area.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { AreaErrorCode } from './types/area-error-codes';
 
 const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46a301';
@@ -227,6 +229,21 @@ describe('AreaService', () => {
       );
 
       expect(areaCreateData().armDistanceKm).toBeNull();
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe armDistanceKm is an own
+    // property even when left out; it must stay off the insert so the DB default 0 holds.
+    it('leaves a distance a piped body omits to the DB default, and keeps days empty', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        { armName: 'Kakkanad', armCityId: CITY_ID },
+        { type: 'body', metatype: SaveAreaDto },
+      )) as SaveAreaDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'armDistanceKm')).toBe(true);
+
+      await service.createAreaMaster(dto, USER_ID);
+
+      expect(areaCreateData()).not.toHaveProperty('armDistanceKm');
+      expect(areaCreateData().armCollectionDays).toEqual([]);
     });
 
     it('returns the area with the group id and audits the create', async () => {

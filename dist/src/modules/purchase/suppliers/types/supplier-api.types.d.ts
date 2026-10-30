@@ -1,6 +1,7 @@
 import type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 import type { PurchaseErrorDetail, PurchaseErrorResponse } from "../../../../common/types/module-api.types";
 import type { SupplierErrorCode } from './supplier-error-codes';
+import type { PartySyncResult } from "../../../../common/party/party-sync.service";
 export interface SupplierErrorDetail extends PurchaseErrorDetail {
     code: SupplierErrorCode;
 }
@@ -70,4 +71,7 @@ export interface SupplierPayload {
     supModifiedOn: string;
     supModifiedBy: string | null;
     ledgerBankAccount: LedgerBankAccountPayload[];
+}
+export interface SupplierSavePayload extends SupplierPayload {
+    partySync: PartySyncResult;
 }

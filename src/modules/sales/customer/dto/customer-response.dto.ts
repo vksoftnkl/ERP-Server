@@ -1,3 +1,4 @@
+import { PartySyncDto } from 'src/common/party/party-response.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CustomerErrorFieldDto {
@@ -35,19 +36,19 @@ export class CustomerPayloadDto {
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusName!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr1!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr2!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
   cusAddr3!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   cusCity!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
   cusDistrict!: string | null;
 
   @ApiProperty({ maxLength: 100 })
@@ -301,6 +302,22 @@ export class CustomerSuccessSingleDto {
 
   @ApiProperty({ type: CustomerPayloadDto })
   data!: CustomerPayloadDto;
+}
+
+export class CustomerSavePayloadDto extends CustomerPayloadDto {
+  @ApiProperty({ type: PartySyncDto, description: 'Party rules D4-6: what the save did to the supplier of the same ledger.' })
+  partySync!: PartySyncDto;
+}
+
+export class CustomerSuccessSaveDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Customer updated successfully' })
+  message!: string;
+
+  @ApiProperty({ type: CustomerSavePayloadDto })
+  data!: CustomerSavePayloadDto;
 }
 
 export class CustomerSuccessDeleteDto {

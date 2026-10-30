@@ -670,11 +670,10 @@ model AccLedgerMaster {
   // them four live parties had no ledger row at all and could not be posted to.
   customer                 Customer?              @relation("CustomerLedger")
   supplier                 Supplier?              @relation("SupplierLedger")
-  // Kept for the exact-case scoped case; the three rules below are what actually hold,
-  // because this one is INERT for shared rows (led_company_id IS NULL — 50 of 61
-  // ledgers) and case-sensitive besides.
-  @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
-  @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
+  // The plain @@unique([ledCompanyId, ledName]) and @@unique([ledCompanyId, ledTallyName])
+  // were dropped by 20261029110000_ledger_name_unique_skip_deleted: they counted soft-deleted
+  // rows, so a deleted ledger's name could never be reused. The partial rules below hold for
+  // live rows (uq_led_tally_name_company / uq_led_tally_name_shared for the Tally name).
   @@index([ledCompanyId], name: "idx_led_company_id")
   @@index([ledBranchId], name: "idx_led_branch_id")
   @@index([ledGroupId], name: "idx_led_group_id")
@@ -684,6 +683,9 @@ model AccLedgerMaster {
   // Partial unique indexes — enforced via raw SQL migration, not expressible in Prisma schema:
   //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
   //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
+  //   uq_led_tally_name_shared   UNIQUE (lower(led_tally_name))                 WHERE led_company_id IS NULL     AND NOT led_is_deleted AND led_tally_name IS NOT NULL
+  //   uq_led_tally_name_company  UNIQUE (led_company_id, lower(led_tally_name)) WHERE led_company_id IS NOT NULL AND NOT led_is_deleted AND led_tally_name IS NOT NULL
+  //   (20261029110000)
   //
   // NAME UNIQUENESS — the same three rules as acc_group_master (20260917110000):
   //   uq_led_name_shared   UNIQUE (lower(led_name)) WHERE led_company_id IS NULL     AND NOT led_is_deleted
@@ -9998,6 +10000,28 @@ model PurAgent {
   @@schema("purchase")
 }
 
+/// PO terms master (migration 20261029130000). Company NULL = shared. ux_pte_code
+/// (COALESCE(company, zero uuid), upper(code)) WHERE NOT deleted and ix_pte_list are DB-only.
+model PurTerms {
+  pteId         String     @id(map: "pk_pur_terms") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pte_id")
+  pteCompanyId  String?    @db.Uuid @map("pte_company_id")
+  pteCode       String     @db.VarChar(30) @map("pte_code")
+  pteName       String     @db.VarChar(100) @map("pte_name")
+  pteTermsText  String     @map("pte_terms_text")
+  pteSort       Int        @default(0) @map("pte_sort")
+  pteIsActive   Boolean    @default(true) @map("pte_is_active")
+  pteIsDeleted  Boolean    @default(false) @map("pte_is_deleted")
+  pteSyncDate   DateTime?  @db.Timestamptz(6) @map("pte_sync_date")
+  pteCreatedOn  DateTime   @default(now()) @db.Timestamptz(6) @map("pte_created_on")
+  pteCreatedBy  String     @db.VarChar(50) @map("pte_created_by")
+  pteModifiedOn DateTime?  @db.Timestamptz(6) @map("pte_modified_on")
+  pteModifiedBy String?    @db.VarChar(50) @map("pte_modified_by")
+  purOrder      PurOrder[]
+
+  @@map("pur_terms")
+  @@schema("purchase")
+}
+
 /// Purchase order — posts nothing; pending derived from GRN / bill lines whose src_* point at its lines.
 model PurOrder {
   poId               String         @default(dbgenerated("uuidv7()")) @db.Uuid @map("po_id")
@@ -10037,7 +10061,10 @@ model PurOrder {
   poCreatedBy        String         @db.VarChar(50) @map("po_created_by")
   poModifiedOn       DateTime?      @db.Timestamptz(6) @map("po_modified_on")
   poModifiedBy       String?        @db.VarChar(50) @map("po_modified_by")
+  /// pur_terms row the terms came from (NULL = typed); poTermsText keeps the PO's own copy. ix_po_terms is partial (DB-only).
+  poTermsId          String?        @db.Uuid @map("po_terms_id")
   purAgent           PurAgent?      @relation(fields: [poAgentId], references: [pagId], onDelete: Restrict, map: "fk_po_agent")
+  purTerms           PurTerms?      @relation(fields: [poTermsId], references: [pteId], onDelete: Restrict, map: "fk_po_terms")
   purOrderItem       PurOrderItem[]
 
   @@id([poId, poAccYear], map: "pk_pur_order")
@@ -10268,6 +10295,8 @@ model PurInvoice {
   piCreatedBy            String           @db.VarChar(50) @map("pi_created_by")
   piModifiedOn           DateTime?        @db.Timestamptz(6) @map("pi_modified_on")
   piModifiedBy           String?          @db.VarChar(50) @map("pi_modified_by")
+  piVehicleNo            String?          @db.VarChar(20) @map("pi_vehicle_no")
+  piDriverName           String?          @db.VarChar(100) @map("pi_driver_name")
   purAgent               PurAgent?        @relation(fields: [piAgentId], references: [pagId], onDelete: Restrict, map: "fk_pi_agent")
   purInvoiceItem         PurInvoiceItem[]
 
@@ -10458,6 +10487,7 @@ model PurShortageClose {
   pscModifiedOn      DateTime?   @db.Timestamptz(6) @map("psc_modified_on")
   pscModifiedBy      String?     @db.VarChar(50) @map("psc_modified_by")
   purShortage        PurShortage @relation(fields: [pscShortageId, pscShortageAccYear], references: [pshId, pshAccYear], map: "fk_psc_shortage")
+  purClaimSettlement PurClaimSettlement[]
 
   @@id([pscId, pscAccYear], map: "pk_pur_shortage_close")
   @@map("pur_shortage_close")
@@ -10493,6 +10523,8 @@ model PurShortageReceipt {
   psrCreatedBy           String                   @db.VarChar(50) @map("psr_created_by")
   psrModifiedOn          DateTime?                @db.Timestamptz(6) @map("psr_modified_on")
   psrModifiedBy          String?                  @db.VarChar(50) @map("psr_modified_by")
+  /// employee_master (fk_psr_supervisor, DB-only FK); ix_psr_supervisor is partial (DB-only).
+  psrSupervisorId        String?                  @db.Uuid @map("psr_supervisor_id")
   purShortageReceiptItem PurShortageReceiptItem[]
 
   @@id([psrId, psrAccYear], map: "pk_pur_shortage_receipt")
@@ -10578,6 +10610,8 @@ model PurReturn {
   prCreatedBy       String          @db.VarChar(50) @map("pr_created_by")
   prModifiedOn      DateTime?       @db.Timestamptz(6) @map("pr_modified_on")
   prModifiedBy      String?         @db.VarChar(50) @map("pr_modified_by")
+  /// "Our ref": free text typed on the return. prOurRef holds the source refno.
+  prMemoRef         String?         @db.VarChar(60) @map("pr_memo_ref")
   purReturnItem     PurReturnItem[]
 
   @@id([prId, prAccYear], map: "pk_pur_return")
@@ -10657,8 +10691,9 @@ model PurClaimSettlement {
   pcsBranchId          String        @db.Uuid @map("pcs_branch_id")
   pcsAccYear           String        @db.Char(9) @map("pcs_acc_year")
   pcsDeviceId          String?       @db.Uuid @map("pcs_device_id")
-  pcsReturnItemId      String        @db.Uuid @map("pcs_return_item_id")
-  pcsReturnItemAccYear String        @db.Char(9) @map("pcs_return_item_acc_year")
+  /// Exactly one source: a return claim line OR a shortage close of kind CLAIM (ck_pcs_source, DB-only CHECK).
+  pcsReturnItemId      String?       @db.Uuid @map("pcs_return_item_id")
+  pcsReturnItemAccYear String?       @db.Char(9) @map("pcs_return_item_acc_year")
   pcsAction            String        @db.VarChar(15) @map("pcs_action")
   pcsReceivedAs        String?       @db.VarChar(10) @map("pcs_received_as")
   pcsAmount            Decimal       @default(0) @db.Decimal(15, 2) @map("pcs_amount")
@@ -10675,7 +10710,11 @@ model PurClaimSettlement {
   pcsCreatedBy         String        @db.VarChar(50) @map("pcs_created_by")
   pcsModifiedOn        DateTime?     @db.Timestamptz(6) @map("pcs_modified_on")
   pcsModifiedBy        String?       @db.VarChar(50) @map("pcs_modified_by")
-  purReturnItem        PurReturnItem @relation(fields: [pcsReturnItemId, pcsReturnItemAccYear], references: [priId, priAccYear], map: "fk_pcs_return_item")
+  /// ix_pcs_shortage_close is partial (DB-only).
+  pcsShortageCloseId      String?    @db.Uuid @map("pcs_shortage_close_id")
+  pcsShortageCloseAccYear String?    @db.Char(9) @map("pcs_shortage_close_acc_year")
+  purReturnItem        PurReturnItem? @relation(fields: [pcsReturnItemId, pcsReturnItemAccYear], references: [priId, priAccYear], onDelete: Restrict, map: "fk_pcs_return_item")
+  purShortageClose     PurShortageClose? @relation(fields: [pcsShortageCloseId, pcsShortageCloseAccYear], references: [pscId, pscAccYear], onDelete: Restrict, map: "fk_pcs_shortage_close")
 
   @@id([pcsId, pcsAccYear], map: "pk_pur_claim_settlement")
   @@map("pur_claim_settlement")

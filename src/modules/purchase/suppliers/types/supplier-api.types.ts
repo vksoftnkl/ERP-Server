@@ -1,6 +1,7 @@
 import type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 import type { PurchaseErrorDetail, PurchaseErrorResponse } from 'src/common/types/module-api.types';
 import type { SupplierErrorCode } from './supplier-error-codes';
+import type { PartySyncResult } from 'src/common/party/party-sync.service';
 
 /** Notes 119: every refusal names its code — see supplier-error-codes.ts. */
 export interface SupplierErrorDetail extends PurchaseErrorDetail {
@@ -72,4 +73,9 @@ export interface SupplierPayload {
   supModifiedOn: string;
   supModifiedBy: string | null;
   ledgerBankAccount: LedgerBankAccountPayload[];
+}
+
+/** POST /suppliers/create → data: the supplier plus what the sync did (party rules D4-6). */
+export interface SupplierSavePayload extends SupplierPayload {
+  partySync: PartySyncResult;
 }

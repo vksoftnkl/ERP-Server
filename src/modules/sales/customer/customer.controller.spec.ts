@@ -29,13 +29,13 @@ describe('CustomerController', () => {
       getById: jest.fn().mockResolvedValue(PAYLOAD),
       softDelete: jest.fn().mockResolvedValue({ cusId: CUS_ID, deleted: true }),
     };
-    controller = new CustomerController(service as unknown as CustomerService);
+    controller = new CustomerController(service as unknown as CustomerService, { publish: jest.fn() } as never);
   });
 
   it('words a save without cusId as a create', async () => {
     const body = dto();
 
-    await expect(controller.save(body)).resolves.toEqual({
+    await expect(controller.save(body, {})).resolves.toEqual({
       success: true,
       message: 'Customer created successfully',
       data: PAYLOAD,
@@ -44,13 +44,13 @@ describe('CustomerController', () => {
   });
 
   it('words a save with cusId as an update', async () => {
-    await expect(controller.save(dto({ cusId: CUS_ID }))).resolves.toMatchObject({
+    await expect(controller.save(dto({ cusId: CUS_ID }), {})).resolves.toMatchObject({
       message: 'Customer updated successfully',
     });
   });
 
   it('words a link create (cusLinkLedId, no cusId) as a create', async () => {
-    await expect(controller.save(dto({ cusLinkLedId: CUS_ID }))).resolves.toMatchObject({
+    await expect(controller.save(dto({ cusLinkLedId: CUS_ID }), {})).resolves.toMatchObject({
       message: 'Customer created successfully',
     });
   });

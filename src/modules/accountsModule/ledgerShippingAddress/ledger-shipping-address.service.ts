@@ -9,7 +9,7 @@ import {
 } from './types/ledger-shipping-address-api.types';
 import {
   DEFAULT_ACTOR,
-  hasOwnProperty,
+  isPresentField,
   throwAccountsBadRequest,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
@@ -182,7 +182,7 @@ export class LedgerShippingAddressService {
         await this.ensureLedgerExists(saveLedgerShippingAddressDto.saaLedgerId, tx);
 
         if (
-          hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId') &&
+          isPresentField(saveLedgerShippingAddressDto, 'saaCompanyId') &&
           saveLedgerShippingAddressDto.saaCompanyId !== null &&
           saveLedgerShippingAddressDto.saaCompanyId !== undefined
         ) {
@@ -190,7 +190,7 @@ export class LedgerShippingAddressService {
         }
 
         if (
-          hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId') &&
+          isPresentField(saveLedgerShippingAddressDto, 'saaBranchId') &&
           saveLedgerShippingAddressDto.saaBranchId !== null &&
           saveLedgerShippingAddressDto.saaBranchId !== undefined
         ) {
@@ -277,10 +277,10 @@ export class LedgerShippingAddressService {
           saveLedgerShippingAddressDto.saaAddrType ?? existing.saaAddrType,
         );
         const nextLedgerId = saveLedgerShippingAddressDto.saaLedgerId;
-        const nextCompanyId = hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')
+        const nextCompanyId = isPresentField(saveLedgerShippingAddressDto, 'saaCompanyId')
           ? (saveLedgerShippingAddressDto.saaCompanyId ?? null)
           : existing.saaCompanyId;
-        const nextBranchId = hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId')
+        const nextBranchId = isPresentField(saveLedgerShippingAddressDto, 'saaBranchId')
           ? (saveLedgerShippingAddressDto.saaBranchId ?? null)
           : existing.saaBranchId;
         const nextCountryCode = this.resolveCountryCode(
@@ -289,7 +289,7 @@ export class LedgerShippingAddressService {
         const nextGstin = assertSaaGstin(saveLedgerShippingAddressDto.saaGstin);
         assertSaaStateCode(saveLedgerShippingAddressDto.saaStateCode);
         assertSaaPin(saveLedgerShippingAddressDto.saaPin, nextCountryCode);
-        const nextIsDefault = hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')
+        const nextIsDefault = isPresentField(saveLedgerShippingAddressDto, 'saaIsDefault')
           ? (saveLedgerShippingAddressDto.saaIsDefault ?? false)
           : existing.saaIsDefault;
 
@@ -467,79 +467,79 @@ export class LedgerShippingAddressService {
     data: Prisma.AccShipAddrUncheckedCreateInput | Prisma.AccShipAddrUncheckedUpdateInput,
     saveLedgerShippingAddressDto: SaveLedgerShippingAddressDto,
   ): void {
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaCompanyId')) {
       data.saaCompanyId = saveLedgerShippingAddressDto.saaCompanyId;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaBranchId')) {
       data.saaBranchId = saveLedgerShippingAddressDto.saaBranchId;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaIsDefault')) {
       data.saaIsDefault = saveLedgerShippingAddressDto.saaIsDefault;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSort')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaSort')) {
       data.saaSort = saveLedgerShippingAddressDto.saaSort;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaTradeName')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaTradeName')) {
       data.saaTradeName = saveLedgerShippingAddressDto.saaTradeName;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaContactName')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaContactName')) {
       data.saaContactName = saveLedgerShippingAddressDto.saaContactName;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr1')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaAddr1')) {
       data.saaAddr1 = saveLedgerShippingAddressDto.saaAddr1;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr2')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaAddr2')) {
       data.saaAddr2 = saveLedgerShippingAddressDto.saaAddr2;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr3')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaAddr3')) {
       data.saaAddr3 = saveLedgerShippingAddressDto.saaAddr3;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaLocation')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaLocation')) {
       data.saaLocation = saveLedgerShippingAddressDto.saaLocation;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPin')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaPin')) {
       data.saaPin = saveLedgerShippingAddressDto.saaPin;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateCode')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaStateCode')) {
       data.saaStateCode = saveLedgerShippingAddressDto.saaStateCode;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateName')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaStateName')) {
       data.saaStateName = saveLedgerShippingAddressDto.saaStateName;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
       data.saaDistanceKm = saveLedgerShippingAddressDto.saaDistanceKm;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPhone')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaPhone')) {
       data.saaPhone = saveLedgerShippingAddressDto.saaPhone;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaEmail')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaEmail')) {
       data.saaEmail = saveLedgerShippingAddressDto.saaEmail;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSyncedOn')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaSyncedOn')) {
       data.saaSyncedOn = saveLedgerShippingAddressDto.saaSyncedOn;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsActive')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaIsActive')) {
       data.saaIsActive = saveLedgerShippingAddressDto.saaIsActive;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaRemarks')) {
+    if (isPresentField(saveLedgerShippingAddressDto, 'saaRemarks')) {
       data.saaRemarks = saveLedgerShippingAddressDto.saaRemarks;
     }
   }

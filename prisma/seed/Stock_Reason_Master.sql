@@ -1,4 +1,4 @@
--- Seed: stock.stock_reason_master -- why stock moved outside a trade document (22 rows).
+-- Seed: stock.stock_reason_master -- why stock moved outside a trade document (29 rows).
 --
 -- This is not decoration. fn_svh_txn_map REFUSES to post an ADJUSTMENT that does
 -- not cite a reason, and refuses one whose reason is direction BOTH, because a
@@ -159,7 +159,35 @@ SELECT v.company, v.code, v.name, v.direction,
      'Moving stock to where it is better kept or picked from. Nothing is gained or lost.'),
     (NULL, 'RETURN_STORE',  'Back to main store',        'BOTH',
      ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 210,
-     'Unsold or surplus stock sent back to the main store.')
+     'Unsold or surplus stock sent back to the main store.'),
+
+    -- ── purchase returns: why goods went back to the supplier ─────────────
+    -- The per-line reason on a Purchase Return (menu 25). OUT, and named only
+    -- for PURCHASE_RETURN, so no adjustment or count picker offers them.
+    -- PRET_ prefix because EXPIRY and DAMAGE above are already shared codes.
+    -- Migration 20261029130000 inserts the same seven on a database that
+    -- already has the table.
+    (NULL, 'PRET_EXPIRY',     'Expired',                   'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 310,
+     'Purchase return: past its expiry date, sent back to the supplier.'),
+    (NULL, 'PRET_BREAKAGE',   'Breakage',                  'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 320,
+     'Purchase return: broken in transit or on receipt.'),
+    (NULL, 'PRET_DAMAGE',     'Damaged',                   'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 330,
+     'Purchase return: damaged or unsaleable.'),
+    (NULL, 'PRET_WRONG_ITEM', 'Wrong item',                'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 340,
+     'Purchase return: not what was ordered.'),
+    (NULL, 'PRET_EXCESS',     'Excess supply',             'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 350,
+     'Purchase return: more than was ordered.'),
+    (NULL, 'PRET_QUALITY',    'Quality',                   'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 360,
+     'Purchase return: below the agreed quality.'),
+    (NULL, 'PRET_RATE',       'Rate difference',           'OUT',
+     ARRAY['PURCHASE_RETURN']::text[],                    false, 370,
+     'Purchase return / claim: billed at a rate other than agreed.')
   ) AS v(company, code, name, direction, allowed, require_remarks, sort_order, note)
  WHERE NOT EXISTS (
         SELECT 1

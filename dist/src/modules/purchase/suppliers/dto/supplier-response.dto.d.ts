@@ -1,3 +1,4 @@
+import { PartySyncDto } from "../../../../common/party/party-response.dto";
 import { LedgerBankAccountPayloadDto } from '../../../accountsModule/ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export declare class SupplierErrorFieldDto {
     field: string;
@@ -80,6 +81,14 @@ export declare class SupplierSuccessSingleDto {
     success: true;
     message: string;
     data: SupplierPayloadDto;
+}
+export declare class SupplierSavePayloadDto extends SupplierPayloadDto {
+    partySync: PartySyncDto;
+}
+export declare class SupplierSuccessSaveDto {
+    success: true;
+    message: string;
+    data: SupplierSavePayloadDto;
 }
 export declare class SupplierSuccessDeleteDto {
     success: true;

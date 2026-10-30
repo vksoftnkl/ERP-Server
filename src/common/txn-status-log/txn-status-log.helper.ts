@@ -110,6 +110,8 @@ export enum TxnStatusEvent {
   HOLD = 'HOLD',
   RELEASED = 'RELEASED',
   HOLD_OVERRIDE = 'HOLD_OVERRIDE',
+  // Purchase — Post went past WARN items that need a right (overrideWarnings + Override on menu 24); remarks list what.
+  WARN_OVERRIDE = 'WARN_OVERRIDE',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

@@ -44,4 +44,20 @@ export enum CustomerErrorCode {
   BRANCH_NOT_FOUND = 'CUSTOMER_BRANCH_NOT_FOUND',
   /** cusGstNo's first two digits are not the customer's state code (cusStateCode). */
   GSTIN_STATE_MISMATCH = 'CUSTOMER_GSTIN_STATE_MISMATCH',
+  /** Delete: the ledger's lifetime balance is not 0 in a company (party rules D1). */
+  HAS_BALANCE = 'CUSTOMER_HAS_BALANCE',
+  /** Delete: a cheque of this party is HELD / DEPOSITED and posts only on clearing (Q3). */
+  HAS_CHEQUE_IN_HAND = 'CUSTOMER_HAS_CHEQUE_IN_HAND',
+  /** cusGstType is not one of REGULAR / COMPOSITION / SEZ / OVERSEAS / UNREGISTERED (D2). */
+  GST_TYPE_INVALID = 'CUSTOMER_GST_TYPE_INVALID',
+  /** cusGstType blank while a GSTIN is given. */
+  GST_TYPE_REQUIRED = 'CUSTOMER_GST_TYPE_REQUIRED',
+  /** A REGULAR / COMPOSITION / SEZ customer has no GSTIN. */
+  GSTIN_REQUIRED = 'CUSTOMER_GSTIN_REQUIRED',
+  /** An UNREGISTERED / OVERSEAS customer has a GSTIN (Q5). */
+  GSTIN_NOT_ALLOWED = 'CUSTOMER_GSTIN_NOT_ALLOWED',
+  /** An OVERSEAS customer's state is not 96 Other Country (Q6). */
+  OVERSEAS_STATE = 'CUSTOMER_OVERSEAS_STATE',
+  /** A company change on a party with books in its current company (Q7 = a). */
+  COMPANY_HAS_BOOKS = 'CUSTOMER_COMPANY_HAS_BOOKS',
 }

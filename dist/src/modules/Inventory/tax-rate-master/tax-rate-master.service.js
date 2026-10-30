@@ -270,7 +270,7 @@ let TaxRateMasterService = class TaxRateMasterService {
         });
     }
     applyHeaderFields(data, dto) {
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'tax_code'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'tax_code'))
             data.taxCode = (0, module_service_utils_1.normalizeNullableString)(dto.tax_code);
         if (dto.tax_supersedes_id !== undefined)
             data.taxSupersedesId = dto.tax_supersedes_id ?? null;
@@ -488,14 +488,14 @@ let TaxRateMasterService = class TaxRateMasterService {
                 trlModifiedOn: new Date(),
                 trlModifiedBy: this.resolveWriteActor(line.trl_modified_by),
             };
-            if ((0, module_service_utils_1.hasOwnProperty)(line, 'trl_role'))
+            if ((0, module_service_utils_1.isPresentField)(line, 'trl_role'))
                 data.trlRole = line.trl_role;
-            if ((0, module_service_utils_1.hasOwnProperty)(line, 'trl_supply_nature')) {
+            if ((0, module_service_utils_1.isPresentField)(line, 'trl_supply_nature')) {
                 data.trlSupplyNature = line.trl_supply_nature ?? null;
             }
-            if ((0, module_service_utils_1.hasOwnProperty)(line, 'trl_ledger_id'))
+            if ((0, module_service_utils_1.isPresentField)(line, 'trl_ledger_id'))
                 data.trlLedgerId = line.trl_ledger_id;
-            if ((0, module_service_utils_1.hasOwnProperty)(line, 'trl_remarks')) {
+            if ((0, module_service_utils_1.isPresentField)(line, 'trl_remarks')) {
                 data.trlRemarks = (0, module_service_utils_1.normalizeNullableString)(line.trl_remarks);
             }
             if (isPresent(line.trl_is_active))

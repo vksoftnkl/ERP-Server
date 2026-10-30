@@ -1,16 +1,5 @@
-import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  ValidateBy,
-  ValidateIf,
-} from 'class-validator';
+import { IsEmail, IsNotEmpty, Max, ValidateIf } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -22,88 +11,24 @@ import {
   OptionalUuid,
   RequiredInteger,
   RequiredUuid,
-  SkipOnNullish,
   TrimmedString,
   UpperString,
 } from 'src/common/dto/dtoDecorators';
+import {
+  NullableUpperPattern,
+  PARTY_GSTIN_PATTERN,
+  PARTY_GSTIN_PATTERNS,
+  PARTY_PAN_PATTERN,
+  gstinKindOf,
+  type PartyGstinKind,
+} from 'src/common/party/party-gstin';
 
-/**
- * Every GSTN registration shape a customer can hold (U1). All are 15 characters, upper
- * case. Written from GSTN's published structure of each number (GSTIN / UIN layouts in
- * the GST registration rules and GSTN FAQs), from knowledge, not copied from a fetched
- * file; there is no checksum test here (Qt adds one for NORMAL):
- *  - NORMAL: 2-digit state + PAN (AAAAA9999A) + entity no. + 'Z' + check
- *    (regular, composition, SEZ, casual, ISD, e-commerce TCS collector). Same as the
- *    Qt TaxValidator today.
- *  - TDS_DEDUCTOR: 2-digit state + TAN (AAAA99999A) + entity no. + 'D' + check
- *    (government departments deducting GST TDS, section 51).
- *  - UIN: 2-digit state + 2-digit country code + 3-letter body code + 5 digits + 'UN'
- *    or 'ON' + check (embassies, UN bodies, notified persons).
- *  - OIDAR: '99' + 2-digit country code + 3 letters + 5 digits + 'OS' + check
- *    (online services from abroad; state 99 is "Centre Jurisdiction").
- *  - NRTP: 2-digit state + 2-digit country code + 3 letters + 5 digits + 'NR' + check
- *    (non-resident taxable person).
- * Only NORMAL has its state checked against cusStateCode (CUSTOMER_GSTIN_STATE_MISMATCH).
- */
-export const CUSTOMER_GSTIN_PATTERNS = {
-  NORMAL: /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/,
-  TDS_DEDUCTOR: /^[0-9]{2}[A-Z]{4}[0-9]{5}[A-Z][1-9A-Z]D[0-9A-Z]$/,
-  UIN: /^[0-9]{4}[A-Z]{3}[0-9]{5}[UO]N[0-9A-Z]$/,
-  OIDAR: /^99[0-9]{2}[A-Z]{3}[0-9]{5}OS[0-9A-Z]$/,
-  NRTP: /^[0-9]{4}[A-Z]{3}[0-9]{5}NR[0-9A-Z]$/,
-} as const;
-export type CustomerGstinKind = keyof typeof CUSTOMER_GSTIN_PATTERNS;
-/** Which shape a GSTIN has, or null when it has none of them. */
-export function gstinKindOf(gstin: string): CustomerGstinKind | null {
-  for (const kind of Object.keys(CUSTOMER_GSTIN_PATTERNS) as CustomerGstinKind[]) {
-    if (CUSTOMER_GSTIN_PATTERNS[kind].test(gstin)) {
-      return kind;
-    }
-  }
-  return null;
-}
-/** Any accepted shape, as one pattern (Swagger, and for the Qt validator to match). */
-export const CUSTOMER_GSTIN_PATTERN = new RegExp(
-  `^(?:${Object.values(CUSTOMER_GSTIN_PATTERNS)
-    .map((pattern) => pattern.source.slice(1, -1))
-    .join('|')})$`,
-);
-/** Income-tax PAN: 5 letters, 4 digits, 1 letter. */
-export const CUSTOMER_PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-
-const toNullableUpperStrict = (value: unknown): unknown => {
-  if (value === undefined || value === null || typeof value !== 'string') {
-    return value;
-  }
-  const trimmed = value.trim().toUpperCase();
-  return trimmed ? trimmed : null;
-};
-
-/**
- * Trimmed and upper-cased; blank is null (= cleared) and is not checked. A sent value
- * must match `pattern`; the house pipe codes the refusal VALIDATION_ + the constraint
- * name in upper snake case (isGstin -> VALIDATION_IS_GSTIN).
- */
-const NullableUpperPattern = (
-  maxLength: number,
-  constraint: string,
-  pattern: RegExp,
-  what: string,
-) =>
-  applyDecorators(
-    IsOptional(),
-    Transform(({ value }) => toNullableUpperStrict(value)),
-    SkipOnNullish(),
-    IsString(),
-    MaxLength(maxLength),
-    ValidateBy({
-      name: constraint,
-      validator: {
-        validate: (value: unknown) => typeof value === 'string' && pattern.test(value),
-        defaultMessage: (args) => `${args?.property ?? 'value'} must be ${what}`,
-      },
-    }),
-  );
+// The GSTIN / PAN shapes live in src/common/party/party-gstin.ts (shared with the supplier).
+export const CUSTOMER_GSTIN_PATTERNS = PARTY_GSTIN_PATTERNS;
+export type CustomerGstinKind = PartyGstinKind;
+export const CUSTOMER_GSTIN_PATTERN = PARTY_GSTIN_PATTERN;
+export const CUSTOMER_PAN_PATTERN = PARTY_PAN_PATTERN;
+export { gstinKindOf };
 
 export class SaveCustomerDto {
   @ApiPropertyOptional({
@@ -141,24 +66,24 @@ export class SaveCustomerDto {
   @NullableStringStrict(200)
   cusName?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr1?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr2?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusAddr3?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusCity?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusDistrict?: string | null;
 
   @ApiProperty({ maxLength: 100, description: 'May be left out when cusLinkLedId is set' })
@@ -326,24 +251,24 @@ export class SaveCustomerDto {
   @NullableStringStrict(200)
   cusRegionName?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr1?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr2?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
   cusRegionAddr3?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusRegionCity?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
   cusRegionDistrict?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
@@ -397,7 +322,13 @@ export class SaveCustomerDto {
   @NullableUpperPattern(10, 'isPan', CUSTOMER_PAN_PATTERN, 'a 10-character PAN (AAAAA9999A)')
   cusPanNo?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 30,
+    nullable: true,
+    enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+    description:
+      'Party rules D2. Old spellings (Regular, unregistered, SEZ Unit …) are mapped to the code. Blank = UNREGISTERED when there is no GSTIN. REGULAR / COMPOSITION / SEZ need cusGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs cusStateCode 96.',
+  })
   @NullableStringStrict(30)
   cusGstType?: string | null;
 
@@ -441,11 +372,16 @@ export class SaveCustomerDto {
   @RequiredInteger(0)
   cusPriceLevelId!: number;
 
-  @ApiPropertyOptional({ nullable: true, format: 'date' })
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date',
+    deprecated: true,
+    description: 'Ignored (party rules D3): last billed is read from the posted bills. Accepted for one release.',
+  })
   @NullableDateString()
   cusBilledDate?: string | null;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({ default: 0, deprecated: true, description: 'Ignored (party rules D3), as cusBilledDate.' })
   @NullableInteger(0)
   cusBilledCount?: number;
 

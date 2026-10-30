@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-export type TransportDocType = 'SALE_BILL' | 'DELIVERY_CHALLAN' | 'SALE_RETURN' | 'DC_RETURN' | 'STOCK_TRANSFER';
+export type TransportDocType = 'SALE_BILL' | 'DELIVERY_CHALLAN' | 'SALE_RETURN' | 'DC_RETURN' | 'STOCK_TRANSFER' | 'PURCHASE_BILL' | 'GRN' | 'PURCHASE_RETURN';
 export interface TransportEnd {
     godownId?: string | null;
     branchId?: string | null;

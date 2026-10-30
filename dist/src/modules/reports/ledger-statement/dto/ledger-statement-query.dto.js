@@ -118,6 +118,7 @@ class LedgerStatementLedgersDto {
     search;
     groupId;
     limit;
+    includeDeleted;
 }
 exports.LedgerStatementLedgersDto = LedgerStatementLedgersDto;
 __decorate([
@@ -145,6 +146,14 @@ __decorate([
     (0, dtoDecorators_1.OptionalQueryInt)(1, 100),
     __metadata("design:type", Number)
 ], LedgerStatementLedgersDto.prototype, "limit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: 'Party rules D1-7 ("Show deleted"): true lists deleted ledgers too, each with isDeleted: true. Their statement opens read-only.',
+    }),
+    (0, dtoDecorators_1.OptionalQueryBoolean)(),
+    __metadata("design:type", Boolean)
+], LedgerStatementLedgersDto.prototype, "includeDeleted", void 0);
 class LedgerStatementVoucherLegsDto {
     companyId;
     accYear;

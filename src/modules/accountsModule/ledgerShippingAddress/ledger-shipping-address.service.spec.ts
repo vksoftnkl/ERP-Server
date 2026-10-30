@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveLedgerShippingAddressDto } from './dto/save-ledger-shipping-address.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { LedgerShippingAddressService } from './ledger-shipping-address.service';
 import { SaaAddrType } from './types/ledger-shipping-address-enum';
 import { LedgerShippingAddressErrorCode } from './types/ledger-shipping-address-error-codes';
@@ -410,6 +411,29 @@ describe('LedgerShippingAddressService', () => {
       await service.save(saveDto({ saaId: SAA_ID }));
 
       expect(prisma.accShipAddr.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe every declared field is
+    // own (undefined when left out), so the checks must see the stored values.
+    it('checks the stored company and re-clears a stored default for a piped partial body', async () => {
+      prisma.accShipAddr.findFirst.mockResolvedValue(
+        makeAddress({ saaCompanyId: COMPANY_ID, saaIsDefault: true }),
+      );
+      const dto = (await createHouseValidationPipe().transform(
+        { saaId: SAA_ID, saaLedgerId: LEDGER_ID, saaGstin: GSTIN },
+        { type: 'body', metatype: SaveLedgerShippingAddressDto },
+      )) as SaveLedgerShippingAddressDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'saaCompanyId')).toBe(true);
+
+      await service.save(dto);
+
+      expect(prisma.company.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { compId: COMPANY_ID, compIsDeleted: false } }),
+      );
+      expect(prisma.accShipAddr.updateMany).toHaveBeenCalledTimes(1);
+      const { data } = prisma.accShipAddr.update.mock.calls[0][0];
+      expect(data).not.toHaveProperty('saaCompanyId');
+      expect(data).not.toHaveProperty('saaIsDefault');
     });
 
     it('checks the PIN against the stored country', async () => {

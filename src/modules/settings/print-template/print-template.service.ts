@@ -36,6 +36,7 @@ import {
   collectTemplateInvariantErrors,
   collectVersionInvariantErrors,
 } from './utils/print-template-invariants';
+import { changedVersionKeys, datasetsDifference } from './utils/print-template-frozen-compare';
 import {
   DATASET_ORDER_BY,
   DatasetRow,
@@ -53,7 +54,7 @@ import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
   SettingsWriteClient,
-  hasOwnProperty,
+  isPresentField,
   normalizeNullableString,
   throwSettingsBadRequest,
   throwSettingsConflict,
@@ -363,7 +364,7 @@ export class PrintTemplateService {
     update: Prisma.PrintTemplateUncheckedUpdateInput;
     effective: EffectiveTemplate & { companyId: string | null };
   } {
-    const companyId = hasOwnProperty(dto, 'ptlCompanyId')
+    const companyId = isPresentField(dto, 'ptlCompanyId')
       ? (dto.ptlCompanyId ?? null)
       : (existing?.ptlCompanyId ?? null);
     const purposeId = dto.ptlPurposeId ?? existing?.ptlPurposeId ?? '';
@@ -394,10 +395,10 @@ export class PrintTemplateService {
       }
     }
 
-    const forkedFromId = hasOwnProperty(dto, 'ptlForkedFromId')
+    const forkedFromId = isPresentField(dto, 'ptlForkedFromId')
       ? (dto.ptlForkedFromId ?? null)
       : (existing?.ptlForkedFromId ?? null);
-    const forkedFromRev = hasOwnProperty(dto, 'ptlForkedFromRev')
+    const forkedFromRev = isPresentField(dto, 'ptlForkedFromRev')
       ? (dto.ptlForkedFromRev ?? null)
       : (existing?.ptlForkedFromRev ?? null);
     const sortOrder = dto.ptlSortOrder ?? existing?.ptlSortOrder ?? 100;
@@ -431,17 +432,17 @@ export class PrintTemplateService {
       ptlModifiedOn: new Date(),
       ptlModifiedBy: this.resolveWriteActor(dto.ptlModifiedBy),
     };
-    if (hasOwnProperty(dto, 'ptlCompanyId')) update.ptlCompanyId = companyId;
-    if (hasOwnProperty(dto, 'ptlPurposeId')) update.ptlPurposeId = purposeId;
-    if (hasOwnProperty(dto, 'ptlCode')) update.ptlCode = code;
-    if (hasOwnProperty(dto, 'ptlName')) update.ptlName = name;
-    if (hasOwnProperty(dto, 'ptlDescription')) {
+    if (isPresentField(dto, 'ptlCompanyId')) update.ptlCompanyId = companyId;
+    if (isPresentField(dto, 'ptlPurposeId')) update.ptlPurposeId = purposeId;
+    if (isPresentField(dto, 'ptlCode')) update.ptlCode = code;
+    if (isPresentField(dto, 'ptlName')) update.ptlName = name;
+    if (isPresentField(dto, 'ptlDescription')) {
       update.ptlDescription = normalizeNullableString(dto.ptlDescription) ?? null;
     }
-    if (hasOwnProperty(dto, 'ptlForkedFromId')) update.ptlForkedFromId = forkedFromId;
-    if (hasOwnProperty(dto, 'ptlForkedFromRev')) update.ptlForkedFromRev = forkedFromRev;
-    if (hasOwnProperty(dto, 'ptlSortOrder')) update.ptlSortOrder = sortOrder;
-    if (hasOwnProperty(dto, 'ptlIsActive')) update.ptlIsActive = dto.ptlIsActive ?? true;
+    if (isPresentField(dto, 'ptlForkedFromId')) update.ptlForkedFromId = forkedFromId;
+    if (isPresentField(dto, 'ptlForkedFromRev')) update.ptlForkedFromRev = forkedFromRev;
+    if (isPresentField(dto, 'ptlSortOrder')) update.ptlSortOrder = sortOrder;
+    if (isPresentField(dto, 'ptlIsActive')) update.ptlIsActive = dto.ptlIsActive ?? true;
 
     return { create, update, effective };
   }
@@ -557,7 +558,7 @@ export class PrintTemplateService {
       // request arrived is frozen; one being published BY this request is not,
       // so a designer can compose a revision and publish it in a single call.
       if (current && current.ptvStatus !== 'DRAFT') {
-        const plan = this.planFrozenVersion(existing, current, row, path, errors);
+        const plan = this.planFrozenVersion(existing, current, row, path, errors, current.datasets ?? []);
         if (plan) {
           plans.push(plan);
         }
@@ -610,8 +611,12 @@ export class PrintTemplateService {
     row: SavePrintTemplateVersionDto,
     path: string,
     errors: PrintTemplateErrorDetail[],
+    storedDatasets: DatasetRow[] = [],
   ): VersionPlan | null {
-    const design = this.designKeysPresent(row);
+    // The server compares (user 2026-10-29): a client may send the whole frozen design back (the web Designer's
+    // Retire does). Only a field whose sent value DIFFERS from the stored one is an edit; equal ones are dropped.
+    const sentDesign = this.designKeysPresent(row);
+    const design = changedVersionKeys(row, current, sentDesign);
     if (design.length > 0) {
       errors.push({
         field: `${path}.${design[0]}`,
@@ -623,15 +628,23 @@ export class PrintTemplateService {
       });
       return null;
     }
-    if (row.datasets !== undefined) {
+    const datasetsChange = row.datasets === undefined ? null : datasetsDifference(row.datasets, storedDatasets);
+    if (datasetsChange) {
       errors.push({
         field: `${path}.datasets`,
         code: PrintTemplateErrorCode.VERSION_FROZEN,
         message:
           `The datasets of ${current.ptvStatus} revision ${current.ptvRevNo} are frozen with its ` +
-          'design. Add a new revision to change what feeds it.',
+          `design. Add a new revision to change what feeds it. (Differs: ${datasetsChange}.)`,
       });
       return null;
+    }
+    // what is left to write: the status move (and the audit stamps), never the unchanged design / datasets
+    if (sentDesign.length > 0 || row.datasets !== undefined) {
+      const slim = Object.assign(Object.create(Object.getPrototypeOf(row) as object) as SavePrintTemplateVersionDto, row);
+      for (const key of sentDesign) delete (slim as unknown as Record<string, unknown>)[key];
+      delete slim.datasets;
+      row = slim;
     }
 
     const target = row.ptvStatus ?? current.ptvStatus;
@@ -732,7 +745,7 @@ export class PrintTemplateService {
       'ptvParams',
       'ptvNote',
     ];
-    return designKeys.filter((key) => hasOwnProperty(row, key));
+    return designKeys.filter((key) => isPresentField(row, key));
   }
 
   /** The existing revision overlaid with whatever this request writes. */
@@ -761,7 +774,7 @@ export class PrintTemplateService {
       ptvMarginRightMm: pick('ptvMarginRightMm', numberOr(current?.ptvMarginRightMm, 0)),
       ptvColumns: pick('ptvColumns', current?.ptvColumns ?? null),
       ptvLang: pick('ptvLang', current?.ptvLang ?? PTV_DEFAULT_LANG),
-      ptvParams: hasOwnProperty(row, 'ptvParams')
+      ptvParams: isPresentField(row, 'ptvParams')
         ? (row.ptvParams ?? null)
         : (current?.ptvParams ?? null),
       // Publishing takes a signature. An explicit ptvApprovedBy wins; otherwise
@@ -861,14 +874,14 @@ export class PrintTemplateService {
       ptdDatasetNo: Number.isNaN(datasetNo) ? -1 : datasetNo,
       ptdName: name,
       ptdSourceKind: row.ptdSourceKind ?? existing?.ptdSourceKind ?? PTD_DEFAULT_SOURCE_KIND,
-      ptdProviderCode: hasOwnProperty(row, 'ptdProviderCode')
+      ptdProviderCode: isPresentField(row, 'ptdProviderCode')
         ? (row.ptdProviderCode ?? null)
         : (existing?.ptdProviderCode ?? null),
-      ptdSql: hasOwnProperty(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
-      ptdParentNo: hasOwnProperty(row, 'ptdParentNo')
+      ptdSql: isPresentField(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
+      ptdParentNo: isPresentField(row, 'ptdParentNo')
         ? (row.ptdParentNo ?? null)
         : (existing?.ptdParentNo ?? null),
-      ptdLinkFields: hasOwnProperty(row, 'ptdLinkFields')
+      ptdLinkFields: isPresentField(row, 'ptdLinkFields')
         ? (row.ptdLinkFields ?? null)
         : (existing?.ptdLinkFields ?? null),
       ptdRowLimit: row.ptdRowLimit ?? existing?.ptdRowLimit ?? PTD_DEFAULT_ROW_LIMIT,
@@ -900,7 +913,7 @@ export class PrintTemplateService {
       });
     }
 
-    if (!hasOwnProperty(dto, 'ptlPublishedRevId')) {
+    if (!isPresentField(dto, 'ptlPublishedRevId')) {
       return { explicit: false, value: null };
     }
 
@@ -1032,30 +1045,30 @@ export class PrintTemplateService {
       ptvModifiedOn: new Date(),
       ptvModifiedBy: this.resolveWriteActor(row.ptvModifiedBy),
     };
-    if (hasOwnProperty(row, 'ptvRevNo')) data.ptvRevNo = effective.ptvRevNo;
-    if (hasOwnProperty(row, 'ptvStatus')) data.ptvStatus = effective.ptvStatus;
-    if (hasOwnProperty(row, 'ptvEngine')) data.ptvEngine = effective.ptvEngine;
-    if (hasOwnProperty(row, 'ptvBody')) data.ptvBody = effective.ptvBody;
-    if (hasOwnProperty(row, 'ptvSchemaVer')) data.ptvSchemaVer = row.ptvSchemaVer;
-    if (hasOwnProperty(row, 'ptvPaperCode')) data.ptvPaperCode = effective.ptvPaperCode;
-    if (hasOwnProperty(row, 'ptvOrientation')) data.ptvOrientation = effective.ptvOrientation;
-    if (hasOwnProperty(row, 'ptvWidthMm')) data.ptvWidthMm = effective.ptvWidthMm;
-    if (hasOwnProperty(row, 'ptvHeightMm')) data.ptvHeightMm = effective.ptvHeightMm;
-    if (hasOwnProperty(row, 'ptvMarginTopMm')) data.ptvMarginTopMm = effective.ptvMarginTopMm;
-    if (hasOwnProperty(row, 'ptvMarginBottomMm')) {
+    if (isPresentField(row, 'ptvRevNo')) data.ptvRevNo = effective.ptvRevNo;
+    if (isPresentField(row, 'ptvStatus')) data.ptvStatus = effective.ptvStatus;
+    if (isPresentField(row, 'ptvEngine')) data.ptvEngine = effective.ptvEngine;
+    if (isPresentField(row, 'ptvBody')) data.ptvBody = effective.ptvBody;
+    if (isPresentField(row, 'ptvSchemaVer')) data.ptvSchemaVer = row.ptvSchemaVer;
+    if (isPresentField(row, 'ptvPaperCode')) data.ptvPaperCode = effective.ptvPaperCode;
+    if (isPresentField(row, 'ptvOrientation')) data.ptvOrientation = effective.ptvOrientation;
+    if (isPresentField(row, 'ptvWidthMm')) data.ptvWidthMm = effective.ptvWidthMm;
+    if (isPresentField(row, 'ptvHeightMm')) data.ptvHeightMm = effective.ptvHeightMm;
+    if (isPresentField(row, 'ptvMarginTopMm')) data.ptvMarginTopMm = effective.ptvMarginTopMm;
+    if (isPresentField(row, 'ptvMarginBottomMm')) {
       data.ptvMarginBottomMm = effective.ptvMarginBottomMm;
     }
-    if (hasOwnProperty(row, 'ptvMarginLeftMm')) data.ptvMarginLeftMm = effective.ptvMarginLeftMm;
-    if (hasOwnProperty(row, 'ptvMarginRightMm')) {
+    if (isPresentField(row, 'ptvMarginLeftMm')) data.ptvMarginLeftMm = effective.ptvMarginLeftMm;
+    if (isPresentField(row, 'ptvMarginRightMm')) {
       data.ptvMarginRightMm = effective.ptvMarginRightMm;
     }
-    if (hasOwnProperty(row, 'ptvColumns')) data.ptvColumns = effective.ptvColumns;
-    if (hasOwnProperty(row, 'ptvLang')) data.ptvLang = effective.ptvLang;
-    if (hasOwnProperty(row, 'ptvFontFamily')) {
+    if (isPresentField(row, 'ptvColumns')) data.ptvColumns = effective.ptvColumns;
+    if (isPresentField(row, 'ptvLang')) data.ptvLang = effective.ptvLang;
+    if (isPresentField(row, 'ptvFontFamily')) {
       data.ptvFontFamily = normalizeNullableString(row.ptvFontFamily) ?? null;
     }
-    if (hasOwnProperty(row, 'ptvParams')) data.ptvParams = toJsonInput(effective.ptvParams);
-    if (hasOwnProperty(row, 'ptvNote')) {
+    if (isPresentField(row, 'ptvParams')) data.ptvParams = toJsonInput(effective.ptvParams);
+    if (isPresentField(row, 'ptvNote')) {
       data.ptvNote = normalizeNullableString(row.ptvNote) ?? null;
     }
 
@@ -1065,7 +1078,7 @@ export class PrintTemplateService {
     if (plan.publishes) {
       data.ptvApprovedBy = effective.ptvApprovedBy;
       data.ptvApprovedOn = new Date();
-    } else if (hasOwnProperty(row, 'ptvApprovedBy')) {
+    } else if (isPresentField(row, 'ptvApprovedBy')) {
       data.ptvApprovedBy = effective.ptvApprovedBy;
     }
 
@@ -1242,21 +1255,21 @@ export class PrintTemplateService {
       ptdModifiedOn: new Date(),
       ptdModifiedBy: this.resolveWriteActor(row.ptdModifiedBy),
     };
-    if (hasOwnProperty(row, 'ptdRole')) data.ptdRole = effective.ptdRole;
-    if (hasOwnProperty(row, 'ptdDatasetNo')) data.ptdDatasetNo = effective.ptdDatasetNo;
-    if (hasOwnProperty(row, 'ptdSortOrder')) data.ptdSortOrder = row.ptdSortOrder;
-    if (hasOwnProperty(row, 'ptdName')) data.ptdName = effective.ptdName;
-    if (hasOwnProperty(row, 'ptdLabel')) {
+    if (isPresentField(row, 'ptdRole')) data.ptdRole = effective.ptdRole;
+    if (isPresentField(row, 'ptdDatasetNo')) data.ptdDatasetNo = effective.ptdDatasetNo;
+    if (isPresentField(row, 'ptdSortOrder')) data.ptdSortOrder = row.ptdSortOrder;
+    if (isPresentField(row, 'ptdName')) data.ptdName = effective.ptdName;
+    if (isPresentField(row, 'ptdLabel')) {
       data.ptdLabel = normalizeNullableString(row.ptdLabel) ?? null;
     }
-    if (hasOwnProperty(row, 'ptdSourceKind')) data.ptdSourceKind = effective.ptdSourceKind;
-    if (hasOwnProperty(row, 'ptdProviderCode')) data.ptdProviderCode = effective.ptdProviderCode;
-    if (hasOwnProperty(row, 'ptdSql')) data.ptdSql = effective.ptdSql;
-    if (hasOwnProperty(row, 'ptdParentNo')) data.ptdParentNo = effective.ptdParentNo;
-    if (hasOwnProperty(row, 'ptdLinkFields')) data.ptdLinkFields = effective.ptdLinkFields;
-    if (hasOwnProperty(row, 'ptdRowLimit')) data.ptdRowLimit = effective.ptdRowLimit;
-    if (hasOwnProperty(row, 'ptdTimeoutMs')) data.ptdTimeoutMs = effective.ptdTimeoutMs;
-    if (hasOwnProperty(row, 'ptdRemarks')) {
+    if (isPresentField(row, 'ptdSourceKind')) data.ptdSourceKind = effective.ptdSourceKind;
+    if (isPresentField(row, 'ptdProviderCode')) data.ptdProviderCode = effective.ptdProviderCode;
+    if (isPresentField(row, 'ptdSql')) data.ptdSql = effective.ptdSql;
+    if (isPresentField(row, 'ptdParentNo')) data.ptdParentNo = effective.ptdParentNo;
+    if (isPresentField(row, 'ptdLinkFields')) data.ptdLinkFields = effective.ptdLinkFields;
+    if (isPresentField(row, 'ptdRowLimit')) data.ptdRowLimit = effective.ptdRowLimit;
+    if (isPresentField(row, 'ptdTimeoutMs')) data.ptdTimeoutMs = effective.ptdTimeoutMs;
+    if (isPresentField(row, 'ptdRemarks')) {
       data.ptdRemarks = normalizeNullableString(row.ptdRemarks) ?? null;
     }
 

@@ -230,19 +230,19 @@ let ChargeMasterService = class ChargeMasterService {
                 }
                 const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveChargeMasterDto.chgName, 'chgName');
                 const nextModule = saveChargeMasterDto.chgModule;
-                const nextCode = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgCode')
+                const nextCode = (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgCode')
                     ? ((0, module_service_utils_1.normalizeNullableString)(saveChargeMasterDto.chgCode) ?? null)
                     : existing.chgCode;
-                const nextRole = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgRole')
+                const nextRole = (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgRole')
                     ? (saveChargeMasterDto.chgRole ?? null)
                     : existing.chgRole;
-                const nextTaxId = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgTaxId')
+                const nextTaxId = (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgTaxId')
                     ? (saveChargeMasterDto.chgTaxId ?? null)
                     : existing.chgTaxId;
-                const nextTaxApl = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgTaxApl')
+                const nextTaxApl = (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgTaxApl')
                     ? (saveChargeMasterDto.chgTaxApl ?? false)
                     : existing.chgTaxApl;
-                const nextBeforeTax = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgBeforeTax')
+                const nextBeforeTax = (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgBeforeTax')
                     ? (saveChargeMasterDto.chgBeforeTax ?? false)
                     : existing.chgBeforeTax;
                 this.ensureValuesAreAllowed(this.guardedValues(saveChargeMasterDto, { chgModule: nextModule, chgRole: nextRole }));
@@ -374,15 +374,15 @@ let ChargeMasterService = class ChargeMasterService {
     guardedValues(saveChargeMasterDto, overrides = {}) {
         return {
             chgModule: saveChargeMasterDto.chgModule,
-            chgRole: (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgRole')
+            chgRole: (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgRole')
                 ? (saveChargeMasterDto.chgRole ?? null)
                 : undefined,
             chgMethod: saveChargeMasterDto.chgMethod,
-            chgType: (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgType')
+            chgType: (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgType')
                 ? (saveChargeMasterDto.chgType ?? null)
                 : undefined,
             chgApplyOn: saveChargeMasterDto.chgApplyOn,
-            chgCostAlloc: (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgCostAlloc')
+            chgCostAlloc: (0, module_service_utils_1.isPresentField)(saveChargeMasterDto, 'chgCostAlloc')
                 ? (saveChargeMasterDto.chgCostAlloc ?? null)
                 : undefined,
             ...overrides,

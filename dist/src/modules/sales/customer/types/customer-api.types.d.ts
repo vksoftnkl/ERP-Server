@@ -1,5 +1,6 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
 import type { CustomerErrorCode } from './customer-error-codes';
+import type { PartySyncResult } from "../../../../common/party/party-sync.service";
 export interface CustomerErrorDetail extends ModuleApiErrorDetail {
     code: CustomerErrorCode;
 }
@@ -87,4 +88,7 @@ export interface CustomerPayload {
     cusCreatedBy: string | null;
     cusModifiedOn: string;
     cusModifiedBy: string | null;
+}
+export interface CustomerSavePayload extends CustomerPayload {
+    partySync: PartySyncResult;
 }

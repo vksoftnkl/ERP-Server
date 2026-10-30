@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { SaveItemCustRateDto } from './dto/save-item-cust-rate.dto';
+import { createHouseValidationPipe } from '../../common/validation/house-validation';
 import { ItemsCustRatesMasterService } from './items-cust-rates-master.service';
 import { ItemCustRateErrorCode } from './types/item-cust-rate-error-codes';
 
@@ -390,6 +391,24 @@ describe('ItemsCustRatesMasterService', () => {
       await expect(
         bodyOf(service.save(createDto({ csr_id: RATE_ID, csr_valid_from: '2027-01-01' }))),
       ).resolves.toEqual(VALID_TO_BEFORE_FROM_BODY);
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe the date keys are own
+    // properties even when left out; the range check must use the stored ends.
+    it('checks a piped valid-to sent alone against the stored valid-from', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        {
+          csr_id: RATE_ID,
+          csr_customer_id: CUSTOMER_ID,
+          csr_unit_rate_id: UNIT_RATE_ID,
+          csr_valid_to: '2026-09-30',
+        },
+        { type: 'body', metatype: SaveItemCustRateDto },
+      )) as SaveItemCustRateDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'csr_valid_from')).toBe(true);
+
+      await expect(bodyOf(service.save(dto))).resolves.toEqual(VALID_TO_BEFORE_FROM_BODY);
+      expect(prisma.custItemRate.update).not.toHaveBeenCalled();
     });
 
     it('lets an open-ended window through once one end is cleared', async () => {

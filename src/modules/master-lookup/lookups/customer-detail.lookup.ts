@@ -8,6 +8,7 @@ import { CustomerDetailQueryDto } from '../dto/customer-detail-query.dto';
 import { CustomerDetail } from '../types/master-lookup-api.types';
 import { formatBilledDate } from '../utils/lookup-option.utils';
 import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
+import { lastBilledOf } from '../../../common/party/party-billed';
 /**
  * Port of the legacy PL/pgSQL `iflag = 7` customer-detail cursor onto the
  * current UUID schema. Resolves one customer (legacy isale_cust_id) within a
@@ -27,7 +28,8 @@ import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
  *  - `local_sales`: true when the customer and company share a state code. An
  *    unknown or deleted company_id is refused (LOOKUP_COMPANY_NOT_FOUND) rather
  *    than answered as an inter-state sale.
- *  - `billed_date`: "<n> days : dd/MM/yy" built from the last billed date.
+ *  - `billed_date`: "<n> days : dd/MM/yy" of the customer's last POSTED sale bill
+ *    (party rules D3, read from the bills; cus_billed_date is no longer used).
  *
  * Schema divergences from the legacy query:
  *  - the legacy debit_* credit-control fields are the current cus_credit_*
@@ -56,7 +58,7 @@ export class CustomerDetailLookup {
     }
     // Company (legacy INNER JOIN companys ON comp_id = icompany_id) and the
     // salesman (legacy default_salesman[1] ⋈ employee_master).
-    const [company, ledger, salesman] = await Promise.all([
+    const [company, ledger, salesman, billed] = await Promise.all([
       this.prisma.company.findFirst({
         where: { compId: company_id, compIsDeleted: false },
         select: { compTcsApplicable: true, compStateCode: true },
@@ -71,6 +73,8 @@ export class CustomerDetailLookup {
             select: { empName: true },
           })
         : Promise.resolve(null),
+      // Party rules D3 (Q9 = B): the last POSTED sale bill, read now.
+      lastBilledOf(this.prisma, customer.cusId),
     ]);
     if (!company) {
       throwMasterNotFound<MasterErrorDetail>(
@@ -132,7 +136,7 @@ export class CustomerDetailLookup {
       // Legacy `local_sales`: customer and company in the same state.
       local_sales: customer.cusStateCode === company.compStateCode,
       cust_points: null,
-      billed_date: formatBilledDate(customer.cusBilledDate),
+      billed_date: formatBilledDate(billed.date),
     };
   }
 }

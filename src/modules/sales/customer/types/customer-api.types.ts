@@ -4,6 +4,7 @@ import type {
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
 import type { CustomerErrorCode } from './customer-error-codes';
+import type { PartySyncResult } from 'src/common/party/party-sync.service';
 
 /** Notes 119: every refusal names its code — see customer-error-codes.ts. */
 export interface CustomerErrorDetail extends ModuleApiErrorDetail {
@@ -98,4 +99,9 @@ export interface CustomerPayload {
   cusCreatedBy: string | null;
   cusModifiedOn: string;
   cusModifiedBy: string | null;
+}
+
+/** POST /customers/create → data: the customer plus what the sync did (party rules D4-6). */
+export interface CustomerSavePayload extends CustomerPayload {
+  partySync: PartySyncResult;
 }

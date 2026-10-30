@@ -383,11 +383,6 @@ Table acc_ledger_master {
   tillReasons till_reason [not null]
   tillCashMovements till_cash_movement [not null]
   settlementImports acc_settlement_import [not null]
-
-  indexes {
-    (ledCompanyId, ledName) [unique]
-    (ledCompanyId, ledTallyName) [unique]
-  }
 }
 
 Table acc_ledger_role {
@@ -3229,6 +3224,11 @@ Table item_master {
   itemCompanyCategoryId String
   itemMfgrId String
   itemSupplierId String
+  itemPurchaseUomId String
+  itemMinShelfLifePct Decimal
+  itemItcClass String
+  itemShortagePct Decimal
+  itemDefaultMarkupPct Decimal
   itemCustGroup String
   itemBaseUnitId String
   itemIsService Boolean [not null, default: false]
@@ -3306,6 +3306,7 @@ changes nothing until this item is explicitly re-saved.']
   stockTrackPolicies stock_track_policy [not null]
   stockLots stock_lot [not null]
   stockLedgerEntries stock_ledger [not null]
+  stockCostRevaluations stock_cost_revaluation [not null]
   stockBalances stock_balance [not null]
   stockItemCosts stock_item_cost [not null]
   stockVoucherItems stock_voucher_item [not null]
@@ -3833,6 +3834,10 @@ flood cess beside compensation cess is the standard example.']
   taxSupersedesId String [note: 'The rate this one replaced. A rate change makes a NEW row and re-points
 items (see ItemTaxHistory); this keeps the chain followable. NULL on an
 original rate.']
+  taxValueThreshold Decimal [note: 'Above this taxable value PER PIECE (after discount) the line takes
+taxAboveTaxId instead (GST 2.0 apparel: <= 2,500 at 5 %, above at 18 %).
+Both set or both NULL (ck_tax_value_slab).']
+  taxAboveTaxId String
   taxIsActive Boolean [not null, default: true]
   taxIsDeleted Boolean [not null, default: false]
   taxSyncDate DateTime
@@ -3842,6 +3847,8 @@ original rate.']
   taxModifiedBy String
   supersedes tax_rate_master
   supersededBy tax_rate_master [not null]
+  aboveTax tax_rate_master
+  belowTaxes tax_rate_master [not null]
   ledgerOverrides tax_rate_ledger [not null]
   defaultItems item_master [not null]
   itemTaxHistory item_tax_history [not null]
@@ -4084,6 +4091,7 @@ Table branch_master {
   stockTrackPolicies stock_track_policy [not null]
   stockLotsFirstInward stock_lot [not null]
   stockLedgerEntries stock_ledger [not null]
+  stockCostRevaluations stock_cost_revaluation [not null]
   stockBalances stock_balance [not null]
   stockItemCosts stock_item_cost [not null]
   stockVouchers stock_voucher [not null]
@@ -4127,6 +4135,7 @@ Table charge_master {
   chgBeforeTax Boolean [not null, default: false]
   chgTaxId String
   chgSepPost Boolean [not null, default: false]
+  chgOnBill Boolean [not null, default: true]
   chgManParty Boolean [not null, default: false]
   chgDispOrder Int [default: 0]
   chgAutoApply Boolean [not null, default: false]
@@ -5185,6 +5194,37 @@ ix_ppo_company / ix_ppo_created_by / ix_ppo_modified_by
 FK-covering, all partial on IS NOT NULL'
 }
 
+Table print_share_link {
+  pslId String [pk]
+  pslToken String [unique, not null, note: '128 random bits, base64url — 22 characters. Unique; the lookup key.']
+  pslVersionId String [not null]
+  pslDocId String [not null]
+  pslCompanyId String [not null]
+  pslBranchId String
+  pslAccYear String [not null, note: 'The DOCUMENT\'s year, fixed at creation: a link opened after the year
+rolls over must still read the partition the document lives in.']
+  pslDeviceId String
+  pslFilename String [not null, note: 'File name stem the PDF is served under, without extension.']
+  pslExpiresOn DateTime [not null]
+  pslCreatedOn DateTime [default: `now()`, not null]
+  pslCreatedBy String [note: 'The user who shared it — also the render\'s :user_id.']
+  pslSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+An offline site\'s links reach the cloud this way, which is what lets a
+customer open one when the site itself is not on the internet.']
+
+  Note: 'public.print_share_link — a rendered document handed to someone OUTSIDE the
+system as a link: the sale bill\'s WhatsApp send puts one in the message.
+
+The token is the whole of the authorisation. Whoever holds the link may open
+that one document, rendered from that one revision, until it expires — and
+nothing else. It is rendered on every open rather than stored, so the row is
+a few hundred bytes and an amended bill shows as it now stands.
+
+No foreign keys, deliberately: a link is a pointer handed to a customer, and
+one whose revision or document has since gone answers "no longer available"
+rather than holding either in place.'
+}
+
 Table print_template {
   ptlId String [pk]
   ptlCompanyId String [note: 'NULL = shipped with the product. The only scope column here.']
@@ -5735,6 +5775,8 @@ not fit in twelve characters.']
   cdBeforeTax Boolean [not null, default: false]
   cdTaxApl Boolean [not null, default: false]
   cdSepPost Boolean [not null, default: false]
+  cdOnBill Boolean [not null, default: true]
+  cdPartyId String
   cdUnit String
   cdQtyVal Decimal
   cdWeight Decimal
@@ -6171,6 +6213,832 @@ stores it — upper case, no spaces — because a number that differs by a
 space is a number the portal will not match.'
 }
 
+Table pur_supplier_item {
+  psiId String [pk]
+  psiCompanyId String
+  psiSupplierId String [not null]
+  psiItemId String [not null]
+  psiSupplierItemCode String
+  psiSupplierBarcode String
+  psiBuyUomId String
+  psiPackQty Decimal [not null, default: 1]
+  psiMoq Decimal
+  psiLeadDays Int
+  psiIsPreferred Boolean [not null, default: false]
+  psiSchemeBuyQty Decimal [note: 'ENT-07 buy N get M: both set or both NULL (ck_psi_scheme)']
+  psiSchemeFreeQty Decimal
+  psiSource String [not null, default: 'TYPED']
+  psiIsActive Boolean [not null, default: true]
+  psiIsDeleted Boolean [not null, default: false]
+  psiSyncDate DateTime
+  psiCreatedOn DateTime [default: `now()`, not null]
+  psiCreatedBy String [not null]
+  psiModifiedOn DateTime
+  psiModifiedBy String
+
+  Note: 'Supplier–item map (id = uuid v5 company+supplier+item). Last rate / bills are derived from posted bill lines.'
+}
+
+Table pur_agent {
+  pagId String [pk]
+  pagCompanyId String
+  pagBranchId String
+  pagGroupId String
+  pagCode String
+  pagName String [not null]
+  pagAlias String
+  pagMobile1 String
+  pagMobile2 String
+  pagAddr1 String
+  pagAddr2 String
+  pagCity String
+  pagDistrict String
+  pagState String
+  pagPincode String
+  pagPanNo String
+  pagGstin String
+  pagDefaultCommPct Decimal
+  pagRemarks String
+  pagIsActive Boolean [not null, default: true]
+  pagIsDeleted Boolean [not null, default: false]
+  pagSyncDate DateTime
+  pagCreatedOn DateTime [default: `now()`, not null]
+  pagCreatedBy String [not null]
+  pagModifiedOn DateTime
+  pagModifiedBy String
+  purInvoice pur_invoice [not null]
+  purOrder pur_order [not null]
+
+  Note: 'Purchase agent. pagId = ledger id (the agent IS its ledger).'
+}
+
+Table pur_terms {
+  pteId String [pk]
+  pteCompanyId String
+  pteCode String [not null]
+  pteName String [not null]
+  pteTermsText String [not null]
+  pteSort Int [not null, default: 0]
+  pteIsActive Boolean [not null, default: true]
+  pteIsDeleted Boolean [not null, default: false]
+  pteSyncDate DateTime
+  pteCreatedOn DateTime [default: `now()`, not null]
+  pteCreatedBy String [not null]
+  pteModifiedOn DateTime
+  pteModifiedBy String
+  purOrder pur_order [not null]
+
+  Note: 'PO terms master (migration 20261029130000). Company NULL = shared. ux_pte_code
+(COALESCE(company, zero uuid), upper(code)) WHERE NOT deleted and ix_pte_list are DB-only.'
+}
+
+Table pur_order {
+  poId String [not null]
+  poCompanyId String [not null]
+  poBranchId String [not null]
+  poTenantId String
+  poAccYear String [not null]
+  poDeviceId String [not null]
+  poSessionId String
+  poSlno BigInt [not null]
+  poRefno String [not null]
+  poDocDate DateTime [not null]
+  poDocDatetime DateTime [default: `now()`, not null]
+  poStatus String [not null, default: 'DRAFT']
+  poSupplierId String [not null]
+  poExpectedDate DateTime
+  poDeliverGodownId String
+  poAgentId String
+  poContact String
+  poCreditDays Int
+  poTermsText String
+  poApprovalStatus String [not null, default: 'NOT_REQUIRED']
+  poIsShortClosed Boolean [not null, default: false]
+  poShortCloseReason String
+  poGrossAmt Decimal [not null, default: 0]
+  poTaxableAmt Decimal [not null, default: 0]
+  poTaxAmt Decimal [not null, default: 0]
+  poChargesAmt Decimal [not null, default: 0]
+  poNetAmt Decimal [not null, default: 0]
+  poRemarks String
+  poRevisionNo Int [not null, default: 1]
+  poPrintCount Int [not null, default: 0]
+  poPostedVoucherId String
+  poIsDeleted Boolean [not null, default: false]
+  poSyncDate DateTime
+  poCreatedOn DateTime [default: `now()`, not null]
+  poCreatedBy String [not null]
+  poModifiedOn DateTime
+  poModifiedBy String
+  poTermsId String [note: 'pur_terms row the terms came from (NULL = typed); poTermsText keeps the PO\'s own copy. ix_po_terms is partial (DB-only).']
+  purAgent pur_agent
+  purTerms pur_terms
+  purOrderItem pur_order_item [not null]
+
+  indexes {
+    (poId, poAccYear) [pk]
+    (poCompanyId, poBranchId, poAccYear, poDeviceId, poSlno) [unique]
+    (poCompanyId, poBranchId, poAccYear, poRefno) [unique]
+  }
+
+  Note: 'Purchase order — posts nothing; pending derived from GRN / bill lines whose src_* point at its lines.'
+}
+
+Table pur_order_item {
+  poiId String [not null]
+  poiPoId String [not null]
+  poiCompanyId String [not null]
+  poiBranchId String [not null]
+  poiAccYear String [not null]
+  poiLineNo Int [not null]
+  poiItemId String [not null]
+  poiUomId String [not null]
+  poiBaseUomId String [not null]
+  poiToBaseFactor Decimal [not null, default: 1]
+  poiHsnCode String
+  poiWeight Decimal
+  poiQty Decimal [not null, default: 0]
+  poiFreeQty Decimal [not null, default: 0]
+  poiRate Decimal [not null, default: 0]
+  poiDiscPct Decimal [not null, default: 0]
+  poiDiscPerQty Decimal [not null, default: 0]
+  poiDiscAmt Decimal [not null, default: 0]
+  poiSchPct Decimal [not null, default: 0]
+  poiSchPerQty Decimal [not null, default: 0]
+  poiSchAmt Decimal [not null, default: 0]
+  poiExtraDiscAmt Decimal [not null, default: 0]
+  poiChrgBeforeTax Decimal [not null, default: 0]
+  poiChrgAfterTax Decimal [not null, default: 0]
+  poiGrossAmt Decimal [not null, default: 0]
+  poiTaxableAmt Decimal [not null, default: 0]
+  poiTaxId String
+  poiGstPct Decimal [not null, default: 0]
+  poiCgstAmt Decimal [not null, default: 0]
+  poiSgstAmt Decimal [not null, default: 0]
+  poiIgstAmt Decimal [not null, default: 0]
+  poiCessPct Decimal [not null, default: 0]
+  poiCessPerUnit Decimal [not null, default: 0]
+  poiCessAmt Decimal [not null, default: 0]
+  poiTotalAmt Decimal [not null, default: 0]
+  poiMrp Decimal
+  poiExpectedSell Decimal
+  poiModel String
+  poiSizeId String
+  poiColourId String
+  poiShortClosedQty Decimal [not null, default: 0]
+  poiShortCloseReason String
+  poiRemarks String
+  poiIsDeleted Boolean [not null, default: false]
+  poiSyncDate DateTime
+  poiCreatedOn DateTime [default: `now()`, not null]
+  poiCreatedBy String [not null]
+  poiModifiedOn DateTime
+  poiModifiedBy String
+  purOrder pur_order [not null]
+
+  indexes {
+    (poiId, poiAccYear) [pk]
+  }
+}
+
+Table pur_grn {
+  grnId String [not null]
+  grnCompanyId String [not null]
+  grnBranchId String [not null]
+  grnTenantId String
+  grnAccYear String [not null]
+  grnDeviceId String [not null]
+  grnSessionId String
+  grnSlno BigInt [not null]
+  grnRefno String [not null]
+  grnDocDate DateTime [not null]
+  grnDocDatetime DateTime [default: `now()`, not null]
+  grnStatus String [not null, default: 'DRAFT']
+  grnSupplierId String [not null]
+  grnGodownId String [not null]
+  grnChallanNo String
+  grnChallanDate DateTime
+  grnSupplierInvNo String
+  grnReceivedAt DateTime [not null]
+  grnReceivedBy String[] [not null]
+  grnSupervisorId String
+  grnVehicleNo String
+  grnDriverName String
+  grnEwbNo String
+  grnEwbDate DateTime
+  grnPackagesSent Int
+  grnPackagesReceived Int
+  grnProvisionalValue Decimal [not null, default: 0]
+  grnOffbillCharges Decimal [not null, default: 0]
+  grnRemarks String
+  grnRevisionNo Int [not null, default: 1]
+  grnPrintCount Int [not null, default: 0]
+  grnPostedVoucherId String
+  grnIsDeleted Boolean [not null, default: false]
+  grnSyncDate DateTime
+  grnCreatedOn DateTime [default: `now()`, not null]
+  grnCreatedBy String [not null]
+  grnModifiedOn DateTime
+  grnModifiedBy String
+  purGrnItem pur_grn_item [not null]
+
+  indexes {
+    (grnId, grnAccYear) [pk]
+    (grnCompanyId, grnBranchId, grnAccYear, grnDeviceId, grnSlno) [unique]
+    (grnCompanyId, grnBranchId, grnAccYear, grnRefno) [unique]
+  }
+
+  Note: 'Goods received before the bill — stock in at the provisional rate, Dr Stock / Cr GRNI. grnReceivedBy = crew (coolie payees).'
+}
+
+Table pur_grn_item {
+  griId String [not null]
+  griGrnId String [not null]
+  griCompanyId String [not null]
+  griBranchId String [not null]
+  griAccYear String [not null]
+  griLineNo Int [not null]
+  griItemId String [not null]
+  griUomId String [not null]
+  griBaseUomId String [not null]
+  griToBaseFactor Decimal [not null, default: 1]
+  griHsnCode String
+  griWeight Decimal
+  griSrcDocType String
+  griSrcDocId String
+  griSrcDocYear String
+  griSrcItemId String
+  griSrcDocLineNo Int
+  griSrcDocRefno String
+  griChallanQty Decimal [not null, default: 0]
+  griReceivedQty Decimal [not null, default: 0]
+  griDamagedQty Decimal [not null, default: 0]
+  griDamageReasonId String
+  griFreeQty Decimal [not null, default: 0]
+  griExcessQty Decimal [not null, default: 0]
+  griExcessAction String
+  griProvisionalRate Decimal [not null, default: 0]
+  griOffbillShare Decimal [not null, default: 0]
+  griValue Decimal [not null, default: 0]
+  griMrp Decimal
+  griSellA Decimal
+  griSellB Decimal
+  griSellC Decimal
+  griSellD Decimal
+  griPriceUpdateResult String
+  griRemarks String
+  griIsDeleted Boolean [not null, default: false]
+  griSyncDate DateTime
+  griCreatedOn DateTime [default: `now()`, not null]
+  griCreatedBy String [not null]
+  griModifiedOn DateTime
+  griModifiedBy String
+  purGrn pur_grn [not null]
+
+  indexes {
+    (griId, griAccYear) [pk]
+  }
+}
+
+Table pur_invoice {
+  piId String [not null]
+  piCompanyId String [not null]
+  piBranchId String [not null]
+  piTenantId String
+  piAccYear String [not null]
+  piDeviceId String [not null]
+  piSessionId String
+  piSlno BigInt [not null]
+  piRefno String [not null]
+  piDocDate DateTime [not null]
+  piDocDatetime DateTime [default: `now()`, not null]
+  piStatus String [not null, default: 'DRAFT']
+  piSupplierId String [not null]
+  piSupplierGstin String
+  piSupplierGstType String
+  piSupplierInvNo String [not null]
+  piSupplierInvDate DateTime [not null]
+  piGoodsReceivedOn DateTime
+  piSourceKind String [not null, default: 'DIRECT']
+  piSisterCompanyId String
+  piGodownId String [not null]
+  piInvoiceAmountPrinted Decimal [not null, default: 0]
+  piMode String [not null, default: 'CREDIT']
+  piCreditDays Int
+  piDueDate DateTime
+  piMsmeDueDate DateTime
+  piAgentId String
+  piPosStcd String
+  piIsReverseCharge Boolean [not null, default: false]
+  piEwbNo String
+  piEwbDate DateTime
+  piIrn String
+  piAckNo String
+  piPaymentHold Boolean [not null, default: false]
+  piHoldReason String
+  piHoldReleasedBy String
+  piHoldReleasedOn DateTime
+  piGrossAmt Decimal [not null, default: 0]
+  piDiscAmt Decimal [not null, default: 0]
+  piTaxableAmt Decimal [not null, default: 0]
+  piCgstAmt Decimal [not null, default: 0]
+  piSgstAmt Decimal [not null, default: 0]
+  piIgstAmt Decimal [not null, default: 0]
+  piCessAmt Decimal [not null, default: 0]
+  piChargesOnBill Decimal [not null, default: 0]
+  piTcsAmt Decimal [not null, default: 0]
+  piRoundOff Decimal [not null, default: 0]
+  piNetPayable Decimal [not null, default: 0]
+  piOffbillCharges Decimal [not null, default: 0]
+  piShortValue Decimal [not null, default: 0]
+  piItcEligibleAmt Decimal [not null, default: 0]
+  piItcPendingAmt Decimal [not null, default: 0]
+  piItcIneligibleAmt Decimal [not null, default: 0]
+  piPolicy Json
+  piRemarks String
+  piRevisionNo Int [not null, default: 1]
+  piPrintCount Int [not null, default: 0]
+  piPostedVoucherId String
+  piIsDeleted Boolean [not null, default: false]
+  piSyncDate DateTime
+  piCreatedOn DateTime [default: `now()`, not null]
+  piCreatedBy String [not null]
+  piModifiedOn DateTime
+  piModifiedBy String
+  piVehicleNo String
+  piDriverName String
+  purAgent pur_agent
+  purInvoiceItem pur_invoice_item [not null]
+
+  indexes {
+    (piId, piAccYear) [pk]
+    (piCompanyId, piBranchId, piAccYear, piDeviceId, piSlno) [unique]
+    (piCompanyId, piBranchId, piAccYear, piRefno) [unique]
+  }
+
+  Note: 'The supplier\'s bill as printed. piSupplierInvNo is NOT unique (offline branches) — duplicates refused online.'
+}
+
+Table pur_invoice_item {
+  piiId String [not null]
+  piiPiId String [not null]
+  piiCompanyId String [not null]
+  piiBranchId String [not null]
+  piiAccYear String [not null]
+  piiLineNo Int [not null]
+  piiItemId String [not null]
+  piiUomId String [not null]
+  piiBaseUomId String [not null]
+  piiToBaseFactor Decimal [not null, default: 1]
+  piiHsnCode String
+  piiWeight Decimal
+  piiSrcDocType String
+  piiSrcDocId String
+  piiSrcDocYear String
+  piiSrcItemId String
+  piiSrcDocLineNo Int
+  piiSrcDocRefno String
+  piiBilledQty Decimal [not null, default: 0]
+  piiReceivedQty Decimal [not null, default: 0]
+  piiDamagedQty Decimal [not null, default: 0]
+  piiShortQty Decimal [not null, default: 0]
+  piiAbsorbedShortQty Decimal [not null, default: 0]
+  piiExcessQty Decimal [not null, default: 0]
+  piiExcessAction String
+  piiRejectedAtGrnQty Decimal [not null, default: 0]
+  piiFreeQty Decimal [not null, default: 0]
+  piiRate Decimal [not null, default: 0]
+  piiDiscPct Decimal [not null, default: 0]
+  piiDiscPerQty Decimal [not null, default: 0]
+  piiDiscAmt Decimal [not null, default: 0]
+  piiSchPct Decimal [not null, default: 0]
+  piiSchPerQty Decimal [not null, default: 0]
+  piiSchAmt Decimal [not null, default: 0]
+  piiExtraDiscAmt Decimal [not null, default: 0]
+  piiChrgBeforeTax Decimal [not null, default: 0]
+  piiChrgAfterTax Decimal [not null, default: 0]
+  piiGrossAmt Decimal [not null, default: 0]
+  piiTaxableAmt Decimal [not null, default: 0]
+  piiTaxId String
+  piiGstPct Decimal [not null, default: 0]
+  piiCgstAmt Decimal [not null, default: 0]
+  piiSgstAmt Decimal [not null, default: 0]
+  piiIgstAmt Decimal [not null, default: 0]
+  piiCessPct Decimal [not null, default: 0]
+  piiCessPerUnit Decimal [not null, default: 0]
+  piiCessAmt Decimal [not null, default: 0]
+  piiTotalAmt Decimal [not null, default: 0]
+  piiItcEligibleAmt Decimal [not null, default: 0]
+  piiItcPendingAmt Decimal [not null, default: 0]
+  piiItcIneligibleAmt Decimal [not null, default: 0]
+  piiItcClass String
+  piiLandedCostWot Decimal [not null, default: 0]
+  piiMarkupAPct Decimal
+  piiMarkupBPct Decimal
+  piiMarkupCPct Decimal
+  piiMarkupDPct Decimal
+  piiSellA Decimal
+  piiSellB Decimal
+  piiSellC Decimal
+  piiSellD Decimal
+  piiMrp Decimal
+  piiOldPrices Json
+  piiPriceUpdateResult String
+  piiRemarks String
+  piiIsDeleted Boolean [not null, default: false]
+  piiSyncDate DateTime
+  piiCreatedOn DateTime [default: `now()`, not null]
+  piiCreatedBy String [not null]
+  piiModifiedOn DateTime
+  piiModifiedBy String
+  purInvoice pur_invoice [not null]
+
+  indexes {
+    (piiId, piiAccYear) [pk]
+  }
+
+  Note: 'The printed line; the stock side is PurItemAlloc. src_* = sales pattern (PO / GRN / SALE_BILL).'
+}
+
+Table pur_item_alloc {
+  piaId String [not null]
+  piaCompanyId String [not null]
+  piaBranchId String [not null]
+  piaAccYear String [not null]
+  piaDocType String [not null]
+  piaDocId String [not null]
+  piaLineId String [not null]
+  piaRowNo Int [not null]
+  piaBillLineNo Int
+  piaGodownId String [not null]
+  piaBucket String [not null, default: 'SALEABLE']
+  piaBatchNo String
+  piaMfgDate DateTime
+  piaExpiryDate DateTime
+  piaMrp Decimal
+  piaSalePrice Decimal
+  piaSizeId String
+  piaColourId String
+  piaModel String
+  piaSerialNo String
+  piaWarrantyTo DateTime
+  piaQty Decimal [not null, default: 0]
+  piaFreeQty Decimal [not null, default: 0]
+  piaBarcode String
+  piaLotId String
+  piaSviId String
+  piaSviAccYear String
+  piaIsDeleted Boolean [not null, default: false]
+  piaSyncDate DateTime
+  piaCreatedOn DateTime [default: `now()`, not null]
+  piaCreatedBy String [not null]
+  piaModifiedOn DateTime
+  piaModifiedBy String
+
+  indexes {
+    (piaId, piaAccYear) [pk]
+  }
+
+  Note: 'Stock side of a GRN / bill / return / shortage-receipt line: godown, bucket, batch, serial, size-colour; lot filled at post.'
+}
+
+Table pur_shortage {
+  pshId String [not null]
+  pshCompanyId String [not null]
+  pshBranchId String [not null]
+  pshAccYear String [not null]
+  pshSupplierId String [not null]
+  pshItemId String [not null]
+  pshSrcDocType String [not null]
+  pshSrcDocId String [not null]
+  pshSrcDocYear String [not null]
+  pshSrcItemId String [not null]
+  pshSrcDocRefno String
+  pshBillDocId String
+  pshBillDocYear String
+  pshBillItemId String
+  pshReason String [not null]
+  pshQtyBase Decimal [not null, default: 0]
+  pshValue Decimal
+  pshGstPending Decimal
+  pshOriginCostRate Decimal
+  pshRemarks String
+  pshIsDeleted Boolean [not null, default: false]
+  pshSyncDate DateTime
+  pshCreatedOn DateTime [default: `now()`, not null]
+  pshCreatedBy String [not null]
+  pshModifiedOn DateTime
+  pshModifiedBy String
+  purShortageClose pur_shortage_close [not null]
+  purShortageReceiptItem pur_shortage_receipt_item [not null]
+
+  indexes {
+    (pshId, pshAccYear) [pk]
+  }
+
+  Note: 'One row per short supplier line. Open qty / status derived (receipts − closes).'
+}
+
+Table pur_shortage_close {
+  pscId String [not null]
+  pscCompanyId String [not null]
+  pscBranchId String [not null]
+  pscAccYear String [not null]
+  pscShortageId String [not null]
+  pscShortageAccYear String [not null]
+  pscKind String [not null]
+  pscQtyBase Decimal [not null, default: 0]
+  pscAmount Decimal [not null, default: 0]
+  pscPartyId String
+  pscCnNo String
+  pscCnDate DateTime
+  pscReason String
+  pscVoucherId String
+  pscReversalOfId String
+  pscIsDeleted Boolean [not null, default: false]
+  pscSyncDate DateTime
+  pscCreatedOn DateTime [default: `now()`, not null]
+  pscCreatedBy String [not null]
+  pscModifiedOn DateTime
+  pscModifiedBy String
+  purShortage pur_shortage [not null]
+  purClaimSettlement pur_claim_settlement [not null]
+
+  indexes {
+    (pscId, pscAccYear) [pk]
+  }
+}
+
+Table pur_shortage_receipt {
+  psrId String [not null]
+  psrCompanyId String [not null]
+  psrBranchId String [not null]
+  psrTenantId String
+  psrAccYear String [not null]
+  psrDeviceId String [not null]
+  psrSessionId String
+  psrSlno BigInt [not null]
+  psrRefno String [not null]
+  psrDocDate DateTime [not null]
+  psrDocDatetime DateTime [default: `now()`, not null]
+  psrStatus String [not null, default: 'DRAFT']
+  psrSupplierId String [not null]
+  psrGodownId String [not null]
+  psrReceivedAt DateTime [not null]
+  psrChallanNo String
+  psrReceivedBy String[] [not null]
+  psrValue Decimal [not null, default: 0]
+  psrRemarks String
+  psrRevisionNo Int [not null, default: 1]
+  psrPrintCount Int [not null, default: 0]
+  psrPostedVoucherId String
+  psrIsDeleted Boolean [not null, default: false]
+  psrSyncDate DateTime
+  psrCreatedOn DateTime [default: `now()`, not null]
+  psrCreatedBy String [not null]
+  psrModifiedOn DateTime
+  psrModifiedBy String
+  psrSupervisorId String [note: 'employee_master (fk_psr_supervisor, DB-only FK); ix_psr_supervisor is partial (DB-only).']
+  purShortageReceiptItem pur_shortage_receipt_item [not null]
+
+  indexes {
+    (psrId, psrAccYear) [pk]
+    (psrCompanyId, psrBranchId, psrAccYear, psrDeviceId, psrSlno) [unique]
+    (psrCompanyId, psrBranchId, psrAccYear, psrRefno) [unique]
+  }
+}
+
+Table pur_shortage_receipt_item {
+  psriId String [not null]
+  psriPsrId String [not null]
+  psriCompanyId String [not null]
+  psriBranchId String [not null]
+  psriAccYear String [not null]
+  psriLineNo Int [not null]
+  psriShortageId String [not null]
+  psriShortageAccYear String [not null]
+  psriItemId String [not null]
+  psriUomId String [not null]
+  psriBaseUomId String [not null]
+  psriToBaseFactor Decimal [not null, default: 1]
+  psriHsnCode String
+  psriWeight Decimal
+  psriQty Decimal [not null, default: 0]
+  psriCostRate Decimal [not null, default: 0]
+  psriValue Decimal [not null, default: 0]
+  psriGstReleased Decimal [not null, default: 0]
+  psriRemarks String
+  psriIsDeleted Boolean [not null, default: false]
+  psriSyncDate DateTime
+  psriCreatedOn DateTime [default: `now()`, not null]
+  psriCreatedBy String [not null]
+  psriModifiedOn DateTime
+  psriModifiedBy String
+  purShortageReceipt pur_shortage_receipt [not null]
+  purShortage pur_shortage [not null]
+
+  indexes {
+    (psriId, psriAccYear) [pk]
+  }
+}
+
+Table pur_return {
+  prId String [not null]
+  prCompanyId String [not null]
+  prBranchId String [not null]
+  prTenantId String
+  prAccYear String [not null]
+  prDeviceId String [not null]
+  prSessionId String
+  prSlno BigInt [not null]
+  prRefno String [not null]
+  prDocDate DateTime [not null]
+  prDocDatetime DateTime [default: `now()`, not null]
+  prStatus String [not null, default: 'DRAFT']
+  prKind String [not null, default: 'AGAINST_INVOICE']
+  prSrcDocId String [not null]
+  prSrcAccYear String [not null]
+  prSupplierId String [not null]
+  prGodownId String
+  prSettlement String [not null, default: 'ADJUST']
+  prPosStcd String
+  prSupplierCnNo String
+  prSupplierCnDate DateTime
+  prEwbNo String
+  prEwbDate DateTime
+  prVehicleNo String
+  prDriverName String
+  prOurRef String
+  prReturnValue Decimal [not null, default: 0]
+  prClaimValue Decimal [not null, default: 0]
+  prItcReversed Decimal [not null, default: 0]
+  prReplaceQtyBase Decimal [not null, default: 0]
+  prRemarks String
+  prRevisionNo Int [not null, default: 1]
+  prPrintCount Int [not null, default: 0]
+  prPostedVoucherId String
+  prIsDeleted Boolean [not null, default: false]
+  prSyncDate DateTime
+  prCreatedOn DateTime [default: `now()`, not null]
+  prCreatedBy String [not null]
+  prModifiedOn DateTime
+  prModifiedBy String
+  prMemoRef String [note: '"Our ref": free text typed on the return. prOurRef holds the source refno.']
+  purReturnItem pur_return_item [not null]
+
+  indexes {
+    (prId, prAccYear) [pk]
+    (prCompanyId, prBranchId, prAccYear, prDeviceId, prSlno) [unique]
+    (prCompanyId, prBranchId, prAccYear, prRefno) [unique]
+  }
+
+  Note: 'Return / claim / replace — outcome per row.'
+}
+
+Table pur_return_item {
+  priId String [not null]
+  priPrId String [not null]
+  priCompanyId String [not null]
+  priBranchId String [not null]
+  priAccYear String [not null]
+  priLineNo Int [not null]
+  priItemId String [not null]
+  priUomId String [not null]
+  priBaseUomId String [not null]
+  priToBaseFactor Decimal [not null, default: 1]
+  priHsnCode String
+  priWeight Decimal
+  priSrcDocType String
+  priSrcDocId String
+  priSrcDocYear String
+  priSrcItemId String
+  priSrcDocLineNo Int
+  priSrcDocRefno String
+  priOutcome String [not null]
+  priReasonId String
+  priQty Decimal [not null, default: 0]
+  priFreeQty Decimal [not null, default: 0]
+  priRate Decimal [not null, default: 0]
+  priDiscPct Decimal [not null, default: 0]
+  priDiscPerQty Decimal [not null, default: 0]
+  priDiscAmt Decimal [not null, default: 0]
+  priSchPct Decimal [not null, default: 0]
+  priSchPerQty Decimal [not null, default: 0]
+  priSchAmt Decimal [not null, default: 0]
+  priExtraDiscAmt Decimal [not null, default: 0]
+  priChrgBeforeTax Decimal [not null, default: 0]
+  priChrgAfterTax Decimal [not null, default: 0]
+  priGrossAmt Decimal [not null, default: 0]
+  priTaxableAmt Decimal [not null, default: 0]
+  priTaxId String
+  priGstPct Decimal [not null, default: 0]
+  priCgstAmt Decimal [not null, default: 0]
+  priSgstAmt Decimal [not null, default: 0]
+  priIgstAmt Decimal [not null, default: 0]
+  priCessPct Decimal [not null, default: 0]
+  priCessPerUnit Decimal [not null, default: 0]
+  priCessAmt Decimal [not null, default: 0]
+  priTotalAmt Decimal [not null, default: 0]
+  priLotCostValue Decimal [not null, default: 0]
+  priItcReversedInBooks Boolean [not null, default: true]
+  priSupplierCnStatus String [not null, default: 'PENDING']
+  priClaimAgainst String
+  priClaimPartyId String
+  priRemarks String
+  priIsDeleted Boolean [not null, default: false]
+  priSyncDate DateTime
+  priCreatedOn DateTime [default: `now()`, not null]
+  priCreatedBy String [not null]
+  priModifiedOn DateTime
+  priModifiedBy String
+  purClaimSettlement pur_claim_settlement [not null]
+  purReturn pur_return [not null]
+
+  indexes {
+    (priId, priAccYear) [pk]
+  }
+}
+
+Table pur_claim_settlement {
+  pcsId String [not null]
+  pcsCompanyId String [not null]
+  pcsBranchId String [not null]
+  pcsAccYear String [not null]
+  pcsDeviceId String
+  pcsReturnItemId String [note: 'Exactly one source: a return claim line OR a shortage close of kind CLAIM (ck_pcs_source, DB-only CHECK).']
+  pcsReturnItemAccYear String
+  pcsAction String [not null]
+  pcsReceivedAs String
+  pcsAmount Decimal [not null, default: 0]
+  pcsGstReavailed Decimal [not null, default: 0]
+  pcsCnNo String
+  pcsCnDate DateTime
+  pcsReason String
+  pcsDocDate DateTime [not null]
+  pcsVoucherId String
+  pcsReversalOfId String
+  pcsIsDeleted Boolean [not null, default: false]
+  pcsSyncDate DateTime
+  pcsCreatedOn DateTime [default: `now()`, not null]
+  pcsCreatedBy String [not null]
+  pcsModifiedOn DateTime
+  pcsModifiedBy String
+  pcsShortageCloseId String [note: 'ix_pcs_shortage_close is partial (DB-only).']
+  pcsShortageCloseAccYear String
+  purReturnItem pur_return_item
+  purShortageClose pur_shortage_close
+
+  indexes {
+    (pcsId, pcsAccYear) [pk]
+  }
+}
+
+Table txn_attachment {
+  tatId String [not null]
+  tatCompanyId String [not null]
+  tatBranchId String [not null]
+  tatAccYear String [not null]
+  tatSrcModule String [not null]
+  tatSrcDocType String [not null]
+  tatSrcDocId String [not null]
+  tatPageNo Int [not null, default: 1]
+  tatFileName String [not null]
+  tatMimeType String [not null]
+  tatSizeBytes Int [not null]
+  tatSha256 String [not null]
+  tatContent Bytes [not null]
+  tatCaption String
+  tatIsDeleted Boolean [not null, default: false]
+  tatSyncDate DateTime
+  tatCreatedOn DateTime [default: `now()`, not null]
+  tatCreatedBy String [not null]
+  tatModifiedOn DateTime
+  tatModifiedBy String
+
+  indexes {
+    (tatId, tatAccYear) [pk]
+  }
+
+  Note: 'Bill scans / photos, one row per page; any module.'
+}
+
+Table pur_rcm_notified_hsn {
+  rnhId String [pk]
+  rnhCompanyId String
+  rnhHsnPrefix String [not null]
+  rnhDescription String [not null]
+  rnhNotification String
+  rnhEffectiveFrom DateTime [not null]
+  rnhEffectiveTo DateTime
+  rnhIsActive Boolean [not null, default: true]
+  rnhCreatedOn DateTime [default: `now()`, not null]
+  rnhCreatedBy String [not null, default: 'SYSTEM']
+
+  Note: 'R13 — goods under reverse charge when bought from an UNREGISTERED supplier (notification 6/2024-CT(R)).
+Company NULL = every company; an item HSN matches when it starts with rnhHsnPrefix.
+ux_rnh_scope_prefix_from (COALESCE(company, zero uuid), prefix, from) is DB-only (expression index).'
+}
+
 Table suppliers {
   supId String [pk]
   supCompanyId String
@@ -6196,6 +7064,16 @@ Table suppliers {
   supNotes String
   supCreditDays Int [not null, default: 0]
   supCashDiscPerc Decimal [not null, default: 0]
+  supMsmeCategory String
+  supMsmeActivity String
+  supMsmeAgreement Boolean [not null, default: false]
+  supMsmeAgreedDays Int
+  supDrugLicenceExpiry DateTime
+  supFssaiNo String
+  supFssaiValidTo DateTime
+  supDefaultGodownId String
+  supShowNotesOnEntry Boolean [not null, default: false]
+  supIsImport Boolean [not null, default: false]
   supCollectionDays Int[] [not null]
   supGstNo String
   supStateCode String [not null]
@@ -9758,6 +10636,44 @@ CHECKs: ck_sbd_batch_shape (stored upper(btrim())), ck_sbd_model,
 ck_sbd_src (the source triple is all-or-nothing).'
 }
 
+Table stock_cost_revaluation {
+  scrId String [not null]
+  scrAccYear String [not null]
+  scrCompanyId String [not null]
+  scrBranchId String [not null]
+  scrItemId String [not null]
+  scrLotId String [not null]
+  scrValue Decimal [not null]
+  scrValueWot Decimal [not null]
+  scrBasisBaseQty Decimal [not null]
+  scrDocDate DateTime [not null]
+  scrDocDatetime DateTime [default: `now()`, not null]
+  scrSrcModule String [not null]
+  scrSrcDocType String [not null]
+  scrSrcDocId String [not null]
+  scrSrcAccYear String [not null]
+  scrSrcLineId String [not null]
+  scrSrcRefno String
+  scrIsReversal Boolean [not null, default: false]
+  scrReversesId String
+  scrNarration String
+  scrIsDeleted Boolean [not null, default: false]
+  scrSyncDate DateTime
+  scrCreatedOn DateTime [default: `now()`, not null]
+  scrCreatedBy String
+  branch branch_master [not null]
+  item item_master [not null]
+  lot stock_lot [not null]
+
+  indexes {
+    (scrId, scrAccYear) [pk]
+  }
+
+  Note: 'P13 — value-only stock movements (a bill priced off its GRN revalues the qty still on hand).
+Summed by the cost rebuild with stock_ledger. Append-only: a cancel is a reversal row.
+One writer: stock-voucher-posting.helper.ts (revalueOnHand / reverseCostRevaluation).'
+}
+
 Table stock_demand_daily {
   sddId String [pk]
   sddCompanyId String [not null]
@@ -10305,6 +11221,7 @@ StockLedger by fn_sml_apply(). NEVER written from application code.']
   supplier suppliers
   firstInwardBranch branch_master
   ledgerEntries stock_ledger [not null]
+  costRevaluations stock_cost_revaluation [not null]
   balances stock_balance [not null]
   voucherItems stock_voucher_item [not null]
   reservations stock_reservation [not null]
@@ -11953,6 +12870,8 @@ Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Rest
 
 Ref: tax_rate_master.taxSupersedesId - tax_rate_master.taxId [delete: Set Null]
 
+Ref: tax_rate_master.taxAboveTaxId - tax_rate_master.taxId [delete: Set Null]
+
 Ref: tax_rate_ledger.trlTaxId > tax_rate_master.taxId [delete: Cascade]
 
 Ref: tax_rate_ledger.trlRole > acc_ledger_role.alrRole [delete: Restrict]
@@ -12110,6 +13029,30 @@ Ref: user_menus.umMenuId > menu_master.menuId
 Ref: vehicle_master.vehTransporterId > transporter_master.trnId [delete: Restrict]
 
 Ref: vehicle_master.vehDriverId > employee_master.empId [delete: Restrict]
+
+Ref: pur_order.poAgentId > pur_agent.pagId [delete: Restrict]
+
+Ref: pur_order.poTermsId > pur_terms.pteId [delete: Restrict]
+
+Ref: pur_order_item.(poiPoId, poiAccYear) > pur_order.(poId, poAccYear)
+
+Ref: pur_grn_item.(griGrnId, griAccYear) > pur_grn.(grnId, grnAccYear)
+
+Ref: pur_invoice.piAgentId > pur_agent.pagId [delete: Restrict]
+
+Ref: pur_invoice_item.(piiPiId, piiAccYear) > pur_invoice.(piId, piAccYear)
+
+Ref: pur_shortage_close.(pscShortageId, pscShortageAccYear) > pur_shortage.(pshId, pshAccYear)
+
+Ref: pur_shortage_receipt_item.(psriPsrId, psriAccYear) > pur_shortage_receipt.(psrId, psrAccYear)
+
+Ref: pur_shortage_receipt_item.(psriShortageId, psriShortageAccYear) > pur_shortage.(pshId, pshAccYear)
+
+Ref: pur_return_item.(priPrId, priAccYear) > pur_return.(prId, prAccYear)
+
+Ref: pur_claim_settlement.(pcsReturnItemId, pcsReturnItemAccYear) > pur_return_item.(priId, priAccYear) [delete: Restrict]
+
+Ref: pur_claim_settlement.(pcsShortageCloseId, pcsShortageCloseAccYear) > pur_shortage_close.(pscId, pscAccYear) [delete: Restrict]
 
 Ref: suppliers.supId - acc_ledger_master.ledId [delete: Restrict]
 
@@ -12532,6 +13475,12 @@ Ref: stock_batch_detail.sbdItemId > item_master.itemId [delete: Restrict]
 Ref: stock_batch_detail.sbdSizeId > item_size_master.iszId [delete: Restrict]
 
 Ref: stock_batch_detail.sbdColourId > item_colour_master.iclId [delete: Restrict]
+
+Ref: stock_cost_revaluation.scrBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_cost_revaluation.scrItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_cost_revaluation.scrLotId > stock_lot.sltId [delete: Restrict]
 
 Ref: stock_demand_daily.sddCompanyId > companys.compId [delete: Restrict]
 

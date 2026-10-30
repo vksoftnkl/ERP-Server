@@ -28,7 +28,11 @@
 --     matching index on every sale_bill_YYYY_YYYY partition and on every
 --     partition made later by ensure_acc_year_partitions. Partial, so it is
 --     NOT declared in the Prisma model.
---     No back-fill and no write to cus_billed_date / cus_billed_count (Q9 = B).
+--     No back-fill from bills (Q9 = B). Instead a one-time reset (user OK
+--     2026-10-29): every value in cus_billed_date / cus_billed_count /
+--     sup_billed_date came from master saves, never from a bill, so they go to
+--     NULL / 0 (cus_billed_count is NOT NULL DEFAULT 0; suppliers have no count
+--     column). Nothing writes them after this build; they are dropped in P2.
 --  5. Plain wording rows (notes 120) for the new §4.2 codes, the customer bug
 --     batch codes and the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ /
 --     PURCHASE_SUPPLIER_ codes. Same rows as prisma/seed/Error_Messages.json
@@ -143,6 +147,17 @@ ON CONFLICT (state_code) DO NOTHING;
 CREATE INDEX IF NOT EXISTS ix_sb_cust_posted
     ON sales.sale_bill USING btree (sb_cust_id, sb_bill_date DESC)
     WHERE sb_status = 'POSTED' AND sb_is_deleted = false;
+
+-- ── 4b. One-time reset of the master-save billed columns (Q9 = B) ─────────
+UPDATE sales.customers
+   SET cus_billed_date = NULL,
+       cus_billed_count = 0
+ WHERE cus_billed_date IS NOT NULL
+    OR cus_billed_count <> 0;
+
+UPDATE purchase.suppliers
+   SET sup_billed_date = NULL
+ WHERE sup_billed_date IS NOT NULL;
 
 -- ── 5. Plain wording rows (notes 120), catalogue 2026-10-29.1 ──────────────
 INSERT INTO fixed.error_message

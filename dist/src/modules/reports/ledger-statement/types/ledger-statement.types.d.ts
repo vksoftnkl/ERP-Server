@@ -19,6 +19,7 @@ export interface LedgerPickItem {
     groupName: string | null;
     isBillByBill: boolean;
     isShared: boolean;
+    isDeleted: boolean;
 }
 export interface LedgerPickPayload {
     items: LedgerPickItem[];
@@ -26,6 +27,7 @@ export interface LedgerPickPayload {
 export interface LedgerFacts {
     ledgerId: string;
     name: string;
+    isDeleted: boolean;
     groupName: string | null;
     nature: string | null;
     isBillByBill: boolean;

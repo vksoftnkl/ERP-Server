@@ -9,7 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CustomerSuccessDeleteDto = exports.CustomerSuccessSingleDto = exports.CustomerDeleteResultDto = exports.CustomerPayloadDto = exports.CustomerErrorResponseDto = exports.CustomerErrorFieldDto = void 0;
+exports.CustomerSuccessDeleteDto = exports.CustomerSuccessSaveDto = exports.CustomerSavePayloadDto = exports.CustomerSuccessSingleDto = exports.CustomerDeleteResultDto = exports.CustomerPayloadDto = exports.CustomerErrorResponseDto = exports.CustomerErrorFieldDto = void 0;
+const party_response_dto_1 = require("../../../../common/party/party-response.dto");
 const swagger_1 = require("@nestjs/swagger");
 class CustomerErrorFieldDto {
     field;
@@ -147,23 +148,23 @@ __decorate([
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusAddr1", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusAddr2", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusAddr3", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusCity", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
     __metadata("design:type", Object)
 ], CustomerPayloadDto.prototype, "cusDistrict", void 0);
 __decorate([
@@ -501,6 +502,32 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: CustomerPayloadDto }),
     __metadata("design:type", CustomerPayloadDto)
 ], CustomerSuccessSingleDto.prototype, "data", void 0);
+class CustomerSavePayloadDto extends CustomerPayloadDto {
+    partySync;
+}
+exports.CustomerSavePayloadDto = CustomerSavePayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: party_response_dto_1.PartySyncDto, description: 'Party rules D4-6: what the save did to the supplier of the same ledger.' }),
+    __metadata("design:type", party_response_dto_1.PartySyncDto)
+], CustomerSavePayloadDto.prototype, "partySync", void 0);
+class CustomerSuccessSaveDto {
+    success;
+    message;
+    data;
+}
+exports.CustomerSuccessSaveDto = CustomerSuccessSaveDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], CustomerSuccessSaveDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Customer updated successfully' }),
+    __metadata("design:type", String)
+], CustomerSuccessSaveDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: CustomerSavePayloadDto }),
+    __metadata("design:type", CustomerSavePayloadDto)
+], CustomerSuccessSaveDto.prototype, "data", void 0);
 class CustomerSuccessDeleteDto {
     success;
     message;

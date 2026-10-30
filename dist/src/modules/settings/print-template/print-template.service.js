@@ -18,6 +18,7 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const print_template_constants_1 = require("./print-template.constants");
 const print_template_error_codes_1 = require("./types/print-template-error-codes");
 const print_template_invariants_1 = require("./utils/print-template-invariants");
+const print_template_frozen_compare_1 = require("./utils/print-template-frozen-compare");
 const print_template_utils_1 = require("./utils/print-template.utils");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const TEMPLATE_TABLE_NAME = 'print template';
@@ -171,7 +172,7 @@ let PrintTemplateService = class PrintTemplateService {
         });
     }
     planHeader(existing, dto, errors) {
-        const companyId = (0, module_service_utils_1.hasOwnProperty)(dto, 'ptlCompanyId')
+        const companyId = (0, module_service_utils_1.isPresentField)(dto, 'ptlCompanyId')
             ? (dto.ptlCompanyId ?? null)
             : (existing?.ptlCompanyId ?? null);
         const purposeId = dto.ptlPurposeId ?? existing?.ptlPurposeId ?? '';
@@ -200,10 +201,10 @@ let PrintTemplateService = class PrintTemplateService {
                 });
             }
         }
-        const forkedFromId = (0, module_service_utils_1.hasOwnProperty)(dto, 'ptlForkedFromId')
+        const forkedFromId = (0, module_service_utils_1.isPresentField)(dto, 'ptlForkedFromId')
             ? (dto.ptlForkedFromId ?? null)
             : (existing?.ptlForkedFromId ?? null);
-        const forkedFromRev = (0, module_service_utils_1.hasOwnProperty)(dto, 'ptlForkedFromRev')
+        const forkedFromRev = (0, module_service_utils_1.isPresentField)(dto, 'ptlForkedFromRev')
             ? (dto.ptlForkedFromRev ?? null)
             : (existing?.ptlForkedFromRev ?? null);
         const sortOrder = dto.ptlSortOrder ?? existing?.ptlSortOrder ?? 100;
@@ -232,24 +233,24 @@ let PrintTemplateService = class PrintTemplateService {
             ptlModifiedOn: new Date(),
             ptlModifiedBy: this.resolveWriteActor(dto.ptlModifiedBy),
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlCompanyId'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlCompanyId'))
             update.ptlCompanyId = companyId;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlPurposeId'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlPurposeId'))
             update.ptlPurposeId = purposeId;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlCode'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlCode'))
             update.ptlCode = code;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlName'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlName'))
             update.ptlName = name;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlDescription')) {
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlDescription')) {
             update.ptlDescription = (0, module_service_utils_1.normalizeNullableString)(dto.ptlDescription) ?? null;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlForkedFromId'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlForkedFromId'))
             update.ptlForkedFromId = forkedFromId;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlForkedFromRev'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlForkedFromRev'))
             update.ptlForkedFromRev = forkedFromRev;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlSortOrder'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlSortOrder'))
             update.ptlSortOrder = sortOrder;
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'ptlIsActive'))
+        if ((0, module_service_utils_1.isPresentField)(dto, 'ptlIsActive'))
             update.ptlIsActive = dto.ptlIsActive ?? true;
         return { create, update, effective };
     }
@@ -324,7 +325,7 @@ let PrintTemplateService = class PrintTemplateService {
                 return;
             }
             if (current && current.ptvStatus !== 'DRAFT') {
-                const plan = this.planFrozenVersion(existing, current, row, path, errors);
+                const plan = this.planFrozenVersion(existing, current, row, path, errors, current.datasets ?? []);
                 if (plan) {
                     plans.push(plan);
                 }
@@ -360,8 +361,9 @@ let PrintTemplateService = class PrintTemplateService {
         });
         return plans;
     }
-    planFrozenVersion(existing, current, row, path, errors) {
-        const design = this.designKeysPresent(row);
+    planFrozenVersion(existing, current, row, path, errors, storedDatasets = []) {
+        const sentDesign = this.designKeysPresent(row);
+        const design = (0, print_template_frozen_compare_1.changedVersionKeys)(row, current, sentDesign);
         if (design.length > 0) {
             errors.push({
                 field: `${path}.${design[0]}`,
@@ -372,14 +374,22 @@ let PrintTemplateService = class PrintTemplateService {
             });
             return null;
         }
-        if (row.datasets !== undefined) {
+        const datasetsChange = row.datasets === undefined ? null : (0, print_template_frozen_compare_1.datasetsDifference)(row.datasets, storedDatasets);
+        if (datasetsChange) {
             errors.push({
                 field: `${path}.datasets`,
                 code: print_template_error_codes_1.PrintTemplateErrorCode.VERSION_FROZEN,
                 message: `The datasets of ${current.ptvStatus} revision ${current.ptvRevNo} are frozen with its ` +
-                    'design. Add a new revision to change what feeds it.',
+                    `design. Add a new revision to change what feeds it. (Differs: ${datasetsChange}.)`,
             });
             return null;
+        }
+        if (sentDesign.length > 0 || row.datasets !== undefined) {
+            const slim = Object.assign(Object.create(Object.getPrototypeOf(row)), row);
+            for (const key of sentDesign)
+                delete slim[key];
+            delete slim.datasets;
+            row = slim;
         }
         const target = row.ptvStatus ?? current.ptvStatus;
         if (target === current.ptvStatus) {
@@ -465,7 +475,7 @@ let PrintTemplateService = class PrintTemplateService {
             'ptvParams',
             'ptvNote',
         ];
-        return designKeys.filter((key) => (0, module_service_utils_1.hasOwnProperty)(row, key));
+        return designKeys.filter((key) => (0, module_service_utils_1.isPresentField)(row, key));
     }
     effectiveVersion(current, row, revNo) {
         const pick = (key, fallback) => {
@@ -488,7 +498,7 @@ let PrintTemplateService = class PrintTemplateService {
             ptvMarginRightMm: pick('ptvMarginRightMm', numberOr(current?.ptvMarginRightMm, 0)),
             ptvColumns: pick('ptvColumns', current?.ptvColumns ?? null),
             ptvLang: pick('ptvLang', current?.ptvLang ?? print_template_constants_1.PTV_DEFAULT_LANG),
-            ptvParams: (0, module_service_utils_1.hasOwnProperty)(row, 'ptvParams')
+            ptvParams: (0, module_service_utils_1.isPresentField)(row, 'ptvParams')
                 ? (row.ptvParams ?? null)
                 : (current?.ptvParams ?? null),
             ptvApprovedBy: pick('ptvApprovedBy', current?.ptvApprovedBy ?? null) ??
@@ -545,14 +555,14 @@ let PrintTemplateService = class PrintTemplateService {
             ptdDatasetNo: Number.isNaN(datasetNo) ? -1 : datasetNo,
             ptdName: name,
             ptdSourceKind: row.ptdSourceKind ?? existing?.ptdSourceKind ?? print_template_constants_1.PTD_DEFAULT_SOURCE_KIND,
-            ptdProviderCode: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdProviderCode')
+            ptdProviderCode: (0, module_service_utils_1.isPresentField)(row, 'ptdProviderCode')
                 ? (row.ptdProviderCode ?? null)
                 : (existing?.ptdProviderCode ?? null),
-            ptdSql: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
-            ptdParentNo: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdParentNo')
+            ptdSql: (0, module_service_utils_1.isPresentField)(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
+            ptdParentNo: (0, module_service_utils_1.isPresentField)(row, 'ptdParentNo')
                 ? (row.ptdParentNo ?? null)
                 : (existing?.ptdParentNo ?? null),
-            ptdLinkFields: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdLinkFields')
+            ptdLinkFields: (0, module_service_utils_1.isPresentField)(row, 'ptdLinkFields')
                 ? (row.ptdLinkFields ?? null)
                 : (existing?.ptdLinkFields ?? null),
             ptdRowLimit: row.ptdRowLimit ?? existing?.ptdRowLimit ?? print_template_constants_1.PTD_DEFAULT_ROW_LIMIT,
@@ -569,7 +579,7 @@ let PrintTemplateService = class PrintTemplateService {
                     'pointer, and two candidates leave no way to say which is live.',
             });
         }
-        if (!(0, module_service_utils_1.hasOwnProperty)(dto, 'ptlPublishedRevId')) {
+        if (!(0, module_service_utils_1.isPresentField)(dto, 'ptlPublishedRevId')) {
             return { explicit: false, value: null };
         }
         const requested = dto.ptlPublishedRevId ?? null;
@@ -667,51 +677,51 @@ let PrintTemplateService = class PrintTemplateService {
             ptvModifiedOn: new Date(),
             ptvModifiedBy: this.resolveWriteActor(row.ptvModifiedBy),
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvRevNo'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvRevNo'))
             data.ptvRevNo = effective.ptvRevNo;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvStatus'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvStatus'))
             data.ptvStatus = effective.ptvStatus;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvEngine'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvEngine'))
             data.ptvEngine = effective.ptvEngine;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvBody'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvBody'))
             data.ptvBody = effective.ptvBody;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvSchemaVer'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvSchemaVer'))
             data.ptvSchemaVer = row.ptvSchemaVer;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvPaperCode'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvPaperCode'))
             data.ptvPaperCode = effective.ptvPaperCode;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvOrientation'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvOrientation'))
             data.ptvOrientation = effective.ptvOrientation;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvWidthMm'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvWidthMm'))
             data.ptvWidthMm = effective.ptvWidthMm;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvHeightMm'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvHeightMm'))
             data.ptvHeightMm = effective.ptvHeightMm;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvMarginTopMm'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvMarginTopMm'))
             data.ptvMarginTopMm = effective.ptvMarginTopMm;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvMarginBottomMm')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvMarginBottomMm')) {
             data.ptvMarginBottomMm = effective.ptvMarginBottomMm;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvMarginLeftMm'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvMarginLeftMm'))
             data.ptvMarginLeftMm = effective.ptvMarginLeftMm;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvMarginRightMm')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvMarginRightMm')) {
             data.ptvMarginRightMm = effective.ptvMarginRightMm;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvColumns'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvColumns'))
             data.ptvColumns = effective.ptvColumns;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvLang'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvLang'))
             data.ptvLang = effective.ptvLang;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvFontFamily')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvFontFamily')) {
             data.ptvFontFamily = (0, module_service_utils_1.normalizeNullableString)(row.ptvFontFamily) ?? null;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvParams'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvParams'))
             data.ptvParams = toJsonInput(effective.ptvParams);
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvNote')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptvNote')) {
             data.ptvNote = (0, module_service_utils_1.normalizeNullableString)(row.ptvNote) ?? null;
         }
         if (plan.publishes) {
             data.ptvApprovedBy = effective.ptvApprovedBy;
             data.ptvApprovedOn = new Date();
         }
-        else if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptvApprovedBy')) {
+        else if ((0, module_service_utils_1.isPresentField)(row, 'ptvApprovedBy')) {
             data.ptvApprovedBy = effective.ptvApprovedBy;
         }
         const updated = await tx.printTemplateVersion.update({
@@ -806,32 +816,32 @@ let PrintTemplateService = class PrintTemplateService {
             ptdModifiedOn: new Date(),
             ptdModifiedBy: this.resolveWriteActor(row.ptdModifiedBy),
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdRole'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdRole'))
             data.ptdRole = effective.ptdRole;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdDatasetNo'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdDatasetNo'))
             data.ptdDatasetNo = effective.ptdDatasetNo;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdSortOrder'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdSortOrder'))
             data.ptdSortOrder = row.ptdSortOrder;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdName'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdName'))
             data.ptdName = effective.ptdName;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdLabel')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdLabel')) {
             data.ptdLabel = (0, module_service_utils_1.normalizeNullableString)(row.ptdLabel) ?? null;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdSourceKind'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdSourceKind'))
             data.ptdSourceKind = effective.ptdSourceKind;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdProviderCode'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdProviderCode'))
             data.ptdProviderCode = effective.ptdProviderCode;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdSql'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdSql'))
             data.ptdSql = effective.ptdSql;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdParentNo'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdParentNo'))
             data.ptdParentNo = effective.ptdParentNo;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdLinkFields'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdLinkFields'))
             data.ptdLinkFields = effective.ptdLinkFields;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdRowLimit'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdRowLimit'))
             data.ptdRowLimit = effective.ptdRowLimit;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdTimeoutMs'))
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdTimeoutMs'))
             data.ptdTimeoutMs = effective.ptdTimeoutMs;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdRemarks')) {
+        if ((0, module_service_utils_1.isPresentField)(row, 'ptdRemarks')) {
             data.ptdRemarks = (0, module_service_utils_1.normalizeNullableString)(row.ptdRemarks) ?? null;
         }
         const updated = await tx.printTemplateDataset.update({

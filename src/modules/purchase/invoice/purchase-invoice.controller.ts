@@ -5,7 +5,7 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PostPurchaseInvoiceDto, PurchaseInvoiceHoldDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 
 /** Menu 24 — Purchase Entry. One right per route (code prefix PUR). plan-purchase-backend.md B6. */
 export const PURCHASE_INVOICE_MENU_ID = 24;
@@ -26,6 +26,7 @@ export class PurchaseInvoiceController {
   async save(@Body() dto: SavePurchaseInvoiceDto) {
     await this.right(dto.header.piId ? 'edit' : 'create', 'save a purchase invoice');
     if (dto.header.post) await this.right('post', 'post a purchase invoice');
+    if (dto.header.post && dto.header.overrideWarnings) await this.right('override', 'post a purchase invoice past its warnings');
     const data = await this.service.save(dto);
     const base = dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`;
     return { success: true, message: data.warnings.length ? `${base} — ${data.warnings.map((w) => w.message).join(' ')}` : base, data };
@@ -33,7 +34,7 @@ export class PurchaseInvoiceController {
 
   @Post('validate')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'The server calculation of a bill (lines, charges, ITC, short, landed cost, net payable) — nothing is written.' })
+  @ApiOperation({ summary: 'The server calculation of a bill (lines, charges, ITC, short, landed cost, net payable) — nothing is written. Also the WARN / REFUSE strip (warnings[], refusals[]: code, level, lineNo, field, message, needsRight), the per-line check{} and the derived header (bill from, place of supply, reverse charge, agent, due dates).' })
   async validate(@Body() dto: SavePurchaseInvoiceDto) {
     await this.right('view', 'calculate a purchase invoice');
     return { success: true, message: 'Purchase invoice calculated', data: await this.service.preview(dto) };
@@ -41,10 +42,11 @@ export class PurchaseInvoiceController {
 
   @Post('post')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Post a saved draft.' })
-  async post(@Body() dto: GetPurchaseInvoiceQueryDto) {
+  @ApiOperation({ summary: 'Post a saved draft. overrideWarnings (Override right on menu 24) posts past the WARN items that need it — PUR_RATE_ABOVE_PO: no payment hold — and logs it (WARN_OVERRIDE).' })
+  async post(@Body() dto: PostPurchaseInvoiceDto) {
     await this.right('post', 'post a purchase invoice');
-    const data = await this.service.post(dto.piId, dto.accYear);
+    if (dto.overrideWarnings) await this.right('override', 'post a purchase invoice past its warnings');
+    const data = await this.service.post(dto.piId, dto.accYear, { override: !!dto.overrideWarnings, reason: dto.overrideReason ?? null });
     return { success: true, message: `Purchase ${data.header.piRefno} posted`, data };
   }
 

@@ -60,6 +60,18 @@ export declare class PurchaseChargeDto {
     amount?: number;
     payees?: PurchaseChargePayeeDto[];
 }
+export declare class PurchaseTransportDto {
+    vehicleNo?: string | null;
+    driverName?: string | null;
+    mode?: string;
+    transporterId?: string;
+    transporterName?: string;
+    transporterGstin?: string;
+    lrNo?: string;
+    lrDate?: string;
+    distanceKm?: number;
+    remarks?: string;
+}
 export declare class PurchaseInvoiceHeaderDto {
     piId?: string;
     companyId: string;
@@ -82,6 +94,11 @@ export declare class PurchaseInvoiceHeaderDto {
     irn?: string;
     ackNo?: string;
     remarks?: string;
+    agentId?: string | null;
+    billFromGstin?: string | null;
+    transport?: PurchaseTransportDto | null;
+    overrideWarnings?: boolean;
+    overrideReason?: string;
     post?: boolean;
 }
 export declare class SavePurchaseInvoiceDto {
@@ -92,6 +109,12 @@ export declare class SavePurchaseInvoiceDto {
 export declare class GetPurchaseInvoiceQueryDto {
     piId: string;
     accYear: string;
+}
+export declare class PostPurchaseInvoiceDto {
+    piId: string;
+    accYear: string;
+    overrideWarnings?: boolean;
+    overrideReason?: string;
 }
 export declare class CancelPurchaseInvoiceDto {
     piId: string;

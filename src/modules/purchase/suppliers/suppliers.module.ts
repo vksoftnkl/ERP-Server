@@ -4,9 +4,10 @@ import { AccountLedgerMastersModule } from '../../accountsModule/accountLedgerMa
 import { SupplierExceptionFilter } from './supplier-exception.filter';
 import { SuppliersController } from './suppliers.controller';
 import { SuppliersService } from './suppliers.service';
+import { PartyModule } from '../../../common/party/party.module';
 
 @Module({
-  imports: [AuditLogModule, AccountLedgerMastersModule],
+  imports: [AuditLogModule, AccountLedgerMastersModule, PartyModule],
   controllers: [SuppliersController],
   providers: [SuppliersService, SupplierExceptionFilter],
 })

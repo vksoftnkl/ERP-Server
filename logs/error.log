@@ -20893,3 +20893,158 @@ Raw query failed. Code: `42703`. Message: `column "tat_doc_type" of relation "tx
     at async PurchaseAttachmentService.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:65:19)
     at async PurchaseAttachmentController.upload (/home/vk/Dev/erp/ERP server/src/modules/purchase/attachment/purchase-attachment.ts:108:56)
 2026-10-29T07:33:29.993Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-29T08:03:48.866Z ERROR [DatasetRunnerService] Dataset 'head' (01a186af-a7ba-7039-846c-1d9217400632) failed after binding :company_id, :as_on, :side, :filter_branch_id, :party_id, :area_id, :salesman_id, :collection_day, :age_by, :include_on_account, :only_overdue, :min_due_days, :max_due_days, :group_id, :user_id, :buckets: invalid input syntax for type integer: "Bill-wise Outstanding refused - This user may not view menu 279 (Reports › Party Outstanding)."
+2026-10-29T08:45:12.162Z ERROR [ModuleExceptionFilter] POST /api/v1/charges/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.chargeMaster.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master/charge-master/charge-master.service.ts:322:47
+
+  319 };
+  320 this.applyOptionalFields(data, saveChargeMasterDto);
+  321 data.chgCode = nextCode;
+→ 322 const updated = await tx.chargeMaster.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"charge_master\" violates check constraint \"ck_chg_tax_id\"", severity: "ERROR", detail: Some("Failing row contains (41a411b8-2e58-4abe-8021-0cf0697dd1e8, ZT-PU-CHG2 263512, null, S, null, PERCENT, DEDUCT, VALUE, 0.0000, f, null, 019ef844-efba-755d-ab5d-b4d7281edf19, f, f, f, f, 0, f, t, f, null, 2026-10-29 14:15:12.088+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-29 14:15:12.146+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, 01a090cd-4a59-719a-8815-4eb6abbc9b2e, t)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/master/charge-master/charge-master.service.ts:322:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ChargeMasterService.updateCharge (/home/vk/Dev/erp/ERP server/src/modules/master/charge-master/charge-master.service.ts:273:14)
+    at async ChargeMasterController.save (/home/vk/Dev/erp/ERP server/src/modules/master/charge-master/charge-master.controller.ts:62:18)
+2026-10-29T10:47:05.871Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/grns/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.purGrn.create()` invocation:
+
+
+Foreign key constraint violated on the constraint: `fk_grn_supervisor`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async id.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/grn/purchase-grn.ts:348:27)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseGrnService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/grn/purchase-grn.ts:312:16)
+    at async PurchaseGrnController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/grn/purchase-grn.ts:735:18)
+2026-10-29T10:55:35.158Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-29T11:47:17.315Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/supplier-dues/settle
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23503`. Message: `insert or update on table "acc_vouchers_2026_2027" violates foreign key constraint "fk_av_doc"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.insertLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:375:5)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:128:5)
+    at async PurchaseShortageService.settleClaimIn (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:707:20)
+    at async run (/home/vk/Dev/erp/ERP server/src/modules/purchase/dues/purchase-supplier-dues.ts:115:23)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseSupplierDuesService.settle (/home/vk/Dev/erp/ERP server/src/modules/purchase/dues/purchase-supplier-dues.ts:124:19)
+2026-10-29T11:56:36.401Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/shortages/close
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_party_id, avh_voucher_type_id, avh_acc_year, avh_doc_refno)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 01a178a5-c4ce-7bfb-bc8e-006984b8505f, 52, 2026-2027, PUR/2026-2027/D14/00534/X1) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async out.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:557:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseShortageService.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:517:17)
+    at async PurchaseShortageController.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:797:18)
+2026-10-29T11:57:17.115Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/shortages/close
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42883`. Message: `ERROR: function left(character varying, bigint) does not exist
+HINT: No function matches the given name and argument types. You might need to add explicit type casts.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async out.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:551:21)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseShortageService.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:528:17)
+    at async PurchaseShortageController.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:817:18)
+2026-10-29T11:57:17.130Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/shortages/close
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42883`. Message: `ERROR: function left(character varying, bigint) does not exist
+HINT: No function matches the given name and argument types. You might need to add explicit type casts.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async out.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:551:21)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseShortageService.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:528:17)
+    at async PurchaseShortageController.close (/home/vk/Dev/erp/ERP server/src/modules/purchase/shortage/purchase-shortage.ts:817:18)
+2026-10-29T13:22:58.184Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-29T15:37:37.897Z ERROR [ModuleExceptionFilter] POST /api/v1/suppliers/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.supplier.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:43
+
+  517 };
+  518 this.applyOptionalFields(data, saveSupplierDto);
+  519 data.supGstType = normalizedGstType;
+→ 520 const updated = await tx.supplier.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"suppliers\" violates check constraint \"ck_sup_msme_days\"", severity: "ERROR", detail: Some("Failing row contains (null, null, ZT-SYNC-88254, null, null, 0.000, null, Namakkal, {}, null, India, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-03 09:34:13.563+05:30, 0, null, null, 019c99c6-4094-7e80-8fa7-c30d83b02800, null, UNREGISTERED, 01a0ffef-1390-7c83-a55a-4c6a1afa1f50, t, f, null, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-29 21:07:37.885+05:30, ZT-ROLE-C 253, null, null, 9000000011, null, LOCAL, null, null, null, null, India, null, null, null, null, 0, 33, Tamil Nadu, null, null, null, null, null, null, null, f, 0, null, null, null, null, f, f)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SuppliersService.updateSupplier (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:449:14)
+    at async SuppliersController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.controller.ts:70:18)
+2026-10-29T15:37:39.028Z ERROR [ModuleExceptionFilter] POST /api/v1/suppliers/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.supplier.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:43
+
+  517 };
+  518 this.applyOptionalFields(data, saveSupplierDto);
+  519 data.supGstType = normalizedGstType;
+→ 520 const updated = await tx.supplier.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"suppliers\" violates check constraint \"ck_sup_msme_days\"", severity: "ERROR", detail: Some("Failing row contains (null, null, null, null, null, 0.000, null, Namakkal, {}, null, India, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-03 09:34:13.563+05:30, 0, null, null, 019c99c6-4094-7e80-8fa7-c30d83b02800, null, UNREGISTERED, 01a0ffef-1390-7c83-a55a-4c6a1afa1f50, t, f, null, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-29 21:07:39.023+05:30, ZT-ROLE-C 253, null, null, 9000000011, null, LOCAL, null, null, null, null, India, null, null, null, null, 0, 33, Tamil Nadu, null, null, null, null, null, null, null, f, 0, null, null, null, null, f, f)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SuppliersService.updateSupplier (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:449:14)
+    at async SuppliersController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.controller.ts:70:18)
+2026-10-29T15:47:01.341Z ERROR [ModuleExceptionFilter] POST /api/v1/suppliers/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.supplier.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:43
+
+  517 };
+  518 this.applyOptionalFields(data, saveSupplierDto);
+  519 data.supGstType = normalizedGstType;
+→ 520 const updated = await tx.supplier.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"suppliers\" violates check constraint \"ck_sup_msme_days\"", severity: "ERROR", detail: Some("Failing row contains (null, null, null, 2026-10-29, null, 0.000, null, null, {}, 019c8ea6-19e9-78a8-b15f-749e1cde7292, India, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-27 17:10:37.616+05:30, 30, null, null, 019c99c6-4094-7e80-8fa7-c30d83b02800, 33ABCDE1234F1Z5, REGULAR, 01a17d29-8d79-7508-9830-c6017ae17a1a, t, f, null, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-10-29 21:17:01.329+05:30, ZT-PUR Supplier, null, null, null, null, LOCAL, null, null, null, null, India, null, null, null, null, 0, 33, Tamil Nadu, null, null, null, null, null, null, null, f, 0, null, null, null, null, f, f)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:520:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SuppliersService.updateSupplier (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:449:14)
+    at async SuppliersController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.controller.ts:70:18)
+2026-10-29T15:58:11.379Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

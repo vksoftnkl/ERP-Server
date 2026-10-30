@@ -16,6 +16,8 @@ exports.SuppliersController = void 0;
 const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const data_change_service_1 = require("../../../common/data-changes/data-change.service");
+const party_response_dto_1 = require("../../../common/party/party-response.dto");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const save_supplier_dto_1 = require("./dto/save-supplier.dto");
 const supplier_response_dto_1 = require("./dto/supplier-response.dto");
@@ -24,11 +26,21 @@ const suppliers_service_1 = require("./suppliers.service");
 const api_version_1 = require("../../../common/constants/api-version");
 let SuppliersController = class SuppliersController {
     suppliersService;
-    constructor(suppliersService) {
+    dataChangeService;
+    constructor(suppliersService, dataChangeService) {
         this.suppliersService = suppliersService;
+        this.dataChangeService = dataChangeService;
     }
-    async save(saveSupplierDto) {
+    async save(saveSupplierDto, request) {
         const data = await this.suppliersService.save(saveSupplierDto);
+        if (data.partySync?.otherRoleUpdated) {
+            this.dataChangeService.publish({
+                resource: 'customers',
+                method: 'POST',
+                at: Date.now(),
+                originSessionId: request.user?.sid ?? null,
+            });
+        }
         return {
             success: true,
             message: saveSupplierDto.supId
@@ -45,6 +57,10 @@ let SuppliersController = class SuppliersController {
             data,
         };
     }
+    async deleteCheck(supId) {
+        const data = await this.suppliersService.deleteCheck(supId);
+        return { success: true, message: 'Supplier delete check', data };
+    }
     async remove(supId) {
         const data = await this.suppliersService.softDelete(supId);
         return {
@@ -59,13 +75,14 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'Create or update supplier (by supId presence)' }),
-    (0, swagger_1.ApiCreatedResponse)({ type: supplier_response_dto_1.SupplierSuccessSingleDto }),
+    (0, swagger_1.ApiCreatedResponse)({ type: supplier_response_dto_1.SupplierSuccessSaveDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_supplier_dto_1.SaveSupplierDto]),
+    __metadata("design:paramtypes", [save_supplier_dto_1.SaveSupplierDto, Object]),
     __metadata("design:returntype", Promise)
 ], SuppliersController.prototype, "save", null);
 __decorate([
@@ -82,9 +99,30 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SuppliersController.prototype, "getById", null);
 __decorate([
+    (0, common_1.Get)('delete-check'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Would DELETE /suppliers/delete go through? (balance per company, cheques, drafts)',
+        description: 'Party rules D1-4. 200 even when the delete would be refused: canDelete / refusalCode / refusals[] say why. Needs the menu-22 delete right.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'supId', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiOkResponse)({ type: party_response_dto_1.PartyDeleteCheckSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
+    __param(0, (0, common_1.Query)('supId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], SuppliersController.prototype, "deleteCheck", null);
+__decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete supplier by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete supplier by id',
+        description: 'Menu-22 delete right. 409 PURCHASE_SUPPLIER_HAS_BALANCE / _HAS_CHEQUE_IN_HAND when the ledger goes with the supplier and is not settled.',
+    }),
+    (0, swagger_1.ApiConflictResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
+    (0, swagger_1.ApiForbiddenResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
     (0, swagger_1.ApiQuery)({ name: 'supId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: supplier_response_dto_1.SupplierSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: supplier_response_dto_1.SupplierErrorResponseDto }),
@@ -101,6 +139,7 @@ exports.SuppliersController = SuppliersController = __decorate([
     (0, cache_manager_1.CacheTTL)(1),
     (0, common_1.Controller)('suppliers'),
     (0, common_1.UseFilters)(supplier_exception_filter_1.SupplierExceptionFilter),
-    __metadata("design:paramtypes", [suppliers_service_1.SuppliersService])
+    __metadata("design:paramtypes", [suppliers_service_1.SuppliersService,
+        data_change_service_1.DataChangeService])
 ], SuppliersController);
 //# sourceMappingURL=suppliers.controller.js.map

@@ -15,6 +15,7 @@ import {
   TrimmedString,
   UpperString,
 } from 'src/common/dto/dtoDecorators';
+import { NullableUpperPattern, PARTY_GSTIN_PATTERN } from 'src/common/party/party-gstin';
 import { LedgerBankAccountItemDto } from '../../../accountsModule/accountLedgerMasters/dto/ledger-bank-account-item.dto';
 import { normalizeBankAccountItems } from '../../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 export class SaveSupplierDto {
@@ -55,20 +56,20 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @NullableString(50)
   supShort?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr1?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr2?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supAddr3?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supCity?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supDistrict?: string | null;
   @ApiProperty({ maxLength: 100, description: 'May be left out when supLinkLedId is set' })
   @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supStateName))
@@ -114,8 +115,14 @@ export class SaveSupplierDto {
   })
   @OptionalIntegerArray()
   supCollectionDays?: number[];
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @NullableString(15)
+  @ApiPropertyOptional({
+    maxLength: 15,
+    nullable: true,
+    pattern: PARTY_GSTIN_PATTERN.source,
+    description:
+      'Trimmed and upper-cased; blank = cleared. Any GSTN shape (normal, TDS deductor, UIN, OIDAR, NRTP), the same check as cusGstNo (VALIDATION_IS_GSTIN); a normal GSTIN must start with supStateCode.',
+  })
+  @NullableUpperPattern(15, 'isGstin', PARTY_GSTIN_PATTERN, 'a 15-character GSTIN')
   supGstNo?: string | null;
   @ApiProperty({
     minLength: 2,
@@ -128,7 +135,12 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @NullableString(10)
   supPanNo?: string | null;
-  @ApiProperty({ maxLength: 30 })
+  @ApiProperty({
+    maxLength: 30,
+    enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+    description:
+      'Party rules D2. Old spellings (Regular, Unregistered …) are mapped to the code. REGULAR / COMPOSITION / SEZ need supGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs supStateCode 96.',
+  })
   @TrimmedString(30)
   @IsNotEmpty()
   supGstType!: string;
@@ -175,20 +187,20 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @NullableString(200)
   supRegionName?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr1?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr2?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
   supRegionAddr3?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supRegionCity?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
   supRegionDistrict?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
@@ -196,7 +208,12 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
   @NullableString(60)
   supRegionCountry?: string | null;
-  @ApiPropertyOptional({ nullable: true, format: 'date' })
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date',
+    deprecated: true,
+    description: 'Ignored (party rules D3-5): no master save writes it. Accepted for one release.',
+  })
   @NullableDateString()
   supBilledDate?: string | null;
   @ApiPropertyOptional({ nullable: true })

@@ -1,4 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { PartyBalanceService } from '../src/common/party/party-balance.service';
+import { PartySyncService } from '../src/common/party/party-sync.service';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { PrismaService } from '../src/database/prisma/prisma.service';
@@ -87,7 +89,13 @@ describe('The ledger delete refuses a ledger a master owns, notes 82 (e2e — on
         );
     });
     const [user] = await tx.$queryRaw<Array<{ usr_id: string }>>`
-      SELECT usr_id FROM public.user_master WHERE usr_is_deleted = false LIMIT 1`;
+      SELECT u.usr_id FROM public.user_master u
+       WHERE u.usr_is_deleted = false
+         -- Party rules D1-6: the customer / supplier deletes need the menu 10 / 22 delete right.
+         AND (SELECT count(*) FROM public.user_menus m
+               WHERE m.um_user_id = u.usr_id AND m.um_menu_id IN (10, 22)
+                 AND m.um_can_delete AND NOT m.um_is_deleted) = 2
+       LIMIT 1`;
     userId = user.usr_id;
     // Two live areas that are mirrored as account groups, so a customer's ledger can hang
     // under either and an area change has somewhere to (wrongly) move it.
@@ -111,8 +119,8 @@ describe('The ledger delete refuses a ledger a master owns, notes 82 (e2e — on
     const db = transactional(tx);
     const audit = new AuditLogService(db, ctx);
     ledgers = new AccountLedgerMastersService(db, audit, ctx);
-    customers = new CustomerService(db, audit, ctx, ledgers);
-    suppliers = new SuppliersService(db, audit, ctx, ledgers);
+    customers = new CustomerService(db, audit, ctx, ledgers, new PartyBalanceService(), new PartySyncService(audit));
+    suppliers = new SuppliersService(db, audit, ctx, ledgers, new PartyBalanceService(), new PartySyncService(audit));
     saleAgents = new SaleAgentService(db, audit, ctx, ledgers);
     companyId = (await tx.company.findFirstOrThrow({ where: { compIsDeleted: false } })).compId;
     saleAgentGroupId = (
@@ -178,6 +186,7 @@ describe('The ledger delete refuses a ledger a master owns, notes 82 (e2e — on
     cusAddr1: '12 Mount Road',
     cusCity: 'Chennai',
     cusGstNo: '33ZTABC1234Z1Z5',
+    cusGstType: 'REGULAR',
     cusPanNo: 'ZTABC1234Z',
     ...extra,
   });

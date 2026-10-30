@@ -1,3 +1,4 @@
+import { PartySyncDto } from "../../../../common/party/party-response.dto";
 export declare class CustomerErrorFieldDto {
     field: string;
     message: string;
@@ -98,6 +99,14 @@ export declare class CustomerSuccessSingleDto {
     success: true;
     message: string;
     data: CustomerPayloadDto;
+}
+export declare class CustomerSavePayloadDto extends CustomerPayloadDto {
+    partySync: PartySyncDto;
+}
+export declare class CustomerSuccessSaveDto {
+    success: true;
+    message: string;
+    data: CustomerSavePayloadDto;
 }
 export declare class CustomerSuccessDeleteDto {
     success: true;

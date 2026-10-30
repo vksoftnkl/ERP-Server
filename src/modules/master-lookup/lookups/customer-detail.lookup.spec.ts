@@ -53,6 +53,7 @@ describe('CustomerDetailLookup (F12 / R2)', () => {
     company: { findFirst: jest.Mock };
     accLedgerMaster: { findFirst: jest.Mock };
     employeeMaster: { findFirst: jest.Mock };
+    $queryRaw: jest.Mock;
   };
   let lookup: CustomerDetailLookup;
   const query = { cus_id: CUS_ID, company_id: COMPANY_ID, branch_id: BRANCH_ID };
@@ -65,6 +66,8 @@ describe('CustomerDetailLookup (F12 / R2)', () => {
       },
       accLedgerMaster: { findFirst: jest.fn().mockResolvedValue({ ledIsTcsApplicable: false }) },
       employeeMaster: { findFirst: jest.fn().mockResolvedValue(null) },
+      // Party rules D3: the last POSTED bill (none here).
+      $queryRaw: jest.fn().mockResolvedValue([{ d: null, n: 0 }]),
     };
     lookup = new CustomerDetailLookup(prisma as unknown as PrismaService);
   });
@@ -129,5 +132,13 @@ describe('CustomerDetailLookup (F12 / R2)', () => {
     prisma.customer.findFirst.mockResolvedValue(customerRow(customer));
 
     expect((await lookup.getCustomerDetail(query)).tcs_customer).toBe(expected);
+  });
+
+  it('words billed_date from the last POSTED bill, not the stored column (D3)', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ d: new Date('2026-10-01T00:00:00Z'), n: 2 }]);
+
+    const detail = await lookup.getCustomerDetail(query);
+
+    expect(detail.billed_date).toMatch(/ days : 01\/10\/26$/);
   });
 });

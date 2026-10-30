@@ -88,9 +88,9 @@ create/update payload:
      `tr_led_name_scope`, because no index can say "must not match a row in the other scope".
 
   NULL `ledCompanyId` means *shared by every company* and is deliberate: one customer billed in
-  four companies is one ledger. Postgres treats NULLs as distinct, so the older
-  `uq_led_name_per_company` is inert for exactly those rows — 50 of 61 ledgers on the live box.
-  Matching is case-insensitive (`lower()`) because Tally matches master names that way, and a
+  four companies is one ledger. All three rules count live rows only: a soft-deleted ledger holds
+  no name (the old plain `(led_company_id, led_name)` key was dropped by
+  `20261029110000_ledger_name_unique_skip_deleted`). Matching is case-insensitive (`lower()`) because Tally matches master names that way, and a
   Tally company file receives the shared ledgers **plus** that company's own; Tally merges two
   `<LEDGER>` entries with the same `NAME` into one and combines their balances, silently.
 

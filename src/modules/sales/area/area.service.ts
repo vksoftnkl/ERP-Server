@@ -14,7 +14,7 @@ import {
   DEFAULT_ACTOR,
   SalesWriteClient,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
   normalizeRequiredText,
   resolveActor,
   throwOnUniqueConstraintError,
@@ -136,7 +136,7 @@ export class AreaService {
           armCityId: dto.armCityId,
           armSort: sort,
           armDescription: dto.armDescription ?? null,
-          armCollectionDays: hasOwnProperty(dto, 'armCollectionDays')
+          armCollectionDays: isPresentField(dto, 'armCollectionDays')
             ? (dto.armCollectionDays ?? [])
             : [],
           armIsActive: !isDeleted,
@@ -148,7 +148,7 @@ export class AreaService {
         };
         // armDistanceKm is nullable with a DB default of 0 — only write it when the client sent
         // it, so an omitted value keeps the default rather than being forced to null.
-        if (hasOwnProperty(dto, 'armDistanceKm')) {
+        if (isPresentField(dto, 'armDistanceKm')) {
           areaData.armDistanceKm = dto.armDistanceKm ?? null;
         }
         const created = await tx.areaMaster.create({ data: areaData });
@@ -379,7 +379,7 @@ export class AreaService {
           undefined,
           AreaErrorCode.NAME_REQUIRED,
         );
-        const nextCityId = hasOwnProperty(saveAreaDto, 'armCityId')
+        const nextCityId = isPresentField(saveAreaDto, 'armCityId')
           ? saveAreaDto.armCityId
           : existing.armCityId;
         await this.ensureCityExists(tx, nextCityId);

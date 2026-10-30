@@ -14,6 +14,7 @@ const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const party_gstin_1 = require("../../../../common/party/party-gstin");
 const ledger_bank_account_item_dto_1 = require("../../../accountsModule/accountLedgerMasters/dto/ledger-bank-account-item.dto");
 const save_account_ledger_master_dto_1 = require("../../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto");
 class SaveSupplierDto {
@@ -128,28 +129,28 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supShort", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supAddr1", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supAddr2", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supAddr3", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supCity", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supDistrict", void 0);
 __decorate([
@@ -223,8 +224,13 @@ __decorate([
     __metadata("design:type", Array)
 ], SaveSupplierDto.prototype, "supCollectionDays", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(15),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 15,
+        nullable: true,
+        pattern: party_gstin_1.PARTY_GSTIN_PATTERN.source,
+        description: 'Trimmed and upper-cased; blank = cleared. Any GSTN shape (normal, TDS deductor, UIN, OIDAR, NRTP), the same check as cusGstNo (VALIDATION_IS_GSTIN); a normal GSTIN must start with supStateCode.',
+    }),
+    (0, party_gstin_1.NullableUpperPattern)(15, 'isGstin', party_gstin_1.PARTY_GSTIN_PATTERN, 'a 15-character GSTIN'),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supGstNo", void 0);
 __decorate([
@@ -243,7 +249,11 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supPanNo", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 30 }),
+    (0, swagger_1.ApiProperty)({
+        maxLength: 30,
+        enum: ['REGULAR', 'COMPOSITION', 'SEZ', 'OVERSEAS', 'UNREGISTERED'],
+        description: 'Party rules D2. Old spellings (Regular, Unregistered …) are mapped to the code. REGULAR / COMPOSITION / SEZ need supGstNo; UNREGISTERED / OVERSEAS refuse one; OVERSEAS needs supStateCode 96.',
+    }),
     (0, dtoDecorators_1.TrimmedString)(30),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
@@ -317,28 +327,28 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionAddr1", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionAddr2", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionAddr3", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionCity", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(250),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionDistrict", void 0);
 __decorate([
@@ -352,7 +362,12 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supRegionCountry", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'date' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        format: 'date',
+        deprecated: true,
+        description: 'Ignored (party rules D3-5): no master save writes it. Accepted for one release.',
+    }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supBilledDate", void 0);

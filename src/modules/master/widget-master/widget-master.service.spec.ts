@@ -4,6 +4,7 @@ import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { SaveWidgetDto } from './dto/save-widget.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { WidgetPlatform, WidgetVisibilityFilter } from './types/widget-master-api.types';
 import { WIDGET_ERROR } from './types/widget-master-error-codes';
 import { WidgetMasterService } from './widget-master.service';
@@ -321,6 +322,38 @@ describe('WidgetMasterService', () => {
           fieldSectionId: 1,
         },
       });
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe every declared field of
+    // a nested field row is own (undefined when left out); left out keeps, null clears.
+    it('keeps a field label and secondary text a piped body leaves out, and clears them on null', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        {
+          sectionId: 1,
+          sectionMenuId: 10,
+          sectionName: 'Primary Information',
+          sectionGuiName: 'Primary Information',
+          sectionPlatform: 'Web',
+          fields: [
+            { fieldId: 5, fieldName: 'item_name' },
+            { fieldId: 6, fieldName: 'item_code', fieldGuiName: null, fieldSecondaryText: '' },
+          ],
+        },
+        { type: 'body', metatype: SaveWidgetDto },
+      )) as SaveWidgetDto;
+      expect(Object.prototype.hasOwnProperty.call(dto.fields![0], 'fieldGuiName')).toBe(true);
+
+      await service.save(dto);
+
+      const dataFor = (fieldId: number) =>
+        (
+          prisma.formField.update.mock.calls.find(
+            ([args]) => (args.where as { fieldId: number }).fieldId === fieldId,
+          )![0] as { data: Record<string, unknown> }
+        ).data;
+      expect(dataFor(5)).not.toHaveProperty('fieldGuiName');
+      expect(dataFor(5)).not.toHaveProperty('fieldSecondaryText');
+      expect(dataFor(6)).toMatchObject({ fieldGuiName: null, fieldSecondaryText: null });
     });
 
     // A fieldId from another section is not this section's to update.

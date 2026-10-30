@@ -25,7 +25,7 @@ import {
   DEFAULT_ACTOR,
   FixedWriteClient,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
   normalizeRequiredText,
   resolveActor,
   throwFixedBadRequest,
@@ -331,7 +331,7 @@ export class DeviceListMasterService {
     const normalizedDeviceUid =
       normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType) ??
       buildGeneratedDeviceUid(normalizedDeviceType);
-    const companyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
+    const companyId = isPresentField(saveDeviceListMasterDto, 'devCompanyId')
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
     const now = new Date();
@@ -415,7 +415,7 @@ export class DeviceListMasterService {
           normalizedDeviceType,
         );
         const nextDeviceUid = normalizedDeviceUid ?? existing.devDeviceUid;
-        const nextCompanyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
+        const nextCompanyId = isPresentField(saveDeviceListMasterDto, 'devCompanyId')
           ? (saveDeviceListMasterDto.devCompanyId ?? null)
           : existing.devCompanyId;
         await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);

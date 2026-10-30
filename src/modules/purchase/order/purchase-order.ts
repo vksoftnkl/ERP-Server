@@ -8,11 +8,14 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { calcPurchase } from '../common/purchase-calc';
+import { calcPurchase, type CalcChargeIn, type CalcLineIn } from '../common/purchase-calc';
+import { PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
 import { loadPurchaseSettings } from '../common/purchase-settings';
+import { pickableTermsId, termsOf } from '../terms/purchase-terms';
+import { isPresentField } from 'src/common/utils/module-shared.utils';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
-  allocateDocNumber, D, isInterState, jsonSafe, unitNames, loadTaxRates, loadUnits, statusLog, supplierRow, TxnStatusDocType, TxnStatusEvent, ZERO,
+  allocateDocNumber, D, isInterState, jsonSafe, r2, unitNames, loadTaxRates, loadUnits, statusLog, supplierRow, TxnStatusDocType, TxnStatusEvent, ZERO,
 } from '../common/purchase-doc.helpers';
 
 /**
@@ -64,8 +67,11 @@ export class PurchaseOrderHeaderDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() expectedDate?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() godownId?: string;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) creditDays?: number;
+  @ApiPropertyOptional({ description: 'purchase.pur_agent.pag_id (Agents master, menu 28). Omit / null = no agent.' }) @IsOptional() @IsUUID() agentId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(150) contact?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() termsText?: string;
+  @ApiPropertyOptional({ description: 'The PO\'s own copy of the terms. Omitted: a newly picked termsId = that row\'s text; on an edit = keep the saved text.' }) @IsOptional() @IsString() termsText?: string;
+  @ApiPropertyOptional({ nullable: true, description: 'purchase.pur_terms.pte_id (PO terms master, dropdown 73) the terms came from (get: header.poTermsId + termsName). Omit = keep the saved one; null = typed terms, no master row.' })
+  @IsOptional() @IsUUID() termsId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) remarks?: string;
   @ApiPropertyOptional({ description: 'Confirm: the PO is open for GRNs and bills.' }) @IsOptional() @IsBoolean() post?: boolean;
   @ApiPropertyOptional({ description: 'Why a confirmed PO is amended (kept on the trail).' }) @IsOptional() @IsString() @MaxLength(250) amendReason?: string;
@@ -73,6 +79,8 @@ export class PurchaseOrderHeaderDto {
 export class SavePurchaseOrderDto {
   @ApiProperty({ type: PurchaseOrderHeaderDto }) @ValidateNested() @Type(() => PurchaseOrderHeaderDto) header!: PurchaseOrderHeaderDto;
   @ApiProperty({ type: [PurchaseOrderLineDto] }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PurchaseOrderLineDto) lines!: PurchaseOrderLineDto[];
+  @ApiPropertyOptional({ type: [PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — an ESTIMATE only: nothing posts, the line figures stay as keyed; po_charges_amt = Σ ADD − Σ DEDUCT, the PO total includes it. Payees are ignored on a PO. Every save replaces the set.' })
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseChargeDto) charges?: PurchaseChargeDto[];
 }
 export class PurchaseOrderRefDto {
   @ApiProperty() @IsUUID() poId!: string;
@@ -108,7 +116,49 @@ export class PendingPoLinesQueryDto {
 }
 
 type Db = Prisma.TransactionClient | PrismaService;
+interface PoChargeEstimate {
+  chgId: string; chgName: string; role: string | null; type: string; method: string; rate: Prisma.Decimal; amount: Prisma.Decimal; signedAmount: Prisma.Decimal;
+  onBill: boolean; ledgerId: string; costAlloc: string | null; beforeTax: boolean; landingCost: boolean;
+}
 const today = () => new Date().toISOString().slice(0, 10);
+const isoDay = (d: Date | string) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+/** DOC-01 line status, derived (never stored): DONE = all came; SHORT_CLOSED = the rest closed; PART = some came; OPEN = nothing yet. */
+export function poLineStatus(qty: Prisma.Decimal, received: Prisma.Decimal, shortClosed: Prisma.Decimal) {
+  if (received.greaterThanOrEqualTo(qty) && qty.greaterThan(0)) return 'DONE';
+  if (shortClosed.greaterThan(0) && received.plus(shortClosed).greaterThanOrEqualTo(qty)) return 'SHORT_CLOSED';
+  if (received.greaterThan(0)) return 'PART';
+  return 'OPEN';
+}
+/** The status the screen's chip shows — DRAFT / CANCELLED / AWAITING_APPROVAL / NOT_APPROVED / CONFIRMED / PART_RECEIVED / RECEIVED / CLOSED. */
+export function poDocStatus(status: string, approval: string, lineStatuses: string[]) {
+  if (status === 'CANCELLED') return 'CANCELLED';
+  if (status === 'DRAFT') return 'DRAFT';
+  if (approval === 'AWAITING') return 'AWAITING_APPROVAL';
+  if (approval === 'REJECTED') return 'NOT_APPROVED';
+  const open = lineStatuses.filter((x) => x === 'OPEN' || x === 'PART').length;
+  if (!open) return lineStatuses.every((x) => x === 'DONE') ? 'RECEIVED' : 'CLOSED';
+  return lineStatuses.some((x) => x !== 'OPEN') ? 'PART_RECEIVED' : 'CONFIRMED';
+}
+/**
+ * PO approval (purchase.po_approval_above, 0 = off) — on the GOODS value only (user 2026-10-29): the lines' taxable +
+ * GST. The charges estimate (CHG-07) is shown on the PO but never counts towards approval. Confirming decides afresh;
+ * an amendment keeps an approval unless the goods value rises (a rise asks again) or drops to the limit or below.
+ */
+export function poApprovalStatus(a: {
+  limit: Prisma.Decimal; goods: { taxable: Prisma.Decimal; cgst: Prisma.Decimal; sgst: Prisma.Decimal; igst: Prisma.Decimal; cess: Prisma.Decimal };
+  chargesEstimate: Prisma.Decimal; confirming: boolean; amending: boolean; current: string | null; currentGoodsValue: Prisma.Decimal | null;
+}) {
+  void a.chargesEstimate;   // deliberately not part of the basis
+  const value = a.goods.taxable.plus(a.goods.cgst).plus(a.goods.sgst).plus(a.goods.igst).plus(a.goods.cess);
+  const above = a.limit.greaterThan(0) && value.greaterThan(a.limit);
+  let status = a.current ?? 'NOT_REQUIRED';
+  if (a.confirming) status = above ? 'AWAITING' : 'NOT_REQUIRED';
+  if (a.amending) {
+    if (!above) status = 'NOT_REQUIRED';
+    else if (status !== 'APPROVED' || value.greaterThan(a.currentGoodsValue ?? 0)) status = 'AWAITING';
+  }
+  return { status, value };
+}
 const PO_AUDIT = { screenName: 'purchase order', tableName: 'pur_order' } as const;
 
 /** qty already received / billed per PO line (base units), from the lines whose src_* name it. */
@@ -216,20 +266,67 @@ export class PurchaseOrderService {
     if (problems.length) purRefuseMany(problems[0].message, problems);
     for (const l of dto.lines) if (!l.taxId) l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
     const taxes = await loadTaxRates(tx as Prisma.TransactionClient, dto.lines.map((l) => l.taxId));
-    const calc = calcPurchase({
-      interState: inter, roundOffStep: 0,
-      lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
-        gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 })),
+    const lineIns: CalcLineIn[] = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
+      gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 }));
+    const calc = calcPurchase({ interState: inter, roundOffStep: 0, lines: lineIns });
+    const charges = await this.estimateCharges(tx, dto.charges ?? [], lineIns, inter);
+    const agent = await this.agentOf(tx, dto.header.agentId, dto.header.companyId);
+    return { sup, units, calc, charges, agent };
+  }
+
+  /** The PO's agent (pur_agent.pag_id = his ledger), checked like the bill's. */
+  private async agentOf(db: Db, agentId: string | null | undefined, companyId: string) {
+    if (!agentId) return null;
+    const [a] = await db.$queryRaw<{ pag_id: string; pag_name: string; pag_is_active: boolean; pag_company_id: string | null }[]>`
+      SELECT pag_id, pag_name, pag_is_active, pag_company_id FROM purchase.pur_agent WHERE pag_id = ${agentId}::uuid AND NOT pag_is_deleted`;
+    if (!a || (a.pag_company_id && a.pag_company_id !== companyId)) purNotFound(`Agent ${agentId} not found`, 'PUR_AGENT_NOT_FOUND', 'header.agentId');
+    if (!a.pag_is_active) purRefuse(`Agent ${a.pag_name} is inactive.`, 'PUR_AGENT_INACTIVE', 'header.agentId');
+    return { id: a.pag_id, name: a.pag_name };
+  }
+
+  /**
+   * CHG-07 — the PO's charges, an ESTIMATE: worked out on the keyed lines by each master's method (fixed / % / per qty /
+   * weight), never spread back onto the lines (the PO rate stays the rate a GRN / bill is judged against) and never posted.
+   */
+  private async estimateCharges(db: Db, charges: PurchaseChargeDto[], lineIns: CalcLineIn[], inter: boolean) {
+    if (!charges.length) return { rows: [] as PoChargeEstimate[], total: ZERO };
+    const ids = [...new Set(charges.map((c) => c.chgId))];
+    const masters = await db.$queryRaw<{ chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null;
+                                         chg_on_bill: boolean; chg_role: string | null; chg_ledger_code: string; chg_before_tax: boolean; chg_landing_cost: boolean }[]>`
+      SELECT chg_id, chg_name, chg_type, chg_method, chg_default_rate, chg_cost_alloc, chg_on_bill, chg_role, chg_ledger_code, chg_before_tax, chg_landing_cost
+        FROM public.charge_master WHERE chg_id = ANY(${ids}::uuid[]) AND NOT chg_is_deleted AND chg_module IN ('P','B')`;
+    const by = new Map(masters.map((m) => [m.chg_id, m]));
+    const problems = charges.flatMap((c, i) => (by.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
+    if (problems.length) purRefuseMany(problems[0].message, problems);
+    const ins: CalcChargeIn[] = charges.map((c, i) => {
+      const m = by.get(c.chgId)!;
+      return { key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD', method: m.chg_method as CalcChargeIn['method'], rate: c.rate ?? m.chg_default_rate ?? 0,
+        amount: c.amount ?? null, alloc: ((m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE') as CalcChargeIn['alloc']),
+        beforeTax: false, onBill: false, landingCost: true, taxPct: 0, payees: [] };
     });
-    return { sup, units, calc };
+    const out = calcPurchase({ interState: inter, roundOffStep: 0, lines: lineIns, charges: ins });
+    let total = ZERO;
+    const rows = charges.map((c, i) => {
+      const m = by.get(c.chgId)!;
+      const amount = out.charges[i].amount.abs();
+      const signed = m.chg_type === 'DEDUCT' ? amount.negated() : amount;
+      total = total.plus(signed);
+      return { chgId: c.chgId, chgName: m.chg_name, role: m.chg_role, type: m.chg_type, method: m.chg_method, rate: D(c.rate ?? m.chg_default_rate ?? 0),
+               amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost };
+    });
+    return { rows, total };
   }
 
   async preview(dto: SavePurchaseOrderDto) {
-    const { calc } = await this.compute(this.prisma, dto);
+    const { calc, charges, agent } = await this.compute(this.prisma, dto);
     const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
+    const net = calc.taxable.plus(tax);
     return jsonSafe({
+      header: { agentId: agent?.id ?? null, agentName: agent?.name ?? null },
       lines: calc.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.cgst.plus(o.sgst).plus(o.igst).plus(o.cess), total: o.total })),
-      totals: { gross: calc.gross, taxable: calc.taxable, tax, net: calc.taxable.plus(tax) },
+      charges: charges.rows.map((c) => ({ ...c, rate: c.rate.toString(), amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2) })),
+      totals: { gross: calc.gross, taxable: calc.taxable, tax, net,
+                lines: dto.lines.length, orderedValue: net.toFixed(2), chargesEstimate: charges.total.toFixed(2), poTotal: net.plus(charges.total).toFixed(2) },
     });
   }
 
@@ -242,7 +339,7 @@ export class PurchaseOrderService {
   /** The save, inside a transaction — create / edit a draft, confirm, or amend a confirmed PO. */
   async saveIn(tx: Prisma.TransactionClient, dto: SavePurchaseOrderDto, actor: string, opts: { auditNote?: string } = {}) {
     const h = dto.header;
-    const { sup, units, calc } = await this.compute(tx, dto);
+    const { sup, units, calc, charges, agent } = await this.compute(tx, dto);
     let poId = h.poId ?? null;
     let slno: bigint, refno: string, isNew = false;
     let cur: Awaited<ReturnType<typeof tx.purOrder.findFirst>> = null;
@@ -266,18 +363,19 @@ export class PurchaseOrderService {
     // approval: purchase.po_approval_above (0 = off)
     const settings = await loadPurchaseSettings(tx, h.companyId, h.branchId);
     const limit = D(settings.poApprovalAbove ?? 0);
-    let approval = cur?.poApprovalStatus ?? 'NOT_REQUIRED';
-    if (confirming) approval = limit.greaterThan(0) && net.greaterThan(limit) ? 'AWAITING' : 'NOT_REQUIRED';
-    if (amending) {
-      const above = limit.greaterThan(0) && net.greaterThan(limit);
-      if (!above) approval = 'NOT_REQUIRED';
-      else if (approval !== 'APPROVED' || net.greaterThan(cur!.poNetAmt)) approval = 'AWAITING';   // a rise asks again
-    }
+    const approval = poApprovalStatus({ limit, goods: calc, chargesEstimate: charges.total, confirming, amending,
+                                        current: cur?.poApprovalStatus ?? null, currentGoodsValue: cur?.poNetAmt ?? null }).status;
+    // PO terms master row (dropdown 73): a new pick must be live, active, shared or this company's; the row the PO already
+    // names is kept as is (switched off or deleted since: the PO has its own copy of the text — review 2026-10-29)
+    const keepTerms = !!cur && !!h.termsId && h.termsId === cur.poTermsId;
+    const terms = h.termsId ? await termsOf(tx, h.termsId, h.companyId, 'header.termsId', { keep: keepTerms }) : null;
+    // the text: typed = that; a new pick with none typed = the row's text; else absent = keep (an edit) / none (a new PO)
+    const termsText = isPresentField(h, 'termsText') ? (h.termsText ?? null) : terms && !keepTerms ? terms.text : cur ? undefined : null;
     const data = {
       poCompanyId: h.companyId, poBranchId: h.branchId, poAccYear: h.accYear, poDeviceId: h.deviceId, poSlno: slno, poRefno: refno,
       poDocDate: new Date(`${h.docDate}T00:00:00Z`), poSupplierId: h.supplierId, poExpectedDate: h.expectedDate ? new Date(`${h.expectedDate}T00:00:00Z`) : null,
-      poDeliverGodownId: h.godownId ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
-      poTermsText: h.termsText ?? null, poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poNetAmt: net,
+      poDeliverGodownId: h.godownId ?? null, poAgentId: agent?.id ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
+      ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: charges.total, poNetAmt: net,
       poRemarks: h.remarks ?? null, poStatus: amending ? 'POSTED' : h.post ? 'POSTED' : 'DRAFT', poApprovalStatus: approval,
     };
     if (amending && cur!.poSupplierId !== h.supplierId) {
@@ -336,6 +434,18 @@ export class PurchaseOrderService {
         else await tx.purOrderItem.create({ data: { ...lineData(i), poiPoId: poId!, poiCompanyId: h.companyId, poiBranchId: h.branchId, poiAccYear: h.accYear, poiCreatedBy: actor } });
       }
     }
+    // CHG-07: the estimated charges — the set is replaced on every save (nothing posts from them)
+    await tx.$executeRaw`DELETE FROM public.txn_charge_detail WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
+    let n = 0;
+    for (const c of charges.rows) {
+      await tx.$executeRaw`
+        INSERT INTO public.txn_charge_detail (cd_doc_type, cd_doc_id, cd_slno, cd_comp_id, cd_branch_id, cd_acc_year, cd_voucher_no,
+          cd_chg_id, cd_chg_name, cd_role, cd_method, cd_type, cd_apply_on, cd_ledger_code, cd_landing_cost, cd_cost_alloc, cd_before_tax, cd_tax_apl, cd_sep_post,
+          cd_rate, cd_amount, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
+        VALUES ('PURCHASE_ORDER', ${poId}::uuid, ${++n}::int, ${h.companyId}::uuid, ${h.branchId}::uuid, ${h.accYear}::bpchar, ${slno}::bigint,
+          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, false, false,
+          ${c.rate}::numeric, ${c.amount}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
+    }
     const log = (event: TxnStatusEvent, from: string | null, to: string, remarks?: string) =>
       statusLog(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: TxnStatusDocType.PURCHASE_ORDER, docId: poId!, refno, event, from, to, actor, deviceId: h.deviceId, remarks });
     if (isNew) await log(TxnStatusEvent.CREATED, null, 'DRAFT', opts.auditNote);
@@ -350,8 +460,58 @@ export class PurchaseOrderService {
     return poId!;
   }
 
+  /** /get: the document (getDoc) + per-line context the screen shows beside it (last rate, stock, reorder) — kept out of
+   *  getDoc so the revision snapshots (audit before / after) do not change when only the stock did. */
   async get(poId: string, accYear: string) {
-    return this.getDoc(this.prisma, poId, accYear);
+    const doc = await this.getDoc(this.prisma, poId, accYear) as unknown as { header: Record<string, unknown>; lines: Record<string, unknown>[] };
+    const ctx = await this.lineContext(this.prisma, String(doc.header.poCompanyId), String(doc.header.poBranchId), (doc.header.poDeliverGodownId as string | null) ?? null,
+      doc.lines.map((l) => ({ id: String(l.poiId), itemId: String(l.poiItemId), factor: D(l.poiToBaseFactor as string) })));
+    return jsonSafe({ ...doc, lines: doc.lines.map((l) => ({ ...l, ...ctx.get(String(l.poiId)) })) });
+  }
+
+  /**
+   * Per line, in the line's unit: the item's last posted purchase-bill rate in the company (any supplier — what the
+   * Last rate column shows), SALEABLE stock on hand at the branch, and the branch's reorder level / qty (item card,
+   * inventory.item_reorders: the PO's godown row before the any-godown row).
+   */
+  private async lineContext(db: Db, companyId: string, branchId: string, godownId: string | null, lines: { id: string; itemId: string; factor: Prisma.Decimal }[]) {
+    const out = new Map<string, Record<string, unknown>>();
+    const items = [...new Set(lines.map((l) => l.itemId))];
+    if (!items.length) return out;
+    const [last, stock, reorder] = await Promise.all([
+      db.$queryRaw<{ item_id: string; refno: string; doc_date: Date; rate_base: Prisma.Decimal | null }[]>`
+        SELECT DISTINCT ON (pii.pii_item_id) pii.pii_item_id AS item_id, pi.pi_refno AS refno, pi.pi_doc_date AS doc_date,
+               pii.pii_rate / NULLIF(pii.pii_to_base_factor, 0) AS rate_base
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_invoice pi ON pi.pi_id = pii.pii_pi_id AND pi.pi_acc_year = pii.pii_acc_year
+         WHERE pi.pi_company_id = ${companyId}::uuid AND pii.pii_item_id = ANY(${items}::uuid[])
+           AND pi.pi_status = 'POSTED' AND NOT pi.pi_is_deleted AND NOT pii.pii_is_deleted AND pii.pii_billed_qty > 0
+         ORDER BY pii.pii_item_id, pi.pi_doc_date DESC, pi.pi_created_on DESC`,
+      db.$queryRaw<{ item_id: string; q: Prisma.Decimal | null }[]>`
+        SELECT sbl_item_id AS item_id, SUM(sbl_on_hand_qty) AS q FROM stock.stock_balance
+         WHERE sbl_company_id = ${companyId}::uuid AND sbl_branch_id = ${branchId}::uuid AND sbl_item_id = ANY(${items}::uuid[])
+           AND sbl_bucket = 'SALEABLE' AND NOT sbl_is_deleted GROUP BY 1`,
+      db.$queryRaw<{ item_id: string; level: Prisma.Decimal | null; qty: Prisma.Decimal | null; factor: Prisma.Decimal | null }[]>`
+        SELECT DISTINCT ON (ir.ir_item_id) ir.ir_item_id AS item_id, ir.ir_reorder_level AS level, ir.ir_reorder_qty AS qty, iuc.iuc_to_base_factor AS factor
+          FROM inventory.item_reorders ir LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = ir.ir_uc_unit_id
+         WHERE ir.ir_branch_id = ${branchId}::uuid AND ir.ir_item_id = ANY(${items}::uuid[]) AND ir.ir_is_active AND NOT ir.ir_is_deleted
+           AND (ir.ir_godown_id IS NULL OR ir.ir_godown_id = ${godownId}::uuid)
+         ORDER BY ir.ir_item_id, (ir.ir_godown_id IS NOT NULL) DESC, ir.ir_modified_on DESC NULLS LAST`,
+    ]);
+    const lastBy = new Map(last.map((r) => [r.item_id, r])), stockBy = new Map(stock.map((r) => [r.item_id, D(r.q)])), roBy = new Map(reorder.map((r) => [r.item_id, r]));
+    const inUnit = (base: Prisma.Decimal, f: Prisma.Decimal) => (f.isZero() ? base : base.dividedBy(f)).toDecimalPlaces(3).toString();
+    for (const l of lines) {
+      const lr = lastBy.get(l.itemId), ro = roBy.get(l.itemId);
+      const roF = D(ro?.factor ?? 1);
+      out.set(l.id, {
+        lastRate: lr?.rate_base != null ? D(lr.rate_base).times(l.factor).toDecimalPlaces(2).toFixed(2) : null, lastRateRefno: lr?.refno ?? null,
+        lastRateDate: lr ? isoDay(lr.doc_date) : null,
+        stockQty: inUnit(stockBy.get(l.itemId) ?? ZERO, l.factor),
+        reorderLevel: ro?.level != null ? inUnit(D(ro.level).times(roF), l.factor) : null,
+        reorderQty: ro?.qty != null ? inUnit(D(ro.qty).times(roF), l.factor) : null,
+      });
+    }
+    return out;
   }
 
   /** A PO in the /get shape, from any client (a save reads it inside its transaction for the audit snapshot). */
@@ -368,14 +528,42 @@ export class PurchaseOrderService {
         FROM public.txn_status_log t LEFT JOIN public.user_master u ON u.usr_id = t.tsl_changed_by
        WHERE t.tsl_src_doc_id = ${poId}::uuid AND t.tsl_event IN ('APPROVED', 'REJECTED') AND NOT t.tsl_is_deleted
        ORDER BY t.tsl_seq_no DESC LIMIT 1` : [];
+    // the last amendment's reason ("Revision 2: qty raised on line 4"), the deliver-to godown and agent names
+    const [amend] = await db.$queryRaw<{ remarks: string | null }[]>`
+      SELECT t.tsl_remarks AS remarks FROM public.txn_status_log t
+       WHERE t.tsl_src_doc_id = ${poId}::uuid AND t.tsl_event = 'AMENDED' AND NOT t.tsl_is_deleted ORDER BY t.tsl_seq_no DESC LIMIT 1`;
+    const [names2] = await db.$queryRaw<{ godown: string | null; agent: string | null; terms: string | null }[]>`
+      SELECT (SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.poDeliverGodownId}::uuid) AS godown,
+             (SELECT pag_name FROM purchase.pur_agent WHERE pag_id = ${header.poAgentId}::uuid) AS agent,
+             (SELECT pte_name FROM purchase.pur_terms WHERE pte_id = ${header.poTermsId}::uuid) AS terms`;
+    const charges = await db.$queryRaw<Record<string, unknown>[]>`
+      SELECT cd_id AS "cdId", cd_slno AS "slNo", cd_chg_id AS "chgId", cd_chg_name AS "chgName", cd_role AS "role", cd_type AS "type", cd_method AS "method",
+             cd_rate AS "rate", cd_amount AS "amount", CASE WHEN cd_type = 'DEDUCT' THEN -cd_amount ELSE cd_amount END AS "signedAmount", cd_on_bill AS "onBill"
+        FROM public.txn_charge_detail
+       WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${accYear}::bpchar AND NOT cd_is_deleted ORDER BY cd_slno`;
+    let recdValue = ZERO, pendValue = ZERO, closedValue = ZERO, closedLines = 0;
+    const outLines = lines.map((l) => {
+      const f = l.poiToBaseFactor.isZero() ? D(1) : l.poiToBaseFactor;
+      const received = (used.get(l.poiId) ?? ZERO).dividedBy(f).toDecimalPlaces(6);
+      const pendingRaw = l.poiQty.minus(received).minus(l.poiShortClosedQty);
+      const pending = pendingRaw.isNegative() ? ZERO : pendingRaw;
+      const unit = l.poiQty.isZero() ? ZERO : l.poiTotalAmt.dividedBy(l.poiQty);   // value incl. tax per ordered unit
+      recdValue = recdValue.plus(Prisma.Decimal.min(received, l.poiQty).times(unit));
+      pendValue = pendValue.plus(pending.times(unit));
+      if (l.poiShortClosedQty.greaterThan(0)) { closedLines++; closedValue = closedValue.plus(l.poiShortClosedQty.times(unit)); }
+      return { ...l, ...names.get(l.poiUomId), receivedQty: received.toString(), pendingQty: pending.toString(),
+               lineStatus: poLineStatus(l.poiQty, received, l.poiShortClosedQty) };
+    });
+    const docStatus = poDocStatus(header.poStatus, header.poApprovalStatus, outLines.map((l) => l.lineStatus));
+    const net = header.poNetAmt, chg = header.poChargesAmt ?? ZERO;
     return jsonSafe({
-      header: { ...header, supplierName: sup?.sup_name ?? null, approvedBy: appr?.by ?? null, approvedOn: appr?.on ?? null, approvalRemarks: appr?.remarks ?? null },
-      lines: lines.map((l) => {
-        const f = l.poiToBaseFactor.isZero() ? D(1) : l.poiToBaseFactor;
-        const received = (used.get(l.poiId) ?? ZERO).dividedBy(f).toDecimalPlaces(6);
-        const pending = l.poiQty.minus(received).minus(l.poiShortClosedQty);
-        return { ...l, ...names.get(l.poiUomId), receivedQty: received.toString(), pendingQty: (pending.isNegative() ? ZERO : pending).toString() };
-      }),
+      header: { ...header, supplierName: sup?.sup_name ?? null, approvedBy: appr?.by ?? null, approvedOn: appr?.on ?? null, approvalRemarks: appr?.remarks ?? null,
+                deliverGodownName: names2?.godown ?? null, agentName: names2?.agent ?? null, termsName: names2?.terms ?? null, revisionNo: header.poRevisionNo ?? 1,
+                lastAmendReason: amend?.remarks ?? null, docStatus },
+      lines: outLines,
+      charges,
+      totals: { lines: outLines.length, orderedValue: net.toFixed(2), receivedValue: r2(recdValue).toFixed(2), pendingValue: r2(pendValue).toFixed(2),
+                shortClosedLines: closedLines, shortClosedValue: r2(closedValue).toFixed(2), chargesEstimate: chg.toFixed(2), poTotal: net.plus(chg).toFixed(2) },
     });
   }
 
@@ -433,8 +621,9 @@ export class PurchaseOrderService {
     const save: SavePurchaseOrderDto = {
       header: { companyId: String(h.poCompanyId), branchId: String(h.poBranchId), accYear: dto.toAccYear ?? dto.accYear, deviceId: dto.deviceId,
                 supplierId: String(h.poSupplierId), docDate: dto.docDate ?? today(), godownId: (h.poDeliverGodownId as string | null) ?? undefined,
-                creditDays: (h.poCreditDays as number | null) ?? undefined, contact: (h.poContact as string | null) ?? undefined,
-                termsText: (h.poTermsText as string | null) ?? undefined, remarks: `Copy of ${h.poRefno}`.slice(0, 500) },
+                creditDays: (h.poCreditDays as number | null) ?? undefined, contact: (h.poContact as string | null) ?? undefined, agentId: (h.poAgentId as string | null) ?? undefined,
+                termsText: (h.poTermsText as string | null) ?? undefined, termsId: (await pickableTermsId(this.prisma, h.poTermsId as string | null, String(h.poCompanyId))) ?? undefined, remarks: `Copy of ${h.poRefno}`.slice(0, 500) },
+      charges: ((src as unknown as { charges: Record<string, unknown>[] }).charges ?? []).map((c) => ({ chgId: String(c.chgId), rate: Number(c.rate), amount: Number(c.amount) })),
       lines: src.lines.map((l, i) => ({ lineNo: i + 1, itemId: String(l.poiItemId), uomId: String(l.poiUomId), qty: Number(l.poiQty), freeQty: Number(l.poiFreeQty ?? 0),
         rate: Number(l.poiRate), discPct: Number(l.poiDiscPct ?? 0), schPct: Number(l.poiSchPct ?? 0), taxId: (l.poiTaxId as string | null) ?? undefined,
         mrp: l.poiMrp != null ? Number(l.poiMrp) : undefined, weight: l.poiWeight != null ? Number(l.poiWeight) : undefined, remarks: (l.poiRemarks as string | null) ?? undefined })),

@@ -15,36 +15,18 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const account_ledger_masters_service_1 = require("../../accountsModule/accountLedgerMasters/account-ledger-masters.service");
 const supplier_error_codes_1 = require("./types/supplier-error-codes");
+const rights_1 = require("../../../common/posting/rights");
+const party_balance_service_1 = require("../../../common/party/party-balance.service");
+const party_sync_service_1 = require("../../../common/party/party-sync.service");
+const party_detail_map_1 = require("../../../common/party/party-detail.map");
+const party_gst_type_1 = require("../../../common/party/party-gst-type");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
+const SUPPLIER_MENU_ID = 22;
 const SUPPLIER_LINKED_LEDGER_GROUP_ID = '019f081c-98cc-757a-9346-4cfba810c47f';
 const SUPPLIER_TO_LEDGER_FIELD_MAP = [
-    ['supCompanyId', 'ledCompanyId'],
-    ['supBranchId', 'ledBranchId'],
-    ['supShort', 'ledShort'],
-    ['supMailId', 'ledEmail'],
-    ['supTel', 'ledTel'],
-    ['supPhone', 'ledPhone1'],
-    ['supWhatsappNo', 'ledWhatsappNo'],
-    ['supAddr1', 'ledAddr1'],
-    ['supAddr2', 'ledAddr2'],
-    ['supAddr3', 'ledAddr3'],
-    ['supCity', 'ledCity'],
-    ['supDistrict', 'ledDistrict'],
-    ['supPincode', 'ledPin'],
-    ['supCountry', 'ledCountry'],
-    ['supRegionName', 'ledRegionName'],
-    ['supRegionAddr1', 'ledRegionAddr1'],
-    ['supRegionAddr2', 'ledRegionAddr2'],
-    ['supRegionAddr3', 'ledRegionAddr3'],
-    ['supRegionCity', 'ledRegionCity'],
-    ['supRegionDistrict', 'ledRegionDistrict'],
-    ['supRegionStateName', 'ledRegionStateName'],
-    ['supRegionCountry', 'ledRegionCountry'],
-    ['supGstNo', 'ledGstinNo'],
-    ['supPanNo', 'ledPanNo'],
     ['supNotes', 'ledRemarks'],
     ['supIsActive', 'ledIsActive'],
 ];
@@ -52,7 +34,7 @@ const SUPPLIER_FIELDS_FROM_LINKED_LEDGER = [
     ['supName', 'ledName'],
     ['supStateName', 'ledStateName'],
     ['supStateCode', 'ledStateCode'],
-    ...SUPPLIER_TO_LEDGER_FIELD_MAP.filter(([supField]) => supField !== 'supIsActive' && supField !== 'supNotes'),
+    ...party_detail_map_1.PARTY_DETAIL_FIELDS.filter((field) => field.sup !== null).map((field) => [field.sup, field.led]),
 ];
 const SUPPLIER_LINK_MAX_LENGTH = {
     supMailId: 120,
@@ -63,13 +45,18 @@ let SuppliersService = class SuppliersService {
     auditLogService;
     requestContextService;
     accountLedgerMastersService;
-    constructor(prisma, auditLogService, requestContextService, accountLedgerMastersService) {
+    partyBalanceService;
+    partySyncService;
+    constructor(prisma, auditLogService, requestContextService, accountLedgerMastersService, partyBalanceService, partySyncService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
         this.accountLedgerMastersService = accountLedgerMastersService;
+        this.partyBalanceService = partyBalanceService;
+        this.partySyncService = partySyncService;
     }
-    async save(saveSupplierDto) {
+    async save(rawDto) {
+        const saveSupplierDto = normalizeSupplierGstin(rawDto);
         if (saveSupplierDto.supId) {
             if (saveSupplierDto.supLinkLedId && saveSupplierDto.supLinkLedId !== saveSupplierDto.supId) {
                 (0, module_service_utils_1.throwPurchaseBadRequest)('Validation failed', [
@@ -98,13 +85,56 @@ let SuppliersService = class SuppliersService {
         const payload = this.toPayload(record, ledgerBankAccount);
         return { ...payload, ...relatedNames };
     }
+    async deleteCheck(supId) {
+        return this.prisma.$transaction(async (tx) => {
+            await this.assertDeleteRight(tx);
+            await this.loadLiveSupplier(tx, supId);
+            return this.partyBalanceService.deleteCheck(tx, {
+                partyId: supId,
+                role: 'SUPPLIER',
+                otherRoleLive: (await this.findCustomerRole(tx, supId)) !== null,
+                codes: {
+                    hasBalance: supplier_error_codes_1.SupplierErrorCode.HAS_BALANCE,
+                    hasChequeInHand: supplier_error_codes_1.SupplierErrorCode.HAS_CHEQUE_IN_HAND,
+                },
+            });
+        });
+    }
+    assertDeleteRight(tx) {
+        return (0, rights_1.assertMenuRight)(tx, {
+            userId: this.requestContextService.getUserId() ?? null,
+            menuId: SUPPLIER_MENU_ID,
+            right: 'delete',
+            codePrefix: 'PURCHASE_SUPPLIER',
+            action: 'delete suppliers',
+        });
+    }
+    async loadLiveSupplier(tx, supId) {
+        const existing = await tx.supplier.findFirst({ where: { supId, supIsDeleted: false } });
+        if (!existing) {
+            (0, module_service_utils_1.throwPurchaseNotFound)('Supplier not found', 'supId', `No active supplier found with id ${supId}`, supplier_error_codes_1.SupplierErrorCode.NOT_FOUND);
+        }
+        return existing;
+    }
     async softDelete(supId) {
         return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.supplier.findFirst({
-                where: { supId, supIsDeleted: false },
-            });
-            if (!existing) {
-                (0, module_service_utils_1.throwPurchaseNotFound)('Supplier not found', 'supId', `No active supplier found with id ${supId}`, supplier_error_codes_1.SupplierErrorCode.NOT_FOUND);
+            await this.assertDeleteRight(tx);
+            const existing = await this.loadLiveSupplier(tx, supId);
+            const ledger = await this.partyBalanceService.lockLedger(tx, supId);
+            const otherRoleLive = (await this.findCustomerRole(tx, supId)) !== null;
+            if (ledger && !ledger.ledIsDeleted && !otherRoleLive) {
+                const check = await this.partyBalanceService.deleteCheck(tx, {
+                    partyId: supId,
+                    role: 'SUPPLIER',
+                    otherRoleLive,
+                    codes: {
+                        hasBalance: supplier_error_codes_1.SupplierErrorCode.HAS_BALANCE,
+                        hasChequeInHand: supplier_error_codes_1.SupplierErrorCode.HAS_CHEQUE_IN_HAND,
+                    },
+                });
+                if (!check.canDelete) {
+                    (0, module_service_utils_1.throwConflict)('Supplier cannot be deleted', check.refusals);
+                }
             }
             const modifiedOn = new Date();
             const result = await tx.supplier.updateMany({
@@ -182,7 +212,8 @@ let SuppliersService = class SuppliersService {
                 const normalizedPurchaseType = (0, module_service_utils_1.normalizeRequiredText)(dto.supPurchaseType, 'supPurchaseType', undefined, supplier_error_codes_1.SupplierErrorCode.PURCHASE_TYPE_REQUIRED);
                 const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(dto.supStateName, 'supStateName', undefined, supplier_error_codes_1.SupplierErrorCode.STATE_NAME_REQUIRED);
                 const normalizedStateCode = this.normalizeStateCode(dto.supStateCode);
-                const normalizedGstType = (0, module_service_utils_1.normalizeRequiredText)(dto.supGstType, 'supGstType', undefined, supplier_error_codes_1.SupplierErrorCode.GST_TYPE_REQUIRED);
+                (0, module_service_utils_1.normalizeRequiredText)(dto.supGstType, 'supGstType', undefined, supplier_error_codes_1.SupplierErrorCode.GST_TYPE_REQUIRED);
+                const normalizedGstType = this.resolveGstType(dto.supGstType, dto.supGstNo, normalizedStateCode);
                 const now = new Date();
                 const createdBy = (0, module_service_utils_1.resolveActor)(dto.supCreatedBy, this.requestContextService.getUserId());
                 const data = {
@@ -192,22 +223,22 @@ let SuppliersService = class SuppliersService {
                     supStateName: normalizedStateName,
                     supStateCode: normalizedStateCode,
                     supGstType: normalizedGstType,
-                    supBilledDate: now,
                     supCreatedOn: now,
                     supCreatedBy: createdBy,
                 };
                 this.applyOptionalFields(data, dto);
                 await this.ensureSupplierGroupExists(tx, data.supGroupId);
-                const companyId = (0, module_service_utils_1.hasOwnProperty)(dto, 'supCompanyId') ? (dto.supCompanyId ?? null) : null;
+                const companyId = (0, module_service_utils_1.isPresentField)(dto, 'supCompanyId') ? (dto.supCompanyId ?? null) : null;
                 await this.ensureNameIsUnique(tx, normalizedName, companyId, linkLedger?.ledId);
                 if (linkLedger) {
-                    return this.createSupplierOnLedger(tx, data, linkLedger);
+                    const linked = await this.createSupplierOnLedger(tx, data, linkLedger);
+                    const customerLive = (await this.findCustomerRole(tx, linkLedger.ledId)) !== null;
+                    return {
+                        ...linked,
+                        partySync: { otherRole: customerLive ? 'CUSTOMER' : null, otherRoleUpdated: false, fields: [] },
+                    };
                 }
-                const ledgerDto = this.buildLinkedLedgerDto(dto, {
-                    name: normalizedName,
-                    stateName: normalizedStateName,
-                    stateCode: normalizedStateCode,
-                });
+                const ledgerDto = this.buildLinkedLedgerDto(dto, { name: normalizedName, stateName: normalizedStateName, stateCode: normalizedStateCode }, { gstType: normalizedGstType, shared: false });
                 const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
                 data.supId = ledger.ledId;
                 const created = await tx.supplier.create({ data });
@@ -224,7 +255,7 @@ let SuppliersService = class SuppliersService {
                     userId: createdBy,
                     notes: 'Supplier created',
                 }, tx);
-                return payload;
+                return { ...payload, partySync: { ...party_sync_service_1.NO_PARTY_SYNC, fields: [] } };
             });
         }
         catch (error) {
@@ -311,49 +342,48 @@ let SuppliersService = class SuppliersService {
         const supId = saveSupplierDto.supId;
         try {
             return await this.prisma.$transaction(async (tx) => {
-                const existing = await tx.supplier.findFirst({
-                    where: { supId, supIsDeleted: false },
-                });
-                if (!existing) {
-                    (0, module_service_utils_1.throwPurchaseNotFound)('Supplier not found', 'supId', `No active supplier found with id ${supId}`, supplier_error_codes_1.SupplierErrorCode.NOT_FOUND);
-                }
+                const lockedLedger = await this.partyBalanceService.lockLedger(tx, supId);
+                const existing = await this.loadLiveSupplier(tx, supId);
                 const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supName, 'supName', undefined, supplier_error_codes_1.SupplierErrorCode.NAME_REQUIRED);
                 const normalizedPurchaseType = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supPurchaseType, 'supPurchaseType', undefined, supplier_error_codes_1.SupplierErrorCode.PURCHASE_TYPE_REQUIRED);
                 const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supStateName, 'supStateName', undefined, supplier_error_codes_1.SupplierErrorCode.STATE_NAME_REQUIRED);
                 const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
-                const normalizedGstType = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supGstType, 'supGstType', undefined, supplier_error_codes_1.SupplierErrorCode.GST_TYPE_REQUIRED);
+                (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supGstType, 'supGstType', undefined, supplier_error_codes_1.SupplierErrorCode.GST_TYPE_REQUIRED);
+                const normalizedGstType = this.resolveGstType(saveSupplierDto.supGstType, (0, module_service_utils_1.isPresentField)(saveSupplierDto, 'supGstNo') ? saveSupplierDto.supGstNo : existing.supGstNo, normalizedStateCode);
                 await this.ensureSupplierGroupExists(tx, saveSupplierDto.supGroupId);
-                const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, 'supCompanyId')
+                const companySent = (0, module_service_utils_1.isPresentField)(saveSupplierDto, 'supCompanyId');
+                const nextCompanyId = companySent
                     ? (saveSupplierDto.supCompanyId ?? null)
                     : existing.supCompanyId;
                 await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, supId);
+                const linkedLedger = lockedLedger && !lockedLedger.ledIsDeleted
+                    ? await tx.accLedgerMaster.findFirst({
+                        where: { ledId: supId, ledIsDeleted: false },
+                        select: { ledId: true, ledGroupId: true, ledCompanyId: true },
+                    })
+                    : null;
+                if (linkedLedger && companySent && nextCompanyId !== linkedLedger.ledCompanyId) {
+                    await this.ensureCompanyChangeAllowed(tx, supId, linkedLedger.ledCompanyId, nextCompanyId);
+                }
+                const customerRole = await this.findCustomerRole(tx, supId);
                 const now = new Date();
+                const modifiedBy = (0, module_service_utils_1.resolveActor)(saveSupplierDto.supModifiedBy, this.requestContextService.getUserId());
                 const data = {
                     supGroupId: saveSupplierDto.supGroupId,
                     supPurchaseType: normalizedPurchaseType,
                     supName: normalizedName,
                     supStateName: normalizedStateName,
                     supStateCode: normalizedStateCode,
-                    supGstType: normalizedGstType,
-                    supBilledDate: now,
                     supModifiedOn: now,
-                    supModifiedBy: (0, module_service_utils_1.resolveActor)(saveSupplierDto.supModifiedBy, this.requestContextService.getUserId()),
+                    supModifiedBy: modifiedBy,
                 };
                 this.applyOptionalFields(data, saveSupplierDto);
+                data.supGstType = normalizedGstType;
                 const updated = await tx.supplier.update({ where: { supId }, data });
-                const linkedLedger = await tx.accLedgerMaster.findFirst({
-                    where: { ledId: supId, ledIsDeleted: false },
-                    select: { ledId: true, ledGroupId: true },
-                });
                 let ledgerBankAccount = [];
                 if (linkedLedger) {
-                    const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, {
-                        name: normalizedName,
-                        stateName: normalizedStateName,
-                        stateCode: normalizedStateCode,
-                    });
+                    const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, { name: normalizedName, stateName: normalizedStateName, stateCode: normalizedStateCode }, { gstType: normalizedGstType, shared: customerRole !== null });
                     ledgerDto.ledId = supId;
-                    const customerRole = await this.findCustomerRole(tx, supId);
                     if (customerRole) {
                         ledgerDto.ledGroupId = linkedLedger.ledGroupId;
                         ledgerDto.ledIsActive = updated.supIsActive || customerRole.cusIsActive;
@@ -361,6 +391,20 @@ let SuppliersService = class SuppliersService {
                     const ledger = await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
                     ledgerBankAccount = ledger.ledgerBankAccount;
                 }
+                const partySync = customerRole
+                    ? await this.partySyncService.syncOtherRole(tx, {
+                        role: 'SUPPLIER',
+                        partyId: supId,
+                        details: this.partySyncService.detailsOf('SUPPLIER', saveSupplierDto, {
+                            ledName: normalizedName,
+                            ledStateName: normalizedStateName,
+                            ledStateCode: normalizedStateCode,
+                            ...(companySent ? { ledCompanyId: nextCompanyId } : {}),
+                        }),
+                        gstType: normalizedGstType,
+                        actor: modifiedBy,
+                    })
+                    : { ...party_sync_service_1.NO_PARTY_SYNC, fields: [] };
                 const payload = this.toPayload(updated, ledgerBankAccount);
                 await this.auditLogService.logEntityChange({
                     action: 'update',
@@ -374,7 +418,7 @@ let SuppliersService = class SuppliersService {
                     userId: payload.supModifiedBy,
                     notes: 'Supplier updated',
                 }, tx);
-                return payload;
+                return { ...payload, partySync };
             });
         }
         catch (error) {
@@ -479,22 +523,27 @@ let SuppliersService = class SuppliersService {
             ]);
         }
     }
-    buildLinkedLedgerDto(saveSupplierDto, normalized) {
+    buildLinkedLedgerDto(saveSupplierDto, normalized, party) {
         const ledgerDto = {
             ledGroupId: SUPPLIER_LINKED_LEDGER_GROUP_ID,
             ledName: normalized.name,
             ledStateName: normalized.stateName,
             ledStateCode: normalized.stateCode,
             ledIsBillByBill: true,
+            ...(0, party_gst_type_1.ledgerGstFieldsOf)(party.gstType),
         };
         const ledgerDtoRecord = ledgerDto;
+        Object.assign(ledgerDtoRecord, this.partySyncService.detailsOf('SUPPLIER', saveSupplierDto));
         const supplierRecord = saveSupplierDto;
         for (const [supField, ledField] of SUPPLIER_TO_LEDGER_FIELD_MAP) {
-            if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, supField)) {
+            if (supField === 'supNotes' && party.shared) {
+                continue;
+            }
+            if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, supField)) {
                 ledgerDtoRecord[ledField] = supplierRecord[supField];
             }
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, 'ledgerBankAccount')) {
+        if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, 'ledgerBankAccount')) {
             ledgerDto.ledgerBankAccount = saveSupplierDto.ledgerBankAccount;
         }
         return ledgerDto;
@@ -527,7 +576,6 @@ let SuppliersService = class SuppliersService {
             'supMsmeCategory',
             'supMsmeActivity',
             'supMsmeAgreement',
-            'supMsmeAgreedDays',
             'supFssaiNo',
             'supDefaultGodownId',
             'supShowNotesOnEntry',
@@ -544,18 +592,40 @@ let SuppliersService = class SuppliersService {
             'supIsActive',
         ];
         for (const field of optionalFields) {
-            if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, field)) {
+            if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, field)) {
                 data[field] = saveSupplierDto[field];
             }
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, 'supCollectionDays')) {
+        if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, 'supMsmeAgreedDays')) {
+            data.supMsmeAgreedDays = saveSupplierDto.supMsmeAgreedDays || null;
+        }
+        if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, 'supCollectionDays')) {
             data.supCollectionDays = saveSupplierDto.supCollectionDays ?? [];
         }
         for (const field of ['supDrugLicenceExpiry', 'supFssaiValidTo']) {
-            if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, field)) {
+            if ((0, module_service_utils_1.isPresentField)(saveSupplierDto, field)) {
                 const v = saveSupplierDto[field];
                 data[field] = v ? new Date(`${String(v).slice(0, 10)}T00:00:00Z`) : null;
             }
+        }
+    }
+    resolveGstType(rawType, gstin, stateCode) {
+        const result = (0, party_gst_type_1.resolvePartyGstType)({ rawType, gstin, stateCode });
+        if ('type' in result) {
+            return result.type;
+        }
+        (0, module_service_utils_1.throwPurchaseBadRequest)('Validation failed', [supplierGstRefusal(result.refusal)]);
+    }
+    async ensureCompanyChangeAllowed(tx, ledId, currentCompanyId, nextCompanyId) {
+        const books = await this.partyBalanceService.companyWithBooks(tx, ledId, currentCompanyId, nextCompanyId);
+        if (books) {
+            (0, module_service_utils_1.throwConflict)('Supplier company cannot change', [
+                (0, party_balance_service_1.withFigures)({
+                    field: 'supCompanyId',
+                    code: supplier_error_codes_1.SupplierErrorCode.COMPANY_HAS_BOOKS,
+                    message: `The party has entries in company ${books.companyId}; its company cannot change`,
+                }, `This party has entries in ${books.companyName ?? 'its company'}.`),
+            ]);
         }
     }
     normalizeStateCode(value) {
@@ -641,6 +711,58 @@ exports.SuppliersService = SuppliersService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
         request_context_service_1.RequestContextService,
-        account_ledger_masters_service_1.AccountLedgerMastersService])
+        account_ledger_masters_service_1.AccountLedgerMastersService,
+        party_balance_service_1.PartyBalanceService,
+        party_sync_service_1.PartySyncService])
 ], SuppliersService);
+function normalizeSupplierGstin(dto) {
+    if (!(0, module_service_utils_1.isPresentField)(dto, 'supGstNo')) {
+        return dto;
+    }
+    const raw = dto.supGstNo;
+    const gstin = typeof raw === 'string' ? raw.trim().toUpperCase() : raw;
+    return Object.assign(Object.create(Object.getPrototypeOf(dto)), dto, {
+        supGstNo: gstin === '' ? null : gstin,
+    });
+}
+function supplierGstRefusal(refusal) {
+    switch (refusal.kind) {
+        case 'TYPE_INVALID':
+            return {
+                field: 'supGstType',
+                message: `supGstType "${refusal.sent}" is not one of REGULAR, COMPOSITION, SEZ, OVERSEAS, UNREGISTERED`,
+                code: supplier_error_codes_1.SupplierErrorCode.GST_TYPE_INVALID,
+            };
+        case 'TYPE_REQUIRED':
+            return {
+                field: 'supGstType',
+                message: 'supGstType is required',
+                code: supplier_error_codes_1.SupplierErrorCode.GST_TYPE_REQUIRED,
+            };
+        case 'GSTIN_REQUIRED':
+            return {
+                field: 'supGstNo',
+                message: `A ${(0, party_gst_type_1.partyGstTypeWord)(refusal.type)} supplier must have a GSTIN`,
+                code: supplier_error_codes_1.SupplierErrorCode.GSTIN_REQUIRED,
+            };
+        case 'GSTIN_NOT_ALLOWED':
+            return {
+                field: 'supGstNo',
+                message: `An ${(0, party_gst_type_1.partyGstTypeWord)(refusal.type)} supplier has no GSTIN; clear supGstNo`,
+                code: supplier_error_codes_1.SupplierErrorCode.GSTIN_NOT_ALLOWED,
+            };
+        case 'OVERSEAS_STATE':
+            return {
+                field: 'supStateCode',
+                message: `An Overseas supplier's state must be 96 (Other Country), not ${refusal.stateCode}`,
+                code: supplier_error_codes_1.SupplierErrorCode.OVERSEAS_STATE,
+            };
+        case 'GSTIN_STATE_MISMATCH':
+            return {
+                field: 'supGstNo',
+                message: `GSTIN ${refusal.gstin} is registered in state ${refusal.gstinState}, but supStateCode is ${refusal.stateCode}`,
+                code: supplier_error_codes_1.SupplierErrorCode.GSTIN_STATE_MISMATCH,
+            };
+    }
+}
 //# sourceMappingURL=suppliers.service.js.map

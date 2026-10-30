@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-29.1",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29",
+  "version": "2026-10-29.6",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -188,6 +188,22 @@
     },
     {
       "code": "SALES_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "CUSTOMER_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PURCHASE_SUPPLIER_RIGHT_DELETE",
       "variant": "",
       "lang": "en",
       "title": "Not allowed",
@@ -3105,6 +3121,870 @@
       "title": "Wrong discount",
       "line": "Discount must be 0 to 100.",
       "todo": "Type a discount from 0 to 100."
+    },
+    {
+      "code": "PUR_RATE_ABOVE_PO",
+      "variant": "",
+      "lang": "en",
+      "title": "Rate above the PO",
+      "line": "This rate is above the PO rate by more than the allowed tolerance.",
+      "todo": "Post puts the bill on payment hold. Check the rate, or tick override if you have the right."
+    },
+    {
+      "code": "PUR_RATE_ABOVE_LAST",
+      "variant": "",
+      "lang": "en",
+      "title": "Rate above last purchase",
+      "line": "This rate is above the last purchase rate by more than the allowed tolerance.",
+      "todo": "Check the rate with the supplier bill."
+    },
+    {
+      "code": "PUR_SHORT_QTY",
+      "variant": "",
+      "lang": "en",
+      "title": "Goods short",
+      "line": "Some billed goods did not arrive.",
+      "todo": "They go to the shortage register until the supplier sends them."
+    },
+    {
+      "code": "PUR_SERIAL_COUNT",
+      "variant": "",
+      "lang": "en",
+      "title": "Serial numbers missing",
+      "line": "The serial numbers do not match the pieces received.",
+      "todo": "Scan one serial for every piece (F12), then post."
+    },
+    {
+      "code": "PUR_SERIAL_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Serial number repeated",
+      "line": "A serial number is scanned twice, or is already in stock.",
+      "todo": "Remove the repeated serial and scan the right one."
+    },
+    {
+      "code": "PUR_PRICE_BELOW_COST",
+      "variant": "",
+      "lang": "en",
+      "title": "Price below cost",
+      "line": "Sell A is below the cost of this item.",
+      "todo": "Check Sell A before you post."
+    },
+    {
+      "code": "PUR_PRICE_ABOVE_MRP",
+      "variant": "",
+      "lang": "en",
+      "title": "Price above MRP",
+      "line": "Sell A is above the MRP.",
+      "todo": "Lower Sell A to the MRP or less."
+    },
+    {
+      "code": "PUR_RCM_NOT_SUPPORTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Reverse charge not here",
+      "line": "This supplier is under reverse charge. Purchase Entry cannot post reverse-charge GST yet.",
+      "todo": "Enter it in Expense Voucher (RCM)."
+    },
+    {
+      "code": "PUR_BILL_FROM_UNKNOWN",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong bill-from GSTIN",
+      "line": "This GSTIN is not one of the supplier's GSTINs.",
+      "todo": "Pick a GSTIN from the list, or add it to the supplier's ledger addresses."
+    },
+    {
+      "code": "PUR_AGENT_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Agent not found",
+      "line": "This agent is not in the Agents master.",
+      "todo": "Pick an agent from the list."
+    },
+    {
+      "code": "PUR_AGENT_INACTIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Agent inactive",
+      "line": "This agent is switched off.",
+      "todo": "Pick another agent, or switch this one on in Agents master."
+    },
+    {
+      "code": "PUR_TRANSPORTER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Transporter not found",
+      "line": "This transporter is not in the Transporter master.",
+      "todo": "Pick a transporter from the list, or type the name."
+    },
+    {
+      "code": "PUR_WARN_OVERRIDDEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Warnings overridden",
+      "line": "The bill was posted past its warnings. This is logged.",
+      "todo": "Nothing to do."
+    },
+    {
+      "code": "PUR_SHORT_VS_CHALLAN",
+      "variant": "",
+      "lang": "en",
+      "title": "Short on the challan",
+      "line": "Less arrived than the challan says. The short qty goes to the shortage register.",
+      "todo": "Check the count. Post if it is right; the shortage is followed up on Supplier dues."
+    },
+    {
+      "code": "PUR_GRN_DAMAGE_NO_REASON",
+      "variant": "",
+      "lang": "en",
+      "title": "No damage reason",
+      "line": "Some goods are marked damaged with no reason.",
+      "todo": "Pick a reason for the damaged qty (Stock Reasons)."
+    },
+    {
+      "code": "PUR_REASON_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Reason not found",
+      "line": "That reason is not in Stock Reasons.",
+      "todo": "Pick a reason from the list, or add it on the Stock Reasons screen."
+    },
+    {
+      "code": "PUR_RETURN_LOT_NOT_IN_GODOWN",
+      "variant": "",
+      "lang": "en",
+      "title": "Not in this godown",
+      "line": "The bill brought nothing of this line into the godown you picked.",
+      "todo": "Pick the godown the goods came into, or leave the godown blank."
+    },
+    {
+      "code": "PUR_RETURN_EWB_NEEDED",
+      "variant": "",
+      "lang": "en",
+      "title": "E-way bill needed",
+      "line": "The goods going back are worth more than the e-way bill limit.",
+      "todo": "Make the e-way bill and type its number before the goods leave."
+    },
+    {
+      "code": "PUR_CLAIM_PARTY_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Who is the claim on?",
+      "line": "A claim needs the transporter or insurer it is on.",
+      "todo": "Pick the transporter or insurer ledger."
+    },
+    {
+      "code": "PUR_CLAIM_PARTY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Party not found",
+      "line": "That transporter or insurer ledger was not found.",
+      "todo": "Pick the party again from the list."
+    },
+    {
+      "code": "PUR_SUPERVISOR_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Supervisor not found",
+      "line": "The supervisor picked is not an employee.",
+      "todo": "Pick the supervisor again from the employee list."
+    },
+    {
+      "code": "SDU_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SDU_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "SDU_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_TERMS_CODE_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Code already used",
+      "line": "Another PO terms row already has this code.",
+      "todo": "Type a different code."
+    },
+    {
+      "code": "PUR_TERMS_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Terms not found",
+      "line": "These PO terms are not in the PO terms list.",
+      "todo": "Pick the terms again from the list."
+    },
+    {
+      "code": "PUR_TERMS_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name needed",
+      "line": "The PO terms have no name.",
+      "todo": "Type a name."
+    },
+    {
+      "code": "PUR_TERMS_TEXT_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Terms text needed",
+      "line": "The PO terms have no text.",
+      "todo": "Type the terms text."
+    },
+    {
+      "code": "PUR_COMPANY_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Company not found",
+      "line": "The company picked is not in the company list.",
+      "todo": "Pick the company again, or leave it blank to share the terms."
+    },
+    {
+      "code": "PUR_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "PUR_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_RIGHT_OVERRIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to override a warning or release a payment hold.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "GRN_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "GRN_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "GRN_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "GRN_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "GRN_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "GRN_RIGHT_OVERRIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to override this warning.",
+      "todo": "Call supervisor."
+    },
+    {
+      "code": "PO_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to confirm a PO.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "PO_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_AMEND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to amend.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PO_RIGHT_OVERRIDE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to approve a PO.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PRN_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PRN_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PRN_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PRN_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "PRN_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SHR_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SHR_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SHR_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "SHR_RIGHT_POST",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to post.",
+      "todo": "Save as draft, or call manager."
+    },
+    {
+      "code": "SHR_RIGHT_CANCEL",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to cancel.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "AGT_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "AGT_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "AGT_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PSI_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PSI_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "LBL_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to print labels.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "PUR_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not found",
+      "line": "This entry or line is not there any more.",
+      "todo": "Open the list again and pick it."
+    },
+    {
+      "code": "PUR_SUPPLIER_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Supplier not found",
+      "line": "The supplier picked is not in the supplier list.",
+      "todo": "Pick the supplier again."
+    },
+    {
+      "code": "PUR_ITEM_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Item not found",
+      "line": "The item picked is not in the item list.",
+      "todo": "Pick the item again."
+    },
+    {
+      "code": "PUR_UNIT_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong unit",
+      "line": "The unit is not one of this item's units.",
+      "todo": "Pick the unit again for the item."
+    },
+    {
+      "code": "PUR_CHARGE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong charge",
+      "line": "This charge is not a purchase charge, or it does not go here.",
+      "todo": "Pick the charge again. Supplier's bill charges go on the purchase bill."
+    },
+    {
+      "code": "PUR_QTY_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Check qty or amount",
+      "line": "A qty or amount is not right for this entry.",
+      "todo": "Read the line below, correct it, then save."
+    },
+    {
+      "code": "PUR_ALLOC_SUM_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Batch split wrong",
+      "line": "The batch / serial rows do not add up to the line's qty.",
+      "todo": "Correct the batch rows so they add up to the qty."
+    },
+    {
+      "code": "PUR_DUPLICATE_SUPPLIER_INVOICE",
+      "variant": "",
+      "lang": "en",
+      "title": "Bill already entered",
+      "line": "This supplier's bill number is already entered.",
+      "todo": "Check the bill number. If it is the same bill, open the old entry."
+    },
+    {
+      "code": "PUR_INVOICE_AMOUNT_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Bill total differs",
+      "line": "The amount printed on the bill does not match the total here.",
+      "todo": "Check rates, tax and charges with the paper bill."
+    },
+    {
+      "code": "PUR_NOT_DRAFT",
+      "variant": "",
+      "lang": "en",
+      "title": "Already posted",
+      "line": "Only a draft can be changed or posted. This one is posted or cancelled.",
+      "todo": "Open it again to see its status."
+    },
+    {
+      "code": "PUR_NOT_POSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cannot do this now",
+      "line": "This entry is not in the right state for this (not posted, cancelled or already undone).",
+      "todo": "Open it again to see its status."
+    },
+    {
+      "code": "PUR_EDIT_LOCKED_PAID",
+      "variant": "",
+      "lang": "en",
+      "title": "Already used",
+      "line": "Something already uses this entry (paid, adjusted, returned or settled).",
+      "todo": "Undo that first, then try again."
+    },
+    {
+      "code": "PUR_OFFBILL_NO_PAYEE",
+      "variant": "",
+      "lang": "en",
+      "title": "Who is owed?",
+      "line": "Our own charge needs the person or party it is owed to.",
+      "todo": "Pick the loadmen / party for the charge."
+    },
+    {
+      "code": "PUR_OFFBILL_GTA_REFUSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Use Expense Voucher",
+      "line": "This party is a GTA (reverse charge). Its charge cannot go on the purchase bill.",
+      "todo": "Enter its bill in Expense Voucher (RCM)."
+    },
+    {
+      "code": "PUR_MODE_NOT_SUPPORTED",
+      "variant": "",
+      "lang": "en",
+      "title": "Cash purchase not ready",
+      "line": "Cash purchase is not built yet.",
+      "todo": "Enter it as Credit, then pay it in Payment."
+    },
+    {
+      "code": "PUR_VOUCHER_TYPE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Setup missing",
+      "line": "A voucher type needed for this is not set up.",
+      "todo": "Call support."
+    },
+    {
+      "code": "PUR_GRN_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong GRN or PO",
+      "line": "This GRN / PO is of another supplier or branch, or the item is different.",
+      "todo": "Pick a GRN / PO of this supplier and branch."
+    },
+    {
+      "code": "PUR_GRN_LINE_BILLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Already billed",
+      "line": "This GRN line is already on a bill (or twice on this bill).",
+      "todo": "Return it against that bill, or remove the extra line."
+    },
+    {
+      "code": "PUR_GRN_NOT_BUILT",
+      "variant": "",
+      "lang": "en",
+      "title": "GRN changed",
+      "line": "Returns or shortage receipts of the GRN changed after this draft was saved.",
+      "todo": "Save the draft again, then post."
+    },
+    {
+      "code": "PUR_GRN_OFFBILL_REFUSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Charge stays on GRN",
+      "line": "Our own charges stay on the GRN. A bill from a GRN takes only the supplier's charges.",
+      "todo": "Remove this charge from the bill."
+    },
+    {
+      "code": "PUR_NO_USER",
+      "variant": "",
+      "lang": "en",
+      "title": "Please log in",
+      "line": "No logged-in user on this request.",
+      "todo": "Log in again."
+    },
+    {
+      "code": "PUR_AGENT_NAME_EXISTS",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "An agent with this name already exists.",
+      "todo": "Use another name, or open the old agent."
+    },
+    {
+      "code": "PUR_BRANCH_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Other branch",
+      "line": "These orders are of different branches.",
+      "todo": "Merge orders of one branch only."
+    },
+    {
+      "code": "PUR_SUPPLIER_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Other supplier",
+      "line": "These orders are of different suppliers.",
+      "todo": "Merge orders of one supplier only."
+    },
+    {
+      "code": "PUR_SUPPLIER_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Supplier needed",
+      "line": "Every ticked row needs a supplier.",
+      "todo": "Pick a supplier on each ticked row."
+    },
+    {
+      "code": "PUR_PO_NOT_APPROVED",
+      "variant": "",
+      "lang": "en",
+      "title": "PO not approved",
+      "line": "This PO is waiting for approval, or was not approved.",
+      "todo": "Get the PO approved first."
+    },
+    {
+      "code": "PUR_PO_NOT_AWAITING",
+      "variant": "",
+      "lang": "en",
+      "title": "Not waiting for approval",
+      "line": "This PO is not waiting for approval.",
+      "todo": "Open the PO again to see its status."
+    },
+    {
+      "code": "PUR_PO_CLOSED_ON_FIRST_BILL",
+      "variant": "",
+      "lang": "en",
+      "title": "Rest of PO closed",
+      "line": "This is the first bill of the PO, so the rest of the PO is closed.",
+      "todo": "Make a new PO if more goods are needed."
+    },
+    {
+      "code": "PUR_HOLD_UNCHANGED",
+      "variant": "",
+      "lang": "en",
+      "title": "No change",
+      "line": "The bill is already on hold, or already not on hold.",
+      "todo": "Open the bill again to see its hold."
+    },
+    {
+      "code": "PUR_PAYMENT_HOLD",
+      "variant": "",
+      "lang": "en",
+      "title": "On payment hold",
+      "line": "This bill is on payment hold.",
+      "todo": "Release the hold first, or ask a supervisor."
+    },
+    {
+      "code": "PUR_EXCESS_IN_RECEIVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Extra is in Received",
+      "line": "Goods over the PO that go back are keyed in Received.",
+      "todo": "Key the extra qty as Excess, not Received."
+    },
+    {
+      "code": "PUR_EXCESS_HELD",
+      "variant": "",
+      "lang": "en",
+      "title": "More than the PO",
+      "line": "More came than the PO. It is taken at the PO rate for now.",
+      "todo": "Make sure the supplier's bill covers the extra qty."
+    },
+    {
+      "code": "PUR_EXCESS_KEPT_FREE",
+      "variant": "",
+      "lang": "en",
+      "title": "Extra taken as free",
+      "line": "The qty over the PO is taken as free goods (no value).",
+      "todo": "Nothing to do if the supplier gives it free."
+    },
+    {
+      "code": "PUR_GRN_KEPT_NOT_BILLED",
+      "variant": "",
+      "lang": "en",
+      "title": "Not all billed",
+      "line": "Part of the GRN qty is not on this bill. It is taken as free goods.",
+      "todo": "If the supplier will bill it, bill it here, or return it."
+    },
+    {
+      "code": "PUR_PRICE_KEPT_NEWER",
+      "variant": "",
+      "lang": "en",
+      "title": "Price not changed",
+      "line": "The selling price was changed later, so this entry did not change it.",
+      "todo": "Check the price in Change Selling if needed."
+    },
+    {
+      "code": "PUR_PRICE_NOT_WRITTEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Price not changed",
+      "line": "The selling price was not written for this line.",
+      "todo": "Check the price in Change Selling if needed."
+    },
+    {
+      "code": "PUR_RETURN_QTY_EXCEEDS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too much to return",
+      "line": "The return qty is more than what came in and is left.",
+      "todo": "Reduce the return qty."
+    },
+    {
+      "code": "PUR_SCHEME_INCOMPLETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Scheme not complete",
+      "line": "A scheme needs both numbers: buy how many, and how many free.",
+      "todo": "Type both numbers, or clear both."
+    },
+    {
+      "code": "PUR_SHELF_LIFE",
+      "variant": "",
+      "lang": "en",
+      "title": "Short shelf life",
+      "line": "The batch has expired, or too little shelf life is left.",
+      "todo": "Check the expiry date. Take it only if the supplier agrees."
+    },
+    {
+      "code": "PUR_SHORTAGE_QTY_EXCEEDS",
+      "variant": "",
+      "lang": "en",
+      "title": "More than short",
+      "line": "The qty received is more than what is still short.",
+      "todo": "Reduce the qty to the short qty."
+    },
+    {
+      "code": "PUR_SUPPLIER_BARCODE_TAKEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Barcode already used",
+      "line": "This barcode already finds another item. A scan would not know which one.",
+      "todo": "Use another barcode, or clear it on the other item."
+    },
+    {
+      "code": "PUR_SUPPLIER_CODE_TAKEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Code already used",
+      "line": "This supplier already has this code for another item.",
+      "todo": "Use another code."
+    },
+    {
+      "code": "PUR_TERMS_INACTIVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Terms switched off",
+      "line": "These PO terms are switched off.",
+      "todo": "Pick other terms, or switch these on in the terms list."
     }
   ]
 }

@@ -356,8 +356,8 @@ export class StaffAdvanceLedgerService {
   /**
    * The first generated name no other ledger holds. "Holds" is what the ledger save refuses —
    * a live ledger of that name, any case, in the company or shared (uq_led_name_company,
-   * uq_led_name_shared, tr_led_name_scope) — plus the plain (company, name) key
-   * uq_led_name_per_company, which still counts deleted rows.
+   * uq_led_name_shared, tr_led_name_scope). A deleted ledger holds no name (the old plain
+   * (company, name) key was dropped by 20261029110000_ledger_name_unique_skip_deleted).
    */
   private async firstFreeName(
     tx: SettingsWriteClient,
@@ -370,16 +370,11 @@ export class StaffAdvanceLedgerService {
       const clash = await tx.accLedgerMaster.findFirst({
         where: {
           ...(excludeLedId ? { ledId: { not: excludeLedId } } : {}),
-          OR: [
-            {
-              ledIsDeleted: false,
-              ledName: { equals: name, mode: 'insensitive' },
-              ...(companyId === null
-                ? {}
-                : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
-            },
-            ...(companyId === null ? [] : [{ ledCompanyId: companyId, ledName: name }]),
-          ],
+          ledIsDeleted: false,
+          ledName: { equals: name, mode: 'insensitive' },
+          ...(companyId === null
+            ? {}
+            : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
         },
         select: { ledId: true },
       });

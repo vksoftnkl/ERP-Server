@@ -1,9 +1,42 @@
 import { Prisma } from '@prisma/client';
 import { VoucherPostingService } from "../../../common/posting/voucher-posting.service";
+import type { VoucherLeg } from "../../../common/posting/voucher-leg.types";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { StockPostingService } from "../../stocks/posting/stock-posting.service";
+import { PurchaseAllocDto } from '../invoice/dto/save-purchase-invoice.dto';
 export declare const SHORTAGE_MENU_ID = 195;
+export declare const SHORTAGE_CLAIM_SETTLE_DOC = "SHORTAGE_CLAIM_SETTLEMENT";
+export declare function nextShortageCloseRef(prefix: string, taken: string[]): string;
+export declare const SHORTAGE_CLAIM_ACTIONS: readonly ["CREDIT", "SHORT_SETTLED", "REJECTED"];
+export interface ShortageClaimSettleInput {
+    shortageCloseId: string;
+    accYear: string;
+    settleAccYear?: string;
+    deviceId: string;
+    action: string;
+    amount?: number;
+    receivedAs?: string;
+    cnNo?: string;
+    cnDate?: string;
+    docDate?: string;
+    reason?: string;
+}
+export interface ShortageClaimSettleResult {
+    shortageCloseId: string;
+    refno: string;
+    action: string;
+    receivedAs: string | null;
+    amount: Prisma.Decimal;
+    open: Prisma.Decimal;
+    companyId: string;
+    branchId: string;
+    legs: VoucherLeg[];
+    dryRun: boolean;
+    settlementId: string | null;
+    accYear: string;
+    voucherRefno: string | null;
+}
 export declare class ShortageReceiptLineDto {
     lineNo: number;
     shortageId: string;
@@ -13,6 +46,7 @@ export declare class ShortageReceiptLineDto {
     expiryDate?: string;
     mrp?: number;
     remarks?: string;
+    allocs?: PurchaseAllocDto[];
 }
 export declare class ShortageReceiptHeaderDto {
     psrId?: string;
@@ -23,8 +57,10 @@ export declare class ShortageReceiptHeaderDto {
     supplierId: string;
     godownId: string;
     docDate: string;
+    receivedAt?: string;
     challanNo?: string;
     receivedBy?: string[];
+    supervisorId?: string | null;
     remarks?: string;
     post?: boolean;
 }
@@ -51,6 +87,8 @@ export declare class CloseShortageDto {
     closeAccYear?: string;
     deviceId: string;
     kind: string;
+    partyId?: string;
+    claimAgainst?: string;
     qty?: number;
     cnNo?: string;
     cnDate?: string;
@@ -62,6 +100,7 @@ export declare class CloseUndoDto {
     accYear: string;
     reason: string;
 }
+type Tx = Prisma.TransactionClient;
 export declare class PurchaseShortageService {
     private readonly prisma;
     private readonly ctx;
@@ -75,19 +114,42 @@ export declare class PurchaseShortageService {
     open(q: OpenShortagesQueryDto): Promise<{
         uomId: string;
         reason: string;
+        reasonText: string;
         srcRefno: string | null;
+        srcDocType: {} | null;
+        srcDocId: {} | null;
+        srcDocDate: {} | null;
+        srcLineNo: {} | null;
+        ageDays: {} | null;
         qtyBase: Prisma.Decimal;
         received: Prisma.Decimal;
         closed: Prisma.Decimal;
+        closedByCn: {};
+        closedByClaim: {};
+        writtenOffQty: {};
         openQty: Prisma.Decimal;
         value: Prisma.Decimal;
         gst: Prisma.Decimal;
         openValue: Prisma.Decimal;
         openGst: Prisma.Decimal;
         costRate: Prisma.Decimal;
+        gstPending: boolean;
         batchNo: string | null;
         expiryDate: Date | null;
         mrp: Prisma.Decimal | null;
+        status: string;
+        lastAction: {
+            closeId: {};
+            accYear: unknown;
+            kind: unknown;
+            qty: unknown;
+            amount: unknown;
+            cnNo: unknown;
+            partyId: unknown;
+            partyName: unknown;
+            reason: unknown;
+            on: unknown;
+        } | null;
         itemName?: string | undefined;
         unitName?: string | undefined;
         shortageId: string;
@@ -99,6 +161,12 @@ export declare class PurchaseShortageService {
     save(dto: SaveShortageReceiptDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            receivedBy: {
+                id: string;
+                name: string;
+            }[];
+            supervisorName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -127,14 +195,28 @@ export declare class PurchaseShortageService {
             psrCreatedBy: string;
             psrModifiedOn: Date | null;
             psrModifiedBy: string | null;
+            psrSupervisorId: string | null;
         };
         lines: {
             reason: string | null;
             srcRefno: string | null;
             openQty: Prisma.Decimal | null;
+            shortQty: Prisma.Decimal | null;
             batchNo: string | null;
             expiryDate: Date | null;
             mrp: Prisma.Decimal | null;
+            allocs: {
+                rowNo: number;
+                godownId: string;
+                batchNo: string | null;
+                mfgDate: Date | null;
+                expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                serialNo: string | null;
+                warrantyTo: Date | null;
+                qty: Prisma.Decimal;
+                lotId: string | null;
+            }[];
             itemName?: string | undefined;
             unitName?: string | undefined;
             psriId: string;
@@ -167,6 +249,12 @@ export declare class PurchaseShortageService {
     post(psrId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            receivedBy: {
+                id: string;
+                name: string;
+            }[];
+            supervisorName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -195,14 +283,28 @@ export declare class PurchaseShortageService {
             psrCreatedBy: string;
             psrModifiedOn: Date | null;
             psrModifiedBy: string | null;
+            psrSupervisorId: string | null;
         };
         lines: {
             reason: string | null;
             srcRefno: string | null;
             openQty: Prisma.Decimal | null;
+            shortQty: Prisma.Decimal | null;
             batchNo: string | null;
             expiryDate: Date | null;
             mrp: Prisma.Decimal | null;
+            allocs: {
+                rowNo: number;
+                godownId: string;
+                batchNo: string | null;
+                mfgDate: Date | null;
+                expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                serialNo: string | null;
+                warrantyTo: Date | null;
+                qty: Prisma.Decimal;
+                lotId: string | null;
+            }[];
             itemName?: string | undefined;
             unitName?: string | undefined;
             psriId: string;
@@ -236,6 +338,12 @@ export declare class PurchaseShortageService {
     get(psrId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            receivedBy: {
+                id: string;
+                name: string;
+            }[];
+            supervisorName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -264,14 +372,28 @@ export declare class PurchaseShortageService {
             psrCreatedBy: string;
             psrModifiedOn: Date | null;
             psrModifiedBy: string | null;
+            psrSupervisorId: string | null;
         };
         lines: {
             reason: string | null;
             srcRefno: string | null;
             openQty: Prisma.Decimal | null;
+            shortQty: Prisma.Decimal | null;
             batchNo: string | null;
             expiryDate: Date | null;
             mrp: Prisma.Decimal | null;
+            allocs: {
+                rowNo: number;
+                godownId: string;
+                batchNo: string | null;
+                mfgDate: Date | null;
+                expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                serialNo: string | null;
+                warrantyTo: Date | null;
+                qty: Prisma.Decimal;
+                lotId: string | null;
+            }[];
             itemName?: string | undefined;
             unitName?: string | undefined;
             psriId: string;
@@ -304,6 +426,12 @@ export declare class PurchaseShortageService {
     cancel(dto: ShortageReceiptCancelDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            receivedBy: {
+                id: string;
+                name: string;
+            }[];
+            supervisorName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -332,14 +460,28 @@ export declare class PurchaseShortageService {
             psrCreatedBy: string;
             psrModifiedOn: Date | null;
             psrModifiedBy: string | null;
+            psrSupervisorId: string | null;
         };
         lines: {
             reason: string | null;
             srcRefno: string | null;
             openQty: Prisma.Decimal | null;
+            shortQty: Prisma.Decimal | null;
             batchNo: string | null;
             expiryDate: Date | null;
             mrp: Prisma.Decimal | null;
+            allocs: {
+                rowNo: number;
+                godownId: string;
+                batchNo: string | null;
+                mfgDate: Date | null;
+                expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                serialNo: string | null;
+                warrantyTo: Date | null;
+                qty: Prisma.Decimal;
+                lotId: string | null;
+            }[];
             itemName?: string | undefined;
             unitName?: string | undefined;
             psriId: string;
@@ -372,6 +514,9 @@ export declare class PurchaseShortageService {
     close(dto: CloseShortageDto): Promise<{
         closeId: string;
         accYear: string;
+        kind: string;
+        partyId: string | null;
+        partyName: string | null;
         qty: Prisma.Decimal;
         amount: Prisma.Decimal;
         openQty: Prisma.Decimal;
@@ -381,6 +526,34 @@ export declare class PurchaseShortageService {
         reversalId: string;
         shortageId: string;
     }>;
+    private claimSettled;
+    duesClaims(q: {
+        companyId: string;
+        branchId: string;
+        supplierId?: string | null;
+        all?: boolean;
+    }): Promise<{
+        outcome: string;
+        kindText: string;
+        claimRef: string;
+        credited: string;
+        writtenOff: string;
+        settled: string;
+        open: string;
+        status: string;
+        lastSettlementId: string | null;
+        lastAction: Record<string, unknown> | null;
+        source: string;
+        returnItemId: null;
+    }[]>;
+    settleClaimIn(tx: Tx, dto: ShortageClaimSettleInput, actor: string, opts?: {
+        dryRun?: boolean;
+        takenAlready?: Prisma.Decimal;
+    }): Promise<ShortageClaimSettleResult>;
+    settleClaimUndoIn(tx: Tx, settlementId: string, accYear: string, reason: string, actor: string): Promise<{
+        reversalId: string;
+        shortageCloseId: string;
+    } | null>;
     closes(shortageId: string): Promise<Record<string, unknown>[]>;
 }
 export declare class PurchaseShortageController {
@@ -395,19 +568,42 @@ export declare class PurchaseShortageController {
         data: {
             uomId: string;
             reason: string;
+            reasonText: string;
             srcRefno: string | null;
+            srcDocType: {} | null;
+            srcDocId: {} | null;
+            srcDocDate: {} | null;
+            srcLineNo: {} | null;
+            ageDays: {} | null;
             qtyBase: Prisma.Decimal;
             received: Prisma.Decimal;
             closed: Prisma.Decimal;
+            closedByCn: {};
+            closedByClaim: {};
+            writtenOffQty: {};
             openQty: Prisma.Decimal;
             value: Prisma.Decimal;
             gst: Prisma.Decimal;
             openValue: Prisma.Decimal;
             openGst: Prisma.Decimal;
             costRate: Prisma.Decimal;
+            gstPending: boolean;
             batchNo: string | null;
             expiryDate: Date | null;
             mrp: Prisma.Decimal | null;
+            status: string;
+            lastAction: {
+                closeId: {};
+                accYear: unknown;
+                kind: unknown;
+                qty: unknown;
+                amount: unknown;
+                cnNo: unknown;
+                partyId: unknown;
+                partyName: unknown;
+                reason: unknown;
+                on: unknown;
+            } | null;
             itemName?: string | undefined;
             unitName?: string | undefined;
             shortageId: string;
@@ -423,6 +619,12 @@ export declare class PurchaseShortageController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                receivedBy: {
+                    id: string;
+                    name: string;
+                }[];
+                supervisorName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -451,14 +653,28 @@ export declare class PurchaseShortageController {
                 psrCreatedBy: string;
                 psrModifiedOn: Date | null;
                 psrModifiedBy: string | null;
+                psrSupervisorId: string | null;
             };
             lines: {
                 reason: string | null;
                 srcRefno: string | null;
                 openQty: Prisma.Decimal | null;
+                shortQty: Prisma.Decimal | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
                 mrp: Prisma.Decimal | null;
+                allocs: {
+                    rowNo: number;
+                    godownId: string;
+                    batchNo: string | null;
+                    mfgDate: Date | null;
+                    expiryDate: Date | null;
+                    mrp: Prisma.Decimal | null;
+                    serialNo: string | null;
+                    warrantyTo: Date | null;
+                    qty: Prisma.Decimal;
+                    lotId: string | null;
+                }[];
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 psriId: string;
@@ -495,6 +711,12 @@ export declare class PurchaseShortageController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                receivedBy: {
+                    id: string;
+                    name: string;
+                }[];
+                supervisorName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -523,14 +745,28 @@ export declare class PurchaseShortageController {
                 psrCreatedBy: string;
                 psrModifiedOn: Date | null;
                 psrModifiedBy: string | null;
+                psrSupervisorId: string | null;
             };
             lines: {
                 reason: string | null;
                 srcRefno: string | null;
                 openQty: Prisma.Decimal | null;
+                shortQty: Prisma.Decimal | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
                 mrp: Prisma.Decimal | null;
+                allocs: {
+                    rowNo: number;
+                    godownId: string;
+                    batchNo: string | null;
+                    mfgDate: Date | null;
+                    expiryDate: Date | null;
+                    mrp: Prisma.Decimal | null;
+                    serialNo: string | null;
+                    warrantyTo: Date | null;
+                    qty: Prisma.Decimal;
+                    lotId: string | null;
+                }[];
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 psriId: string;
@@ -567,6 +803,12 @@ export declare class PurchaseShortageController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                receivedBy: {
+                    id: string;
+                    name: string;
+                }[];
+                supervisorName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -595,14 +837,28 @@ export declare class PurchaseShortageController {
                 psrCreatedBy: string;
                 psrModifiedOn: Date | null;
                 psrModifiedBy: string | null;
+                psrSupervisorId: string | null;
             };
             lines: {
                 reason: string | null;
                 srcRefno: string | null;
                 openQty: Prisma.Decimal | null;
+                shortQty: Prisma.Decimal | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
                 mrp: Prisma.Decimal | null;
+                allocs: {
+                    rowNo: number;
+                    godownId: string;
+                    batchNo: string | null;
+                    mfgDate: Date | null;
+                    expiryDate: Date | null;
+                    mrp: Prisma.Decimal | null;
+                    serialNo: string | null;
+                    warrantyTo: Date | null;
+                    qty: Prisma.Decimal;
+                    lotId: string | null;
+                }[];
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 psriId: string;
@@ -639,6 +895,12 @@ export declare class PurchaseShortageController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                receivedBy: {
+                    id: string;
+                    name: string;
+                }[];
+                supervisorName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -667,14 +929,28 @@ export declare class PurchaseShortageController {
                 psrCreatedBy: string;
                 psrModifiedOn: Date | null;
                 psrModifiedBy: string | null;
+                psrSupervisorId: string | null;
             };
             lines: {
                 reason: string | null;
                 srcRefno: string | null;
                 openQty: Prisma.Decimal | null;
+                shortQty: Prisma.Decimal | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
                 mrp: Prisma.Decimal | null;
+                allocs: {
+                    rowNo: number;
+                    godownId: string;
+                    batchNo: string | null;
+                    mfgDate: Date | null;
+                    expiryDate: Date | null;
+                    mrp: Prisma.Decimal | null;
+                    serialNo: string | null;
+                    warrantyTo: Date | null;
+                    qty: Prisma.Decimal;
+                    lotId: string | null;
+                }[];
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 psriId: string;
@@ -711,6 +987,9 @@ export declare class PurchaseShortageController {
         data: {
             closeId: string;
             accYear: string;
+            kind: string;
+            partyId: string | null;
+            partyName: string | null;
             qty: Prisma.Decimal;
             amount: Prisma.Decimal;
             openQty: Prisma.Decimal;
@@ -731,3 +1010,4 @@ export declare class PurchaseShortageController {
         data: Record<string, unknown>[];
     }>;
 }
+export {};

@@ -1,8 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { VoucherPostingService } from "../../../common/posting/voucher-posting.service";
+import type { VoucherLeg } from "../../../common/posting/voucher-leg.types";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { StockPostingService } from "../../stocks/posting/stock-posting.service";
+import { StatutoryService } from "../../../common/posting/statutory.service";
+import { TransportBandService } from "../../sales/posting/transport-band.service";
+import { PurchaseTransportDto } from '../invoice/dto/save-purchase-invoice.dto';
+import type { PurIssue } from '../invoice/purchase-invoice-checks';
 export declare const RETURN_MENU_ID = 25;
 export declare class ReturnLineDto {
     lineNo: number;
@@ -33,6 +38,10 @@ export declare class ReturnHeaderDto {
     vehicleNo?: string;
     driverName?: string;
     ewbNo?: string;
+    ewbDate?: string;
+    godownId?: string;
+    transport?: PurchaseTransportDto | null;
+    ourRef?: string | null;
     remarks?: string;
     post?: boolean;
 }
@@ -82,12 +91,32 @@ export declare class SettleUndoDto {
     accYear: string;
     reason: string;
 }
+type Tx = Prisma.TransactionClient;
+export interface SettleResult {
+    returnItemId: string;
+    refno: string;
+    lineNo: number;
+    action: string;
+    receivedAs: string | null;
+    amount: Prisma.Decimal;
+    gstReavailed: Prisma.Decimal;
+    open: Prisma.Decimal;
+    companyId: string;
+    branchId: string;
+    legs: VoucherLeg[];
+    dryRun: boolean;
+    settlementId: string | null;
+    accYear: string;
+    voucherRefno: string | null;
+}
 export declare class PurchaseReturnService {
     private readonly prisma;
     private readonly ctx;
     private readonly vouchers;
     private readonly stockPosting;
-    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService);
+    private readonly transportBand;
+    private readonly statutory;
+    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, transportBand: TransportBandService, statutory: StatutoryService);
     private actor;
     private rules;
     private sourceDoc;
@@ -107,6 +136,9 @@ export declare class PurchaseReturnService {
             supplierInvNo: string | null;
             status: string;
             docType: "PURCHASE_BILL" | "GRN";
+            posStcd: string | null;
+            branchId: string;
+            docDate: Date;
         };
         lines: {
             inQty: Prisma.Decimal;
@@ -134,9 +166,92 @@ export declare class PurchaseReturnService {
         }[];
     }>;
     private defaultSettlement;
+    private prepare;
+    private rowWrites;
+    private supplierBalance;
+    validate(dto: SaveReturnDto): Promise<{
+        header: {
+            supplierId: string;
+            supplierName: string | null;
+            srcRefno: string;
+            srcDocDate: Date;
+            godownId: string | null;
+            placeOfSupply: string | null;
+        };
+        lines: {
+            creditTo: {
+                kind: string;
+                name: string | null;
+            };
+            writes: {
+                drCr: string;
+                head: string;
+                amount: string | null;
+            }[];
+            outcome: string;
+            outcomeText: string;
+            reasonId: string | null;
+            reasonName: string | null;
+            billedQty: Prisma.Decimal;
+            inQty: Prisma.Decimal;
+            returnedQty: Prisma.Decimal;
+            returnableQty: Prisma.Decimal;
+            lotId: string | null;
+            godownId: string | null;
+            batchNo: string | null;
+            expiryDate: Date | null;
+            mrp: Prisma.Decimal | null;
+            rate: Prisma.Decimal;
+            gstPct: Prisma.Decimal;
+            taxable: Prisma.Decimal;
+            tax: Prisma.Decimal;
+            total: Prisma.Decimal;
+            itemName?: string | undefined;
+            unitName?: string | undefined;
+            lineNo: number;
+            srcItemId: string;
+            srcLineNo: number;
+            itemId: string;
+        }[];
+        totals: {
+            rows: number;
+            returnNow: string;
+            claimsRaised: string;
+            replaceQtyBase: string;
+            itcReversed: string;
+            itcOnDestroyed: string;
+            itcPendingOnReplace: string;
+            goodsValue: string;
+            supplierBalance: string;
+            supplierBalanceNow: string;
+        };
+        warnings: PurIssue[];
+        refusals: PurIssue[];
+    }>;
+    private totalsOf;
+    private ewbIssues;
+    private partyNames;
+    private bandInput;
     save(dto: SaveReturnDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            placeOfSupply: string | null;
+            srcRefno: string;
+            srcDocDate: Date;
+            claimPartyId: string | null;
+            claimPartyName: string | null;
+            claimAgainst: string | null;
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             prId: string;
             prCompanyId: string;
             prBranchId: string;
@@ -177,15 +292,34 @@ export declare class PurchaseReturnService {
             prCreatedBy: string;
             prModifiedOn: Date | null;
             prModifiedBy: string | null;
+            prMemoRef: string | null;
         };
         lines: {
+            creditTo: {
+                kind: string;
+                name: string | null;
+            };
+            writes: {
+                drCr: string;
+                head: string;
+                amount: string | null;
+            }[];
             bucket: string | null;
             lotId: string | null;
             batchNo: string | null;
             expiryDate: Date | null;
+            mrp: Prisma.Decimal | null;
+            godownId: string | null;
             claimValue: Prisma.Decimal;
             claimSettled: Prisma.Decimal;
             claimOpen: Prisma.Decimal;
+            outcomeText: string;
+            reasonName: string | null;
+            claimPartyName: string | null;
+            billedQty: Prisma.Decimal | null;
+            inQty: Prisma.Decimal | null;
+            returnedQty: Prisma.Decimal;
+            returnableQty: Prisma.Decimal | null;
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
@@ -244,10 +378,39 @@ export declare class PurchaseReturnService {
             priPrId: string;
             priAccYear: string;
         }[];
+        totals: {
+            rows: number;
+            returnNow: string;
+            claimsRaised: string;
+            replaceQtyBase: string;
+            itcReversed: string;
+            itcOnDestroyed: string;
+            itcPendingOnReplace: string;
+            goodsValue: string;
+            supplierBalance: string;
+            supplierBalanceNow: string;
+        };
     }>;
     post(prId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            placeOfSupply: string | null;
+            srcRefno: string;
+            srcDocDate: Date;
+            claimPartyId: string | null;
+            claimPartyName: string | null;
+            claimAgainst: string | null;
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             prId: string;
             prCompanyId: string;
             prBranchId: string;
@@ -288,15 +451,34 @@ export declare class PurchaseReturnService {
             prCreatedBy: string;
             prModifiedOn: Date | null;
             prModifiedBy: string | null;
+            prMemoRef: string | null;
         };
         lines: {
+            creditTo: {
+                kind: string;
+                name: string | null;
+            };
+            writes: {
+                drCr: string;
+                head: string;
+                amount: string | null;
+            }[];
             bucket: string | null;
             lotId: string | null;
             batchNo: string | null;
             expiryDate: Date | null;
+            mrp: Prisma.Decimal | null;
+            godownId: string | null;
             claimValue: Prisma.Decimal;
             claimSettled: Prisma.Decimal;
             claimOpen: Prisma.Decimal;
+            outcomeText: string;
+            reasonName: string | null;
+            claimPartyName: string | null;
+            billedQty: Prisma.Decimal | null;
+            inQty: Prisma.Decimal | null;
+            returnedQty: Prisma.Decimal;
+            returnableQty: Prisma.Decimal | null;
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
@@ -355,11 +537,40 @@ export declare class PurchaseReturnService {
             priPrId: string;
             priAccYear: string;
         }[];
+        totals: {
+            rows: number;
+            returnNow: string;
+            claimsRaised: string;
+            replaceQtyBase: string;
+            itcReversed: string;
+            itcOnDestroyed: string;
+            itcPendingOnReplace: string;
+            goodsValue: string;
+            supplierBalance: string;
+            supplierBalanceNow: string;
+        };
     }>;
     private postInTx;
     get(prId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            placeOfSupply: string | null;
+            srcRefno: string;
+            srcDocDate: Date;
+            claimPartyId: string | null;
+            claimPartyName: string | null;
+            claimAgainst: string | null;
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             prId: string;
             prCompanyId: string;
             prBranchId: string;
@@ -400,15 +611,34 @@ export declare class PurchaseReturnService {
             prCreatedBy: string;
             prModifiedOn: Date | null;
             prModifiedBy: string | null;
+            prMemoRef: string | null;
         };
         lines: {
+            creditTo: {
+                kind: string;
+                name: string | null;
+            };
+            writes: {
+                drCr: string;
+                head: string;
+                amount: string | null;
+            }[];
             bucket: string | null;
             lotId: string | null;
             batchNo: string | null;
             expiryDate: Date | null;
+            mrp: Prisma.Decimal | null;
+            godownId: string | null;
             claimValue: Prisma.Decimal;
             claimSettled: Prisma.Decimal;
             claimOpen: Prisma.Decimal;
+            outcomeText: string;
+            reasonName: string | null;
+            claimPartyName: string | null;
+            billedQty: Prisma.Decimal | null;
+            inQty: Prisma.Decimal | null;
+            returnedQty: Prisma.Decimal;
+            returnableQty: Prisma.Decimal | null;
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
@@ -467,10 +697,39 @@ export declare class PurchaseReturnService {
             priPrId: string;
             priAccYear: string;
         }[];
+        totals: {
+            rows: number;
+            returnNow: string;
+            claimsRaised: string;
+            replaceQtyBase: string;
+            itcReversed: string;
+            itcOnDestroyed: string;
+            itcPendingOnReplace: string;
+            goodsValue: string;
+            supplierBalance: string;
+            supplierBalanceNow: string;
+        };
     }>;
     cancel(dto: ReturnCancelDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            placeOfSupply: string | null;
+            srcRefno: string;
+            srcDocDate: Date;
+            claimPartyId: string | null;
+            claimPartyName: string | null;
+            claimAgainst: string | null;
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             prId: string;
             prCompanyId: string;
             prBranchId: string;
@@ -511,15 +770,34 @@ export declare class PurchaseReturnService {
             prCreatedBy: string;
             prModifiedOn: Date | null;
             prModifiedBy: string | null;
+            prMemoRef: string | null;
         };
         lines: {
+            creditTo: {
+                kind: string;
+                name: string | null;
+            };
+            writes: {
+                drCr: string;
+                head: string;
+                amount: string | null;
+            }[];
             bucket: string | null;
             lotId: string | null;
             batchNo: string | null;
             expiryDate: Date | null;
+            mrp: Prisma.Decimal | null;
+            godownId: string | null;
             claimValue: Prisma.Decimal;
             claimSettled: Prisma.Decimal;
             claimOpen: Prisma.Decimal;
+            outcomeText: string;
+            reasonName: string | null;
+            claimPartyName: string | null;
+            billedQty: Prisma.Decimal | null;
+            inQty: Prisma.Decimal | null;
+            returnedQty: Prisma.Decimal;
+            returnableQty: Prisma.Decimal | null;
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
@@ -578,6 +856,18 @@ export declare class PurchaseReturnService {
             priPrId: string;
             priAccYear: string;
         }[];
+        totals: {
+            rows: number;
+            returnNow: string;
+            claimsRaised: string;
+            replaceQtyBase: string;
+            itcReversed: string;
+            itcOnDestroyed: string;
+            itcPendingOnReplace: string;
+            goodsValue: string;
+            supplierBalance: string;
+            supplierBalanceNow: string;
+        };
     }>;
     private claimValueOf;
     private settledByItem;
@@ -585,12 +875,50 @@ export declare class PurchaseReturnService {
         open: Prisma.Decimal;
     }[]>;
     settle(dto: SettleClaimDto): Promise<{
-        settlementId: string;
-        accYear: string;
+        returnItemId: string;
+        refno: string;
+        lineNo: number;
+        action: string;
+        receivedAs: string | null;
         amount: Prisma.Decimal;
+        gstReavailed: Prisma.Decimal;
         open: Prisma.Decimal;
+        companyId: string;
+        branchId: string;
+        dryRun: boolean;
+        settlementId: string | null;
+        accYear: string;
         voucherRefno: string | null;
     }>;
+    settleIn(tx: Tx, dto: SettleClaimDto, actor: string, opts?: {
+        dryRun?: boolean;
+        takenAlready?: Prisma.Decimal;
+    }): Promise<SettleResult>;
+    duesClaims(q: {
+        companyId: string;
+        branchId: string;
+        supplierId?: string | null;
+        all?: boolean;
+    }): Promise<{
+        claimRef: string;
+        kindText: string;
+        credited: string;
+        writtenOff: string;
+        settled: string;
+        open: string;
+        status: string;
+        lastAction: {
+            settlementId: {};
+            accYear: unknown;
+            action: unknown;
+            receivedAs: unknown;
+            cnNo: unknown;
+            cnDate: unknown;
+            amount: unknown;
+            on: unknown;
+            reason: unknown;
+        } | null;
+    }[]>;
     settleUndo(dto: SettleUndoDto): Promise<{
         reversalId: string;
         returnItemId: string;
@@ -608,6 +936,23 @@ export declare class PurchaseReturnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                placeOfSupply: string | null;
+                srcRefno: string;
+                srcDocDate: Date;
+                claimPartyId: string | null;
+                claimPartyName: string | null;
+                claimAgainst: string | null;
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 prId: string;
                 prCompanyId: string;
                 prBranchId: string;
@@ -648,15 +993,34 @@ export declare class PurchaseReturnController {
                 prCreatedBy: string;
                 prModifiedOn: Date | null;
                 prModifiedBy: string | null;
+                prMemoRef: string | null;
             };
             lines: {
+                creditTo: {
+                    kind: string;
+                    name: string | null;
+                };
+                writes: {
+                    drCr: string;
+                    head: string;
+                    amount: string | null;
+                }[];
                 bucket: string | null;
                 lotId: string | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                godownId: string | null;
                 claimValue: Prisma.Decimal;
                 claimSettled: Prisma.Decimal;
                 claimOpen: Prisma.Decimal;
+                outcomeText: string;
+                reasonName: string | null;
+                claimPartyName: string | null;
+                billedQty: Prisma.Decimal | null;
+                inQty: Prisma.Decimal | null;
+                returnedQty: Prisma.Decimal;
+                returnableQty: Prisma.Decimal | null;
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
@@ -715,6 +1079,81 @@ export declare class PurchaseReturnController {
                 priPrId: string;
                 priAccYear: string;
             }[];
+            totals: {
+                rows: number;
+                returnNow: string;
+                claimsRaised: string;
+                replaceQtyBase: string;
+                itcReversed: string;
+                itcOnDestroyed: string;
+                itcPendingOnReplace: string;
+                goodsValue: string;
+                supplierBalance: string;
+                supplierBalanceNow: string;
+            };
+        };
+    }>;
+    validate(dto: SaveReturnDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            header: {
+                supplierId: string;
+                supplierName: string | null;
+                srcRefno: string;
+                srcDocDate: Date;
+                godownId: string | null;
+                placeOfSupply: string | null;
+            };
+            lines: {
+                creditTo: {
+                    kind: string;
+                    name: string | null;
+                };
+                writes: {
+                    drCr: string;
+                    head: string;
+                    amount: string | null;
+                }[];
+                outcome: string;
+                outcomeText: string;
+                reasonId: string | null;
+                reasonName: string | null;
+                billedQty: Prisma.Decimal;
+                inQty: Prisma.Decimal;
+                returnedQty: Prisma.Decimal;
+                returnableQty: Prisma.Decimal;
+                lotId: string | null;
+                godownId: string | null;
+                batchNo: string | null;
+                expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                rate: Prisma.Decimal;
+                gstPct: Prisma.Decimal;
+                taxable: Prisma.Decimal;
+                tax: Prisma.Decimal;
+                total: Prisma.Decimal;
+                itemName?: string | undefined;
+                unitName?: string | undefined;
+                lineNo: number;
+                srcItemId: string;
+                srcLineNo: number;
+                itemId: string;
+            }[];
+            totals: {
+                rows: number;
+                returnNow: string;
+                claimsRaised: string;
+                replaceQtyBase: string;
+                itcReversed: string;
+                itcOnDestroyed: string;
+                itcPendingOnReplace: string;
+                goodsValue: string;
+                supplierBalance: string;
+                supplierBalanceNow: string;
+            };
+            warnings: PurIssue[];
+            refusals: PurIssue[];
         };
     }>;
     post(dto: ReturnRefDto): Promise<{
@@ -723,6 +1162,23 @@ export declare class PurchaseReturnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                placeOfSupply: string | null;
+                srcRefno: string;
+                srcDocDate: Date;
+                claimPartyId: string | null;
+                claimPartyName: string | null;
+                claimAgainst: string | null;
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 prId: string;
                 prCompanyId: string;
                 prBranchId: string;
@@ -763,15 +1219,34 @@ export declare class PurchaseReturnController {
                 prCreatedBy: string;
                 prModifiedOn: Date | null;
                 prModifiedBy: string | null;
+                prMemoRef: string | null;
             };
             lines: {
+                creditTo: {
+                    kind: string;
+                    name: string | null;
+                };
+                writes: {
+                    drCr: string;
+                    head: string;
+                    amount: string | null;
+                }[];
                 bucket: string | null;
                 lotId: string | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                godownId: string | null;
                 claimValue: Prisma.Decimal;
                 claimSettled: Prisma.Decimal;
                 claimOpen: Prisma.Decimal;
+                outcomeText: string;
+                reasonName: string | null;
+                claimPartyName: string | null;
+                billedQty: Prisma.Decimal | null;
+                inQty: Prisma.Decimal | null;
+                returnedQty: Prisma.Decimal;
+                returnableQty: Prisma.Decimal | null;
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
@@ -830,6 +1305,18 @@ export declare class PurchaseReturnController {
                 priPrId: string;
                 priAccYear: string;
             }[];
+            totals: {
+                rows: number;
+                returnNow: string;
+                claimsRaised: string;
+                replaceQtyBase: string;
+                itcReversed: string;
+                itcOnDestroyed: string;
+                itcPendingOnReplace: string;
+                goodsValue: string;
+                supplierBalance: string;
+                supplierBalanceNow: string;
+            };
         };
     }>;
     get(q: ReturnRefDto): Promise<{
@@ -838,6 +1325,23 @@ export declare class PurchaseReturnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                placeOfSupply: string | null;
+                srcRefno: string;
+                srcDocDate: Date;
+                claimPartyId: string | null;
+                claimPartyName: string | null;
+                claimAgainst: string | null;
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 prId: string;
                 prCompanyId: string;
                 prBranchId: string;
@@ -878,15 +1382,34 @@ export declare class PurchaseReturnController {
                 prCreatedBy: string;
                 prModifiedOn: Date | null;
                 prModifiedBy: string | null;
+                prMemoRef: string | null;
             };
             lines: {
+                creditTo: {
+                    kind: string;
+                    name: string | null;
+                };
+                writes: {
+                    drCr: string;
+                    head: string;
+                    amount: string | null;
+                }[];
                 bucket: string | null;
                 lotId: string | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                godownId: string | null;
                 claimValue: Prisma.Decimal;
                 claimSettled: Prisma.Decimal;
                 claimOpen: Prisma.Decimal;
+                outcomeText: string;
+                reasonName: string | null;
+                claimPartyName: string | null;
+                billedQty: Prisma.Decimal | null;
+                inQty: Prisma.Decimal | null;
+                returnedQty: Prisma.Decimal;
+                returnableQty: Prisma.Decimal | null;
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
@@ -945,6 +1468,18 @@ export declare class PurchaseReturnController {
                 priPrId: string;
                 priAccYear: string;
             }[];
+            totals: {
+                rows: number;
+                returnNow: string;
+                claimsRaised: string;
+                replaceQtyBase: string;
+                itcReversed: string;
+                itcOnDestroyed: string;
+                itcPendingOnReplace: string;
+                goodsValue: string;
+                supplierBalance: string;
+                supplierBalanceNow: string;
+            };
         };
     }>;
     cancel(dto: ReturnCancelDto): Promise<{
@@ -953,6 +1488,23 @@ export declare class PurchaseReturnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
+                placeOfSupply: string | null;
+                srcRefno: string;
+                srcDocDate: Date;
+                claimPartyId: string | null;
+                claimPartyName: string | null;
+                claimAgainst: string | null;
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 prId: string;
                 prCompanyId: string;
                 prBranchId: string;
@@ -993,15 +1545,34 @@ export declare class PurchaseReturnController {
                 prCreatedBy: string;
                 prModifiedOn: Date | null;
                 prModifiedBy: string | null;
+                prMemoRef: string | null;
             };
             lines: {
+                creditTo: {
+                    kind: string;
+                    name: string | null;
+                };
+                writes: {
+                    drCr: string;
+                    head: string;
+                    amount: string | null;
+                }[];
                 bucket: string | null;
                 lotId: string | null;
                 batchNo: string | null;
                 expiryDate: Date | null;
+                mrp: Prisma.Decimal | null;
+                godownId: string | null;
                 claimValue: Prisma.Decimal;
                 claimSettled: Prisma.Decimal;
                 claimOpen: Prisma.Decimal;
+                outcomeText: string;
+                reasonName: string | null;
+                claimPartyName: string | null;
+                billedQty: Prisma.Decimal | null;
+                inQty: Prisma.Decimal | null;
+                returnedQty: Prisma.Decimal;
+                returnableQty: Prisma.Decimal | null;
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
@@ -1060,6 +1631,18 @@ export declare class PurchaseReturnController {
                 priPrId: string;
                 priAccYear: string;
             }[];
+            totals: {
+                rows: number;
+                returnNow: string;
+                claimsRaised: string;
+                replaceQtyBase: string;
+                itcReversed: string;
+                itcOnDestroyed: string;
+                itcPendingOnReplace: string;
+                goodsValue: string;
+                supplierBalance: string;
+                supplierBalanceNow: string;
+            };
         };
     }>;
     sources(q: SourcesQueryDto): Promise<{
@@ -1080,6 +1663,9 @@ export declare class PurchaseReturnController {
                 supplierInvNo: string | null;
                 status: string;
                 docType: "PURCHASE_BILL" | "GRN";
+                posStcd: string | null;
+                branchId: string;
+                docDate: Date;
             };
             lines: {
                 inQty: Prisma.Decimal;
@@ -1118,10 +1704,19 @@ export declare class PurchaseReturnController {
         success: boolean;
         message: string;
         data: {
-            settlementId: string;
-            accYear: string;
+            returnItemId: string;
+            refno: string;
+            lineNo: number;
+            action: string;
+            receivedAs: string | null;
             amount: Prisma.Decimal;
+            gstReavailed: Prisma.Decimal;
             open: Prisma.Decimal;
+            companyId: string;
+            branchId: string;
+            dryRun: boolean;
+            settlementId: string | null;
+            accYear: string;
             voucherRefno: string | null;
         };
     }>;
@@ -1134,3 +1729,4 @@ export declare class PurchaseReturnController {
         };
     }>;
 }
+export {};

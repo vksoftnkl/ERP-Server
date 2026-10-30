@@ -262,16 +262,11 @@ let StaffAdvanceLedgerService = class StaffAdvanceLedgerService {
             const clash = await tx.accLedgerMaster.findFirst({
                 where: {
                     ...(excludeLedId ? { ledId: { not: excludeLedId } } : {}),
-                    OR: [
-                        {
-                            ledIsDeleted: false,
-                            ledName: { equals: name, mode: 'insensitive' },
-                            ...(companyId === null
-                                ? {}
-                                : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
-                        },
-                        ...(companyId === null ? [] : [{ ledCompanyId: companyId, ledName: name }]),
-                    ],
+                    ledIsDeleted: false,
+                    ledName: { equals: name, mode: 'insensitive' },
+                    ...(companyId === null
+                        ? {}
+                        : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
                 },
                 select: { ledId: true },
             });

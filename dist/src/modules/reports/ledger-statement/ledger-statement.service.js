@@ -35,10 +35,10 @@ let LedgerStatementService = class LedgerStatementService {
         await this.assertMenuRight();
         const rows = await this.prisma.$queryRaw `
       SELECT l.led_id, l.led_name, l.led_group_id, g.acc_group_name, l.led_is_bill_by_bill,
-             l.led_company_id
+             l.led_company_id, l.led_is_deleted
         FROM accounts.acc_ledger_master l
         LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
-       WHERE l.led_is_deleted = false
+       WHERE (l.led_is_deleted = false OR ${q.includeDeleted === true})
          AND (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND (${q.groupId ?? null}::uuid IS NULL OR l.led_group_id = ${q.groupId ?? null}::uuid)
          AND ${(0, loose_search_1.looseSearchSql)(['l.led_name', 'l.led_alias', 'l.led_short', 'l.led_gstin_no', 'l.led_phone1'], q.search)}
@@ -52,6 +52,7 @@ let LedgerStatementService = class LedgerStatementService {
                 groupName: r.acc_group_name,
                 isBillByBill: r.led_is_bill_by_bill === true,
                 isShared: r.led_company_id === null,
+                isDeleted: r.led_is_deleted === true,
             })),
         };
     }
@@ -244,7 +245,7 @@ let LedgerStatementService = class LedgerStatementService {
         }
         const [led] = await this.prisma.$queryRaw `
       SELECT led_company_id FROM accounts.acc_ledger_master
-       WHERE led_id = ${q.ledgerId}::uuid AND led_is_deleted = false`;
+       WHERE led_id = ${q.ledgerId}::uuid`;
         if (!led) {
             (0, module_service_utils_1.throwAccountsNotFound)('Ledger not found', 'ledgerId', `No live ledger ${q.ledgerId}`, ledger_statement_types_1.LEDGER_STATEMENT_ERROR.LEDGER_NOT_FOUND);
         }
@@ -539,7 +540,7 @@ let LedgerStatementService = class LedgerStatementService {
     async ledgerFacts(scope) {
         const [r] = await this.prisma.$queryRaw `
       SELECT l.led_id, l.led_name, g.acc_group_name, g.acc_group_nature, l.led_is_bill_by_bill,
-             l.led_gstin_no, l.led_phone1, l.led_whatsapp_no,
+             l.led_gstin_no, l.led_phone1, l.led_whatsapp_no, l.led_is_deleted,
              c.cus_credit_days, c.cus_credit_amt_limit, s.sup_credit_days
         FROM accounts.acc_ledger_master l
         LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
@@ -550,6 +551,7 @@ let LedgerStatementService = class LedgerStatementService {
         return {
             ledgerId: r.led_id,
             name: r.led_name,
+            isDeleted: r.led_is_deleted === true,
             groupName: r.acc_group_name,
             nature: r.acc_group_nature,
             isBillByBill: r.led_is_bill_by_bill === true,

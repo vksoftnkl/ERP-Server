@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { applyValueSlabs } from '../common/purchase-value-slab';
 import { assertNoUnregisteredRcm } from '../common/purchase-rcm';
 import { recordSisterPull } from '../sister/purchase-sister';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PurInvoiceItem, type PurItemAlloc } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
@@ -28,7 +28,12 @@ import {
   allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
   shelfLifeIssues,
 } from '../common/purchase-doc.helpers';
-import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto } from './dto/save-purchase-invoice.dto';
+import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto, PurchaseTransportDto } from './dto/save-purchase-invoice.dto';
+import { checkLines, type LineCheck, type LineFact, type PurIssue } from './purchase-invoice-checks';
+import { msmeDueDays } from '../lookup/purchase-lookup';
+import { supplierBillFrom, type BillFromRow } from '../common/purchase-bill-from';
+import { TransportBandService, type TransportBandInput } from 'src/modules/sales/posting/transport-band.service';
+import { isPresentField } from 'src/common/utils/module-shared.utils';
 
 /**
  * Purchase Invoice — save (draft), save + post, get, preview, cancel.
@@ -93,7 +98,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Tx = Prisma.TransactionClient;
 
-interface SupplierRow { sup_id: string; sup_name: string; sup_state_code: string | null; sup_gst_type: string | null; sup_gst_no: string | null; sup_credit_days: number | null }
+interface SupplierRow {
+  sup_id: string; sup_name: string; sup_state_code: string | null; sup_gst_type: string | null; sup_gst_no: string | null; sup_credit_days: number | null;
+  led_is_reverse_charge: boolean | null; msme_category: string | null; sup_msme_activity: string | null; sup_msme_agreement: boolean | null; sup_msme_agreed_days: number | null;
+}
 interface ItemRow { iuc_id: string; iuc_item_id: string; iuc_to_base_factor: Prisma.Decimal; base_iuc_id: string; item_default_tax_id: string | null; item_hsn_code: string | null; item_itc_class: string | null; item_shortage_pct: Prisma.Decimal | null; item_name: string | null }
 interface TaxRow { tax_id: string; tax_rate_perc: Prisma.Decimal; tax_cess_perc: Prisma.Decimal | null; tax_cess_per_unit: Prisma.Decimal | null }
 interface ChargeRow { chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null; chg_before_tax: boolean; chg_tax_apl: boolean; chg_landing_cost: boolean; chg_on_bill: boolean; chg_ledger_code: string; chg_role: string | null; tax_rate_perc: Prisma.Decimal | null; chg_tax_id: string | null }
@@ -154,6 +162,12 @@ interface Prepared {
   info: LineInfo[];
   /** set by save (the purchase.* settings snapshotted on the bill) */
   settings?: PurchaseSettings;
+  /** S1/S2 — the header facts the server derives: bill-from GSTIN + its state, place of supply (our branch's state), reverse charge, agent */
+  billFrom: BillFromRow;
+  supplierState: string | null;
+  posStcd: string | null;
+  reverseCharge: { value: boolean; reason: string };
+  agent: { id: string; name: string } | null;
   allocs: Map<number, { godownId: string; bucket: string; batchNo: string | null; mfgDate: string | null; expiryDate: string | null; mrp: number | null; salePrice: number | null; serialNo: string | null; warrantyTo: string | null; sizeId: string | null; colourId: string | null; model: string | null; qty: Prisma.Decimal; freeQty: Prisma.Decimal }[]>;
 }
 
@@ -165,14 +179,18 @@ export class PurchaseInvoiceService {
     private readonly vouchers: VoucherPostingService,
     private readonly stockPosting: StockPostingService,
     private readonly prices: SellingPriceBulkService,
+    private readonly transportBand: TransportBandService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
   //  preview — the calculation only, nothing written
   // ═══════════════════════════════════════════════════════════════════════
   async preview(dto: SavePurchaseInvoiceDto) {
-    const p = await this.prepare(this.prisma as unknown as Tx, dto);
-    return this.calcPayload(p, dto);
+    const db = this.prisma as unknown as Tx;
+    const p = await this.prepare(db, dto);
+    p.settings = await loadPurchaseSettings(db, dto.header.companyId, dto.header.branchId);
+    const { issues, checks } = await this.collectIssues(db, dto, p, p.settings);
+    return { ...this.calcPayload(p, dto, checks), warnings: issues.filter((x) => x.level === 'WARN'), refusals: issues.filter((x) => x.level === 'REFUSE') };
   }
 
   /**
@@ -216,28 +234,23 @@ export class PurchaseInvoiceService {
   async save(dto: SavePurchaseInvoiceDto) {
     const actor = this.actor();
     const h = dto.header;
-    const warnings: { code: string; message: string; field: string }[] = [];
+    const warnings: PurIssue[] = [];
+    let refusals: PurIssue[] = [];
     const piId = await this.prisma.$transaction(
       async (tx) => {
         const p = await this.prepare(tx, dto);
         const settings = await loadPurchaseSettings(tx, h.companyId, h.branchId);
         p.settings = settings;
-        await this.assertNotDuplicate(tx, dto, settings, warnings);
-        if (h.post) this.assertPrintedAmount(p, dto, settings, warnings);
-        // WS6: a GRN line billed for less than was kept — the rest are free goods (they share the cost)
-        dto.lines.forEach((l, i) => {
-          const g = p.grn.get(l.lineNo);
-          if (g?.free_kept?.greaterThan(0)) {
-            warnings.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', field: `lines.${i}.billedQty`,
-              message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
-          }
-        });
-        // ENT-15 on a direct bill (lines from a GRN were judged on the GRN): WARN on any save, REFUSE stops the post
-        const shelf = await shelfLifeIssues(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate,
-          dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
-            lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null })))));
-        if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post) purRefuseMany(shelf[0].message, shelf);
-        if (!h.post) warnings.push(...shelf);   // a post says it itself
+        const legacy: { code: string; message: string; field: string }[] = [];
+        await this.assertNotDuplicate(tx, dto, settings, legacy);        // REFUSE setting: 409 on any save (unchanged)
+        if (h.post) this.assertPrintedAmount(p, dto, settings, legacy);  // REFUSE setting: 422 at post (unchanged)
+        warnings.push(...legacy.map((w) => this.issueOf(w, 'WARN', dto)));
+        // S4: the strip — WS6 kept-not-billed, ENT-15 shelf life, the line checks (rate / short / serials / prices), RCM
+        const { issues } = await this.collectIssues(tx, dto, p, settings, { skipDuplicate: true, skipAmount: !!h.post });
+        refusals = issues.filter((x) => x.level === 'REFUSE');
+        if (h.post && refusals.length) purRefuseMany(refusals[0].message, refusals.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+        // a post says shelf life itself (postInTx, under the post's own settings)
+        warnings.push(...issues.filter((x) => x.level === 'WARN' && !(h.post && x.code === 'PUR_SHELF_LIFE')));
 
         let id = h.piId ?? null;
         let slno: bigint, refno: string, fromStatus: string | null = null;
@@ -256,19 +269,121 @@ export class PurchaseInvoiceService {
         if (!fromStatus) {
           await this.log(tx, dto, id, refno, TxnStatusEvent.CREATED, null, 'DRAFT', actor);
         }
-        if (h.post) for (const note of await this.postInTx(tx, id, h.accYear, actor)) warnings.push(note);
+        if (h.post) {
+          const notes = await this.postInTx(tx, id, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null });
+          for (const note of notes) {
+            const hit = warnings.find((w) => w.code === note.code && w.field === note.field);
+            if (hit) Object.assign(hit, { message: note.message }); else warnings.push(this.issueOf(note, 'WARN', dto));
+          }
+          // S5: what the override went past is not "on hold" — the PUR_WARN_OVERRIDDEN note says what happened instead
+          if (notes.some((n) => n.code === 'PUR_WARN_OVERRIDDEN')) warnings.splice(0, warnings.length, ...warnings.filter((w) => w.code !== 'PUR_RATE_ABOVE_PO'));
+        }
         return id;
       },
       { timeout: 60000, maxWait: 10000 },
     );
-    // a WARN setting lets the bill through and says so
-    return { ...(await this.get(piId, h.accYear)), warnings };
+    // a WARN setting lets the bill through and says so; a draft lists what Post would refuse
+    return { ...(await this.get(piId, h.accYear)), warnings, refusals: h.post ? [] : refusals };
   }
 
-  async post(piId: string, accYear: string) {
+  async post(piId: string, accYear: string, opts: { override?: boolean; reason?: string | null } = {}) {
     const actor = this.actor();
-    await this.prisma.$transaction((tx) => this.postInTx(tx, piId, accYear, actor), { timeout: 60000, maxWait: 10000 });
-    return this.get(piId, accYear);
+    const notes = await this.prisma.$transaction((tx) => this.postInTx(tx, piId, accYear, actor, { override: !!opts.override, reason: opts.reason ?? null }),
+                                                 { timeout: 60000, maxWait: 10000 });
+    return { ...(await this.get(piId, accYear)), warnings: notes.map((n) => this.issueOf(n, 'WARN', null)), refusals: [] as PurIssue[] };
+  }
+
+  /** A {code, message, field} note as a strip entry. */
+  private issueOf(w: { code: string; message: string; field: string }, level: 'WARN' | 'REFUSE', dto: SavePurchaseInvoiceDto | null): PurIssue {
+    const m = /^lines\.(\d+)/.exec(w.field);
+    const lineNo = m ? (dto ? dto.lines[Number(m[1])]?.lineNo ?? Number(m[1]) + 1 : Number(m[1])) : null;
+    return { code: w.code, level, lineNo, field: w.field, message: w.message, needsRight: null };
+  }
+
+  /**
+   * S4 — every WARN / REFUSE the screen shows before Post, nothing thrown: duplicate bill and printed amount
+   * (by their settings), WS6 kept-not-billed, ENT-15 shelf life, the line checks, reverse charge.
+   */
+  private async collectIssues(tx: Tx, dto: SavePurchaseInvoiceDto, p: Prepared, settings: PurchaseSettings, opts: { skipDuplicate?: boolean; skipAmount?: boolean } = {}) {
+    const h = dto.header;
+    const out: PurIssue[] = [];
+    if (!opts.skipDuplicate) {
+      const dup = await this.duplicateOf(tx, dto);
+      if (dup) out.push({ code: PUR.DUPLICATE_SUPPLIER_INVOICE, level: settings.duplicateBillMode === 'WARN' ? 'WARN' : 'REFUSE', lineNo: null, field: 'header.supplierInvNo', needsRight: null, message: dup });
+    }
+    if (!opts.skipAmount) {
+      const diff = D(h.invoiceAmountPrinted).minus(p.calc.netPayable);
+      if (!diff.isZero()) {
+        out.push({ code: PUR.INVOICE_AMOUNT_MISMATCH, level: settings.invAmountCheck === 'WARN' ? 'WARN' : 'REFUSE', lineNo: null, field: 'header.invoiceAmountPrinted', needsRight: null,
+          message: settings.invAmountCheck === 'WARN'
+            ? `Posted at the net payable ${p.calc.netPayable.toFixed(2)}; the bill says ${D(h.invoiceAmountPrinted).toFixed(2)} (difference ${diff.toFixed(2)}).`
+            : `Invoice amount ${D(h.invoiceAmountPrinted).toFixed(2)} does not match the net payable ${p.calc.netPayable.toFixed(2)} (difference ${diff.toFixed(2)}). Check the lines, charges and round off.` });
+      }
+    }
+    // WS6: a GRN line billed for less than was kept — the rest are free goods (they share the cost)
+    dto.lines.forEach((l, i) => {
+      const g = p.grn.get(l.lineNo);
+      if (g?.free_kept?.greaterThan(0)) {
+        out.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', level: 'WARN', lineNo: l.lineNo, field: `lines.${i}.billedQty`, needsRight: null,
+          message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
+      }
+    });
+    // ENT-15 on a direct bill (lines from a GRN were judged on the GRN)
+    const shelf = await shelfLifeIssues(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate,
+      dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
+        lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null })))));
+    out.push(...shelf.map((x) => this.issueOf(x, settings.shelfLifeMode === 'REFUSE' ? 'REFUSE' : 'WARN', dto)));
+    if (p.reverseCharge.value) {
+      out.push({ code: 'PUR_RCM_NOT_SUPPORTED', level: 'REFUSE', lineNo: null, field: 'header.supplierId', needsRight: null,
+        message: `${p.supplier.sup_name} is a reverse-charge party — phase 1 posts no reverse-charge GST. Enter it through Expense Voucher (RCM).` });
+    }
+    const judged = await checkLines(tx, { companyId: h.companyId, branchId: h.branchId, docDate: h.docDate.slice(0, 10), piId: h.piId ?? null, tolerancePct: settings.rateTolerancePct },
+                                    this.factsFromDto(dto, p));
+    out.push(...judged.issues);
+    return { issues: out, checks: judged.checks };
+  }
+
+  private factsFromDto(dto: SavePurchaseInvoiceDto, p: Prepared): LineFact[] {
+    return dto.lines.map((l, i) => {
+      const o = p.calc.lines[i];
+      const it = p.items.get(l.uomId)!;
+      const g = p.grn.get(l.lineNo), po = p.po.get(l.lineNo);
+      const rows = p.allocs.get(l.lineNo) ?? [];
+      const billed = D(l.billedQty);
+      const pieces = g ? D(l.receivedQty).plus(D(l.damagedQty)).plus(D(l.freeQty)) : rows.reduce((a, r) => a.plus(r.qty).plus(r.freeQty), ZERO);
+      return {
+        index: i, lineNo: l.lineNo, itemId: l.itemId, itemName: it.item_name, factor: D(it.iuc_to_base_factor), billed, taxable: o.taxable,
+        costInclUnit: billed.greaterThan(0) ? o.total.dividedBy(billed) : null, pieces,
+        srcType: g ? 'GRN' : po ? 'PURCHASE_ORDER' : null, srcItemId: g?.gri_id ?? po?.poi_id ?? null,
+        serials: rows.map((r) => r.serialNo).filter((x): x is string => !!x),
+        mrps: [l.mrp, ...rows.map((r) => r.mrp)].filter((x): x is number => x !== null && x !== undefined).map((x) => D(x)),
+        sellA: l.sellA !== null && l.sellA !== undefined ? D(l.sellA) : null,
+        pendingShort: o.pendingShortQty, shortValue: o.shortValue, gstOnShort: o.itcPending, priceUpdateResult: null,
+      };
+    });
+  }
+
+  /** The same facts from a saved bill (post / get). */
+  private factsFromStored(lines: PurInvoiceItem[], allocs: PurItemAlloc[], names: Map<string, string>): LineFact[] {
+    return lines.map((l, i) => {
+      const rows = allocs.filter((a) => a.piaLineId === l.piiId);
+      const pieces = l.piiSrcDocType === 'GRN' ? l.piiReceivedQty.plus(l.piiDamagedQty).plus(l.piiFreeQty) : rows.reduce((a, r) => a.plus(r.piaQty).plus(r.piaFreeQty), ZERO);
+      return {
+        index: i, lineNo: l.piiLineNo, itemId: l.piiItemId, itemName: names.get(l.piiItemId) ?? null, factor: l.piiToBaseFactor, billed: l.piiBilledQty, taxable: l.piiTaxableAmt,
+        costInclUnit: l.piiBilledQty.greaterThan(0) ? l.piiTotalAmt.dividedBy(l.piiBilledQty) : null, pieces,
+        srcType: l.piiSrcDocType ?? null, srcItemId: l.piiSrcItemId ?? null,
+        serials: rows.map((r) => r.piaSerialNo).filter((x): x is string => !!x),
+        mrps: [l.piiMrp, ...rows.map((r) => r.piaMrp)].filter((x): x is Prisma.Decimal => !!x),
+        sellA: l.piiSellA ?? null, pendingShort: l.piiShortQty,
+        shortValue: l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.times(l.piiShortQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
+        gstOnShort: l.piiItcPendingAmt, priceUpdateResult: l.piiPriceUpdateResult ?? null,
+      };
+    });
+  }
+
+  private async itemNames(db: Tx, ids: string[]) {
+    const rows = ids.length ? await db.$queryRaw<{ item_id: string; n: string }[]>`SELECT item_id, item_name_en AS n FROM inventory.item_master WHERE item_id = ANY(${[...new Set(ids)]}::uuid[])` : [];
+    return new Map(rows.map((r) => [r.item_id, r.n]));
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -293,11 +408,47 @@ export class PurchaseInvoiceService {
     ]);
     const byLine = new Map<string, typeof allocs>();
     for (const a of allocs) byLine.set(a.piaLineId, [...(byLine.get(a.piaLineId) ?? []), a]);
+    const db = this.prisma as unknown as Tx;
+    const [extra] = await this.prisma.$queryRaw<{ godown: string | null; agent: string | null; pos_name: string | null; branch_state: string | null }[]>`
+      SELECT (SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid) AS godown,
+             (SELECT pag_name FROM purchase.pur_agent WHERE pag_id = ${header.piAgentId}::uuid) AS agent,
+             (SELECT state_name FROM fixed.state_codes WHERE state_code = ${header.piPosStcd}) AS pos_name,
+             (SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id
+               WHERE b.br_id = ${header.piBranchId}::uuid) AS branch_state`;
+    // S2 — which of the supplier's GSTINs the bill is from (the address row when it is not the master's)
+    const gstin = (header.piSupplierGstin ?? '').trim().toUpperCase();
+    const billFrom = gstin ? (await this.billFromOptions(db, header.piSupplierId)).find((o) => o.gstin === gstin) ?? null : null;
+    const billFromState = billFrom?.state_code ?? (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : null);
+    const pos = header.piPosStcd ?? extra?.branch_state ?? null;
+    const band = await this.transportBand.read({ docType: DOC_TYPE as 'PURCHASE_BILL', docId: piId, accYear });
+    // S6 / S7 — the TOTALS panel and the Check column, computed from the saved rows
+    const settings = await loadPurchaseSettings(db, header.piCompanyId, header.piBranchId);
+    const judged = await checkLines(db, { companyId: header.piCompanyId, branchId: header.piBranchId, docDate: isoDate(header.piDocDate), piId, tolerancePct: settings.rateTolerancePct },
+                                    this.factsFromStored(lines, allocs, await this.itemNames(db, lines.map((l) => l.piiItemId))));
+    const chargeTax = charges.reduce((a, c) => a.plus(D(c.cgst as Prisma.Decimal)).plus(D(c.sgst as Prisma.Decimal)).plus(D(c.igst as Prisma.Decimal)), ZERO);
+    const totals = {
+      gross: header.piGrossAmt.toFixed(2), discount: header.piDiscAmt.toFixed(2), taxable: header.piTaxableAmt.toFixed(2),
+      cgst: header.piCgstAmt.toFixed(2), sgst: header.piSgstAmt.toFixed(2), igst: header.piIgstAmt.toFixed(2), cess: header.piCessAmt.toFixed(2), chargeTax: chargeTax.toFixed(2),
+      chargesOnBill: header.piChargesOnBill.toFixed(2), tcs: header.piTcsAmt.toFixed(2), roundOff: header.piRoundOff.toFixed(2), netPayable: header.piNetPayable.toFixed(2),
+      offbillCharges: header.piOffbillCharges.toFixed(2), shortValue: header.piShortValue.toFixed(2),
+      itcEligible: header.piItcEligibleAmt.toFixed(2), itcPending: header.piItcPendingAmt.toFixed(2), itcIneligible: header.piItcIneligibleAmt.toFixed(2),
+      ...this.panelTotals({ cgst: header.piCgstAmt, sgst: header.piSgstAmt, igst: header.piIgstAmt, cess: header.piCessAmt, chargeTax, netPayable: header.piNetPayable,
+                            printed: header.piInvoiceAmountPrinted, mode: header.piMode, shortQty: lines.reduce((a, l) => a.plus(l.piiShortQty), ZERO),
+                            shortLines: lines.filter((l) => l.piiShortQty.greaterThan(0)).length, itcPending: header.piItcPendingAmt }),
+    };
     return jsonSafe({
-      header: { ...header, supplierName: supplier[0]?.sup_name ?? null,
-                godownName: (await this.prisma.$queryRaw<{ gdl_name: string }[]>`SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid`)[0]?.gdl_name ?? null },
-      lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [] })),
+      header: { ...header, supplierName: supplier[0]?.sup_name ?? null, godownName: extra?.godown ?? null,
+                agentName: extra?.agent ?? null,
+                billFromGstin: gstin || null, billFromAddrId: billFrom?.addr_id ?? null, billFromStateCode: billFromState,
+                posStateName: extra?.pos_name ?? null, interState: !!billFromState && !!pos && billFromState !== pos,
+                reverseChargeReason: header.piIsReverseCharge ? 'supplier ledger is marked reverse charge'
+                  : header.piSupplierGstType === 'COMPOSITION' ? 'composition supplier' : header.piSupplierGstType === 'UNREGISTERED' ? 'unregistered supplier, no notified goods' : 'regular supplier',
+                transport: band || header.piVehicleNo || header.piDriverName ? { vehicleNo: header.piVehicleNo ?? null, driverName: header.piDriverName ?? null, mode: band?.mode ?? null, transporterId: band?.transporterId ?? null, transporterName: band?.transporterName ?? null,
+                                    transporterGstin: band?.transporterGstin ?? null, lrNo: band?.lrNo ?? null, lrDate: band?.lrDate ? String(band.lrDate).slice(0, 10) : null,
+                                    distanceKm: band?.distanceKm ?? null, remarks: band?.remarks ?? null, from: band?.from ?? null, to: band?.to ?? null } : null },
+      lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [], check: judged.checks.get(l.piiLineNo) ?? null })),
       charges,
+      totals,
     });
   }
 
@@ -423,18 +574,42 @@ export class PurchaseInvoiceService {
       purRefuse('Cash purchase is not built yet — enter it as Credit and pay it in Payment.', PUR.MODE_NOT_SUPPORTED, 'header.mode');
     }
     const [supplier] = await tx.$queryRaw<SupplierRow[]>`
-      SELECT sup_id, sup_name, sup_state_code, sup_gst_type, sup_gst_no, sup_credit_days
-        FROM purchase.suppliers WHERE sup_id = ${h.supplierId}::uuid AND sup_is_deleted = false`;
+      SELECT s.sup_id, s.sup_name, s.sup_state_code, s.sup_gst_type, s.sup_gst_no, s.sup_credit_days,
+             l.led_is_reverse_charge, COALESCE(NULLIF(s.sup_msme_category, ''), NULLIF(l.led_msme_type, '')) AS msme_category,
+             s.sup_msme_activity, s.sup_msme_agreement, s.sup_msme_agreed_days
+        FROM purchase.suppliers s LEFT JOIN accounts.acc_ledger_master l ON l.led_id = s.sup_id
+       WHERE s.sup_id = ${h.supplierId}::uuid AND s.sup_is_deleted = false`;
     if (!supplier) purNotFound(`Supplier ${h.supplierId} not found`, PUR.SUPPLIER_NOT_FOUND, 'header.supplierId');
     const [branch] = await tx.$queryRaw<{ state: string | null }[]>`
       SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
         FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id
        WHERE b.br_id = ${h.branchId}::uuid`;
+    // S2 — bill from: the supplier GSTIN the bill is from (default the master's); its state is the supplier's side of the IGST test
+    const billFrom = await this.resolveBillFrom(tx, supplier, h.billFromGstin ?? null);
+    // S1 — place of supply of goods received here = our branch's state (read-only on the screen)
     const ourState = (branch?.state ?? '').trim();
-    const theirState = (supplier.sup_state_code ?? '').trim() || (supplier.sup_gst_no ?? '').slice(0, 2);
+    const theirState = (billFrom.state_code ?? '').trim() || billFrom.gstin.slice(0, 2) || (supplier.sup_state_code ?? '').trim();
     const interState = !!ourState && !!theirState && ourState !== theirState;
     const gt = (supplier.sup_gst_type ?? 'REGULAR').toUpperCase();
     const taxMode = gt.startsWith('COMP') ? 'COMPOSITION' : gt.startsWith('UNREG') ? 'UNREGISTERED' : 'REGULAR';
+    // S1 — reverse charge is DERIVED, never typed (plan §3.3 "auto from supplier + item / service"): the supplier's ledger is
+    // marked reverse charge. Notified goods from an unregistered supplier never get here (R13 refuses them).
+    const reverseCharge = supplier.led_is_reverse_charge
+      ? { value: true, reason: 'supplier ledger is marked reverse charge' }
+      : { value: false, reason: taxMode === 'REGULAR' ? 'regular supplier' : taxMode === 'COMPOSITION' ? 'composition supplier' : 'unregistered supplier, no notified goods' };
+    // S1 — agent: a purchase agent (pur_agent.pag_id = his ledger)
+    let agent: Prepared['agent'] = null;
+    if (h.agentId) {
+      const [a] = await tx.$queryRaw<{ pag_id: string; pag_name: string; pag_is_active: boolean; pag_company_id: string | null }[]>`
+        SELECT pag_id, pag_name, pag_is_active, pag_company_id FROM purchase.pur_agent WHERE pag_id = ${h.agentId}::uuid AND NOT pag_is_deleted`;
+      if (!a || (a.pag_company_id && a.pag_company_id !== h.companyId)) purNotFound(`Agent ${h.agentId} not found`, 'PUR_AGENT_NOT_FOUND', 'header.agentId');
+      if (!a.pag_is_active) purRefuse(`Agent ${a.pag_name} is inactive.`, 'PUR_AGENT_INACTIVE', 'header.agentId');
+      agent = { id: a.pag_id, name: a.pag_name };
+    }
+    if (h.transport?.transporterId) {
+      const [t] = await tx.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM public.transporter_master WHERE trn_id = ${h.transport.transporterId}::uuid AND NOT trn_is_deleted`;
+      if (!Number(t?.n)) purNotFound(`Transporter ${h.transport.transporterId} not found`, 'PUR_TRANSPORTER_NOT_FOUND', 'header.transport.transporterId');
+    }
 
     const uomIds = [...new Set(dto.lines.map((l) => l.uomId))];
     const items = new Map(
@@ -607,7 +782,21 @@ export class PurchaseInvoiceService {
     });
     if (allocProblems.length) purRefuseMany(allocProblems[0].message, allocProblems);
 
-    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info };
+    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info,
+             billFrom, supplierState: theirState || null, posStcd: ourState || null, reverseCharge, agent };
+  }
+
+  /** S2 — the supplier's GSTINs (common/purchase-bill-from). */
+  billFromOptions(db: Tx, supplierId: string) { return supplierBillFrom(db, supplierId); }
+
+  private async resolveBillFrom(tx: Tx, supplier: SupplierRow, wanted: string | null): Promise<BillFromRow> {
+    const want = (wanted ?? '').trim().toUpperCase();
+    const master: BillFromRow = { addr_id: null, gstin: (supplier.sup_gst_no ?? '').trim().toUpperCase(), state_code: (supplier.sup_state_code ?? '').trim() || null,
+                                  state_name: null, name: supplier.sup_name, addr: null, place: null, pin: null, is_default: true, source: 'MASTER' };
+    if (!want || want === master.gstin) return master;
+    const hit = (await this.billFromOptions(tx, supplier.sup_id)).find((o) => o.gstin === want);
+    if (!hit) purRefuse(`${want} is not one of ${supplier.sup_name}'s GSTINs — add it as a billing address on the supplier's ledger, or pick another.`, 'PUR_BILL_FROM_UNKNOWN', 'header.billFromGstin');
+    return hit;
   }
 
   /**
@@ -815,21 +1004,55 @@ export class PurchaseInvoiceService {
     );
   }
 
-  private calcPayload(p: Prepared, dto: SavePurchaseInvoiceDto) {
+  private calcPayload(p: Prepared, dto: SavePurchaseInvoiceDto, checks: Map<number, LineCheck>) {
     const c = p.calc;
+    const h = dto.header;
+    const dd = this.dueDates(dto, p);
     return {
       interState: p.interState,
       supplierTaxMode: p.taxMode,
+      // S1 / S2 — what the server derives for the header (read-only on the screen)
+      header: {
+        billFromGstin: p.billFrom.gstin || null, billFromAddrId: p.billFrom.addr_id, billFromStateCode: p.supplierState,
+        posStcd: p.posStcd, isReverseCharge: p.reverseCharge.value, reverseChargeReason: p.reverseCharge.reason,
+        agentId: p.agent?.id ?? null, agentName: p.agent?.name ?? null,
+        creditDays: dd.creditDays, goodsReceivedOn: dd.goodsReceivedOn, creditDueDate: dd.creditDue, msmeDueDate: dd.msmeDue, dueDate: dd.due,
+        transport: h.transport ? this.bandInput(h.transport, dto, p) : null,
+      },
       lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
-                                      ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null })),
+                                      ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null, check: checks.get(dto.lines[i].lineNo) ?? null })),
       charges: c.charges.map((ch, i) => ({ chgId: dto.charges![i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
-      totals: decimals({ ...c, lines: undefined, charges: undefined }),
+      totals: { ...decimals({ ...c, lines: undefined, charges: undefined }), ...this.panelTotals({ cgst: c.cgst, sgst: c.sgst, igst: c.igst, cess: c.cess, chargeTax: c.chargeTax,
+                netPayable: c.netPayable, printed: D(h.invoiceAmountPrinted), mode: h.mode ?? 'CREDIT', shortQty: c.lines.reduce((a, l) => a.plus(l.pendingShortQty), ZERO), shortLines: c.lines.filter((l) => l.pendingShortQty.greaterThan(0)).length, itcPending: c.itcPending }) },
       invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
       difference: D(dto.header.invoiceAmountPrinted).minus(c.netPayable).toFixed(2),
     };
   }
 
+  /** S6 — the TOTALS panel's computed rows (never stored): GST split + total, printed vs net, short parked, cash tender. */
+  private panelTotals(a: { cgst: Prisma.Decimal; sgst: Prisma.Decimal; igst: Prisma.Decimal; cess: Prisma.Decimal; chargeTax: Prisma.Decimal; netPayable: Prisma.Decimal;
+                           printed: Prisma.Decimal; mode: string; shortQty: Prisma.Decimal; shortLines: number; itcPending: Prisma.Decimal }) {
+    const diff = a.printed.minus(a.netPayable);
+    return {
+      gstTotal: a.cgst.plus(a.sgst).plus(a.igst).plus(a.chargeTax).toFixed(2),   // cess is its own row (totals.cess)
+      invoiceAmountPrinted: a.printed.toFixed(2), difference: diff.toFixed(2), amountMatches: diff.isZero(),
+      shortQty: a.shortQty.toString(), shortLines: a.shortLines, gstOnShort: a.itcPending.toFixed(2),
+      mode: a.mode,
+      // DOC-09 cash purchase is not built (prepare refuses mode CASH, PUR_MODE_NOT_SUPPORTED): no tender rows to show
+      cashTender: null as null,
+    };
+  }
+
   private async assertNotDuplicate(tx: Tx, dto: SavePurchaseInvoiceDto, settings: PurchaseSettings, warnings: { code: string; message: string; field: string }[]) {
+    const message = await this.duplicateOf(tx, dto);
+    if (!message) return;
+    // purchase.duplicate_bill_mode — WARN lets it through (a supplier that reuses numbers)
+    if (settings.duplicateBillMode === 'WARN') warnings.push({ code: PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
+    else purConflict(message, PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
+  }
+
+  /** The bill this supplier invoice no is already entered as, said in words; null = none. */
+  private async duplicateOf(tx: Tx, dto: SavePurchaseInvoiceDto): Promise<string | null> {
     const h = dto.header;
     // R1 / P17: company-wide, every branch; not a unique index (offline branches)
     const dup = await tx.$queryRaw<{ pi_refno: string; br: string | null }[]>`
@@ -840,12 +1063,7 @@ export class PurchaseInvoiceService {
          AND pi.pi_acc_year = ${h.accYear}::bpchar AND pi.pi_is_deleted = false AND pi.pi_status <> 'CANCELLED'
          AND (${h.piId ?? null}::uuid IS NULL OR pi.pi_id <> ${h.piId ?? null}::uuid)
        LIMIT 1`;
-    if (dup.length) {
-      const message = `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`;
-      // purchase.duplicate_bill_mode — WARN lets it through (a supplier that reuses numbers)
-      if (settings.duplicateBillMode === 'WARN') warnings.push({ code: PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
-      else purConflict(message, PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
-    }
+    return dup.length ? `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.` : null;
   }
 
   private assertPrintedAmount(p: Prepared, dto: SavePurchaseInvoiceDto, settings: PurchaseSettings, warnings: { code: string; message: string; field: string }[]) {
@@ -876,17 +1094,16 @@ export class PurchaseInvoiceService {
   private async writeDocument(tx: Tx, dto: SavePurchaseInvoiceDto, p: Prepared, id: string | null, slno: bigint, refno: string, actor: string): Promise<string> {
     const h = dto.header;
     const c = p.calc;
-    const creditDays = h.creditDays ?? p.supplier.sup_credit_days ?? 0;
-    const due = addDays(h.supplierInvDate, creditDays);
+    const { creditDays, goodsReceivedOn, msmeDue, due } = this.dueDates(dto, p);
     const data = {
       piCompanyId: h.companyId, piBranchId: h.branchId, piAccYear: h.accYear, piDeviceId: h.deviceId, piSessionId: h.sessionId ?? null,
       piSlno: slno, piRefno: refno, piDocDate: new Date(`${h.docDate}T00:00:00Z`), piStatus: 'DRAFT',
-      piSupplierId: h.supplierId, piSupplierGstin: p.supplier.sup_gst_no, piSupplierGstType: p.taxMode,
+      piSupplierId: h.supplierId, piSupplierGstin: p.billFrom.gstin || p.supplier.sup_gst_no, piSupplierGstType: p.taxMode,
       piSupplierInvNo: h.supplierInvNo.trim(), piSupplierInvDate: new Date(`${h.supplierInvDate}T00:00:00Z`),
-      piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`)
-        : p.grn.size ? new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime()))) : new Date(`${h.docDate}T00:00:00Z`),
+      piGoodsReceivedOn: new Date(`${goodsReceivedOn}T00:00:00Z`),
       piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piSisterCompanyId: null, piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
-      piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piIsReverseCharge: false,
+      piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piMsmeDueDate: msmeDue ? new Date(`${msmeDue}T00:00:00Z`) : null,
+      piIsReverseCharge: p.reverseCharge.value, piPosStcd: p.posStcd, piAgentId: p.agent?.id ?? null,
       piEwbNo: h.ewbNo ?? null, piEwbDate: h.ewbDate ? new Date(`${h.ewbDate}T00:00:00Z`) : null, piIrn: h.irn ?? null, piAckNo: h.ackNo ?? null,
       piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
       piChargesOnBill: c.chargesOnBill, piTcsAmt: c.tcs, piRoundOff: c.roundOff, piNetPayable: c.netPayable, piOffbillCharges: c.offbillCharges,
@@ -897,6 +1114,10 @@ export class PurchaseInvoiceService {
         allowPriceUpdate: p.settings?.allowPriceUpdate ?? false, priceUpdate: p.settings?.allowPriceUpdate ? p.settings.priceUpdate : 'OFF',
       } as Prisma.InputJsonValue,
       piRemarks: h.remarks ?? null,
+      // vehicle / driver ride in the transport object but live on the bill: omitted = kept; transport null = cleared
+      ...(h.transport === null ? { piVehicleNo: null, piDriverName: null } : {}),
+      ...(h.transport && isPresentField(h.transport, 'vehicleNo') ? { piVehicleNo: h.transport.vehicleNo?.trim() || null } : {}),
+      ...(h.transport && isPresentField(h.transport, 'driverName') ? { piDriverName: h.transport.driverName?.trim() || null } : {}),
     };
     let piId: string;
     if (id) {
@@ -980,7 +1201,47 @@ export class PurchaseInvoiceService {
     await assertNoUnregisteredRcm(tx, { companyId: h.companyId, supplierId: h.supplierId, docDate: h.docDate }, dto.lines);
     // DOC-08: lines pulled from a sister company sale bill (purchase/sister)
     await recordSisterPull(tx, { companyId: h.companyId, supplierId: h.supplierId, piId, accYear: h.accYear }, dto.lines);
+    // S3: the transport band (txn_transport_detail, INWARD) — omitted = kept, null / blank = removed
+    if (h.transport !== undefined) await this.writeTransport(tx, dto, p, piId, refno, actor);
     return piId;
+  }
+
+  /** S1 — credit days → due date from the supplier's invoice date; R27: an MSME pay-by date (from goods received) that comes first wins. */
+  private dueDates(dto: SavePurchaseInvoiceDto, p: Prepared) {
+    const h = dto.header;
+    const creditDays = h.creditDays ?? p.supplier.sup_credit_days ?? 0;
+    const goodsReceivedOn = h.goodsReceivedOn?.slice(0, 10)
+      ?? (p.grn.size ? isoDate(new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime())))) : h.docDate.slice(0, 10));
+    const creditDue = addDays(h.supplierInvDate, creditDays);
+    const msmeDays = msmeDueDays(p.supplier.msme_category?.trim() || null, p.supplier.sup_msme_activity?.trim() || null, p.supplier.sup_msme_agreement, p.supplier.sup_msme_agreed_days);
+    const msmeDue = msmeDays == null ? null : addDays(goodsReceivedOn, msmeDays);
+    return { creditDays, goodsReceivedOn, creditDue, msmeDue, due: msmeDue && msmeDue < creditDue ? msmeDue : creditDue };
+  }
+
+  private bandInput(t: PurchaseTransportDto, dto: SavePurchaseInvoiceDto, p: Prepared): TransportBandInput {
+    return {
+      direction: 'INWARD',
+      from: { name: p.supplier.sup_name, gstin: p.billFrom.gstin || null, stcd: p.supplierState, addrId: p.billFrom.addr_id },
+      to: { godownId: dto.header.godownId, branchId: dto.header.branchId, stcd: p.posStcd },
+      mode: t.mode ?? null, transporterId: t.transporterId ?? null, transporterName: t.transporterName?.trim() || null,
+      transporterGstin: t.transporterGstin?.trim() || null, lrNo: t.lrNo?.trim() || null, lrDate: t.lrDate?.slice(0, 10) ?? null,
+      distanceKm: t.distanceKm ?? null, remarks: t.remarks?.trim() || null,
+    };
+  }
+
+  private async writeTransport(tx: Tx, dto: SavePurchaseInvoiceDto, p: Prepared, piId: string, refno: string, actor: string) {
+    const h = dto.header;
+    const ref = { docType: DOC_TYPE as 'PURCHASE_BILL', docId: piId, accYear: h.accYear, companyId: h.companyId, branchId: h.branchId, docRefno: refno };
+    const t = h.transport;
+    const carriage = t && (t.mode || t.transporterId || t.transporterName?.trim() || t.transporterGstin?.trim() || t.lrNo?.trim() || t.lrDate || t.distanceKm != null || t.remarks?.trim());
+    if (!t || !carriage) { await this.transportBand.remove(tx, ref, actor); return; }
+    const input = this.bandInput(t, dto, p);
+    if (input.transporterId && !input.transporterName) {
+      const [m] = await tx.$queryRaw<{ trn_name: string; trn_gstin: string | null }[]>`SELECT trn_name, trn_gstin FROM public.transporter_master WHERE trn_id = ${input.transporterId}::uuid`;
+      input.transporterName = m?.trn_name ?? null;
+      input.transporterGstin = input.transporterGstin ?? m?.trn_gstin ?? null;
+    }
+    await this.transportBand.write(tx, ref, input, actor, { gdrId: null });   // a purchase bill has no register row of ours: never IRN / EWB-locked here
   }
 
   private stockRules(): StockVoucherTypeRules {
@@ -992,7 +1253,8 @@ export class PurchaseInvoiceService {
   }
 
   /** Posts the draft; returns what the screen should be told (prices kept / not written). */
-  private async postInTx(tx: Tx, piId: string, accYear: string, actor: string): Promise<{ code: string; message: string; field: string }[]> {
+  private async postInTx(tx: Tx, piId: string, accYear: string, actor: string,
+                         opts: { override: boolean; reason: string | null } = { override: false, reason: null }): Promise<{ code: string; message: string; field: string }[]> {
     const notes: { code: string; message: string; field: string }[] = [];
     const pi = await tx.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
     if (!pi) purNotFound(`Purchase invoice ${piId} not found`);
@@ -1014,6 +1276,16 @@ export class PurchaseInvoiceService {
         allocs.filter((a) => lineOf.has(a.piaLineId)).map((a) => { const l = lineOf.get(a.piaLineId)!; return { lineNo: l.piiLineNo, index: l.piiLineNo - 1, itemId: l.piiItemId, bucket: a.piaBucket, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate }; }));
       if (shelf.length && st.shelfLifeMode === 'REFUSE') purRefuseMany(shelf[0].message, shelf);
       for (const x of shelf) notes.push({ code: x.code, field: x.field, message: x.message });
+    }
+    // S4 under the post, from what was saved: serial count / duplicates refuse; the rate checks decide the hold (4b2)
+    const settingsNow = await loadPurchaseSettings(tx, pi.piCompanyId, pi.piBranchId);
+    const judged = await checkLines(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, docDate, piId, tolerancePct: settingsNow.rateTolerancePct },
+                                    this.factsFromStored(lines, allocs, await this.itemNames(tx, lines.map((l) => l.piiItemId))));
+    const refused = judged.issues.filter((x) => x.level === 'REFUSE');
+    if (refused.length) purRefuseMany(refused[0].message, refused.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+    {
+      const [rc] = await tx.$queryRaw<{ rc: boolean | null }[]>`SELECT led_is_reverse_charge AS rc FROM accounts.acc_ledger_master WHERE led_id = ${pi.piSupplierId}::uuid`;
+      if (pi.piIsReverseCharge || rc?.rc) purRefuse('This supplier is a reverse-charge party — phase 1 posts no reverse-charge GST. Enter it through Expense Voucher (RCM).', 'PUR_RCM_NOT_SUPPORTED', 'header.supplierId');
     }
 
     // ── 1 · stock: the shadow RECEIPT ───────────────────────────────────
@@ -1290,41 +1562,29 @@ export class PurchaseInvoiceService {
     }
 
     // ── 4b2 · R19: a bill rate over the PO rate beyond purchase.rate_tolerance_pct puts the bill on payment hold
-    //    (the PO reaches the bill through its GRN line; base units on both sides)
+    //    (the PO reaches the bill through its GRN line or a direct PO line; taxable per base unit on both sides, R28).
+    //    S5: overrideWarnings (the controller checked Override on menu 24) posts it free of the hold — logged.
     {
-      const settingsNow = await loadPurchaseSettings(tx, pi.piCompanyId, pi.piBranchId);
-      const fromPo = grnLines.length ? await tx.$queryRaw<{ gri_id: string; po_refno: string; po_rate_base: Prisma.Decimal }[]>`
-        SELECT gri.gri_id, po.po_refno,
-               poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
-          FROM purchase.pur_grn_item gri
-          JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
-          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
-         WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId!)}::uuid[])` : [];
-      // DOC-04: a direct bill line that received a PO line is checked against it the same way
-      const poDirect = lines.filter((l) => l.piiSrcDocType === 'PURCHASE_ORDER' && l.piiSrcItemId);
-      const fromPoDirect = poDirect.length ? await tx.$queryRaw<{ poi_id: string; po_refno: string; po_rate_base: Prisma.Decimal }[]>`
-        SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
-          FROM purchase.pur_order_item poi
-          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
-         WHERE poi.poi_id = ANY(${poDirect.map((l) => l.piiSrcItemId!)}::uuid[])` : [];
-      const tol = D(settingsNow.rateTolerancePct);
-      const over: string[] = [];
-      const checks = [...fromPo.map((r) => ({ l: grnLines.find((x) => x.piiSrcItemId === r.gri_id), r })),
-                      ...fromPoDirect.map((r) => ({ l: poDirect.find((x) => x.piiSrcItemId === r.poi_id), r }))];
-      for (const { l, r } of checks) {
-        if (!l || !r.po_rate_base || D(r.po_rate_base).isZero()) continue;
-        const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
-        const pct = billBase.minus(r.po_rate_base).dividedBy(r.po_rate_base).times(100);
-        if (pct.greaterThan(tol)) over.push(`line ${l.piiLineNo} ${pct.toFixed(1)}% over ${r.po_refno}`);
-      }
+      const over = judged.issues.filter((x) => x.code === 'PUR_RATE_ABOVE_PO');
       if (over.length) {
-        const reason = `Rate over PO beyond ${tol.toString()}%: ${over.join('; ')}`.slice(0, 250);
-        await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
-        await appendTxnStatusLog(tx, {
-          companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
-          srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
-        });
-        notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+        const what = over.map((x) => { const c = judged.checks.get(x.lineNo!)?.rate; return `line ${x.lineNo} ${D(c?.diffPct ?? 0).toFixed(1)}% over ${c?.refno}`; }).join('; ');   // one decimal: the hold reason's old wording
+        const tol = D(settingsNow.rateTolerancePct).toString();
+        if (opts.override) {
+          const remarks = `Overrode PUR_RATE_ABOVE_PO (tolerance ${tol}%): ${what}${opts.reason?.trim() ? ` — ${opts.reason.trim()}` : ''}`.slice(0, 500);
+          await appendTxnStatusLog(tx, {
+            companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
+            srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.WARN_OVERRIDE, fromStatus: 'DRAFT', toStatus: 'POSTED', changedBy: actor, remarks, deviceId: pi.piDeviceId,
+          });
+          notes.push({ code: 'PUR_WARN_OVERRIDDEN', field: 'header.overrideWarnings', message: `Posted without the payment hold (override logged) — ${what}` });
+        } else {
+          const reason = `Rate over PO beyond ${tol}%: ${what}`.slice(0, 250);
+          await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
+          await appendTxnStatusLog(tx, {
+            companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: TxnStatusSrcModule.PURCHASE, srcDocType: TxnStatusDocType.PURCHASE_BILL,
+            srcDocId: piId, srcDocRefno: pi.piRefno, event: TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
+          });
+          notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+        }
       }
     }
 

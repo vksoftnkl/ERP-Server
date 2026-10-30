@@ -285,11 +285,11 @@ let TenderMasterService = class TenderMasterService {
                 const tndName = (0, module_service_utils_1.normalizeRequiredText)(saveTenderMasterDto.tndName, 'tndName');
                 const tndShortName = this.buildShortName(saveTenderMasterDto, tndName);
                 const tndTypeId = this.parseTenderTypeId(saveTenderMasterDto.tndTypeId, 'tndTypeId');
-                const tndBranchId = (0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, 'tndBranchId')
+                const tndBranchId = (0, module_service_utils_1.isPresentField)(saveTenderMasterDto, 'tndBranchId')
                     ? (saveTenderMasterDto.tndBranchId ?? null)
                     : existing.tndBranchId;
                 const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
-                const tndMaxAmount = (0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, 'tndMaxAmount')
+                const tndMaxAmount = (0, module_service_utils_1.isPresentField)(saveTenderMasterDto, 'tndMaxAmount')
                     ? this.toInputNullableNumber(saveTenderMasterDto.tndMaxAmount, 'tndMaxAmount')
                     : this.toOutputNullableNumber(existing.tndMaxAmount);
                 this.validateAmountRange(tndMinAmount, tndMaxAmount);
@@ -307,12 +307,12 @@ let TenderMasterService = class TenderMasterService {
                 await this.ensureLedgerExists(saveTenderMasterDto.tndSurchargeLedgerId, tx, 'tndSurchargeLedgerId');
                 await this.ensureBankAccountExists(tx, saveTenderMasterDto.tndBankAccountId);
                 await this.ensureNameIsUnique(tx, tndName, tndShortName, scope, tndId);
-                await this.ensureHotkeyIsUnique(tx, (0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, 'tndHotkey')
+                await this.ensureHotkeyIsUnique(tx, (0, module_service_utils_1.isPresentField)(saveTenderMasterDto, 'tndHotkey')
                     ? (saveTenderMasterDto.tndHotkey ?? null)
                     : existing.tndHotkey, scope, tndId);
-                await this.ensureSingleDefault(tx, (0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, 'tndIsDefault')
+                await this.ensureSingleDefault(tx, (0, module_service_utils_1.isPresentField)(saveTenderMasterDto, 'tndIsDefault')
                     ? saveTenderMasterDto.tndIsDefault === true
-                    : existing.tndIsDefault, (0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, 'tndIsActive')
+                    : existing.tndIsDefault, (0, module_service_utils_1.isPresentField)(saveTenderMasterDto, 'tndIsActive')
                     ? saveTenderMasterDto.tndIsActive !== false
                     : existing.tndIsActive, scope, tndId);
                 const data = {
@@ -644,7 +644,7 @@ let TenderMasterService = class TenderMasterService {
         }
     }
     resolveDate(saveTenderMasterDto, field, current) {
-        if (!(0, module_service_utils_1.hasOwnProperty)(saveTenderMasterDto, field)) {
+        if (!(0, module_service_utils_1.isPresentField)(saveTenderMasterDto, field)) {
             return current;
         }
         return toDateOrNull(saveTenderMasterDto[field], field) ?? null;

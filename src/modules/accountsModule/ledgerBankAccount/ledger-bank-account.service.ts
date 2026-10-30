@@ -10,7 +10,7 @@ import {
 import { LedgerBankErrorCode } from './types/ledger-bank-account-error-codes';
 import {
   DEFAULT_ACTOR,
-  hasOwnProperty,
+  isPresentField,
   isForeignKeyConstraintError,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -145,7 +145,7 @@ export class LedgerBankAccountService {
           LedgerBankErrorCode.FIELD_EMPTY,
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-        const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
+        const requestedCompanyId = isPresentField(saveLedgerBankAccountDto, 'lbaCompanyId')
           ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
           : undefined;
         const companyId = await this.resolveCompanyId(
@@ -251,7 +251,7 @@ export class LedgerBankAccountService {
           LedgerBankErrorCode.FIELD_EMPTY,
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-        const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
+        const requestedCompanyId = isPresentField(saveLedgerBankAccountDto, 'lbaCompanyId')
           ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
           : undefined;
         const companyId = await this.resolveCompanyId(
@@ -472,39 +472,39 @@ export class LedgerBankAccountService {
       | Prisma.AccLedgerBankAccountUncheckedUpdateInput,
     saveLedgerBankAccountDto: SaveLedgerBankAccountDto,
   ): void {
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaBranchName')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaBranchName')) {
       data.lbaBranchName = saveLedgerBankAccountDto.lbaBranchName;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIfscCode')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaIfscCode')) {
       data.lbaIfscCode = saveLedgerBankAccountDto.lbaIfscCode;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaMicrCode')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaMicrCode')) {
       data.lbaMicrCode = saveLedgerBankAccountDto.lbaMicrCode;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaAccountType')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaAccountType')) {
       data.lbaAccountType = saveLedgerBankAccountDto.lbaAccountType;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaUpiId')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaUpiId')) {
       data.lbaUpiId = saveLedgerBankAccountDto.lbaUpiId;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaChequeName')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaChequeName')) {
       data.lbaChequeName = saveLedgerBankAccountDto.lbaChequeName;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsDefault')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaIsDefault')) {
       data.lbaIsDefault = saveLedgerBankAccountDto.lbaIsDefault;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsActive')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaIsActive')) {
       data.lbaIsActive = saveLedgerBankAccountDto.lbaIsActive;
     }
 
-    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaRemarks')) {
+    if (isPresentField(saveLedgerBankAccountDto, 'lbaRemarks')) {
       data.lbaRemarks = saveLedgerBankAccountDto.lbaRemarks;
     }
   }

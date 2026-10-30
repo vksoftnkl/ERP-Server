@@ -13,6 +13,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import { ChargeMasterService } from './charge-master.service';
 import { SaveChargeMasterDto } from './dto/save-charge-master.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { ChargeLedgerDetail, ChargeTaxDetail } from './types/charge-master-api.types';
 import { CHARGE_ERROR } from './types/charge-master-error-codes';
 
@@ -555,6 +556,62 @@ describe('ChargeMasterService', () => {
         chgTaxRate: null,
       });
       expect(payload).toMatchObject({ chgLedgerName: 'Freight Inward A/c', chgTaxName: 'GST 18%' });
+    });
+
+    // dto-own-undefined trap: after the house ValidationPipe every declared field is
+    // an own property holding undefined, so a key left out must read as "keep".
+    describe('a partial body through the house ValidationPipe', () => {
+      const piped = async (body: Record<string, unknown>) =>
+        (await createHouseValidationPipe().transform(body, {
+          type: 'body',
+          metatype: SaveChargeMasterDto,
+        })) as SaveChargeMasterDto;
+      const partial = {
+        chgId: CHG_ID,
+        chgName: 'Freight',
+        chgModule: 'P',
+        chgMethod: 'FIXED',
+        chgApplyOn: 'VALUE',
+        chgLedgerCode: LEDGER_ID,
+      };
+
+      it('keeps the stored code, role, type and rate when the body leaves them out', async () => {
+        const dto = await piped(partial);
+        expect(Object.prototype.hasOwnProperty.call(dto, 'chgCode')).toBe(true);
+
+        await service.save(dto);
+
+        const { data } = prisma.chargeMaster.update.mock.calls[0][0];
+        expect(data!.chgCode).toBe('FRT');
+        expect(data).not.toHaveProperty('chgRole');
+        expect(data).not.toHaveProperty('chgType');
+        expect(data).not.toHaveProperty('chgTaxId');
+        // The role check runs against the stored role, not a null.
+        expect(probe('chgRole')).toMatchObject({ chgRole: 'FREIGHT', chgId: { not: CHG_ID } });
+      });
+
+      it('judges chgTaxApl=false against the stored rate', async () => {
+        await expect(
+          bodyOf(service.save(await piped({ ...partial, chgTaxApl: false }))),
+        ).resolves.toMatchObject({
+          errors: [{ field: 'chgTaxId', code: CHARGE_ERROR.TAX_NOT_APPLICABLE }],
+        });
+        expect(prisma.chargeMaster.update).not.toHaveBeenCalled();
+      });
+
+      it('judges chgBeforeTax=true against the stored tax flag and rate', async () => {
+        await expect(
+          bodyOf(service.save(await piped({ ...partial, chgBeforeTax: true }))),
+        ).resolves.toMatchObject({
+          errors: [{ field: 'chgTaxId', code: CHARGE_ERROR.TAX_NOT_APPLICABLE }],
+        });
+      });
+
+      it('still clears the code when the body sends null', async () => {
+        await service.save(await piped({ ...partial, chgCode: null }));
+
+        expect(prisma.chargeMaster.update.mock.calls[0][0].data!.chgCode).toBeNull();
+      });
     });
 
     it('refuses an id with no live charge', async () => {

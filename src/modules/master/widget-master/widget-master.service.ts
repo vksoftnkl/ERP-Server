@@ -17,7 +17,7 @@ import {
 import { WIDGET_ERROR } from './types/widget-master-error-codes';
 import {
   DEFAULT_ACTOR,
-  hasOwnProperty,
+  isPresentField,
   throwMasterBadRequest,
   throwMasterNotFound,
 } from 'src/common/utils/module-service.utils';
@@ -318,10 +318,10 @@ export class WidgetMasterService {
       fieldUpdatedBy: actor,
       fieldUpdatedOn: new Date(),
     };
-    if (hasOwnProperty(field, 'fieldGuiName')) {
+    if (isPresentField(field, 'fieldGuiName')) {
       data.fieldGuiName = field.fieldGuiName ?? null;
     }
-    if (hasOwnProperty(field, 'fieldSecondaryText')) {
+    if (isPresentField(field, 'fieldSecondaryText')) {
       data.fieldSecondaryText = field.fieldSecondaryText ?? null;
     }
     if (field.fieldPosition !== undefined) {

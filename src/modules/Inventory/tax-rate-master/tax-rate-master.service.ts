@@ -8,7 +8,7 @@ import {
   DEFAULT_AUDIT_ACTOR,
   InventoryWriteClient,
   ModuleErrorDetail,
-  hasOwnProperty,
+  isPresentField,
   normalizeNullableString,
   resolveActor,
   throwInventoryNotFound,
@@ -464,7 +464,7 @@ export class TaxRateMasterService {
     dto: SaveTaxRateDto,
   ): void {
     // Nullable: an explicit null clears the column.
-    if (hasOwnProperty(dto, 'tax_code')) data.taxCode = normalizeNullableString(dto.tax_code);
+    if (isPresentField(dto, 'tax_code')) data.taxCode = normalizeNullableString(dto.tax_code);
     // `!== undefined`, not hasOwnProperty: every declared DTO field is an own
     // property (ES2022 class fields), so an update that OMITTED the key cleared
     // the chain. An explicit null (or "") still clears it.
@@ -848,12 +848,12 @@ export class TaxRateMasterService {
         trlModifiedOn: new Date(),
         trlModifiedBy: this.resolveWriteActor(line.trl_modified_by),
       };
-      if (hasOwnProperty(line, 'trl_role')) data.trlRole = line.trl_role;
-      if (hasOwnProperty(line, 'trl_supply_nature')) {
+      if (isPresentField(line, 'trl_role')) data.trlRole = line.trl_role;
+      if (isPresentField(line, 'trl_supply_nature')) {
         data.trlSupplyNature = line.trl_supply_nature ?? null;
       }
-      if (hasOwnProperty(line, 'trl_ledger_id')) data.trlLedgerId = line.trl_ledger_id;
-      if (hasOwnProperty(line, 'trl_remarks')) {
+      if (isPresentField(line, 'trl_ledger_id')) data.trlLedgerId = line.trl_ledger_id;
+      if (isPresentField(line, 'trl_remarks')) {
         data.trlRemarks = normalizeNullableString(line.trl_remarks);
       }
       if (isPresent(line.trl_is_active)) data.trlIsActive = line.trl_is_active;

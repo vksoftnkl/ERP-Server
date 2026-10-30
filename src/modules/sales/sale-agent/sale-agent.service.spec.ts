@@ -3,6 +3,7 @@ import { SaleAgent } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { SaveSaleAgentDto } from './dto/save-sale-agent.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { SaleAgentService } from './sale-agent.service';
 import { SaleAgentErrorCode } from './types/sale-agent-error-codes';
 
@@ -429,6 +430,42 @@ describe('SaleAgentService', () => {
 
       expect(updatedData().saCode).toBeNull();
       expect(findWhere('saCode')).toBeUndefined();
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe every declared field is
+    // own (undefined when left out), so a left-out branch or code must be kept.
+    it('keeps the stored branch and code when a piped update leaves them out', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        { saId: SA_ID, saCompanyId: COMPANY_ID, saGroupId: GROUP_ID, saName: 'Agent One' },
+        { type: 'body', metatype: SaveSaleAgentDto },
+      )) as SaveSaleAgentDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'saBranchId')).toBe(true);
+
+      await service.save(dto);
+
+      expect(updatedData()).toMatchObject({ saBranchId: BRANCH_ID, saCode: 'SA01' });
+      expect(findWhere('saCode')).toMatchObject({ saCode: { equals: 'SA01', mode: 'insensitive' } });
+      expect(ledgers.updateLedgerWithinTx.mock.calls[0][0]).toMatchObject({
+        ledBranchId: BRANCH_ID,
+      });
+    });
+
+    it('clears the branch and code when a piped update sends null', async () => {
+      const dto = (await createHouseValidationPipe().transform(
+        {
+          saId: SA_ID,
+          saCompanyId: COMPANY_ID,
+          saGroupId: GROUP_ID,
+          saName: 'Agent One',
+          saBranchId: null,
+          saCode: null,
+        },
+        { type: 'body', metatype: SaveSaleAgentDto },
+      )) as SaveSaleAgentDto;
+
+      await service.save(dto);
+
+      expect(updatedData()).toMatchObject({ saBranchId: null, saCode: null });
     });
 
     it('syncs the linked ledger, keeping the group the ledger is filed under', async () => {

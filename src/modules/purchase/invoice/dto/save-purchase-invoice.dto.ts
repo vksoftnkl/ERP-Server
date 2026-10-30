@@ -92,6 +92,24 @@ export class PurchaseChargeDto {
   payees?: PurchaseChargePayeeDto[];
 }
 
+/** The bill's transport band (public.txn_transport_detail, direction INWARD: FROM = the supplier, TO = our godown).
+ *  Vehicle / driver are NOT in the band (house rule: crew and vehicle live on the document): vehicleNo / driverName
+ *  ride in this object but are stored on pur_invoice (pi_vehicle_no / pi_driver_name). */
+export class PurchaseTransportDto {
+  @ApiPropertyOptional({ nullable: true, description: 'pur_invoice.pi_vehicle_no. Omit = keep the saved one; null / blank = clear.' })
+  @IsOptional() @IsString() @MaxLength(20) vehicleNo?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'pur_invoice.pi_driver_name. Omit = keep the saved one; null / blank = clear.' })
+  @IsOptional() @IsString() @MaxLength(100) driverName?: string | null;
+  @ApiPropertyOptional({ enum: ['ROAD', 'RAIL', 'AIR', 'SHIP'] }) @IsOptional() @IsIn(['ROAD', 'RAIL', 'AIR', 'SHIP']) mode?: string;
+  @ApiPropertyOptional({ description: 'public.transporter_master.trn_id' }) @IsOptional() @IsUUID() transporterId?: string;
+  @ApiPropertyOptional({ description: 'Typed name; default = the transporter master\'s name.' }) @IsOptional() @IsString() @MaxLength(200) transporterName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(15) transporterGstin?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50) lrNo?: string;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() lrDate?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) distanceKm?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) remarks?: string;
+}
+
 export class PurchaseInvoiceHeaderDto {
   @ApiPropertyOptional({ description: 'Set to update a draft.' }) @IsOptional() @IsUUID() piId?: string;
   @ApiProperty() @IsUUID() companyId!: string;
@@ -114,6 +132,15 @@ export class PurchaseInvoiceHeaderDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) irn?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) ackNo?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) remarks?: string;
+  @ApiPropertyOptional({ description: 'purchase.pur_agent.pag_id (= the agent\'s ledger, Agents master menu 28). Omit / null = no agent.' })
+  @IsOptional() @IsUUID() agentId?: string | null;
+  @ApiPropertyOptional({ description: "Bill from: which of the supplier's GSTINs the bill is from (the master's, or one of its ledger's BILL_TO / BOTH addresses — see supplier-context billFrom[]). Default the master's. Its state against the place of supply decides CGST+SGST vs IGST." })
+  @IsOptional() @IsString() @MaxLength(15) billFromGstin?: string | null;
+  @ApiPropertyOptional({ type: PurchaseTransportDto, nullable: true, description: 'Omit = keep the saved band and vehicle / driver; null = remove the band and clear vehicle / driver; an object = write the band (all blank = remove) — its vehicleNo / driverName are kept when absent.' })
+  @IsOptional() @ValidateNested() @Type(() => PurchaseTransportDto) transport?: PurchaseTransportDto | null;
+  @ApiPropertyOptional({ description: 'With post: go past the WARN items that need a right (needsRight = OVERRIDE, e.g. PUR_RATE_ABOVE_PO: no payment hold). Needs the Override right on menu 24; logged on the bill\'s trail.' })
+  @IsOptional() @IsBoolean() overrideWarnings?: boolean;
+  @ApiPropertyOptional({ description: 'Why the warnings were overridden — kept in the trail.' }) @IsOptional() @IsString() @MaxLength(250) overrideReason?: string;
   @ApiPropertyOptional({ description: 'Save and post in one transaction.' }) @IsOptional() @IsBoolean() post?: boolean;
 }
 
@@ -130,6 +157,13 @@ export class SavePurchaseInvoiceDto {
 export class GetPurchaseInvoiceQueryDto {
   @ApiProperty() @IsUUID() piId!: string;
   @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
+}
+
+export class PostPurchaseInvoiceDto {
+  @ApiProperty() @IsUUID() piId!: string;
+  @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
+  @ApiPropertyOptional({ description: 'Go past the WARN items that need a right (Override on menu 24); logged.' }) @IsOptional() @IsBoolean() overrideWarnings?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) overrideReason?: string;
 }
 
 export class CancelPurchaseInvoiceDto {

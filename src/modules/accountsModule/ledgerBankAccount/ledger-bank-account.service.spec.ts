@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveLedgerBankAccountDto } from './dto/save-ledger-bank-account.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { LedgerBankAccountService } from './ledger-bank-account.service';
 import { LedgerBankErrorCode } from './types/ledger-bank-account-error-codes';
 
@@ -513,6 +514,30 @@ describe('LedgerBankAccountService', () => {
         lbaIsDefault: true,
         lbaId: { not: LBA_ID },
       });
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe lbaCompanyId is an own
+    // property even when left out; the stored company must survive such an update.
+    it('keeps the stored company when a piped update leaves it out and the ledger has none', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValueOnce({
+        ledId: LEDGER_ID,
+        ledCompanyId: null,
+      });
+      const dto = (await createHouseValidationPipe().transform(
+        {
+          lbaId: LBA_ID,
+          lbaLedgerId: LEDGER_ID,
+          lbaAccountHolder: 'Acme Industries Pvt Ltd',
+          lbaBankName: 'HDFC Bank',
+          lbaAccountNo: '50100123456789',
+        },
+        { type: 'body', metatype: SaveLedgerBankAccountDto },
+      )) as SaveLedgerBankAccountDto;
+      expect(Object.prototype.hasOwnProperty.call(dto, 'lbaCompanyId')).toBe(true);
+
+      await service.save(dto);
+
+      expect(prisma.accLedgerBankAccount.update.mock.calls[0][0].data.lbaCompanyId).toBe(COMPANY_ID);
     });
 
     it('refuses a company other than the ledger company', async () => {

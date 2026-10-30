@@ -123,12 +123,12 @@ let LedgerShippingAddressService = class LedgerShippingAddressService {
                 (0, ledger_shipping_address_validation_1.assertSaaStateCode)(saveLedgerShippingAddressDto.saaStateCode);
                 (0, ledger_shipping_address_validation_1.assertSaaPin)(saveLedgerShippingAddressDto.saaPin, saaCountryCode);
                 await this.ensureLedgerExists(saveLedgerShippingAddressDto.saaLedgerId, tx);
-                if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaCompanyId') &&
+                if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaCompanyId') &&
                     saveLedgerShippingAddressDto.saaCompanyId !== null &&
                     saveLedgerShippingAddressDto.saaCompanyId !== undefined) {
                     await this.ensureCompanyExists(saveLedgerShippingAddressDto.saaCompanyId, tx);
                 }
-                if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaBranchId') &&
+                if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaBranchId') &&
                     saveLedgerShippingAddressDto.saaBranchId !== null &&
                     saveLedgerShippingAddressDto.saaBranchId !== undefined) {
                     await this.ensureBranchExists(saveLedgerShippingAddressDto.saaBranchId, tx);
@@ -189,17 +189,17 @@ let LedgerShippingAddressService = class LedgerShippingAddressService {
                 }
                 const nextAddrType = (0, ledger_shipping_address_validation_1.assertSaaAddrType)(saveLedgerShippingAddressDto.saaAddrType ?? existing.saaAddrType);
                 const nextLedgerId = saveLedgerShippingAddressDto.saaLedgerId;
-                const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaCompanyId')
+                const nextCompanyId = (0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaCompanyId')
                     ? (saveLedgerShippingAddressDto.saaCompanyId ?? null)
                     : existing.saaCompanyId;
-                const nextBranchId = (0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaBranchId')
+                const nextBranchId = (0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaBranchId')
                     ? (saveLedgerShippingAddressDto.saaBranchId ?? null)
                     : existing.saaBranchId;
                 const nextCountryCode = this.resolveCountryCode(saveLedgerShippingAddressDto.saaCountryCode ?? existing.saaCountryCode);
                 const nextGstin = (0, ledger_shipping_address_validation_1.assertSaaGstin)(saveLedgerShippingAddressDto.saaGstin);
                 (0, ledger_shipping_address_validation_1.assertSaaStateCode)(saveLedgerShippingAddressDto.saaStateCode);
                 (0, ledger_shipping_address_validation_1.assertSaaPin)(saveLedgerShippingAddressDto.saaPin, nextCountryCode);
-                const nextIsDefault = (0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaIsDefault')
+                const nextIsDefault = (0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaIsDefault')
                     ? (saveLedgerShippingAddressDto.saaIsDefault ?? false)
                     : existing.saaIsDefault;
                 await this.ensureLedgerExists(nextLedgerId, tx);
@@ -337,61 +337,61 @@ let LedgerShippingAddressService = class LedgerShippingAddressService {
         });
     }
     applyOptionalFields(data, saveLedgerShippingAddressDto) {
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaCompanyId')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaCompanyId')) {
             data.saaCompanyId = saveLedgerShippingAddressDto.saaCompanyId;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaBranchId')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaBranchId')) {
             data.saaBranchId = saveLedgerShippingAddressDto.saaBranchId;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaIsDefault')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaIsDefault')) {
             data.saaIsDefault = saveLedgerShippingAddressDto.saaIsDefault;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaSort')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaSort')) {
             data.saaSort = saveLedgerShippingAddressDto.saaSort;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaTradeName')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaTradeName')) {
             data.saaTradeName = saveLedgerShippingAddressDto.saaTradeName;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaContactName')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaContactName')) {
             data.saaContactName = saveLedgerShippingAddressDto.saaContactName;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaAddr1')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaAddr1')) {
             data.saaAddr1 = saveLedgerShippingAddressDto.saaAddr1;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaAddr2')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaAddr2')) {
             data.saaAddr2 = saveLedgerShippingAddressDto.saaAddr2;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaAddr3')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaAddr3')) {
             data.saaAddr3 = saveLedgerShippingAddressDto.saaAddr3;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaLocation')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaLocation')) {
             data.saaLocation = saveLedgerShippingAddressDto.saaLocation;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaPin')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaPin')) {
             data.saaPin = saveLedgerShippingAddressDto.saaPin;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaStateCode')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaStateCode')) {
             data.saaStateCode = saveLedgerShippingAddressDto.saaStateCode;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaStateName')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaStateName')) {
             data.saaStateName = saveLedgerShippingAddressDto.saaStateName;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
             data.saaDistanceKm = saveLedgerShippingAddressDto.saaDistanceKm;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaPhone')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaPhone')) {
             data.saaPhone = saveLedgerShippingAddressDto.saaPhone;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaEmail')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaEmail')) {
             data.saaEmail = saveLedgerShippingAddressDto.saaEmail;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaSyncedOn')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaSyncedOn')) {
             data.saaSyncedOn = saveLedgerShippingAddressDto.saaSyncedOn;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaIsActive')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaIsActive')) {
             data.saaIsActive = saveLedgerShippingAddressDto.saaIsActive;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerShippingAddressDto, 'saaRemarks')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerShippingAddressDto, 'saaRemarks')) {
             data.saaRemarks = saveLedgerShippingAddressDto.saaRemarks;
         }
     }

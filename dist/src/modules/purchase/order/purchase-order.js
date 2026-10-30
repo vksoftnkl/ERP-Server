@@ -13,6 +13,9 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PurchaseOrderController = exports.PurchaseOrderService = exports.PendingPoLinesQueryDto = exports.MergePurchaseOrdersDto = exports.MergeSourceDto = exports.ClonePurchaseOrderDto = exports.PurchaseOrderApproveDto = exports.PurchaseOrderReasonDto = exports.PurchaseOrderRefDto = exports.SavePurchaseOrderDto = exports.PurchaseOrderHeaderDto = exports.PurchaseOrderLineDto = exports.PURCHASE_ORDER_MENU_ID = void 0;
+exports.poLineStatus = poLineStatus;
+exports.poDocStatus = poDocStatus;
+exports.poApprovalStatus = poApprovalStatus;
 exports.poUsedQty = poUsedQty;
 exports.assertPoApproved = assertPoApproved;
 exports.closePosOnFirstBill = closePosOnFirstBill;
@@ -20,13 +23,17 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
+const client_1 = require("@prisma/client");
 const api_version_1 = require("../../../common/constants/api-version");
 const rights_1 = require("../../../common/posting/rights");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const purchase_calc_1 = require("../common/purchase-calc");
+const save_purchase_invoice_dto_1 = require("../invoice/dto/save-purchase-invoice.dto");
 const purchase_settings_1 = require("../common/purchase-settings");
+const purchase_terms_1 = require("../terms/purchase-terms");
+const module_shared_utils_1 = require("../../../common/utils/module-shared.utils");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 exports.PURCHASE_ORDER_MENU_ID = 23;
@@ -135,8 +142,10 @@ class PurchaseOrderHeaderDto {
     expectedDate;
     godownId;
     creditDays;
+    agentId;
     contact;
     termsText;
+    termsId;
     remarks;
     post;
     amendReason;
@@ -199,6 +208,12 @@ __decorate([
     __metadata("design:type", Number)
 ], PurchaseOrderHeaderDto.prototype, "creditDays", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'purchase.pur_agent.pag_id (Agents master, menu 28). Omit / null = no agent.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], PurchaseOrderHeaderDto.prototype, "agentId", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -206,11 +221,17 @@ __decorate([
     __metadata("design:type", String)
 ], PurchaseOrderHeaderDto.prototype, "contact", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'The PO\'s own copy of the terms. Omitted: a newly picked termsId = that row\'s text; on an edit = keep the saved text.' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], PurchaseOrderHeaderDto.prototype, "termsText", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'purchase.pur_terms.pte_id (PO terms master, dropdown 73) the terms came from (get: header.poTermsId + termsName). Omit = keep the saved one; null = typed terms, no master row.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], PurchaseOrderHeaderDto.prototype, "termsId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -234,6 +255,7 @@ __decorate([
 class SavePurchaseOrderDto {
     header;
     lines;
+    charges;
 }
 exports.SavePurchaseOrderDto = SavePurchaseOrderDto;
 __decorate([
@@ -250,6 +272,14 @@ __decorate([
     (0, class_transformer_1.Type)(() => PurchaseOrderLineDto),
     __metadata("design:type", Array)
 ], SavePurchaseOrderDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: [save_purchase_invoice_dto_1.PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — an ESTIMATE only: nothing posts, the line figures stay as keyed; po_charges_amt = Σ ADD − Σ DEDUCT, the PO total includes it. Payees are ignored on a PO. Every save replaces the set.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_purchase_invoice_dto_1.PurchaseChargeDto),
+    __metadata("design:type", Array)
+], SavePurchaseOrderDto.prototype, "charges", void 0);
 class PurchaseOrderRefDto {
     poId;
     accYear;
@@ -396,6 +426,45 @@ __decorate([
     __metadata("design:type", String)
 ], PendingPoLinesQueryDto.prototype, "supplierId", void 0);
 const today = () => new Date().toISOString().slice(0, 10);
+const isoDay = (d) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+function poLineStatus(qty, received, shortClosed) {
+    if (received.greaterThanOrEqualTo(qty) && qty.greaterThan(0))
+        return 'DONE';
+    if (shortClosed.greaterThan(0) && received.plus(shortClosed).greaterThanOrEqualTo(qty))
+        return 'SHORT_CLOSED';
+    if (received.greaterThan(0))
+        return 'PART';
+    return 'OPEN';
+}
+function poDocStatus(status, approval, lineStatuses) {
+    if (status === 'CANCELLED')
+        return 'CANCELLED';
+    if (status === 'DRAFT')
+        return 'DRAFT';
+    if (approval === 'AWAITING')
+        return 'AWAITING_APPROVAL';
+    if (approval === 'REJECTED')
+        return 'NOT_APPROVED';
+    const open = lineStatuses.filter((x) => x === 'OPEN' || x === 'PART').length;
+    if (!open)
+        return lineStatuses.every((x) => x === 'DONE') ? 'RECEIVED' : 'CLOSED';
+    return lineStatuses.some((x) => x !== 'OPEN') ? 'PART_RECEIVED' : 'CONFIRMED';
+}
+function poApprovalStatus(a) {
+    void a.chargesEstimate;
+    const value = a.goods.taxable.plus(a.goods.cgst).plus(a.goods.sgst).plus(a.goods.igst).plus(a.goods.cess);
+    const above = a.limit.greaterThan(0) && value.greaterThan(a.limit);
+    let status = a.current ?? 'NOT_REQUIRED';
+    if (a.confirming)
+        status = above ? 'AWAITING' : 'NOT_REQUIRED';
+    if (a.amending) {
+        if (!above)
+            status = 'NOT_REQUIRED';
+        else if (status !== 'APPROVED' || value.greaterThan(a.currentGoodsValue ?? 0))
+            status = 'AWAITING';
+    }
+    return { status, value };
+}
 const PO_AUDIT = { screenName: 'purchase order', tableName: 'pur_order' };
 async function poUsedQty(tx, poId) {
     const rows = await tx.$queryRaw `
@@ -499,19 +568,63 @@ let PurchaseOrderService = class PurchaseOrderService {
             if (!l.taxId)
                 l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
         const taxes = await (0, purchase_doc_helpers_1.loadTaxRates)(tx, dto.lines.map((l) => l.taxId));
-        const calc = (0, purchase_calc_1.calcPurchase)({
-            interState: inter, roundOffStep: 0,
-            lines: dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
-                gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId).iuc_to_base_factor, weight: l.weight ?? 0 })),
+        const lineIns = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
+            gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId).iuc_to_base_factor, weight: l.weight ?? 0 }));
+        const calc = (0, purchase_calc_1.calcPurchase)({ interState: inter, roundOffStep: 0, lines: lineIns });
+        const charges = await this.estimateCharges(tx, dto.charges ?? [], lineIns, inter);
+        const agent = await this.agentOf(tx, dto.header.agentId, dto.header.companyId);
+        return { sup, units, calc, charges, agent };
+    }
+    async agentOf(db, agentId, companyId) {
+        if (!agentId)
+            return null;
+        const [a] = await db.$queryRaw `
+      SELECT pag_id, pag_name, pag_is_active, pag_company_id FROM purchase.pur_agent WHERE pag_id = ${agentId}::uuid AND NOT pag_is_deleted`;
+        if (!a || (a.pag_company_id && a.pag_company_id !== companyId))
+            (0, purchase_errors_1.purNotFound)(`Agent ${agentId} not found`, 'PUR_AGENT_NOT_FOUND', 'header.agentId');
+        if (!a.pag_is_active)
+            (0, purchase_errors_1.purRefuse)(`Agent ${a.pag_name} is inactive.`, 'PUR_AGENT_INACTIVE', 'header.agentId');
+        return { id: a.pag_id, name: a.pag_name };
+    }
+    async estimateCharges(db, charges, lineIns, inter) {
+        if (!charges.length)
+            return { rows: [], total: purchase_doc_helpers_1.ZERO };
+        const ids = [...new Set(charges.map((c) => c.chgId))];
+        const masters = await db.$queryRaw `
+      SELECT chg_id, chg_name, chg_type, chg_method, chg_default_rate, chg_cost_alloc, chg_on_bill, chg_role, chg_ledger_code, chg_before_tax, chg_landing_cost
+        FROM public.charge_master WHERE chg_id = ANY(${ids}::uuid[]) AND NOT chg_is_deleted AND chg_module IN ('P','B')`;
+        const by = new Map(masters.map((m) => [m.chg_id, m]));
+        const problems = charges.flatMap((c, i) => (by.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: purchase_errors_1.PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
+        if (problems.length)
+            (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
+        const ins = charges.map((c, i) => {
+            const m = by.get(c.chgId);
+            return { key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD', method: m.chg_method, rate: c.rate ?? m.chg_default_rate ?? 0,
+                amount: c.amount ?? null, alloc: (m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE'),
+                beforeTax: false, onBill: false, landingCost: true, taxPct: 0, payees: [] };
         });
-        return { sup, units, calc };
+        const out = (0, purchase_calc_1.calcPurchase)({ interState: inter, roundOffStep: 0, lines: lineIns, charges: ins });
+        let total = purchase_doc_helpers_1.ZERO;
+        const rows = charges.map((c, i) => {
+            const m = by.get(c.chgId);
+            const amount = out.charges[i].amount.abs();
+            const signed = m.chg_type === 'DEDUCT' ? amount.negated() : amount;
+            total = total.plus(signed);
+            return { chgId: c.chgId, chgName: m.chg_name, role: m.chg_role, type: m.chg_type, method: m.chg_method, rate: (0, purchase_doc_helpers_1.D)(c.rate ?? m.chg_default_rate ?? 0),
+                amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost };
+        });
+        return { rows, total };
     }
     async preview(dto) {
-        const { calc } = await this.compute(this.prisma, dto);
+        const { calc, charges, agent } = await this.compute(this.prisma, dto);
         const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
+        const net = calc.taxable.plus(tax);
         return (0, purchase_doc_helpers_1.jsonSafe)({
+            header: { agentId: agent?.id ?? null, agentName: agent?.name ?? null },
             lines: calc.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.cgst.plus(o.sgst).plus(o.igst).plus(o.cess), total: o.total })),
-            totals: { gross: calc.gross, taxable: calc.taxable, tax, net: calc.taxable.plus(tax) },
+            charges: charges.rows.map((c) => ({ ...c, rate: c.rate.toString(), amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2) })),
+            totals: { gross: calc.gross, taxable: calc.taxable, tax, net,
+                lines: dto.lines.length, orderedValue: net.toFixed(2), chargesEstimate: charges.total.toFixed(2), poTotal: net.plus(charges.total).toFixed(2) },
         });
     }
     async save(dto) {
@@ -521,7 +634,7 @@ let PurchaseOrderService = class PurchaseOrderService {
     }
     async saveIn(tx, dto, actor, opts = {}) {
         const h = dto.header;
-        const { sup, units, calc } = await this.compute(tx, dto);
+        const { sup, units, calc, charges, agent } = await this.compute(tx, dto);
         let poId = h.poId ?? null;
         let slno, refno, isNew = false;
         let cur = null;
@@ -547,21 +660,16 @@ let PurchaseOrderService = class PurchaseOrderService {
         const confirming = !amending && !!h.post;
         const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
         const limit = (0, purchase_doc_helpers_1.D)(settings.poApprovalAbove ?? 0);
-        let approval = cur?.poApprovalStatus ?? 'NOT_REQUIRED';
-        if (confirming)
-            approval = limit.greaterThan(0) && net.greaterThan(limit) ? 'AWAITING' : 'NOT_REQUIRED';
-        if (amending) {
-            const above = limit.greaterThan(0) && net.greaterThan(limit);
-            if (!above)
-                approval = 'NOT_REQUIRED';
-            else if (approval !== 'APPROVED' || net.greaterThan(cur.poNetAmt))
-                approval = 'AWAITING';
-        }
+        const approval = poApprovalStatus({ limit, goods: calc, chargesEstimate: charges.total, confirming, amending,
+            current: cur?.poApprovalStatus ?? null, currentGoodsValue: cur?.poNetAmt ?? null }).status;
+        const keepTerms = !!cur && !!h.termsId && h.termsId === cur.poTermsId;
+        const terms = h.termsId ? await (0, purchase_terms_1.termsOf)(tx, h.termsId, h.companyId, 'header.termsId', { keep: keepTerms }) : null;
+        const termsText = (0, module_shared_utils_1.isPresentField)(h, 'termsText') ? (h.termsText ?? null) : terms && !keepTerms ? terms.text : cur ? undefined : null;
         const data = {
             poCompanyId: h.companyId, poBranchId: h.branchId, poAccYear: h.accYear, poDeviceId: h.deviceId, poSlno: slno, poRefno: refno,
             poDocDate: new Date(`${h.docDate}T00:00:00Z`), poSupplierId: h.supplierId, poExpectedDate: h.expectedDate ? new Date(`${h.expectedDate}T00:00:00Z`) : null,
-            poDeliverGodownId: h.godownId ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
-            poTermsText: h.termsText ?? null, poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poNetAmt: net,
+            poDeliverGodownId: h.godownId ?? null, poAgentId: agent?.id ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
+            ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: charges.total, poNetAmt: net,
             poRemarks: h.remarks ?? null, poStatus: amending ? 'POSTED' : h.post ? 'POSTED' : 'DRAFT', poApprovalStatus: approval,
         };
         if (amending && cur.poSupplierId !== h.supplierId) {
@@ -633,6 +741,17 @@ let PurchaseOrderService = class PurchaseOrderService {
                     await tx.purOrderItem.create({ data: { ...lineData(i), poiPoId: poId, poiCompanyId: h.companyId, poiBranchId: h.branchId, poiAccYear: h.accYear, poiCreatedBy: actor } });
             }
         }
+        await tx.$executeRaw `DELETE FROM public.txn_charge_detail WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
+        let n = 0;
+        for (const c of charges.rows) {
+            await tx.$executeRaw `
+        INSERT INTO public.txn_charge_detail (cd_doc_type, cd_doc_id, cd_slno, cd_comp_id, cd_branch_id, cd_acc_year, cd_voucher_no,
+          cd_chg_id, cd_chg_name, cd_role, cd_method, cd_type, cd_apply_on, cd_ledger_code, cd_landing_cost, cd_cost_alloc, cd_before_tax, cd_tax_apl, cd_sep_post,
+          cd_rate, cd_amount, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
+        VALUES ('PURCHASE_ORDER', ${poId}::uuid, ${++n}::int, ${h.companyId}::uuid, ${h.branchId}::uuid, ${h.accYear}::bpchar, ${slno}::bigint,
+          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, false, false,
+          ${c.rate}::numeric, ${c.amount}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
+        }
         const log = (event, from, to, remarks) => (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.PURCHASE_ORDER, docId: poId, refno, event, from, to, actor, deviceId: h.deviceId, remarks });
         if (isNew)
             await log(purchase_doc_helpers_1.TxnStatusEvent.CREATED, null, 'DRAFT', opts.auditNote);
@@ -648,7 +767,49 @@ let PurchaseOrderService = class PurchaseOrderService {
         return poId;
     }
     async get(poId, accYear) {
-        return this.getDoc(this.prisma, poId, accYear);
+        const doc = await this.getDoc(this.prisma, poId, accYear);
+        const ctx = await this.lineContext(this.prisma, String(doc.header.poCompanyId), String(doc.header.poBranchId), doc.header.poDeliverGodownId ?? null, doc.lines.map((l) => ({ id: String(l.poiId), itemId: String(l.poiItemId), factor: (0, purchase_doc_helpers_1.D)(l.poiToBaseFactor) })));
+        return (0, purchase_doc_helpers_1.jsonSafe)({ ...doc, lines: doc.lines.map((l) => ({ ...l, ...ctx.get(String(l.poiId)) })) });
+    }
+    async lineContext(db, companyId, branchId, godownId, lines) {
+        const out = new Map();
+        const items = [...new Set(lines.map((l) => l.itemId))];
+        if (!items.length)
+            return out;
+        const [last, stock, reorder] = await Promise.all([
+            db.$queryRaw `
+        SELECT DISTINCT ON (pii.pii_item_id) pii.pii_item_id AS item_id, pi.pi_refno AS refno, pi.pi_doc_date AS doc_date,
+               pii.pii_rate / NULLIF(pii.pii_to_base_factor, 0) AS rate_base
+          FROM purchase.pur_invoice_item pii
+          JOIN purchase.pur_invoice pi ON pi.pi_id = pii.pii_pi_id AND pi.pi_acc_year = pii.pii_acc_year
+         WHERE pi.pi_company_id = ${companyId}::uuid AND pii.pii_item_id = ANY(${items}::uuid[])
+           AND pi.pi_status = 'POSTED' AND NOT pi.pi_is_deleted AND NOT pii.pii_is_deleted AND pii.pii_billed_qty > 0
+         ORDER BY pii.pii_item_id, pi.pi_doc_date DESC, pi.pi_created_on DESC`,
+            db.$queryRaw `
+        SELECT sbl_item_id AS item_id, SUM(sbl_on_hand_qty) AS q FROM stock.stock_balance
+         WHERE sbl_company_id = ${companyId}::uuid AND sbl_branch_id = ${branchId}::uuid AND sbl_item_id = ANY(${items}::uuid[])
+           AND sbl_bucket = 'SALEABLE' AND NOT sbl_is_deleted GROUP BY 1`,
+            db.$queryRaw `
+        SELECT DISTINCT ON (ir.ir_item_id) ir.ir_item_id AS item_id, ir.ir_reorder_level AS level, ir.ir_reorder_qty AS qty, iuc.iuc_to_base_factor AS factor
+          FROM inventory.item_reorders ir LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = ir.ir_uc_unit_id
+         WHERE ir.ir_branch_id = ${branchId}::uuid AND ir.ir_item_id = ANY(${items}::uuid[]) AND ir.ir_is_active AND NOT ir.ir_is_deleted
+           AND (ir.ir_godown_id IS NULL OR ir.ir_godown_id = ${godownId}::uuid)
+         ORDER BY ir.ir_item_id, (ir.ir_godown_id IS NOT NULL) DESC, ir.ir_modified_on DESC NULLS LAST`,
+        ]);
+        const lastBy = new Map(last.map((r) => [r.item_id, r])), stockBy = new Map(stock.map((r) => [r.item_id, (0, purchase_doc_helpers_1.D)(r.q)])), roBy = new Map(reorder.map((r) => [r.item_id, r]));
+        const inUnit = (base, f) => (f.isZero() ? base : base.dividedBy(f)).toDecimalPlaces(3).toString();
+        for (const l of lines) {
+            const lr = lastBy.get(l.itemId), ro = roBy.get(l.itemId);
+            const roF = (0, purchase_doc_helpers_1.D)(ro?.factor ?? 1);
+            out.set(l.id, {
+                lastRate: lr?.rate_base != null ? (0, purchase_doc_helpers_1.D)(lr.rate_base).times(l.factor).toDecimalPlaces(2).toFixed(2) : null, lastRateRefno: lr?.refno ?? null,
+                lastRateDate: lr ? isoDay(lr.doc_date) : null,
+                stockQty: inUnit(stockBy.get(l.itemId) ?? purchase_doc_helpers_1.ZERO, l.factor),
+                reorderLevel: ro?.level != null ? inUnit((0, purchase_doc_helpers_1.D)(ro.level).times(roF), l.factor) : null,
+                reorderQty: ro?.qty != null ? inUnit((0, purchase_doc_helpers_1.D)(ro.qty).times(roF), l.factor) : null,
+            });
+        }
+        return out;
     }
     async getDoc(db, poId, accYear) {
         const header = await db.purOrder.findFirst({ where: { poId, poAccYear: accYear, poIsDeleted: false } });
@@ -663,14 +824,44 @@ let PurchaseOrderService = class PurchaseOrderService {
         FROM public.txn_status_log t LEFT JOIN public.user_master u ON u.usr_id = t.tsl_changed_by
        WHERE t.tsl_src_doc_id = ${poId}::uuid AND t.tsl_event IN ('APPROVED', 'REJECTED') AND NOT t.tsl_is_deleted
        ORDER BY t.tsl_seq_no DESC LIMIT 1` : [];
+        const [amend] = await db.$queryRaw `
+      SELECT t.tsl_remarks AS remarks FROM public.txn_status_log t
+       WHERE t.tsl_src_doc_id = ${poId}::uuid AND t.tsl_event = 'AMENDED' AND NOT t.tsl_is_deleted ORDER BY t.tsl_seq_no DESC LIMIT 1`;
+        const [names2] = await db.$queryRaw `
+      SELECT (SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.poDeliverGodownId}::uuid) AS godown,
+             (SELECT pag_name FROM purchase.pur_agent WHERE pag_id = ${header.poAgentId}::uuid) AS agent,
+             (SELECT pte_name FROM purchase.pur_terms WHERE pte_id = ${header.poTermsId}::uuid) AS terms`;
+        const charges = await db.$queryRaw `
+      SELECT cd_id AS "cdId", cd_slno AS "slNo", cd_chg_id AS "chgId", cd_chg_name AS "chgName", cd_role AS "role", cd_type AS "type", cd_method AS "method",
+             cd_rate AS "rate", cd_amount AS "amount", CASE WHEN cd_type = 'DEDUCT' THEN -cd_amount ELSE cd_amount END AS "signedAmount", cd_on_bill AS "onBill"
+        FROM public.txn_charge_detail
+       WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${accYear}::bpchar AND NOT cd_is_deleted ORDER BY cd_slno`;
+        let recdValue = purchase_doc_helpers_1.ZERO, pendValue = purchase_doc_helpers_1.ZERO, closedValue = purchase_doc_helpers_1.ZERO, closedLines = 0;
+        const outLines = lines.map((l) => {
+            const f = l.poiToBaseFactor.isZero() ? (0, purchase_doc_helpers_1.D)(1) : l.poiToBaseFactor;
+            const received = (used.get(l.poiId) ?? purchase_doc_helpers_1.ZERO).dividedBy(f).toDecimalPlaces(6);
+            const pendingRaw = l.poiQty.minus(received).minus(l.poiShortClosedQty);
+            const pending = pendingRaw.isNegative() ? purchase_doc_helpers_1.ZERO : pendingRaw;
+            const unit = l.poiQty.isZero() ? purchase_doc_helpers_1.ZERO : l.poiTotalAmt.dividedBy(l.poiQty);
+            recdValue = recdValue.plus(client_1.Prisma.Decimal.min(received, l.poiQty).times(unit));
+            pendValue = pendValue.plus(pending.times(unit));
+            if (l.poiShortClosedQty.greaterThan(0)) {
+                closedLines++;
+                closedValue = closedValue.plus(l.poiShortClosedQty.times(unit));
+            }
+            return { ...l, ...names.get(l.poiUomId), receivedQty: received.toString(), pendingQty: pending.toString(),
+                lineStatus: poLineStatus(l.poiQty, received, l.poiShortClosedQty) };
+        });
+        const docStatus = poDocStatus(header.poStatus, header.poApprovalStatus, outLines.map((l) => l.lineStatus));
+        const net = header.poNetAmt, chg = header.poChargesAmt ?? purchase_doc_helpers_1.ZERO;
         return (0, purchase_doc_helpers_1.jsonSafe)({
-            header: { ...header, supplierName: sup?.sup_name ?? null, approvedBy: appr?.by ?? null, approvedOn: appr?.on ?? null, approvalRemarks: appr?.remarks ?? null },
-            lines: lines.map((l) => {
-                const f = l.poiToBaseFactor.isZero() ? (0, purchase_doc_helpers_1.D)(1) : l.poiToBaseFactor;
-                const received = (used.get(l.poiId) ?? purchase_doc_helpers_1.ZERO).dividedBy(f).toDecimalPlaces(6);
-                const pending = l.poiQty.minus(received).minus(l.poiShortClosedQty);
-                return { ...l, ...names.get(l.poiUomId), receivedQty: received.toString(), pendingQty: (pending.isNegative() ? purchase_doc_helpers_1.ZERO : pending).toString() };
-            }),
+            header: { ...header, supplierName: sup?.sup_name ?? null, approvedBy: appr?.by ?? null, approvedOn: appr?.on ?? null, approvalRemarks: appr?.remarks ?? null,
+                deliverGodownName: names2?.godown ?? null, agentName: names2?.agent ?? null, termsName: names2?.terms ?? null, revisionNo: header.poRevisionNo ?? 1,
+                lastAmendReason: amend?.remarks ?? null, docStatus },
+            lines: outLines,
+            charges,
+            totals: { lines: outLines.length, orderedValue: net.toFixed(2), receivedValue: (0, purchase_doc_helpers_1.r2)(recdValue).toFixed(2), pendingValue: (0, purchase_doc_helpers_1.r2)(pendValue).toFixed(2),
+                shortClosedLines: closedLines, shortClosedValue: (0, purchase_doc_helpers_1.r2)(closedValue).toFixed(2), chargesEstimate: chg.toFixed(2), poTotal: net.plus(chg).toFixed(2) },
         });
     }
     async cancel(dto) {
@@ -730,8 +921,9 @@ let PurchaseOrderService = class PurchaseOrderService {
         const save = {
             header: { companyId: String(h.poCompanyId), branchId: String(h.poBranchId), accYear: dto.toAccYear ?? dto.accYear, deviceId: dto.deviceId,
                 supplierId: String(h.poSupplierId), docDate: dto.docDate ?? today(), godownId: h.poDeliverGodownId ?? undefined,
-                creditDays: h.poCreditDays ?? undefined, contact: h.poContact ?? undefined,
-                termsText: h.poTermsText ?? undefined, remarks: `Copy of ${h.poRefno}`.slice(0, 500) },
+                creditDays: h.poCreditDays ?? undefined, contact: h.poContact ?? undefined, agentId: h.poAgentId ?? undefined,
+                termsText: h.poTermsText ?? undefined, termsId: (await (0, purchase_terms_1.pickableTermsId)(this.prisma, h.poTermsId, String(h.poCompanyId))) ?? undefined, remarks: `Copy of ${h.poRefno}`.slice(0, 500) },
+            charges: (src.charges ?? []).map((c) => ({ chgId: String(c.chgId), rate: Number(c.rate), amount: Number(c.amount) })),
             lines: src.lines.map((l, i) => ({ lineNo: i + 1, itemId: String(l.poiItemId), uomId: String(l.poiUomId), qty: Number(l.poiQty), freeQty: Number(l.poiFreeQty ?? 0),
                 rate: Number(l.poiRate), discPct: Number(l.poiDiscPct ?? 0), schPct: Number(l.poiSchPct ?? 0), taxId: l.poiTaxId ?? undefined,
                 mrp: l.poiMrp != null ? Number(l.poiMrp) : undefined, weight: l.poiWeight != null ? Number(l.poiWeight) : undefined, remarks: l.poiRemarks ?? undefined })),

@@ -116,6 +116,14 @@ export class LedgerStatementLedgersDto {
   @ApiPropertyOptional({ default: 30, minimum: 1, maximum: 100 })
   @OptionalQueryInt(1, 100)
   limit?: number;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Party rules D1-7 ("Show deleted"): true lists deleted ledgers too, each with isDeleted: true. Their statement opens read-only.',
+  })
+  @OptionalQueryBoolean()
+  includeDeleted?: boolean;
 }
 
 /** `/voucher-legs` — Alt+F1 / the ▾ toggle. */

@@ -1,7 +1,7 @@
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { PurchaseInvoiceService } from './purchase-invoice.service';
-import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
+import { CancelPurchaseInvoiceDto, GetPurchaseInvoiceQueryDto, GrnLinesQueryDto, PostPurchaseInvoiceDto, PurchaseInvoiceHoldDto, PurchaseSettingsQueryDto, SavePurchaseInvoiceDto } from './dto/save-purchase-invoice.dto';
 export declare const PURCHASE_INVOICE_MENU_ID = 24;
 export declare class PurchaseInvoiceController {
     private readonly service;
@@ -12,14 +12,32 @@ export declare class PurchaseInvoiceController {
         success: boolean;
         message: string;
         data: {
-            warnings: {
-                code: string;
-                message: string;
-                field: string;
-            }[];
+            warnings: import("./purchase-invoice-checks").PurIssue[];
+            refusals: import("./purchase-invoice-checks").PurIssue[];
             header: {
                 supplierName: string;
-                godownName: string;
+                godownName: string | null;
+                agentName: string | null;
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStateName: string | null;
+                interState: boolean;
+                reverseChargeReason: string;
+                transport: {
+                    vehicleNo: string | null;
+                    driverName: string | null;
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                    from: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                    to: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                } | null;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -84,6 +102,8 @@ export declare class PurchaseInvoiceController {
                 piCreatedBy: string;
                 piModifiedOn: Date | null;
                 piModifiedBy: string | null;
+                piVehicleNo: string | null;
+                piDriverName: string | null;
             };
             lines: {
                 allocs: {
@@ -121,6 +141,7 @@ export declare class PurchaseInvoiceController {
                     piaModifiedOn: Date | null;
                     piaModifiedBy: string | null;
                 }[];
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 piiId: string;
                 piiPiId: string;
                 piiCompanyId: string;
@@ -194,16 +215,63 @@ export declare class PurchaseInvoiceController {
                 piiModifiedBy: string | null;
             }[];
             charges: Record<string, unknown>[];
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+                gross: string;
+                discount: string;
+                taxable: string;
+                cgst: string;
+                sgst: string;
+                igst: string;
+                cess: string;
+                chargeTax: string;
+                chargesOnBill: string;
+                tcs: string;
+                roundOff: string;
+                netPayable: string;
+                offbillCharges: string;
+                shortValue: string;
+                itcEligible: string;
+                itcPending: string;
+                itcIneligible: string;
+            };
         };
     }>;
     validate(dto: SavePurchaseInvoiceDto): Promise<{
         success: boolean;
         message: string;
         data: {
+            warnings: import("./purchase-invoice-checks").PurIssue[];
+            refusals: import("./purchase-invoice-checks").PurIssue[];
             interState: boolean;
             supplierTaxMode: "REGULAR" | "COMPOSITION" | "UNREGISTERED";
+            header: {
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStcd: string | null;
+                isReverseCharge: boolean;
+                reverseChargeReason: string;
+                agentId: string | null;
+                agentName: string | null;
+                creditDays: number;
+                goodsReceivedOn: string;
+                creditDueDate: string;
+                msmeDueDate: string | null;
+                dueDate: string;
+                transport: import("../../sales/posting/transport-band.service").TransportBandInput | null;
+            };
             lines: {
                 poRefno: string | null;
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 rate: number;
                 costIncl: string | null;
                 sellA: number | null;
@@ -219,18 +287,51 @@ export declare class PurchaseInvoiceController {
                 }[];
                 chgId: string;
             }[];
-            totals: Record<string, unknown>;
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+            };
             invoiceAmountPrinted: number;
             difference: string;
         };
     }>;
-    post(dto: GetPurchaseInvoiceQueryDto): Promise<{
+    post(dto: PostPurchaseInvoiceDto): Promise<{
         success: boolean;
         message: string;
         data: {
+            warnings: import("./purchase-invoice-checks").PurIssue[];
+            refusals: import("./purchase-invoice-checks").PurIssue[];
             header: {
                 supplierName: string;
-                godownName: string;
+                godownName: string | null;
+                agentName: string | null;
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStateName: string | null;
+                interState: boolean;
+                reverseChargeReason: string;
+                transport: {
+                    vehicleNo: string | null;
+                    driverName: string | null;
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                    from: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                    to: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                } | null;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -295,6 +396,8 @@ export declare class PurchaseInvoiceController {
                 piCreatedBy: string;
                 piModifiedOn: Date | null;
                 piModifiedBy: string | null;
+                piVehicleNo: string | null;
+                piDriverName: string | null;
             };
             lines: {
                 allocs: {
@@ -332,6 +435,7 @@ export declare class PurchaseInvoiceController {
                     piaModifiedOn: Date | null;
                     piaModifiedBy: string | null;
                 }[];
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 piiId: string;
                 piiPiId: string;
                 piiCompanyId: string;
@@ -405,6 +509,34 @@ export declare class PurchaseInvoiceController {
                 piiModifiedBy: string | null;
             }[];
             charges: Record<string, unknown>[];
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+                gross: string;
+                discount: string;
+                taxable: string;
+                cgst: string;
+                sgst: string;
+                igst: string;
+                cess: string;
+                chargeTax: string;
+                chargesOnBill: string;
+                tcs: string;
+                roundOff: string;
+                netPayable: string;
+                offbillCharges: string;
+                shortValue: string;
+                itcEligible: string;
+                itcPending: string;
+                itcIneligible: string;
+            };
         };
     }>;
     get(q: GetPurchaseInvoiceQueryDto): Promise<{
@@ -413,7 +545,28 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
-                godownName: string;
+                godownName: string | null;
+                agentName: string | null;
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStateName: string | null;
+                interState: boolean;
+                reverseChargeReason: string;
+                transport: {
+                    vehicleNo: string | null;
+                    driverName: string | null;
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                    from: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                    to: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                } | null;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -478,6 +631,8 @@ export declare class PurchaseInvoiceController {
                 piCreatedBy: string;
                 piModifiedOn: Date | null;
                 piModifiedBy: string | null;
+                piVehicleNo: string | null;
+                piDriverName: string | null;
             };
             lines: {
                 allocs: {
@@ -515,6 +670,7 @@ export declare class PurchaseInvoiceController {
                     piaModifiedOn: Date | null;
                     piaModifiedBy: string | null;
                 }[];
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 piiId: string;
                 piiPiId: string;
                 piiCompanyId: string;
@@ -588,6 +744,34 @@ export declare class PurchaseInvoiceController {
                 piiModifiedBy: string | null;
             }[];
             charges: Record<string, unknown>[];
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+                gross: string;
+                discount: string;
+                taxable: string;
+                cgst: string;
+                sgst: string;
+                igst: string;
+                cess: string;
+                chargeTax: string;
+                chargesOnBill: string;
+                tcs: string;
+                roundOff: string;
+                netPayable: string;
+                offbillCharges: string;
+                shortValue: string;
+                itcEligible: string;
+                itcPending: string;
+                itcIneligible: string;
+            };
         };
     }>;
     hold(dto: PurchaseInvoiceHoldDto): Promise<{
@@ -596,7 +780,28 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
-                godownName: string;
+                godownName: string | null;
+                agentName: string | null;
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStateName: string | null;
+                interState: boolean;
+                reverseChargeReason: string;
+                transport: {
+                    vehicleNo: string | null;
+                    driverName: string | null;
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                    from: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                    to: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                } | null;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -661,6 +866,8 @@ export declare class PurchaseInvoiceController {
                 piCreatedBy: string;
                 piModifiedOn: Date | null;
                 piModifiedBy: string | null;
+                piVehicleNo: string | null;
+                piDriverName: string | null;
             };
             lines: {
                 allocs: {
@@ -698,6 +905,7 @@ export declare class PurchaseInvoiceController {
                     piaModifiedOn: Date | null;
                     piaModifiedBy: string | null;
                 }[];
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 piiId: string;
                 piiPiId: string;
                 piiCompanyId: string;
@@ -771,6 +979,34 @@ export declare class PurchaseInvoiceController {
                 piiModifiedBy: string | null;
             }[];
             charges: Record<string, unknown>[];
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+                gross: string;
+                discount: string;
+                taxable: string;
+                cgst: string;
+                sgst: string;
+                igst: string;
+                cess: string;
+                chargeTax: string;
+                chargesOnBill: string;
+                tcs: string;
+                roundOff: string;
+                netPayable: string;
+                offbillCharges: string;
+                shortValue: string;
+                itcEligible: string;
+                itcPending: string;
+                itcIneligible: string;
+            };
         };
     }>;
     settings(q: PurchaseSettingsQueryDto): Promise<{
@@ -820,7 +1056,28 @@ export declare class PurchaseInvoiceController {
         data: {
             header: {
                 supplierName: string;
-                godownName: string;
+                godownName: string | null;
+                agentName: string | null;
+                billFromGstin: string | null;
+                billFromAddrId: string | null;
+                billFromStateCode: string | null;
+                posStateName: string | null;
+                interState: boolean;
+                reverseChargeReason: string;
+                transport: {
+                    vehicleNo: string | null;
+                    driverName: string | null;
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                    from: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                    to: import("../../sales/posting/transport-band.service").TransportEnd | null;
+                } | null;
                 piId: string;
                 piCompanyId: string;
                 piBranchId: string;
@@ -885,6 +1142,8 @@ export declare class PurchaseInvoiceController {
                 piCreatedBy: string;
                 piModifiedOn: Date | null;
                 piModifiedBy: string | null;
+                piVehicleNo: string | null;
+                piDriverName: string | null;
             };
             lines: {
                 allocs: {
@@ -922,6 +1181,7 @@ export declare class PurchaseInvoiceController {
                     piaModifiedOn: Date | null;
                     piaModifiedBy: string | null;
                 }[];
+                check: import("./purchase-invoice-checks").LineCheck | null;
                 piiId: string;
                 piiPiId: string;
                 piiCompanyId: string;
@@ -995,6 +1255,34 @@ export declare class PurchaseInvoiceController {
                 piiModifiedBy: string | null;
             }[];
             charges: Record<string, unknown>[];
+            totals: {
+                gstTotal: string;
+                invoiceAmountPrinted: string;
+                difference: string;
+                amountMatches: boolean;
+                shortQty: string;
+                shortLines: number;
+                gstOnShort: string;
+                mode: string;
+                cashTender: null;
+                gross: string;
+                discount: string;
+                taxable: string;
+                cgst: string;
+                sgst: string;
+                igst: string;
+                cess: string;
+                chargeTax: string;
+                chargesOnBill: string;
+                tcs: string;
+                roundOff: string;
+                netPayable: string;
+                offbillCharges: string;
+                shortValue: string;
+                itcEligible: string;
+                itcPending: string;
+                itcIneligible: string;
+            };
         };
     }>;
     private right;

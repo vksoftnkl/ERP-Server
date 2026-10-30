@@ -221,10 +221,10 @@ let SaleAgentService = class SaleAgentService {
                 const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveSaleAgentDto.saName, 'saName', undefined, sale_agent_error_codes_1.SaleAgentErrorCode.NAME_REQUIRED);
                 const nextCompanyId = saveSaleAgentDto.saCompanyId;
                 const nextGroupId = saveSaleAgentDto.saGroupId;
-                const nextBranchId = (0, module_service_utils_1.hasOwnProperty)(saveSaleAgentDto, 'saBranchId')
+                const nextBranchId = (0, module_service_utils_1.isPresentField)(saveSaleAgentDto, 'saBranchId')
                     ? (saveSaleAgentDto.saBranchId ?? null)
                     : existing.saBranchId;
-                const nextCode = (0, module_service_utils_1.hasOwnProperty)(saveSaleAgentDto, 'saCode')
+                const nextCode = (0, module_service_utils_1.isPresentField)(saveSaleAgentDto, 'saCode')
                     ? ((0, module_service_utils_1.normalizeNullableString)(saveSaleAgentDto.saCode) ?? null)
                     : existing.saCode;
                 await this.ensureCompanyExists(tx, nextCompanyId);
@@ -472,7 +472,7 @@ let SaleAgentService = class SaleAgentService {
         ledgerRecord.ledBranchId = resolved.branchId;
         const dtoRecord = saveSaleAgentDto;
         for (const [saField, ledField] of SALE_AGENT_TO_LEDGER_FIELD_MAP) {
-            if ((0, module_service_utils_1.hasOwnProperty)(saveSaleAgentDto, saField)) {
+            if ((0, module_service_utils_1.isPresentField)(saveSaleAgentDto, saField)) {
                 ledgerRecord[ledField] = dtoRecord[saField];
             }
         }

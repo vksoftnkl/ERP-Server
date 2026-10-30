@@ -1,5 +1,7 @@
 import { PrintTemplateAssignmentService } from './print-template-assignment.service';
 import { SavePrintTemplateAssignmentDto } from './dto/save-print-template-assignment.dto';
+import { PrintTemplateAssignmentErrorCode } from './types/print-template-assignment-error-codes';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 
 /**
  * The rules §5 states that the compiler cannot see:
@@ -217,6 +219,73 @@ describe('rule 3 — "every company" is asked for, not arrived at', () => {
 
     expect(errors[0].field).toBe('ptaCompanyId');
     expect(errors[0].message).toContain('null');
+  });
+});
+
+// dto-own-undefined trap: after the house ValidationPipe every declared field is an
+// own property (undefined when left out), so "present" means own AND !== undefined.
+describe('a body through the house ValidationPipe', () => {
+  const PTA_ID = '01a046bc-e2d6-731f-9b5b-83071e395b79';
+  const piped = async (body: Record<string, unknown>) =>
+    (await createHouseValidationPipe().transform(body, {
+      type: 'body',
+      metatype: SavePrintTemplateAssignmentDto,
+    })) as SavePrintTemplateAssignmentDto;
+
+  it('refuses a create that leaves ptaCompanyId out (COMPANY_NOT_STATED)', async () => {
+    const { service, tx } = buildService({ templateOwner: null });
+    const body = await piped({ ptaPurposeId: PURPOSE, ptaTemplateId: TEMPLATE });
+    expect(Object.prototype.hasOwnProperty.call(body, 'ptaCompanyId')).toBe(true);
+
+    const errors = await errorsOf(() => service.save(body));
+
+    expect(errors[0]).toMatchObject({
+      field: 'ptaCompanyId',
+      code: PrintTemplateAssignmentErrorCode.COMPANY_NOT_STATED,
+    });
+    expect(tx.printTemplateAssignment.create).not.toHaveBeenCalled();
+  });
+
+  it('still takes an explicit null as "every company" for a shipped design', async () => {
+    const { service, tx } = buildService({ templateOwner: null });
+
+    await service.save(await piped({ ptaCompanyId: null, ptaPurposeId: PURPOSE, ptaTemplateId: TEMPLATE }));
+
+    expect(tx.printTemplateAssignment.create).toHaveBeenCalledWith(
+      containing({ data: containing({ ptaCompanyId: null, ptaTemplateCompanyKey: NIL }) }),
+    );
+  });
+
+  it('judges an update that leaves the scope out on the stored company, branch and device', async () => {
+    const { service, tx } = buildService({
+      existing: assignmentRow({ ptaBranchId: BRANCH, ptaDeviceId: 'dev-1' }),
+    });
+
+    await service.save(
+      await piped({ ptaId: PTA_ID, ptaPurposeId: PURPOSE, ptaTemplateId: TEMPLATE, ptaRemarks: 'x' }),
+    );
+
+    // A private ACME design stays assignable: the stored company is ACME, not null.
+    const { data } = (tx.printTemplateAssignment.update.mock.calls[0] as unknown as [Args])[0];
+    expect(data).toMatchObject({ ptaTemplateCompanyKey: ACME, ptaRemarks: 'x' });
+    expect(data).not.toHaveProperty('ptaCompanyId');
+    expect(data).not.toHaveProperty('ptaBranchId');
+    expect(data).not.toHaveProperty('ptaDeviceId');
+  });
+
+  it('refuses an update that clears only the branch while the stored counter stays', async () => {
+    const { service, tx } = buildService({
+      existing: assignmentRow({ ptaBranchId: BRANCH, ptaDeviceId: 'dev-1' }),
+    });
+
+    const errors = await errorsOf(async () =>
+      service.save(
+        await piped({ ptaId: PTA_ID, ptaPurposeId: PURPOSE, ptaTemplateId: TEMPLATE, ptaBranchId: null }),
+      ),
+    );
+
+    expect(errors[0].field).toBe('ptaBranchId');
+    expect(tx.printTemplateAssignment.update).not.toHaveBeenCalled();
   });
 });
 

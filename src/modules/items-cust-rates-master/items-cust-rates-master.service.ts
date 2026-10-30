@@ -18,7 +18,7 @@ import { ItemCustRateErrorCode } from './types/item-cust-rate-error-codes';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
-  hasOwnProperty,
+  isPresentField,
   isForeignKeyConstraintError,
   resolveActor,
   throwMasterBadRequest,
@@ -189,10 +189,10 @@ export class ItemsCustRatesMasterService {
           this.throwNotFound(csrId);
         }
 
-        const nextValidFrom = hasOwnProperty(saveItemCustRateDto, 'csr_valid_from')
+        const nextValidFrom = isPresentField(saveItemCustRateDto, 'csr_valid_from')
           ? (this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from') ?? null)
           : existing.csrValidFrom;
-        const nextValidTo = hasOwnProperty(saveItemCustRateDto, 'csr_valid_to')
+        const nextValidTo = isPresentField(saveItemCustRateDto, 'csr_valid_to')
           ? (this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to') ?? null)
           : existing.csrValidTo;
         this.validateDateRange(nextValidFrom, nextValidTo);
@@ -261,40 +261,40 @@ export class ItemsCustRatesMasterService {
     data: Prisma.CustItemRateUncheckedCreateInput | Prisma.CustItemRateUncheckedUpdateInput,
     saveItemCustRateDto: SaveItemCustRateDto,
   ): void {
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_branch_id'))
+    if (isPresentField(saveItemCustRateDto, 'csr_branch_id'))
       data.csrBranchId = saveItemCustRateDto.csr_branch_id;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_rate_type'))
+    if (isPresentField(saveItemCustRateDto, 'csr_rate_type'))
       data.csrRateType = saveItemCustRateDto.csr_rate_type;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_item_rate'))
+    if (isPresentField(saveItemCustRateDto, 'csr_item_rate'))
       data.csrItemRate = saveItemCustRateDto.csr_item_rate;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_perc'))
+    if (isPresentField(saveItemCustRateDto, 'csr_disc_perc'))
       data.csrDiscPerc = saveItemCustRateDto.csr_disc_perc;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_qty'))
+    if (isPresentField(saveItemCustRateDto, 'csr_disc_qty'))
       data.csrDiscQty = saveItemCustRateDto.csr_disc_qty;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_price_level'))
+    if (isPresentField(saveItemCustRateDto, 'csr_price_level'))
       data.csrPriceLevel = saveItemCustRateDto.csr_price_level;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_valid_from')) {
+    if (isPresentField(saveItemCustRateDto, 'csr_valid_from')) {
       data.csrValidFrom = this.parseOptionalDate(
         saveItemCustRateDto.csr_valid_from,
         'csr_valid_from',
       );
     }
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_valid_to')) {
+    if (isPresentField(saveItemCustRateDto, 'csr_valid_to')) {
       data.csrValidTo = this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to');
     }
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_priority'))
+    if (isPresentField(saveItemCustRateDto, 'csr_priority'))
       data.csrPriority = saveItemCustRateDto.csr_priority;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_is_active'))
+    if (isPresentField(saveItemCustRateDto, 'csr_is_active'))
       data.csrIsActive = saveItemCustRateDto.csr_is_active;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_uploaded_at')) {
+    if (isPresentField(saveItemCustRateDto, 'csr_uploaded_at')) {
       data.csrUploadedAt = this.parseOptionalDate(
         saveItemCustRateDto.csr_uploaded_at,
         'csr_uploaded_at',
       );
     }
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_uploaded_by'))
+    if (isPresentField(saveItemCustRateDto, 'csr_uploaded_by'))
       data.csrUploadedBy = saveItemCustRateDto.csr_uploaded_by;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_remarks'))
+    if (isPresentField(saveItemCustRateDto, 'csr_remarks'))
       data.csrRemarks = saveItemCustRateDto.csr_remarks;
   }
 

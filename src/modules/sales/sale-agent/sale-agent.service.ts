@@ -15,7 +15,7 @@ import {
   DEFAULT_ACTOR,
   SalesWriteClient,
   applyPresentFields,
-  hasOwnProperty,
+  isPresentField,
   isForeignKeyConstraintError,
   normalizeNullableString,
   normalizeRequiredText,
@@ -278,10 +278,10 @@ export class SaleAgentService {
         );
         const nextCompanyId = saveSaleAgentDto.saCompanyId;
         const nextGroupId = saveSaleAgentDto.saGroupId;
-        const nextBranchId = hasOwnProperty(saveSaleAgentDto, 'saBranchId')
+        const nextBranchId = isPresentField(saveSaleAgentDto, 'saBranchId')
           ? (saveSaleAgentDto.saBranchId ?? null)
           : existing.saBranchId;
-        const nextCode = hasOwnProperty(saveSaleAgentDto, 'saCode')
+        const nextCode = isPresentField(saveSaleAgentDto, 'saCode')
           ? (normalizeNullableString(saveSaleAgentDto.saCode) ?? null)
           : existing.saCode;
         await this.ensureCompanyExists(tx, nextCompanyId);
@@ -583,7 +583,7 @@ export class SaleAgentService {
     ledgerRecord.ledBranchId = resolved.branchId;
     const dtoRecord = saveSaleAgentDto as unknown as Record<string, unknown>;
     for (const [saField, ledField] of SALE_AGENT_TO_LEDGER_FIELD_MAP) {
-      if (hasOwnProperty(saveSaleAgentDto, saField)) {
+      if (isPresentField(saveSaleAgentDto, saField)) {
         ledgerRecord[ledField] = dtoRecord[saField];
       }
     }

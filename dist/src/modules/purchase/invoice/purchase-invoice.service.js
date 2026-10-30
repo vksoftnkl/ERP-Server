@@ -30,6 +30,11 @@ const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_calc_1 = require("../common/purchase-calc");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
+const purchase_invoice_checks_1 = require("./purchase-invoice-checks");
+const purchase_lookup_1 = require("../lookup/purchase-lookup");
+const purchase_bill_from_1 = require("../common/purchase-bill-from");
+const transport_band_service_1 = require("../../sales/posting/transport-band.service");
+const module_shared_utils_1 = require("../../../common/utils/module-shared.utils");
 const D = (v) => new client_1.Prisma.Decimal(v ?? 0);
 const ZERO = D(0);
 const num = (v) => Number(v.toFixed(2));
@@ -50,16 +55,21 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
     vouchers;
     stockPosting;
     prices;
-    constructor(prisma, requestContext, vouchers, stockPosting, prices) {
+    transportBand;
+    constructor(prisma, requestContext, vouchers, stockPosting, prices, transportBand) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.vouchers = vouchers;
         this.stockPosting = stockPosting;
         this.prices = prices;
+        this.transportBand = transportBand;
     }
     async preview(dto) {
-        const p = await this.prepare(this.prisma, dto);
-        return this.calcPayload(p, dto);
+        const db = this.prisma;
+        const p = await this.prepare(db, dto);
+        p.settings = await (0, purchase_settings_1.loadPurchaseSettings)(db, dto.header.companyId, dto.header.branchId);
+        const { issues, checks } = await this.collectIssues(db, dto, p, p.settings);
+        return { ...this.calcPayload(p, dto, checks), warnings: issues.filter((x) => x.level === 'WARN'), refusals: issues.filter((x) => x.level === 'REFUSE') };
     }
     async setHold(dto) {
         const actor = this.actor();
@@ -96,27 +106,21 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         const actor = this.actor();
         const h = dto.header;
         const warnings = [];
+        let refusals = [];
         const piId = await this.prisma.$transaction(async (tx) => {
             const p = await this.prepare(tx, dto);
             const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
             p.settings = settings;
-            await this.assertNotDuplicate(tx, dto, settings, warnings);
+            const legacy = [];
+            await this.assertNotDuplicate(tx, dto, settings, legacy);
             if (h.post)
-                this.assertPrintedAmount(p, dto, settings, warnings);
-            dto.lines.forEach((l, i) => {
-                const g = p.grn.get(l.lineNo);
-                if (g?.free_kept?.greaterThan(0)) {
-                    warnings.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', field: `lines.${i}.billedQty`,
-                        message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
-                }
-            });
-            const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate, dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
-                lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null
-            })))));
-            if (shelf.length && settings.shelfLifeMode === 'REFUSE' && h.post)
-                (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
-            if (!h.post)
-                warnings.push(...shelf);
+                this.assertPrintedAmount(p, dto, settings, legacy);
+            warnings.push(...legacy.map((w) => this.issueOf(w, 'WARN', dto)));
+            const { issues } = await this.collectIssues(tx, dto, p, settings, { skipDuplicate: true, skipAmount: !!h.post });
+            refusals = issues.filter((x) => x.level === 'REFUSE');
+            if (h.post && refusals.length)
+                (0, purchase_errors_1.purRefuseMany)(refusals[0].message, refusals.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+            warnings.push(...issues.filter((x) => x.level === 'WARN' && !(h.post && x.code === 'PUR_SHELF_LIFE')));
             let id = h.piId ?? null;
             let slno, refno, fromStatus = null;
             if (id) {
@@ -139,17 +143,106 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             if (!fromStatus) {
                 await this.log(tx, dto, id, refno, txn_status_log_helper_1.TxnStatusEvent.CREATED, null, 'DRAFT', actor);
             }
-            if (h.post)
-                for (const note of await this.postInTx(tx, id, h.accYear, actor))
-                    warnings.push(note);
+            if (h.post) {
+                const notes = await this.postInTx(tx, id, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null });
+                for (const note of notes) {
+                    const hit = warnings.find((w) => w.code === note.code && w.field === note.field);
+                    if (hit)
+                        Object.assign(hit, { message: note.message });
+                    else
+                        warnings.push(this.issueOf(note, 'WARN', dto));
+                }
+                if (notes.some((n) => n.code === 'PUR_WARN_OVERRIDDEN'))
+                    warnings.splice(0, warnings.length, ...warnings.filter((w) => w.code !== 'PUR_RATE_ABOVE_PO'));
+            }
             return id;
         }, { timeout: 60000, maxWait: 10000 });
-        return { ...(await this.get(piId, h.accYear)), warnings };
+        return { ...(await this.get(piId, h.accYear)), warnings, refusals: h.post ? [] : refusals };
     }
-    async post(piId, accYear) {
+    async post(piId, accYear, opts = {}) {
         const actor = this.actor();
-        await this.prisma.$transaction((tx) => this.postInTx(tx, piId, accYear, actor), { timeout: 60000, maxWait: 10000 });
-        return this.get(piId, accYear);
+        const notes = await this.prisma.$transaction((tx) => this.postInTx(tx, piId, accYear, actor, { override: !!opts.override, reason: opts.reason ?? null }), { timeout: 60000, maxWait: 10000 });
+        return { ...(await this.get(piId, accYear)), warnings: notes.map((n) => this.issueOf(n, 'WARN', null)), refusals: [] };
+    }
+    issueOf(w, level, dto) {
+        const m = /^lines\.(\d+)/.exec(w.field);
+        const lineNo = m ? (dto ? dto.lines[Number(m[1])]?.lineNo ?? Number(m[1]) + 1 : Number(m[1])) : null;
+        return { code: w.code, level, lineNo, field: w.field, message: w.message, needsRight: null };
+    }
+    async collectIssues(tx, dto, p, settings, opts = {}) {
+        const h = dto.header;
+        const out = [];
+        if (!opts.skipDuplicate) {
+            const dup = await this.duplicateOf(tx, dto);
+            if (dup)
+                out.push({ code: purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, level: settings.duplicateBillMode === 'WARN' ? 'WARN' : 'REFUSE', lineNo: null, field: 'header.supplierInvNo', needsRight: null, message: dup });
+        }
+        if (!opts.skipAmount) {
+            const diff = D(h.invoiceAmountPrinted).minus(p.calc.netPayable);
+            if (!diff.isZero()) {
+                out.push({ code: purchase_errors_1.PUR.INVOICE_AMOUNT_MISMATCH, level: settings.invAmountCheck === 'WARN' ? 'WARN' : 'REFUSE', lineNo: null, field: 'header.invoiceAmountPrinted', needsRight: null,
+                    message: settings.invAmountCheck === 'WARN'
+                        ? `Posted at the net payable ${p.calc.netPayable.toFixed(2)}; the bill says ${D(h.invoiceAmountPrinted).toFixed(2)} (difference ${diff.toFixed(2)}).`
+                        : `Invoice amount ${D(h.invoiceAmountPrinted).toFixed(2)} does not match the net payable ${p.calc.netPayable.toFixed(2)} (difference ${diff.toFixed(2)}). Check the lines, charges and round off.` });
+            }
+        }
+        dto.lines.forEach((l, i) => {
+            const g = p.grn.get(l.lineNo);
+            if (g?.free_kept?.greaterThan(0)) {
+                out.push({ code: 'PUR_GRN_KEPT_NOT_BILLED', level: 'WARN', lineNo: l.lineNo, field: `lines.${i}.billedQty`, needsRight: null,
+                    message: `Line ${l.lineNo}: ${g.free_kept.toString()} of what came in on ${g.grn_refno} is not billed — taken as free goods, they share the bill's cost. If the supplier will bill them, bill them here, or return them.` });
+            }
+        });
+        const shelf = await (0, purchase_doc_helpers_1.shelfLifeIssues)(tx, settings.shelfLifeMode, settings.minShelfLifePct, h.docDate, dto.lines.flatMap((l, i) => (l.grnItemId ? [] : (l.allocs ?? []).map((a) => ({
+            lineNo: l.lineNo, index: i, itemId: l.itemId, bucket: a.bucket, mfgDate: a.mfgDate ? new Date(a.mfgDate) : null, expiryDate: a.expiryDate ? new Date(a.expiryDate) : null
+        })))));
+        out.push(...shelf.map((x) => this.issueOf(x, settings.shelfLifeMode === 'REFUSE' ? 'REFUSE' : 'WARN', dto)));
+        if (p.reverseCharge.value) {
+            out.push({ code: 'PUR_RCM_NOT_SUPPORTED', level: 'REFUSE', lineNo: null, field: 'header.supplierId', needsRight: null,
+                message: `${p.supplier.sup_name} is a reverse-charge party — phase 1 posts no reverse-charge GST. Enter it through Expense Voucher (RCM).` });
+        }
+        const judged = await (0, purchase_invoice_checks_1.checkLines)(tx, { companyId: h.companyId, branchId: h.branchId, docDate: h.docDate.slice(0, 10), piId: h.piId ?? null, tolerancePct: settings.rateTolerancePct }, this.factsFromDto(dto, p));
+        out.push(...judged.issues);
+        return { issues: out, checks: judged.checks };
+    }
+    factsFromDto(dto, p) {
+        return dto.lines.map((l, i) => {
+            const o = p.calc.lines[i];
+            const it = p.items.get(l.uomId);
+            const g = p.grn.get(l.lineNo), po = p.po.get(l.lineNo);
+            const rows = p.allocs.get(l.lineNo) ?? [];
+            const billed = D(l.billedQty);
+            const pieces = g ? D(l.receivedQty).plus(D(l.damagedQty)).plus(D(l.freeQty)) : rows.reduce((a, r) => a.plus(r.qty).plus(r.freeQty), ZERO);
+            return {
+                index: i, lineNo: l.lineNo, itemId: l.itemId, itemName: it.item_name, factor: D(it.iuc_to_base_factor), billed, taxable: o.taxable,
+                costInclUnit: billed.greaterThan(0) ? o.total.dividedBy(billed) : null, pieces,
+                srcType: g ? 'GRN' : po ? 'PURCHASE_ORDER' : null, srcItemId: g?.gri_id ?? po?.poi_id ?? null,
+                serials: rows.map((r) => r.serialNo).filter((x) => !!x),
+                mrps: [l.mrp, ...rows.map((r) => r.mrp)].filter((x) => x !== null && x !== undefined).map((x) => D(x)),
+                sellA: l.sellA !== null && l.sellA !== undefined ? D(l.sellA) : null,
+                pendingShort: o.pendingShortQty, shortValue: o.shortValue, gstOnShort: o.itcPending, priceUpdateResult: null,
+            };
+        });
+    }
+    factsFromStored(lines, allocs, names) {
+        return lines.map((l, i) => {
+            const rows = allocs.filter((a) => a.piaLineId === l.piiId);
+            const pieces = l.piiSrcDocType === 'GRN' ? l.piiReceivedQty.plus(l.piiDamagedQty).plus(l.piiFreeQty) : rows.reduce((a, r) => a.plus(r.piaQty).plus(r.piaFreeQty), ZERO);
+            return {
+                index: i, lineNo: l.piiLineNo, itemId: l.piiItemId, itemName: names.get(l.piiItemId) ?? null, factor: l.piiToBaseFactor, billed: l.piiBilledQty, taxable: l.piiTaxableAmt,
+                costInclUnit: l.piiBilledQty.greaterThan(0) ? l.piiTotalAmt.dividedBy(l.piiBilledQty) : null, pieces,
+                srcType: l.piiSrcDocType ?? null, srcItemId: l.piiSrcItemId ?? null,
+                serials: rows.map((r) => r.piaSerialNo).filter((x) => !!x),
+                mrps: [l.piiMrp, ...rows.map((r) => r.piaMrp)].filter((x) => !!x),
+                sellA: l.piiSellA ?? null, pendingShort: l.piiShortQty,
+                shortValue: l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.times(l.piiShortQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP),
+                gstOnShort: l.piiItcPendingAmt, priceUpdateResult: l.piiPriceUpdateResult ?? null,
+            };
+        });
+    }
+    async itemNames(db, ids) {
+        const rows = ids.length ? await db.$queryRaw `SELECT item_id, item_name_en AS n FROM inventory.item_master WHERE item_id = ANY(${[...new Set(ids)]}::uuid[])` : [];
+        return new Map(rows.map((r) => [r.item_id, r.n]));
     }
     async get(piId, accYear) {
         const header = await this.prisma.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
@@ -172,11 +265,44 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         const byLine = new Map();
         for (const a of allocs)
             byLine.set(a.piaLineId, [...(byLine.get(a.piaLineId) ?? []), a]);
+        const db = this.prisma;
+        const [extra] = await this.prisma.$queryRaw `
+      SELECT (SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid) AS godown,
+             (SELECT pag_name FROM purchase.pur_agent WHERE pag_id = ${header.piAgentId}::uuid) AS agent,
+             (SELECT state_name FROM fixed.state_codes WHERE state_code = ${header.piPosStcd}) AS pos_name,
+             (SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id
+               WHERE b.br_id = ${header.piBranchId}::uuid) AS branch_state`;
+        const gstin = (header.piSupplierGstin ?? '').trim().toUpperCase();
+        const billFrom = gstin ? (await this.billFromOptions(db, header.piSupplierId)).find((o) => o.gstin === gstin) ?? null : null;
+        const billFromState = billFrom?.state_code ?? (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : null);
+        const pos = header.piPosStcd ?? extra?.branch_state ?? null;
+        const band = await this.transportBand.read({ docType: DOC_TYPE, docId: piId, accYear });
+        const settings = await (0, purchase_settings_1.loadPurchaseSettings)(db, header.piCompanyId, header.piBranchId);
+        const judged = await (0, purchase_invoice_checks_1.checkLines)(db, { companyId: header.piCompanyId, branchId: header.piBranchId, docDate: isoDate(header.piDocDate), piId, tolerancePct: settings.rateTolerancePct }, this.factsFromStored(lines, allocs, await this.itemNames(db, lines.map((l) => l.piiItemId))));
+        const chargeTax = charges.reduce((a, c) => a.plus(D(c.cgst)).plus(D(c.sgst)).plus(D(c.igst)), ZERO);
+        const totals = {
+            gross: header.piGrossAmt.toFixed(2), discount: header.piDiscAmt.toFixed(2), taxable: header.piTaxableAmt.toFixed(2),
+            cgst: header.piCgstAmt.toFixed(2), sgst: header.piSgstAmt.toFixed(2), igst: header.piIgstAmt.toFixed(2), cess: header.piCessAmt.toFixed(2), chargeTax: chargeTax.toFixed(2),
+            chargesOnBill: header.piChargesOnBill.toFixed(2), tcs: header.piTcsAmt.toFixed(2), roundOff: header.piRoundOff.toFixed(2), netPayable: header.piNetPayable.toFixed(2),
+            offbillCharges: header.piOffbillCharges.toFixed(2), shortValue: header.piShortValue.toFixed(2),
+            itcEligible: header.piItcEligibleAmt.toFixed(2), itcPending: header.piItcPendingAmt.toFixed(2), itcIneligible: header.piItcIneligibleAmt.toFixed(2),
+            ...this.panelTotals({ cgst: header.piCgstAmt, sgst: header.piSgstAmt, igst: header.piIgstAmt, cess: header.piCessAmt, chargeTax, netPayable: header.piNetPayable,
+                printed: header.piInvoiceAmountPrinted, mode: header.piMode, shortQty: lines.reduce((a, l) => a.plus(l.piiShortQty), ZERO),
+                shortLines: lines.filter((l) => l.piiShortQty.greaterThan(0)).length, itcPending: header.piItcPendingAmt }),
+        };
         return jsonSafe({
-            header: { ...header, supplierName: supplier[0]?.sup_name ?? null,
-                godownName: (await this.prisma.$queryRaw `SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.piGodownId}::uuid`)[0]?.gdl_name ?? null },
-            lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [] })),
+            header: { ...header, supplierName: supplier[0]?.sup_name ?? null, godownName: extra?.godown ?? null,
+                agentName: extra?.agent ?? null,
+                billFromGstin: gstin || null, billFromAddrId: billFrom?.addr_id ?? null, billFromStateCode: billFromState,
+                posStateName: extra?.pos_name ?? null, interState: !!billFromState && !!pos && billFromState !== pos,
+                reverseChargeReason: header.piIsReverseCharge ? 'supplier ledger is marked reverse charge'
+                    : header.piSupplierGstType === 'COMPOSITION' ? 'composition supplier' : header.piSupplierGstType === 'UNREGISTERED' ? 'unregistered supplier, no notified goods' : 'regular supplier',
+                transport: band || header.piVehicleNo || header.piDriverName ? { vehicleNo: header.piVehicleNo ?? null, driverName: header.piDriverName ?? null, mode: band?.mode ?? null, transporterId: band?.transporterId ?? null, transporterName: band?.transporterName ?? null,
+                    transporterGstin: band?.transporterGstin ?? null, lrNo: band?.lrNo ?? null, lrDate: band?.lrDate ? String(band.lrDate).slice(0, 10) : null,
+                    distanceKm: band?.distanceKm ?? null, remarks: band?.remarks ?? null, from: band?.from ?? null, to: band?.to ?? null } : null },
+            lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [], check: judged.checks.get(l.piiLineNo) ?? null })),
             charges,
+            totals,
         });
     }
     async cancel(dto) {
@@ -285,19 +411,41 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             (0, purchase_errors_1.purRefuse)('Cash purchase is not built yet — enter it as Credit and pay it in Payment.', purchase_errors_1.PUR.MODE_NOT_SUPPORTED, 'header.mode');
         }
         const [supplier] = await tx.$queryRaw `
-      SELECT sup_id, sup_name, sup_state_code, sup_gst_type, sup_gst_no, sup_credit_days
-        FROM purchase.suppliers WHERE sup_id = ${h.supplierId}::uuid AND sup_is_deleted = false`;
+      SELECT s.sup_id, s.sup_name, s.sup_state_code, s.sup_gst_type, s.sup_gst_no, s.sup_credit_days,
+             l.led_is_reverse_charge, COALESCE(NULLIF(s.sup_msme_category, ''), NULLIF(l.led_msme_type, '')) AS msme_category,
+             s.sup_msme_activity, s.sup_msme_agreement, s.sup_msme_agreed_days
+        FROM purchase.suppliers s LEFT JOIN accounts.acc_ledger_master l ON l.led_id = s.sup_id
+       WHERE s.sup_id = ${h.supplierId}::uuid AND s.sup_is_deleted = false`;
         if (!supplier)
             (0, purchase_errors_1.purNotFound)(`Supplier ${h.supplierId} not found`, purchase_errors_1.PUR.SUPPLIER_NOT_FOUND, 'header.supplierId');
         const [branch] = await tx.$queryRaw `
       SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
         FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id
        WHERE b.br_id = ${h.branchId}::uuid`;
+        const billFrom = await this.resolveBillFrom(tx, supplier, h.billFromGstin ?? null);
         const ourState = (branch?.state ?? '').trim();
-        const theirState = (supplier.sup_state_code ?? '').trim() || (supplier.sup_gst_no ?? '').slice(0, 2);
+        const theirState = (billFrom.state_code ?? '').trim() || billFrom.gstin.slice(0, 2) || (supplier.sup_state_code ?? '').trim();
         const interState = !!ourState && !!theirState && ourState !== theirState;
         const gt = (supplier.sup_gst_type ?? 'REGULAR').toUpperCase();
         const taxMode = gt.startsWith('COMP') ? 'COMPOSITION' : gt.startsWith('UNREG') ? 'UNREGISTERED' : 'REGULAR';
+        const reverseCharge = supplier.led_is_reverse_charge
+            ? { value: true, reason: 'supplier ledger is marked reverse charge' }
+            : { value: false, reason: taxMode === 'REGULAR' ? 'regular supplier' : taxMode === 'COMPOSITION' ? 'composition supplier' : 'unregistered supplier, no notified goods' };
+        let agent = null;
+        if (h.agentId) {
+            const [a] = await tx.$queryRaw `
+        SELECT pag_id, pag_name, pag_is_active, pag_company_id FROM purchase.pur_agent WHERE pag_id = ${h.agentId}::uuid AND NOT pag_is_deleted`;
+            if (!a || (a.pag_company_id && a.pag_company_id !== h.companyId))
+                (0, purchase_errors_1.purNotFound)(`Agent ${h.agentId} not found`, 'PUR_AGENT_NOT_FOUND', 'header.agentId');
+            if (!a.pag_is_active)
+                (0, purchase_errors_1.purRefuse)(`Agent ${a.pag_name} is inactive.`, 'PUR_AGENT_INACTIVE', 'header.agentId');
+            agent = { id: a.pag_id, name: a.pag_name };
+        }
+        if (h.transport?.transporterId) {
+            const [t] = await tx.$queryRaw `SELECT count(*) AS n FROM public.transporter_master WHERE trn_id = ${h.transport.transporterId}::uuid AND NOT trn_is_deleted`;
+            if (!Number(t?.n))
+                (0, purchase_errors_1.purNotFound)(`Transporter ${h.transport.transporterId} not found`, 'PUR_TRANSPORTER_NOT_FOUND', 'header.transport.transporterId');
+        }
         const uomIds = [...new Set(dto.lines.map((l) => l.uomId))];
         const items = new Map((await tx.$queryRaw `
         SELECT iuc.iuc_id, iuc.iuc_item_id, iuc.iuc_to_base_factor,
@@ -472,7 +620,20 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         });
         if (allocProblems.length)
             (0, purchase_errors_1.purRefuseMany)(allocProblems[0].message, allocProblems);
-        return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info };
+        return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info,
+            billFrom, supplierState: theirState || null, posStcd: ourState || null, reverseCharge, agent };
+    }
+    billFromOptions(db, supplierId) { return (0, purchase_bill_from_1.supplierBillFrom)(db, supplierId); }
+    async resolveBillFrom(tx, supplier, wanted) {
+        const want = (wanted ?? '').trim().toUpperCase();
+        const master = { addr_id: null, gstin: (supplier.sup_gst_no ?? '').trim().toUpperCase(), state_code: (supplier.sup_state_code ?? '').trim() || null,
+            state_name: null, name: supplier.sup_name, addr: null, place: null, pin: null, is_default: true, source: 'MASTER' };
+        if (!want || want === master.gstin)
+            return master;
+        const hit = (await this.billFromOptions(tx, supplier.sup_id)).find((o) => o.gstin === want);
+        if (!hit)
+            (0, purchase_errors_1.purRefuse)(`${want} is not one of ${supplier.sup_name}'s GSTINs — add it as a billing address on the supplier's ledger, or pick another.`, 'PUR_BILL_FROM_UNKNOWN', 'header.billFromGstin');
+        return hit;
     }
     async loadPoLines(tx, dto, items, problems) {
         const h = dto.header;
@@ -671,20 +832,49 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             };
         }));
     }
-    calcPayload(p, dto) {
+    calcPayload(p, dto, checks) {
         const c = p.calc;
+        const h = dto.header;
+        const dd = this.dueDates(dto, p);
         return {
             interState: p.interState,
             supplierTaxMode: p.taxMode,
+            header: {
+                billFromGstin: p.billFrom.gstin || null, billFromAddrId: p.billFrom.addr_id, billFromStateCode: p.supplierState,
+                posStcd: p.posStcd, isReverseCharge: p.reverseCharge.value, reverseChargeReason: p.reverseCharge.reason,
+                agentId: p.agent?.id ?? null, agentName: p.agent?.name ?? null,
+                creditDays: dd.creditDays, goodsReceivedOn: dd.goodsReceivedOn, creditDueDate: dd.creditDue, msmeDueDate: dd.msmeDue, dueDate: dd.due,
+                transport: h.transport ? this.bandInput(h.transport, dto, p) : null,
+            },
             lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
-                ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null })),
+                ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null, check: checks.get(dto.lines[i].lineNo) ?? null })),
             charges: c.charges.map((ch, i) => ({ chgId: dto.charges[i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
-            totals: decimals({ ...c, lines: undefined, charges: undefined }),
+            totals: { ...decimals({ ...c, lines: undefined, charges: undefined }), ...this.panelTotals({ cgst: c.cgst, sgst: c.sgst, igst: c.igst, cess: c.cess, chargeTax: c.chargeTax,
+                    netPayable: c.netPayable, printed: D(h.invoiceAmountPrinted), mode: h.mode ?? 'CREDIT', shortQty: c.lines.reduce((a, l) => a.plus(l.pendingShortQty), ZERO), shortLines: c.lines.filter((l) => l.pendingShortQty.greaterThan(0)).length, itcPending: c.itcPending }) },
             invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
             difference: D(dto.header.invoiceAmountPrinted).minus(c.netPayable).toFixed(2),
         };
     }
+    panelTotals(a) {
+        const diff = a.printed.minus(a.netPayable);
+        return {
+            gstTotal: a.cgst.plus(a.sgst).plus(a.igst).plus(a.chargeTax).toFixed(2),
+            invoiceAmountPrinted: a.printed.toFixed(2), difference: diff.toFixed(2), amountMatches: diff.isZero(),
+            shortQty: a.shortQty.toString(), shortLines: a.shortLines, gstOnShort: a.itcPending.toFixed(2),
+            mode: a.mode,
+            cashTender: null,
+        };
+    }
     async assertNotDuplicate(tx, dto, settings, warnings) {
+        const message = await this.duplicateOf(tx, dto);
+        if (!message)
+            return;
+        if (settings.duplicateBillMode === 'WARN')
+            warnings.push({ code: purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
+        else
+            (0, purchase_errors_1.purConflict)(message, purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
+    }
+    async duplicateOf(tx, dto) {
         const h = dto.header;
         const dup = await tx.$queryRaw `
       SELECT pi.pi_refno, b.br_name AS br FROM purchase.pur_invoice pi
@@ -694,13 +884,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
          AND pi.pi_acc_year = ${h.accYear}::bpchar AND pi.pi_is_deleted = false AND pi.pi_status <> 'CANCELLED'
          AND (${h.piId ?? null}::uuid IS NULL OR pi.pi_id <> ${h.piId ?? null}::uuid)
        LIMIT 1`;
-        if (dup.length) {
-            const message = `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.`;
-            if (settings.duplicateBillMode === 'WARN')
-                warnings.push({ code: purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, message, field: 'header.supplierInvNo' });
-            else
-                (0, purchase_errors_1.purConflict)(message, purchase_errors_1.PUR.DUPLICATE_SUPPLIER_INVOICE, 'header.supplierInvNo');
-        }
+        return dup.length ? `Supplier invoice ${h.supplierInvNo} is already entered as ${dup[0].pi_refno}${dup[0].br ? ` (${dup[0].br})` : ''}.` : null;
     }
     assertPrintedAmount(p, dto, settings, warnings) {
         const diff = D(dto.header.invoiceAmountPrinted).minus(p.calc.netPayable);
@@ -726,17 +910,16 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
     async writeDocument(tx, dto, p, id, slno, refno, actor) {
         const h = dto.header;
         const c = p.calc;
-        const creditDays = h.creditDays ?? p.supplier.sup_credit_days ?? 0;
-        const due = addDays(h.supplierInvDate, creditDays);
+        const { creditDays, goodsReceivedOn, msmeDue, due } = this.dueDates(dto, p);
         const data = {
             piCompanyId: h.companyId, piBranchId: h.branchId, piAccYear: h.accYear, piDeviceId: h.deviceId, piSessionId: h.sessionId ?? null,
             piSlno: slno, piRefno: refno, piDocDate: new Date(`${h.docDate}T00:00:00Z`), piStatus: 'DRAFT',
-            piSupplierId: h.supplierId, piSupplierGstin: p.supplier.sup_gst_no, piSupplierGstType: p.taxMode,
+            piSupplierId: h.supplierId, piSupplierGstin: p.billFrom.gstin || p.supplier.sup_gst_no, piSupplierGstType: p.taxMode,
             piSupplierInvNo: h.supplierInvNo.trim(), piSupplierInvDate: new Date(`${h.supplierInvDate}T00:00:00Z`),
-            piGoodsReceivedOn: h.goodsReceivedOn ? new Date(`${h.goodsReceivedOn}T00:00:00Z`)
-                : p.grn.size ? new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime()))) : new Date(`${h.docDate}T00:00:00Z`),
+            piGoodsReceivedOn: new Date(`${goodsReceivedOn}T00:00:00Z`),
             piSourceKind: p.grn.size ? 'GRN' : 'DIRECT', piSisterCompanyId: null, piGodownId: h.godownId, piInvoiceAmountPrinted: D(h.invoiceAmountPrinted), piMode: h.mode ?? 'CREDIT',
-            piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piIsReverseCharge: false,
+            piCreditDays: creditDays, piDueDate: new Date(`${due}T00:00:00Z`), piMsmeDueDate: msmeDue ? new Date(`${msmeDue}T00:00:00Z`) : null,
+            piIsReverseCharge: p.reverseCharge.value, piPosStcd: p.posStcd, piAgentId: p.agent?.id ?? null,
             piEwbNo: h.ewbNo ?? null, piEwbDate: h.ewbDate ? new Date(`${h.ewbDate}T00:00:00Z`) : null, piIrn: h.irn ?? null, piAckNo: h.ackNo ?? null,
             piGrossAmt: c.gross, piDiscAmt: c.discount, piTaxableAmt: c.taxable, piCgstAmt: c.cgst, piSgstAmt: c.sgst, piIgstAmt: c.igst, piCessAmt: c.cess,
             piChargesOnBill: c.chargesOnBill, piTcsAmt: c.tcs, piRoundOff: c.roundOff, piNetPayable: c.netPayable, piOffbillCharges: c.offbillCharges,
@@ -746,6 +929,9 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 allowPriceUpdate: p.settings?.allowPriceUpdate ?? false, priceUpdate: p.settings?.allowPriceUpdate ? p.settings.priceUpdate : 'OFF',
             },
             piRemarks: h.remarks ?? null,
+            ...(h.transport === null ? { piVehicleNo: null, piDriverName: null } : {}),
+            ...(h.transport && (0, module_shared_utils_1.isPresentField)(h.transport, 'vehicleNo') ? { piVehicleNo: h.transport.vehicleNo?.trim() || null } : {}),
+            ...(h.transport && (0, module_shared_utils_1.isPresentField)(h.transport, 'driverName') ? { piDriverName: h.transport.driverName?.trim() || null } : {}),
         };
         let piId;
         if (id) {
@@ -825,7 +1011,46 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         }
         await (0, purchase_rcm_1.assertNoUnregisteredRcm)(tx, { companyId: h.companyId, supplierId: h.supplierId, docDate: h.docDate }, dto.lines);
         await (0, purchase_sister_1.recordSisterPull)(tx, { companyId: h.companyId, supplierId: h.supplierId, piId, accYear: h.accYear }, dto.lines);
+        if (h.transport !== undefined)
+            await this.writeTransport(tx, dto, p, piId, refno, actor);
         return piId;
+    }
+    dueDates(dto, p) {
+        const h = dto.header;
+        const creditDays = h.creditDays ?? p.supplier.sup_credit_days ?? 0;
+        const goodsReceivedOn = h.goodsReceivedOn?.slice(0, 10)
+            ?? (p.grn.size ? isoDate(new Date(Math.min(...[...p.grn.values()].map((g) => g.grn_doc_date.getTime())))) : h.docDate.slice(0, 10));
+        const creditDue = addDays(h.supplierInvDate, creditDays);
+        const msmeDays = (0, purchase_lookup_1.msmeDueDays)(p.supplier.msme_category?.trim() || null, p.supplier.sup_msme_activity?.trim() || null, p.supplier.sup_msme_agreement, p.supplier.sup_msme_agreed_days);
+        const msmeDue = msmeDays == null ? null : addDays(goodsReceivedOn, msmeDays);
+        return { creditDays, goodsReceivedOn, creditDue, msmeDue, due: msmeDue && msmeDue < creditDue ? msmeDue : creditDue };
+    }
+    bandInput(t, dto, p) {
+        return {
+            direction: 'INWARD',
+            from: { name: p.supplier.sup_name, gstin: p.billFrom.gstin || null, stcd: p.supplierState, addrId: p.billFrom.addr_id },
+            to: { godownId: dto.header.godownId, branchId: dto.header.branchId, stcd: p.posStcd },
+            mode: t.mode ?? null, transporterId: t.transporterId ?? null, transporterName: t.transporterName?.trim() || null,
+            transporterGstin: t.transporterGstin?.trim() || null, lrNo: t.lrNo?.trim() || null, lrDate: t.lrDate?.slice(0, 10) ?? null,
+            distanceKm: t.distanceKm ?? null, remarks: t.remarks?.trim() || null,
+        };
+    }
+    async writeTransport(tx, dto, p, piId, refno, actor) {
+        const h = dto.header;
+        const ref = { docType: DOC_TYPE, docId: piId, accYear: h.accYear, companyId: h.companyId, branchId: h.branchId, docRefno: refno };
+        const t = h.transport;
+        const carriage = t && (t.mode || t.transporterId || t.transporterName?.trim() || t.transporterGstin?.trim() || t.lrNo?.trim() || t.lrDate || t.distanceKm != null || t.remarks?.trim());
+        if (!t || !carriage) {
+            await this.transportBand.remove(tx, ref, actor);
+            return;
+        }
+        const input = this.bandInput(t, dto, p);
+        if (input.transporterId && !input.transporterName) {
+            const [m] = await tx.$queryRaw `SELECT trn_name, trn_gstin FROM public.transporter_master WHERE trn_id = ${input.transporterId}::uuid`;
+            input.transporterName = m?.trn_name ?? null;
+            input.transporterGstin = input.transporterGstin ?? m?.trn_gstin ?? null;
+        }
+        await this.transportBand.write(tx, ref, input, actor, { gdrId: null });
     }
     stockRules() {
         return {
@@ -834,7 +1059,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             allowsToBranch: false, postShape: 'SIMPLE', auditScreenName: 'Purchase', statusDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
         };
     }
-    async postInTx(tx, piId, accYear, actor) {
+    async postInTx(tx, piId, accYear, actor, opts = { override: false, reason: null }) {
         const notes = [];
         const pi = await tx.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
         if (!pi)
@@ -858,6 +1083,16 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 (0, purchase_errors_1.purRefuseMany)(shelf[0].message, shelf);
             for (const x of shelf)
                 notes.push({ code: x.code, field: x.field, message: x.message });
+        }
+        const settingsNow = await (0, purchase_settings_1.loadPurchaseSettings)(tx, pi.piCompanyId, pi.piBranchId);
+        const judged = await (0, purchase_invoice_checks_1.checkLines)(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, docDate, piId, tolerancePct: settingsNow.rateTolerancePct }, this.factsFromStored(lines, allocs, await this.itemNames(tx, lines.map((l) => l.piiItemId))));
+        const refused = judged.issues.filter((x) => x.level === 'REFUSE');
+        if (refused.length)
+            (0, purchase_errors_1.purRefuseMany)(refused[0].message, refused.map((x) => ({ field: x.field, code: x.code, message: x.message })));
+        {
+            const [rc] = await tx.$queryRaw `SELECT led_is_reverse_charge AS rc FROM accounts.acc_ledger_master WHERE led_id = ${pi.piSupplierId}::uuid`;
+            if (pi.piIsReverseCharge || rc?.rc)
+                (0, purchase_errors_1.purRefuse)('This supplier is a reverse-charge party — phase 1 posts no reverse-charge GST. Enter it through Expense Voucher (RCM).', 'PUR_RCM_NOT_SUPPORTED', 'header.supplierId');
         }
         const stockAllocs = allocs.filter((a) => a.piaQty.plus(a.piaFreeQty).greaterThan(0));
         if (stockAllocs.length) {
@@ -1117,40 +1352,27 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
             });
         }
         {
-            const settingsNow = await (0, purchase_settings_1.loadPurchaseSettings)(tx, pi.piCompanyId, pi.piBranchId);
-            const fromPo = grnLines.length ? await tx.$queryRaw `
-        SELECT gri.gri_id, po.po_refno,
-               poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
-          FROM purchase.pur_grn_item gri
-          JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
-          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
-         WHERE gri.gri_id = ANY(${grnLines.map((l) => l.piiSrcItemId)}::uuid[])` : [];
-            const poDirect = lines.filter((l) => l.piiSrcDocType === 'PURCHASE_ORDER' && l.piiSrcItemId);
-            const fromPoDirect = poDirect.length ? await tx.$queryRaw `
-        SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
-          FROM purchase.pur_order_item poi
-          JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
-         WHERE poi.poi_id = ANY(${poDirect.map((l) => l.piiSrcItemId)}::uuid[])` : [];
-            const tol = D(settingsNow.rateTolerancePct);
-            const over = [];
-            const checks = [...fromPo.map((r) => ({ l: grnLines.find((x) => x.piiSrcItemId === r.gri_id), r })),
-                ...fromPoDirect.map((r) => ({ l: poDirect.find((x) => x.piiSrcItemId === r.poi_id), r }))];
-            for (const { l, r } of checks) {
-                if (!l || !r.po_rate_base || D(r.po_rate_base).isZero())
-                    continue;
-                const billBase = l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.dividedBy(l.piiBilledQty.times(l.piiToBaseFactor));
-                const pct = billBase.minus(r.po_rate_base).dividedBy(r.po_rate_base).times(100);
-                if (pct.greaterThan(tol))
-                    over.push(`line ${l.piiLineNo} ${pct.toFixed(1)}% over ${r.po_refno}`);
-            }
+            const over = judged.issues.filter((x) => x.code === 'PUR_RATE_ABOVE_PO');
             if (over.length) {
-                const reason = `Rate over PO beyond ${tol.toString()}%: ${over.join('; ')}`.slice(0, 250);
-                await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
-                await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
-                    companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
-                    srcDocId: piId, srcDocRefno: pi.piRefno, event: txn_status_log_helper_1.TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
-                });
-                notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+                const what = over.map((x) => { const c = judged.checks.get(x.lineNo)?.rate; return `line ${x.lineNo} ${D(c?.diffPct ?? 0).toFixed(1)}% over ${c?.refno}`; }).join('; ');
+                const tol = D(settingsNow.rateTolerancePct).toString();
+                if (opts.override) {
+                    const remarks = `Overrode PUR_RATE_ABOVE_PO (tolerance ${tol}%): ${what}${opts.reason?.trim() ? ` — ${opts.reason.trim()}` : ''}`.slice(0, 500);
+                    await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                        companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
+                        srcDocId: piId, srcDocRefno: pi.piRefno, event: txn_status_log_helper_1.TxnStatusEvent.WARN_OVERRIDE, fromStatus: 'DRAFT', toStatus: 'POSTED', changedBy: actor, remarks, deviceId: pi.piDeviceId,
+                    });
+                    notes.push({ code: 'PUR_WARN_OVERRIDDEN', field: 'header.overrideWarnings', message: `Posted without the payment hold (override logged) — ${what}` });
+                }
+                else {
+                    const reason = `Rate over PO beyond ${tol}%: ${what}`.slice(0, 250);
+                    await tx.purInvoice.update({ where: { piId_piAccYear: { piId, piAccYear: accYear } }, data: { piPaymentHold: true, piHoldReason: reason } });
+                    await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                        companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, srcModule: txn_status_log_helper_1.TxnStatusSrcModule.PURCHASE, srcDocType: txn_status_log_helper_1.TxnStatusDocType.PURCHASE_BILL,
+                        srcDocId: piId, srcDocRefno: pi.piRefno, event: txn_status_log_helper_1.TxnStatusEvent.HOLD, fromStatus: 'POSTED', toStatus: 'POSTED', changedBy: actor, remarks: reason, deviceId: pi.piDeviceId,
+                    });
+                    notes.push({ code: 'PUR_PAYMENT_HOLD', field: 'header', message: `On payment hold — ${reason}` });
+                }
             }
         }
         if (policy.allowPriceUpdate && policy.priceUpdate === 'UPDATE_PRICES') {
@@ -1284,7 +1506,8 @@ exports.PurchaseInvoiceService = PurchaseInvoiceService = __decorate([
         request_context_service_1.RequestContextService,
         voucher_posting_service_1.VoucherPostingService,
         stock_posting_service_1.StockPostingService,
-        selling_price_bulk_service_1.SellingPriceBulkService])
+        selling_price_bulk_service_1.SellingPriceBulkService,
+        transport_band_service_1.TransportBandService])
 ], PurchaseInvoiceService);
 function jsonSafe(v) {
     if (typeof v === 'bigint')

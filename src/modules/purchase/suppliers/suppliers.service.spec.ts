@@ -11,7 +11,9 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { SuppliersService } from './suppliers.service';
+import { PartySyncService } from '../../../common/party/party-sync.service';
 import { SupplierErrorCode } from './types/supplier-error-codes';
 
 const SUP_ID = '019c6f6c-be87-7a11-8905-36092c46f501';
@@ -66,7 +68,7 @@ const makeSupplier = (overrides: Partial<Supplier> = {}): Supplier => ({
   supGstNo: null,
   supStateCode: '33',
   supPanNo: null,
-  supGstType: 'REGULAR',
+  supGstType: 'UNREGISTERED',
   supSupCst: null,
   supDrugLiscenceNo: null,
   supRegionName: null,
@@ -132,7 +134,7 @@ const createDto = (overrides: Partial<SaveSupplierDto> = {}): SaveSupplierDto =>
   supName: 'Sri Ganesh Mills',
   supStateName: 'Tamil Nadu',
   supStateCode: '33',
-  supGstType: 'REGULAR',
+  supGstType: 'UNREGISTERED',
   ...overrides,
 });
 
@@ -150,7 +152,11 @@ type PrismaMock = {
   supplierGroup: {
     findFirst: jest.Mock<Promise<{ spgId?: string; spgName?: string } | null>, [Args]>;
   };
-  customer: { findFirst: jest.Mock<Promise<{ cusIsActive: boolean } | null>, [Args]> };
+  customer: {
+    findFirst: jest.Mock<Promise<{ cusIsActive: boolean } | null>, [Args]>;
+    update: jest.Mock<Promise<unknown>, [Args]>;
+  };
+  $queryRaw: jest.Mock;
   accLedgerMaster: {
     findFirst: jest.Mock<Promise<unknown>, [Args]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Args]>;
@@ -171,6 +177,11 @@ const bodyOf = async (promise: Promise<unknown>): Promise<unknown> => {
   throw new Error('expected the call to refuse');
 };
 
+const partyMock = () => ({
+  lockLedger: jest.fn().mockResolvedValue({ ledCompanyId: null, ledIsDeleted: false }),
+  companyWithBooks: jest.fn().mockResolvedValue(null),
+  deleteCheck: jest.fn().mockResolvedValue({ canDelete: true, refusals: [] }),
+});
 describe('SuppliersService', () => {
   let service: SuppliersService;
   let prisma: PrismaMock;
@@ -181,6 +192,7 @@ describe('SuppliersService', () => {
   };
   let auditLogService: { logEntityChange: jest.Mock<Promise<void>, [AuditEntry, unknown]> };
   let userId: string | undefined;
+  let party: ReturnType<typeof partyMock>;
 
   beforeEach(() => {
     userId = USER_ID;
@@ -215,7 +227,10 @@ describe('SuppliersService', () => {
         findFirst: jest.fn<Promise<{ cusIsActive: boolean } | null>, [Args]>(() =>
           Promise.resolve(null),
         ),
+        update: jest.fn<Promise<unknown>, [Args]>(({ data }) => Promise.resolve({ cusId: SUP_ID, ...data })),
       },
+      // assertMenuRight (delete): the user holds the menu-22 right.
+      $queryRaw: jest.fn(() => Promise.resolve([{ um_can_delete: true }])),
       accLedgerMaster: {
         findFirst: jest.fn<Promise<unknown>, [Args]>(() =>
           Promise.resolve({ ledId: SUP_ID, ledGroupId: SUPPLIER_LEDGER_GROUP_ID }),
@@ -248,11 +263,14 @@ describe('SuppliersService', () => {
     auditLogService = {
       logEntityChange: jest.fn<Promise<void>, [AuditEntry, unknown]>(() => Promise.resolve()),
     };
+    party = partyMock();
     service = new SuppliersService(
       prisma as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
       { getUserId: () => userId } as unknown as RequestContextService,
       ledgers as unknown as AccountLedgerMastersService,
+      party as never,
+      new PartySyncService(auditLogService as never),
     );
   });
 
@@ -263,6 +281,8 @@ describe('SuppliersService', () => {
       expect(ledgers.createLedgerWithinTx).toHaveBeenCalledWith(
         {
           ledGroupId: SUPPLIER_LEDGER_GROUP_ID,
+          ledGstPartyRegType: 'UNREGISTERED',
+          ledIsSez: false,
           ledName: 'Sri Ganesh Mills',
           ledStateName: 'Tamil Nadu',
           ledStateCode: '33',
@@ -277,8 +297,7 @@ describe('SuppliersService', () => {
         supName: 'Sri Ganesh Mills',
         supStateName: 'Tamil Nadu',
         supStateCode: '33',
-        supGstType: 'REGULAR',
-        supBilledDate: expect.any(Date) as Date,
+        supGstType: 'UNREGISTERED',
         supCreatedOn: expect.any(Date) as Date,
         supCreatedBy: USER_ID,
       });
@@ -299,6 +318,7 @@ describe('SuppliersService', () => {
           supPhone: '9000000001',
           supPincode: '641601',
           supGstNo: '33ABCDE1234F1Z5',
+          supGstType: 'REGULAR',
           supNotes: 'net 30',
           supIsActive: false,
           ledgerBankAccount: [],
@@ -428,7 +448,8 @@ describe('SuppliersService', () => {
     });
 
     it('files a New audit row inside the same transaction', async () => {
-      const payload = await service.save(createDto());
+      const { partySync, ...payload } = await service.save(createDto());
+      expect(partySync).toEqual({ otherRole: null, otherRoleUpdated: false, fields: [] });
 
       const [entry, client] = auditLogService.logEntityChange.mock.calls[0];
       expect(entry).toEqual({
@@ -450,7 +471,8 @@ describe('SuppliersService', () => {
   // Notes 81 — a party we sell to and buy from keeps one ledger and one balance.
   describe('save — create on an existing ledger (supLinkLedId)', () => {
     beforeEach(() => {
-      prisma.accLedgerMaster.findFirst.mockResolvedValue(linkLedger());
+      // Party rules D2: an UNREGISTERED body takes no GSTIN, so the default ledger has none.
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(linkLedger({ ledGstinNo: null }));
     });
 
     it('joins the ledger without writing it, taking the ledger id', async () => {
@@ -470,8 +492,10 @@ describe('SuppliersService', () => {
     });
 
     it('fills the blank name, state, contact and tax fields from the ledger', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(linkLedger());
       await service.save(
         createDto({
+          supGstType: 'REGULAR',
           supLinkLedId: LINK_LED_ID,
           supName: undefined as unknown as string,
           supStateName: '',
@@ -514,7 +538,7 @@ describe('SuppliersService', () => {
 
     it('leaves out a ledger email too wide for the supplier column', async () => {
       prisma.accLedgerMaster.findFirst.mockResolvedValue(
-        linkLedger({ ledEmail: `${'a'.repeat(115)}@x.com` }),
+        linkLedger({ ledEmail: `${'a'.repeat(115)}@x.com`, ledGstinNo: null }),
       );
 
       await service.save(createDto({ supLinkLedId: LINK_LED_ID }));
@@ -568,7 +592,7 @@ describe('SuppliersService', () => {
 
     // June-2026 customers were provisioned before createLedgerWithinTx stamped PARTY.
     it('accepts an untyped ledger that a live customer already owns', async () => {
-      prisma.accLedgerMaster.findFirst.mockResolvedValue(linkLedger({ ledLedgerType: null }));
+      prisma.accLedgerMaster.findFirst.mockResolvedValue(linkLedger({ ledLedgerType: null, ledGstinNo: null }));
       prisma.customer.findFirst.mockResolvedValue({ cusIsActive: true });
 
       await service.save(createDto({ supLinkLedId: LINK_LED_ID }));
@@ -732,8 +756,72 @@ describe('SuppliersService', () => {
       });
     });
 
+    // dto-own-undefined trap: through the house ValidationPipe every declared field is
+    // own (undefined when left out); left out must keep, explicit null must clear.
+    describe('a partial body through the house ValidationPipe', () => {
+      const piped = async (body: Record<string, unknown>) =>
+        (await createHouseValidationPipe().transform(body, {
+          type: 'body',
+          metatype: SaveSupplierDto,
+        })) as SaveSupplierDto;
+      const partial = {
+        supId: SUP_ID,
+        supGroupId: GROUP_ID,
+        supPurchaseType: 'LOCAL',
+        supName: 'Sri Ganesh Mills',
+        supStateName: 'Tamil Nadu',
+        supStateCode: '33',
+        supGstType: 'UNREGISTERED',
+      };
+
+      it('keeps the collection days and licence dates, and checks the name in the stored company', async () => {
+        const dto = await piped(partial);
+        expect(Object.prototype.hasOwnProperty.call(dto, 'supCollectionDays')).toBe(true);
+
+        await service.save(dto);
+
+        const { data } = prisma.supplier.update.mock.calls[0][0];
+        expect(data).not.toHaveProperty('supCollectionDays');
+        expect(data).not.toHaveProperty('supDrugLicenceExpiry');
+        expect(data).not.toHaveProperty('supFssaiValidTo');
+        expect(data).not.toHaveProperty('supCompanyId');
+        expect(prisma.supplier.findFirst.mock.calls[1][0].where).toMatchObject({
+          supCompanyId: COMPANY_ID,
+        });
+      });
+
+      it('clears them when the body sends null', async () => {
+        await service.save(
+          await piped({
+            ...partial,
+            supCollectionDays: null,
+            supDrugLicenceExpiry: null,
+            supFssaiValidTo: null,
+          }),
+        );
+
+        const { data } = prisma.supplier.update.mock.calls[0][0];
+        expect(data!.supCollectionDays).toEqual([]);
+        expect(data!.supDrugLicenceExpiry).toBeNull();
+        expect(data!.supFssaiValidTo).toBeNull();
+      });
+
+      it('writes licence dates the body sends as date columns', async () => {
+        await service.save(
+          await piped({ ...partial, supCollectionDays: [5, 20], supFssaiValidTo: '2027-06-30' }),
+        );
+
+        const { data } = prisma.supplier.update.mock.calls[0][0];
+        expect(data!.supCollectionDays).toEqual([5, 20]);
+        expect(data!.supFssaiValidTo).toEqual(new Date('2027-06-30T00:00:00Z'));
+        expect(data).not.toHaveProperty('supDrugLicenceExpiry');
+      });
+    });
+
     it('files an update audit row holding the row before and after', async () => {
-      const payload = await service.save(createDto({ supId: SUP_ID, supName: 'Ganesh Mills' }));
+      const { partySync: _sync, ...payload } = await service.save(
+        createDto({ supId: SUP_ID, supName: 'Ganesh Mills' }),
+      );
 
       const [entry] = auditLogService.logEntityChange.mock.calls[0];
       expect(entry).toMatchObject({

@@ -138,13 +138,14 @@ export class LedgerStatementService {
         acc_group_name: string | null;
         led_is_bill_by_bill: boolean | null;
         led_company_id: string | null;
+        led_is_deleted: boolean;
       }[]
     >`
       SELECT l.led_id, l.led_name, l.led_group_id, g.acc_group_name, l.led_is_bill_by_bill,
-             l.led_company_id
+             l.led_company_id, l.led_is_deleted
         FROM accounts.acc_ledger_master l
         LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
-       WHERE l.led_is_deleted = false
+       WHERE (l.led_is_deleted = false OR ${q.includeDeleted === true})
          AND (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND (${q.groupId ?? null}::uuid IS NULL OR l.led_group_id = ${q.groupId ?? null}::uuid)
          AND ${looseSearchSql(
@@ -161,6 +162,7 @@ export class LedgerStatementService {
         groupName: r.acc_group_name,
         isBillByBill: r.led_is_bill_by_bill === true,
         isShared: r.led_company_id === null,
+        isDeleted: r.led_is_deleted === true,
       })),
     };
   }
@@ -416,9 +418,11 @@ export class LedgerStatementService {
         `No fiscal year ${q.accYear} for this company.`,
       );
     }
+    // Party rules D1-7: a deleted ledger still has its history; the report is read-only, so
+    // every statement route opens it (the picker lists it only with includeDeleted).
     const [led] = await this.prisma.$queryRaw<{ led_company_id: string | null }[]>`
       SELECT led_company_id FROM accounts.acc_ledger_master
-       WHERE led_id = ${q.ledgerId}::uuid AND led_is_deleted = false`;
+       WHERE led_id = ${q.ledgerId}::uuid`;
     if (!led) {
       throwAccountsNotFound(
         'Ledger not found',
@@ -834,13 +838,14 @@ export class LedgerStatementService {
         led_gstin_no: string | null;
         led_phone1: string | null;
         led_whatsapp_no: string | null;
+        led_is_deleted: boolean;
         cus_credit_days: number | null;
         cus_credit_amt_limit: Prisma.Decimal | null;
         sup_credit_days: number | null;
       }[]
     >`
       SELECT l.led_id, l.led_name, g.acc_group_name, g.acc_group_nature, l.led_is_bill_by_bill,
-             l.led_gstin_no, l.led_phone1, l.led_whatsapp_no,
+             l.led_gstin_no, l.led_phone1, l.led_whatsapp_no, l.led_is_deleted,
              c.cus_credit_days, c.cus_credit_amt_limit, s.sup_credit_days
         FROM accounts.acc_ledger_master l
         LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
@@ -851,6 +856,7 @@ export class LedgerStatementService {
     return {
       ledgerId: r.led_id,
       name: r.led_name,
+      isDeleted: r.led_is_deleted === true,
       groupName: r.acc_group_name,
       nature: r.acc_group_nature,
       isBillByBill: r.led_is_bill_by_bill === true,

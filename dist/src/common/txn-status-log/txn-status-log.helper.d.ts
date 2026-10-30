@@ -56,7 +56,8 @@ export declare enum TxnStatusEvent {
     WRITTEN_OFF = "WRITTEN_OFF",
     HOLD = "HOLD",
     RELEASED = "RELEASED",
-    HOLD_OVERRIDE = "HOLD_OVERRIDE"
+    HOLD_OVERRIDE = "HOLD_OVERRIDE",
+    WARN_OVERRIDE = "WARN_OVERRIDE"
 }
 export declare enum TxnStatusNotifyChannel {
     SMS = "SMS",

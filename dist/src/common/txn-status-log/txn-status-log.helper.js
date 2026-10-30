@@ -65,6 +65,7 @@ var TxnStatusEvent;
     TxnStatusEvent["HOLD"] = "HOLD";
     TxnStatusEvent["RELEASED"] = "RELEASED";
     TxnStatusEvent["HOLD_OVERRIDE"] = "HOLD_OVERRIDE";
+    TxnStatusEvent["WARN_OVERRIDE"] = "WARN_OVERRIDE";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

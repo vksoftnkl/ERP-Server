@@ -7,6 +7,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { purNotFound } from '../common/purchase.errors';
 import { D, jsonSafe } from '../common/purchase-doc.helpers';
 import { PurchaseOrderService, type PendingPoLinesQueryDto } from '../order/purchase-order';
+import { supplierBillFrom } from '../common/purchase-bill-from';
 
 /**
  * B9 lookups (plan-purchase-backend.md §6) — what the entry screens show beside the document,
@@ -108,6 +109,10 @@ export class PurchaseLookupService {
     if (fssaiTo && fssaiTo < onDate) warnings.push({ code: 'FSSAI_EXPIRED', message: `FSSAI licence ${s.sup_fssai_no ?? ''} expired on ${fssaiTo}.`.replace('  ', ' ') });
 
     const cr = D(bal?.cr ?? 0), dr = D(bal?.dr ?? 0);
+    // S2 — Bill from: the GSTINs this supplier bills from (master first); the Purchase Invoice sends one as header.billFromGstin
+    const billFrom = (await supplierBillFrom(this.prisma as unknown as Prisma.TransactionClient, q.supplierId)).map((b) => ({
+      addrId: b.addr_id, gstin: b.gstin, stateCode: b.state_code, stateName: b.state_name, name: b.name, addr: b.addr, place: b.place, pin: b.pin,
+      isDefault: b.is_default, source: b.source }));
     return jsonSafe({
       supplierId: s.sup_id, name: s.sup_name,
       gstNo: s.sup_gst_no ?? null, gstType: s.sup_gst_type ?? null, stateCode: s.sup_state_code ?? null, stateName: s.sup_state_name ?? null,
@@ -117,6 +122,7 @@ export class PurchaseLookupService {
       msme: category ? { category, activity, udyamNo: s.led_udyam_no ?? null, writtenAgreement: !!s.sup_msme_agreement,
                          agreedDays: s.sup_msme_agreed_days ?? null, dueDays, payBy: dueDays != null ? addDays(onDate, dueDays) : null } : null,
       licences: { drugLicenceNo: s.sup_drug_liscence_no ?? null, drugLicenceExpiry: drugExp, fssaiNo: s.sup_fssai_no ?? null, fssaiValidTo: fssaiTo },
+      billFrom,
       pendingPos: [...pos.values()],
       outstanding: { payable: cr, debits: dr, balance: cr.minus(dr), bills: Number(bal?.bills ?? 0), overdueBills: Number(bal?.overdue ?? 0),
                      oldestDue: day(bal?.oldest_due), billsOnHold: Number(held?.n ?? 0) },

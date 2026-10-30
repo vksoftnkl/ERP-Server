@@ -370,6 +370,7 @@ describe('LedgerStatementService', () => {
             groupName: 'Sundry Debtors',
             isBillByBill: true,
             isShared: false,
+            isDeleted: false,
           },
           {
             ledgerId: CASH_ID,
@@ -378,13 +379,22 @@ describe('LedgerStatementService', () => {
             groupName: null,
             isBillByBill: false,
             isShared: true,
+            isDeleted: false,
           },
         ],
       });
       const text = textOfCall(db.handlers.picker);
       expect(text).toContain('(l.led_company_id IS NULL OR l.led_company_id = ?::uuid)');
       expect(text).toContain('AND TRUE ORDER BY');
-      expect(valuesOf(db.handlers.picker)).toEqual([COMPANY_ID, null, null, 30]);
+      // false = includeDeleted left out: deleted ledgers stay hidden.
+      expect(text).toContain('(l.led_is_deleted = false OR ?)');
+      expect(valuesOf(db.handlers.picker)).toEqual([false, COMPANY_ID, null, null, 30]);
+    });
+
+    it('lists deleted ledgers too with includeDeleted, flagged isDeleted (D1-7)', async () => {
+      await service.ledgers({ companyId: COMPANY_ID, includeDeleted: true });
+
+      expect(valuesOf(db.handlers.picker)[0]).toBe(true);
     });
 
     it('narrows by group and searches five columns for every word, up to the limit given', async () => {
@@ -424,6 +434,7 @@ describe('LedgerStatementService', () => {
         ledger: {
           ledgerId: LEDGER_ID,
           name: 'Ravi Stores',
+          isDeleted: false,
           groupName: 'Sundry Debtors',
           nature: 'ASSET',
           isBillByBill: true,

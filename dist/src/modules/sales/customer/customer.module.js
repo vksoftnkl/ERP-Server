@@ -13,12 +13,13 @@ const account_ledger_masters_module_1 = require("../../accountsModule/accountLed
 const customer_controller_1 = require("./customer.controller");
 const customer_exception_filter_1 = require("./customer-exception.filter");
 const customer_service_1 = require("./customer.service");
+const party_module_1 = require("../../../common/party/party.module");
 let CustomerModule = class CustomerModule {
 };
 exports.CustomerModule = CustomerModule;
 exports.CustomerModule = CustomerModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule],
+        imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule, party_module_1.PartyModule],
         controllers: [customer_controller_1.CustomerController],
         providers: [customer_service_1.CustomerService, customer_exception_filter_1.CustomerExceptionFilter],
     })

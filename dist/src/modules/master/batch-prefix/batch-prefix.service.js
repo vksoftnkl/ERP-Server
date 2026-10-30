@@ -153,7 +153,7 @@ let BatchPrefixService = class BatchPrefixService {
                     modifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                     modifiedOn: new Date(),
                 };
-                if ((0, module_service_utils_1.hasOwnProperty)(saveBatchPrefixDto, 'syncDate')) {
+                if ((0, module_service_utils_1.isPresentField)(saveBatchPrefixDto, 'syncDate')) {
                     const syncDate = this.parseNullableDate(saveBatchPrefixDto.syncDate, 'syncDate');
                     data.syncDate = syncDate ?? null;
                 }

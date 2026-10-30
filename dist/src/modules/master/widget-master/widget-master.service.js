@@ -269,10 +269,10 @@ let WidgetMasterService = class WidgetMasterService {
             fieldUpdatedBy: actor,
             fieldUpdatedOn: new Date(),
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(field, 'fieldGuiName')) {
+        if ((0, module_service_utils_1.isPresentField)(field, 'fieldGuiName')) {
             data.fieldGuiName = field.fieldGuiName ?? null;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(field, 'fieldSecondaryText')) {
+        if ((0, module_service_utils_1.isPresentField)(field, 'fieldSecondaryText')) {
             data.fieldSecondaryText = field.fieldSecondaryText ?? null;
         }
         if (field.fieldPosition !== undefined) {

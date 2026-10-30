@@ -105,7 +105,7 @@ let LedgerBankAccountService = class LedgerBankAccountService {
                 const bankName = (0, module_service_utils_1.normalizeRequiredText)(saveLedgerBankAccountDto.lbaBankName, 'lbaBankName', undefined, ledger_bank_account_error_codes_1.LedgerBankErrorCode.FIELD_EMPTY);
                 const accountNo = (0, module_service_utils_1.normalizeRequiredText)(saveLedgerBankAccountDto.lbaAccountNo, 'lbaAccountNo', undefined, ledger_bank_account_error_codes_1.LedgerBankErrorCode.FIELD_EMPTY);
                 const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-                const requestedCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaCompanyId')
+                const requestedCompanyId = (0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaCompanyId')
                     ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
                     : undefined;
                 const companyId = await this.resolveCompanyId(requestedCompanyId, null, ledger.ledCompanyId, tx);
@@ -178,7 +178,7 @@ let LedgerBankAccountService = class LedgerBankAccountService {
                 const bankName = (0, module_service_utils_1.normalizeRequiredText)(saveLedgerBankAccountDto.lbaBankName, 'lbaBankName', undefined, ledger_bank_account_error_codes_1.LedgerBankErrorCode.FIELD_EMPTY);
                 const accountNo = (0, module_service_utils_1.normalizeRequiredText)(saveLedgerBankAccountDto.lbaAccountNo, 'lbaAccountNo', undefined, ledger_bank_account_error_codes_1.LedgerBankErrorCode.FIELD_EMPTY);
                 const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-                const requestedCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaCompanyId')
+                const requestedCompanyId = (0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaCompanyId')
                     ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
                     : undefined;
                 const companyId = await this.resolveCompanyId(requestedCompanyId, existing.lbaCompanyId, ledger.ledCompanyId, tx);
@@ -354,31 +354,31 @@ let LedgerBankAccountService = class LedgerBankAccountService {
         });
     }
     applyOptionalFields(data, saveLedgerBankAccountDto) {
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaBranchName')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaBranchName')) {
             data.lbaBranchName = saveLedgerBankAccountDto.lbaBranchName;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaIfscCode')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaIfscCode')) {
             data.lbaIfscCode = saveLedgerBankAccountDto.lbaIfscCode;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaMicrCode')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaMicrCode')) {
             data.lbaMicrCode = saveLedgerBankAccountDto.lbaMicrCode;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaAccountType')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaAccountType')) {
             data.lbaAccountType = saveLedgerBankAccountDto.lbaAccountType;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaUpiId')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaUpiId')) {
             data.lbaUpiId = saveLedgerBankAccountDto.lbaUpiId;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaChequeName')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaChequeName')) {
             data.lbaChequeName = saveLedgerBankAccountDto.lbaChequeName;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaIsDefault')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaIsDefault')) {
             data.lbaIsDefault = saveLedgerBankAccountDto.lbaIsDefault;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaIsActive')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaIsActive')) {
             data.lbaIsActive = saveLedgerBankAccountDto.lbaIsActive;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveLedgerBankAccountDto, 'lbaRemarks')) {
+        if ((0, module_service_utils_1.isPresentField)(saveLedgerBankAccountDto, 'lbaRemarks')) {
             data.lbaRemarks = saveLedgerBankAccountDto.lbaRemarks;
         }
     }

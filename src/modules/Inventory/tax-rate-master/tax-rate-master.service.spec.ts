@@ -1,6 +1,7 @@
 import { ConflictException, HttpException } from '@nestjs/common';
 import { Prisma, TaxRateLedger, TaxRateMaster } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import {
@@ -1190,7 +1191,6 @@ describe('TaxRateMasterService', () => {
             trlModifiedOn: expect.any(Date),
             trlModifiedBy: USER_ID,
             trlRole: 'OUTPUT_CGST',
-            trlSupplyNature: null,
             trlLedgerId: OTHER_LEDGER_ID,
             trlRemarks: 'changed',
           },
@@ -1214,28 +1214,50 @@ describe('TaxRateMasterService', () => {
         ]);
       });
 
-      // "null (the default) = both natures": a line resent without its nature
-      // covers both again, as it would on insert.
-      it('writes a null supply nature for a line updated without one, and keeps its remarks', async () => {
-        await service.save(
-          dtoOf({
+      // Absent keeps, explicit null clears (dto-own-undefined trap): after the house
+      // ValidationPipe every declared line field is an own property, so a line resent
+      // WITHOUT trl_supply_nature must keep the stored nature, not reset it to null.
+      it('keeps the stored supply nature for a line updated without one, and keeps its remarks', async () => {
+        const dto = (await createHouseValidationPipe().transform(
+          {
+            tax_id: TAX_ID,
+            lines: [{ trl_id: LINE_2, trl_role: 'SALES', trl_ledger_id: LEDGER_ID }],
+          },
+          { type: 'body', metatype: SaveTaxRateDto },
+        )) as SaveTaxRateDto;
+        expect(Object.prototype.hasOwnProperty.call(dto.lines![0], 'trl_supply_nature')).toBe(true);
+
+        await service.save(dto);
+
+        const { data } = prisma.taxRateLedger.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        };
+        expect(data).not.toHaveProperty('trlSupplyNature');
+        expect(data.trlRemarks).toBeUndefined();
+        expect(store.lines.get(LINE_2)).toMatchObject({
+          trlSupplyNature: 'INTRA',
+          trlRemarks: 'kept',
+        });
+      });
+
+      it('clears the supply nature when the line sends null for it', async () => {
+        const dto = (await createHouseValidationPipe().transform(
+          {
             tax_id: TAX_ID,
             lines: [
-              { trl_id: LINE_2, trl_role: 'SALES', trl_ledger_id: LEDGER_ID, trl_is_active: null },
+              { trl_id: LINE_2, trl_role: 'SALES', trl_ledger_id: LEDGER_ID, trl_supply_nature: null },
             ],
-          }),
-        );
+          },
+          { type: 'body', metatype: SaveTaxRateDto },
+        )) as SaveTaxRateDto;
+
+        await service.save(dto);
 
         const { data } = prisma.taxRateLedger.update.mock.calls[0][0] as {
           data: Record<string, unknown>;
         };
         expect(data.trlSupplyNature).toBeNull();
-        expect(data.trlRemarks).toBeUndefined();
-        expect(data).not.toHaveProperty('trlIsActive');
-        expect(store.lines.get(LINE_2)).toMatchObject({
-          trlSupplyNature: null,
-          trlRemarks: 'kept',
-        });
+        expect(store.lines.get(LINE_2)).toMatchObject({ trlSupplyNature: null, trlRemarks: 'kept' });
       });
 
       it('switches a line back on, as the modifier the line names', async () => {

@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (257 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (258 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -142,7 +142,7 @@ VALUES
     ,( 285,  283, 'Approval Authority'                   , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
     ,( 277,    5, 'Expense Voucher'                      , NULL                  , true ,  30.00, NULL, NULL, NULL, true , true)
     ,( 278,    5, 'Card / UPI Settlement'                , NULL                  , true , 150.00, NULL, NULL, NULL, true , true)
-    -- ============ &2 Purchase (menu 2, 18 rows) ============
+    -- ============ &2 Purchase (menu 2, 19 rows) ============
     ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,  20.00, '0', NULL, NULL, true , false)
     ,(  22,    2, 'Suppliers'                            , NULL                  , true ,  10.00, NULL, NULL, NULL, true , true)
     ,(  23,    2, 'Purchase Order'                       , 'CTRL+SHIFT+P'        , false,   2.00, NULL, NULL, NULL, true , false)
@@ -154,6 +154,7 @@ VALUES
     ,( 149,   26, 'Transporters'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 195,    2, 'Shortage Receipt'                     , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 196,    2, 'Purchase Note'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
+    ,( 297,    2, 'Supplier Dues'                        , NULL                  , true ,   4.50, NULL, NULL, NULL, true , false)
     ,( 208,    2, 'Procurement'                          , NULL                  , false,   4.90, NULL, NULL, NULL, true , false)
     ,( 209,  208, 'Center Master'                        , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,( 210,  208, 'Farmer Master'                        , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
@@ -465,6 +466,19 @@ UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,CANCEL}'
  WHERE menu_id = 192
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Purchase (20261028130000_purchase_masters_menus, 20261029130000_purchase_fidelity_db_needs):
+-- 195 Shortage Receipt posts and cancels; 196 GRN also takes OVERRIDE (posting past
+-- PUR_SHELF_LIFE in REFUSE mode); 297 Supplier Dues (claims + shortages on one page)
+-- views, settles (POST) and voids (CANCEL), no DELETE. Same guard as above.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (195, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}'),
+               (196, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'),
+               (297, '{VIEW,CREATE,EDIT,PRINT,EXPORT,POST,CANCEL}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu
 -- created from the UI reuses id 1 and fails on the primary key.

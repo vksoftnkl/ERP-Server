@@ -198,6 +198,7 @@ SELECT v.id, v.sch, v.tbl, v.parent, v.name, v.kind, v.module, v.prefix, v.sync_
     -- 800s PURCHASE
     ( 801, 'purchase',   'supplier_groups',            NULL,  'Supplier Group',                   'MASTER',      'PURCHASE',  'spg_',              'spg_sync_date',            27,    'EDITABLE',    NULL,  true,   NULL),
     ( 802, 'purchase',   'suppliers',                  NULL,  'Supplier',                         'MASTER',      'PURCHASE',  'sup_',              'sup_sync_date',            22,    'EDITABLE',    NULL,  true,   'Mirrors into an acc_ledger_master row with the same id.'),
+    ( 803, 'purchase',   'pur_terms',                  NULL,  'PO Terms',                         'MASTER',      'PURCHASE',  'pte_',              'pte_sync_date',            NULL,  'EDITABLE',    NULL,  true,   'Terms picked on a purchase order; company NULL = shared. The PO keeps its own copy of the text.'),
     -- 900s INVENTORY
     ( 901, 'inventory',  'item_group_master',          NULL,  'Item Group',                       'MASTER',      'INVENTORY', 'itg_',              'itg_sync_date',            35,    'EDITABLE',    NULL,  true,   NULL),
     ( 902, 'inventory',  'item_category_master',       NULL,  'Item Category',                    'MASTER',      'INVENTORY', 'category_',         'category_sync_date',       240,   'EDITABLE',    NULL,  true,   NULL),

@@ -1,3 +1,4 @@
+import { gstinKindOf, type PartyGstinKind } from "../../../../common/party/party-gstin";
 export declare const CUSTOMER_GSTIN_PATTERNS: {
     readonly NORMAL: RegExp;
     readonly TDS_DEDUCTOR: RegExp;
@@ -5,10 +6,10 @@ export declare const CUSTOMER_GSTIN_PATTERNS: {
     readonly OIDAR: RegExp;
     readonly NRTP: RegExp;
 };
-export type CustomerGstinKind = keyof typeof CUSTOMER_GSTIN_PATTERNS;
-export declare function gstinKindOf(gstin: string): CustomerGstinKind | null;
+export type CustomerGstinKind = PartyGstinKind;
 export declare const CUSTOMER_GSTIN_PATTERN: RegExp;
 export declare const CUSTOMER_PAN_PATTERN: RegExp;
+export { gstinKindOf };
 export declare class SaveCustomerDto {
     cusId?: string;
     cusLinkLedId?: string;

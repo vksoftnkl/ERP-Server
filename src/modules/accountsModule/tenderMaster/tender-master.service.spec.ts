@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
+import { createHouseValidationPipe } from '../../../common/validation/house-validation';
 import { TenderMasterService } from './tender-master.service';
 import { TenderMasterErrorCode } from './types/tender-master-api.types';
 
@@ -533,6 +534,56 @@ describe('TenderMasterService', () => {
       await expect(
         bodyOf(service.save(saveDto({ tndId: TND_ID, tndEffectiveTo: '2026-03-31' }))),
       ).resolves.toMatchObject({ errors: [{ code: TenderMasterErrorCode.DATE_RANGE }] });
+    });
+
+    // dto-own-undefined trap: through the house ValidationPipe every declared field is
+    // own (undefined when left out), so the checks must see the stored values.
+    describe('a partial body through the house ValidationPipe', () => {
+      const piped = async (body: Record<string, unknown>) =>
+        (await createHouseValidationPipe().transform(body, {
+          type: 'body',
+          metatype: SaveTenderMasterDto,
+        })) as SaveTenderMasterDto;
+      const partial = {
+        tndId: TND_ID,
+        tndCompanyId: COMPANY_ID,
+        tndTypeId: '1',
+        tndName: 'Cash',
+        tndLedgerId: CASH_LEDGER_ID,
+        tndMinAmount: 0,
+      };
+
+      it('keeps the stored branch and checks the stored hotkey in that branch', async () => {
+        const dto = await piped(partial);
+        expect(Object.prototype.hasOwnProperty.call(dto, 'tndBranchId')).toBe(true);
+
+        await service.save(dto);
+
+        expect(prisma.accTenderMaster.update.mock.calls[0][0].data!.tndBranchId).toBe(BRANCH_ID);
+        const hotkeyProbe = prisma.accTenderMaster.findFirst.mock.calls
+          .map(([args]) => args.where)
+          .find((where) => 'tndHotkey' in where);
+        expect(hotkeyProbe).toMatchObject({ tndHotkey: 'F2' });
+      });
+
+      it('checks a new minimum against the stored maximum', async () => {
+        await expect(
+          bodyOf(service.save(await piped({ ...partial, tndMinAmount: 300000 }))),
+        ).resolves.toMatchObject({ errors: [{ code: TenderMasterErrorCode.AMOUNT_RANGE }] });
+        expect(prisma.accTenderMaster.update).not.toHaveBeenCalled();
+      });
+
+      it('checks a new effective-to against the stored effective-from', async () => {
+        await expect(
+          bodyOf(service.save(await piped({ ...partial, tndEffectiveTo: '2026-03-31' }))),
+        ).resolves.toMatchObject({ errors: [{ code: TenderMasterErrorCode.DATE_RANGE }] });
+      });
+
+      it('still makes the tender company-wide when the body sends a null branch', async () => {
+        await service.save(await piped({ ...partial, tndBranchId: null }));
+
+        expect(prisma.accTenderMaster.update.mock.calls[0][0].data!.tndBranchId).toBeNull();
+      });
     });
 
     it('skips its own row in every uniqueness check', async () => {

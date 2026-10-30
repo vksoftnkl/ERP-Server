@@ -14,14 +14,19 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const account_ledger_masters_service_1 = require("../../accountsModule/accountLedgerMasters/account-ledger-masters.service");
-const account_ledger_master_enum_1 = require("../../accountsModule/accountLedgerMasters/types/account-ledger-master-enum");
 const account_ledger_master_error_codes_1 = require("../../accountsModule/accountLedgerMasters/types/account-ledger-master-error-codes");
-const save_customer_dto_1 = require("./dto/save-customer.dto");
+const rights_1 = require("../../../common/posting/rights");
+const party_balance_service_1 = require("../../../common/party/party-balance.service");
+const party_sync_service_1 = require("../../../common/party/party-sync.service");
+const party_detail_map_1 = require("../../../common/party/party-detail.map");
+const party_gst_type_1 = require("../../../common/party/party-gst-type");
+const party_billed_1 = require("../../../common/party/party-billed");
 const customer_error_codes_1 = require("./types/customer-error-codes");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
+const CUSTOMER_MENU_ID = 10;
 const CUSTOMER_ZERO_WHEN_CLEARED_FIELDS = [
     'cusCreditBillLimit',
     'cusCreditAmtLimit',
@@ -123,66 +128,22 @@ const CUSTOMER_OPTIONAL_FIELDS = [
     'cusIsActive',
 ];
 const CUSTOMER_TO_LEDGER_FIELD_MAP = [
-    ['cusCompanyId', 'ledCompanyId'],
-    ['cusBranchId', 'ledBranchId'],
-    ['cusShort', 'ledShort'],
-    ['cusEmail', 'ledEmail'],
-    ['cusTel', 'ledTel'],
-    ['cusPhone1', 'ledPhone1'],
-    ['cusPhone2', 'ledPhone2'],
-    ['cusWhatsappNo', 'ledWhatsappNo'],
-    ['cusContactPerson', 'ledContactPerson'],
-    ['cusAddr1', 'ledAddr1'],
-    ['cusAddr2', 'ledAddr2'],
-    ['cusAddr3', 'ledAddr3'],
-    ['cusCity', 'ledCity'],
-    ['cusDistrict', 'ledDistrict'],
-    ['cusPin', 'ledPin'],
-    ['cusCountry', 'ledCountry'],
-    ['cusRegionName', 'ledRegionName'],
-    ['cusRegionAddr1', 'ledRegionAddr1'],
-    ['cusRegionAddr2', 'ledRegionAddr2'],
-    ['cusRegionAddr3', 'ledRegionAddr3'],
-    ['cusRegionCity', 'ledRegionCity'],
-    ['cusRegionDistrict', 'ledRegionDistrict'],
-    ['cusRegionStateName', 'ledRegionStateName'],
-    ['cusRegionCountry', 'ledRegionCountry'],
-    ['cusGstNo', 'ledGstinNo'],
-    ['cusPanNo', 'ledPanNo'],
-    ['cusAadharNo', 'ledAadharNo'],
-    ['cusEcommerceGstin', 'ledEcommerceGstin'],
     ['cusNotes', 'ledRemarks'],
     ['cusEnableSms', 'ledAllowSms'],
     ['cusSortOrder', 'ledSortOrder'],
     ['cusIsActive', 'ledIsActive'],
 ];
-const CUSTOMER_FIELDS_NOT_FROM_LINKED_LEDGER = new Set([
-    'cusIsActive',
-    'cusEnableSms',
-    'cusSortOrder',
-    'cusNotes',
-]);
 const CUSTOMER_FIELDS_FROM_LINKED_LEDGER = [
     ['cusName', 'ledName'],
     ['cusStateName', 'ledStateName'],
     ['cusStateCode', 'ledStateCode'],
-    ...CUSTOMER_TO_LEDGER_FIELD_MAP.filter(([cusField]) => !CUSTOMER_FIELDS_NOT_FROM_LINKED_LEDGER.has(cusField)),
+    ...party_detail_map_1.PARTY_DETAIL_FIELDS.filter((field) => field.cus !== null).map((field) => [field.cus, field.led]),
 ];
 const CUSTOMER_LINK_MAX_LENGTH = {
     cusEmail: 120,
     cusAadharNo: 12,
     cusRegionName: 200,
 };
-function toLedgerGstPartyRegType(cusGstType) {
-    if (typeof cusGstType !== 'string') {
-        return null;
-    }
-    const normalized = cusGstType
-        .trim()
-        .toUpperCase()
-        .replace(/[\s_-]+/g, '');
-    return (Object.values(account_ledger_master_enum_1.LedGstPartyRegType).find((value) => value.replace(/[\s_-]+/g, '') === normalized) ?? null);
-}
 function toLedgerItCollectionFlags(saveCustomerDto) {
     const hasTcsFlag = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusTcsApplicable');
     const hasItcollType = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusItcollType');
@@ -210,11 +171,15 @@ let CustomerService = class CustomerService {
     auditLogService;
     requestContextService;
     accountLedgerMastersService;
-    constructor(prisma, auditLogService, requestContextService, accountLedgerMastersService) {
+    partyBalanceService;
+    partySyncService;
+    constructor(prisma, auditLogService, requestContextService, accountLedgerMastersService, partyBalanceService, partySyncService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
         this.accountLedgerMastersService = accountLedgerMastersService;
+        this.partyBalanceService = partyBalanceService;
+        this.partySyncService = partySyncService;
     }
     async save(saveCustomerDto) {
         if (saveCustomerDto.cusId) {
@@ -241,20 +206,68 @@ let CustomerService = class CustomerService {
         if (!record) {
             (0, module_service_utils_1.throwSalesNotFound)('Customer not found', 'cusId', `No active customer found with id ${cusId}`, customer_error_codes_1.CustomerErrorCode.NOT_FOUND);
         }
-        const payload = this.toPayload(record);
+        const payload = await this.withLastBilled(this.prisma, this.toPayload(record));
         const relatedNames = await this.resolveRelatedNames(this.prisma, record);
         return { ...payload, ...relatedNames };
     }
-    async softDelete(cusId) {
+    async withLastBilled(client, payload) {
+        const billed = await (0, party_billed_1.lastBilledOf)(client, payload.cusId);
+        return {
+            ...payload,
+            cusBilledDate: billed.date ? billed.date.toISOString() : null,
+            cusBilledCount: billed.count,
+        };
+    }
+    async deleteCheck(cusId) {
         return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.customer.findFirst({
-                where: {
-                    cusId,
-                    cusIsDeleted: false,
+            await this.assertDeleteRight(tx);
+            await this.loadLiveCustomer(tx, cusId);
+            return this.partyBalanceService.deleteCheck(tx, {
+                partyId: cusId,
+                role: 'CUSTOMER',
+                otherRoleLive: (await this.findSupplierRole(tx, cusId)) !== null,
+                codes: {
+                    hasBalance: customer_error_codes_1.CustomerErrorCode.HAS_BALANCE,
+                    hasChequeInHand: customer_error_codes_1.CustomerErrorCode.HAS_CHEQUE_IN_HAND,
                 },
             });
-            if (!existing) {
-                (0, module_service_utils_1.throwSalesNotFound)('Customer not found', 'cusId', `No active customer found with id ${cusId}`, customer_error_codes_1.CustomerErrorCode.NOT_FOUND);
+        });
+    }
+    assertDeleteRight(tx) {
+        return (0, rights_1.assertMenuRight)(tx, {
+            userId: this.requestContextService.getUserId() ?? null,
+            menuId: CUSTOMER_MENU_ID,
+            right: 'delete',
+            codePrefix: 'CUSTOMER',
+            action: 'delete customers',
+        });
+    }
+    async loadLiveCustomer(tx, cusId) {
+        const existing = await tx.customer.findFirst({ where: { cusId, cusIsDeleted: false } });
+        if (!existing) {
+            (0, module_service_utils_1.throwSalesNotFound)('Customer not found', 'cusId', `No active customer found with id ${cusId}`, customer_error_codes_1.CustomerErrorCode.NOT_FOUND);
+        }
+        return existing;
+    }
+    async softDelete(cusId) {
+        return this.prisma.$transaction(async (tx) => {
+            await this.assertDeleteRight(tx);
+            const existing = await this.loadLiveCustomer(tx, cusId);
+            const ledger = await this.partyBalanceService.lockLedger(tx, cusId);
+            const otherRoleLive = (await this.findSupplierRole(tx, cusId)) !== null;
+            if (ledger && !ledger.ledIsDeleted && !otherRoleLive) {
+                const check = await this.partyBalanceService.deleteCheck(tx, {
+                    partyId: cusId,
+                    role: 'CUSTOMER',
+                    otherRoleLive,
+                    codes: {
+                        hasBalance: customer_error_codes_1.CustomerErrorCode.HAS_BALANCE,
+                        hasChequeInHand: customer_error_codes_1.CustomerErrorCode.HAS_CHEQUE_IN_HAND,
+                    },
+                });
+                if (!check.canDelete) {
+                    (0, module_service_utils_1.throwConflict)('Customer cannot be deleted', check.refusals);
+                }
             }
             const modifiedOn = new Date();
             const result = await tx.customer.updateMany({
@@ -323,7 +336,7 @@ let CustomerService = class CustomerService {
                     ? await this.loadLedgerToLink(tx, saveCustomerDto.cusLinkLedId)
                     : null;
                 const dto = linkLedger
-                    ? this.withLinkedLedgerDefaults(saveCustomerDto, linkLedger)
+                    ? await this.withLinkedLedgerDefaults(tx, saveCustomerDto, linkLedger)
                     : saveCustomerDto;
                 const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(dto.cusName ?? '', 'cusName', undefined, customer_error_codes_1.CustomerErrorCode.NAME_REQUIRED);
                 const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(dto.cusStateName, 'cusStateName', undefined, customer_error_codes_1.CustomerErrorCode.STATE_NAME_REQUIRED);
@@ -340,8 +353,6 @@ let CustomerService = class CustomerService {
                     cusCollectionDays: (0, module_service_utils_1.isPresentField)(dto, 'cusCollectionDays')
                         ? (dto.cusCollectionDays ?? [])
                         : [],
-                    cusBilledDate: now,
-                    cusBilledCount: 1,
                     cusCreatedOn: now,
                     cusCreatedBy: createdBy,
                 };
@@ -353,15 +364,17 @@ let CustomerService = class CustomerService {
                 await this.ensureStateCodeExists(tx, normalizedStateCode);
                 await this.ensurePriceLevelExists(tx, data.cusPriceLevelId);
                 await this.ensureBranchExists(tx, saveCustomerDto.cusBranchId);
-                this.ensureGstinMatchesState(saveCustomerDto.cusGstNo, normalizedStateCode);
+                const gstType = this.resolveGstType(dto.cusGstType, dto.cusGstNo, normalizedStateCode);
+                data.cusGstType = gstType;
                 if (linkLedger) {
-                    return this.createCustomerOnLedger(tx, data, linkLedger);
+                    const linked = await this.createCustomerOnLedger(tx, data, linkLedger);
+                    const supplierLive = (await this.findSupplierRole(tx, linkLedger.ledId)) !== null;
+                    return {
+                        ...(await this.withLastBilled(tx, linked)),
+                        partySync: { otherRole: supplierLive ? 'SUPPLIER' : null, otherRoleUpdated: false, fields: [] },
+                    };
                 }
-                const ledgerDto = this.buildLinkedLedgerDto(dto, {
-                    name: normalizedName,
-                    stateName: normalizedStateName,
-                    stateCode: normalizedStateCode,
-                });
+                const ledgerDto = this.buildLinkedLedgerDto(dto, { name: normalizedName, stateName: normalizedStateName, stateCode: normalizedStateCode }, { gstType, shared: false });
                 let ledger;
                 try {
                     ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
@@ -385,7 +398,7 @@ let CustomerService = class CustomerService {
                     userId: createdBy,
                     notes: 'Customer created',
                 }, tx);
-                return payload;
+                return { ...payload, partySync: { ...party_sync_service_1.NO_PARTY_SYNC, fields: [] } };
             });
         }
         catch (error) {
@@ -416,12 +429,11 @@ let CustomerService = class CustomerService {
         }
         let saved;
         if (previous) {
-            const { cusCreatedOn, cusCreatedBy, cusBilledCount, ...revived } = data;
+            const { cusCreatedOn, cusCreatedBy, ...revived } = data;
             saved = await tx.customer.update({
                 where: { cusId },
                 data: {
                     ...revived,
-                    cusBilledCount: { increment: cusBilledCount ?? 1 },
                     cusIsDeleted: false,
                     cusIsActive: data.cusIsActive ?? true,
                     cusModifiedOn: cusCreatedOn,
@@ -477,8 +489,17 @@ let CustomerService = class CustomerService {
             select: { supIsActive: true },
         });
     }
-    withLinkedLedgerDefaults(saveCustomerDto, ledger) {
+    async withLinkedLedgerDefaults(tx, saveCustomerDto, ledger) {
         const dto = { ...saveCustomerDto };
+        if (dto.cusGstType === undefined || dto.cusGstType === null || dto.cusGstType === '') {
+            const supplier = await tx.supplier.findFirst({
+                where: { supId: ledger.ledId, supIsDeleted: false },
+                select: { supGstType: true },
+            });
+            if (supplier?.supGstType) {
+                dto.cusGstType = supplier.supGstType;
+            }
+        }
         const ledgerRecord = ledger;
         for (const [cusField, ledField] of CUSTOMER_FIELDS_FROM_LINKED_LEDGER) {
             const current = dto[cusField];
@@ -497,15 +518,8 @@ let CustomerService = class CustomerService {
         const cusId = saveCustomerDto.cusId;
         try {
             return await this.prisma.$transaction(async (tx) => {
-                const existing = await tx.customer.findFirst({
-                    where: {
-                        cusId,
-                        cusIsDeleted: false,
-                    },
-                });
-                if (!existing) {
-                    (0, module_service_utils_1.throwSalesNotFound)('Customer not found', 'cusId', `No active customer found with id ${cusId}`, customer_error_codes_1.CustomerErrorCode.NOT_FOUND);
-                }
+                const lockedLedger = await this.partyBalanceService.lockLedger(tx, cusId);
+                const existing = await this.loadLiveCustomer(tx, cusId);
                 const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(saveCustomerDto.cusStateName, 'cusStateName', undefined, customer_error_codes_1.CustomerErrorCode.STATE_NAME_REQUIRED);
                 const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
                 const normalizedName = saveCustomerDto.cusName !== undefined
@@ -517,7 +531,8 @@ let CustomerService = class CustomerService {
                 const nextGroupId = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusGroupId')
                     ? saveCustomerDto.cusGroupId
                     : existing.cusGroupId;
-                const nextCompanyId = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusCompanyId')
+                const companySent = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusCompanyId');
+                const nextCompanyId = companySent
                     ? (saveCustomerDto.cusCompanyId ?? null)
                     : existing.cusCompanyId;
                 const nextPriceLevelId = (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusPriceLevelId')
@@ -529,7 +544,19 @@ let CustomerService = class CustomerService {
                 await this.ensureStateCodeExists(tx, normalizedStateCode);
                 await this.ensurePriceLevelExists(tx, nextPriceLevelId);
                 await this.ensureBranchExists(tx, saveCustomerDto.cusBranchId);
-                this.ensureGstinMatchesState(saveCustomerDto.cusGstNo, normalizedStateCode);
+                const gstType = this.resolveGstType((0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusGstType')
+                    ? saveCustomerDto.cusGstType
+                    : existing.cusGstType, (0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusGstNo') ? saveCustomerDto.cusGstNo : existing.cusGstNo, normalizedStateCode);
+                const linkedLedger = lockedLedger && !lockedLedger.ledIsDeleted
+                    ? await tx.accLedgerMaster.findFirst({
+                        where: { ledId: cusId, ledIsDeleted: false },
+                        select: { ledId: true, ledName: true, ledGroupId: true, ledCompanyId: true },
+                    })
+                    : null;
+                if (linkedLedger && companySent && nextCompanyId !== linkedLedger.ledCompanyId) {
+                    await this.ensureCompanyChangeAllowed(tx, cusId, linkedLedger.ledCompanyId, nextCompanyId);
+                }
+                const supplierRole = await this.findSupplierRole(tx, cusId);
                 const now = new Date();
                 const modifiedBy = (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId());
                 const data = {
@@ -539,14 +566,11 @@ let CustomerService = class CustomerService {
                     cusAreaId: nextAreaId,
                     cusGroupId: nextGroupId,
                     cusPriceLevelId: nextPriceLevelId,
-                    cusBilledDate: now,
-                    cusBilledCount: {
-                        increment: 1,
-                    },
                     cusModifiedOn: now,
                     cusModifiedBy: modifiedBy,
                 };
                 this.applyOptionalFields(data, saveCustomerDto);
+                data.cusGstType = gstType;
                 if (normalizedName !== undefined) {
                     data.cusName = normalizedName;
                 }
@@ -556,18 +580,13 @@ let CustomerService = class CustomerService {
                     },
                     data,
                 });
-                const linkedLedger = await tx.accLedgerMaster.findFirst({
-                    where: { ledId: cusId, ledIsDeleted: false },
-                    select: { ledId: true, ledName: true, ledGroupId: true },
-                });
                 if (linkedLedger) {
                     const ledgerDto = this.buildLinkedLedgerDto(saveCustomerDto, {
                         name: updated.cusName || linkedLedger.ledName,
                         stateName: normalizedStateName,
                         stateCode: normalizedStateCode,
-                    });
+                    }, { gstType, shared: supplierRole !== null });
                     ledgerDto.ledId = cusId;
-                    const supplierRole = await this.findSupplierRole(tx, cusId);
                     ledgerDto.ledGroupId = supplierRole ? linkedLedger.ledGroupId : nextAreaId;
                     if (supplierRole) {
                         ledgerDto.ledIsActive = updated.cusIsActive || supplierRole.supIsActive;
@@ -580,6 +599,21 @@ let CustomerService = class CustomerService {
                         throw error;
                     }
                 }
+                const partySync = supplierRole
+                    ? await this.partySyncService.syncOtherRole(tx, {
+                        role: 'CUSTOMER',
+                        partyId: cusId,
+                        details: this.partySyncService.detailsOf('CUSTOMER', saveCustomerDto, {
+                            ...(normalizedName !== undefined ? { ledName: normalizedName } : {}),
+                            ledStateName: normalizedStateName,
+                            ledStateCode: normalizedStateCode,
+                            ...(companySent ? { ledCompanyId: nextCompanyId } : {}),
+                        }),
+                        gstType,
+                        actor: modifiedBy,
+                        assertOtherNameFree: (name, companyId) => this.ensureSupplierNameFree(tx, name, companyId, cusId),
+                    })
+                    : { ...party_sync_service_1.NO_PARTY_SYNC, fields: [] };
                 const payload = this.toPayload(updated);
                 await this.auditLogService.logEntityChange({
                     action: 'update',
@@ -593,7 +627,7 @@ let CustomerService = class CustomerService {
                     userId: modifiedBy,
                     notes: 'Customer updated',
                 }, tx);
-                return payload;
+                return { ...(await this.withLastBilled(tx, payload)), partySync };
             });
         }
         catch (error) {
@@ -747,17 +781,41 @@ let CustomerService = class CustomerService {
             ]);
         }
     }
-    ensureGstinMatchesState(gstin, stateCode) {
-        if (!gstin || (0, save_customer_dto_1.gstinKindOf)(gstin) !== 'NORMAL') {
-            return;
+    resolveGstType(rawType, gstin, stateCode) {
+        const result = (0, party_gst_type_1.resolvePartyGstType)({ rawType, gstin, stateCode });
+        if ('type' in result) {
+            return result.type;
         }
-        const gstinState = gstin.slice(0, 2);
-        if (gstinState !== stateCode) {
-            (0, module_service_utils_1.throwSalesBadRequest)('Validation failed', [
+        const detail = customerGstRefusal(result.refusal);
+        (0, module_service_utils_1.throwSalesBadRequest)('Validation failed', [detail]);
+    }
+    async ensureCompanyChangeAllowed(tx, ledId, currentCompanyId, nextCompanyId) {
+        const books = await this.partyBalanceService.companyWithBooks(tx, ledId, currentCompanyId, nextCompanyId);
+        if (books) {
+            (0, module_service_utils_1.throwConflict)('Customer company cannot change', [
+                (0, party_balance_service_1.withFigures)({
+                    field: 'cusCompanyId',
+                    code: customer_error_codes_1.CustomerErrorCode.COMPANY_HAS_BOOKS,
+                    message: `The party has entries in company ${books.companyId}; its company cannot change`,
+                }, `This party has entries in ${books.companyName ?? 'its company'}.`),
+            ]);
+        }
+    }
+    async ensureSupplierNameFree(tx, name, companyId, ownId) {
+        const clash = await tx.supplier.findFirst({
+            where: {
+                supIsDeleted: false,
+                supCompanyId: companyId,
+                supName: { equals: name, mode: 'insensitive' },
+                supId: { not: ownId },
+            },
+            select: { supId: true },
+        });
+        if (clash) {
+            (0, module_service_utils_1.throwSalesConflict)('Customer name already exists for this company', [
                 {
-                    field: 'cusGstNo',
-                    message: `GSTIN ${gstin} is registered in state ${gstinState}, but cusStateCode is ${stateCode}`,
-                    code: customer_error_codes_1.CustomerErrorCode.GSTIN_STATE_MISMATCH,
+                    ...CUSTOMER_NAME_EXISTS_DETAIL,
+                    message: 'Another supplier of this company has this name; the shared supplier would clash',
                 },
             ]);
         }
@@ -782,26 +840,28 @@ let CustomerService = class CustomerService {
             ]);
         }
     }
-    buildLinkedLedgerDto(saveCustomerDto, normalized) {
+    buildLinkedLedgerDto(saveCustomerDto, normalized, party) {
         const ledgerDto = {
             ledGroupId: saveCustomerDto.cusAreaId,
             ledName: normalized.name,
             ledStateName: normalized.stateName,
             ledStateCode: normalized.stateCode,
             ledIsBillByBill: true,
+            ...(0, party_gst_type_1.ledgerGstFieldsOf)(party.gstType),
         };
         const ledgerDtoRecord = ledgerDto;
+        Object.assign(ledgerDtoRecord, this.partySyncService.detailsOf('CUSTOMER', saveCustomerDto));
         const customerRecord = saveCustomerDto;
         for (const [cusField, ledField] of CUSTOMER_TO_LEDGER_FIELD_MAP) {
+            if (cusField === 'cusNotes' && party.shared) {
+                continue;
+            }
             if ((0, module_service_utils_1.isPresentField)(saveCustomerDto, cusField)) {
                 ledgerDtoRecord[ledField] =
                     cusField === 'cusSortOrder'
                         ? zeroWhenCleared(customerRecord[cusField])
                         : customerRecord[cusField];
             }
-        }
-        if ((0, module_service_utils_1.isPresentField)(saveCustomerDto, 'cusGstType')) {
-            ledgerDto.ledGstPartyRegType = toLedgerGstPartyRegType(saveCustomerDto.cusGstType);
         }
         const itCollectionFlags = toLedgerItCollectionFlags(saveCustomerDto);
         if (itCollectionFlags.tcs !== undefined) {
@@ -939,6 +999,48 @@ exports.CustomerService = CustomerService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
         request_context_service_1.RequestContextService,
-        account_ledger_masters_service_1.AccountLedgerMastersService])
+        account_ledger_masters_service_1.AccountLedgerMastersService,
+        party_balance_service_1.PartyBalanceService,
+        party_sync_service_1.PartySyncService])
 ], CustomerService);
+function customerGstRefusal(refusal) {
+    switch (refusal.kind) {
+        case 'TYPE_INVALID':
+            return {
+                field: 'cusGstType',
+                message: `cusGstType "${refusal.sent}" is not one of REGULAR, COMPOSITION, SEZ, OVERSEAS, UNREGISTERED`,
+                code: customer_error_codes_1.CustomerErrorCode.GST_TYPE_INVALID,
+            };
+        case 'TYPE_REQUIRED':
+            return {
+                field: 'cusGstType',
+                message: 'cusGstType is required when cusGstNo is given',
+                code: customer_error_codes_1.CustomerErrorCode.GST_TYPE_REQUIRED,
+            };
+        case 'GSTIN_REQUIRED':
+            return {
+                field: 'cusGstNo',
+                message: `A ${(0, party_gst_type_1.partyGstTypeWord)(refusal.type)} customer must have a GSTIN`,
+                code: customer_error_codes_1.CustomerErrorCode.GSTIN_REQUIRED,
+            };
+        case 'GSTIN_NOT_ALLOWED':
+            return {
+                field: 'cusGstNo',
+                message: `An ${(0, party_gst_type_1.partyGstTypeWord)(refusal.type)} customer has no GSTIN; clear cusGstNo`,
+                code: customer_error_codes_1.CustomerErrorCode.GSTIN_NOT_ALLOWED,
+            };
+        case 'OVERSEAS_STATE':
+            return {
+                field: 'cusStateCode',
+                message: `An Overseas customer's state must be 96 (Other Country), not ${refusal.stateCode}`,
+                code: customer_error_codes_1.CustomerErrorCode.OVERSEAS_STATE,
+            };
+        case 'GSTIN_STATE_MISMATCH':
+            return {
+                field: 'cusGstNo',
+                message: `GSTIN ${refusal.gstin} is registered in state ${refusal.gstinState}, but cusStateCode is ${refusal.stateCode}`,
+                code: customer_error_codes_1.CustomerErrorCode.GSTIN_STATE_MISMATCH,
+            };
+    }
+}
 //# sourceMappingURL=customer.service.js.map

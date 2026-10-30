@@ -30,6 +30,8 @@ export interface LedgerPickItem {
   isBillByBill: boolean;
   /** led_company_id IS NULL — shared by every company. */
   isShared: boolean;
+  /** Party rules D1-7: a deleted ledger (listed only with includeDeleted=true). */
+  isDeleted: boolean;
 }
 
 export interface LedgerPickPayload {
@@ -39,6 +41,8 @@ export interface LedgerPickPayload {
 export interface LedgerFacts {
   ledgerId: string;
   name: string;
+  /** The ledger is deleted (its party too); the statement is history, read-only. */
+  isDeleted: boolean;
   groupName: string | null;
   /** acc_group_master.acc_group_nature */
   nature: string | null;

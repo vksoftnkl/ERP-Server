@@ -255,7 +255,7 @@ let DeviceListMasterService = class DeviceListMasterService {
         const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? device_list_master_enum_1.DeviceType.DESKTOP;
         const normalizedDeviceUid = normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType) ??
             buildGeneratedDeviceUid(normalizedDeviceType);
-        const companyId = (0, module_service_utils_1.hasOwnProperty)(saveDeviceListMasterDto, 'devCompanyId')
+        const companyId = (0, module_service_utils_1.isPresentField)(saveDeviceListMasterDto, 'devCompanyId')
             ? (saveDeviceListMasterDto.devCompanyId ?? null)
             : null;
         const now = new Date();
@@ -314,7 +314,7 @@ let DeviceListMasterService = class DeviceListMasterService {
                     toDeviceType(existing.devDeviceType);
                 const normalizedDeviceUid = normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType);
                 const nextDeviceUid = normalizedDeviceUid ?? existing.devDeviceUid;
-                const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveDeviceListMasterDto, 'devCompanyId')
+                const nextCompanyId = (0, module_service_utils_1.isPresentField)(saveDeviceListMasterDto, 'devCompanyId')
                     ? (saveDeviceListMasterDto.devCompanyId ?? null)
                     : existing.devCompanyId;
                 await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);

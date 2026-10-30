@@ -24,6 +24,7 @@ export declare class LedgerStatementLedgersDto {
     search?: string;
     groupId?: string;
     limit?: number;
+    includeDeleted?: boolean;
 }
 export declare class LedgerStatementVoucherLegsDto {
     companyId: string;

@@ -4,7 +4,10 @@ import { RequestContextService } from "../../../common/request-context/request-c
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { StockPostingService } from "../../stocks/posting/stock-posting.service";
 import { SellingPriceBulkService } from "../../stocks/selling-price-bulk/selling-price-bulk.service";
-import { PurchaseAllocDto, PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
+import { PurchaseAllocDto, PurchaseChargeDto, PurchaseTransportDto } from '../invoice/dto/save-purchase-invoice.dto';
+import { type PurIssue } from '../invoice/purchase-invoice-checks';
+import { TransportBandService, type TransportBandInput } from "../../sales/posting/transport-band.service";
+import { type GrnLineCheck } from './purchase-grn-checks';
 export declare const GRN_MENU_ID = 196;
 export declare class GrnLineDto {
     lineNo: number;
@@ -48,6 +51,10 @@ export declare class GrnHeaderDto {
     vehicleNo?: string;
     driverName?: string;
     ewbNo?: string;
+    ewbDate?: string;
+    transport?: PurchaseTransportDto | null;
+    overrideWarnings?: boolean;
+    overrideReason?: string;
     packagesSent?: number;
     packagesReceived?: number;
     remarks?: string;
@@ -61,6 +68,10 @@ export declare class SaveGrnDto {
 export declare class GrnRefDto {
     grnId: string;
     accYear: string;
+}
+export declare class GrnPostDto extends GrnRefDto {
+    overrideWarnings?: boolean;
+    overrideReason?: string;
 }
 export declare class LabelsFromDocDto {
     docType: string;
@@ -76,22 +87,86 @@ export declare class PurchaseGrnService {
     private readonly vouchers;
     private readonly stockPosting;
     private readonly prices;
-    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, prices: SellingPriceBulkService);
+    private readonly transportBand;
+    constructor(prisma: PrismaService, ctx: RequestContextService, vouchers: VoucherPostingService, stockPosting: StockPostingService, prices: SellingPriceBulkService, transportBand: TransportBandService);
     private actor;
     private rules;
-    save(dto: SaveGrnDto): Promise<{
-        warnings: {
-            field: string;
-            code: string;
-            message: string;
-        }[];
+    private prepare;
+    private judge;
+    validate(dto: SaveGrnDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
+            poRefs: {
+                poId: string;
+                accYear: string;
+                refno: string;
+            }[];
+            transport: TransportBandInput | null;
+        };
+        lines: {
+            lineNo: number;
+            receivedQty: string;
+            freeQty: string;
+            excessQty: string;
+            excessAction: string | null;
+            value: string | null;
+            offbillShare: string | null;
+            check: GrnLineCheck | null;
+        }[];
+        charges: {
+            chgId: string;
+            amount: string;
+            payees: {
+                partyId: string;
+                amount: string;
+            }[];
+        }[];
+        totals: {
+            lines: number;
+            receivedBase: string;
+            damagedBase: string;
+            freeBase: string;
+            shortBase: string;
+            shortLines: number;
+            offbillCharges: string;
+            provisionalValue: string;
+            total: string;
+        } | null;
+        warnings: PurIssue[];
+        refusals: PurIssue[];
+    }>;
+    private totalsOf;
+    private poRefsOf;
+    private bandInput;
+    private writeTransport;
+    save(dto: SaveGrnDto): Promise<{
+        warnings: PurIssue[];
+        refusals: PurIssue[];
+        header: {
+            supplierName: string;
+            godownName: string;
             receivedBy: {
                 id: string;
                 name: string;
             }[];
+            supervisorName: string | null;
             billStatus: string;
+            poRefs: {
+                poId: string;
+                accYear: string;
+                refno: string;
+            }[];
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             grnId: string;
             grnCompanyId: string;
             grnBranchId: string;
@@ -133,6 +208,10 @@ export declare class PurchaseGrnService {
         };
         lines: {
             poRefno: string | null;
+            damageReasonName: string | null;
+            billed: boolean;
+            billRefno: string | null;
+            check: GrnLineCheck | null;
             allocs: {
                 piaId: string;
                 piaCompanyId: string;
@@ -212,21 +291,66 @@ export declare class PurchaseGrnService {
             griModifiedOn: Date | null;
             griModifiedBy: string | null;
         }[];
+        charges: {
+            amount: string;
+            chgId: string;
+            chgName: string;
+            role: string | null;
+            method: string;
+            type: string;
+            rate: string;
+            payees: {
+                partyId: string;
+                partyName: string | null;
+                amount: string;
+            }[];
+        }[];
+        totals: {
+            lines: number;
+            receivedBase: string;
+            damagedBase: string;
+            freeBase: string;
+            shortBase: string;
+            shortLines: number;
+            offbillCharges: string;
+            provisionalValue: string;
+            total: string;
+        };
     }>;
     private poPendingBase;
     private coolieFor;
     private poIdOf;
     private loadCharges;
     private writeCharges;
-    post(grnId: string, accYear: string): Promise<{
+    post(grnId: string, accYear: string, ov?: {
+        override: boolean;
+        reason: string | null;
+    }): Promise<{
         warnings: import("../common/purchase-doc.helpers").ShelfLifeIssue[];
         header: {
             supplierName: string;
+            godownName: string;
             receivedBy: {
                 id: string;
                 name: string;
             }[];
+            supervisorName: string | null;
             billStatus: string;
+            poRefs: {
+                poId: string;
+                accYear: string;
+                refno: string;
+            }[];
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             grnId: string;
             grnCompanyId: string;
             grnBranchId: string;
@@ -268,6 +392,10 @@ export declare class PurchaseGrnService {
         };
         lines: {
             poRefno: string | null;
+            damageReasonName: string | null;
+            billed: boolean;
+            billRefno: string | null;
+            check: GrnLineCheck | null;
             allocs: {
                 piaId: string;
                 piaCompanyId: string;
@@ -347,20 +475,63 @@ export declare class PurchaseGrnService {
             griModifiedOn: Date | null;
             griModifiedBy: string | null;
         }[];
+        charges: {
+            amount: string;
+            chgId: string;
+            chgName: string;
+            role: string | null;
+            method: string;
+            type: string;
+            rate: string;
+            payees: {
+                partyId: string;
+                partyName: string | null;
+                amount: string;
+            }[];
+        }[];
+        totals: {
+            lines: number;
+            receivedBase: string;
+            damagedBase: string;
+            freeBase: string;
+            shortBase: string;
+            shortLines: number;
+            offbillCharges: string;
+            provisionalValue: string;
+            total: string;
+        };
     }>;
     private postInTx;
     labels(q: LabelsFromDocDto): Promise<{
         copies: number;
         textile: boolean;
     }[]>;
+    private factsOfSaved;
     get(grnId: string, accYear: string): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             receivedBy: {
                 id: string;
                 name: string;
             }[];
+            supervisorName: string | null;
             billStatus: string;
+            poRefs: {
+                poId: string;
+                accYear: string;
+                refno: string;
+            }[];
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             grnId: string;
             grnCompanyId: string;
             grnBranchId: string;
@@ -402,6 +573,10 @@ export declare class PurchaseGrnService {
         };
         lines: {
             poRefno: string | null;
+            damageReasonName: string | null;
+            billed: boolean;
+            billRefno: string | null;
+            check: GrnLineCheck | null;
             allocs: {
                 piaId: string;
                 piaCompanyId: string;
@@ -481,15 +656,57 @@ export declare class PurchaseGrnService {
             griModifiedOn: Date | null;
             griModifiedBy: string | null;
         }[];
+        charges: {
+            amount: string;
+            chgId: string;
+            chgName: string;
+            role: string | null;
+            method: string;
+            type: string;
+            rate: string;
+            payees: {
+                partyId: string;
+                partyName: string | null;
+                amount: string;
+            }[];
+        }[];
+        totals: {
+            lines: number;
+            receivedBase: string;
+            damagedBase: string;
+            freeBase: string;
+            shortBase: string;
+            shortLines: number;
+            offbillCharges: string;
+            provisionalValue: string;
+            total: string;
+        };
     }>;
     cancel(dto: GrnCancelDto): Promise<{
         header: {
             supplierName: string;
+            godownName: string;
             receivedBy: {
                 id: string;
                 name: string;
             }[];
+            supervisorName: string | null;
             billStatus: string;
+            poRefs: {
+                poId: string;
+                accYear: string;
+                refno: string;
+            }[];
+            transport: {
+                mode: string | null;
+                transporterId: string | null;
+                transporterName: string | null;
+                transporterGstin: string | null;
+                lrNo: string | null;
+                lrDate: string | null;
+                distanceKm: number | null;
+                remarks: string | null;
+            } | null;
             grnId: string;
             grnCompanyId: string;
             grnBranchId: string;
@@ -531,6 +748,10 @@ export declare class PurchaseGrnService {
         };
         lines: {
             poRefno: string | null;
+            damageReasonName: string | null;
+            billed: boolean;
+            billRefno: string | null;
+            check: GrnLineCheck | null;
             allocs: {
                 piaId: string;
                 piaCompanyId: string;
@@ -610,6 +831,31 @@ export declare class PurchaseGrnService {
             griModifiedOn: Date | null;
             griModifiedBy: string | null;
         }[];
+        charges: {
+            amount: string;
+            chgId: string;
+            chgName: string;
+            role: string | null;
+            method: string;
+            type: string;
+            rate: string;
+            payees: {
+                partyId: string;
+                partyName: string | null;
+                amount: string;
+            }[];
+        }[];
+        totals: {
+            lines: number;
+            receivedBase: string;
+            damagedBase: string;
+            freeBase: string;
+            shortBase: string;
+            shortLines: number;
+            offbillCharges: string;
+            provisionalValue: string;
+            total: string;
+        };
     }>;
 }
 export declare class PurchaseGrnController {
@@ -622,18 +868,32 @@ export declare class PurchaseGrnController {
         success: boolean;
         message: string;
         data: {
-            warnings: {
-                field: string;
-                code: string;
-                message: string;
-            }[];
+            warnings: PurIssue[];
+            refusals: PurIssue[];
             header: {
                 supplierName: string;
+                godownName: string;
                 receivedBy: {
                     id: string;
                     name: string;
                 }[];
+                supervisorName: string | null;
                 billStatus: string;
+                poRefs: {
+                    poId: string;
+                    accYear: string;
+                    refno: string;
+                }[];
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 grnId: string;
                 grnCompanyId: string;
                 grnBranchId: string;
@@ -675,6 +935,10 @@ export declare class PurchaseGrnController {
             };
             lines: {
                 poRefno: string | null;
+                damageReasonName: string | null;
+                billed: boolean;
+                billRefno: string | null;
+                check: GrnLineCheck | null;
                 allocs: {
                     piaId: string;
                     piaCompanyId: string;
@@ -754,20 +1018,109 @@ export declare class PurchaseGrnController {
                 griModifiedOn: Date | null;
                 griModifiedBy: string | null;
             }[];
+            charges: {
+                amount: string;
+                chgId: string;
+                chgName: string;
+                role: string | null;
+                method: string;
+                type: string;
+                rate: string;
+                payees: {
+                    partyId: string;
+                    partyName: string | null;
+                    amount: string;
+                }[];
+            }[];
+            totals: {
+                lines: number;
+                receivedBase: string;
+                damagedBase: string;
+                freeBase: string;
+                shortBase: string;
+                shortLines: number;
+                offbillCharges: string;
+                provisionalValue: string;
+                total: string;
+            };
         };
     }>;
-    post(dto: GrnRefDto): Promise<{
+    validate(dto: SaveGrnDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            header: {
+                supplierName: string;
+                godownName: string;
+                poRefs: {
+                    poId: string;
+                    accYear: string;
+                    refno: string;
+                }[];
+                transport: TransportBandInput | null;
+            };
+            lines: {
+                lineNo: number;
+                receivedQty: string;
+                freeQty: string;
+                excessQty: string;
+                excessAction: string | null;
+                value: string | null;
+                offbillShare: string | null;
+                check: GrnLineCheck | null;
+            }[];
+            charges: {
+                chgId: string;
+                amount: string;
+                payees: {
+                    partyId: string;
+                    amount: string;
+                }[];
+            }[];
+            totals: {
+                lines: number;
+                receivedBase: string;
+                damagedBase: string;
+                freeBase: string;
+                shortBase: string;
+                shortLines: number;
+                offbillCharges: string;
+                provisionalValue: string;
+                total: string;
+            } | null;
+            warnings: PurIssue[];
+            refusals: PurIssue[];
+        };
+    }>;
+    post(dto: GrnPostDto): Promise<{
         success: boolean;
         message: string;
         data: {
             warnings: import("../common/purchase-doc.helpers").ShelfLifeIssue[];
             header: {
                 supplierName: string;
+                godownName: string;
                 receivedBy: {
                     id: string;
                     name: string;
                 }[];
+                supervisorName: string | null;
                 billStatus: string;
+                poRefs: {
+                    poId: string;
+                    accYear: string;
+                    refno: string;
+                }[];
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 grnId: string;
                 grnCompanyId: string;
                 grnBranchId: string;
@@ -809,6 +1162,10 @@ export declare class PurchaseGrnController {
             };
             lines: {
                 poRefno: string | null;
+                damageReasonName: string | null;
+                billed: boolean;
+                billRefno: string | null;
+                check: GrnLineCheck | null;
                 allocs: {
                     piaId: string;
                     piaCompanyId: string;
@@ -888,6 +1245,31 @@ export declare class PurchaseGrnController {
                 griModifiedOn: Date | null;
                 griModifiedBy: string | null;
             }[];
+            charges: {
+                amount: string;
+                chgId: string;
+                chgName: string;
+                role: string | null;
+                method: string;
+                type: string;
+                rate: string;
+                payees: {
+                    partyId: string;
+                    partyName: string | null;
+                    amount: string;
+                }[];
+            }[];
+            totals: {
+                lines: number;
+                receivedBase: string;
+                damagedBase: string;
+                freeBase: string;
+                shortBase: string;
+                shortLines: number;
+                offbillCharges: string;
+                provisionalValue: string;
+                total: string;
+            };
         };
     }>;
     get(q: GrnRefDto): Promise<{
@@ -896,11 +1278,28 @@ export declare class PurchaseGrnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 receivedBy: {
                     id: string;
                     name: string;
                 }[];
+                supervisorName: string | null;
                 billStatus: string;
+                poRefs: {
+                    poId: string;
+                    accYear: string;
+                    refno: string;
+                }[];
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 grnId: string;
                 grnCompanyId: string;
                 grnBranchId: string;
@@ -942,6 +1341,10 @@ export declare class PurchaseGrnController {
             };
             lines: {
                 poRefno: string | null;
+                damageReasonName: string | null;
+                billed: boolean;
+                billRefno: string | null;
+                check: GrnLineCheck | null;
                 allocs: {
                     piaId: string;
                     piaCompanyId: string;
@@ -1021,6 +1424,31 @@ export declare class PurchaseGrnController {
                 griModifiedOn: Date | null;
                 griModifiedBy: string | null;
             }[];
+            charges: {
+                amount: string;
+                chgId: string;
+                chgName: string;
+                role: string | null;
+                method: string;
+                type: string;
+                rate: string;
+                payees: {
+                    partyId: string;
+                    partyName: string | null;
+                    amount: string;
+                }[];
+            }[];
+            totals: {
+                lines: number;
+                receivedBase: string;
+                damagedBase: string;
+                freeBase: string;
+                shortBase: string;
+                shortLines: number;
+                offbillCharges: string;
+                provisionalValue: string;
+                total: string;
+            };
         };
     }>;
     cancel(dto: GrnCancelDto): Promise<{
@@ -1029,11 +1457,28 @@ export declare class PurchaseGrnController {
         data: {
             header: {
                 supplierName: string;
+                godownName: string;
                 receivedBy: {
                     id: string;
                     name: string;
                 }[];
+                supervisorName: string | null;
                 billStatus: string;
+                poRefs: {
+                    poId: string;
+                    accYear: string;
+                    refno: string;
+                }[];
+                transport: {
+                    mode: string | null;
+                    transporterId: string | null;
+                    transporterName: string | null;
+                    transporterGstin: string | null;
+                    lrNo: string | null;
+                    lrDate: string | null;
+                    distanceKm: number | null;
+                    remarks: string | null;
+                } | null;
                 grnId: string;
                 grnCompanyId: string;
                 grnBranchId: string;
@@ -1075,6 +1520,10 @@ export declare class PurchaseGrnController {
             };
             lines: {
                 poRefno: string | null;
+                damageReasonName: string | null;
+                billed: boolean;
+                billRefno: string | null;
+                check: GrnLineCheck | null;
                 allocs: {
                     piaId: string;
                     piaCompanyId: string;
@@ -1154,6 +1603,31 @@ export declare class PurchaseGrnController {
                 griModifiedOn: Date | null;
                 griModifiedBy: string | null;
             }[];
+            charges: {
+                amount: string;
+                chgId: string;
+                chgName: string;
+                role: string | null;
+                method: string;
+                type: string;
+                rate: string;
+                payees: {
+                    partyId: string;
+                    partyName: string | null;
+                    amount: string;
+                }[];
+            }[];
+            totals: {
+                lines: number;
+                receivedBase: string;
+                damagedBase: string;
+                freeBase: string;
+                shortBase: string;
+                shortLines: number;
+                offbillCharges: string;
+                provisionalValue: string;
+                total: string;
+            };
         };
     }>;
 }

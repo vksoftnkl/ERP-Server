@@ -23,8 +23,8 @@ import {
   DEFAULT_ACTOR,
   MasterWriteClient,
   applyPresentFields,
-  hasOwnProperty,
   isForeignKeyConstraintError,
+  isPresentField,
   normalizeNullableString,
   normalizeRequiredText,
   toNullableNumber,
@@ -282,19 +282,19 @@ export class ChargeMasterService {
           'chgName',
         );
         const nextModule = saveChargeMasterDto.chgModule;
-        const nextCode = hasOwnProperty(saveChargeMasterDto, 'chgCode')
+        const nextCode = isPresentField(saveChargeMasterDto, 'chgCode')
           ? (normalizeNullableString(saveChargeMasterDto.chgCode) ?? null)
           : existing.chgCode;
-        const nextRole = hasOwnProperty(saveChargeMasterDto, 'chgRole')
+        const nextRole = isPresentField(saveChargeMasterDto, 'chgRole')
           ? (saveChargeMasterDto.chgRole ?? null)
           : existing.chgRole;
-        const nextTaxId = hasOwnProperty(saveChargeMasterDto, 'chgTaxId')
+        const nextTaxId = isPresentField(saveChargeMasterDto, 'chgTaxId')
           ? (saveChargeMasterDto.chgTaxId ?? null)
           : existing.chgTaxId;
-        const nextTaxApl = hasOwnProperty(saveChargeMasterDto, 'chgTaxApl')
+        const nextTaxApl = isPresentField(saveChargeMasterDto, 'chgTaxApl')
           ? (saveChargeMasterDto.chgTaxApl ?? false)
           : existing.chgTaxApl;
-        const nextBeforeTax = hasOwnProperty(saveChargeMasterDto, 'chgBeforeTax')
+        const nextBeforeTax = isPresentField(saveChargeMasterDto, 'chgBeforeTax')
           ? (saveChargeMasterDto.chgBeforeTax ?? false)
           : existing.chgBeforeTax;
         this.ensureValuesAreAllowed(
@@ -475,15 +475,15 @@ export class ChargeMasterService {
   ): ChargeGuardedValues {
     return {
       chgModule: saveChargeMasterDto.chgModule,
-      chgRole: hasOwnProperty(saveChargeMasterDto, 'chgRole')
+      chgRole: isPresentField(saveChargeMasterDto, 'chgRole')
         ? (saveChargeMasterDto.chgRole ?? null)
         : undefined,
       chgMethod: saveChargeMasterDto.chgMethod,
-      chgType: hasOwnProperty(saveChargeMasterDto, 'chgType')
+      chgType: isPresentField(saveChargeMasterDto, 'chgType')
         ? (saveChargeMasterDto.chgType ?? null)
         : undefined,
       chgApplyOn: saveChargeMasterDto.chgApplyOn,
-      chgCostAlloc: hasOwnProperty(saveChargeMasterDto, 'chgCostAlloc')
+      chgCostAlloc: isPresentField(saveChargeMasterDto, 'chgCostAlloc')
         ? (saveChargeMasterDto.chgCostAlloc ?? null)
         : undefined,
       ...overrides,
