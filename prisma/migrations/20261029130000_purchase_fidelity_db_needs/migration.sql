@@ -22,7 +22,8 @@
 --     grn_vehicle_no / grn_driver_name.
 --  6. purchase.pur_terms (pte_): PO terms master. Company NULL = shared. Code
 --     unique per company scope among live rows. Sync triggers + pending index
---     written out for this table (what sync_install_triggers() does per table).
+--     written out for this table (what sync_install_triggers() does per table),
+--     only where the sync functions exist (absent on the VPS).
 --     pur_order.po_terms_id -> pur_terms, partial index covering the FK.
 --     po_terms_text stays: the PO keeps its own copy of the text.
 --     Dropdown 73 PO TERMS (shape of 70/71). Registry row 803 in
@@ -191,12 +192,23 @@ CREATE INDEX IF NOT EXISTS ix_po_terms ON purchase.pur_order (po_terms_id)
 -- public.sync_install_triggers() runs per table, for this one table only.
 -- (Calling the installer re-creates triggers on every synced table and took a
 -- lock on each; the dry run deadlocked against the running API.)
-CREATE OR REPLACE TRIGGER zz_sync_mark_dirty BEFORE UPDATE ON purchase.pur_terms
-    FOR EACH ROW EXECUTE FUNCTION public.fn_sync_mark_dirty('pte_sync_date');
-CREATE OR REPLACE TRIGGER zz_sync_log_delete AFTER DELETE ON purchase.pur_terms
-    FOR EACH ROW EXECUTE FUNCTION public.fn_sync_log_delete('purchase', 'pur_terms', 'pte_id');
-CREATE INDEX IF NOT EXISTS ix_sync_pending_pur_terms ON purchase.pur_terms (pte_id)
- WHERE pte_sync_date IS NULL;
+-- Skipped where the sync functions are absent (the VPS: cloud sync is local-only),
+-- the same guard as 20261028170000_print_share_link; pte_sync_date itself is
+-- unconditional, the Prisma fragment declares it.
+DO $$
+BEGIN
+  IF to_regprocedure('public.fn_sync_mark_dirty()') IS NULL
+     OR to_regprocedure('public.fn_sync_log_delete()') IS NULL THEN
+    RAISE NOTICE 'pur_terms: sync functions absent, sync triggers skipped';
+    RETURN;
+  END IF;
+  CREATE OR REPLACE TRIGGER zz_sync_mark_dirty BEFORE UPDATE ON purchase.pur_terms
+      FOR EACH ROW EXECUTE FUNCTION public.fn_sync_mark_dirty('pte_sync_date');
+  CREATE OR REPLACE TRIGGER zz_sync_log_delete AFTER DELETE ON purchase.pur_terms
+      FOR EACH ROW EXECUTE FUNCTION public.fn_sync_log_delete('purchase', 'pur_terms', 'pte_id');
+  CREATE INDEX IF NOT EXISTS ix_sync_pending_pur_terms ON purchase.pur_terms (pte_id)
+   WHERE pte_sync_date IS NULL;
+END $$;
 
 -- dropdown 73 PO TERMS
 INSERT INTO fixed.dropdown_details
