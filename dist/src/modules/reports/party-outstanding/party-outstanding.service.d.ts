@@ -1,0 +1,37 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { type OutstandingBillHistoryDto, type OutstandingBillWiseDto, type OutstandingDueCalendarDto, type OutstandingExportDto, type OutstandingOptionsDto, type OutstandingPartiesDto, type OutstandingPartyDto, type OutstandingSummaryDto } from './dto/party-outstanding-query.dto';
+import { type BillHistoryPayload, type BillsPayload, type BillWisePayload, type DueCalendarPayload, type ExportPayload, type OptionsPayload, type PartiesPayload, type PartyCardPayload, type SummaryPayload } from './types/party-outstanding.types';
+export declare const PARTY_OUTSTANDING_MENU_ID = 279;
+export declare class PartyOutstandingService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly logger;
+    constructor(prisma: PrismaService, requestContext: RequestContextService);
+    options(q: OutstandingOptionsDto): Promise<OptionsPayload>;
+    parties(q: OutstandingPartiesDto): Promise<PartiesPayload>;
+    party(q: OutstandingPartyDto): Promise<PartyCardPayload>;
+    bills(q: OutstandingPartyDto): Promise<BillsPayload>;
+    billWise(q: OutstandingBillWiseDto): Promise<BillWisePayload>;
+    billHistory(q: OutstandingBillHistoryDto): Promise<BillHistoryPayload>;
+    summary(q: OutstandingSummaryDto): Promise<SummaryPayload>;
+    dueCalendar(q: OutstandingDueCalendarDto): Promise<DueCalendarPayload>;
+    export(q: OutstandingExportDto): Promise<ExportPayload>;
+    private assertMenuRight;
+    private resolveScope;
+    private rootGroupId;
+    private assertPartySort;
+    private assertCap;
+    private partyRows;
+    private toPartyRow;
+    private tilesAndTotals;
+    private partySummarySql;
+    private billRows;
+    private remarksOf;
+    private ledgerClosing;
+    private card;
+    private partyFacts;
+    private lastSettlement;
+    private printNames;
+    private printedAs;
+}

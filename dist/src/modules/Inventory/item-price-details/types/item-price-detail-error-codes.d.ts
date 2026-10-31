@@ -1,0 +1,4 @@
+export declare enum ItemPriceDetailErrorCode {
+    ITEM_NOT_FOUND = "ITEM_PRICE_DETAIL_ITEM_NOT_FOUND",
+    BARCODE_NOT_FOUND = "ITEM_PRICE_DETAIL_BARCODE_NOT_FOUND"
+}

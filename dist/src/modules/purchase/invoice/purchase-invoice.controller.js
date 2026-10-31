@@ -1,0 +1,165 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PurchaseInvoiceController = exports.PURCHASE_INVOICE_MENU_ID = void 0;
+const common_1 = require("@nestjs/common");
+const swagger_1 = require("@nestjs/swagger");
+const api_version_1 = require("../../../common/constants/api-version");
+const rights_1 = require("../../../common/posting/rights");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const purchase_invoice_service_1 = require("./purchase-invoice.service");
+const save_purchase_invoice_dto_1 = require("./dto/save-purchase-invoice.dto");
+exports.PURCHASE_INVOICE_MENU_ID = 24;
+let PurchaseInvoiceController = class PurchaseInvoiceController {
+    service;
+    prisma;
+    requestContext;
+    constructor(service, prisma, requestContext) {
+        this.service = service;
+        this.prisma = prisma;
+        this.requestContext = requestContext;
+    }
+    async save(dto) {
+        await this.right(dto.header.piId ? 'edit' : 'create', 'save a purchase invoice');
+        if (dto.header.post)
+            await this.right('post', 'post a purchase invoice');
+        if (dto.header.post && dto.header.overrideWarnings)
+            await this.right('override', 'post a purchase invoice past its warnings');
+        const data = await this.service.save(dto);
+        const base = dto.header.post ? `Purchase ${data.header.piRefno} posted` : `Purchase ${data.header.piRefno} saved as draft`;
+        return { success: true, message: data.warnings.length ? `${base} — ${data.warnings.map((w) => w.message).join(' ')}` : base, data };
+    }
+    async validate(dto) {
+        await this.right('view', 'calculate a purchase invoice');
+        return { success: true, message: 'Purchase invoice calculated', data: await this.service.preview(dto) };
+    }
+    async post(dto) {
+        await this.right('post', 'post a purchase invoice');
+        if (dto.overrideWarnings)
+            await this.right('override', 'post a purchase invoice past its warnings');
+        const data = await this.service.post(dto.piId, dto.accYear, { override: !!dto.overrideWarnings, reason: dto.overrideReason ?? null });
+        return { success: true, message: `Purchase ${data.header.piRefno} posted`, data };
+    }
+    async get(q) {
+        await this.right('view', 'open a purchase invoice');
+        return { success: true, message: 'Purchase invoice fetched', data: await this.service.get(q.piId, q.accYear) };
+    }
+    async hold(dto) {
+        if (dto.hold)
+            await this.right('edit', 'put a bill on payment hold');
+        else
+            await this.right('override', 'release a payment hold');
+        const data = await this.service.setHold(dto);
+        return { success: true, message: `Purchase ${data.header.piRefno} ${dto.hold ? 'put on payment hold' : 'released for payment'}`, data };
+    }
+    async settings(q) {
+        await this.right('view', 'read the purchase settings');
+        return { success: true, message: 'Purchase settings', data: await this.service.settings(q.companyId, q.branchId) };
+    }
+    async grnLines(q) {
+        await this.right('view', 'list GRN lines to bill');
+        return { success: true, message: 'GRN lines to bill', data: await this.service.grnLines(q) };
+    }
+    async cancel(dto) {
+        await this.right('cancel', 'cancel a purchase invoice');
+        const data = await this.service.cancel(dto);
+        return { success: true, message: `Purchase ${data.header.piRefno} cancelled`, data };
+    }
+    async right(right, action) {
+        await (0, rights_1.assertMenuRight)(this.prisma, { userId: this.requestContext.getUserId(), menuId: exports.PURCHASE_INVOICE_MENU_ID, right, codePrefix: 'PUR', action });
+    }
+};
+exports.PurchaseInvoiceController = PurchaseInvoiceController;
+__decorate([
+    (0, common_1.Post)('save'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Save a purchase invoice draft; header.post = true saves and posts in one transaction (stock in, books, bill-wise, shortage).' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.SavePurchaseInvoiceDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "save", null);
+__decorate([
+    (0, common_1.Post)('validate'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'The server calculation of a bill (lines, charges, ITC, short, landed cost, net payable) — nothing is written. Also the WARN / REFUSE strip (warnings[], refusals[]: code, level, lineNo, field, message, needsRight), the per-line check{} and the derived header (bill from, place of supply, reverse charge, agent, due dates).' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.SavePurchaseInvoiceDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "validate", null);
+__decorate([
+    (0, common_1.Post)('post'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Post a saved draft. overrideWarnings (Override right on menu 24) posts past the WARN items that need it — PUR_RATE_ABOVE_PO: no payment hold — and logs it (WARN_OVERRIDE).' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PostPurchaseInvoiceDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "post", null);
+__decorate([
+    (0, common_1.Get)('get'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'A purchase invoice: header, printed lines with their allocation rows, charges.' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GetPurchaseInvoiceQueryDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "get", null);
+__decorate([
+    (0, common_1.Post)('hold'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Put a posted bill on payment hold (Edit right), or release it (Override right — "Release payment hold"). Payment refuses a held bill unless the payer has that right.' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PurchaseInvoiceHoldDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "hold", null);
+__decorate([
+    (0, common_1.Get)('settings'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'The purchase.* settings in force for a branch (App Settings, module PURCHASE): invoice amount / duplicate checks, price update, …' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.PurchaseSettingsQueryDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "settings", null);
+__decorate([
+    (0, common_1.Get)('grn-lines'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: "A supplier's posted GRN lines at the branch not yet billed (R4) — what a bill from GRN picks. `blocked` says why a line cannot be billed yet." }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.GrnLinesQueryDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "grnLines", null);
+__decorate([
+    (0, common_1.Post)('cancel'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel a posted bill nothing has paid or adjusted: stock out, voucher reversed, bill-wise and shortage rows withdrawn.' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_purchase_invoice_dto_1.CancelPurchaseInvoiceDto]),
+    __metadata("design:returntype", Promise)
+], PurchaseInvoiceController.prototype, "cancel", null);
+exports.PurchaseInvoiceController = PurchaseInvoiceController = __decorate([
+    (0, swagger_1.ApiTags)('Purchase — Invoice'),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.Controller)('purchase/invoices'),
+    __metadata("design:paramtypes", [purchase_invoice_service_1.PurchaseInvoiceService,
+        prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService])
+], PurchaseInvoiceController);
+//# sourceMappingURL=purchase-invoice.controller.js.map
