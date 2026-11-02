@@ -75,6 +75,8 @@ const perBase = (taxable: Prisma.Decimal, billed: Prisma.Decimal, factor: Prisma
 /**
  * The rate each line is judged against (R19 / R28: taxable per base unit, no tax):
  *  - its PO line (direct line on a PO, or a GRN line received against one) → basis PO (the post holds payment);
+ *    the PO line's taxable LESS its before-tax charge share (poi_chrg_before_tax, since 2026-11-02) — the PO's goods
+ *    figure, as before the PO spread its charges;
  *  - else the item's last POSTED purchase-bill line in the company, any supplier → basis LAST (information).
  */
 export async function rateRefs(tx: Tx, companyId: string, exceptPiId: string | null, facts: LineFact[]): Promise<Map<number, RateRef>> {
@@ -83,7 +85,7 @@ export async function rateRefs(tx: Tx, companyId: string, exceptPiId: string | n
   const direct = facts.filter((f) => f.srcType === 'PURCHASE_ORDER' && f.srcItemId);
   if (viaGrn.length) {
     const rows = await tx.$queryRaw<{ gri_id: string; po_refno: string; po_rate_base: Prisma.Decimal | null }[]>`
-      SELECT gri.gri_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+      SELECT gri.gri_id, po.po_refno, (poi.poi_taxable_amt - poi.poi_chrg_before_tax) / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
         FROM purchase.pur_grn_item gri
         JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
         JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
@@ -95,7 +97,7 @@ export async function rateRefs(tx: Tx, companyId: string, exceptPiId: string | n
   }
   if (direct.length) {
     const rows = await tx.$queryRaw<{ poi_id: string; po_refno: string; po_rate_base: Prisma.Decimal | null }[]>`
-      SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+      SELECT poi.poi_id, po.po_refno, (poi.poi_taxable_amt - poi.poi_chrg_before_tax) / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
         FROM purchase.pur_order_item poi
         JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
        WHERE poi.poi_id = ANY(${direct.map((f) => f.srcItemId!)}::uuid[])`;

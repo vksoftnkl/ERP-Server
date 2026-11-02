@@ -23,6 +23,7 @@ import { recordSupplierItems } from '../supplier-item/purchase-supplier-item';
 import { closePosOnFirstBill } from '../order/purchase-order';
 import { loadPurchaseSettings, type PurchaseSettings } from '../common/purchase-settings';
 import { calcPurchase, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCost, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
+import { loadPurchaseChargeMasters, purchaseChargeInput, type PurchaseChargeMaster } from '../common/purchase-charges';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
   allocateDocNumber, assertBillsUnsettled, assertNoLiveReturns, assertShortagesUntouched, numberTextileBatches, payeeLedgers, raiseBillRow, writeTextileDetails, statusLog, voucherTypeId, withdrawBillRows,
@@ -104,7 +105,7 @@ interface SupplierRow {
 }
 interface ItemRow { iuc_id: string; iuc_item_id: string; iuc_to_base_factor: Prisma.Decimal; base_iuc_id: string; item_default_tax_id: string | null; item_hsn_code: string | null; item_itc_class: string | null; item_shortage_pct: Prisma.Decimal | null; item_name: string | null }
 interface TaxRow { tax_id: string; tax_rate_perc: Prisma.Decimal; tax_cess_perc: Prisma.Decimal | null; tax_cess_per_unit: Prisma.Decimal | null }
-interface ChargeRow { chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null; chg_before_tax: boolean; chg_tax_apl: boolean; chg_landing_cost: boolean; chg_on_bill: boolean; chg_ledger_code: string; chg_role: string | null; tax_rate_perc: Prisma.Decimal | null; chg_tax_id: string | null }
+type ChargeRow = PurchaseChargeMaster;
 
 /** The GRN line a bill line bills — read at save (prepare) and again at post. */
 interface GrnFacts {
@@ -649,15 +650,8 @@ export class PurchaseInvoiceService {
           : []
       ).map((t) => [t.tax_id, t]),
     );
-    const chgIds = [...new Set((dto.charges ?? []).map((c) => c.chgId))];
-    const charges = chgIds.length
-      ? await tx.$queryRaw<ChargeRow[]>`
-          SELECT c.chg_id, c.chg_name, c.chg_type, c.chg_method, c.chg_default_rate, c.chg_cost_alloc, c.chg_before_tax,
-                 c.chg_tax_apl, c.chg_landing_cost, c.chg_on_bill, c.chg_ledger_code, c.chg_role, c.chg_tax_id, t.tax_rate_perc
-            FROM public.charge_master c LEFT JOIN inventory.tax_rate_master t ON t.tax_id = c.chg_tax_id
-           WHERE c.chg_id = ANY(${chgIds}::uuid[]) AND c.chg_is_deleted = false AND c.chg_module IN ('P','B')`
-      : [];
-    const chgById = new Map(charges.map((c) => [c.chg_id, c]));
+    const chgById = await loadPurchaseChargeMasters(tx, (dto.charges ?? []).map((c) => c.chgId));
+    const charges: ChargeRow[] = [...chgById.values()];
     // loadmen are picked as employees: each is owed on his own staff ledger (as on the GRN)
     for (const [i, c] of (dto.charges ?? []).entries()) if (c.payees?.length) c.payees = await payeeLedgers(tx, c.payees, `charges.${i}.payees`);
     const calcCharges: CalcChargeIn[] = [];
@@ -672,17 +666,7 @@ export class PurchaseInvoiceService {
         problems.push({ field: `charges.${i}.payees`, code: PUR.OFFBILL_NO_PAYEE, message: `${m.chg_name}: say who is owed (pick the loadmen / party)` });
       }
       c.payees?.forEach((p) => payeeIds.add(p.partyId));
-      calcCharges.push({
-        key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD',
-        method: (m.chg_method as CalcChargeIn['method']) ?? 'FIXED',
-        rate: c.rate ?? m.chg_default_rate ?? 0, amount: c.amount ?? null,
-        alloc: ((m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE') as CalcChargeIn['alloc']),
-        beforeTax: m.chg_on_bill ? m.chg_before_tax : false,
-        onBill: m.chg_on_bill,
-        landingCost: m.chg_on_bill ? m.chg_landing_cost : true, // D13: off-bill is always landing cost
-        taxPct: m.chg_on_bill && m.chg_tax_apl && !m.chg_before_tax ? (m.tax_rate_perc ?? 0) : 0, // D14: off-bill no GST
-        payees: m.chg_on_bill ? [] : (c.payees ?? []).map((p) => ({ partyId: p.partyId, amount: p.amount ?? null })),
-      });
+      calcCharges.push(purchaseChargeInput(m, c, String(i)));   // the master's real flags (common/purchase-charges — the PO builds its charges there too)
     });
     if (payeeIds.size) {
       const led = await tx.$queryRaw<{ led_id: string; led_name: string; led_is_reverse_charge: boolean | null }[]>`

@@ -8,7 +8,9 @@ import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { calcPurchase, type CalcChargeIn, type CalcLineIn } from '../common/purchase-calc';
+import { calcPurchase, type CalcLineIn, type CalcOut } from '../common/purchase-calc';
+import { loadPurchaseChargeMasters, purchaseChargeInput, type PurchaseChargeMaster } from '../common/purchase-charges';
+import { poFigures, poGoodsValue } from './purchase-order-figures';
 import { PurchaseChargeDto } from '../invoice/dto/save-purchase-invoice.dto';
 import { loadPurchaseSettings } from '../common/purchase-settings';
 import { pickableTermsId, termsOf } from '../terms/purchase-terms';
@@ -79,7 +81,7 @@ export class PurchaseOrderHeaderDto {
 export class SavePurchaseOrderDto {
   @ApiProperty({ type: PurchaseOrderHeaderDto }) @ValidateNested() @Type(() => PurchaseOrderHeaderDto) header!: PurchaseOrderHeaderDto;
   @ApiProperty({ type: [PurchaseOrderLineDto] }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PurchaseOrderLineDto) lines!: PurchaseOrderLineDto[];
-  @ApiPropertyOptional({ type: [PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — an ESTIMATE only: nothing posts, the line figures stay as keyed; po_charges_amt = Σ ADD − Σ DEDUCT, the PO total includes it. Payees are ignored on a PO. Every save replaces the set.' })
+  @ApiPropertyOptional({ type: [PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — nothing posts. Spread on the lines as the bill spreads them (2026-11-02): a before-tax charge joins the line taxable (and its GST); after-tax and off-bill ones give each line its share and its landed cost. po_net_amt = the lines (taxable + GST); po_charges_amt = the rest (after-tax + their own GST + off-bill); the PO total is both. Payees are ignored on a PO. Every save replaces the set.' })
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseChargeDto) charges?: PurchaseChargeDto[];
 }
 export class PurchaseOrderRefDto {
@@ -119,6 +121,8 @@ type Db = Prisma.TransactionClient | PrismaService;
 interface PoChargeEstimate {
   chgId: string; chgName: string; role: string | null; type: string; method: string; rate: Prisma.Decimal; amount: Prisma.Decimal; signedAmount: Prisma.Decimal;
   onBill: boolean; ledgerId: string; costAlloc: string | null; beforeTax: boolean; landingCost: boolean;
+  /** Own GST — an after-tax, tax-applicable, on-bill charge only (as the bill). */
+  taxApl: boolean; taxPct: Prisma.Decimal; cgst: Prisma.Decimal; sgst: Prisma.Decimal; igst: Prisma.Decimal;
 }
 const today = () => new Date().toISOString().slice(0, 10);
 const isoDay = (d: Date | string) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
@@ -141,7 +145,8 @@ export function poDocStatus(status: string, approval: string, lineStatuses: stri
 }
 /**
  * PO approval (purchase.po_approval_above, 0 = off) — on the GOODS value only (user 2026-10-29): the lines' taxable +
- * GST. The charges estimate (CHG-07) is shown on the PO but never counts towards approval. Confirming decides afresh;
+ * GST with NO charge in it (poGoodsValue). The charges estimate (CHG-07) never counts towards approval — not even a
+ * before-tax charge, which since 2026-11-02 sits inside the stored line taxable / po_net_amt. Confirming decides afresh;
  * an amendment keeps an approval unless the goods value rises (a rise asks again) or drops to the limit or below.
  */
 export function poApprovalStatus(a: {
@@ -253,7 +258,13 @@ export class PurchaseOrderService {
     return u;
   }
 
-  /** The money of a PO as the server figures it — the same calc save uses, nothing written. */
+  /**
+   * The money of a PO as the server figures it — the same calc save uses, nothing written. ONE calcPurchase over the
+   * lines AND the charges (user 2026-11-02, "full, like Sale Entry"): each charge with its master's real flags, built
+   * where the bill builds them (common/purchase-charges). Everything ordered counts as received (received = ordered,
+   * free = free, nothing damaged or short), so every line has a landed cost. The PO RATE is never changed: it stays the
+   * rate a GRN / bill is judged against.
+   */
   private async compute(tx: Prisma.TransactionClient | PrismaService, dto: SavePurchaseOrderDto) {
     const h = dto.header;
     const sup = await supplierRow(tx as Prisma.TransactionClient, h.supplierId);
@@ -266,12 +277,20 @@ export class PurchaseOrderService {
     if (problems.length) purRefuseMany(problems[0].message, problems);
     for (const l of dto.lines) if (!l.taxId) l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
     const taxes = await loadTaxRates(tx as Prisma.TransactionClient, dto.lines.map((l) => l.taxId));
-    const lineIns: CalcLineIn[] = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
+    const lineIns: CalcLineIn[] = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, receivedQty: l.qty, damagedQty: 0, freeQty: l.freeQty ?? 0,
+      rate: l.rate, discPct: l.discPct, schPct: l.schPct,
       gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 }));
-    const calc = calcPurchase({ interState: inter, roundOffStep: 0, lines: lineIns });
-    const charges = await this.estimateCharges(tx, dto.charges ?? [], lineIns, inter);
+    const keyed = dto.charges ?? [];
+    const masters = await loadPurchaseChargeMasters(tx, keyed.map((c) => c.chgId));
+    const chgProblems = keyed.flatMap((c, i) => (masters.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
+    if (chgProblems.length) purRefuseMany(chgProblems[0].message, chgProblems);
+    // payees are not taken on a PO (nothing posts from it): the charge's own ledger stands
+    const calc = calcPurchase({ interState: inter, roundOffStep: 0, lines: lineIns,
+                                charges: keyed.map((c, i) => purchaseChargeInput(masters.get(c.chgId)!, { rate: c.rate, amount: c.amount }, String(i))) });
+    const figures = poFigures(calc, dto.lines);
+    const charges = this.chargeRows(keyed, masters, calc);
     const agent = await this.agentOf(tx, dto.header.agentId, dto.header.companyId);
-    return { sup, units, calc, charges, agent };
+    return { sup, units, inter, lineIns, calc, figures, charges, agent };
   }
 
   /** The PO's agent (pur_agent.pag_id = his ledger), checked like the bill's. */
@@ -285,48 +304,37 @@ export class PurchaseOrderService {
   }
 
   /**
-   * CHG-07 — the PO's charges, an ESTIMATE: worked out on the keyed lines by each master's method (fixed / % / per qty /
-   * weight), never spread back onto the lines (the PO rate stays the rate a GRN / bill is judged against) and never posted.
+   * CHG-07 — one estimate row per keyed charge: its amount by the master's method (fixed / % / per qty / weight), its own
+   * GST, the master's flags. The PO's one calc has already spread it on the lines; nothing is posted from it.
    */
-  private async estimateCharges(db: Db, charges: PurchaseChargeDto[], lineIns: CalcLineIn[], inter: boolean) {
-    if (!charges.length) return { rows: [] as PoChargeEstimate[], total: ZERO };
-    const ids = [...new Set(charges.map((c) => c.chgId))];
-    const masters = await db.$queryRaw<{ chg_id: string; chg_name: string; chg_type: string; chg_method: string; chg_default_rate: Prisma.Decimal | null; chg_cost_alloc: string | null;
-                                         chg_on_bill: boolean; chg_role: string | null; chg_ledger_code: string; chg_before_tax: boolean; chg_landing_cost: boolean }[]>`
-      SELECT chg_id, chg_name, chg_type, chg_method, chg_default_rate, chg_cost_alloc, chg_on_bill, chg_role, chg_ledger_code, chg_before_tax, chg_landing_cost
-        FROM public.charge_master WHERE chg_id = ANY(${ids}::uuid[]) AND NOT chg_is_deleted AND chg_module IN ('P','B')`;
-    const by = new Map(masters.map((m) => [m.chg_id, m]));
-    const problems = charges.flatMap((c, i) => (by.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
-    if (problems.length) purRefuseMany(problems[0].message, problems);
-    const ins: CalcChargeIn[] = charges.map((c, i) => {
-      const m = by.get(c.chgId)!;
-      return { key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD', method: m.chg_method as CalcChargeIn['method'], rate: c.rate ?? m.chg_default_rate ?? 0,
-        amount: c.amount ?? null, alloc: ((m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE') as CalcChargeIn['alloc']),
-        beforeTax: false, onBill: false, landingCost: true, taxPct: 0, payees: [] };
-    });
-    const out = calcPurchase({ interState: inter, roundOffStep: 0, lines: lineIns, charges: ins });
-    let total = ZERO;
-    const rows = charges.map((c, i) => {
-      const m = by.get(c.chgId)!;
-      const amount = out.charges[i].amount.abs();
+  private chargeRows(keyed: PurchaseChargeDto[], masters: Map<string, PurchaseChargeMaster>, calc: CalcOut): PoChargeEstimate[] {
+    return keyed.map((c, i) => {
+      const m = masters.get(c.chgId)!;
+      const out = calc.charges[i];
+      const amount = out.amount.abs();
       const signed = m.chg_type === 'DEDUCT' ? amount.negated() : amount;
-      total = total.plus(signed);
+      const taxed = !out.cgst.plus(out.sgst).plus(out.igst).isZero();
       return { chgId: c.chgId, chgName: m.chg_name, role: m.chg_role, type: m.chg_type, method: m.chg_method, rate: D(c.rate ?? m.chg_default_rate ?? 0),
-               amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost };
+               amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost,
+               taxApl: m.chg_tax_apl, taxPct: taxed ? D(m.tax_rate_perc) : ZERO, cgst: out.cgst, sgst: out.sgst, igst: out.igst };
     });
-    return { rows, total };
   }
 
   async preview(dto: SavePurchaseOrderDto) {
-    const { calc, charges, agent } = await this.compute(this.prisma, dto);
-    const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
-    const net = calc.taxable.plus(tax);
+    const { figures, charges, agent } = await this.compute(this.prisma, dto);
+    const t = figures.totals;
     return jsonSafe({
       header: { agentId: agent?.id ?? null, agentName: agent?.name ?? null },
-      lines: calc.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.cgst.plus(o.sgst).plus(o.igst).plus(o.cess), total: o.total })),
-      charges: charges.rows.map((c) => ({ ...c, rate: c.rate.toString(), amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2) })),
-      totals: { gross: calc.gross, taxable: calc.taxable, tax, net,
-                lines: dto.lines.length, orderedValue: net.toFixed(2), chargesEstimate: charges.total.toFixed(2), poTotal: net.plus(charges.total).toFixed(2) },
+      lines: figures.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.tax, total: o.total,
+        netGross: o.netGross, chrgBeforeTax: o.chrgBeforeTax, chrgAfterTax: o.chrgAfterTax, offbillShare: o.offbillShare, amount: o.amount,
+        landedValue: o.landedValue, landedCost: o.landedCost, landedCostIncl: o.landedCostIncl })),
+      charges: charges.map((c) => ({ chgId: c.chgId, chgName: c.chgName, role: c.role, type: c.type, method: c.method, rate: c.rate.toString(),
+        amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2), onBill: c.onBill, ledgerId: c.ledgerId, costAlloc: c.costAlloc,
+        beforeTax: c.beforeTax, landingCost: c.landingCost, taxPct: c.taxPct.toString(), tax: c.cgst.plus(c.sgst).plus(c.igst).toFixed(2) })),
+      totals: { gross: t.gross, taxable: t.taxable, tax: t.tax, net: t.net,
+                lines: dto.lines.length, orderedValue: t.net.toFixed(2), chargesEstimate: t.chargesEstimate.toFixed(2), poTotal: t.poTotal.toFixed(2),
+                netGross: t.netGross.toFixed(2), chrgBeforeTax: t.chrgBeforeTax.toFixed(2), chrgAfterTax: t.chrgAfterTax.toFixed(2), chargeTax: t.chargeTax.toFixed(2),
+                offbill: t.offbill.toFixed(2), chargesTotal: t.chargesTotal.toFixed(2), amount: t.amount.toFixed(2), landedValue: t.landedValue.toFixed(2) },
     });
   }
 
@@ -339,7 +347,7 @@ export class PurchaseOrderService {
   /** The save, inside a transaction — create / edit a draft, confirm, or amend a confirmed PO. */
   async saveIn(tx: Prisma.TransactionClient, dto: SavePurchaseOrderDto, actor: string, opts: { auditNote?: string } = {}) {
     const h = dto.header;
-    const { sup, units, calc, charges, agent } = await this.compute(tx, dto);
+    const { sup, units, inter, lineIns, calc, figures, charges, agent } = await this.compute(tx, dto);
     let poId = h.poId ?? null;
     let slno: bigint, refno: string, isNew = false;
     let cur: Awaited<ReturnType<typeof tx.purOrder.findFirst>> = null;
@@ -357,14 +365,20 @@ export class PurchaseOrderService {
       isNew = true;
     }
     const amending = cur?.poStatus === 'POSTED';
-    const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
-    const net = calc.taxable.plus(tax);
+    // po_net_amt = the lines (taxable + GST; a before-tax charge sits inside); po_charges_amt = the rest of the estimate
+    // (after-tax charges + their own GST + off-bill) — net + charges = the PO total, nothing counted twice (purchase-order-figures)
+    const { tax, net, chargesEstimate } = figures.totals;
     const confirming = !amending && !!h.post;
     // approval: purchase.po_approval_above (0 = off)
     const settings = await loadPurchaseSettings(tx, h.companyId, h.branchId);
     const limit = D(settings.poApprovalAbove ?? 0);
-    const approval = poApprovalStatus({ limit, goods: calc, chargesEstimate: charges.total, confirming, amending,
-                                        current: cur?.poApprovalStatus ?? null, currentGoodsValue: cur?.poNetAmt ?? null }).status;
+    // the basis is the goods alone (no charge), now and as last saved — po_net_amt holds a before-tax charge since 2026-11-02
+    const storedGoods = amending
+      ? poGoodsValue((await tx.purOrderItem.findMany({ where: { poiPoId: poId!, poiAccYear: h.accYear, poiIsDeleted: false } }))
+          .map((l) => ({ key: l.poiId, billedQty: l.poiQty, rate: l.poiRate, discPct: l.poiDiscPct, schPct: l.poiSchPct, gstPct: l.poiGstPct })), inter)
+      : null;
+    const { status: approval, value: goodsValue } = poApprovalStatus({ limit, goods: poGoodsValue(lineIns, inter), chargesEstimate, confirming, amending,
+                                        current: cur?.poApprovalStatus ?? null, currentGoodsValue: storedGoods?.value ?? null });
     // PO terms master row (dropdown 73): a new pick must be live, active, shared or this company's; the row the PO already
     // names is kept as is (switched off or deleted since: the PO has its own copy of the text — review 2026-10-29)
     const keepTerms = !!cur && !!h.termsId && h.termsId === cur.poTermsId;
@@ -375,7 +389,7 @@ export class PurchaseOrderService {
       poCompanyId: h.companyId, poBranchId: h.branchId, poAccYear: h.accYear, poDeviceId: h.deviceId, poSlno: slno, poRefno: refno,
       poDocDate: new Date(`${h.docDate}T00:00:00Z`), poSupplierId: h.supplierId, poExpectedDate: h.expectedDate ? new Date(`${h.expectedDate}T00:00:00Z`) : null,
       poDeliverGodownId: h.godownId ?? null, poAgentId: agent?.id ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
-      ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: charges.total, poNetAmt: net,
+      ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: chargesEstimate, poNetAmt: net,
       poRemarks: h.remarks ?? null, poStatus: amending ? 'POSTED' : h.post ? 'POSTED' : 'DRAFT', poApprovalStatus: approval,
     };
     if (amending && cur!.poSupplierId !== h.supplierId) {
@@ -391,7 +405,7 @@ export class PurchaseOrderService {
       return {
         poiLineNo: l.lineNo, poiItemId: l.itemId, poiUomId: l.uomId, poiBaseUomId: u.base_iuc_id, poiToBaseFactor: u.iuc_to_base_factor, poiHsnCode: u.item_hsn_code,
         poiWeight: l.weight ?? null, poiQty: D(l.qty), poiFreeQty: D(l.freeQty), poiRate: D(l.rate), poiDiscPct: D(l.discPct), poiDiscAmt: o.discAmt,
-        poiSchPct: D(l.schPct), poiSchAmt: o.schAmt, poiGrossAmt: o.gross, poiTaxableAmt: o.taxable, poiTaxId: l.taxId ?? null, poiGstPct: o.gstPct,
+        poiSchPct: D(l.schPct), poiSchAmt: o.schAmt, poiChrgBeforeTax: o.chrgBeforeTax, poiChrgAfterTax: o.chrgAfterTax, poiGrossAmt: o.gross, poiTaxableAmt: o.taxable, poiTaxId: l.taxId ?? null, poiGstPct: o.gstPct,
         poiCgstAmt: o.cgst, poiSgstAmt: o.sgst, poiIgstAmt: o.igst, poiCessAmt: o.cess, poiTotalAmt: o.total, poiMrp: l.mrp ?? null,
         poiRemarks: l.remarks ?? null,
       };
@@ -437,14 +451,14 @@ export class PurchaseOrderService {
     // CHG-07: the estimated charges — the set is replaced on every save (nothing posts from them)
     await tx.$executeRaw`DELETE FROM public.txn_charge_detail WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
     let n = 0;
-    for (const c of charges.rows) {
+    for (const c of charges) {
       await tx.$executeRaw`
         INSERT INTO public.txn_charge_detail (cd_doc_type, cd_doc_id, cd_slno, cd_comp_id, cd_branch_id, cd_acc_year, cd_voucher_no,
           cd_chg_id, cd_chg_name, cd_role, cd_method, cd_type, cd_apply_on, cd_ledger_code, cd_landing_cost, cd_cost_alloc, cd_before_tax, cd_tax_apl, cd_sep_post,
-          cd_rate, cd_amount, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
+          cd_rate, cd_amount, cd_tax_perc, cd_cgst_amt, cd_sgst_amt, cd_igst_amt, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
         VALUES ('PURCHASE_ORDER', ${poId}::uuid, ${++n}::int, ${h.companyId}::uuid, ${h.branchId}::uuid, ${h.accYear}::bpchar, ${slno}::bigint,
-          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, false, false,
-          ${c.rate}::numeric, ${c.amount}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
+          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, ${c.taxApl}, false,
+          ${c.rate}::numeric, ${c.amount}::numeric, ${c.taxPct}::numeric, ${c.cgst}::numeric, ${c.sgst}::numeric, ${c.igst}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
     }
     const log = (event: TxnStatusEvent, from: string | null, to: string, remarks?: string) =>
       statusLog(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: TxnStatusDocType.PURCHASE_ORDER, docId: poId!, refno, event, from, to, actor, deviceId: h.deviceId, remarks });
@@ -452,7 +466,7 @@ export class PurchaseOrderService {
     if (confirming) await log(TxnStatusEvent.POSTED, 'DRAFT', 'POSTED');
     if (amending) await log(TxnStatusEvent.AMENDED, 'POSTED', 'POSTED', `Revision ${(cur!.poRevisionNo ?? 1) + 1}${h.amendReason ? `: ${h.amendReason}` : ''}`.slice(0, 250));
     if ((confirming || amending) && approval === 'AWAITING' && cur?.poApprovalStatus !== 'AWAITING')
-      await log(TxnStatusEvent.SUBMITTED, 'POSTED', 'POSTED', `Waiting for approval — PO value ${net.toFixed(2)} is above ${limit.toFixed(2)}`);
+      await log(TxnStatusEvent.SUBMITTED, 'POSTED', 'POSTED', `Waiting for approval — PO value ${goodsValue.toFixed(2)} is above ${limit.toFixed(2)}`);
     // notes 89: the whole PO before / after this save — the revision history
     const after = await this.getDoc(tx, poId!, h.accYear);
     await this.audit.logDocumentRevision({ ...PO_AUDIT, docId: poId!, displayName: refno, before, after, userId: actor, branchId: h.branchId, deviceId: h.deviceId,
@@ -753,7 +767,7 @@ export class PurchaseOrderController {
     return { success: true, message: `Purchase order ${data.header.poRefno} ${dto.header.post ? 'confirmed' : 'saved'}`, data };
   }
 
-  @Post('validate') @Version(API_VERSION) @ApiOperation({ summary: 'The server\'s figures for a PO being keyed — line taxable / tax / total and the totals. Writes nothing.' })
+  @Post('validate') @Version(API_VERSION) @ApiOperation({ summary: 'The server\'s figures for a PO being keyed — per line taxable / tax / total with the charges spread on it (before / after tax, off-bill), amount and landed cost (without / with GST, per the line\'s unit); the charge estimate rows and the totals. Writes nothing.' })
   async validate(@Body() dto: SavePurchaseOrderDto) {
     await this.right('view', 'check a purchase order');
     return { success: true, message: 'Purchase order calculated', data: await this.service.preview(dto) };
