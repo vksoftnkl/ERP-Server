@@ -31,6 +31,7 @@ import {
 } from '../common/purchase-doc.helpers';
 import type { SavePurchaseInvoiceDto, PurchaseInvoiceLineDto, CancelPurchaseInvoiceDto, GrnLinesQueryDto, PurchaseInvoiceHoldDto, PurchaseTransportDto } from './dto/save-purchase-invoice.dto';
 import { checkLines, type LineCheck, type LineFact, type PurIssue } from './purchase-invoice-checks';
+import { savedMinPrice, shownMinPrice } from './purchase-invoice-msp';
 import { msmeDueDays } from '../lookup/purchase-lookup';
 import { supplierBillFrom, type BillFromRow } from '../common/purchase-bill-from';
 import { TransportBandService, type TransportBandInput } from 'src/modules/sales/posting/transport-band.service';
@@ -169,7 +170,8 @@ interface Prepared {
   /** lineNo → the PO line it receives (DOC-04) */
   po: Map<number, PoFacts>;
   info: LineInfo[];
-  /** P9 — per line (dto order), the MSP the line saves: typed, else the item's current minimum here, else null */
+  /** P9 — per line (dto order), the MSP the line SHOWS: typed, else the item's current minimum here, else null.
+   *  The line SAVES only a typed one (purchase-invoice-msp). */
   minPrices: (Prisma.Decimal | null)[];
   /** P12 — the bill's GST by rate (lines + taxed after-tax charges) */
   gstBreakup: GstBreakupRow[];
@@ -738,7 +740,7 @@ export class PurchaseInvoiceService {
     // P9 — the MSP each line starts from: typed, else the item's current minimum on the price row Post would write (unit + MRP bucket)
     const current = await this.prices.currentMinPrices(tx, h.companyId, h.branchId,
       dto.lines.map((l) => ({ itemId: l.itemId, uomId: l.uomId, mrp: l.mrp ?? null })));
-    const minPrices = dto.lines.map((l, i) => (l.minPrice !== null && l.minPrice !== undefined ? D(l.minPrice).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP) : current[i] ?? null));
+    const minPrices = dto.lines.map((l, i) => shownMinPrice(l.minPrice, current[i]));
 
     // ENT-18 / P8: Sell A–D each from a markup % on the cost without tax (GST added), or the markup / margin of a typed sell —
     // the same basis for all four (costUnit = landed cost w/o tax per billed unit). A typed sell wins; the markup is kept for the save.
@@ -1180,7 +1182,8 @@ export class PurchaseInvoiceService {
           piiCgstAmt: o.cgst, piiSgstAmt: o.sgst, piiIgstAmt: o.igst, piiCessPct: D(l.cessPct), piiCessPerUnit: D(l.cessPerUnit), piiCessAmt: o.cess,
           piiTotalAmt: o.total, piiItcEligibleAmt: o.itcEligible, piiItcPendingAmt: o.itcPending, piiItcIneligibleAmt: o.itcIneligible,
           piiItcClass: o.itcClass, piiLandedCostWot: o.landedCostWot, piiMarkupAPct: l.markupAPct ?? null,
-          piiMarkupBPct: l.markupBPct ?? null, piiMarkupCPct: l.markupCPct ?? null, piiMarkupDPct: l.markupDPct ?? null, piiMinPrice: p.minPrices[i],
+          piiMarkupBPct: l.markupBPct ?? null, piiMarkupCPct: l.markupCPct ?? null, piiMarkupDPct: l.markupDPct ?? null,
+          piiMinPrice: savedMinPrice(l.minPrice),   // P9: only a typed MSP is saved (NULL = leave the item's minimum alone on Post)
           piiSellA: l.sellA ?? null, piiSellB: l.sellB ?? null, piiSellC: l.sellC ?? null, piiSellD: l.sellD ?? null, piiMrp: l.mrp ?? null,
           piiPriceUpdateResult: p.settings?.allowPriceUpdate && p.settings.priceUpdate === 'UPDATE_PRICES' ? 'NONE' : 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
         },
@@ -1628,7 +1631,8 @@ export class PurchaseInvoiceService {
         rows: lines.map((l) => ({
           key: l.piiId, itemId: l.piiItemId, uomId: l.piiUomId, mrp: l.piiMrp ? Number(l.piiMrp) : null,
           levels: [{ level: 1, price: lv(l.piiSellA) }, { level: 2, price: lv(l.piiSellB) }, { level: 3, price: lv(l.piiSellC) }, { level: 4, price: lv(l.piiSellD) }],
-          // P9 — the line's MSP, written with the prices (MSP first: the prices are checked against it), only when it changes the stored one
+          // P9 — a typed MSP, written with the prices (MSP first: the prices are checked against it) when it changes the stored one;
+          //      NULL (not typed) leaves the item's minimum alone, and the prices are checked against that
           minPrice: l.piiMinPrice === null ? null : Number(l.piiMinPrice),
         })),
       });

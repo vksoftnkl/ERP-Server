@@ -78,7 +78,7 @@ export class PurchaseInvoiceLineDto {
   @IsOptional() @IsNumber() markupCPct?: number;
   @ApiPropertyOptional({ description: 'P8: as markupAPct, for Sell D — used only when sellD is empty.' })
   @IsOptional() @IsNumber() markupDPct?: number;
-  @ApiPropertyOptional({ type: Number, nullable: true, description: "P9: the line's MSP (minimum selling price). Omit = the item's current minimum at this branch (the answer's minPrice). Saved on the line (pii_min_price); on Post, under the same price policy as Sell A–D, written to item_price_master.ipm_min_price when it differs (0 = no minimum)." })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: "P9: the line's MSP (minimum selling price), as typed. Saved on the line (pii_min_price) only when sent; omitted = NULL on the line, and /validate shows the item's current minimum at this branch (minPrice). On Post, under the same price policy as Sell A–D, a saved MSP is written to item_price_master.ipm_min_price when it differs (0 = no minimum); NULL leaves it alone. Re-send a draft's piiMinPrice on re-save." })
   @IsOptional() @IsNumber() @Min(0) minPrice?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) remarks?: string;
   @ApiPropertyOptional({ type: [PurchaseAllocDto] })

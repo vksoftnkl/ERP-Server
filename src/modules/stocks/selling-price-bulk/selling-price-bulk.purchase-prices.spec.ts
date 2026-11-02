@@ -131,6 +131,18 @@ describe('SellingPriceBulkService.applyPurchasePrices — the line MSP (P9)', ()
     expect((await apply({})).get('L1')).toEqual({ result: 'NONE', note: null });
   });
 
+  it('a bill line with NO saved MSP (null): the item\'s minimum is left alone, and the prices are still checked against it', async () => {
+    stored = { ...stored, minPrice: 100 };
+    const ok = await apply({ levels: [{ level: 1, price: 130 }], minPrice: null });
+    expect(ok.get('L1')!.result).toBe('UPDATED');
+    expect(written().minPrice).toBeNull();
+    writer.updateBucketPrice.mockClear();
+    const low = await apply({ levels: [{ level: 1, price: 90 }], minPrice: null });
+    expect(low.get('L1')).toEqual({ result: 'NONE', note: 'Price not updated — Rice 25 Kg: 90 is below the minimum price 100.' });
+    expect(writer.updateBucketPrice).not.toHaveBeenCalled();
+    expect((await apply({ minPrice: null })).get('L1')).toEqual({ result: 'NONE', note: null });
+  });
+
   it('D16: a change logged after the bill keeps the row — MSP included', async () => {
     newerLog = [{ item_id: ITEM_ID, unit_id: UOM_ID, at: new Date('2026-11-02T11:00:00+05:30'), who: 'admin', source: 'ITEM_CARD' }];
     const r = await apply({ minPrice: 100 });
