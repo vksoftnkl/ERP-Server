@@ -72,6 +72,14 @@ export class PurchaseInvoiceLineDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() sellD?: number;
   @ApiPropertyOptional({ description: 'ENT-18: markup % on the cost without tax; with no sellA the server prices Sell A from it (GST added).' })
   @IsOptional() @IsNumber() markupAPct?: number;
+  @ApiPropertyOptional({ description: 'P8: as markupAPct, for Sell B — used only when sellB is empty.' })
+  @IsOptional() @IsNumber() markupBPct?: number;
+  @ApiPropertyOptional({ description: 'P8: as markupAPct, for Sell C — used only when sellC is empty.' })
+  @IsOptional() @IsNumber() markupCPct?: number;
+  @ApiPropertyOptional({ description: 'P8: as markupAPct, for Sell D — used only when sellD is empty.' })
+  @IsOptional() @IsNumber() markupDPct?: number;
+  @ApiPropertyOptional({ type: Number, nullable: true, description: "P9: the line's MSP (minimum selling price). Omit = the item's current minimum at this branch (the answer's minPrice). Saved on the line (pii_min_price); on Post, under the same price policy as Sell A–D, written to item_price_master.ipm_min_price when it differs (0 = no minimum)." })
+  @IsOptional() @IsNumber() @Min(0) minPrice?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) remarks?: string;
   @ApiPropertyOptional({ type: [PurchaseAllocDto] })
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseAllocDto)

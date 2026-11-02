@@ -323,6 +323,16 @@ export class SellingPriceBulkService {
    * the minimum) or that would go below cost is not written either: a bill is
    * never stopped by its prices. Neither needs the price-change right: the
    * company opted into purchase writing prices.
+   *
+   * 2026-11-02 — the line's MSP (`minPrice`, purchase entry P9) rides in the
+   * same row write, MSP FIRST: when it differs from the row's stored minimum
+   * it is the minimum the bill's prices are checked against (validateRows
+   * takes the candidate's) and S2 / S3 store it with them. One write or none:
+   * a price below the bill's own MSP (or above MRP / below cost) keeps the
+   * whole row — prices and MSP — as it is, and says so. A line that changes
+   * only the MSP rewrites the prices in force unchanged (a new branch / bucket
+   * row keeps them); with no price row at all for the unit there is nothing to
+   * hang an MSP on, and it says so. An MSP equal to the stored one is no change.
    */
   async applyPurchasePrices(
     tx: Prisma.TransactionClient,
@@ -332,11 +342,12 @@ export class SellingPriceBulkService {
       actor: string;
       billRef: string;
       businessTime: Date;
-      rows: { key: string; itemId: string; uomId: string; mrp: number | null; levels: { level: number; price: number }[] }[];
+      rows: { key: string; itemId: string; uomId: string; mrp: number | null; levels: { level: number; price: number }[]; minPrice?: number | null }[];
     },
   ): Promise<Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>> {
     const out = new Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>();
-    const live = args.rows.filter((r) => r.levels.some((l) => l.price > 0));
+    const hasMsp = (r: { minPrice?: number | null }) => r.minPrice !== null && r.minPrice !== undefined && r.minPrice >= 0;
+    const live = args.rows.filter((r) => r.levels.some((l) => l.price > 0) || hasMsp(r));
     for (const r of args.rows) if (!live.includes(r)) out.set(r.key, { result: 'NONE', note: null });
     if (!live.length) return out;
     // D16 — a logged change of the row newer than the bill, in business time
@@ -361,27 +372,57 @@ export class SellingPriceBulkService {
       return false;
     });
     if (!writable.length) return out;
-    const rows = writable.map((r, i) => ({
-      lineNo: i + 1, itemId: r.itemId, uomId: r.uomId, mrp: r.mrp, salePrice: null,
-      levels: r.levels.filter((l) => l.price > 0).map((l) => ({ level: l.level, price: l.price })),
+    const costs = await this.gateway.loadRowCosts(
+      tx, writable.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp ?? null, salePrice: null })), args.companyId, args.branchId, undefined,
+    );
+    // the MSP only when it changes the stored one; a line with no price of its own re-states the prices in force
+    const plans = writable.map((r, i) => {
+      const msp = hasMsp(r) && !new Prisma.Decimal(r.minPrice!).equals(new Prisma.Decimal(costs[i].minPrice)) ? r.minPrice! : null;
+      const own = r.levels.filter((l) => l.price > 0).map((l) => ({ level: l.level, price: l.price }));
+      if (own.length) return { r, cost: costs[i], msp, levels: own, skip: null as string | null };
+      if (msp === null) return { r, cost: costs[i], msp, levels: own, skip: '' };
+      const inForce = costs[i].prices;
+      if (!inForce) return { r, cost: costs[i], msp, levels: own, skip: `MSP ${msp} not written — the item has no selling price for this unit here; set its prices first.` };
+      return { r, cost: costs[i], msp, levels: inForce.map((price, k) => ({ level: k + 1, price })).filter((l) => l.price > 0), skip: null };
+    });
+    for (const x of plans) if (x.skip !== null) out.set(x.r.key, { result: 'NONE', note: x.skip || null });
+    const todo = plans.filter((x) => x.skip === null);
+    if (!todo.length) return out;
+    const rows = todo.map((x, i) => ({
+      lineNo: i + 1, itemId: x.r.itemId, uomId: x.r.uomId, mrp: x.r.mrp, salePrice: null, minPrice: x.msp, levels: x.levels,
     })) as unknown as SaveSellingPriceRowDto[];
     const taxRates = await this.resolveItemTaxRates(tx, rows.map((r) => r.itemId));
-    const costs = await this.gateway.loadRowCosts(
-      tx, rows.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp ?? null, salePrice: null })), args.companyId, args.branchId, undefined,
-    );
-    const candidates = rows.map((row, i) => this.toCandidate(row, i, args.companyId, args.actor, taxRates, costs[i]));
-    const problems = this.gateway.validateRows(candidates, costs.map((c) => c.minPrice));
+    const candidates = rows.map((row, i) => this.toCandidate(row, i, args.companyId, args.actor, taxRates, todo[i].cost));
+    const problems = this.gateway.validateRows(candidates, todo.map((x) => x.cost.minPrice));
     const origin = { source: 'PURCHASE' as const, menuId: PRICE_MENU_ID.PURCHASE_ENTRY, reason: `Purchase ${args.billRef}` };
     for (let i = 0; i < candidates.length; i += 1) {
       const mine = problems.filter((p) => p.lineNo === candidates[i].lineNo);
       if (mine.length) {
-        out.set(writable[i].key, { result: 'NONE', note: `Price not updated — ${mine.map((p) => p.message).join('; ')}` });
+        const msp = todo[i].msp !== null ? ` The MSP ${todo[i].msp} is not written either.` : '';
+        out.set(todo[i].r.key, { result: 'NONE', note: `Price not updated — ${mine.map((p) => p.message).join('; ')}${msp}` });
         continue;
       }
       await this.applyBucketPrice(tx, candidates[i], resolveTargetScope('BRANCH', null, args.branchId), undefined, origin);
-      out.set(writable[i].key, { result: 'UPDATED', note: null });
+      out.set(todo[i].r.key, { result: 'UPDATED', note: null });
     }
     return out;
+  }
+
+  /**
+   * Purchase entry P9 — the MSP each purchase line starts from: the minimum on
+   * the price row in force at this branch today for the line's unit and MRP
+   * bucket (the row applyPurchasePrices would write). Null when no row prices
+   * the unit or its minimum is 0 (no MSP).
+   */
+  async currentMinPrices(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    branchId: string,
+    rows: ReadonlyArray<{ itemId: string; uomId: string; mrp: number | null }>,
+  ): Promise<(Prisma.Decimal | null)[]> {
+    if (!rows.length) return [];
+    const costs = await this.gateway.loadRowCosts(tx, rows.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp, salePrice: null })), companyId, branchId);
+    return costs.map((c) => (c.minPrice > 0 ? new Prisma.Decimal(c.minPrice) : null));
   }
 
   /**

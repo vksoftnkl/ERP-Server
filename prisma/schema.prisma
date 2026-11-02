@@ -10319,7 +10319,7 @@ model PurInvoiceItem {
   piiUomId             String     @db.Uuid @map("pii_uom_id")
   piiBaseUomId         String     @db.Uuid @map("pii_base_uom_id")
   piiToBaseFactor      Decimal    @default(1) @db.Decimal(18, 9) @map("pii_to_base_factor")
-  piiHsnCode           String?    @db.VarChar(8) @map("pii_hsn_code")
+  piiHsnCode           String?    @db.VarChar(10) @map("pii_hsn_code")
   piiWeight            Decimal?   @db.Decimal(15, 3) @map("pii_weight")
   piiSrcDocType        String?    @db.VarChar(20) @map("pii_src_doc_type")
   piiSrcDocId          String?    @db.Uuid @map("pii_src_doc_id")
@@ -10380,6 +10380,8 @@ model PurInvoiceItem {
   piiCreatedBy         String     @db.VarChar(50) @map("pii_created_by")
   piiModifiedOn        DateTime?  @db.Timestamptz(6) @map("pii_modified_on")
   piiModifiedBy        String?    @db.VarChar(50) @map("pii_modified_by")
+  /// MSP typed on the line; written to item_price_master.ipm_min_price on Post (price policy on).
+  piiMinPrice          Decimal?   @db.Decimal(15, 2) @map("pii_min_price")
   purInvoice           PurInvoice @relation(fields: [piiPiId, piiAccYear], references: [piId, piAccYear], map: "fk_pii_pi")
 
   @@id([piiId, piiAccYear], map: "pk_pur_invoice_item")

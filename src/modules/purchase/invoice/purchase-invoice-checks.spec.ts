@@ -62,4 +62,14 @@ describe('purchase invoice checks (S4 / S7)', () => {
     const { issues } = judgeLines([fact({ sellA: D(200), mrps: [D(150)], costInclUnit: D(118) }), fact({ index: 1, lineNo: 2, sellA: D(100) })], new Map(), 2, none, new Map());
     expect(issues.map((i) => [i.lineNo, i.code])).toEqual([[1, 'PUR_PRICE_ABOVE_MRP'], [2, 'PUR_PRICE_BELOW_COST']]);
   });
+
+  it('P9 — a sell below the line\'s MSP warns (Post writes neither); none without an MSP or with every sell at / above it', () => {
+    const sells = [{ level: 'A' as const, price: D(130) }, { level: 'B' as const, price: D(119.5) }, { level: 'C' as const, price: D(110) }];
+    const { issues } = judgeLines([fact({ sells, minPrice: D(120) })], new Map(), 2, none, new Map());
+    expect(issues).toEqual([expect.objectContaining({ code: 'PUR_PRICE_BELOW_MSP', level: 'WARN', lineNo: 1, field: 'lines.0.minPrice', needsRight: null })]);
+    expect(issues[0].message).toBe('Line 1 Surf: Sell B 119.50, Sell C 110.00 are below the MSP 120.00 — Post will not update this item\'s prices or MSP. Raise the price or lower the MSP.');
+    expect(judgeLines([fact({ sells, minPrice: null })], new Map(), 2, none, new Map()).issues).toEqual([]);
+    expect(judgeLines([fact({ sells, minPrice: D(0) })], new Map(), 2, none, new Map()).issues).toEqual([]);
+    expect(judgeLines([fact({ sells, minPrice: D(110) })], new Map(), 2, none, new Map()).issues).toEqual([]);
+  });
 });

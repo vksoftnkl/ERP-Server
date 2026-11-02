@@ -131,6 +131,12 @@ export interface RowCost {
   costBasis: CostBasis | null;
   /** The resolved row's min price, 0 when none. */
   minPrice: number;
+  /**
+   * The resolved row's selling prices A–D; absent when no row prices this unit.
+   * A purchase bill that changes only the MSP writes them back unchanged
+   * (applyPurchasePrices), so a new branch / bucket row keeps the prices in force.
+   */
+  prices?: [number, number, number, number];
 }
 
 /** One level's write, after §5.1's server recompute. */
@@ -677,6 +683,11 @@ export class PriceBucketGateway {
         costWot: Prisma.Decimal | null;
         costBasis: CostBasis | null;
         minPrice: Prisma.Decimal | null;
+        hasPrice: boolean;
+        priceA: Prisma.Decimal | null;
+        priceB: Prisma.Decimal | null;
+        priceC: Prisma.Decimal | null;
+        priceD: Prisma.Decimal | null;
       }>
     >`
       WITH q AS (
@@ -721,7 +732,10 @@ export class PriceBucketGateway {
              ${saveCost.rate} AS "costRate",
              ${saveCost.wot}  AS "costWot",
              ${saveCost.basis} AS "costBasis",
-             COALESCE(p.ipm_min_price, 0) AS "minPrice"
+             COALESCE(p.ipm_min_price, 0) AS "minPrice",
+             p.ipm_id IS NOT NULL AS "hasPrice",
+             p.ipm_sales_price_a AS "priceA", p.ipm_sales_price_b AS "priceB",
+             p.ipm_sales_price_c AS "priceC", p.ipm_sales_price_d AS "priceD"
         FROM keyed k
         -- Notes 75: an MRP bucket is costed by its own MRP's stock, as the grid
         -- showed it — the below-cost check and ipm_cost_price use that figure.
@@ -756,6 +770,9 @@ export class PriceBucketGateway {
         costWot: row?.costWot ? toNumber(row.costWot) : 0,
         costBasis: row?.costBasis ?? null,
         minPrice: row?.minPrice ? toNumber(row.minPrice) : 0,
+        ...(row?.hasPrice
+          ? { prices: [row.priceA, row.priceB, row.priceC, row.priceD].map((v) => (v ? toNumber(v) : 0)) as [number, number, number, number] }
+          : {}),
       };
     });
   }

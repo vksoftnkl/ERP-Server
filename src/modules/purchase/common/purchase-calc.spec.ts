@@ -1,4 +1,4 @@
-import { calcPurchase, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCost, spread } from './purchase-calc';
+import { calcGstPieces, calcPurchase, gstBreakup, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCost, sellLevel, spread, type CalcIn } from './purchase-calc';
 import { Prisma } from '@prisma/client';
 
 // Every expected figure below is worked out by hand from the rules in the file
@@ -138,5 +138,74 @@ describe('purchase-calc', () => {
     expect(marginOf(100, 125).toFixed(4)).toBe('20.0000');
     expect(rateFromInclusiveCost(118, 18).toFixed(6)).toBe('100.000000');
     expect(rateFromInclusiveCost(12.5, 18, 0, 0.7).toFixed(6)).toBe('10.000000'); // (12.50 − 0.70) / 1.18
+  });
+  describe('sellLevel — Sell A–D the same way (P8)', () => {
+    const cost = new Prisma.Decimal(100); // landed cost w/o tax per billed unit
+    it('a markup with no sell prices it on the cost without tax, GST added, 2 places', () => {
+      const r = sellLevel(cost, 18, null, 20);
+      expect([s(r.sell!), r.fromMarkup, r.markupPct!.toFixed(4), r.marginPct!.toFixed(4)]).toEqual(['141.60', true, '20.0000', '16.6667']);
+    });
+    it('a typed sell wins over the markup; the markup / margin are read back from sell ÷ (1 + GST %)', () => {
+      const r = sellLevel(cost, 18, 147.5, 99);
+      expect([s(r.sell!), r.fromMarkup, r.markupPct!.toFixed(4), r.marginPct!.toFixed(4)]).toEqual(['147.50', false, '25.0000', '20.0000']);
+    });
+    it('no cost: no markup and no price from a markup; a zero sell has no markup', () => {
+      expect(sellLevel(new Prisma.Decimal(0), 18, null, 20)).toEqual({ sell: null, fromMarkup: false, markupPct: null, marginPct: null });
+      expect(sellLevel(new Prisma.Decimal(0), 18, 50, null)).toMatchObject({ fromMarkup: false, markupPct: null, marginPct: null });
+      expect(sellLevel(cost, 18, 0, 20)).toMatchObject({ fromMarkup: false, markupPct: null, marginPct: null });
+      expect(sellLevel(cost, 0, null, null)).toEqual({ sell: null, fromMarkup: false, markupPct: null, marginPct: null });
+    });
+  });
+
+  describe('gstBreakup — the bill by GST rate (P12)', () => {
+    it('lines by their rate (before-tax charge inside the line), a taxed after-tax charge at its own rate; sums to the bill', () => {
+      const input: CalcIn = {
+        interState: false,
+        lines: [
+          { key: 'a', billedQty: 10, rate: 100, gstPct: 18 },
+          { key: 'b', billedQty: 5, rate: 200, gstPct: 5, cessPct: 1 },
+          { key: 'c', billedQty: 2, rate: 50, gstPct: 18 },
+          { key: 'd', billedQty: 1, rate: 40, gstPct: 0 },
+        ],
+        charges: [
+          { key: 'f', type: 'ADD', method: 'FIXED', rate: 100, alloc: 'VALUE', beforeTax: true, onBill: true, landingCost: true },
+          { key: 'h', type: 'ADD', method: 'FIXED', rate: 50, alloc: 'VALUE', beforeTax: false, onBill: true, landingCost: true, taxPct: 12 },
+          { key: 'p', type: 'ADD', method: 'FIXED', rate: 30, alloc: 'VALUE', beforeTax: false, onBill: true, landingCost: true },
+          { key: 'o', type: 'ADD', method: 'FIXED', rate: 20, alloc: 'VALUE', beforeTax: false, onBill: false, landingCost: true },
+        ],
+      };
+      const out = calcPurchase(input);
+      const rows = gstBreakup(calcGstPieces(input, out));
+      // before-tax 100 spread on 1000 / 1000 / 100 / 40 of 2140: 46.73 / 46.73 / 4.67 / 1.87
+      expect(rows.map((r) => [r.gstPct.toString(), s(r.taxable), s(r.cgst), s(r.sgst), s(r.igst), s(r.cess), s(r.total)])).toEqual([
+        ['0', '41.87', '0.00', '0.00', '0.00', '0.00', '41.87'],
+        ['5', '1046.73', '26.17', '26.17', '0.00', '10.47', '1109.54'],
+        ['12', '50.00', '3.00', '3.00', '0.00', '0.00', '56.00'],
+        ['18', '1151.40', '103.63', '103.63', '0.00', '0.00', '1358.66'],
+      ]);
+      const sum = (f: (r: (typeof rows)[number]) => Prisma.Decimal) => s(rows.reduce((a, r) => a.plus(f(r)), new Prisma.Decimal(0)));
+      expect(sum((r) => r.taxable)).toBe(s(out.taxable.plus(50)));
+      expect(sum((r) => r.cgst.plus(r.sgst).plus(r.igst))).toBe(s(out.cgst.plus(out.sgst).plus(out.igst).plus(out.chargeTax)));
+      expect(sum((r) => r.cess)).toBe(s(out.cess));
+    });
+
+    it('a bill of supply: one 0 % row, the taxed charge is not taxed', () => {
+      const input: CalcIn = {
+        interState: true, supplierTaxMode: 'COMPOSITION',
+        lines: [{ key: 'a', billedQty: 10, rate: 100, gstPct: 18 }],
+        charges: [{ key: 'h', type: 'ADD', method: 'FIXED', rate: 50, alloc: 'VALUE', beforeTax: false, onBill: true, landingCost: true, taxPct: 12 }],
+      };
+      const rows = gstBreakup(calcGstPieces(input, calcPurchase(input)));
+      expect(rows.map((r) => [r.gstPct.toString(), s(r.taxable), s(r.total)])).toEqual([['0', '1000.00', '1000.00']]);
+    });
+
+    it('a DEDUCT after-tax charge with GST lowers its rate; empty rates are dropped', () => {
+      const rows = gstBreakup([
+        { gstPct: 18, taxable: 100, cgst: 9, sgst: 9, igst: 0, cess: 0 },
+        { gstPct: 18, taxable: -10, cgst: -0.9, sgst: -0.9, igst: 0 },
+        { gstPct: 12, taxable: 0, cgst: 0, sgst: 0, igst: 0 },
+      ]);
+      expect(rows.map((r) => [r.gstPct.toString(), s(r.taxable), s(r.cgst), s(r.total)])).toEqual([['18', '90.00', '8.10', '106.20']]);
+    });
   });
 });

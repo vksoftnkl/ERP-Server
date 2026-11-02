@@ -30,6 +30,7 @@ export const PUR_CHECK = {
   SERIAL_DUPLICATE: 'PUR_SERIAL_DUPLICATE',
   PRICE_BELOW_COST: 'PUR_PRICE_BELOW_COST',
   PRICE_ABOVE_MRP: 'PUR_PRICE_ABOVE_MRP',
+  PRICE_BELOW_MSP: 'PUR_PRICE_BELOW_MSP',
   RCM_NOT_SUPPORTED: 'PUR_RCM_NOT_SUPPORTED',
 } as const;
 
@@ -51,6 +52,9 @@ export interface LineFact {
   serials: string[];
   mrps: Prisma.Decimal[];
   sellA: Prisma.Decimal | null;
+  /** P9 — Sell A–D (those given) and the line's MSP: a sell below the MSP is not written to the item on Post */
+  sells?: { level: 'A' | 'B' | 'C' | 'D'; price: Prisma.Decimal }[];
+  minPrice?: Prisma.Decimal | null;
   pendingShort: Prisma.Decimal;
   shortValue: Prisma.Decimal;
   gstOnShort: Prisma.Decimal;
@@ -241,6 +245,14 @@ export function judgeLines(
       if (top.length && top.some((m) => f.sellA!.greaterThan(m))) {
         issues.push({ code: 'PUR_PRICE_ABOVE_MRP', level: 'WARN', lineNo: f.lineNo, field: `lines.${f.index}.sellA`, needsRight: null,
           message: `Line ${f.lineNo}${name}: Sell A ${f.sellA.toFixed(2)} is above the MRP ${top.map((m) => m.toFixed(2)).join(' / ')}.` });
+      }
+    }
+    // ── P9: a selling price below the line's own MSP (Post writes neither — MSP first, one write or none) ──
+    if (f.minPrice && f.minPrice.greaterThan(0)) {
+      const low = (f.sells ?? []).filter((x) => x.price.greaterThan(0) && x.price.lessThan(f.minPrice!));
+      if (low.length) {
+        issues.push({ code: PUR_CHECK.PRICE_BELOW_MSP, level: 'WARN', lineNo: f.lineNo, field: `lines.${f.index}.minPrice`, needsRight: null,
+          message: `Line ${f.lineNo}${name}: ${low.map((x) => `Sell ${x.level} ${x.price.toFixed(2)}`).join(', ')} ${low.length === 1 ? 'is' : 'are'} below the MSP ${f.minPrice.toFixed(2)} — Post will not update this item's prices or MSP. Raise the price or lower the MSP.` });
       }
     }
     checks.set(f.lineNo, { rate, newMrp, priceKept: f.priceUpdateResult === 'KEPT_NEWER', serials, shortQty: f.pendingShort.toString() });

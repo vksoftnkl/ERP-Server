@@ -22,7 +22,7 @@ import { revalueOnHand, reverseCostRevaluation, type CostRevaluationLine } from 
 import { recordSupplierItems } from '../supplier-item/purchase-supplier-item';
 import { closePosOnFirstBill } from '../order/purchase-order';
 import { loadPurchaseSettings, type PurchaseSettings } from '../common/purchase-settings';
-import { calcPurchase, marginOf, markupOf, priceFromMarkup, rateFromInclusiveCost, type CalcChargeIn, type CalcOut, type ItcClass } from '../common/purchase-calc';
+import { calcGstPieces, calcPurchase, gstBreakup, rateFromInclusiveCost, sellLevel, type CalcChargeIn, type CalcIn, type CalcOut, type GstBreakupRow, type ItcClass } from '../common/purchase-calc';
 import { loadPurchaseChargeMasters, purchaseChargeInput, type PurchaseChargeMaster } from '../common/purchase-charges';
 import { PUR, purConflict, purNotFound, purRefuse, purRefuseMany } from '../common/purchase.errors';
 import {
@@ -145,8 +145,16 @@ interface PoFacts {
   used_base: Prisma.Decimal;
 }
 
-/** per line, what the answer shows beside the money: the (back-solved) rate, the cost incl. tax per billed unit, Sell A / markup / margin */
-interface LineInfo { rate: number; costIncl: string | null; sellA: number | null; markupAPct: string | null; marginAPct: string | null }
+/** per line, what the answer shows beside the money: the (back-solved) rate, the cost incl. tax per billed unit, Sell A–D with their
+ *  markup / margin (P8), the item's HSN and the line's MSP (P9: typed, else the item's current minimum here) */
+interface LineInfo {
+  rate: number; costIncl: string | null;
+  sellA: number | null; markupAPct: string | null; marginAPct: string | null;
+  sellB: number | null; markupBPct: string | null; marginBPct: string | null;
+  sellC: number | null; markupCPct: string | null; marginCPct: string | null;
+  sellD: number | null; markupDPct: string | null; marginDPct: string | null;
+  hsn: string | null; minPrice: string | null;
+}
 
 interface Prepared {
   supplier: SupplierRow;
@@ -161,6 +169,10 @@ interface Prepared {
   /** lineNo → the PO line it receives (DOC-04) */
   po: Map<number, PoFacts>;
   info: LineInfo[];
+  /** P9 — per line (dto order), the MSP the line saves: typed, else the item's current minimum here, else null */
+  minPrices: (Prisma.Decimal | null)[];
+  /** P12 — the bill's GST by rate (lines + taxed after-tax charges) */
+  gstBreakup: GstBreakupRow[];
   /** set by save (the purchase.* settings snapshotted on the bill) */
   settings?: PurchaseSettings;
   /** S1/S2 — the header facts the server derives: bill-from GSTIN + its state, place of supply (our branch's state), reverse charge, agent */
@@ -359,6 +371,7 @@ export class PurchaseInvoiceService {
         serials: rows.map((r) => r.serialNo).filter((x): x is string => !!x),
         mrps: [l.mrp, ...rows.map((r) => r.mrp)].filter((x): x is number => x !== null && x !== undefined).map((x) => D(x)),
         sellA: l.sellA !== null && l.sellA !== undefined ? D(l.sellA) : null,
+        sells: sellsOf([l.sellA, l.sellB, l.sellC, l.sellD]), minPrice: p.minPrices[i],
         pendingShort: o.pendingShortQty, shortValue: o.shortValue, gstOnShort: o.itcPending, priceUpdateResult: null,
       };
     });
@@ -375,7 +388,8 @@ export class PurchaseInvoiceService {
         srcType: l.piiSrcDocType ?? null, srcItemId: l.piiSrcItemId ?? null,
         serials: rows.map((r) => r.piaSerialNo).filter((x): x is string => !!x),
         mrps: [l.piiMrp, ...rows.map((r) => r.piaMrp)].filter((x): x is Prisma.Decimal => !!x),
-        sellA: l.piiSellA ?? null, pendingShort: l.piiShortQty,
+        sellA: l.piiSellA ?? null, sells: sellsOf([l.piiSellA, l.piiSellB, l.piiSellC, l.piiSellD]), minPrice: l.piiMinPrice ?? null,
+        pendingShort: l.piiShortQty,
         shortValue: l.piiBilledQty.isZero() ? ZERO : l.piiTaxableAmt.times(l.piiShortQty).dividedBy(l.piiBilledQty).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
         gstOnShort: l.piiItcPendingAmt, priceUpdateResult: l.piiPriceUpdateResult ?? null,
       };
@@ -437,6 +451,13 @@ export class PurchaseInvoiceService {
                             printed: header.piInvoiceAmountPrinted, mode: header.piMode, shortQty: lines.reduce((a, l) => a.plus(l.piiShortQty), ZERO),
                             shortLines: lines.filter((l) => l.piiShortQty.greaterThan(0)).length, itcPending: header.piItcPendingAmt }),
     };
+    // P12 — the GST break-up from the saved rows: the lines, and each after-tax on-bill charge that carries its own GST
+    const breakup = gstBreakup([
+      ...lines.map((l) => ({ gstPct: l.piiGstPct, taxable: l.piiTaxableAmt, cgst: l.piiCgstAmt, sgst: l.piiSgstAmt, igst: l.piiIgstAmt, cess: l.piiCessAmt })),
+      ...charges.filter((c) => c.onBill && !c.beforeTax && !(D(c.cgst as Prisma.Decimal).isZero() && D(c.sgst as Prisma.Decimal).isZero() && D(c.igst as Prisma.Decimal).isZero()))
+        .map((c) => ({ gstPct: D(c.taxPct as Prisma.Decimal), taxable: c.type === 'DEDUCT' ? D(c.amount as Prisma.Decimal).negated() : D(c.amount as Prisma.Decimal),
+                       cgst: D(c.cgst as Prisma.Decimal), sgst: D(c.sgst as Prisma.Decimal), igst: D(c.igst as Prisma.Decimal), cess: ZERO })),
+    ]);
     return jsonSafe({
       header: { ...header, supplierName: supplier[0]?.sup_name ?? null, godownName: extra?.godown ?? null,
                 agentName: extra?.agent ?? null,
@@ -450,6 +471,7 @@ export class PurchaseInvoiceService {
       lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [], check: judged.checks.get(l.piiLineNo) ?? null })),
       charges,
       totals,
+      gstBreakup: breakupJson(breakup),
     });
   }
 
@@ -692,7 +714,7 @@ export class PurchaseInvoiceService {
       l.rate = Number(net.plus(D(l.schPerQty)).dividedBy(s).plus(D(l.discPerQty)).dividedBy(d).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP));
     }
 
-    const calc = calcPurchase({
+    const calcIn: CalcIn = {
       interState,
       supplierTaxMode: taxMode,
       tcsAmount: h.tcsAmount ?? 0,
@@ -710,22 +732,40 @@ export class PurchaseInvoiceService {
           weight: l.weight ?? 0, itcClass: (it.item_itc_class as ItcClass | null) ?? 'ELIGIBLE', shortagePct: it.item_shortage_pct ?? 0,
         };
       }),
-    });
+    };
+    const calc = calcPurchase(calcIn);
 
-    // ENT-18: Sell A from a markup % on the cost without tax (GST added), or the markup / margin of a typed Sell A
+    // P9 — the MSP each line starts from: typed, else the item's current minimum on the price row Post would write (unit + MRP bucket)
+    const current = await this.prices.currentMinPrices(tx, h.companyId, h.branchId,
+      dto.lines.map((l) => ({ itemId: l.itemId, uomId: l.uomId, mrp: l.mrp ?? null })));
+    const minPrices = dto.lines.map((l, i) => (l.minPrice !== null && l.minPrice !== undefined ? D(l.minPrice).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP) : current[i] ?? null));
+
+    // ENT-18 / P8: Sell A–D each from a markup % on the cost without tax (GST added), or the markup / margin of a typed sell —
+    // the same basis for all four (costUnit = landed cost w/o tax per billed unit). A typed sell wins; the markup is kept for the save.
+    const pct2 = (v: Prisma.Decimal | null) => (v ? v.toFixed(2) : null);
     const info: LineInfo[] = dto.lines.map((l, i) => {
       const o = calc.lines[i];
       const costUnit = o.landedCostWot.times(D(items.get(l.uomId)!.iuc_to_base_factor));
-      const gstMul = D(1).plus(o.gstPct.dividedBy(100));
-      if ((l.sellA === undefined || l.sellA === null) && l.markupAPct !== undefined && l.markupAPct !== null && costUnit.greaterThan(0))
-        l.sellA = Number(priceFromMarkup(costUnit, l.markupAPct).times(gstMul).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP));
-      const sellWot = l.sellA ? D(l.sellA).dividedBy(gstMul) : null;
-      const mk = sellWot && costUnit.greaterThan(0) ? markupOf(costUnit, sellWot) : null;
-      l.markupAPct = mk ? Number(mk.toFixed(4)) : undefined;
+      const a = sellLevel(costUnit, o.gstPct, l.sellA, l.markupAPct);
+      const b = sellLevel(costUnit, o.gstPct, l.sellB, l.markupBPct);
+      const c = sellLevel(costUnit, o.gstPct, l.sellC, l.markupCPct);
+      const d = sellLevel(costUnit, o.gstPct, l.sellD, l.markupDPct);
+      if (a.fromMarkup) l.sellA = Number(a.sell);
+      if (b.fromMarkup) l.sellB = Number(b.sell);
+      if (c.fromMarkup) l.sellC = Number(c.sell);
+      if (d.fromMarkup) l.sellD = Number(d.sell);
+      l.markupAPct = a.markupPct ? Number(a.markupPct.toFixed(4)) : undefined;
+      l.markupBPct = b.markupPct ? Number(b.markupPct.toFixed(4)) : undefined;
+      l.markupCPct = c.markupPct ? Number(c.markupPct.toFixed(4)) : undefined;
+      l.markupDPct = d.markupPct ? Number(d.markupPct.toFixed(4)) : undefined;
       const billed = D(l.billedQty);
       return {
-        rate: l.rate, costIncl: billed.greaterThan(0) ? o.total.dividedBy(billed).toFixed(2) : null, sellA: l.sellA ?? null,
-        markupAPct: mk ? mk.toFixed(2) : null, marginAPct: sellWot && costUnit.greaterThan(0) ? marginOf(costUnit, sellWot).toFixed(2) : null,
+        rate: l.rate, costIncl: billed.greaterThan(0) ? o.total.dividedBy(billed).toFixed(2) : null,
+        sellA: l.sellA ?? null, markupAPct: pct2(a.markupPct), marginAPct: pct2(a.marginPct),
+        sellB: l.sellB ?? null, markupBPct: pct2(b.markupPct), marginBPct: pct2(b.marginPct),
+        sellC: l.sellC ?? null, markupCPct: pct2(c.markupPct), marginCPct: pct2(c.marginPct),
+        sellD: l.sellD ?? null, markupDPct: pct2(d.markupPct), marginDPct: pct2(d.marginPct),
+        hsn: items.get(l.uomId)!.item_hsn_code ?? null, minPrice: minPrices[i] ? minPrices[i]!.toFixed(2) : null,
       };
     });
 
@@ -766,7 +806,8 @@ export class PurchaseInvoiceService {
     });
     if (allocProblems.length) purRefuseMany(allocProblems[0].message, allocProblems);
 
-    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info,
+    return { supplier, interState, taxMode, items, taxes, charges, calc, allocs, grn, po, info, minPrices,
+             gstBreakup: gstBreakup(calcGstPieces(calcIn, calc)),
              billFrom, supplierState: theirState || null, posStcd: ourState || null, reverseCharge, agent };
   }
 
@@ -1003,13 +1044,16 @@ export class PurchaseInvoiceService {
         creditDays: dd.creditDays, goodsReceivedOn: dd.goodsReceivedOn, creditDueDate: dd.creditDue, msmeDueDate: dd.msmeDue, dueDate: dd.due,
         transport: h.transport ? this.bandInput(h.transport, dto, p) : null,
       },
-      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
+      // amount (P10) = total + the after-tax charge share, the PO's `amount` (Sale Entry's line Total); `total` stays taxable + tax
+      lines: c.lines.map((l, i) => ({ lineNo: dto.lines[i].lineNo, ...decimals(l), amount: l.total.plus(l.chrgAfterTax).toFixed(2),
+                                      rejectedQty: (p.grn.get(dto.lines[i].lineNo)?.rejected_billed ?? ZERO).toString(),
                                       ...p.info[i], poRefno: p.po.get(dto.lines[i].lineNo)?.po_refno ?? null, check: checks.get(dto.lines[i].lineNo) ?? null })),
       charges: c.charges.map((ch, i) => ({ chgId: dto.charges![i].chgId, ...decimals(ch), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.toFixed(2) })) })),
       totals: { ...decimals({ ...c, lines: undefined, charges: undefined }), ...this.panelTotals({ cgst: c.cgst, sgst: c.sgst, igst: c.igst, cess: c.cess, chargeTax: c.chargeTax,
                 netPayable: c.netPayable, printed: D(h.invoiceAmountPrinted), mode: h.mode ?? 'CREDIT', shortQty: c.lines.reduce((a, l) => a.plus(l.pendingShortQty), ZERO), shortLines: c.lines.filter((l) => l.pendingShortQty.greaterThan(0)).length, itcPending: c.itcPending }) },
       invoiceAmountPrinted: dto.header.invoiceAmountPrinted,
       difference: D(dto.header.invoiceAmountPrinted).minus(c.netPayable).toFixed(2),
+      gstBreakup: breakupJson(p.gstBreakup),
     };
   }
 
@@ -1136,6 +1180,7 @@ export class PurchaseInvoiceService {
           piiCgstAmt: o.cgst, piiSgstAmt: o.sgst, piiIgstAmt: o.igst, piiCessPct: D(l.cessPct), piiCessPerUnit: D(l.cessPerUnit), piiCessAmt: o.cess,
           piiTotalAmt: o.total, piiItcEligibleAmt: o.itcEligible, piiItcPendingAmt: o.itcPending, piiItcIneligibleAmt: o.itcIneligible,
           piiItcClass: o.itcClass, piiLandedCostWot: o.landedCostWot, piiMarkupAPct: l.markupAPct ?? null,
+          piiMarkupBPct: l.markupBPct ?? null, piiMarkupCPct: l.markupCPct ?? null, piiMarkupDPct: l.markupDPct ?? null, piiMinPrice: p.minPrices[i],
           piiSellA: l.sellA ?? null, piiSellB: l.sellB ?? null, piiSellC: l.sellC ?? null, piiSellD: l.sellD ?? null, piiMrp: l.mrp ?? null,
           piiPriceUpdateResult: p.settings?.allowPriceUpdate && p.settings.priceUpdate === 'UPDATE_PRICES' ? 'NONE' : 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
         },
@@ -1583,6 +1628,8 @@ export class PurchaseInvoiceService {
         rows: lines.map((l) => ({
           key: l.piiId, itemId: l.piiItemId, uomId: l.piiUomId, mrp: l.piiMrp ? Number(l.piiMrp) : null,
           levels: [{ level: 1, price: lv(l.piiSellA) }, { level: 2, price: lv(l.piiSellB) }, { level: 3, price: lv(l.piiSellC) }, { level: 4, price: lv(l.piiSellD) }],
+          // P9 — the line's MSP, written with the prices (MSP first: the prices are checked against it), only when it changes the stored one
+          minPrice: l.piiMinPrice === null ? null : Number(l.piiMinPrice),
         })),
       });
       for (const l of lines) {
@@ -1735,6 +1782,18 @@ function addDays(iso: string, days: number): string {
 }
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+/** Sell A–D as the line checks take them (only those given). */
+function sellsOf(v: (Prisma.Decimal.Value | null | undefined)[]): { level: 'A' | 'B' | 'C' | 'D'; price: Prisma.Decimal }[] {
+  const levels = ['A', 'B', 'C', 'D'] as const;
+  return v.flatMap((x, k) => (x === null || x === undefined ? [] : [{ level: levels[k], price: D(x) }]));
+}
+/** P12 — the GST break-up as the answer carries it: rate as the lines show it, money to 2 places. */
+function breakupJson(rows: GstBreakupRow[]) {
+  return rows.map((r) => ({
+    gstPct: r.gstPct.toFixed(Math.max(2, Math.min(6, r.gstPct.decimalPlaces()))),
+    taxable: r.taxable.toFixed(2), cgst: r.cgst.toFixed(2), sgst: r.sgst.toFixed(2), igst: r.igst.toFixed(2), cess: r.cess.toFixed(2), total: r.total.toFixed(2),
+  }));
 }
 function decimals(o: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};

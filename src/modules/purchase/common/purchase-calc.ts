@@ -391,6 +391,85 @@ export function marginOf(costWot: Prisma.Decimal.Value, sellWot: Prisma.Decimal.
   return s.isZero() ? ZERO : s.minus(D(costWot)).times(HUNDRED).dividedBy(s).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 }
 
+/**
+ * ENT-18 / purchase entry P8 — one selling level (A, B, C or D) of a bill line, all four the same way:
+ *  - a typed sell price wins;
+ *  - with none, a typed markup % prices it on the cost WITHOUT tax (`costWot` per billed unit), GST added, 2 places;
+ *  - the markup and margin are read back from sell ÷ (1 + GST %). No cost, or no (or a zero) sell, gives none.
+ * `fromMarkup` says the sell price came from the markup (the caller keeps it for the save).
+ */
+export function sellLevel(
+  costWot: Prisma.Decimal,
+  gstPct: Prisma.Decimal.Value,
+  sell: Prisma.Decimal.Value | null | undefined,
+  markupPct: Prisma.Decimal.Value | null | undefined,
+): { sell: Prisma.Decimal | null; fromMarkup: boolean; markupPct: Prisma.Decimal | null; marginPct: Prisma.Decimal | null } {
+  const gstMul = D(1).plus(D(gstPct).dividedBy(HUNDRED));
+  const typed = sell !== null && sell !== undefined;
+  const fromMarkup = !typed && markupPct !== null && markupPct !== undefined && costWot.greaterThan(0);
+  const price = typed ? D(sell) : fromMarkup ? r2(priceFromMarkup(costWot, markupPct!).times(gstMul)) : null;
+  const sellWot = price && !price.isZero() ? price.dividedBy(gstMul) : null;
+  const priced = !!sellWot && costWot.greaterThan(0);
+  return {
+    sell: price, fromMarkup,
+    markupPct: priced ? markupOf(costWot, sellWot!) : null,
+    marginPct: priced ? marginOf(costWot, sellWot!) : null,
+  };
+}
+
+/** One rate of the GST break-up (purchase entry P12). */
+export interface GstBreakupRow {
+  gstPct: Prisma.Decimal;
+  taxable: Prisma.Decimal;
+  cgst: Prisma.Decimal;
+  sgst: Prisma.Decimal;
+  igst: Prisma.Decimal;
+  cess: Prisma.Decimal;
+  total: Prisma.Decimal;
+}
+
+/**
+ * The bill's GST by rate — purchase entry P12. Each piece of taxable value with its tax:
+ *  - a line: its taxable (net gross + before-tax charge share, taxed at the line's rate) with its GST and cess,
+ *    at the line's GST % (0 for a bill of supply / RCM line);
+ *  - an after-tax on-bill charge that carries its own GST: its signed amount and GST at the charge's rate.
+ * So Σ taxable = the bill's taxable + those charges, Σ GST = the lines' + the charges' (chargeTax), Σ cess = the bill's.
+ * Grouped by rate, ascending; a rate with nothing on it is dropped.
+ */
+export function gstBreakup(
+  pieces: ReadonlyArray<{ gstPct: Prisma.Decimal.Value; taxable: Prisma.Decimal.Value; cgst: Prisma.Decimal.Value; sgst: Prisma.Decimal.Value; igst: Prisma.Decimal.Value; cess?: Prisma.Decimal.Value | null }>,
+): GstBreakupRow[] {
+  const by = new Map<string, GstBreakupRow>();
+  for (const p of pieces) {
+    const pct = D(p.gstPct);
+    const key = pct.toFixed(6);
+    const row = by.get(key) ?? { gstPct: pct, taxable: ZERO, cgst: ZERO, sgst: ZERO, igst: ZERO, cess: ZERO, total: ZERO };
+    row.taxable = row.taxable.plus(D(p.taxable));
+    row.cgst = row.cgst.plus(D(p.cgst));
+    row.sgst = row.sgst.plus(D(p.sgst));
+    row.igst = row.igst.plus(D(p.igst));
+    row.cess = row.cess.plus(D(p.cess));
+    by.set(key, row);
+  }
+  return [...by.values()]
+    .map((r) => ({ ...r, total: r.taxable.plus(r.cgst).plus(r.sgst).plus(r.igst).plus(r.cess) }))
+    .filter((r) => !(r.taxable.isZero() && r.cgst.isZero() && r.sgst.isZero() && r.igst.isZero() && r.cess.isZero()))
+    .sort((a, b) => a.gstPct.comparedTo(b.gstPct));
+}
+
+/** The GST break-up pieces of one calculation: every line, and every after-tax on-bill charge with its own GST. */
+export function calcGstPieces(input: CalcIn, out: CalcOut) {
+  const noTaxSupplier = input.supplierTaxMode === 'COMPOSITION' || input.supplierTaxMode === 'UNREGISTERED';
+  const lines = out.lines.map((l) => ({ gstPct: l.gstPct, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst, igst: l.igst, cess: l.cess }));
+  const charges = out.charges.flatMap((c, i) => {
+    const ci = (input.charges ?? [])[i];
+    // the same test calcPurchase taxes a charge's own GST by
+    if (!ci || !ci.onBill || ci.beforeTax || noTaxSupplier || D(ci.taxPct).isZero()) return [];
+    return [{ gstPct: D(ci.taxPct), taxable: c.amount, cgst: c.cgst, sgst: c.sgst, igst: c.igst, cess: ZERO }];
+  });
+  return [...lines, ...charges];
+}
+
 /** Back-solve the rate from a typed cost WITH tax (3.0's tax-inclusive entry): rate = (cost − cess/unit) ÷ (1 + (gst + cess)%). */
 export function rateFromInclusiveCost(costIncl: Prisma.Decimal.Value, gstPct: Prisma.Decimal.Value, cessPct?: Prisma.Decimal.Value | null, cessPerUnit?: Prisma.Decimal.Value | null): Prisma.Decimal {
   const div = HUNDRED.plus(D(gstPct)).plus(D(cessPct)).dividedBy(HUNDRED);
