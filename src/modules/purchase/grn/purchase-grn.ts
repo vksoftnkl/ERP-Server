@@ -536,7 +536,8 @@ export class PurchaseGrnService {
       header: { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: DOC, srcDocId: grnId,
         docLabel: 'GRN', docRefno: g.grnRefno, docDate, usrRefno: g.grnChallanNo, docAmount: num2(g.grnProvisionalValue), partyId: g.grnSupplierId,
         userId: actor, sessionId: g.grnSessionId, deviceId: g.grnDeviceId, remarks: g.grnRemarks ?? `GRN ${g.grnRefno}`, createdBy: actor,
-        presetRefno: g.grnRefno, presetNo: g.grnSlno },
+        // no presetNo: grn_slno runs per device and would collide on ux_avh_voucher_no (per branch + type)
+        presetRefno: g.grnRefno },
       legs: legs.filter((l) => l.amount >= 0.005),
     });
     let k = 0;

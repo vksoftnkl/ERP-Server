@@ -522,7 +522,7 @@ export class PurchaseInvoiceService {
         actor, cancelledOn);
       const left = forward.plus(reversed);   // the mirror took `forward` out of INVENTORY; only −`reversed` left stock
       if (!left.toDecimalPlaces(2).isZero()) {
-        // a journal of its own series — the PUR series is the bills' own numbers (presetNo = pi_slno)
+        // a journal of its own series — the PUR series carries the bills' own refnos
         const [vt] = await tx.$queryRaw<{ id: number }[]>`SELECT vchr_type_id AS id FROM accounts.acc_voucher_types WHERE vchr_type_code = 'Jrl' AND vchr_is_active LIMIT 1`;
         if (!vt) purRefuse('Voucher type Jrl (Journal) is missing.', PUR.VOUCHER_TYPE_MISSING);
         const amt = Math.abs(num(left));
@@ -1525,7 +1525,10 @@ export class PurchaseInvoiceService {
         srcModule: SRC_MODULE, srcDocType: DOC_TYPE, srcDocId: piId, docLabel: 'Purchase', docRefno: pi.piRefno, docDate,
         usrRefno: pi.piSupplierInvNo, docAmount: num(pi.piNetPayable), roundOff: num(pi.piRoundOff), partyId: pi.piSupplierId,
         userId: actor, sessionId: pi.piSessionId, deviceId: pi.piDeviceId, remarks: pi.piRemarks ?? `Purchase ${pi.piSupplierInvNo}`,
-        createdBy: actor, presetRefno: pi.piRefno, presetNo: pi.piSlno,
+        // No presetNo: pi_slno runs per DEVICE (PUR/2026-2027/D8/00001), but ux_avh_voucher_no is per branch + type,
+        // so a second device's bill No 1 hit the first device's voucher No 1 (23505 → 500). avh_voucher_no takes the
+        // company serial instead, as stock vouchers do; avh_voucher_refno is still the bill's own number.
+        createdBy: actor, presetRefno: pi.piRefno,
       },
       legs,
     });
@@ -1729,7 +1732,7 @@ export class PurchaseInvoiceService {
       header: { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: SRC_MODULE, srcDocType: 'PURCHASE_RETURN', srcDocId: pr.prId,
         docLabel: 'Purchase Return', docRefno: refno, docDate, usrRefno: null, docAmount: num(total), partyId: pi.piSupplierId,
         userId: actor, sessionId: pi.piSessionId, deviceId: pi.piDeviceId, remarks: `Rejected at ${grnRefs}, billed in ${pi.piRefno}`, createdBy: actor,
-        presetRefno: refno, presetNo: slno },
+        presetRefno: refno }, // no presetNo: the per-device slno collides on ux_avh_voucher_no (see the bill's post)
       legs,
     });
     await raiseBillRow(tx, { companyId: pi.piCompanyId, branchId: pi.piBranchId, accYear, partyId: pi.piSupplierId, billType: 'PURCHASE_RETURN', drCr: 'DR',

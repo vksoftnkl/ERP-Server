@@ -643,7 +643,8 @@ export class PurchaseReturnService {
       header: { companyId: pr.prCompanyId, branchId: pr.prBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: DOC, srcDocId: prId,
         docLabel: 'Purchase Return', docRefno: pr.prRefno, docDate, usrRefno: pr.prSupplierCnNo, docAmount: num2(docAmount), partyId: pr.prSupplierId,
         userId: actor, sessionId: pr.prSessionId, deviceId: pr.prDeviceId, remarks: pr.prRemarks ?? `Return against ${pr.prOurRef}`, createdBy: actor,
-        presetRefno: pr.prRefno, presetNo: pr.prSlno },
+        // no presetNo: pr_slno runs per device and would collide on ux_avh_voucher_no (per branch + type)
+        presetRefno: pr.prRefno },
       legs,
     });
     // bill-wise: the supplier owes us the RETURN value (set off on the next payment, or kept as advance)

@@ -479,7 +479,8 @@ export class PurchaseShortageService {
         header: { companyId: r.psrCompanyId, branchId: r.psrBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: DOC, srcDocId: psrId,
           docLabel: 'Shortage Receipt', docRefno: r.psrRefno, docDate, usrRefno: r.psrChallanNo, docAmount: num2(stockDr), partyId: r.psrSupplierId,
           userId: actor, sessionId: r.psrSessionId, deviceId: r.psrDeviceId, remarks: r.psrRemarks ?? `Shortage receipt ${r.psrRefno}`, createdBy: actor,
-          presetRefno: r.psrRefno, presetNo: r.psrSlno },
+          // no presetNo: psr_slno runs per device and would collide on ux_avh_voucher_no (per branch + type)
+          presetRefno: r.psrRefno },
         legs,
       });
       voucherId = posted.voucherId;
