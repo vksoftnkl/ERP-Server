@@ -148,12 +148,64 @@ interface SourceLine {
   basisQty: Prisma.Decimal;           // the qty the money is per (billed / received + damaged)
   taxable: Prisma.Decimal; cgst: Prisma.Decimal; sgst: Prisma.Decimal; igst: Prisma.Decimal; cess: Prisma.Decimal;
   taxId: string | null; gstPct: Prisma.Decimal; rate: Prisma.Decimal;
+  weight: Prisma.Decimal | null;      // the whole line's weight, kg (pii_weight / gri_weight)
+}
+/** One stock.stock_balance row (base units) — the return rows' Stock / Lot stock / Pur. cost read from these. */
+export interface ReturnStockRow { item_id: string; godown_id: string; bucket: string; lot_id: string | null; on_hand: Prisma.Decimal | null; rate: Prisma.Decimal | null }
+
+/**
+ * PR-2 (plan 2026-11-04 decision 8): kg per line unit — the source line's weight ÷ the qty its money is per; when the
+ * line has none, the unit's own weight (item_unit_conversion.iuc_uom_weight). Null when neither is stated.
+ */
+export function returnWeightPerUnit(lineWeight: Prisma.Decimal | null, basisQty: Prisma.Decimal, uomWeight: Prisma.Decimal | null) {
+  if (lineWeight && lineWeight.greaterThan(0) && basisQty.greaterThan(0)) return lineWeight.dividedBy(basisQty);
+  if (uomWeight && uomWeight.greaterThan(0)) return uomWeight;
+  return null;
+}
+
+/**
+ * PR-2 display figures of one return row (decisions 5–7, Q2 = a), in the row's line unit; nothing here is posted.
+ *  - godownStock: Σ on hand of the item in the row's godown and bucket; lotStock: that lot's own row;
+ *  - costRate: the lot's sbl_avg_cost_rate × the unit factor (6 dp) — the landed cost the lot leaves stock at; once
+ *    posted, `postedCost` (pri_lot_cost_value) ÷ (qty + free) instead; costValue = costRate × (qty + free) (2 dp);
+ *  - returnRate: the debit per unit incl. GST = the row total ÷ (qty + free) (2 dp), null when nothing goes back.
+ */
+export function returnRowFigures(stock: ReturnStockRow[], a: {
+  itemId: string; godownId: string | null; bucket: string | null; lotId: string | null; factor: Prisma.Decimal;
+  qty: Prisma.Decimal; freeQty: Prisma.Decimal; total: Prisma.Decimal; postedCost?: Prisma.Decimal | null;
+}) {
+  const f = a.factor.isZero() ? D(1) : a.factor;
+  const q = a.qty.plus(a.freeQty);
+  const here = a.godownId && a.bucket ? stock.filter((r) => r.item_id === a.itemId && r.godown_id === a.godownId && r.bucket === a.bucket) : [];
+  const lot = a.lotId ? here.find((r) => r.lot_id === a.lotId) : undefined;
+  const inUnit = (base: Prisma.Decimal) => base.dividedBy(f).toDecimalPlaces(3).toString();
+  let costRate: Prisma.Decimal | null = null, costValue: Prisma.Decimal | null = null;
+  if (a.postedCost != null) {
+    costValue = a.postedCost;
+    costRate = q.isZero() ? null : a.postedCost.dividedBy(q).toDecimalPlaces(6);
+  } else if (lot?.rate != null) {
+    const perUnit = D(lot.rate).times(f);
+    costRate = perUnit.toDecimalPlaces(6);
+    costValue = r2(perUnit.times(q));
+  }
+  return {
+    godownStock: a.godownId && a.bucket ? inUnit(here.reduce((s, r) => s.plus(D(r.on_hand)), ZERO)) : null,
+    // a lot with no balance row in that godown / bucket holds nothing there
+    lotStock: a.lotId && a.godownId && a.bucket ? inUnit(D(lot?.on_hand)) : null,
+    costRate: costRate?.toFixed(6) ?? null, costValue: costValue?.toFixed(2) ?? null,
+    returnRate: q.isZero() ? null : r2(a.total.dividedBy(q)).toFixed(2),
+  };
 }
 export interface SettleResult {
   returnItemId: string; refno: string; lineNo: number; action: string; receivedAs: string | null; amount: Prisma.Decimal; gstReavailed: Prisma.Decimal;
   open: Prisma.Decimal; companyId: string; branchId: string; legs: VoucherLeg[]; dryRun: boolean; settlementId: string | null; accYear: string; voucherRefno: string | null;
 }
-interface SourceDoc { id: string; accYear: string; refno: string; supplierId: string; supplierInvNo: string | null; status: string; docType: 'PURCHASE_BILL' | 'GRN'; posStcd: string | null; branchId: string; docDate: Date }
+interface SourceDoc {
+  id: string; accYear: string; refno: string; supplierId: string; supplierInvNo: string | null; status: string; docType: 'PURCHASE_BILL' | 'GRN'; posStcd: string | null;
+  companyId: string; branchId: string; docDate: Date;
+  /** PR-3: the bill's net payable / the GRN's provisional value. */
+  amount: Prisma.Decimal;
+}
 /** "lines.3.qty" → the row's own number. */
 const lineNoOf = (dto: SaveReturnDto, field: string) => {
   const m = /^lines\.(\d+)/.exec(field);
@@ -180,7 +232,7 @@ export class PurchaseReturnService {
       const pi = await db.purInvoice.findFirst({ where: { piId: id, piAccYear: accYear, piIsDeleted: false } });
       if (!pi) purNotFound(`Purchase bill ${id} not found`);
       return { id, accYear, refno: pi.piRefno, supplierId: pi.piSupplierId, supplierInvNo: pi.piSupplierInvNo, status: pi.piStatus, docType: 'PURCHASE_BILL',
-               posStcd: pi.piPosStcd ?? null, branchId: pi.piBranchId, docDate: pi.piDocDate };
+               posStcd: pi.piPosStcd ?? null, companyId: pi.piCompanyId, branchId: pi.piBranchId, docDate: pi.piDocDate, amount: pi.piNetPayable };
     }
     const g = await db.purGrn.findFirst({ where: { grnId: id, grnAccYear: accYear, grnIsDeleted: false } });
     if (!g) purNotFound(`GRN ${id} not found`);
@@ -189,7 +241,7 @@ export class PurchaseReturnService {
       SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
         FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id WHERE b.br_id = ${g.grnBranchId}::uuid`;
     return { id, accYear, refno: g.grnRefno, supplierId: g.grnSupplierId, supplierInvNo: g.grnChallanNo, status: g.grnStatus, docType: 'GRN',
-             posStcd: st?.state?.trim().slice(0, 2) || null, branchId: g.grnBranchId, docDate: g.grnDocDate };
+             posStcd: st?.state?.trim().slice(0, 2) || null, companyId: g.grnCompanyId, branchId: g.grnBranchId, docDate: g.grnDocDate, amount: g.grnProvisionalValue };
   }
 
   private async sourceLines(db: Tx | PrismaService, src: SourceDoc): Promise<Map<string, SourceLine>> {
@@ -200,14 +252,14 @@ export class PurchaseReturnService {
         srcItemId: l.piiId, lineNo: l.piiLineNo, itemId: l.piiItemId, uomId: l.piiUomId, baseUomId: l.piiBaseUomId, factor: l.piiToBaseFactor, hsn: l.piiHsnCode,
         inQty: l.piiReceivedQty.plus(l.piiDamagedQty).plus(l.piiFreeQty), basisQty: l.piiBilledQty,
         taxable: l.piiTaxableAmt, cgst: l.piiCgstAmt, sgst: l.piiSgstAmt, igst: l.piiIgstAmt, cess: l.piiCessAmt,
-        taxId: l.piiTaxId, gstPct: l.piiGstPct, rate: l.piiRate,
+        taxId: l.piiTaxId, gstPct: l.piiGstPct, rate: l.piiRate, weight: l.piiWeight,
       });
     } else {
       const ls = await db.purGrnItem.findMany({ where: { griGrnId: src.id, griAccYear: src.accYear, griIsDeleted: false }, orderBy: { griLineNo: 'asc' } });
       for (const l of ls) out.set(l.griId, {
         srcItemId: l.griId, lineNo: l.griLineNo, itemId: l.griItemId, uomId: l.griUomId, baseUomId: l.griBaseUomId, factor: l.griToBaseFactor, hsn: l.griHsnCode,
         inQty: l.griReceivedQty.plus(l.griDamagedQty).plus(l.griFreeQty), basisQty: l.griReceivedQty.plus(l.griDamagedQty),
-        taxable: l.griValue, cgst: ZERO, sgst: ZERO, igst: ZERO, cess: ZERO, taxId: null, gstPct: ZERO, rate: l.griProvisionalRate,
+        taxable: l.griValue, cgst: ZERO, sgst: ZERO, igst: ZERO, cess: ZERO, taxId: null, gstPct: ZERO, rate: l.griProvisionalRate, weight: l.griWeight,
       });
     }
     return out;
@@ -227,22 +279,45 @@ export class PurchaseReturnService {
   /** The source lines' lots: what the bill / GRN brought in, per allocation row. A bill line billed off a GRN line has
    *  no rows of its own — the goods came in on the GRN, so its lots are the GRN line's (keyed to the bill line). */
   private async sourceLots(db: Tx | PrismaService, src: SourceDoc) {
-    return db.$queryRaw<{ line_id: string; lot_id: string; bucket: string; godown_id: string; batch_no: string | null; expiry: Date | null; mrp: Prisma.Decimal | null; qty: Prisma.Decimal }[]>`
-      SELECT line_id, lot_id, bucket, godown_id, batch_no, expiry, mrp, qty FROM (
+    return db.$queryRaw<{ line_id: string; lot_id: string; bucket: string; godown_id: string; batch_no: string | null; expiry: Date | null; mrp: Prisma.Decimal | null; qty: Prisma.Decimal; barcode: string | null }[]>`
+      SELECT line_id, lot_id, bucket, godown_id, batch_no, expiry, mrp, qty, barcode FROM (
         SELECT pia_line_id AS line_id, pia_lot_id AS lot_id, pia_bucket AS bucket, pia_godown_id AS godown_id, pia_batch_no AS batch_no,
-               pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty, 0 AS line_no, pia_row_no AS row_no
+               pia_expiry_date AS expiry, pia_mrp AS mrp, pia_qty + pia_free_qty AS qty, NULLIF(btrim(pia_barcode), '') AS barcode, 0 AS line_no, pia_row_no AS row_no
           FROM purchase.pur_item_alloc
          WHERE pia_doc_type = ${src.docType} AND pia_doc_id = ${src.id}::uuid AND pia_acc_year = ${src.accYear}::bpchar
            AND NOT pia_is_deleted AND pia_lot_id IS NOT NULL
         UNION ALL
         SELECT pii.pii_id, a.pia_lot_id, a.pia_bucket, a.pia_godown_id, a.pia_batch_no, a.pia_expiry_date, a.pia_mrp, a.pia_qty + a.pia_free_qty,
-               pii.pii_line_no, a.pia_row_no
+               NULLIF(btrim(a.pia_barcode), ''), pii.pii_line_no, a.pia_row_no
           FROM purchase.pur_invoice_item pii
           JOIN purchase.pur_item_alloc a ON a.pia_doc_type = 'GRN' AND a.pia_line_id = pii.pii_src_item_id AND a.pia_acc_year = pii.pii_src_doc_year
          WHERE ${src.docType} = 'PURCHASE_BILL' AND pii.pii_pi_id = ${src.id}::uuid AND pii.pii_acc_year = ${src.accYear}::bpchar
            AND pii.pii_src_doc_type = 'GRN' AND NOT pii.pii_is_deleted AND NOT a.pia_is_deleted AND a.pia_lot_id IS NOT NULL
       ) x
        ORDER BY line_no, row_no`;
+  }
+
+  /** Per line unit (item_unit_conversion id): its own weight (kg, iuc_uom_weight) and the item's default barcode — PR-2. */
+  private async unitExtras(db: Tx | PrismaService, uomIds: string[]) {
+    const ids = [...new Set(uomIds.filter(Boolean))];
+    if (!ids.length) return new Map<string, { uomWeight: Prisma.Decimal | null; defaultBarcode: string | null }>();
+    const rows = await db.$queryRaw<{ iuc_id: string; uom_weight: Prisma.Decimal | null; barcode: string | null }[]>`
+      SELECT iuc.iuc_id, iuc.iuc_uom_weight AS uom_weight, NULLIF(btrim(im.item_default_barcode), '') AS barcode
+        FROM inventory.item_unit_conversion iuc JOIN inventory.item_master im ON im.item_id = iuc.iuc_item_id
+       WHERE iuc.iuc_id = ANY(${ids}::uuid[])`;
+    return new Map(rows.map((r) => [r.iuc_id, { uomWeight: r.uom_weight != null ? D(r.uom_weight) : null, defaultBarcode: r.barcode }]));
+  }
+
+  /** The stock_balance rows of these items in these godowns (company + branch) — Stock / Lot stock / Pur. cost, display only. */
+  private async stockRows(db: Tx | PrismaService, companyId: string, branchId: string, itemIds: string[], godownIds: (string | null | undefined)[]) {
+    const items = [...new Set(itemIds.filter(Boolean))], gds = [...new Set(godownIds.filter((x): x is string => !!x))];
+    if (!items.length || !gds.length) return [] as ReturnStockRow[];
+    return db.$queryRaw<ReturnStockRow[]>`
+      SELECT sbl_item_id AS item_id, sbl_godown_id AS godown_id, sbl_bucket AS bucket, sbl_lot_id AS lot_id,
+             sbl_on_hand_qty AS on_hand, sbl_avg_cost_rate AS rate
+        FROM stock.stock_balance
+       WHERE sbl_company_id = ${companyId}::uuid AND sbl_branch_id = ${branchId}::uuid
+         AND sbl_item_id = ANY(${items}::uuid[]) AND sbl_godown_id = ANY(${gds}::uuid[]) AND NOT sbl_is_deleted`;
   }
 
   /** GRN lines already billed (line id → the bill's number): their goods go back against the bill, not the GRN. */
@@ -289,19 +364,36 @@ export class PurchaseReturnService {
     const [lines, returned, lots] = await Promise.all([
       this.sourceLines(this.prisma, src), this.returnedQty(this.prisma, src.id, q.exceptPrId), this.sourceLots(this.prisma, src),
     ]);
-    const names = await unitNames(this.prisma, [...lines.values()].map((l) => l.uomId));
-    const [sup] = await this.prisma.$queryRaw<{ sup_name: string }[]>`SELECT sup_name FROM purchase.suppliers WHERE sup_id = ${src.supplierId}::uuid`;
+    const all = [...lines.values()];
+    const [names, extras, stock, supRows] = await Promise.all([
+      unitNames(this.prisma, all.map((l) => l.uomId)),
+      this.unitExtras(this.prisma, all.map((l) => l.uomId)),
+      this.stockRows(this.prisma, src.companyId, src.branchId, all.map((l) => l.itemId), lots.map((x) => x.godown_id)),
+      this.prisma.$queryRaw<{ sup_name: string }[]>`SELECT sup_name FROM purchase.suppliers WHERE sup_id = ${src.supplierId}::uuid`,
+    ]);
+    const sup = supRows[0];
     return jsonSafe({
-      source: { ...src, supplierName: sup?.sup_name ?? null },
-      lines: [...lines.values()].map((l) => {
+      // PR-3: the bill's value and line count beside its numbers (supplierRef = supplierInvNo, the name the screen's header uses)
+      source: { ...src, amount: src.amount.toFixed(2), lineCount: lines.size, supplierRef: src.supplierInvNo, supplierName: sup?.sup_name ?? null },
+      lines: all.map((l) => {
         const done = returned.get(l.srcItemId) ?? ZERO;
         const one = this.money(l, D(1));
+        const mine = lots.filter((x) => x.line_id === l.srcItemId);
+        const ex = extras.get(l.uomId);
+        const wpu = returnWeightPerUnit(l.weight, l.basisQty, ex?.uomWeight ?? null);
         return {
           srcItemId: l.srcItemId, lineNo: l.lineNo, itemId: l.itemId, uomId: l.uomId, ...names.get(l.uomId),
           inQty: l.inQty, returnedQty: done, returnableQty: l.inQty.minus(done).isNegative() ? ZERO : l.inQty.minus(done),
           rate: l.rate, gstPct: l.gstPct, unitTaxable: l.basisQty.isZero() ? ZERO : l.taxable.dividedBy(l.basisQty).toDecimalPlaces(4),
           unitTotal: one.total,
-          lots: lots.filter((x) => x.line_id === l.srcItemId).map((x) => ({ lotId: x.lot_id, bucket: x.bucket, godownId: x.godown_id, batchNo: x.batch_no, expiryDate: x.expiry, mrp: x.mrp, qty: x.qty })),
+          // PR-2: the first lot's barcode, else the item's default; kg per line unit
+          barcode: mine.find((x) => x.barcode)?.barcode ?? ex?.defaultBarcode ?? null,
+          weightPerUnit: wpu ? wpu.toDecimalPlaces(6).toString() : null,
+          lots: mine.map((x) => {
+            const fig = returnRowFigures(stock, { itemId: l.itemId, godownId: x.godown_id, bucket: x.bucket, lotId: x.lot_id, factor: l.factor, qty: D(1), freeQty: ZERO, total: ZERO });
+            return { lotId: x.lot_id, bucket: x.bucket, godownId: x.godown_id, batchNo: x.batch_no, expiryDate: x.expiry, mrp: x.mrp, qty: x.qty,
+                     onHand: fig.lotStock, costRate: fig.costRate, barcode: x.barcode };
+          }),
         };
       }),
     });
@@ -365,7 +457,15 @@ export class PurchaseReturnService {
       const left = s.inQty.minus(returned.get(srcItemId) ?? ZERO);
       if (q.greaterThan(left)) problems.push({ field: 'lines', code: 'PUR_RETURN_QTY_EXCEEDS', message: `${src.refno} line ${s.lineNo}: ${q} to return, only ${left.isNegative() ? 0 : left} left of what came in` });
     }
-    const rows = resolved.filter((r): r is NonNullable<typeof r> => !!r).map((r) => ({ ...r, m: this.money(r.s, D(r.l.qty)) }));   // free goods carry no money
+    // PR-2: the row's weight (kg, for qty + free — saved as pri_weight) and barcode (its lot's, else the item's default)
+    const extras = await this.unitExtras(db, [...new Set(resolved.filter((r) => !!r).map((r) => r!.s.uomId))]);
+    const rows = resolved.filter((r): r is NonNullable<typeof r> => !!r).map((r) => {
+      const ex = extras.get(r.s.uomId);
+      const wpu = returnWeightPerUnit(r.s.weight, r.s.basisQty, ex?.uomWeight ?? null);
+      return { ...r, m: this.money(r.s, D(r.l.qty)),   // free goods carry no money
+               weight: wpu ? wpu.times(D(r.l.qty).plus(D(r.l.freeQty))).toDecimalPlaces(3) : null,
+               barcode: r.lot?.barcode ?? ex?.defaultBarcode ?? null };
+    });
     let returnValue = ZERO, claimValue = ZERO, itcDestroyed = ZERO, itcReversed = ZERO, itcOnReplace = ZERO, replaceBase = ZERO, goodsValue = ZERO;
     for (const r of rows) {
       const o = r.l.outcome;
@@ -414,8 +514,12 @@ export class PurchaseReturnService {
     const issues: PurIssue[] = p.problems.map((x) => ({ ...x, level: 'REFUSE' as const, lineNo: lineNoOf(dto, x.field), needsRight: null }));
     issues.push(...await this.ewbIssues(this.prisma, h, p));
     const names = await unitNames(this.prisma, p.rows.map((r) => r.s.uomId));
+    // PR-2: Stock / Lot stock in the row's godown (its lot's; else the header's) and bucket, Pur. cost live off the lot
+    const gdOf = (r: (typeof p.rows)[number]) => r.lot?.godown_id ?? h.godownId ?? null;
+    const stock = await this.stockRows(this.prisma, h.companyId, h.branchId, p.rows.map((r) => r.s.itemId), p.rows.map(gdOf));
     return jsonSafe({
       header: { supplierId: p.src.supplierId, supplierName: parties.get(p.src.supplierId) ?? null, srcRefno: p.src.refno, srcDocDate: p.src.docDate,
+                srcAmount: p.src.amount.toFixed(2), srcSupplierRef: p.src.supplierInvNo, srcLineCount: p.lines.size,
                 godownId: p.godownId, placeOfSupply: p.posStcd },
       lines: p.rows.map((r) => ({
         lineNo: r.l.lineNo, srcItemId: r.s.srcItemId, srcLineNo: r.s.lineNo, itemId: r.s.itemId, ...names.get(r.s.uomId), outcome: r.l.outcome, outcomeText: OUTCOME_TEXT[r.l.outcome],
@@ -423,6 +527,10 @@ export class PurchaseReturnService {
         returnableQty: Prisma.Decimal.max(r.s.inQty.minus(p.returned.get(r.s.srcItemId) ?? ZERO), 0),
         lotId: r.lot?.lot_id ?? null, godownId: r.lot?.godown_id ?? null, batchNo: r.lot?.batch_no ?? null, expiryDate: r.lot?.expiry ?? null, mrp: r.lot?.mrp ?? null,
         rate: r.s.rate, gstPct: r.s.gstPct, taxable: r.m.taxable, tax: r.m.tax, total: r.m.total,
+        barcode: r.barcode, weight: r.weight?.toFixed(3) ?? null,
+        ...returnRowFigures(stock, { itemId: r.s.itemId, godownId: gdOf(r), bucket: r.bucket, lotId: r.lot?.lot_id ?? null, factor: r.s.factor,
+                                     qty: D(r.l.qty), freeQty: D(r.l.freeQty), total: r.m.total }),
+        remarks: r.l.remarks ?? null,
         ...this.rowWrites(h.kind, r.l.outcome, r.m, r.against, r.claimParty ? parties.get(r.claimParty) ?? null : null, parties.get(p.src.supplierId) ?? null),
       })),
       totals: this.totalsOf(p, balance, true),
@@ -520,11 +628,12 @@ export class PurchaseReturnService {
           priCgstAmt: m.cgst, priSgstAmt: m.sgst, priIgstAmt: m.igst, priCessAmt: m.cess, priTotalAmt: m.total,
           priItcReversedInBooks: h.kind === 'AGAINST_INVOICE',   // every outcome, Replace too (user 2026-10-29)
           priSupplierCnStatus: l.outcome === 'RETURN' && h.kind === 'AGAINST_INVOICE' ? 'PENDING' : 'NONE',
-          priClaimAgainst: r.against, priClaimPartyId: r.claimParty, priRemarks: l.remarks ?? null, priCreatedBy: actor,
+          priClaimAgainst: r.against, priClaimPartyId: r.claimParty, priRemarks: l.remarks ?? null, priWeight: r.weight, priCreatedBy: actor,
         }, select: { priId: true } });
         await tx.purItemAlloc.create({ data: {
           piaCompanyId: h.companyId, piaBranchId: h.branchId, piaAccYear: h.accYear, piaDocType: DOC, piaDocId: prId!, piaLineId: row.priId, piaRowNo: 1,
           piaGodownId: r.lot!.godown_id, piaBucket: r.lot!.bucket, piaLotId: r.lot!.lot_id, piaBatchNo: r.lot!.batch_no, piaExpiryDate: r.lot!.expiry, piaMrp: r.lot!.mrp,
+          piaBarcode: r.lot!.barcode,   // PR-2: the source lot's own barcode (the debit note prints it)
           piaQty: D(l.qty), piaFreeQty: D(l.freeQty), piaCreatedBy: actor,
         } });
       }
@@ -677,7 +786,11 @@ export class PurchaseReturnService {
     const settled = await this.settledByItem(this.prisma, lines.map((l) => l.priId));
     // the source line's figures (billed / came in / returned by OTHER returns / returnable), the reasons, the party names, the godown
     const src = await this.sourceDoc(this.prisma, header.prKind, header.prSrcDocId, header.prSrcAccYear);
-    const [srcLines, returnedOthers] = await Promise.all([this.sourceLines(this.prisma, src), this.returnedQty(this.prisma, src.id, prId)]);
+    const [srcLines, returnedOthers, extras, stock] = await Promise.all([this.sourceLines(this.prisma, src), this.returnedQty(this.prisma, src.id, prId),
+      this.unitExtras(this.prisma, lines.map((l) => l.priUomId)),
+      this.stockRows(this.prisma, header.prCompanyId, header.prBranchId, lines.map((l) => l.priItemId), allocs.map((a) => a.piaGodownId))]);
+    // PR-2: once posted (cancelled after a post too) Pur. cost is what the post took out at (pri_lot_cost_value); a draft reads the lot live
+    const posted = header.prStatus === 'POSTED' || !!header.prPostedVoucherId;
     const reasons = await this.prisma.$queryRaw<{ srm_id: string; srm_name: string }[]>`
       SELECT srm_id, srm_name FROM stock.stock_reason_master WHERE srm_id = ANY(${lines.map((l) => l.priReasonId).filter((x): x is string => !!x)}::uuid[])`;
     const reasonName = new Map(reasons.map((r) => [r.srm_id, r.srm_name]));
@@ -699,6 +812,8 @@ export class PurchaseReturnService {
     return jsonSafe({
       header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null, placeOfSupply: header.prPosStcd ?? src.posStcd,
                 srcRefno: src.refno, srcDocDate: src.docDate,
+                // PR-3: the bill's value, the supplier's bill no (challan on a GRN), its line count
+                srcAmount: src.amount.toFixed(2), srcSupplierRef: src.supplierInvNo, srcLineCount: srcLines.size,
                 // the screen's header "Claim on (other)": the transporter / insurer of the first claim row that is not on the supplier
                 claimPartyId: claimParty?.priClaimPartyId ?? null, claimPartyName: claimParty?.priClaimPartyId ? parties.get(claimParty.priClaimPartyId) ?? null : null,
                 claimAgainst: claimParty?.priClaimAgainst ?? null,
@@ -719,6 +834,9 @@ export class PurchaseReturnService {
           claimPartyName: l.priClaimPartyId ? parties.get(l.priClaimPartyId) ?? null : null,
           billedQty: sl?.basisQty ?? null, inQty: sl?.inQty ?? null, returnedQty: others,
           returnableQty: sl ? Prisma.Decimal.max(sl.inQty.minus(others), 0) : null,
+          barcode: a?.piaBarcode ?? extras.get(l.priUomId)?.defaultBarcode ?? null, weight: l.priWeight?.toFixed(3) ?? null,
+          ...returnRowFigures(stock, { itemId: l.priItemId, godownId: a?.piaGodownId ?? null, bucket: a?.piaBucket ?? null, lotId: a?.piaLotId ?? null,
+                                       factor: l.priToBaseFactor, qty: l.priQty, freeQty: l.priFreeQty, total: l.priTotalAmt, postedCost: posted ? l.priLotCostValue : null }),
           ...this.rowWrites(header.prKind, l.priOutcome, { taxable: l.priTaxableAmt, tax, total: l.priTotalAmt }, l.priClaimAgainst,
                             l.priClaimPartyId ? parties.get(l.priClaimPartyId) ?? null : null, sup[0]?.sup_name ?? null) };
       }),
@@ -978,7 +1096,7 @@ export class PurchaseReturnController {
     return { success: true, message: `Return ${data.header.prRefno} ${dto.header.post ? 'posted' : 'saved as draft'}`, data };
   }
   @Post('returns/validate') @Version(API_VERSION)
-  @ApiOperation({ summary: 'The server\'s figures for a return being keyed — per row money, Credit to / Writes, billed / returned / returnable; the six totals (ITC reversed over every outcome, supplier balance now) and the strip (warnings[] / refusals[]). Writes nothing.' })
+  @ApiOperation({ summary: 'The server\'s figures for a return being keyed — per row money, Credit to / Writes, billed / returned / returnable, barcode / weight / godown + lot stock / Pur. cost (costRate, costValue) / Return cost (returnRate) / remarks; the six totals (ITC reversed over every outcome, supplier balance now) and the strip (warnings[] / refusals[]). Writes nothing.' })
   async validate(@Body() dto: SaveReturnDto) {
     await this.right('view', 'check a purchase return');
     return { success: true, message: 'Return checked', data: await this.service.validate(dto) };
@@ -989,7 +1107,7 @@ export class PurchaseReturnController {
     const data = await this.service.post(dto.prId, dto.accYear);
     return { success: true, message: `Return ${data.header.prRefno} posted`, data };
   }
-  @Get('returns/get') @Version(API_VERSION) @ApiOperation({ summary: 'A return with its rows, lots and each claim row\'s open amount.' })
+  @Get('returns/get') @Version(API_VERSION) @ApiOperation({ summary: 'A return with its rows, lots and each claim row\'s open amount; header.srcAmount / srcSupplierRef / srcLineCount; per row barcode, weight, godownStock, lotStock, costRate / costValue (posted: pri_lot_cost_value), returnRate.' })
   async get(@Query() q: ReturnRefDto) {
     await this.right('view', 'open a purchase return');
     return { success: true, message: 'Return fetched', data: await this.service.get(q.prId, q.accYear) };
@@ -1005,7 +1123,7 @@ export class PurchaseReturnController {
     await this.right('view', 'pick a bill to return against');
     return { success: true, message: 'Sources fetched', data: await this.service.sources(q) };
   }
-  @Get('returns/source-lines') @Version(API_VERSION) @ApiOperation({ summary: 'The lines of a bill / GRN: came in, already returned, returnable, per-unit money, lots.' })
+  @Get('returns/source-lines') @Version(API_VERSION) @ApiOperation({ summary: 'The lines of a bill / GRN: came in, already returned, returnable, per-unit money, barcode, weightPerUnit, lots (onHand, costRate, barcode); source.amount / lineCount / supplierRef.' })
   async sourceLines(@Query() q: SourceLinesQueryDto) {
     await this.right('view', 'read a bill to return against');
     return { success: true, message: 'Source lines fetched', data: await this.service.sourceLinesView(q) };

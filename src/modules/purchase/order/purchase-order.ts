@@ -30,6 +30,8 @@ import {
  *    lines point at them), po_revision_no + 1, the trail says AMENDED. A line may not
  *    drop below what has come in (received + short-closed), nor change its item / unit
  *    once anything came; a line that something came against cannot be removed.
+ *    Since 2026-11-04 (PO-1, Q1 = a) a PO that any live GRN / bill line names — drafts too — is not amended at all
+ *    (409 PUR_PO_CONVERTED; get: header.isConverted / convertedBy); the floor rules stay as a second guard.
  *  - Every save keeps the whole PO before and after (audit.audit_log, notes 89) —
  *    that is the revision history (GET /revisions).
  *  - Clone: a new draft with the lines of any PO. Merge: the PENDING of several
@@ -179,6 +181,30 @@ export async function poUsedQty(tx: Db, poId: string) {
        WHERE pii.pii_src_doc_type = 'PURCHASE_ORDER' AND pii.pii_src_doc_id = ${poId}::uuid AND NOT pii.pii_is_deleted AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'
     ) x GROUP BY src_item_id`;
   return new Map(rows.map((r) => [r.id, D(r.q)]));
+}
+
+/**
+ * PO-1 (plan 2026-11-04, Q1 = a): the GRNs / purchase bills whose lines name the PO — the documents `poUsedQty` reads
+ * (not cancelled, not deleted, DRAFTS INCLUDED), any qty. Their numbers, newest first; none = the PO is not converted.
+ */
+export async function poConversions(tx: Db, poId: string) {
+  const rows = await tx.$queryRaw<{ refno: string }[]>`
+    SELECT refno FROM (
+      SELECT DISTINCT g.grn_id AS id, g.grn_refno AS refno, g.grn_created_on AS made_on
+        FROM purchase.pur_grn_item gri JOIN purchase.pur_grn g ON g.grn_id = gri.gri_grn_id AND g.grn_acc_year = gri.gri_acc_year
+       WHERE gri.gri_src_doc_type = 'PURCHASE_ORDER' AND gri.gri_src_doc_id = ${poId}::uuid AND NOT gri.gri_is_deleted AND NOT g.grn_is_deleted AND g.grn_status <> 'CANCELLED'
+      UNION ALL
+      SELECT DISTINCT p.pi_id, p.pi_refno, p.pi_created_on
+        FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+       WHERE pii.pii_src_doc_type = 'PURCHASE_ORDER' AND pii.pii_src_doc_id = ${poId}::uuid AND NOT pii.pii_is_deleted AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'
+    ) x ORDER BY made_on DESC, refno DESC`;
+  return rows.map((r) => r.refno);
+}
+
+/** "GRN/…/00003" · "GRN/…/00003, PUR/…/00002" · "A, B, C and 2 more". */
+export function conversionList(refnos: string[], max = 3) {
+  const shown = refnos.slice(0, max).join(', ');
+  return refnos.length > max ? `${shown} and ${refnos.length - max} more` : shown;
 }
 
 /** A PO waiting for approval (or refused) feeds no GRN / bill — called where a PO line is taken in. */
@@ -365,6 +391,14 @@ export class PurchaseOrderService {
       isNew = true;
     }
     const amending = cur?.poStatus === 'POSTED';
+    // PO-1 (Q1 = a, user 2026-11-04): a confirmed PO that any live GRN / bill line names (drafts too) is not amended —
+    // short-close what is pending, or raise a new PO. Before any write; the floor checks below stay as a second guard.
+    if (amending) {
+      const used = await poConversions(tx, poId!);
+      if (used.length)
+        purConflict(`${refno} has ${conversionList(used)} against it — it can't be amended. Short-close what is pending, or make a new PO.`,
+                    'PUR_PO_CONVERTED', 'poId');
+    }
     // po_net_amt = the lines (taxable + GST; a before-tax charge sits inside); po_charges_amt = the rest of the estimate
     // (after-tax charges + their own GST + off-bill) — net + charges = the PO total, nothing counted twice (purchase-order-figures)
     const { tax, net, chargesEstimate } = figures.totals;
@@ -475,12 +509,18 @@ export class PurchaseOrderService {
   }
 
   /** /get: the document (getDoc) + per-line context the screen shows beside it (last rate, stock, reorder) — kept out of
-   *  getDoc so the revision snapshots (audit before / after) do not change when only the stock did. */
+   *  getDoc so the revision snapshots (audit before / after) do not change when only the stock did. The same goes for
+   *  header.isConverted / convertedBy (PO-1: a GRN or bill names the PO, drafts too — the amend lock; ≤ 3 numbers, newest first). */
   async get(poId: string, accYear: string) {
     const doc = await this.getDoc(this.prisma, poId, accYear) as unknown as { header: Record<string, unknown>; lines: Record<string, unknown>[] };
-    const ctx = await this.lineContext(this.prisma, String(doc.header.poCompanyId), String(doc.header.poBranchId), (doc.header.poDeliverGodownId as string | null) ?? null,
-      doc.lines.map((l) => ({ id: String(l.poiId), itemId: String(l.poiItemId), factor: D(l.poiToBaseFactor as string) })));
-    return jsonSafe({ ...doc, lines: doc.lines.map((l) => ({ ...l, ...ctx.get(String(l.poiId)) })) });
+    const [ctx, conv] = await Promise.all([
+      this.lineContext(this.prisma, String(doc.header.poCompanyId), String(doc.header.poBranchId), (doc.header.poDeliverGodownId as string | null) ?? null,
+        doc.lines.map((l) => ({ id: String(l.poiId), itemId: String(l.poiItemId), factor: D(l.poiToBaseFactor as string) }))),
+      poConversions(this.prisma, poId),
+    ]);
+    const header: Record<string, unknown> = { ...doc.header, isConverted: conv.length > 0, convertedBy: conv.slice(0, 3) };
+    return jsonSafe({ ...doc, header,
+                      lines: doc.lines.map((l) => ({ ...l, ...ctx.get(String(l.poiId)) })) });
   }
 
   /**
@@ -755,7 +795,7 @@ export class PurchaseOrderController {
     await assertMenuRight(this.prisma, { userId: this.ctx.getUserId(), menuId: PURCHASE_ORDER_MENU_ID, right, codePrefix: 'PO', action });
   }
 
-  @Post('save') @Version(API_VERSION) @ApiOperation({ summary: 'Save a PO draft; header.post = true confirms it (open for GRNs / bills).' })
+  @Post('save') @Version(API_VERSION) @ApiOperation({ summary: 'Save a PO draft; header.post = true confirms it (open for GRNs / bills). A confirmed PO is amended in place (right amend) until a GRN or bill names it (409 PUR_PO_CONVERTED).' })
   async save(@Body() dto: SavePurchaseOrderDto) {
     await this.right(dto.header.poId ? 'edit' : 'create', 'save a purchase order');
     if (dto.header.post) await this.right('post', 'confirm a purchase order');
@@ -772,7 +812,7 @@ export class PurchaseOrderController {
     await this.right('view', 'check a purchase order');
     return { success: true, message: 'Purchase order calculated', data: await this.service.preview(dto) };
   }
-  @Get('get') @Version(API_VERSION) @ApiOperation({ summary: 'A PO with received / pending per line (derived).' })
+  @Get('get') @Version(API_VERSION) @ApiOperation({ summary: 'A PO with received / pending per line (derived); header.isConverted / convertedBy (≤ 3 GRN / bill numbers, newest first).' })
   async get(@Query() q: PurchaseOrderRefDto) {
     await this.right('view', 'open a purchase order');
     return { success: true, message: 'Purchase order fetched', data: await this.service.get(q.poId, q.accYear) };

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { poApprovalStatus, poDocStatus, poLineStatus } from './purchase-order';
+import { conversionList, poApprovalStatus, poDocStatus, poLineStatus } from './purchase-order';
 
 const D = (v: number) => new Prisma.Decimal(v);
 
@@ -45,5 +45,13 @@ describe('PO approval — on the goods value only (user 2026-10-29)', () => {
     expect(poApprovalStatus({ ...am, goods: goods(10000, 1800), chargesEstimate: D(9999) }).status).toBe('APPROVED');
     expect(poApprovalStatus({ ...am, goods: goods(10100, 1818), chargesEstimate: D(0) }).status).toBe('AWAITING');
     expect(poApprovalStatus({ ...am, goods: goods(5000, 900), chargesEstimate: D(0) }).status).toBe('NOT_REQUIRED');
+  });
+});
+
+describe('PO-1 convert lock — the documents named in PUR_PO_CONVERTED (plan 2026-11-04)', () => {
+  it('one, three, and more than three numbers', () => {
+    expect(conversionList(['GRN/1'])).toBe('GRN/1');
+    expect(conversionList(['GRN/3', 'PUR/2', 'GRN/1'])).toBe('GRN/3, PUR/2, GRN/1');
+    expect(conversionList(['A', 'B', 'C', 'D', 'E'])).toBe('A, B, C and 2 more');
   });
 });
