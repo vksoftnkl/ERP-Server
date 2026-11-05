@@ -76,8 +76,8 @@ export declare class PendingPoLinesQueryDto {
     supplierId: string;
 }
 type Db = Prisma.TransactionClient | PrismaService;
-export declare function poLineStatus(qty: Prisma.Decimal, received: Prisma.Decimal, shortClosed: Prisma.Decimal): "OPEN" | "DONE" | "SHORT_CLOSED" | "PART";
-export declare function poDocStatus(status: string, approval: string, lineStatuses: string[]): "CLOSED" | "DRAFT" | "CANCELLED" | "CONFIRMED" | "RECEIVED" | "AWAITING_APPROVAL" | "NOT_APPROVED" | "PART_RECEIVED";
+export declare function poLineStatus(qty: Prisma.Decimal, received: Prisma.Decimal, shortClosed: Prisma.Decimal): "DONE" | "SHORT_CLOSED" | "PART" | "OPEN";
+export declare function poDocStatus(status: string, approval: string, lineStatuses: string[]): "CANCELLED" | "DRAFT" | "AWAITING_APPROVAL" | "NOT_APPROVED" | "RECEIVED" | "CLOSED" | "PART_RECEIVED" | "CONFIRMED";
 export declare function poApprovalStatus(a: {
     limit: Prisma.Decimal;
     goods: {
@@ -118,7 +118,7 @@ export declare class PurchaseOrderService {
     private actor;
     private compute;
     private agentOf;
-    private estimateCharges;
+    private chargeRows;
     preview(dto: SavePurchaseOrderDto): Promise<{
         header: {
             agentId: string | null;
@@ -132,21 +132,31 @@ export declare class PurchaseOrderService {
             gstPct: Prisma.Decimal;
             tax: Prisma.Decimal;
             total: Prisma.Decimal;
+            netGross: Prisma.Decimal;
+            chrgBeforeTax: Prisma.Decimal;
+            chrgAfterTax: Prisma.Decimal;
+            offbillShare: Prisma.Decimal;
+            amount: Prisma.Decimal;
+            landedValue: Prisma.Decimal;
+            landedCost: Prisma.Decimal;
+            landedCostIncl: Prisma.Decimal;
         }[];
         charges: {
-            rate: string;
-            amount: string;
-            signedAmount: string;
             chgId: string;
             chgName: string;
             role: string | null;
             type: string;
             method: string;
+            rate: string;
+            amount: string;
+            signedAmount: string;
             onBill: boolean;
             ledgerId: string;
             costAlloc: string | null;
             beforeTax: boolean;
             landingCost: boolean;
+            taxPct: string;
+            tax: string;
         }[];
         totals: {
             gross: Prisma.Decimal;
@@ -157,6 +167,14 @@ export declare class PurchaseOrderService {
             orderedValue: string;
             chargesEstimate: string;
             poTotal: string;
+            netGross: string;
+            chrgBeforeTax: string;
+            chrgAfterTax: string;
+            chargeTax: string;
+            offbill: string;
+            chargesTotal: string;
+            amount: string;
+            landedValue: string;
         };
     }>;
     save(dto: SavePurchaseOrderDto): Promise<{
@@ -241,21 +259,31 @@ export declare class PurchaseOrderController {
                 gstPct: Prisma.Decimal;
                 tax: Prisma.Decimal;
                 total: Prisma.Decimal;
+                netGross: Prisma.Decimal;
+                chrgBeforeTax: Prisma.Decimal;
+                chrgAfterTax: Prisma.Decimal;
+                offbillShare: Prisma.Decimal;
+                amount: Prisma.Decimal;
+                landedValue: Prisma.Decimal;
+                landedCost: Prisma.Decimal;
+                landedCostIncl: Prisma.Decimal;
             }[];
             charges: {
-                rate: string;
-                amount: string;
-                signedAmount: string;
                 chgId: string;
                 chgName: string;
                 role: string | null;
                 type: string;
                 method: string;
+                rate: string;
+                amount: string;
+                signedAmount: string;
                 onBill: boolean;
                 ledgerId: string;
                 costAlloc: string | null;
                 beforeTax: boolean;
                 landingCost: boolean;
+                taxPct: string;
+                tax: string;
             }[];
             totals: {
                 gross: Prisma.Decimal;
@@ -266,6 +294,14 @@ export declare class PurchaseOrderController {
                 orderedValue: string;
                 chargesEstimate: string;
                 poTotal: string;
+                netGross: string;
+                chrgBeforeTax: string;
+                chrgAfterTax: string;
+                chargeTax: string;
+                offbill: string;
+                chargesTotal: string;
+                amount: string;
+                landedValue: string;
             };
         };
     }>;

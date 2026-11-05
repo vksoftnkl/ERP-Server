@@ -27,7 +27,7 @@ async function rateRefs(tx, companyId, exceptPiId, facts) {
     const direct = facts.filter((f) => f.srcType === 'PURCHASE_ORDER' && f.srcItemId);
     if (viaGrn.length) {
         const rows = await tx.$queryRaw `
-      SELECT gri.gri_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+      SELECT gri.gri_id, po.po_refno, (poi.poi_taxable_amt - poi.poi_chrg_before_tax) / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
         FROM purchase.pur_grn_item gri
         JOIN purchase.pur_order_item poi ON poi.poi_id = gri.gri_src_item_id AND gri.gri_src_doc_type = 'PURCHASE_ORDER'
         JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
@@ -40,7 +40,7 @@ async function rateRefs(tx, companyId, exceptPiId, facts) {
     }
     if (direct.length) {
         const rows = await tx.$queryRaw `
-      SELECT poi.poi_id, po.po_refno, poi.poi_taxable_amt / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
+      SELECT poi.poi_id, po.po_refno, (poi.poi_taxable_amt - poi.poi_chrg_before_tax) / NULLIF(poi.poi_qty * poi.poi_to_base_factor, 0) AS po_rate_base
         FROM purchase.pur_order_item poi
         JOIN purchase.pur_order po ON po.po_id = poi.poi_po_id AND po.po_acc_year = poi.poi_acc_year
        WHERE poi.poi_id = ANY(${direct.map((f) => f.srcItemId)}::uuid[])`;

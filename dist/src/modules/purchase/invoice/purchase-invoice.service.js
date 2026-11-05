@@ -28,6 +28,7 @@ const purchase_supplier_item_1 = require("../supplier-item/purchase-supplier-ite
 const purchase_order_1 = require("../order/purchase-order");
 const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_calc_1 = require("../common/purchase-calc");
+const purchase_charges_1 = require("../common/purchase-charges");
 const purchase_errors_1 = require("../common/purchase.errors");
 const purchase_doc_helpers_1 = require("../common/purchase-doc.helpers");
 const purchase_invoice_checks_1 = require("./purchase-invoice-checks");
@@ -480,15 +481,8 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
         const taxes = new Map((taxIds.length
             ? await tx.$queryRaw `SELECT tax_id, tax_rate_perc, tax_cess_perc, tax_cess_per_unit FROM inventory.tax_rate_master WHERE tax_id = ANY(${taxIds}::uuid[])`
             : []).map((t) => [t.tax_id, t]));
-        const chgIds = [...new Set((dto.charges ?? []).map((c) => c.chgId))];
-        const charges = chgIds.length
-            ? await tx.$queryRaw `
-          SELECT c.chg_id, c.chg_name, c.chg_type, c.chg_method, c.chg_default_rate, c.chg_cost_alloc, c.chg_before_tax,
-                 c.chg_tax_apl, c.chg_landing_cost, c.chg_on_bill, c.chg_ledger_code, c.chg_role, c.chg_tax_id, t.tax_rate_perc
-            FROM public.charge_master c LEFT JOIN inventory.tax_rate_master t ON t.tax_id = c.chg_tax_id
-           WHERE c.chg_id = ANY(${chgIds}::uuid[]) AND c.chg_is_deleted = false AND c.chg_module IN ('P','B')`
-            : [];
-        const chgById = new Map(charges.map((c) => [c.chg_id, c]));
+        const chgById = await (0, purchase_charges_1.loadPurchaseChargeMasters)(tx, (dto.charges ?? []).map((c) => c.chgId));
+        const charges = [...chgById.values()];
         for (const [i, c] of (dto.charges ?? []).entries())
             if (c.payees?.length)
                 c.payees = await (0, purchase_doc_helpers_1.payeeLedgers)(tx, c.payees, `charges.${i}.payees`);
@@ -507,17 +501,7 @@ let PurchaseInvoiceService = class PurchaseInvoiceService {
                 problems.push({ field: `charges.${i}.payees`, code: purchase_errors_1.PUR.OFFBILL_NO_PAYEE, message: `${m.chg_name}: say who is owed (pick the loadmen / party)` });
             }
             c.payees?.forEach((p) => payeeIds.add(p.partyId));
-            calcCharges.push({
-                key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD',
-                method: m.chg_method ?? 'FIXED',
-                rate: c.rate ?? m.chg_default_rate ?? 0, amount: c.amount ?? null,
-                alloc: (m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE'),
-                beforeTax: m.chg_on_bill ? m.chg_before_tax : false,
-                onBill: m.chg_on_bill,
-                landingCost: m.chg_on_bill ? m.chg_landing_cost : true,
-                taxPct: m.chg_on_bill && m.chg_tax_apl && !m.chg_before_tax ? (m.tax_rate_perc ?? 0) : 0,
-                payees: m.chg_on_bill ? [] : (c.payees ?? []).map((p) => ({ partyId: p.partyId, amount: p.amount ?? null })),
-            });
+            calcCharges.push((0, purchase_charges_1.purchaseChargeInput)(m, c, String(i)));
         });
         if (payeeIds.size) {
             const led = await tx.$queryRaw `

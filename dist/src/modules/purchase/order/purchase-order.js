@@ -30,6 +30,8 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const purchase_calc_1 = require("../common/purchase-calc");
+const purchase_charges_1 = require("../common/purchase-charges");
+const purchase_order_figures_1 = require("./purchase-order-figures");
 const save_purchase_invoice_dto_1 = require("../invoice/dto/save-purchase-invoice.dto");
 const purchase_settings_1 = require("../common/purchase-settings");
 const purchase_terms_1 = require("../terms/purchase-terms");
@@ -273,7 +275,7 @@ __decorate([
     __metadata("design:type", Array)
 ], SavePurchaseOrderDto.prototype, "lines", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: [save_purchase_invoice_dto_1.PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — an ESTIMATE only: nothing posts, the line figures stay as keyed; po_charges_amt = Σ ADD − Σ DEDUCT, the PO total includes it. Payees are ignored on a PO. Every save replaces the set.' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: [save_purchase_invoice_dto_1.PurchaseChargeDto], description: 'CHG-07: estimated charges (freight, coolie …) — nothing posts. Spread on the lines as the bill spreads them (2026-11-02): a before-tax charge joins the line taxable (and its GST); after-tax and off-bill ones give each line its share and its landed cost. po_net_amt = the lines (taxable + GST); po_charges_amt = the rest (after-tax + their own GST + off-bill); the PO total is both. Payees are ignored on a PO. Every save replaces the set.' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),
@@ -568,12 +570,20 @@ let PurchaseOrderService = class PurchaseOrderService {
             if (!l.taxId)
                 l.taxId = units.get(l.uomId)?.item_default_tax_id ?? undefined;
         const taxes = await (0, purchase_doc_helpers_1.loadTaxRates)(tx, dto.lines.map((l) => l.taxId));
-        const lineIns = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, discPct: l.discPct, schPct: l.schPct,
+        const lineIns = dto.lines.map((l) => ({ key: String(l.lineNo), billedQty: l.qty, receivedQty: l.qty, damagedQty: 0, freeQty: l.freeQty ?? 0,
+            rate: l.rate, discPct: l.discPct, schPct: l.schPct,
             gstPct: l.taxId ? taxes.get(l.taxId)?.tax_rate_perc ?? 0 : 0, toBaseFactor: units.get(l.uomId).iuc_to_base_factor, weight: l.weight ?? 0 }));
-        const calc = (0, purchase_calc_1.calcPurchase)({ interState: inter, roundOffStep: 0, lines: lineIns });
-        const charges = await this.estimateCharges(tx, dto.charges ?? [], lineIns, inter);
+        const keyed = dto.charges ?? [];
+        const masters = await (0, purchase_charges_1.loadPurchaseChargeMasters)(tx, keyed.map((c) => c.chgId));
+        const chgProblems = keyed.flatMap((c, i) => (masters.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: purchase_errors_1.PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
+        if (chgProblems.length)
+            (0, purchase_errors_1.purRefuseMany)(chgProblems[0].message, chgProblems);
+        const calc = (0, purchase_calc_1.calcPurchase)({ interState: inter, roundOffStep: 0, lines: lineIns,
+            charges: keyed.map((c, i) => (0, purchase_charges_1.purchaseChargeInput)(masters.get(c.chgId), { rate: c.rate, amount: c.amount }, String(i))) });
+        const figures = (0, purchase_order_figures_1.poFigures)(calc, dto.lines);
+        const charges = this.chargeRows(keyed, masters, calc);
         const agent = await this.agentOf(tx, dto.header.agentId, dto.header.companyId);
-        return { sup, units, calc, charges, agent };
+        return { sup, units, inter, lineIns, calc, figures, charges, agent };
     }
     async agentOf(db, agentId, companyId) {
         if (!agentId)
@@ -586,45 +596,33 @@ let PurchaseOrderService = class PurchaseOrderService {
             (0, purchase_errors_1.purRefuse)(`Agent ${a.pag_name} is inactive.`, 'PUR_AGENT_INACTIVE', 'header.agentId');
         return { id: a.pag_id, name: a.pag_name };
     }
-    async estimateCharges(db, charges, lineIns, inter) {
-        if (!charges.length)
-            return { rows: [], total: purchase_doc_helpers_1.ZERO };
-        const ids = [...new Set(charges.map((c) => c.chgId))];
-        const masters = await db.$queryRaw `
-      SELECT chg_id, chg_name, chg_type, chg_method, chg_default_rate, chg_cost_alloc, chg_on_bill, chg_role, chg_ledger_code, chg_before_tax, chg_landing_cost
-        FROM public.charge_master WHERE chg_id = ANY(${ids}::uuid[]) AND NOT chg_is_deleted AND chg_module IN ('P','B')`;
-        const by = new Map(masters.map((m) => [m.chg_id, m]));
-        const problems = charges.flatMap((c, i) => (by.has(c.chgId) ? [] : [{ field: `charges.${i}.chgId`, code: purchase_errors_1.PUR.CHARGE_NOT_FOUND, message: `Charge ${c.chgId} is not a purchase charge` }]));
-        if (problems.length)
-            (0, purchase_errors_1.purRefuseMany)(problems[0].message, problems);
-        const ins = charges.map((c, i) => {
-            const m = by.get(c.chgId);
-            return { key: String(i), type: m.chg_type === 'DEDUCT' ? 'DEDUCT' : 'ADD', method: m.chg_method, rate: c.rate ?? m.chg_default_rate ?? 0,
-                amount: c.amount ?? null, alloc: (m.chg_cost_alloc && m.chg_cost_alloc !== 'NONE' ? m.chg_cost_alloc : 'VALUE'),
-                beforeTax: false, onBill: false, landingCost: true, taxPct: 0, payees: [] };
-        });
-        const out = (0, purchase_calc_1.calcPurchase)({ interState: inter, roundOffStep: 0, lines: lineIns, charges: ins });
-        let total = purchase_doc_helpers_1.ZERO;
-        const rows = charges.map((c, i) => {
-            const m = by.get(c.chgId);
-            const amount = out.charges[i].amount.abs();
+    chargeRows(keyed, masters, calc) {
+        return keyed.map((c, i) => {
+            const m = masters.get(c.chgId);
+            const out = calc.charges[i];
+            const amount = out.amount.abs();
             const signed = m.chg_type === 'DEDUCT' ? amount.negated() : amount;
-            total = total.plus(signed);
+            const taxed = !out.cgst.plus(out.sgst).plus(out.igst).isZero();
             return { chgId: c.chgId, chgName: m.chg_name, role: m.chg_role, type: m.chg_type, method: m.chg_method, rate: (0, purchase_doc_helpers_1.D)(c.rate ?? m.chg_default_rate ?? 0),
-                amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost };
+                amount, signedAmount: signed, onBill: m.chg_on_bill, ledgerId: m.chg_ledger_code, costAlloc: m.chg_cost_alloc, beforeTax: m.chg_before_tax, landingCost: m.chg_landing_cost,
+                taxApl: m.chg_tax_apl, taxPct: taxed ? (0, purchase_doc_helpers_1.D)(m.tax_rate_perc) : purchase_doc_helpers_1.ZERO, cgst: out.cgst, sgst: out.sgst, igst: out.igst };
         });
-        return { rows, total };
     }
     async preview(dto) {
-        const { calc, charges, agent } = await this.compute(this.prisma, dto);
-        const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
-        const net = calc.taxable.plus(tax);
+        const { figures, charges, agent } = await this.compute(this.prisma, dto);
+        const t = figures.totals;
         return (0, purchase_doc_helpers_1.jsonSafe)({
             header: { agentId: agent?.id ?? null, agentName: agent?.name ?? null },
-            lines: calc.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.cgst.plus(o.sgst).plus(o.igst).plus(o.cess), total: o.total })),
-            charges: charges.rows.map((c) => ({ ...c, rate: c.rate.toString(), amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2) })),
-            totals: { gross: calc.gross, taxable: calc.taxable, tax, net,
-                lines: dto.lines.length, orderedValue: net.toFixed(2), chargesEstimate: charges.total.toFixed(2), poTotal: net.plus(charges.total).toFixed(2) },
+            lines: figures.lines.map((o) => ({ key: o.key, gross: o.gross, discAmt: o.discAmt, taxable: o.taxable, gstPct: o.gstPct, tax: o.tax, total: o.total,
+                netGross: o.netGross, chrgBeforeTax: o.chrgBeforeTax, chrgAfterTax: o.chrgAfterTax, offbillShare: o.offbillShare, amount: o.amount,
+                landedValue: o.landedValue, landedCost: o.landedCost, landedCostIncl: o.landedCostIncl })),
+            charges: charges.map((c) => ({ chgId: c.chgId, chgName: c.chgName, role: c.role, type: c.type, method: c.method, rate: c.rate.toString(),
+                amount: c.amount.toFixed(2), signedAmount: c.signedAmount.toFixed(2), onBill: c.onBill, ledgerId: c.ledgerId, costAlloc: c.costAlloc,
+                beforeTax: c.beforeTax, landingCost: c.landingCost, taxPct: c.taxPct.toString(), tax: c.cgst.plus(c.sgst).plus(c.igst).toFixed(2) })),
+            totals: { gross: t.gross, taxable: t.taxable, tax: t.tax, net: t.net,
+                lines: dto.lines.length, orderedValue: t.net.toFixed(2), chargesEstimate: t.chargesEstimate.toFixed(2), poTotal: t.poTotal.toFixed(2),
+                netGross: t.netGross.toFixed(2), chrgBeforeTax: t.chrgBeforeTax.toFixed(2), chrgAfterTax: t.chrgAfterTax.toFixed(2), chargeTax: t.chargeTax.toFixed(2),
+                offbill: t.offbill.toFixed(2), chargesTotal: t.chargesTotal.toFixed(2), amount: t.amount.toFixed(2), landedValue: t.landedValue.toFixed(2) },
         });
     }
     async save(dto) {
@@ -634,7 +632,7 @@ let PurchaseOrderService = class PurchaseOrderService {
     }
     async saveIn(tx, dto, actor, opts = {}) {
         const h = dto.header;
-        const { sup, units, calc, charges, agent } = await this.compute(tx, dto);
+        const { sup, units, inter, lineIns, calc, figures, charges, agent } = await this.compute(tx, dto);
         let poId = h.poId ?? null;
         let slno, refno, isNew = false;
         let cur = null;
@@ -655,13 +653,16 @@ let PurchaseOrderService = class PurchaseOrderService {
             isNew = true;
         }
         const amending = cur?.poStatus === 'POSTED';
-        const tax = calc.cgst.plus(calc.sgst).plus(calc.igst).plus(calc.cess);
-        const net = calc.taxable.plus(tax);
+        const { tax, net, chargesEstimate } = figures.totals;
         const confirming = !amending && !!h.post;
         const settings = await (0, purchase_settings_1.loadPurchaseSettings)(tx, h.companyId, h.branchId);
         const limit = (0, purchase_doc_helpers_1.D)(settings.poApprovalAbove ?? 0);
-        const approval = poApprovalStatus({ limit, goods: calc, chargesEstimate: charges.total, confirming, amending,
-            current: cur?.poApprovalStatus ?? null, currentGoodsValue: cur?.poNetAmt ?? null }).status;
+        const storedGoods = amending
+            ? (0, purchase_order_figures_1.poGoodsValue)((await tx.purOrderItem.findMany({ where: { poiPoId: poId, poiAccYear: h.accYear, poiIsDeleted: false } }))
+                .map((l) => ({ key: l.poiId, billedQty: l.poiQty, rate: l.poiRate, discPct: l.poiDiscPct, schPct: l.poiSchPct, gstPct: l.poiGstPct })), inter)
+            : null;
+        const { status: approval, value: goodsValue } = poApprovalStatus({ limit, goods: (0, purchase_order_figures_1.poGoodsValue)(lineIns, inter), chargesEstimate, confirming, amending,
+            current: cur?.poApprovalStatus ?? null, currentGoodsValue: storedGoods?.value ?? null });
         const keepTerms = !!cur && !!h.termsId && h.termsId === cur.poTermsId;
         const terms = h.termsId ? await (0, purchase_terms_1.termsOf)(tx, h.termsId, h.companyId, 'header.termsId', { keep: keepTerms }) : null;
         const termsText = (0, module_shared_utils_1.isPresentField)(h, 'termsText') ? (h.termsText ?? null) : terms && !keepTerms ? terms.text : cur ? undefined : null;
@@ -669,7 +670,7 @@ let PurchaseOrderService = class PurchaseOrderService {
             poCompanyId: h.companyId, poBranchId: h.branchId, poAccYear: h.accYear, poDeviceId: h.deviceId, poSlno: slno, poRefno: refno,
             poDocDate: new Date(`${h.docDate}T00:00:00Z`), poSupplierId: h.supplierId, poExpectedDate: h.expectedDate ? new Date(`${h.expectedDate}T00:00:00Z`) : null,
             poDeliverGodownId: h.godownId ?? null, poAgentId: agent?.id ?? null, poContact: h.contact ?? null, poCreditDays: h.creditDays ?? sup.sup_credit_days ?? null,
-            ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: charges.total, poNetAmt: net,
+            ...(termsText !== undefined ? { poTermsText: termsText } : {}), ...(h.termsId !== undefined ? { poTermsId: h.termsId } : {}), poGrossAmt: calc.gross, poTaxableAmt: calc.taxable, poTaxAmt: tax, poChargesAmt: chargesEstimate, poNetAmt: net,
             poRemarks: h.remarks ?? null, poStatus: amending ? 'POSTED' : h.post ? 'POSTED' : 'DRAFT', poApprovalStatus: approval,
         };
         if (amending && cur.poSupplierId !== h.supplierId) {
@@ -687,7 +688,7 @@ let PurchaseOrderService = class PurchaseOrderService {
             return {
                 poiLineNo: l.lineNo, poiItemId: l.itemId, poiUomId: l.uomId, poiBaseUomId: u.base_iuc_id, poiToBaseFactor: u.iuc_to_base_factor, poiHsnCode: u.item_hsn_code,
                 poiWeight: l.weight ?? null, poiQty: (0, purchase_doc_helpers_1.D)(l.qty), poiFreeQty: (0, purchase_doc_helpers_1.D)(l.freeQty), poiRate: (0, purchase_doc_helpers_1.D)(l.rate), poiDiscPct: (0, purchase_doc_helpers_1.D)(l.discPct), poiDiscAmt: o.discAmt,
-                poiSchPct: (0, purchase_doc_helpers_1.D)(l.schPct), poiSchAmt: o.schAmt, poiGrossAmt: o.gross, poiTaxableAmt: o.taxable, poiTaxId: l.taxId ?? null, poiGstPct: o.gstPct,
+                poiSchPct: (0, purchase_doc_helpers_1.D)(l.schPct), poiSchAmt: o.schAmt, poiChrgBeforeTax: o.chrgBeforeTax, poiChrgAfterTax: o.chrgAfterTax, poiGrossAmt: o.gross, poiTaxableAmt: o.taxable, poiTaxId: l.taxId ?? null, poiGstPct: o.gstPct,
                 poiCgstAmt: o.cgst, poiSgstAmt: o.sgst, poiIgstAmt: o.igst, poiCessAmt: o.cess, poiTotalAmt: o.total, poiMrp: l.mrp ?? null,
                 poiRemarks: l.remarks ?? null,
             };
@@ -743,14 +744,14 @@ let PurchaseOrderService = class PurchaseOrderService {
         }
         await tx.$executeRaw `DELETE FROM public.txn_charge_detail WHERE cd_doc_type = 'PURCHASE_ORDER' AND cd_doc_id = ${poId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
         let n = 0;
-        for (const c of charges.rows) {
+        for (const c of charges) {
             await tx.$executeRaw `
         INSERT INTO public.txn_charge_detail (cd_doc_type, cd_doc_id, cd_slno, cd_comp_id, cd_branch_id, cd_acc_year, cd_voucher_no,
           cd_chg_id, cd_chg_name, cd_role, cd_method, cd_type, cd_apply_on, cd_ledger_code, cd_landing_cost, cd_cost_alloc, cd_before_tax, cd_tax_apl, cd_sep_post,
-          cd_rate, cd_amount, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
+          cd_rate, cd_amount, cd_tax_perc, cd_cgst_amt, cd_sgst_amt, cd_igst_amt, cd_net_amt, cd_on_bill, cd_remarks, cd_created_by)
         VALUES ('PURCHASE_ORDER', ${poId}::uuid, ${++n}::int, ${h.companyId}::uuid, ${h.branchId}::uuid, ${h.accYear}::bpchar, ${slno}::bigint,
-          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, false, false,
-          ${c.rate}::numeric, ${c.amount}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
+          ${c.chgId}::uuid, ${c.chgName}, ${c.role}, ${c.method}, ${c.type}, ${c.costAlloc ?? 'VALUE'}, ${c.ledgerId}::uuid, ${c.landingCost}, ${c.costAlloc}, ${c.beforeTax}, ${c.taxApl}, false,
+          ${c.rate}::numeric, ${c.amount}::numeric, ${c.taxPct}::numeric, ${c.cgst}::numeric, ${c.sgst}::numeric, ${c.igst}::numeric, ${c.amount}::numeric, ${c.onBill}, 'estimate', ${actor})`;
         }
         const log = (event, from, to, remarks) => (0, purchase_doc_helpers_1.statusLog)(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: purchase_doc_helpers_1.TxnStatusDocType.PURCHASE_ORDER, docId: poId, refno, event, from, to, actor, deviceId: h.deviceId, remarks });
         if (isNew)
@@ -760,7 +761,7 @@ let PurchaseOrderService = class PurchaseOrderService {
         if (amending)
             await log(purchase_doc_helpers_1.TxnStatusEvent.AMENDED, 'POSTED', 'POSTED', `Revision ${(cur.poRevisionNo ?? 1) + 1}${h.amendReason ? `: ${h.amendReason}` : ''}`.slice(0, 250));
         if ((confirming || amending) && approval === 'AWAITING' && cur?.poApprovalStatus !== 'AWAITING')
-            await log(purchase_doc_helpers_1.TxnStatusEvent.SUBMITTED, 'POSTED', 'POSTED', `Waiting for approval — PO value ${net.toFixed(2)} is above ${limit.toFixed(2)}`);
+            await log(purchase_doc_helpers_1.TxnStatusEvent.SUBMITTED, 'POSTED', 'POSTED', `Waiting for approval — PO value ${goodsValue.toFixed(2)} is above ${limit.toFixed(2)}`);
         const after = await this.getDoc(tx, poId, h.accYear);
         await this.audit.logDocumentRevision({ ...PO_AUDIT, docId: poId, displayName: refno, before, after, userId: actor, branchId: h.branchId, deviceId: h.deviceId,
             notes: opts.auditNote ?? (amending ? `Amended (revision ${(cur.poRevisionNo ?? 1) + 1})${h.amendReason ? ` — ${h.amendReason}` : ''}` : isNew ? 'Created' : 'Saved') + (confirming ? ' and confirmed' : '') }, tx);
@@ -1113,7 +1114,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('validate'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'The server\'s figures for a PO being keyed — line taxable / tax / total and the totals. Writes nothing.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'The server\'s figures for a PO being keyed — per line taxable / tax / total with the charges spread on it (before / after tax, off-bill), amount and landed cost (without / with GST, per the line\'s unit); the charge estimate rows and the totals. Writes nothing.' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [SavePurchaseOrderDto]),
