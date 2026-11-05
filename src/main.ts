@@ -109,6 +109,12 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     logger,
     ...(httpsOptions ? { httpsOptions } : {}),
+    // On shutdown, destroy every open socket instead of waiting for it. Without
+    // this, one unfinished response (the web client's /data-changes/stream SSE
+    // never finishes) holds server.close() open forever: Node stops its own
+    // request timeouts once close() starts, so the process never exits, and
+    // `nest start --watch` waits on it and never starts the new build.
+    forceCloseConnections: true,
   });
   app.useLogger(logger);
   const configService = app.get(ConfigService);

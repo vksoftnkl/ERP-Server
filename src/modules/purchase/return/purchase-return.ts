@@ -236,6 +236,8 @@ export class PurchaseReturnService {
     }
     const g = await db.purGrn.findFirst({ where: { grnId: id, grnAccYear: accYear, grnIsDeleted: false } });
     if (!g) purNotFound(`GRN ${id} not found`);
+    // GRN rework #13 (D2): only a draft may have no supplier yet — nothing goes back against it until it is posted
+    if (!g.grnSupplierId) purConflict(`${g.grnRefno} is ${g.grnStatus} with no supplier — only a posted GRN takes a return.`, PUR.NOT_POSTED, 'header.srcDocId');
     // a GRN has no place of supply of its own: our branch's state (no GST moves on a GRN return)
     const [st] = await db.$queryRaw<{ state: string | null }[]>`
       SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state

@@ -563,6 +563,8 @@ let PurchaseReturnService = class PurchaseReturnService {
         const g = await db.purGrn.findFirst({ where: { grnId: id, grnAccYear: accYear, grnIsDeleted: false } });
         if (!g)
             (0, purchase_errors_1.purNotFound)(`GRN ${id} not found`);
+        if (!g.grnSupplierId)
+            (0, purchase_errors_1.purConflict)(`${g.grnRefno} is ${g.grnStatus} with no supplier — only a posted GRN takes a return.`, purchase_errors_1.PUR.NOT_POSTED, 'header.srcDocId');
         const [st] = await db.$queryRaw `
       SELECT COALESCE(NULLIF(trim(b.br_state_code), ''), NULLIF(trim(c.comp_state_code), '')) AS state
         FROM public.branch_master b JOIN public.companys c ON c.comp_id = b.br_comp_id WHERE b.br_id = ${g.grnBranchId}::uuid`;

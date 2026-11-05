@@ -102,7 +102,9 @@ export declare function postShadowStock(tx: Tx, stockPosting: StockPostingServic
     docDate: string;
     supplierId: string | null;
     remarks: string;
-}, rules: StockVoucherTypeRules, rows: StockRow[], actor: string, postedOn: Date): Promise<{
+}, rules: StockVoucherTypeRules, rows: StockRow[], actor: string, postedOn: Date, opts?: {
+    keepBatches?: ReadonlySet<string>;
+}): Promise<{
     svhId: string | null;
     perRow: {
         lotId: string | null;
@@ -123,7 +125,7 @@ export declare function numberTextileBatches(tx: Tx, scope: {
     branchId: string;
     accYear: string;
     docDate: string;
-}, rows: TextileRow[]): Promise<{
+}, rows: TextileRow[], keep?: ReadonlySet<string>): Promise<{
     batchNos: (string | null)[];
     numbered: Set<number>;
 }>;

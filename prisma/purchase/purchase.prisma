@@ -215,7 +215,7 @@ model PurGrn {
   grnDocDate          DateTime     @db.Date @map("grn_doc_date")
   grnDocDatetime      DateTime     @default(now()) @db.Timestamptz(6) @map("grn_doc_datetime")
   grnStatus           String       @default("DRAFT") @db.VarChar(20) @map("grn_status")
-  grnSupplierId       String       @db.Uuid @map("grn_supplier_id")
+  grnSupplierId       String?      @db.Uuid @map("grn_supplier_id")
   grnGodownId         String       @db.Uuid @map("grn_godown_id")
   grnChallanNo        String?      @db.VarChar(60) @map("grn_challan_no")
   grnChallanDate      DateTime?    @db.Date @map("grn_challan_date")

@@ -105,6 +105,7 @@ async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule, {
         logger,
         ...(httpsOptions ? { httpsOptions } : {}),
+        forceCloseConnections: true,
     });
     app.useLogger(logger);
     const configService = app.get(config_1.ConfigService);

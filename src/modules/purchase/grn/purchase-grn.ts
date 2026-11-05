@@ -3,7 +3,7 @@ import { assertPoApproved } from '../order/purchase-order';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from 'class-validator';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PurGrn } from '@prisma/client';
 import { API_VERSION } from 'src/common/constants/api-version';
 import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import { VoucherPostingService } from 'src/common/posting/voucher-posting.service';
@@ -11,6 +11,7 @@ import type { VoucherLeg } from 'src/common/posting/voucher-leg.types';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
+import { unreversedLedgerRow } from 'src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { SellingPriceBulkService } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.service';
 import { loadPurchaseSettings } from '../common/purchase-settings';
 import { calcPurchase, type CalcChargeIn } from '../common/purchase-calc';
@@ -30,9 +31,39 @@ import { grnShelfLife, judgeGrnLines, type GrnLineCheck, type GrnLineFact } from
  * rate, else typed), Dr Stock-in-Hand / Cr GRNI; our own labour (off-bill
  * charges) Dr Stock / Cr each payee; a challan short opens a qty-only shortage
  * row the bill adopts later (R3). The bill clears GRNI (invoice-from-GRN: next step).
+ *
+ * GRN rework (2026-11-05):
+ *  - #13 (D2): a DRAFT may be saved without a supplier; Post / an amend refuse (PUR_SUPPLIER_REQUIRED).
+ *  - #15 / #16 (D3, D4): /save with header.grnId of a POSTED GRN and post = true AMENDS it in one transaction —
+ *    the posting unwound as a cancel does (shadow stock reversed, the voucher back to DRAFT for a restate under its
+ *    own number, coolie rows withdrawn, the challan-short rows dropped) without cancelling it, the lines rewritten as a
+ *    draft save does, then posted again: same id / number, revision + 1, status stays POSTED, trail AMENDED.
+ *    Refused (409) while a purchase bill line names it (drafts too, PUR_GRN_AMEND_BILLED), its goods have gone out
+ *    (PUR_GRN_AMEND_STOCK_MOVED), or a cancel would be refused (return, paid coolie, touched shortage:
+ *    PUR_EDIT_LOCKED_PAID). GET header.amendBlock says the same before the screen opens the edit.
  */
 export const GRN_MENU_ID = 196;
 const DOC = 'GRN';
+/** GRN rework #13 (D2, user 2026-11-04): a draft may wait for its supplier; a post — and an amend — may not. */
+const SUPPLIER_REQUIRED = { field: 'header.supplierId', code: 'PUR_SUPPLIER_REQUIRED', message: 'Pick the supplier — a GRN posts against its supplier.' } as const;
+/** #15 / #16 (D4): a purchase bill line names the GRN — drafts too. */
+export const GRN_AMEND_BILLED = 'PUR_GRN_AMEND_BILLED';
+/** #15 / #16 (D3): goods gone out of the lots it created, or a plain item's stock below what it brought in. */
+export const GRN_AMEND_STOCK_MOVED = 'PUR_GRN_AMEND_STOCK_MOVED';
+/** Why a POSTED GRN may not be amended now (GET header.amendBlock; the amend's 409). */
+export interface GrnAmendBlock { code: string; message: string }
+/** What an amend's unwind hands its re-post. */
+interface GrnAmend {
+  /** The posted voucher, back in DRAFT with its legs retired: the re-post restates it under the same number. */
+  restateVoucherId: string | null;
+  /** Batch numbers the earlier post(s) were given (folded): kept, with their size / colour / model. */
+  keepBatches: Set<string>;
+  /** MRP / Sell A–D per line as posted (lineNo|item|unit) and what the price writer did then. */
+  prevPrices: Map<string, { mrp: Prisma.Decimal | null; levels: (Prisma.Decimal | null)[]; result: string | null }>;
+  reason: string | null;
+}
+const priceKey = (l: { griLineNo: number; griItemId: string; griUomId: string }) => `${l.griLineNo}|${l.griItemId}|${l.griUomId}`;
+const sameDec = (a: Prisma.Decimal | null, b: Prisma.Decimal | null) => (a == null || b == null ? a == null && b == null : D(a).equals(D(b)));
 /** "lines.3.allocs" → the line's own number (the strip names lines by number). */
 const lineNoOf = (dto: SaveGrnDto, field: string) => {
   const m = /^lines\.(\d+)/.exec(field);
@@ -68,7 +99,8 @@ export class GrnHeaderDto {
   @ApiProperty() @IsUUID() branchId!: string;
   @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
   @ApiProperty() @IsUUID() deviceId!: string;
-  @ApiProperty() @IsUUID() supplierId!: string;
+  @ApiPropertyOptional({ description: 'The supplier (purchase.suppliers.sup_id). A draft may leave it out (GRN rework #13, D2); post and amend refuse without it (PUR_SUPPLIER_REQUIRED, field header.supplierId).' })
+  @IsOptional() @IsUUID() supplierId?: string;
   @ApiProperty() @IsUUID() godownId!: string;
   @ApiProperty() @IsDateString() docDate!: string;
   @ApiPropertyOptional({ description: 'When the goods came in (date-time, ISO 8601 with offset, e.g. 2026-10-24T16:35:00+05:30). Default: now on the first save, then kept.' })
@@ -92,7 +124,9 @@ export class GrnHeaderDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) packagesSent?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) packagesReceived?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) remarks?: string;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() post?: boolean;
+  @ApiPropertyOptional({ description: 'Draft: save and post. With grnId of a POSTED GRN: AMEND it (unwind + re-post in one transaction, same number, revision + 1).' })
+  @IsOptional() @IsBoolean() post?: boolean;
+  @ApiPropertyOptional({ description: 'Amend: why — kept on the trail (AMENDED, "Revision n: …").' }) @IsOptional() @IsString() @MaxLength(250) amendReason?: string;
 }
 export class SaveGrnDto {
   @ApiProperty({ type: GrnHeaderDto }) @ValidateNested() @Type(() => GrnHeaderDto) header!: GrnHeaderDto;
@@ -137,7 +171,7 @@ export class PurchaseGrnService {
   private async prepare(tx: Prisma.TransactionClient | PrismaService, dto: SaveGrnDto) {
     const h = dto.header;
     const db = tx as Prisma.TransactionClient;
-    const sup = await supplierRow(db, h.supplierId);
+    const sup = h.supplierId ? await supplierRow(db, h.supplierId) : null;   // D2: a draft may wait for it
     const units = await loadUnits(db, dto.lines.map((l) => l.uomId));
     const problems: { field: string; code: string; message: string }[] = [];
     const warnings: { field: string; code: string; message: string }[] = [];
@@ -243,6 +277,7 @@ export class PurchaseGrnService {
       ...p.problems.map((x) => ({ ...x, level: 'REFUSE' as const, lineNo: lineNoOf(dto, x.field), needsRight: null })),
       ...p.warnings.map((x) => ({ ...x, level: 'WARN' as const, lineNo: lineNoOf(dto, x.field), needsRight: null })),
       ...p.issues,
+      ...(dto.header.supplierId ? [] : [{ ...SUPPLIER_REQUIRED, level: 'REFUSE' as const, lineNo: null, needsRight: null }]),
     ];
     const poRefs = await this.poRefsOf(this.prisma, dto.lines.map((l) => l.poItemId).filter((x): x is string => !!x), 'poi');
     const godown = await this.prisma.$queryRaw<{ gdl_name: string }[]>`SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${dto.header.godownId}::uuid`;
@@ -253,7 +288,7 @@ export class PurchaseGrnService {
     }));
     const charges = c ? c.charges.map((ch, i) => ({ chgId: dto.charges![i].chgId, amount: ch.amount.abs().toFixed(2), payees: ch.payees.map((x) => ({ partyId: x.partyId, amount: x.amount.abs().toFixed(2) })) })) : [];
     return jsonSafe({
-      header: { supplierName: p.sup.sup_name, godownName: godown[0]?.gdl_name ?? null, poRefs, transport: dto.header.transport ? this.bandInput(dto.header.transport, dto.header, p.sup.sup_name) : null },
+      header: { supplierName: p.sup?.sup_name ?? null, godownName: godown[0]?.gdl_name ?? null, poRefs, transport: dto.header.transport ? this.bandInput(dto.header.transport, dto.header, p.sup?.sup_name ?? null) : null },
       lines, charges,
       totals: c ? this.totalsOf(dto.lines.map((l, i) => ({ factor: p.units.get(l.uomId)?.iuc_to_base_factor ?? D(1), challan: D(l.challanQty ?? D(l.receivedQty).plus(D(l.damagedQty))),
                     received: D(l.receivedQty), damaged: D(l.damagedQty), free: D(l.freeQty), value: c.lines[i].netGross })), c.offbillCharges) : null,
@@ -284,7 +319,7 @@ export class PurchaseGrnService {
           SELECT po_id AS "poId", po_acc_year AS "accYear", po_refno AS "refno" FROM purchase.pur_order WHERE po_id = ANY(${[...new Set(ids)]}::uuid[]) ORDER BY 3`;
   }
 
-  private bandInput(t: PurchaseTransportDto, h: GrnHeaderDto, supplierName: string): TransportBandInput {
+  private bandInput(t: PurchaseTransportDto, h: GrnHeaderDto, supplierName: string | null): TransportBandInput {
     return {
       direction: 'INWARD', from: { name: supplierName }, to: { godownId: h.godownId, branchId: h.branchId },
       mode: t.mode ?? null, transporterId: t.transporterId ?? null, transporterName: t.transporterName?.trim() || null,
@@ -294,7 +329,7 @@ export class PurchaseGrnService {
   }
 
   /** The transport band: omitted = kept, null / all blank = removed. */
-  private async writeTransport(tx: Prisma.TransactionClient, h: GrnHeaderDto, supplierName: string, grnId: string, refno: string, actor: string) {
+  private async writeTransport(tx: Prisma.TransactionClient, h: GrnHeaderDto, supplierName: string | null, grnId: string, refno: string, actor: string) {
     if (h.transport === undefined) return;
     const ref = { docType: 'GRN' as const, docId: grnId, accYear: h.accYear, companyId: h.companyId, branchId: h.branchId, docRefno: refno };
     const t = h.transport;
@@ -313,8 +348,28 @@ export class PurchaseGrnService {
   async save(dto: SaveGrnDto) {
     const actor = this.actor();
     const h = dto.header;
+    // D2: a draft may wait for its supplier; a post (and an amend, which posts) may not
+    if (h.post && !h.supplierId) purRefuse(SUPPLIER_REQUIRED.message, SUPPLIER_REQUIRED.code, SUPPLIER_REQUIRED.field);
     const warnings: PurIssue[] = [];
     const id = await this.prisma.$transaction(async (tx) => {
+      let grnId = h.grnId ?? null;
+      let cur: PurGrn | null = null;
+      if (grnId) {
+        // two saves of one GRN queue up
+        await tx.$executeRaw`SELECT 1 FROM purchase.pur_grn WHERE grn_id = ${grnId}::uuid AND grn_acc_year = ${h.accYear}::bpchar FOR UPDATE`;
+        cur = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: h.accYear, grnIsDeleted: false } });
+        if (!cur) purNotFound(`GRN ${grnId} not found`);
+      }
+      // #15 / #16: a POSTED GRN saved again with post = true is AMENDED in place
+      const amending = cur?.grnStatus === 'POSTED' && !!h.post;
+      if (cur && cur.grnStatus !== 'DRAFT' && !amending) {
+        purConflict(cur.grnStatus === 'POSTED' ? `${cur.grnRefno} is POSTED — a posted GRN is amended with Post (post = true).` : `${cur.grnRefno} is ${cur.grnStatus} — only a draft can be edited.`,
+                    PUR.NOT_DRAFT, 'grnId');
+      }
+      if (amending) {
+        const block = await this.amendBlockOf(tx, cur!);
+        if (block) purConflict(block.message, block.code, 'header.grnId');
+      }
       const p = await this.prepare(tx, dto);
       if (p.problems.length) purRefuseMany(p.problems[0].message, p.problems);
       const { units, excessOf, priceAtGrn } = p;
@@ -323,32 +378,33 @@ export class PurchaseGrnService {
       const refusals = p.issues.filter((x) => x.level === 'REFUSE' && !(h.overrideWarnings && x.needsRight === 'OVERRIDE'));
       if (h.post && refusals.length) purRefuseMany(refusals[0].message, refusals.map((x) => ({ field: x.field, code: x.code, message: x.message })));
       warnings.push(...p.warnings.map((x) => ({ ...x, level: 'WARN' as const, lineNo: lineNoOf(dto, x.field), needsRight: null })), ...p.issues);
+      // a draft saved without its supplier: what will stop its post (the save's refusals[])
+      if (!h.supplierId) warnings.push({ ...SUPPLIER_REQUIRED, level: 'REFUSE', lineNo: null, needsRight: null });
 
-      let grnId = h.grnId ?? null;
       let slno: bigint, refno: string, isNew = false;
       let receivedAt: Date = h.receivedAt ? new Date(h.receivedAt) : new Date();
-      if (grnId) {
-        const cur = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: h.accYear, grnIsDeleted: false } });
-        if (!cur) purNotFound(`GRN ${grnId} not found`);
-        if (cur.grnStatus !== 'DRAFT') purConflict(`${cur.grnRefno} is ${cur.grnStatus} — only a draft can be edited.`, PUR.NOT_DRAFT, 'grnId');
+      let amend: GrnAmend | null = null;
+      if (cur) {
         slno = cur.grnSlno; refno = cur.grnRefno;
         if (!h.receivedAt && cur.grnReceivedAt) receivedAt = cur.grnReceivedAt;   // kept unless typed again
-        await tx.purItemAlloc.deleteMany({ where: { piaDocType: DOC, piaDocId: grnId, piaAccYear: h.accYear } });
-        await tx.purGrnItem.deleteMany({ where: { griGrnId: grnId, griAccYear: h.accYear } });
-        await tx.$executeRaw`DELETE FROM public.txn_charge_detail WHERE cd_doc_type = ${DOC} AND cd_doc_id = ${grnId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
+        if (amending) amend = await this.unwindForAmend(tx, cur, h.amendReason?.trim() || null, actor);
+        await tx.purItemAlloc.deleteMany({ where: { piaDocType: DOC, piaDocId: cur.grnId, piaAccYear: h.accYear } });
+        await tx.purGrnItem.deleteMany({ where: { griGrnId: cur.grnId, griAccYear: h.accYear } });
+        await tx.$executeRaw`DELETE FROM public.txn_charge_detail WHERE cd_doc_type = ${DOC} AND cd_doc_id = ${cur.grnId}::uuid AND cd_acc_year = ${h.accYear}::bpchar`;
       } else {
         ({ slno, refno } = await allocateDocNumber(tx, 'GRN', h.companyId, h.branchId, h.accYear, h.deviceId));
         isNew = true;
       }
       const provisional = calc.lines.reduce((s, l) => s.plus(l.netGross), ZERO);
       const data = {
-        grnCompanyId: h.companyId, grnBranchId: h.branchId, grnAccYear: h.accYear, grnDeviceId: h.deviceId, grnSlno: slno, grnRefno: refno,
-        grnDocDate: dateOf(h.docDate)!, grnSupplierId: h.supplierId, grnGodownId: h.godownId, grnChallanNo: h.challanNo ?? null,
+        // the device stays the one that numbered it (its code is in the refno; ux_grn_device_slno is per device)
+        grnCompanyId: h.companyId, grnBranchId: h.branchId, grnAccYear: h.accYear, grnDeviceId: cur?.grnDeviceId ?? h.deviceId, grnSlno: slno, grnRefno: refno,
+        grnDocDate: dateOf(h.docDate)!, grnSupplierId: h.supplierId ?? null, grnGodownId: h.godownId, grnChallanNo: h.challanNo ?? null,
         grnChallanDate: dateOf(h.challanDate), grnSupplierInvNo: h.supplierInvNo ?? null,
         grnReceivedAt: receivedAt, grnReceivedBy: h.receivedBy ?? [], grnSupervisorId: h.supervisorId ?? null,
         grnVehicleNo: h.vehicleNo ?? null, grnDriverName: h.driverName ?? null, grnEwbNo: h.ewbNo ?? null, grnEwbDate: dateOf(h.ewbDate),
         grnPackagesSent: h.packagesSent ?? null, grnPackagesReceived: h.packagesReceived ?? null,
-        grnProvisionalValue: provisional, grnOffbillCharges: calc.offbillCharges, grnRemarks: h.remarks ?? null, grnStatus: 'DRAFT',
+        grnProvisionalValue: provisional, grnOffbillCharges: calc.offbillCharges, grnRemarks: h.remarks ?? null, grnStatus: amending ? 'POSTED' : 'DRAFT',
       };
       if (isNew) grnId = (await tx.purGrn.create({ data: { ...data, grnCreatedBy: actor }, select: { grnId: true } })).grnId;
       else await tx.purGrn.update({ where: { grnId_grnAccYear: { grnId: grnId!, grnAccYear: h.accYear } }, data: { ...data, grnModifiedBy: actor, grnModifiedOn: new Date(), grnRevisionNo: { increment: 1 } } });
@@ -386,15 +442,135 @@ export class PurchaseGrnService {
         }
       }
       await this.writeCharges(tx, dto, calc.charges, grnId!, slno, h, actor);
-      await this.writeTransport(tx, h, p.sup.sup_name, grnId!, refno, actor);
+      await this.writeTransport(tx, h, p.sup?.sup_name ?? null, grnId!, refno, actor);
       if (isNew) await statusLog(tx, { companyId: h.companyId, branchId: h.branchId, accYear: h.accYear, docType: TxnStatusDocType.GRN, docId: grnId!, refno, event: TxnStatusEvent.CREATED, from: null, to: 'DRAFT', actor, deviceId: h.deviceId });
       if (h.post) {
-        const notes = await this.postInTx(tx, grnId!, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null });
+        const notes = await this.postInTx(tx, grnId!, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null }, amend);
         warnings.push(...notes.filter((n) => n.code !== 'PUR_SHELF_LIFE').map((n) => ({ ...n, level: 'WARN' as const, lineNo: lineNoOf(dto, n.field), needsRight: null })));
       }
       return grnId!;
     }, { timeout: 60000, maxWait: 10000 });
     return { ...(await this.get(id, h.accYear)), warnings: warnings.filter((w) => w.level === 'WARN'), refusals: h.post ? [] : warnings.filter((w) => w.level === 'REFUSE') };
+  }
+
+  /**
+   * #15 / #16 — an amend's first half, after amendBlockOf passed: the posting undone exactly as cancel() does it, the GRN
+   * left POSTED. The voucher goes back to DRAFT with its legs retired (retireForRestate) so the re-post restates it under
+   * the same number — no Rev mirror per amend, as the Sale Bill / receipt amend. Returns what the re-post needs.
+   */
+  private async unwindForAmend(tx: Prisma.TransactionClient, g: PurGrn, reason: string | null, actor: string): Promise<GrnAmend> {
+    const why = `GRN ${g.grnRefno} amended (revision ${g.grnRevisionNo + 1})${reason ? `: ${reason}` : ''}`.slice(0, 250);
+    // the batch numbers its earlier post(s) were given (textile: their size / colour / model rows), before the shadow goes
+    const given = await tx.$queryRaw<{ b: string }[]>`
+      SELECT DISTINCT d.sbd_batch_no AS b FROM stock.stock_batch_detail d
+       WHERE NOT d.sbd_is_deleted
+         AND d.sbd_src_doc_id IN (SELECT s.svh_id FROM stock.stock_voucher s WHERE s.svh_link_src_module = 'PURCHASE' AND s.svh_link_src_doc_type = ${DOC}
+                                     AND s.svh_link_src_doc_id = ${g.grnId}::uuid AND s.svh_acc_year = ${g.grnAccYear}::bpchar)`;
+    const prev = await tx.purGrnItem.findMany({ where: { griGrnId: g.grnId, griAccYear: g.grnAccYear, griIsDeleted: false } });
+    await cancelShadowStock(tx, this.stockPosting, DOC, g.grnId, g.grnAccYear, g.grnCompanyId, g.grnBranchId, this.rules(), actor, why);
+    const restateVoucherId = g.grnPostedVoucherId && (await this.vouchers.retireForRestate(tx, g.grnPostedVoucherId, g.grnAccYear, actor)) ? g.grnPostedVoucherId : null;
+    await withdrawBillRows(tx, DOC, g.grnId, actor);
+    await tx.purShortage.updateMany({ where: { pshSrcDocType: DOC, pshSrcDocId: g.grnId, pshIsDeleted: false }, data: { pshIsDeleted: true, pshModifiedBy: actor, pshModifiedOn: new Date() } });
+    return {
+      restateVoucherId, reason,
+      keepBatches: new Set(given.map((r) => r.b.trim().toUpperCase())),
+      prevPrices: new Map(prev.map((l) => [priceKey(l), { mrp: l.griMrp, levels: [l.griSellA, l.griSellB, l.griSellC, l.griSellD], result: l.griPriceUpdateResult }])),
+    };
+  }
+
+  /**
+   * Why a POSTED GRN may not be amended now, or null (#15 / #16). Read-only: the amend's refusal and GET header.amendBlock.
+   * In order: D4 — any purchase bill line names it, DRAFT bills too (PUR_GRN_AMEND_BILLED); the cancel's own refusals —
+   * a live return, coolie already paid, a shortage already received / closed (PUR_EDIT_LOCKED_PAID, as cancel); D3 —
+   * its goods have moved (PUR_GRN_AMEND_STOCK_MOVED, stockMovedOf).
+   */
+  private async amendBlockOf(db: Prisma.TransactionClient | PrismaService, g: Pick<PurGrn, 'grnId' | 'grnAccYear' | 'grnRefno' | 'grnCompanyId' | 'grnBranchId'>): Promise<GrnAmendBlock | null> {
+    const q = db as Prisma.TransactionClient;
+    const bills = await q.$queryRaw<{ refno: string; drafts: bigint }[]>`
+      SELECT p.pi_refno AS refno, count(*) FILTER (WHERE p.pi_status = 'DRAFT') AS drafts
+        FROM purchase.pur_invoice_item pii JOIN purchase.pur_invoice p ON p.pi_id = pii.pii_pi_id AND p.pi_acc_year = pii.pii_acc_year
+       WHERE pii.pii_src_doc_type = 'GRN' AND pii.pii_src_doc_id = ${g.grnId}::uuid AND NOT pii.pii_is_deleted
+         AND NOT p.pi_is_deleted AND p.pi_status <> 'CANCELLED'
+       GROUP BY p.pi_refno ORDER BY 1 LIMIT 3`;
+    if (bills.length) {
+      const list = bills.map((b) => (Number(b.drafts) > 0 ? `${b.refno} (draft)` : b.refno)).join(', ');
+      return { code: GRN_AMEND_BILLED, message: `${g.grnRefno} is on ${list} — it can't be amended. Cancel / change that bill first.` };
+    }
+    const returns = await q.$queryRaw<{ pr_refno: string }[]>`
+      SELECT DISTINCT pr.pr_refno FROM purchase.pur_return pr
+       WHERE pr.pr_src_doc_id = ${g.grnId}::uuid AND pr.pr_status <> 'CANCELLED' AND NOT pr.pr_is_deleted ORDER BY 1 LIMIT 3`;
+    if (returns.length) return { code: PUR.EDIT_LOCKED_PAID, message: `${g.grnRefno} has return ${returns.map((r) => r.pr_refno).join(', ')} against it — it can't be amended. Cancel the return first.` };
+    const [paid] = await q.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM accounts.acc_bill_balance WHERE abl_src_doc_type = ${DOC} AND abl_src_doc_id = ${g.grnId}::uuid AND NOT abl_is_deleted
+         AND (abl_alloc_amount + abl_disc_amount + abl_writeoff_amount) <> 0`;
+    if (Number(paid.n) > 0) return { code: PUR.EDIT_LOCKED_PAID, message: `${g.grnRefno}: the loadmen are already paid — it can't be amended. Undo that payment first.` };
+    const [touched] = await q.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM purchase.pur_shortage s
+       WHERE (s.psh_src_doc_id = ${g.grnId}::uuid OR s.psh_bill_doc_id = ${g.grnId}::uuid) AND NOT s.psh_is_deleted
+         AND (EXISTS (SELECT 1 FROM purchase.pur_shortage_receipt_item i JOIN purchase.pur_shortage_receipt r ON r.psr_id = i.psri_psr_id AND r.psr_acc_year = i.psri_acc_year
+                       WHERE i.psri_shortage_id = s.psh_id AND NOT i.psri_is_deleted AND NOT r.psr_is_deleted AND r.psr_status <> 'CANCELLED')
+           OR COALESCE((SELECT SUM(c.psc_qty_base) FROM purchase.pur_shortage_close c WHERE c.psc_shortage_id = s.psh_id AND NOT c.psc_is_deleted), 0) <> 0)`;
+    if (Number(touched.n) > 0) return { code: PUR.EDIT_LOCKED_PAID, message: `${g.grnRefno}: a shortage of it is already received or closed — it can't be amended. Cancel that first.` };
+    const moved = await this.stockMovedOf(q, g);
+    return moved ? { code: GRN_AMEND_STOCK_MOVED, message: moved } : null;
+  }
+
+  /**
+   * D3 (user 2026-11-04, the bill-amend rule D25): has anything gone out of what this GRN brought in? Two readings, per
+   * allocation row of its live posting:
+   *  - a TRACKED lot (track signature <> 'N') this GRN created (its first inward was one of the GRN's shadow vouchers):
+   *    ANY unreversed outward ledger row of another document on the lot — sold, transferred, adjusted, moved bucket,
+   *    returned — blocks, even if something came back since;
+   *  - a plain item's lot (signature 'N', one lot per item) or a tracked lot that was there before: the godown / bucket
+   *    holds less than the GRN brought into it (the unwind would take stock that is no longer there).
+   * Returns the message for the first line it finds, else null.
+   */
+  private async stockMovedOf(q: Prisma.TransactionClient, g: Pick<PurGrn, 'grnId' | 'grnAccYear' | 'grnRefno' | 'grnCompanyId' | 'grnBranchId'>): Promise<string | null> {
+    const [m] = await q.$queryRaw<{ kind: string; line_no: number; item_name: string | null; batch_no: string | null; base_in: Prisma.Decimal | null;
+                                     on_hand: Prisma.Decimal | null; godown: string | null; unit: string | null }[]>`
+      WITH sh AS (
+        SELECT s.svh_id FROM stock.stock_voucher s
+         WHERE s.svh_link_src_module = 'PURCHASE' AND s.svh_link_src_doc_type = ${DOC} AND s.svh_link_src_doc_id = ${g.grnId}::uuid AND s.svh_acc_year = ${g.grnAccYear}::bpchar
+      ), r AS (
+        SELECT a.pia_lot_id AS lot_id, a.pia_godown_id AS godown_id, a.pia_bucket AS bucket, gri.gri_line_no AS line_no, gri.gri_item_id AS item_id,
+               gri.gri_base_uom_id AS base_uom_id, (a.pia_qty + a.pia_free_qty) * gri.gri_to_base_factor AS base_in
+          FROM purchase.pur_item_alloc a
+          JOIN purchase.pur_grn_item gri ON gri.gri_id = a.pia_line_id AND gri.gri_acc_year = a.pia_acc_year AND NOT gri.gri_is_deleted
+         WHERE a.pia_doc_type = ${DOC} AND a.pia_doc_id = ${g.grnId}::uuid AND a.pia_acc_year = ${g.grnAccYear}::bpchar AND NOT a.pia_is_deleted
+           AND a.pia_lot_id IS NOT NULL AND a.pia_qty + a.pia_free_qty > 0
+      ), own AS (
+        SELECT DISTINCT r.lot_id FROM r JOIN stock.stock_lot l ON l.slt_id = r.lot_id
+         WHERE l.slt_track_signature <> 'N' AND l.slt_inward_src_doc_id IN (SELECT svh_id FROM sh)
+      ), hit AS (
+        SELECT 'OUT' AS kind, min(r.line_no) AS line_no, r.item_id, max(l.slt_batch_no) AS batch_no, NULL::numeric AS base_in, NULL::numeric AS on_hand,
+               NULL::uuid AS godown_id, NULL::uuid AS base_uom_id
+          FROM r JOIN stock.stock_lot l ON l.slt_id = r.lot_id
+         WHERE r.lot_id IN (SELECT lot_id FROM own)
+           AND EXISTS (SELECT 1 FROM stock.stock_ledger sml
+                        WHERE sml.sml_lot_id = r.lot_id AND sml.sml_direction = -1 AND sml.sml_src_doc_id NOT IN (SELECT svh_id FROM sh)
+                          AND ${unreversedLedgerRow()})
+         GROUP BY r.lot_id, r.item_id
+        UNION ALL
+        SELECT 'LEFT', min(r.line_no), r.item_id, NULL, sum(r.base_in), COALESCE(max(b.sbl_on_hand_qty), 0), r.godown_id, max(r.base_uom_id::text)::uuid
+          FROM r LEFT JOIN stock.stock_balance b
+               ON b.sbl_company_id = ${g.grnCompanyId}::uuid AND b.sbl_branch_id = ${g.grnBranchId}::uuid AND b.sbl_godown_id = r.godown_id
+              AND b.sbl_item_id = r.item_id AND b.sbl_lot_id = r.lot_id AND b.sbl_bucket = r.bucket AND NOT b.sbl_is_deleted
+         WHERE r.lot_id NOT IN (SELECT lot_id FROM own)
+         GROUP BY r.godown_id, r.item_id, r.lot_id, r.bucket
+        HAVING COALESCE(max(b.sbl_on_hand_qty), 0) < sum(r.base_in)
+      )
+      SELECT h.kind, h.line_no, im.item_name_en AS item_name, h.batch_no, h.base_in, h.on_hand, gd.gdl_name AS godown, u.unit_name AS unit
+        FROM hit h
+        LEFT JOIN inventory.item_master im ON im.item_id = h.item_id
+        LEFT JOIN inventory.godown_locations gd ON gd.gdl_id = h.godown_id
+        LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = h.base_uom_id
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+       ORDER BY h.line_no LIMIT 1`;
+    if (!m) return null;
+    const what = `${g.grnRefno} line ${m.line_no}${m.item_name ? ` (${m.item_name})` : ''}`;
+    if (m.kind === 'OUT') return `${what}: goods have already gone out of ${m.batch_no ? `batch ${m.batch_no}` : 'its lot'} (sold, moved, adjusted or returned) — it can't be amended.`;
+    const n = (v: Prisma.Decimal | null) => D(v).toDecimalPlaces(3).toString();
+    return `${what}: ${m.godown ?? 'the godown'} holds ${n(m.on_hand)}${m.unit ? ` ${m.unit}` : ''} of the ${n(m.base_in)} it brought in — it can't be amended.`;
   }
 
   /** The PO line's qty still to come, in BASE units, leaving out this GRN (a draft being saved again). */
@@ -473,12 +649,22 @@ export class PurchaseGrnService {
     return { ...(await this.get(grnId, accYear)), warnings };
   }
 
-  /** Posts the draft; returns what the screen should be told (shelf life, prices kept / not written, an override logged). */
-  private async postInTx(tx: Prisma.TransactionClient, grnId: string, accYear: string, actor: string, ov: { override: boolean; reason: string | null } = { override: false, reason: null }) {
+  /**
+   * Posts the draft; returns what the screen should be told (shelf life, prices kept / not written, an override logged).
+   * `amend` (#15): the re-post of a POSTED GRN whose posting unwindForAmend undid — same checks and writes, the voucher
+   * restated in place, the earlier batch numbers kept, the trail AMENDED instead of POSTED.
+   */
+  private async postInTx(tx: Prisma.TransactionClient, grnId: string, accYear: string, actor: string, ov: { override: boolean; reason: string | null } = { override: false, reason: null },
+                         amend: GrnAmend | null = null) {
     const notes: { field: string; code: string; message: string }[] = [];
     const g = await tx.purGrn.findFirst({ where: { grnId, grnAccYear: accYear, grnIsDeleted: false } });
     if (!g) purNotFound(`GRN ${grnId} not found`);
-    if (g.grnStatus !== 'DRAFT') purConflict(`${g.grnRefno} is ${g.grnStatus} — only a draft can be posted.`, PUR.NOT_DRAFT, 'grnId');
+    if (amend && g.grnStatus !== 'POSTED') purConflict(`${g.grnRefno} is ${g.grnStatus} — only a posted GRN is amended.`, PUR.NOT_POSTED, 'grnId');
+    if (!amend && g.grnStatus !== 'DRAFT') purConflict(`${g.grnRefno} is ${g.grnStatus} — only a draft can be posted.`, PUR.NOT_DRAFT, 'grnId');
+    // D2: a draft saved without its supplier is posted only once one is picked
+    const supplierId = g.grnSupplierId;
+    if (!supplierId) purRefuse(SUPPLIER_REQUIRED.message, SUPPLIER_REQUIRED.code, SUPPLIER_REQUIRED.field);
+    const fromStatus = amend ? 'POSTED' : 'DRAFT';
     const lines = await tx.purGrnItem.findMany({ where: { griGrnId: grnId, griAccYear: accYear, griIsDeleted: false }, orderBy: { griLineNo: 'asc' } });
     const allocs = await tx.purItemAlloc.findMany({ where: { piaDocType: DOC, piaDocId: grnId, piaAccYear: accYear, piaIsDeleted: false }, orderBy: { piaRowNo: 'asc' } });
     const byLine = new Map(lines.map((l) => [l.griId, l]));
@@ -499,7 +685,7 @@ export class PurchaseGrnService {
       if (issues.length) {
         const what = [...new Set(issues.map((x) => x.code))].join(', ');
         await statusLog(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno,
-          event: TxnStatusEvent.WARN_OVERRIDE, from: 'DRAFT', to: 'POSTED', actor, deviceId: g.grnDeviceId, remarks: `${what}${ov.reason ? ` — ${ov.reason}` : ''}`.slice(0, 250) });
+          event: TxnStatusEvent.WARN_OVERRIDE, from: fromStatus, to: 'POSTED', actor, deviceId: g.grnDeviceId, remarks: `${what}${ov.reason ? ` — ${ov.reason}` : ''}`.slice(0, 250) });
         notes.push({ field: 'header.overrideWarnings', code: 'PUR_WARN_OVERRIDDEN', message: `Posted past ${what} (override logged).` });
       }
     }
@@ -509,16 +695,16 @@ export class PurchaseGrnService {
     };
     const { perRow } = await postShadowStock(tx, this.stockPosting,
       { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, deviceId: g.grnDeviceId, sessionId: g.grnSessionId, docType: DOC, docId: grnId,
-        refno: g.grnRefno, revision: g.grnRevisionNo, usrRefno: g.grnChallanNo, docDate, supplierId: g.grnSupplierId, remarks: `GRN ${g.grnRefno}` },
+        refno: g.grnRefno, revision: g.grnRevisionNo, usrRefno: g.grnChallanNo, docDate, supplierId, remarks: `GRN ${g.grnRefno}` },
       this.rules(),
       allocs.map((a) => {
         const l = byLine.get(a.piaLineId)!;
         return { itemId: l.griItemId, uomId: l.griUomId, baseUomId: l.griBaseUomId, factor: l.griToBaseFactor, godownId: a.piaGodownId, bucket: a.piaBucket,
           batchNo: a.piaBatchNo, mfgDate: a.piaMfgDate, expiryDate: a.piaExpiryDate, mrp: a.piaMrp, salePrice: a.piaSalePrice, serialNo: a.piaSerialNo,
           sizeId: a.piaSizeId, colourId: a.piaColourId, model: a.piaModel,
-          supplierId: g.grnSupplierId, qty: a.piaQty, freeQty: a.piaFreeQty, costRate: cost(l) };
+          supplierId, qty: a.piaQty, freeQty: a.piaFreeQty, costRate: cost(l) };
       }),
-      actor, postedOn);
+      actor, postedOn, { keepBatches: amend?.keepBatches });
     for (let i = 0; i < allocs.length; i++) {
       if (perRow[i]?.sviId) await tx.purItemAlloc.update({ where: { piaId_piaAccYear: { piaId: allocs[i].piaId, piaAccYear: accYear } }, data: { piaLotId: perRow[i].lotId, piaSviId: perRow[i].sviId, piaSviAccYear: accYear, piaBatchNo: perRow[i].batchNo } });
     }
@@ -534,10 +720,12 @@ export class PurchaseGrnService {
     for (const c of charges) legs.push({ ledgerId: c.cd_party_id ?? c.cd_ledger_code, drCr: 'CR', amount: num2(c.cd_amount), remarks: `${c.cd_chg_name} · ${g.grnRefno}` });
     const posted = await this.vouchers.postLegs(tx, {
       header: { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, voucherTypeId: vt, voucherDate: docDate, srcModule: 'PURCHASE', srcDocType: DOC, srcDocId: grnId,
-        docLabel: 'GRN', docRefno: g.grnRefno, docDate, usrRefno: g.grnChallanNo, docAmount: num2(g.grnProvisionalValue), partyId: g.grnSupplierId,
+        docLabel: 'GRN', docRefno: g.grnRefno, docDate, usrRefno: g.grnChallanNo, docAmount: num2(g.grnProvisionalValue), partyId: supplierId,
         userId: actor, sessionId: g.grnSessionId, deviceId: g.grnDeviceId, remarks: g.grnRemarks ?? `GRN ${g.grnRefno}`, createdBy: actor,
         // no presetNo: grn_slno runs per device and would collide on ux_avh_voucher_no (per branch + type)
-        presetRefno: g.grnRefno },
+        presetRefno: g.grnRefno,
+        // an amend: the same voucher (number, slno) restated with the new legs, avh_revision_no + 1
+        restateVoucherId: amend?.restateVoucherId ?? null },
       legs: legs.filter((l) => l.amount >= 0.005),
     });
     let k = 0;
@@ -551,21 +739,34 @@ export class PurchaseGrnService {
       const short = l.griChallanQty.minus(l.griReceivedQty).minus(l.griDamagedQty);
       if (!short.greaterThan(0)) continue;
       await tx.purShortage.create({ data: {
-        pshCompanyId: g.grnCompanyId, pshBranchId: g.grnBranchId, pshAccYear: accYear, pshSupplierId: g.grnSupplierId, pshItemId: l.griItemId,
+        pshCompanyId: g.grnCompanyId, pshBranchId: g.grnBranchId, pshAccYear: accYear, pshSupplierId: supplierId, pshItemId: l.griItemId,
         pshSrcDocType: DOC, pshSrcDocId: grnId, pshSrcDocYear: accYear, pshSrcItemId: l.griId, pshSrcDocRefno: g.grnRefno,
         pshReason: 'SHORT_CHALLAN', pshQtyBase: short.times(l.griToBaseFactor), pshOriginCostRate: cost(l), pshCreatedBy: actor,
       } });
     }
-    // purchase.price_set_at = GRN: the GRN's Sell A–D / MRP go through the purchase price writer (D16: a newer change wins)
+    // purchase.price_set_at = GRN: the GRN's Sell A–D / MRP go through the purchase price writer (D16: a newer change wins).
+    // An amend (#15) writes only the lines whose MRP / Sell A–D it changed, timed now (the user just keyed them); a line
+    // whose prices it left alone is not written again — the first post's write stands, and a price changed on the master
+    // since is not put back — and keeps the first post's result.
     if (settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN') {
       const lv = (v: Prisma.Decimal | null) => (v ? Number(v) : 0);
-      const businessTime = docDate === isoDate(postedOn) ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
-      const result = await this.prices.applyPurchasePrices(tx, {
+      const businessTime = amend || docDate === isoDate(postedOn) ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
+      const kept = (l: (typeof lines)[number]) => {
+        const p = amend?.prevPrices.get(priceKey(l));
+        return !!p && sameDec(p.mrp, l.griMrp) && [l.griSellA, l.griSellB, l.griSellC, l.griSellD].every((v, i) => sameDec(p.levels[i], v)) ? p : null;
+      };
+      const write = lines.filter((l) => !kept(l));
+      const result = write.length ? await this.prices.applyPurchasePrices(tx, {
         companyId: g.grnCompanyId, branchId: g.grnBranchId, actor, billRef: g.grnRefno, businessTime,
-        rows: lines.map((l) => ({ key: l.griId, itemId: l.griItemId, uomId: l.griUomId, mrp: l.griMrp ? Number(l.griMrp) : null,
+        rows: write.map((l) => ({ key: l.griId, itemId: l.griItemId, uomId: l.griUomId, mrp: l.griMrp ? Number(l.griMrp) : null,
                                   levels: [{ level: 1, price: lv(l.griSellA) }, { level: 2, price: lv(l.griSellB) }, { level: 3, price: lv(l.griSellC) }, { level: 4, price: lv(l.griSellD) }] })),
-      });
+      }) : new Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>();
       for (const l of lines) {
+        const before = kept(l);
+        if (before) {
+          if (before.result) await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: before.result } });
+          continue;
+        }
         const r = result.get(l.griId);
         if (!r) continue;
         await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: r.result } });
@@ -573,7 +774,9 @@ export class PurchaseGrnService {
       }
     }
     await tx.purGrn.update({ where: { grnId_grnAccYear: { grnId, grnAccYear: accYear } }, data: { grnStatus: 'POSTED', grnPostedVoucherId: posted.voucherId, grnModifiedBy: actor, grnModifiedOn: postedOn } });
-    await statusLog(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno, event: TxnStatusEvent.POSTED, from: 'DRAFT', to: 'POSTED', actor, deviceId: g.grnDeviceId });
+    await statusLog(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno,
+      ...(amend ? { event: TxnStatusEvent.AMENDED, remarks: `Revision ${g.grnRevisionNo}${amend.reason ? `: ${amend.reason}` : ''}`.slice(0, 250) } : { event: TxnStatusEvent.POSTED }),
+      from: fromStatus, to: 'POSTED', actor, deviceId: g.grnDeviceId });
     return [...shelf, ...notes];
   }
 
@@ -688,13 +891,15 @@ export class PurchaseGrnService {
     const settings = await loadPurchaseSettings(this.prisma as unknown as Prisma.TransactionClient, header.grnCompanyId, header.grnBranchId);
     const facts = await this.factsOfSaved(this.prisma, header.grnCompanyId, header.grnBranchId, lines, allocs);
     const { checks } = await this.judge(this.prisma, header.grnCompanyId, header.grnBranchId, isoDate(header.grnDocDate), settings, facts);
+    // #15 / #16: why F2 may not open an amend (null = it may; always null on a draft / cancelled GRN)
+    const amendBlock = header.grnStatus === 'POSTED' ? await this.amendBlockOf(this.prisma, header) : null;
     return jsonSafe({
       header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null,
                 receivedBy: header.grnReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })),
                 supervisorName: header.grnSupervisorId ? manName.get(header.grnSupervisorId) ?? null : null,
                 createdByName: userName.get(header.grnCreatedBy.toLowerCase()) ?? null,
                 modifiedByName: header.grnModifiedBy ? userName.get(header.grnModifiedBy.toLowerCase()) ?? null : null,
-                billStatus, poRefs,
+                billStatus, poRefs, amendBlock,
                 transport: band ? { mode: band.mode ?? null, transporterId: band.transporterId ?? null, transporterName: band.transporterName ?? null,
                                     transporterGstin: band.transporterGstin ?? null, lrNo: band.lrNo ?? null, lrDate: band.lrDate ? String(band.lrDate).slice(0, 10) : null,
                                     distanceKm: band.distanceKm ?? null, remarks: band.remarks ?? null } : null },
@@ -743,13 +948,16 @@ export class PurchaseGrnController {
   private async right(right: MenuRight, action: string) {
     await assertMenuRight(this.prisma, { userId: this.ctx.getUserId(), menuId: GRN_MENU_ID, right, codePrefix: 'GRN', action });
   }
-  @Post('save') @Version(API_VERSION) @ApiOperation({ summary: 'Save a GRN draft; header.post = true saves and posts (stock in, Dr Stock / Cr GRNI, coolie per loadman, challan short).' })
+  @Post('save') @Version(API_VERSION) @ApiOperation({ summary: 'Save a GRN draft (supplier optional on a draft); header.post = true saves and posts (stock in, Dr Stock / Cr GRNI, coolie per loadman, challan short; PUR_SUPPLIER_REQUIRED without a supplier). header.grnId of a POSTED GRN + post = true AMENDS it: unwind + re-post in one transaction, same number, revision + 1, trail AMENDED (header.amendReason); 409 PUR_GRN_AMEND_BILLED / PUR_GRN_AMEND_STOCK_MOVED / PUR_EDIT_LOCKED_PAID while blocked (GET header.amendBlock).' })
   async save(@Body() dto: SaveGrnDto) {
     await this.right(dto.header.grnId ? 'edit' : 'create', 'save a GRN');
     if (dto.header.post) await this.right('post', 'post a GRN');
     if (dto.header.post && dto.header.overrideWarnings) await this.right('override', 'post a GRN past its warnings');
+    const [cur] = dto.header.grnId && dto.header.post
+      ? await this.prisma.$queryRaw<{ s: string }[]>`SELECT grn_status AS s FROM purchase.pur_grn WHERE grn_id = ${dto.header.grnId}::uuid AND grn_acc_year = ${dto.header.accYear}::bpchar`
+      : [];
     const data = await this.service.save(dto);
-    return { success: true, message: `GRN ${data.header.grnRefno} ${dto.header.post ? 'posted' : 'saved as draft'}`, data };
+    return { success: true, message: `GRN ${data.header.grnRefno} ${cur?.s === 'POSTED' ? 'amended' : dto.header.post ? 'posted' : 'saved as draft'}`, data };
   }
   @Post('validate') @Version(API_VERSION)
   @ApiOperation({ summary: 'The server\'s figures for a GRN being keyed — line value / off-bill share / excess, the charges, the six totals, the WARN / REFUSE strip (warnings[] / refusals[]: code, level, lineNo, field, message, needsRight) and lines[].check (chips, shelf life %, labels, serials). Writes nothing.' })
@@ -757,14 +965,14 @@ export class PurchaseGrnController {
     await this.right('view', 'check a GRN');
     return { success: true, message: 'GRN checked', data: await this.service.validate(dto) };
   }
-  @Post('post') @Version(API_VERSION) @ApiOperation({ summary: 'Post a saved GRN draft. overrideWarnings (Override right on menu 196) posts past PUR_SHELF_LIFE in REFUSE mode; logged (WARN_OVERRIDE).' })
+  @Post('post') @Version(API_VERSION) @ApiOperation({ summary: 'Post a saved GRN draft (PUR_SUPPLIER_REQUIRED while it has no supplier). overrideWarnings (Override right on menu 196) posts past PUR_SHELF_LIFE in REFUSE mode; logged (WARN_OVERRIDE).' })
   async post(@Body() dto: GrnPostDto) {
     await this.right('post', 'post a GRN');
     if (dto.overrideWarnings) await this.right('override', 'post a GRN past its warnings');
     const data = await this.service.post(dto.grnId, dto.accYear, { override: !!dto.overrideWarnings, reason: dto.overrideReason ?? null });
     return { success: true, message: `GRN ${data.header.grnRefno} posted`, data };
   }
-  @Get('get') @Version(API_VERSION) @ApiOperation({ summary: 'A GRN with its lines, allocation rows and bill status.' })
+  @Get('get') @Version(API_VERSION) @ApiOperation({ summary: 'A GRN with its lines, allocation rows and bill status. header.amendBlock: null when a POSTED GRN may be amended (and on a draft / cancelled one), else { code, message } — the amend\'s refusal.' })
   async get(@Query() q: GrnRefDto) {
     await this.right('view', 'open a GRN');
     return { success: true, message: 'GRN fetched', data: await this.service.get(q.grnId, q.accYear) };

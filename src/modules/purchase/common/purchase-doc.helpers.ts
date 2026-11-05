@@ -144,12 +144,14 @@ export async function postShadowStock(
   doc: { companyId: string; branchId: string; accYear: string; deviceId: string; sessionId: string | null; docType: string; docId: string;
          refno: string; revision: number; usrRefno: string | null; docDate: string; supplierId: string | null; remarks: string },
   rules: StockVoucherTypeRules, rows: StockRow[], actor: string, postedOn: Date,
+  /** An amend's re-post (GRN rework #15): the batch numbers the document's earlier post was given (folded) — kept with their size / colour / model. */
+  opts: { keepBatches?: ReadonlySet<string> } = {},
 ) {
   const live = rows.filter((r) => r.qty.plus(r.freeQty).greaterThan(0));
   if (!live.length) return { svhId: null as string | null, perRow: [] as { lotId: string | null; sviId: string; cost: Prisma.Decimal; batchNo: string | null }[] };
   const inward = rules.isInward;
   // an inward of a batch-tracked item with no batch: the server's number (textile, auto_batch_no)
-  const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live) : null;
+  const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live, opts.keepBatches) : null;
   if (textile) live.forEach((r, k) => { r.batchNo = textile.batchNos[k]; });
   const slno = await nextStockVoucherSlno(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, voucherType: rules.voucherType, deviceId: doc.deviceId });
   const total = live.reduce((s, r) => s.plus(r.qty).plus(r.freeQty), ZERO);
@@ -219,13 +221,17 @@ export interface TextileRow { itemId: string; batchNo?: string | null; sizeId?: 
  * Size / colour / model ride only on such a number — on a typed batch they are refused.
  * Returns each row's batch (given or typed) and which rows were numbered.
  */
-export async function numberTextileBatches(tx: Tx, scope: { companyId: string; branchId: string; accYear: string; docDate: string }, rows: TextileRow[]) {
+export async function numberTextileBatches(tx: Tx, scope: { companyId: string; branchId: string; accYear: string; docDate: string }, rows: TextileRow[],
+                                           keep: ReadonlySet<string> = new Set()) {
+  // a number this document was given before (an amend sends it back) is the server's own: its size / colour / model stay on it
+  const given = (r: TextileRow) => !!r.batchNo?.trim() && keep.has(r.batchNo.trim().toUpperCase());
   rows.forEach((r, i) => {
-    if (r.batchNo?.trim() && (r.sizeId || r.colourId || r.model?.trim())) {
+    if (r.batchNo?.trim() && !given(r) && (r.sizeId || r.colourId || r.model?.trim())) {
       purRefuse(`Row ${i + 1}: size, colour and model are kept on a batch number the server gives — leave Batch blank.`, PUR.QTY_INVALID, `allocs.${i}.batchNo`);
     }
   });
   const { lines, numbered } = await assignAutoBatchNumbers(tx, scope, rows.map((r) => ({ itemId: r.itemId, batchNo: r.batchNo ?? null })));
+  rows.forEach((r, i) => { if (given(r)) numbered.add(i); });
   return { batchNos: lines.map((l) => l.batchNo ?? null), numbered };
 }
 

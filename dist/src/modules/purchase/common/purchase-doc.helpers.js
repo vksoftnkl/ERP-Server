@@ -130,12 +130,12 @@ function stockRules(direction, typeCode, display, txnType, statusDocType) {
         postShape: 'SIMPLE', auditScreenName: display, statusDocType,
     };
 }
-async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, postedOn) {
+async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, postedOn, opts = {}) {
     const live = rows.filter((r) => r.qty.plus(r.freeQty).greaterThan(0));
     if (!live.length)
         return { svhId: null, perRow: [] };
     const inward = rules.isInward;
-    const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live) : null;
+    const textile = inward ? await numberTextileBatches(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, docDate: doc.docDate }, live, opts.keepBatches) : null;
     if (textile)
         live.forEach((r, k) => { r.batchNo = textile.batchNos[k]; });
     const slno = await (0, stock_voucher_numbering_helper_1.nextStockVoucherSlno)(tx, { companyId: doc.companyId, branchId: doc.branchId, accYear: doc.accYear, voucherType: rules.voucherType, deviceId: doc.deviceId });
@@ -195,13 +195,16 @@ async function postShadowStock(tx, stockPosting, doc, rules, rows, actor, posted
     }
     return { svhId: hdr.svh_id, perRow };
 }
-async function numberTextileBatches(tx, scope, rows) {
+async function numberTextileBatches(tx, scope, rows, keep = new Set()) {
+    const given = (r) => !!r.batchNo?.trim() && keep.has(r.batchNo.trim().toUpperCase());
     rows.forEach((r, i) => {
-        if (r.batchNo?.trim() && (r.sizeId || r.colourId || r.model?.trim())) {
+        if (r.batchNo?.trim() && !given(r) && (r.sizeId || r.colourId || r.model?.trim())) {
             (0, purchase_errors_1.purRefuse)(`Row ${i + 1}: size, colour and model are kept on a batch number the server gives — leave Batch blank.`, purchase_errors_1.PUR.QTY_INVALID, `allocs.${i}.batchNo`);
         }
     });
     const { lines, numbered } = await (0, stock_voucher_batch_numbering_helper_1.assignAutoBatchNumbers)(tx, scope, rows.map((r) => ({ itemId: r.itemId, batchNo: r.batchNo ?? null })));
+    rows.forEach((r, i) => { if (given(r))
+        numbered.add(i); });
     return { batchNos: lines.map((l) => l.batchNo ?? null), numbered };
 }
 async function writeTextileDetails(tx, a, rows, numbered) {
