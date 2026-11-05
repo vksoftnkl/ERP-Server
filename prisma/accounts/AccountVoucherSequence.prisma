@@ -14,7 +14,7 @@ model AccVoucherSeq {
   // Running number
   lastNo        BigInt   @default(0) @map("seq_last_no")
   // Applied format snapshot
-  voucherPrefix String?  @db.VarChar(20) @map("seq_voucher_prefix")
+  voucherPrefix String?  @db.VarChar(60) @map("seq_voucher_prefix")
   companyCode   String?  @db.VarChar(20) @map("seq_company_code")
   branchCode    String?  @db.VarChar(20) @map("seq_branch_code")
   voucherSuffix String?  @db.VarChar(20) @map("seq_voucher_suffix")

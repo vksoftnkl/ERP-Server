@@ -1162,7 +1162,7 @@ ORDER BY s.spt_sort_order, s.spt_name$seed$)
    AND (NULLIF(isvh_status, '') IS NULL OR v.svh_status = isvh_status)
    AND (v.svh_doc_date >= NULLIF(isvh_from_date, '')::date OR NULLIF(isvh_from_date, '') IS NULL)
    AND (v.svh_doc_date <= NULLIF(isvh_to_date,   '')::date OR NULLIF(isvh_to_date,   '') IS NULL)
- ORDER BY v.svh_doc_date DESC, v.svh_slno DESC$seed$)
+ ORDER BY v.svh_doc_date DESC, v.svh_created_on DESC, v.svh_id DESC$seed$)
     ,(100, 'POPUP - SUPPLIERS', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT sup_id, sup_name, sup_short
 FROM purchase.suppliers
 WHERE sup_is_active = true AND sup_is_deleted = false
@@ -1211,7 +1211,7 @@ ORDER BY sup_name$seed$)
    AND (NULLIF(isvh_status, '') IS NULL OR v.svh_status = isvh_status)
    AND (v.svh_doc_date >= NULLIF(isvh_from_date, '')::date OR NULLIF(isvh_from_date, '') IS NULL)
    AND (v.svh_doc_date <= NULLIF(isvh_to_date,   '')::date OR NULLIF(isvh_to_date,   '') IS NULL)
- ORDER BY v.svh_doc_date DESC, v.svh_slno DESC$seed$)
+ ORDER BY v.svh_doc_date DESC, v.svh_created_on DESC, v.svh_id DESC$seed$)
     ,(102, 'POPUP - STOCK REASONS', 'Reason picker for a physical count line (svi_reason_id).', 'srm_name'        , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT srm_id,
        srm_name,
        srm_code,
@@ -1841,7 +1841,7 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
    AND (NULLIF(istatus, '') IS NULL OR h.svh_status = istatus)
    AND (NULLIF(ifrom_date, '') IS NULL OR h.svh_doc_date >= NULLIF(ifrom_date, '')::date)
    AND (NULLIF(ito_date,   '') IS NULL OR h.svh_doc_date <= NULLIF(ito_date,   '')::date)
- ORDER BY h.svh_doc_date DESC, h.svh_slno DESC NULLS LAST, h.svh_created_on DESC$seed$)
+ ORDER BY h.svh_doc_date DESC, h.svh_created_on DESC, h.svh_id DESC$seed$)
     ,(123, 'MAIN LIST - PAYMENTS', 'Payment vouchers (menu 100) for a company / branch / year. PDC vouchers are excluded — they show under their payment.', 'Date'            , 'Descending', 'Desktop', true , false, 'system', $seed$SELECT
        h.avh_voucher_id,
        h.avh_company_id,

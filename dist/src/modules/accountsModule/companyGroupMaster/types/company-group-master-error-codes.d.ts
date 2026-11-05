@@ -1,5 +1,0 @@
-export declare enum CompanyGroupErrorCode {
-    NOT_FOUND = "COMPANY_GROUP_NOT_FOUND",
-    NAME_TAKEN = "COMPANY_GROUP_NAME_TAKEN",
-    DUPLICATE = "COMPANY_GROUP_DUPLICATE"
-}

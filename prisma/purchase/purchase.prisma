@@ -452,7 +452,17 @@ model PurInvoiceItem {
   piiModifiedBy        String?    @db.VarChar(50) @map("pii_modified_by")
   /// MSP typed on the line; written to item_price_master.ipm_min_price on Post (price policy on).
   piiMinPrice          Decimal?   @db.Decimal(15, 2) @map("pii_min_price")
+  /// Wastage per 1 billed unit (0.100 = 100 g per kg): typed, else item_shortage_pct / 100. Own loss: no claim, not in stock, cost up, full ITC.
+  piiWastagePerQty     Decimal    @default(0) @db.Decimal(18, 6) @map("pii_wastage_per_qty")
+  /// Billed × piiWastagePerQty, rounded to the unit's decimals (server).
+  piiWastageQty        Decimal    @default(0) @db.Decimal(18, 6) @map("pii_wastage_qty")
+  /// Source line qty snapshot at save (PO poi_qty · GRN received + damaged); null = direct line.
+  piiSrcQty            Decimal?   @db.Decimal(18, 6) @map("pii_src_qty")
+  /// Source line rate snapshot at save (PO poi_rate · GRN its PO rate, else provisional); null = direct line.
+  piiSrcRate           Decimal?   @db.Decimal(18, 6) @map("pii_src_rate")
   purInvoice           PurInvoice @relation(fields: [piiPiId, piiAccYear], references: [piId, piAccYear], map: "fk_pii_pi")
+
+  // CHECK (DB-only): ck_pii_wastage — 0 <= pii_wastage_per_qty < 1 AND pii_wastage_qty >= 0 (20261104130000).
 
   @@id([piiId, piiAccYear], map: "pk_pur_invoice_item")
   @@map("pur_invoice_item")

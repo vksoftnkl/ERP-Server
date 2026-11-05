@@ -42,9 +42,11 @@ model TransporterMaster {
 
   vehicles          VehicleMaster[] @relation("VehicleTransporter")
 
-  // DB-only (expression key, NULLS NOT DISTINCT, partial):
-  //   CREATE UNIQUE INDEX ux_trn_name ON public.transporter_master
-  //       (trn_company_id, lower(trn_name)) NULLS NOT DISTINCT
+  // DB-only (expression key, partial) — NOT unique since 20261104130000 (offline
+  // rule: two branches may add the same name; the service checks online,
+  // TRN_NAME_TAKEN). It replaced UNIQUE ux_trn_name on the same key.
+  //   CREATE INDEX ix_trn_name ON public.transporter_master
+  //       (trn_company_id, lower(trn_name))
   //       WHERE trn_is_deleted = false;
   //
   // CHECK constraints (DB-only): ck_trn_mode, ck_trn_gstin_len

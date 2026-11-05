@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-02.1",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02",
+  "version": "2026-11-04.3",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -3993,6 +3993,190 @@
       "title": "Terms switched off",
       "line": "These PO terms are switched off.",
       "todo": "Pick other terms, or switch these on in the terms list."
+    },
+    {
+      "code": "SEQUENCE_BRANCH_CODE_MISSING",
+      "variant": "",
+      "lang": "en",
+      "title": "Branch prefix needed",
+      "line": "This branch has no bill prefix for document numbers.",
+      "todo": "Set Bill Prefix in Branches, then save again."
+    },
+    {
+      "code": "SEQUENCE_BRANCH_CODE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong branch prefix",
+      "line": "The branch prefix may have only letters, numbers and \"-\".",
+      "todo": "Correct Bill Prefix in Branches, then save again."
+    },
+    {
+      "code": "SEQUENCE_NUMBER_TAKEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Number already used",
+      "line": "This document number is already on another document.",
+      "todo": "Save again. If it repeats, call support."
+    },
+    {
+      "code": "SEQUENCE_SERIES_EXHAUSTED",
+      "variant": "",
+      "lang": "en",
+      "title": "No free number",
+      "line": "The next numbers of this series are all used.",
+      "todo": "Call support to move the series on."
+    },
+    {
+      "code": "BRANCH_BILL_PREFIX_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong bill prefix",
+      "line": "Bill prefix may have only letters, numbers and \"-\", up to 10.",
+      "todo": "Type a short prefix like CBE."
+    },
+    {
+      "code": "BRANCH_BILL_PREFIX_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Prefix already used",
+      "line": "Another branch of this company has this bill prefix.",
+      "todo": "Type a different prefix."
+    },
+    {
+      "code": "PUR_PO_CONVERTED",
+      "variant": "",
+      "lang": "en",
+      "title": "PO already used",
+      "line": "Goods or a bill have come in against this PO, so it can't be changed.",
+      "todo": "Short-close what is still pending, or make a new PO."
+    },
+    {
+      "code": "PUR_AMEND_OFF",
+      "variant": "",
+      "lang": "en",
+      "title": "Amend is off",
+      "line": "Changing a posted bill is switched off.",
+      "todo": "Ask your admin to turn on \"Amend a posted purchase in place\", or cancel the bill and enter it again."
+    },
+    {
+      "code": "PUR_REVISION_STALE",
+      "variant": "",
+      "lang": "en",
+      "title": "Changed meanwhile",
+      "line": "Someone changed this bill meanwhile.",
+      "todo": "Open it again and make your change."
+    },
+    {
+      "code": "PUR_HAS_RETURN",
+      "variant": "",
+      "lang": "en",
+      "title": "Return entered",
+      "line": "A return is entered against this bill.",
+      "todo": "Cancel that return first."
+    },
+    {
+      "code": "PUR_SHORTAGE_TOUCHED",
+      "variant": "",
+      "lang": "en",
+      "title": "Shortage already used",
+      "line": "A shortage of this bill is already received or closed.",
+      "todo": "Cancel that first."
+    },
+    {
+      "code": "PUR_AMEND_STOCK_MOVED",
+      "variant": "",
+      "lang": "en",
+      "title": "Goods already gone out",
+      "line": "Some of this bill's goods have already been sold or moved.",
+      "todo": "Enter a Purchase Return for the difference instead."
+    },
+    {
+      "code": "PUR_AMEND_SUPPLIER",
+      "variant": "",
+      "lang": "en",
+      "title": "Supplier cannot change",
+      "line": "The supplier of a posted bill cannot change.",
+      "todo": "Cancel this bill and enter it again for the right supplier."
+    },
+    {
+      "code": "PUR_WASTAGE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wastage too high",
+      "line": "Wastage per qty is from 0 to less than 1 (0.100 = 100 g per kg), and received + damaged + wastage cannot be more than billed.",
+      "todo": "Correct the wastage or the qty on that line."
+    },
+    {
+      "code": "PUR_QTY_DECIMALS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many decimals",
+      "line": "This unit takes fewer decimals (a Box takes whole numbers only).",
+      "todo": "Type the qty as the unit allows, e.g. 2, not 1.250."
+    },
+    {
+      "code": "TRN_NAME_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Name missing",
+      "line": "The transporter name is empty.",
+      "todo": "Type the transporter's name."
+    },
+    {
+      "code": "TRN_GSTIN_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "GSTIN not right",
+      "line": "A GSTIN (or transporter enrolment id) is 15 characters, e.g. 33ABCDE1234F1Z5.",
+      "todo": "Correct it, or leave it blank."
+    },
+    {
+      "code": "TRN_NAME_TAKEN",
+      "variant": "",
+      "lang": "en",
+      "title": "Name already used",
+      "line": "A transporter with this name exists.",
+      "todo": "Pick it from the list instead."
+    },
+    {
+      "code": "PUR_RIGHT_AMEND",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to amend.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TRN_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TRN_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to make new ones.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TRN_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change this.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "TRN_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to delete this.",
+      "todo": "Call manager."
     }
   ]
 }

@@ -21048,3 +21048,54 @@ ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(Postgr
     at async SuppliersService.updateSupplier (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.service.ts:449:14)
     at async SuppliersController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/suppliers/suppliers.controller.ts:70:18)
 2026-10-29T15:58:11.379Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-02T13:21:09.133Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_branch_id, avh_voucher_type_id, avh_acc_year, avh_voucher_no)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, 53, 2026-2027, 1) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async PurchaseInvoiceService.postInTx (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:1522:20)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:254:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:30:18)
+2026-11-03T06:04:56.185Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-04T09:59:17.522Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_branch_id, avh_voucher_type_id, avh_acc_year, avh_voucher_no)=(019cc885-d0f4-771b-a7d1-7c98f9ff3ac1, 019d9b39-3dbd-702a-8c7a-90aa1bee679a, 53, 2026-2027, 19) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async PurchaseInvoiceService.postInTx (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:1522:20)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:254:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:30:18)
+2026-11-04T10:18:29.727Z ERROR [AllExceptionsFilter] POST /api/v1/purchase/invoices/save
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_branch_id, avh_voucher_type_id, avh_acc_year, avh_voucher_no)=(019cc885-d0f4-771b-a7d1-7c98f9ff3ac1, 019d9b39-3dbd-702a-8c7a-90aa1bee679a, 53, 2026-2027, 19) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async VoucherPostingService.postLegs (/home/vk/Dev/erp/ERP server/src/common/posting/voucher-posting.service.ts:97:22)
+    at async PurchaseInvoiceService.postInTx (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:1522:20)
+    at async piId.prisma.$transaction.timeout (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async PurchaseInvoiceService.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:254:18)
+    at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:30:18)
+2026-11-04T10:44:16.385Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-04T10:55:12.709Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
