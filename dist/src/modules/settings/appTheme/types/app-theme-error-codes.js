@@ -1,0 +1,34 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AppThemeErrorCode = void 0;
+var AppThemeErrorCode;
+(function (AppThemeErrorCode) {
+    AppThemeErrorCode["RIGHT_CREATE"] = "THM_RIGHT_CREATE";
+    AppThemeErrorCode["RIGHT_EDIT"] = "THM_RIGHT_EDIT";
+    AppThemeErrorCode["RIGHT_DELETE"] = "THM_RIGHT_DELETE";
+    AppThemeErrorCode["NOT_FOUND"] = "THM_NOT_FOUND";
+    AppThemeErrorCode["COMPANY_NOT_FOUND"] = "THM_COMPANY_NOT_FOUND";
+    AppThemeErrorCode["NO_DEFAULT"] = "THM_NO_DEFAULT";
+    AppThemeErrorCode["NAME_TAKEN"] = "THM_NAME_TAKEN";
+    AppThemeErrorCode["DELETED"] = "THM_DELETED";
+    AppThemeErrorCode["DEFAULT_STAYS_DEFAULT"] = "THM_DEFAULT_STAYS_DEFAULT";
+    AppThemeErrorCode["DEFAULT_MUST_BE_ACTIVE"] = "THM_DEFAULT_MUST_BE_ACTIVE";
+    AppThemeErrorCode["DEFAULT_MOVED"] = "THM_DEFAULT_MOVED";
+    AppThemeErrorCode["ALREADY_DELETED"] = "THM_ALREADY_DELETED";
+    AppThemeErrorCode["DEFAULT_UNDELETABLE"] = "THM_DEFAULT_UNDELETABLE";
+    AppThemeErrorCode["IN_USE"] = "THM_IN_USE";
+    AppThemeErrorCode["NOT_DELETED"] = "THM_NOT_DELETED";
+    AppThemeErrorCode["TOKEN_UNKNOWN"] = "THM_TOKEN_UNKNOWN";
+    AppThemeErrorCode["TOKEN_NOT_COLOUR"] = "THM_TOKEN_NOT_COLOUR";
+    AppThemeErrorCode["BASE_INVALID"] = "THM_BASE_INVALID";
+    AppThemeErrorCode["TEMPLATE_MISSING"] = "THM_TEMPLATE_MISSING";
+    AppThemeErrorCode["TEMPLATE_NOT_FOUND"] = "THM_TEMPLATE_NOT_FOUND";
+    AppThemeErrorCode["TEMPLATE_NOT_ACTIVE"] = "THM_TEMPLATE_NOT_ACTIVE";
+    AppThemeErrorCode["TEMPLATE_CHANGED"] = "THM_TEMPLATE_CHANGED";
+    AppThemeErrorCode["TEMPLATE_TOO_LARGE"] = "THM_TEMPLATE_TOO_LARGE";
+    AppThemeErrorCode["TEMPLATE_PLACEHOLDER_UNKNOWN"] = "THM_TEMPLATE_PLACEHOLDER_UNKNOWN";
+    AppThemeErrorCode["TEMPLATE_OPEN_COMMENT"] = "THM_TEMPLATE_OPEN_COMMENT";
+    AppThemeErrorCode["TEMPLATE_BRACES_UNBALANCED"] = "THM_TEMPLATE_BRACES_UNBALANCED";
+    AppThemeErrorCode["TEMPLATE_URL_NOT_RESOURCE"] = "THM_TEMPLATE_URL_NOT_RESOURCE";
+})(AppThemeErrorCode || (exports.AppThemeErrorCode = AppThemeErrorCode = {}));
+//# sourceMappingURL=app-theme-error-codes.js.map

@@ -1,0 +1,16 @@
+import type { ModuleErrorDetail } from '../../utils/module-shared.utils';
+export declare enum GridRunErrorCode {
+    PARAM_NOT_JSON = "GRID_RUN_PARAM_NOT_JSON",
+    PARAM_NOT_OBJECT = "GRID_RUN_PARAM_NOT_OBJECT",
+    PARAM_NAME_INVALID = "GRID_RUN_PARAM_NAME_INVALID",
+    PARAM_VALUE_UNSUPPORTED = "GRID_RUN_PARAM_VALUE_UNSUPPORTED",
+    PARAM_VALUE_NOT_FINITE = "GRID_RUN_PARAM_VALUE_NOT_FINITE",
+    PARAM_MISSING = "GRID_RUN_PARAM_MISSING",
+    GRID_NOT_FOUND = "GRID_RUN_GRID_NOT_FOUND",
+    SQL_MISSING = "GRID_RUN_SQL_MISSING",
+    SQL_INVALID = "GRID_RUN_SQL_INVALID",
+    SQL_FAILED = "GRID_RUN_SQL_FAILED"
+}
+export interface GridRunErrorDetail extends ModuleErrorDetail {
+    code: GridRunErrorCode;
+}

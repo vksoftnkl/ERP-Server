@@ -1,0 +1,30 @@
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import { RequestContextService } from "../../../common/request-context/request-context.service";
+import type { ItemAttributeMasterConfig, ItemAttributePayload } from './types/item-attribute-master.types';
+export declare abstract class ItemAttributeMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    private readonly config;
+    protected constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, config: ItemAttributeMasterConfig);
+    save(dto: object): Promise<ItemAttributePayload>;
+    getById(id: string): Promise<ItemAttributePayload>;
+    softDelete(id: string): Promise<ItemAttributePayload>;
+    restore(id: string): Promise<ItemAttributePayload>;
+    private create;
+    private update;
+    private setDeleted;
+    private writableFields;
+    private assertCompany;
+    private assertNameFree;
+    private audit;
+    private toPayload;
+    private throwNotFound;
+    private handleWriteError;
+    private actor;
+    private titleLabel;
+    private name;
+    private col;
+    private table;
+}

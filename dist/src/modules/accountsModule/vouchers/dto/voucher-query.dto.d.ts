@@ -1,0 +1,54 @@
+export declare class VoucherTypesQueryDto {
+    companyId: string;
+    menuId?: number;
+}
+export declare class LedgerPickQueryDto {
+    companyId: string;
+    branchId: string;
+    typeCode: string;
+    side: 'DR' | 'CR';
+    q?: string;
+    limit?: number;
+}
+export declare class LedgerBalanceQueryDto {
+    companyId: string;
+    branchId?: string | null;
+    accYear: string;
+    ledgerId: string;
+    asOn: string;
+}
+export declare class PartyFactsQueryDto {
+    companyId: string;
+    partyId: string;
+    asOn: string;
+}
+export declare class OpenBillsQueryDto {
+    companyId: string;
+    partyId: string;
+    side: 'DR' | 'CR';
+}
+export declare class InstrumentsQueryDto {
+    companyId: string;
+    branchId?: string | null;
+    typeCode?: string;
+}
+export declare class ChequeBooksQueryDto {
+    companyId: string;
+    branchId?: string | null;
+    bankLedgerId?: string | null;
+}
+export declare class TaxRatesQueryDto {
+    companyId: string;
+    includeInactive?: string;
+}
+export declare class AdjacentVoucherQueryDto {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    voucherId?: string;
+    direction: 'prev' | 'next';
+    typeCode?: string;
+    status?: 'DRAFT' | 'POSTED' | 'CANCELLED';
+    fromDate?: string;
+    toDate?: string;
+}

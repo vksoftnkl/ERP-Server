@@ -663,6 +663,11 @@ export class PurchaseGrnService {
     const men = people.length ? await this.prisma.$queryRaw<{ id: string; name: string }[]>`
       SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${people}::uuid[])` : [];
     const manName = new Map(men.map((m) => [m.id, m.name]));
+    // the audit line's names (GRN rework #14): created_by / modified_by hold the user id as text
+    const auditIds = [header.grnCreatedBy, header.grnModifiedBy].filter((x): x is string => !!x);
+    const users = auditIds.length ? await this.prisma.$queryRaw<{ id: string; name: string }[]>`
+      SELECT usr_id::text AS id, usr_login_name AS name FROM public.user_master WHERE usr_id::text = ANY(${auditIds}::text[])` : [];
+    const userName = new Map(users.map((u) => [u.id.toLowerCase(), u.name]));
     const [gd] = await this.prisma.$queryRaw<{ gdl_name: string }[]>`SELECT gdl_name FROM inventory.godown_locations WHERE gdl_id = ${header.grnGodownId}::uuid`;
     const reasons = await this.prisma.$queryRaw<{ srm_id: string; srm_name: string }[]>`
       SELECT srm_id, srm_name FROM stock.stock_reason_master WHERE srm_id = ANY(${lines.map((l) => l.griDamageReasonId).filter((x): x is string => !!x)}::uuid[])`;
@@ -687,6 +692,8 @@ export class PurchaseGrnService {
       header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null,
                 receivedBy: header.grnReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })),
                 supervisorName: header.grnSupervisorId ? manName.get(header.grnSupervisorId) ?? null : null,
+                createdByName: userName.get(header.grnCreatedBy.toLowerCase()) ?? null,
+                modifiedByName: header.grnModifiedBy ? userName.get(header.grnModifiedBy.toLowerCase()) ?? null : null,
                 billStatus, poRefs,
                 transport: band ? { mode: band.mode ?? null, transporterId: band.transporterId ?? null, transporterName: band.transporterName ?? null,
                                     transporterGstin: band.transporterGstin ?? null, lrNo: band.lrNo ?? null, lrDate: band.lrDate ? String(band.lrDate).slice(0, 10) : null,

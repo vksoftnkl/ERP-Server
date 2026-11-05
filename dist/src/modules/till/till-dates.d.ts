@@ -1,0 +1,10 @@
+import { Prisma } from '@prisma/client';
+type SqlClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
+export declare function businessDateNow(client: SqlClient, cutoff: string): Promise<string>;
+export declare function businessDateAt(client: SqlClient, at: Date, cutoff: string): Promise<string>;
+export declare function accYearOf(isoDate: string): string;
+export declare function isoDateOf(value: Date): string;
+export declare function dateParam(isoDate: string): Date;
+export declare function sessionNumber(counterCode: string, isoDate: string, daySeq: number): string;
+export declare function assertTillPartitions(client: SqlClient, accYear: string, field: string): Promise<void>;
+export {};

@@ -1,0 +1,363 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ItemMasterUpdateService = void 0;
+const common_1 = require("@nestjs/common");
+const item_unit_conversion_service_1 = require("../item-unit-conversion/item-unit-conversion.service");
+const items_price_master_service_1 = require("../items-price-master/items-price-master.service");
+const price_bucket_service_1 = require("../items-price-master/price-bucket.service");
+const items_ean_code_master_service_1 = require("../items-ean-code-master/items-ean-code-master.service");
+const items_reorder_master_service_1 = require("../items-reorder-master/items-reorder-master.service");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const item_error_codes_1 = require("./types/item-error-codes");
+const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
+const EAN_IGNORED_FIELDS = new Set(['ean_id', 'ean_item_id', 'ean_created_by', 'ean_modified_by']);
+const IUC_IGNORED_FIELDS = new Set([
+    'iuc_id',
+    'iuc_item_id',
+    'iuc_created_by',
+    'iuc_updated_by',
+    'iul_unit_factor',
+]);
+const IPM_IGNORED_FIELDS = new Set(['ipm_id', 'ipm_item_id', 'ipm_created_by', 'ipm_updated_by']);
+const IR_IGNORED_FIELDS = new Set(['ir_id', 'ir_item_id', 'ir_created_by', 'ir_modified_by']);
+let ItemMasterUpdateService = class ItemMasterUpdateService {
+    itemUnitConversionService;
+    itemsPriceMasterService;
+    itemsEanCodeMasterService;
+    itemsReorderMasterService;
+    priceBucketService;
+    constructor(itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, priceBucketService) {
+        this.itemUnitConversionService = itemUnitConversionService;
+        this.itemsPriceMasterService = itemsPriceMasterService;
+        this.itemsEanCodeMasterService = itemsEanCodeMasterService;
+        this.itemsReorderMasterService = itemsReorderMasterService;
+        this.priceBucketService = priceBucketService;
+    }
+    async syncChildren(itemId, dto, tx) {
+        const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx);
+        const conversions = await this.indexUnitConversions(itemId, dto, unit_conversions, tx);
+        const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
+        const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
+        const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
+        if (dto.unit_conversions !== undefined) {
+            await this.retireRowsOfRemovedUnits(itemId, tx);
+        }
+        return { unit_conversions, prices, ean_codes, reorders };
+    }
+    async retireRowsOfRemovedUnits(itemId, tx) {
+        const removedUnit = { iucIsDeleted: true };
+        const [priceIds, eanIds, reorderIds] = await Promise.all([
+            tx.itemPriceMaster
+                .findMany({
+                where: { ipmItemId: itemId, ipmIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { ipmId: true },
+            })
+                .then((rows) => rows.map((row) => row.ipmId)),
+            tx.itemEanCode
+                .findMany({
+                where: { eanItemId: itemId, eanIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { eanId: true },
+            })
+                .then((rows) => rows.map((row) => row.eanId)),
+            tx.itemReorder
+                .findMany({
+                where: { irItemId: itemId, irIsDeleted: false, itemUnitConversion: removedUnit },
+                select: { irId: true },
+            })
+                .then((rows) => rows.map((row) => row.irId)),
+        ]);
+        if (priceIds.length)
+            await this.itemsPriceMasterService.toggleDelete(priceIds, tx);
+        if (eanIds.length)
+            await this.itemsEanCodeMasterService.toggleDelete(eanIds, tx);
+        if (reorderIds.length)
+            await this.itemsReorderMasterService.toggleDelete(reorderIds, tx);
+    }
+    async indexUnitConversions(itemId, dto, syncedUnitConversions, tx) {
+        const needed = dto.prices !== undefined || dto.ean_codes !== undefined || dto.reorders !== undefined;
+        const rows = !needed
+            ? []
+            : dto.unit_conversions !== undefined
+                ? syncedUnitConversions
+                : await this.itemUnitConversionService.findByItemId(itemId, tx);
+        return {
+            iucIdByUnitId: new Map(rows.map((row) => [row.iuc_unit_id, row.iuc_id])),
+            iucIds: new Set(rows.map((row) => row.iuc_id)),
+        };
+    }
+    resolveUnitConversionId(unitId, field, conversions) {
+        const iucId = conversions.iucIdByUnitId.get(unitId);
+        if (iucId) {
+            return iucId;
+        }
+        if (conversions.iucIds.has(unitId)) {
+            return unitId;
+        }
+        (0, module_service_utils_1.throwInventoryBadRequest)('Unit not found in unit conversion for this item', [
+            {
+                field,
+                code: item_error_codes_1.ItemErrorCode.UNIT_NOT_CONVERTED,
+                message: `Unit ${unitId} has no unit conversion row for this item`,
+            },
+        ]);
+    }
+    async syncUnitConversions(itemId, children, tx) {
+        if (children === undefined) {
+            return [];
+        }
+        const existing = await this.itemUnitConversionService.findByItemId(itemId, tx);
+        const existingByKey = new Map(existing.map((row) => [row.iuc_unit_id, row]));
+        this.refuseForeignIds(children, 'iuc_id', 'unit_conversions', existing);
+        this.refuseDuplicateKeys(children.map((child) => child.iuc_unit_id), 'unit_conversions', 'two conversion rows for the same unit');
+        const base = existing.find((row) => row.iuc_is_base_unit);
+        const toSave = [];
+        const claimedIds = new Set();
+        children.forEach((child, index) => {
+            const match = child.iuc_id
+                ? existing.find((row) => row.iuc_id === child.iuc_id)
+                : existingByKey.get(child.iuc_unit_id);
+            const change = base && (0, item_base_unit_helper_1.baseUnitChange)(base, { ...child, iuc_id: match?.iuc_id });
+            if (change) {
+                (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, `unit_conversions.${index}.${change.column}`, change.message);
+            }
+            if (match) {
+                claimedIds.add(match.iuc_id);
+                if (!this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
+                    return;
+                }
+            }
+            toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
+        });
+        if (base && !claimedIds.has(base.iuc_id)) {
+            (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, 'unit_conversions', `The item's base row (${base.iuc_id}, unit ${base.iuc_unit_id}) is missing from ` +
+                'unit_conversions, which would delete it. Send it back with the other rows.');
+        }
+        const staleIds = existing.filter((row) => !claimedIds.has(row.iuc_id)).map((row) => row.iuc_id);
+        if (staleIds.length > 0) {
+            await this.itemUnitConversionService.toggleDelete(staleIds, tx);
+        }
+        if (toSave.length > 0) {
+            await this.itemUnitConversionService.save(toSave, tx);
+        }
+        return this.itemUnitConversionService.findByItemId(itemId, tx);
+    }
+    async syncPrices(itemId, children, conversions, tx) {
+        if (children === undefined) {
+            return [];
+        }
+        const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
+        const existingById = new Map(existing.map((row) => [row.ipm_id, row]));
+        this.refuseForeignIds(children, 'ipm_id', 'prices', existing);
+        const resolvedRows = children.map((child) => ({
+            ...child,
+            ipm_uc_unit_id: this.resolveUnitConversionId(child.ipm_uc_unit_id, 'ipm_uc_unit_id', conversions),
+        }));
+        const [payloadKeys, existingKeys] = await Promise.all([
+            this.priceBucketService.deriveBuckets(tx, itemId, resolvedRows.map((row) => this.payloadBucketSource(row, row.ipm_id ? existingById.get(row.ipm_id) : undefined))),
+            this.priceBucketService.deriveBuckets(tx, itemId, existing.map((row) => this.payloadBucketSource(row, undefined))),
+        ]);
+        const priceKey = (row, bucket) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id, bucket.mrp === null ? null : String(bucket.mrp), bucket.salePrice === null ? null : String(bucket.salePrice));
+        const existingByKey = new Map();
+        existing.forEach((row, index) => {
+            const key = priceKey(row, existingKeys[index]);
+            if (!existingByKey.has(key)) {
+                existingByKey.set(key, row);
+            }
+        });
+        this.refuseDuplicateKeys(resolvedRows.map((row, index) => priceKey(row, payloadKeys[index])), 'prices', 'one price: the same company, branch, unit and MRP / sale-price bucket. ' +
+            'An item that does not track MRP holds one price per unit, whatever MRP each row shows ' +
+            '(ipm_godown_id is an attribute, not part of the key)');
+        const toSave = [];
+        const claimedIds = new Set();
+        resolvedRows.forEach((resolved, index) => {
+            const match = resolved.ipm_id
+                ? existing.find((row) => row.ipm_id === resolved.ipm_id)
+                : existingByKey.get(priceKey(resolved, payloadKeys[index]));
+            if (match) {
+                claimedIds.add(match.ipm_id);
+                if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
+                    return;
+                }
+            }
+            toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
+        });
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ipm_id)).map((row) => row.ipm_id);
+        if (staleIds.length > 0) {
+            await this.itemsPriceMasterService.toggleDelete(staleIds, tx);
+        }
+        if (toSave.length > 0) {
+            await this.itemsPriceMasterService.save(toSave, tx);
+        }
+        return this.itemsPriceMasterService.findByItemId(itemId, tx);
+    }
+    payloadBucketSource(row, stored) {
+        const pick = (field) => {
+            const sent = row[field];
+            if (typeof sent === 'number')
+                return sent;
+            const kept = stored?.[field];
+            return typeof kept === 'number' ? kept : 0;
+        };
+        const scope = (field) => {
+            const sent = row[field];
+            if (sent !== undefined)
+                return sent ?? null;
+            return stored?.[field] ?? null;
+        };
+        return (0, price_bucket_service_1.toBucketSource)({
+            ipmCompanyId: scope('ipm_company_id'),
+            ipmBranchId: scope('ipm_branch_id'),
+            ipmMaxPrice: pick('ipm_max_price'),
+            ipmSalesPriceA: pick('ipm_sales_price_a'),
+            ipmSalesPriceB: pick('ipm_sales_price_b'),
+            ipmSalesPriceC: pick('ipm_sales_price_c'),
+            ipmSalesPriceD: pick('ipm_sales_price_d'),
+        });
+    }
+    async syncEanCodes(itemId, children, conversions, tx) {
+        if (children === undefined) {
+            return [];
+        }
+        const existing = await this.itemsEanCodeMasterService.findByItemId(itemId, tx);
+        const eanKey = (code) => code.trim().toUpperCase();
+        const existingByKey = new Map(existing.map((row) => [eanKey(row.ean_code), row]));
+        this.refuseForeignIds(children, 'ean_id', 'ean_codes', existing);
+        this.refuseDuplicateKeys(children.map((child) => eanKey(child.ean_code)), 'ean_codes', 'the same EAN code (letters compared in any case)');
+        const toSave = [];
+        const claimedIds = new Set();
+        for (const child of children) {
+            const resolved = {
+                ...child,
+                ean_unit_id: this.resolveUnitConversionId(child.ean_unit_id, 'ean_unit_id', conversions),
+            };
+            const match = resolved.ean_id
+                ? existing.find((row) => row.ean_id === resolved.ean_id)
+                : existingByKey.get(eanKey(resolved.ean_code));
+            if (match) {
+                claimedIds.add(match.ean_id);
+                if (!this.rowChanged(resolved, match, EAN_IGNORED_FIELDS)) {
+                    continue;
+                }
+            }
+            toSave.push({ ...resolved, ean_item_id: itemId, ean_id: resolved.ean_id ?? match?.ean_id });
+        }
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ean_id)).map((row) => row.ean_id);
+        if (staleIds.length > 0) {
+            await this.itemsEanCodeMasterService.toggleDelete(staleIds, tx);
+        }
+        if (toSave.length > 0) {
+            await this.itemsEanCodeMasterService.save(toSave, tx);
+        }
+        return this.itemsEanCodeMasterService.findByItemId(itemId, tx);
+    }
+    async syncReorders(itemId, children, conversions, tx) {
+        if (children === undefined) {
+            return [];
+        }
+        const existing = await this.itemsReorderMasterService.findByItemId(itemId, tx);
+        this.refuseForeignIds(children, 'ir_id', 'reorders', existing);
+        const reorderKey = (row) => this.naturalKey(row.ir_branch_id, row.ir_unit_id, row.ir_godown_id);
+        const existingByKey = new Map(existing.map((row) => [reorderKey(row), row]));
+        const resolvedRows = children.map((child) => ({
+            ...child,
+            ir_unit_id: child.ir_unit_id == null
+                ? child.ir_unit_id
+                : this.resolveUnitConversionId(child.ir_unit_id, 'ir_unit_id', conversions),
+        }));
+        this.refuseDuplicateKeys(resolvedRows.map(reorderKey), 'reorders', 'two reorder rows for the same branch, unit and godown');
+        const toSave = [];
+        const claimedIds = new Set();
+        for (const resolved of resolvedRows) {
+            const match = resolved.ir_id
+                ? existing.find((row) => row.ir_id === resolved.ir_id)
+                : existingByKey.get(reorderKey(resolved));
+            if (match) {
+                claimedIds.add(match.ir_id);
+                if (!this.rowChanged(resolved, match, IR_IGNORED_FIELDS)) {
+                    continue;
+                }
+            }
+            toSave.push({ ...resolved, ir_item_id: itemId, ir_id: resolved.ir_id ?? match?.ir_id });
+        }
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ir_id)).map((row) => row.ir_id);
+        if (staleIds.length > 0) {
+            await this.itemsReorderMasterService.toggleDelete(staleIds, tx);
+        }
+        if (toSave.length > 0) {
+            await this.itemsReorderMasterService.save(toSave, tx);
+        }
+        return this.itemsReorderMasterService.findByItemId(itemId, tx);
+    }
+    rowChanged(child, existingRow, ignoredFields) {
+        const existingFields = existingRow;
+        for (const [field, value] of Object.entries(child)) {
+            if (value === undefined || ignoredFields.has(field)) {
+                continue;
+            }
+            const current = existingFields[field];
+            if (typeof value === 'number' && typeof current === 'number') {
+                if (value !== current) {
+                    return true;
+                }
+            }
+            else if (current !== value) {
+                return true;
+            }
+        }
+        return false;
+    }
+    naturalKey(...parts) {
+        return parts.map((part) => part ?? '').join('::');
+    }
+    refuseForeignIds(children, idField, collection, existing) {
+        const ownIds = new Set(existing.map((row) => row[idField]));
+        children.forEach((child, index) => {
+            const id = child[idField];
+            if (id && !ownIds.has(id)) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Row is not part of this item', [
+                    {
+                        field: `${collection}.${index}.${idField}`,
+                        code: item_error_codes_1.ItemErrorCode.CHILD_NOT_OF_ITEM,
+                        message: `${idField} ${id} is not a live row of this item. Leave ${idField} out to add a ` +
+                            'new row; a row of another item is changed on that item.',
+                    },
+                ]);
+            }
+        });
+    }
+    refuseDuplicateKeys(keys, field, what) {
+        const firstAt = new Map();
+        keys.forEach((key, index) => {
+            const first = firstAt.get(key);
+            if (first !== undefined) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Duplicate rows in one save', [
+                    {
+                        field: `${field}.${index}`,
+                        code: item_error_codes_1.ItemErrorCode.DUPLICATE_CHILD_ROWS,
+                        message: `${field}[${first}] and ${field}[${index}] are ${what}.`,
+                    },
+                ]);
+            }
+            firstAt.set(key, index);
+        });
+    }
+};
+exports.ItemMasterUpdateService = ItemMasterUpdateService;
+exports.ItemMasterUpdateService = ItemMasterUpdateService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [item_unit_conversion_service_1.ItemUnitConversionService,
+        items_price_master_service_1.ItemsPriceMasterService,
+        items_ean_code_master_service_1.ItemsEanCodeMasterService,
+        items_reorder_master_service_1.ItemsReorderMasterService,
+        price_bucket_service_1.PriceBucketService])
+], ItemMasterUpdateService);
+//# sourceMappingURL=item-master-update.service.js.map
