@@ -108,6 +108,7 @@ import { LotByBatchModule } from './modules/stocks/lot-by-batch/lot-by-batch.mod
 import { BatchDetailModule } from './modules/stocks/batch-detail/batch-detail.module';
 import { StockAdjustmentModule } from './modules/stocks/stock-adjustment/stock-adjustment.module';
 import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
+import { CostPriceBulkModule } from './modules/stocks/cost-price-bulk/cost-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -282,6 +283,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     BatchDetailModule,
     StockAdjustmentModule,
     SellingPriceBulkModule,
+    CostPriceBulkModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,

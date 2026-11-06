@@ -20,7 +20,7 @@ model ItemPriceChangeLog {
   ipclRowId        String    @db.Uuid @map("ipcl_row_id")
   /// CREATE | UPDATE | DELETE | RESTORE | REKEY
   ipclAction       String    @db.VarChar(10) @map("ipcl_action")
-  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT
+  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT | PURCHASE | BULK_COST_CHANGE
   ipclSource       String    @db.VarChar(30) @map("ipcl_source")
   ipclMenuId       Int?      @map("ipcl_menu_id")
 

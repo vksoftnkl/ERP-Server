@@ -18,6 +18,12 @@ The **only** code that writes either price table. Each method snapshots the row
 | `BUCKET_REKEY` (29) | `PriceBucketService.rekeyItem` | `rekeyPrice` → action `REKEY` |
 | `CHANGE_SELLING_PRICE` (30) | `SellingPriceBulkService` | `updateBucketPrice`, `insertBucketPrice`, `closePriceRowBefore`, `insertSplitPrice`, `softDeletePriceRow`, `extendPriceRowTo` (moved from `PriceBucketGateway`, SQL unchanged) |
 | `QTY_PRICE` (244) | `ItemsQtyPriceMasterService` | `createQtyPrice`, `updateQtyPrice`, `setQtyPriceDeleted` (delete / restore) |
+| `BULK_COST_CHANGE` (298) | `CostPriceBulkService` (Cost Price – Bulk Change) | `rewritePriceRows` — this company's rows of today in place, one UPDATE per save part; `insertCompanyPriceRows` — a company-shared row is copied to a company row (CREATE), never updated; a ticked warning is the row's `ipcl_reason` |
+
+**Profit type (2026-11-05, Cost Price – Bulk Change plan §1).** No method forces
+`ipm_profit_type` any more: an update keeps the row's unless the caller passes one
+(`PriceCandidateWrite.profitType`), an insert (branch override, new bucket, split) copies it
+from the headline / origin row it copies its attributes from, else "By User".
 
 `price-master-writer.guard.spec.ts` (plan §2.5) fails the build on a Prisma write,
 a nested relation write or raw SQL against either table anywhere else.

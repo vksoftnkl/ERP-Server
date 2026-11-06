@@ -1,0 +1,30 @@
+import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import { AppSettingValueService } from "../../settings/appSettings/app-setting-value.service";
+import { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
+import { CostPriceBulkGateway } from './cost-price-bulk.gateway';
+import { ListCostPriceBulkQueryDto } from './dto/list-cost-price-bulk-query.dto';
+import { SaveCostPriceBulkDto } from './dto/save-cost-price-bulk.dto';
+import { type CostBulkListResult, type CostBulkSaveResult, type CostBulkValidateResult } from './types/cost-price-bulk.types';
+export declare class CostPriceBulkService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContext;
+    private readonly appSettingValueService;
+    private readonly gateway;
+    private readonly writer;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContext: RequestContextService, appSettingValueService: AppSettingValueService, gateway: CostPriceBulkGateway, writer: PriceMasterWriter);
+    list(query: ListCostPriceBulkQueryDto): Promise<CostBulkListResult>;
+    private assertItemMayLoad;
+    private refuseItem;
+    validate(dto: SaveCostPriceBulkDto): Promise<CostBulkValidateResult>;
+    save(dto: SaveCostPriceBulkDto): Promise<CostBulkSaveResult>;
+    buildSaveMessage(result: CostBulkSaveResult): string;
+    private assertShape;
+    private contextOf;
+    private evaluate;
+    private assertRight;
+    private belowCostPolicy;
+    private toRow;
+}

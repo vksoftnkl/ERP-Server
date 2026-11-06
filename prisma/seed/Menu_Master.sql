@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (122 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (123 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -116,10 +116,13 @@ VALUES
     ,( 195,    2, 'Shortage Receipt'                     , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 196,    2, 'Purchase Note'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 297,    2, 'Supplier Dues'                        , NULL                  , true ,   4.50, NULL, NULL, NULL, true , false)
-    -- ============ &3 Inventory (menu 3, 16 rows) ============
+    -- ============ &3 Inventory (menu 3, 17 rows) ============
     ,(   3, NULL, '&3 Inventory'                         , NULL                  , true ,  30.00, '0', NULL, NULL, true , false)
     ,(  29,    3, 'Items'                                , 'CTRL+I'              , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  30,    3, 'Change Selling Price'                 , 'CTRL+G'              , true ,  20.00, NULL, NULL, NULL, true , false)
+    -- 298 (20261105120000_cost_price_bulk_change): type the new cost, the selling
+    -- prices follow each unit's own rule; grid = ui_table 67. Verbs below.
+    ,( 298,    3, 'Cost Price – Bulk Change'             , NULL                  , true ,  25.00, NULL, NULL, NULL, true , false)
     ,(  34,    3, 'Item Masters'                         , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
     ,(  35,   34, 'Item Groups'                          , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  36,   34, 'Brands'                               , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
@@ -326,6 +329,14 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,PRINT,EXPORT}'
  WHERE menu_id = 290
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 298 Cost Price – Bulk Change (20261105120000_cost_price_bulk_change): VIEW loads
+-- the grid, EDIT saves the new costs and prices in place. Nothing is created,
+-- deleted, printed or exported. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,EDIT}'
+ WHERE menu_id = 298
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- 192 Branch Outward (notes 160 B / 20261027110000_transfers_notes_160): CANCEL is

@@ -19,11 +19,54 @@ import {
 } from './types/price-change-log.types';
 
 /**
- * The profit type every Change Selling Price write stores. `ipm_profit_type`
- * is NOT NULL and SaveItemPriceDto pins it to three values; "By User" is the
- * only honest one — the operator typed the price, nothing derived it.
+ * The profit type a NEW price row gets when nothing else names one.
+ * `ipm_profit_type` is NOT NULL and SaveItemPriceDto pins it to three values
+ * ('By %', 'By Rs', 'By User'); "By User" says the operator types the price.
+ *
+ * Cost Price – Bulk Change (plan 2026-11-05 §1): the profit type is the unit's
+ * own RULE, and only that screen calculates from it. So a write never forces a
+ * type any more — an UPDATE keeps the row's `ipm_profit_type` unless the
+ * caller passes one, and an INSERT (branch override, new bucket, split) copies
+ * it from the row it already copies its attributes from (the headline / the
+ * origin row), else this default. Before, every Change Selling Price and quick
+ * rate save reset the unit's rule to "By User".
  */
-const PROFIT_TYPE = 'By User';
+const DEFAULT_PROFIT_TYPE = 'By User';
+
+/**
+ * A Change Selling Price candidate as the writer takes it: optionally with the
+ * unit's profit type (rule) to store. Absent or null keeps the stored one on an
+ * update and copies the source row's on an insert (plan 2026-11-05 §1). Menu
+ * 30 and the purchase price update send none.
+ */
+export type PriceCandidateWrite = BucketPriceCandidate & { profitType?: string | null };
+
+/** One level's three stored figures, as Cost Price – Bulk Change writes them. */
+export interface PriceRowLevelWrite {
+  price: Prisma.Decimal;
+  priceWot: Prisma.Decimal;
+  markupPerc: Prisma.Decimal;
+}
+
+/**
+ * Cost Price – Bulk Change (menu 298) — one price row rewritten IN PLACE: the
+ * cost, the MRP and min, the unit's rule, and all four levels, every figure
+ * already computed by the caller ("price wins": wot and markup recomputed from
+ * price against the new cost). Nothing else of the row is touched — not the
+ * round-off, the period, the bucket, discount, cess, charges or loyalty.
+ */
+export interface PriceRowRewrite {
+  ipmId: string;
+  costPrice: Prisma.Decimal;
+  costWot: Prisma.Decimal;
+  maxPrice: Prisma.Decimal;
+  minPrice: Prisma.Decimal;
+  profitType: string;
+  /** Levels 1–4 (ipm_*_a … _d), in that order. */
+  levels: readonly [PriceRowLevelWrite, PriceRowLevelWrite, PriceRowLevelWrite, PriceRowLevelWrite];
+  /** This row's own log reason (warnings ticked at save); else the origin's. */
+  reason?: string | null;
+}
 
 /** A bucket key as the re-key writes it. */
 export interface PriceBucketWrite {
@@ -98,7 +141,7 @@ export class PriceMasterWriter {
   async updateBucketPrice(
     tx: Prisma.TransactionClient,
     ipmId: string,
-    candidate: BucketPriceCandidate,
+    candidate: PriceCandidateWrite,
     origin: PriceWriteOrigin = PRICE_ORIGIN.CHANGE_SELLING_PRICE,
   ): Promise<string> {
     const before = await this.changeLog.snapshot(tx, 'IPM', [ipmId]);
@@ -120,7 +163,7 @@ export class PriceMasterWriter {
              ipm_min_price   = COALESCE(${candidate.minPrice}::numeric, ipm_min_price),
              ipm_cost_price  = ${candidate.costRate},
              ipm_cost_wot    = ${candidate.costWot},
-             ipm_profit_type = ${PROFIT_TYPE},
+             ipm_profit_type = COALESCE(${candidate.profitType ?? null}::varchar, ipm_profit_type),
              ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),
              ipm_updated_on  = now(),
              ipm_updated_by  = ${actorColumn(candidate.actor)}::uuid
@@ -150,7 +193,7 @@ export class PriceMasterWriter {
    */
   async insertBucketPrice(
     tx: Prisma.TransactionClient,
-    candidate: BucketPriceCandidate,
+    candidate: PriceCandidateWrite,
     scope: ScopeResolution,
     onDate?: string,
     origin: PriceWriteOrigin = PRICE_ORIGIN.CHANGE_SELLING_PRICE,
@@ -198,7 +241,8 @@ export class PriceMasterWriter {
              COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0),
              COALESCE(${candidate.minPrice}::numeric, h.ipm_min_price, 0),
              COALESCE(h.ipm_disc_perc, 0), COALESCE(h.ipm_disc_qty, 0), COALESCE(h.ipm_addl_cess, 0),
-             ${PROFIT_TYPE}, COALESCE(${candidate.roundOff}::numeric, h.ipm_round_off, 0),
+             COALESCE(${candidate.profitType ?? null}::varchar, h.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
+             COALESCE(${candidate.roundOff}::numeric, h.ipm_round_off, 0),
              COALESCE(h.ipm_loading_charge, 0), COALESCE(h.ipm_freight_charge, 0),
              COALESCE(h.ipm_loyalty_points, 0), h.ipm_uom_remarks,
              ${candidate.mrp}::numeric, ${candidate.salePrice}::numeric,
@@ -261,7 +305,7 @@ export class PriceMasterWriter {
   async insertSplitPrice(
     tx: Prisma.TransactionClient,
     sourceId: string,
-    candidate: BucketPriceCandidate,
+    candidate: PriceCandidateWrite,
     period: { from: string; to: string },
     origin: PriceWriteOrigin = PRICE_ORIGIN.CHANGE_SELLING_PRICE,
   ): Promise<string> {
@@ -296,7 +340,8 @@ export class PriceMasterWriter {
              COALESCE(${l.d.markupPerc}::numeric, o.ipm_price_d_markup_perc),
              o.ipm_max_price, COALESCE(${candidate.minPrice}::numeric, o.ipm_min_price),
              o.ipm_disc_perc, o.ipm_disc_qty, o.ipm_addl_cess,
-             ${PROFIT_TYPE}, COALESCE(${candidate.roundOff}::numeric, o.ipm_round_off),
+             COALESCE(${candidate.profitType ?? null}::varchar, o.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
+             COALESCE(${candidate.roundOff}::numeric, o.ipm_round_off),
              o.ipm_loading_charge, o.ipm_freight_charge, o.ipm_loyalty_points,
              o.ipm_uom_remarks, o.ipm_cost_remarks, o.ipm_is_active, o.ipm_bucket_mrp, o.ipm_bucket_sp,
              ${period.from}::date, ${period.to}::date,
@@ -344,6 +389,193 @@ export class PriceMasterWriter {
        WHERE ipm_id = ${ipmId}::uuid
     `;
     await this.logAfter(tx, 'IPM', origin, [ipmId], before);
+  }
+
+  // ── item_price_master — Cost Price – Bulk Change (CostPriceBulkService) ──
+
+  /**
+   * Plan 2026-11-05 §3 — today's rows rewritten IN PLACE, in one statement:
+   * cost, cost w/o tax, MRP (`ipm_max_price`), min, the unit's rule
+   * (`ipm_profit_type`), and the four levels' price / w/o tax / markup, every
+   * figure as the caller computed it; stamped now and by `actor`. No new dated
+   * row, no period change. The caller has locked the rows (FOR UPDATE) and
+   * checked them.
+   *
+   * Logged like every write here: one snapshot of all the rows before, the
+   * statement, one after, then one log row per changed row — all in the one
+   * change set of the caller's transaction. Answers both snapshots (to_jsonb,
+   * the shape the "Item Price Master" audit screen projects) for the caller's
+   * audit rows.
+   */
+  async rewritePriceRows(
+    tx: Prisma.TransactionClient,
+    origin: PriceWriteOrigin,
+    rows: readonly PriceRowRewrite[],
+    actor: string,
+  ): Promise<{ before: Map<string, PriceRowSnapshot>; after: Map<string, PriceRowSnapshot> }> {
+    const ids = rows.map((row) => row.ipmId);
+    if (!ids.length) {
+      return { before: new Map(), after: new Map() };
+    }
+    const before = await this.changeLog.snapshot(tx, 'IPM', ids);
+    // Decimals travel as their exact text into numeric[]: never through float64.
+    const text = (pick: (row: PriceRowRewrite) => Prisma.Decimal) =>
+      rows.map((row) => pick(row).toFixed());
+    const level = (index: 0 | 1 | 2 | 3, key: keyof PriceRowLevelWrite) =>
+      text((row) => row.levels[index][key]);
+    await tx.$executeRaw`
+      UPDATE inventory.item_price_master p
+         SET ipm_cost_price          = v.cost_price,
+             ipm_cost_wot            = v.cost_wot,
+             ipm_max_price           = v.max_price,
+             ipm_min_price           = v.min_price,
+             ipm_profit_type         = v.profit_type,
+             ipm_sales_price_a       = v.price_a,
+             ipm_sales_price_b       = v.price_b,
+             ipm_sales_price_c       = v.price_c,
+             ipm_sales_price_d       = v.price_d,
+             ipm_price_a_wot         = v.wot_a,
+             ipm_price_b_wot         = v.wot_b,
+             ipm_price_c_wot         = v.wot_c,
+             ipm_price_d_wot         = v.wot_d,
+             ipm_price_a_markup_perc = v.markup_a,
+             ipm_price_b_markup_perc = v.markup_b,
+             ipm_price_c_markup_perc = v.markup_c,
+             ipm_price_d_markup_perc = v.markup_d,
+             ipm_updated_on          = now(),
+             ipm_updated_by          = ${actorColumn(actor)}::uuid
+        FROM unnest(
+               ${ids}::uuid[],
+               ${text((row) => row.costPrice)}::numeric[],
+               ${text((row) => row.costWot)}::numeric[],
+               ${text((row) => row.maxPrice)}::numeric[],
+               ${text((row) => row.minPrice)}::numeric[],
+               ${rows.map((row) => row.profitType)}::varchar[],
+               ${level(0, 'price')}::numeric[], ${level(1, 'price')}::numeric[],
+               ${level(2, 'price')}::numeric[], ${level(3, 'price')}::numeric[],
+               ${level(0, 'priceWot')}::numeric[], ${level(1, 'priceWot')}::numeric[],
+               ${level(2, 'priceWot')}::numeric[], ${level(3, 'priceWot')}::numeric[],
+               ${level(0, 'markupPerc')}::numeric[], ${level(1, 'markupPerc')}::numeric[],
+               ${level(2, 'markupPerc')}::numeric[], ${level(3, 'markupPerc')}::numeric[]
+             ) AS v(ipm_id, cost_price, cost_wot, max_price, min_price, profit_type,
+                    price_a, price_b, price_c, price_d,
+                    wot_a, wot_b, wot_c, wot_d,
+                    markup_a, markup_b, markup_c, markup_d)
+       WHERE p.ipm_id = v.ipm_id
+    `;
+    const after = await this.changeLog.snapshot(tx, 'IPM', ids);
+    for (const row of rows) {
+      await this.changeLog.record(tx, {
+        table: 'IPM',
+        rowId: row.ipmId,
+        origin: row.reason ? { ...origin, reason: row.reason } : origin,
+        before: before.get(row.ipmId) ?? null,
+        after: after.get(row.ipmId) ?? null,
+      });
+    }
+    return { before, after };
+  }
+
+  /**
+   * Cost Price – Bulk Change (review fix 1, 2026-11-05) — a row SHARED by every
+   * company (`ipm_company_id` NULL) is never rewritten in place: that would
+   * move the price for every company. Each is COPIED to a company-scoped row,
+   * as menu 30's S3 inserts one, and the shared row is left as it is.
+   *
+   * The copy is the shared row (same branch scope, item, unit, bucket, godown,
+   * sl no, round-off, discount, cess, charges, loyalty, remarks, active flag)
+   * with this company and the caller's figures — cost, cost w/o tax, MRP, Min,
+   * the rule and the four levels. Its PERIOD is the shared row's, so it shadows
+   * it for this company wherever the company has no row of its own: clipped to
+   * the day after the company's last closed row of the same key and scope
+   * before today, and to the day before its next scheduled one, so
+   * `ex_ipm_overlap` never meets an existing row.
+   *
+   * Logged as CREATE (one row each, the caller's change set); answers the new
+   * row per source row, with its to_jsonb for the caller's audit insert.
+   */
+  async insertCompanyPriceRows(
+    tx: Prisma.TransactionClient,
+    origin: PriceWriteOrigin,
+    companyId: string,
+    rows: readonly PriceRowRewrite[],
+    actor: string,
+  ): Promise<Map<string, { ipmId: string; after: PriceRowSnapshot | null }>> {
+    const out = new Map<string, { ipmId: string; after: PriceRowSnapshot | null }>();
+    const by = actorColumn(actor);
+    for (const row of rows) {
+      const [a, b, c, d] = row.levels;
+      const sameKey = Prisma.sql`
+               k.ipm_company_id = ${companyId}::uuid
+           AND k.ipm_branch_id IS NOT DISTINCT FROM o.ipm_branch_id
+           AND k.ipm_item_id    = o.ipm_item_id
+           AND k.ipm_uc_unit_id = o.ipm_uc_unit_id
+           AND k.ipm_key_mrp    = o.ipm_key_mrp
+           AND k.ipm_key_sp     = o.ipm_key_sp
+           AND k.ipm_is_deleted = false`;
+      const [created] = await tx.$queryRaw<Array<{ ipmId: string }>>`
+        INSERT INTO inventory.item_price_master (
+          ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id, ipm_godown_id, ipm_sl_no,
+          ipm_cost_price, ipm_cost_wot,
+          ipm_sales_price_a, ipm_sales_price_b, ipm_sales_price_c, ipm_sales_price_d,
+          ipm_price_a_wot, ipm_price_b_wot, ipm_price_c_wot, ipm_price_d_wot,
+          ipm_price_a_markup_perc, ipm_price_b_markup_perc, ipm_price_c_markup_perc, ipm_price_d_markup_perc,
+          ipm_max_price, ipm_min_price, ipm_disc_perc, ipm_disc_qty, ipm_addl_cess,
+          ipm_profit_type, ipm_round_off, ipm_loading_charge, ipm_freight_charge, ipm_loyalty_points,
+          ipm_uom_remarks, ipm_cost_remarks, ipm_is_active, ipm_bucket_mrp, ipm_bucket_sp,
+          ipm_effective_from, ipm_effective_to,
+          ipm_created_on, ipm_created_by, ipm_updated_on, ipm_updated_by
+        )
+        SELECT ${companyId}::uuid, o.ipm_branch_id, o.ipm_item_id, o.ipm_uc_unit_id, o.ipm_godown_id, o.ipm_sl_no,
+               ${row.costPrice.toFixed()}::numeric, ${row.costWot.toFixed()}::numeric,
+               ${a.price.toFixed()}::numeric, ${b.price.toFixed()}::numeric,
+               ${c.price.toFixed()}::numeric, ${d.price.toFixed()}::numeric,
+               ${a.priceWot.toFixed()}::numeric, ${b.priceWot.toFixed()}::numeric,
+               ${c.priceWot.toFixed()}::numeric, ${d.priceWot.toFixed()}::numeric,
+               ${a.markupPerc.toFixed()}::numeric, ${b.markupPerc.toFixed()}::numeric,
+               ${c.markupPerc.toFixed()}::numeric, ${d.markupPerc.toFixed()}::numeric,
+               ${row.maxPrice.toFixed()}::numeric, ${row.minPrice.toFixed()}::numeric,
+               o.ipm_disc_perc, o.ipm_disc_qty, o.ipm_addl_cess,
+               ${row.profitType}::varchar, o.ipm_round_off,
+               o.ipm_loading_charge, o.ipm_freight_charge, o.ipm_loyalty_points,
+               o.ipm_uom_remarks, o.ipm_cost_remarks, o.ipm_is_active, o.ipm_bucket_mrp, o.ipm_bucket_sp,
+               GREATEST(o.ipm_effective_from,
+                        COALESCE((SELECT MAX(k.ipm_effective_to) + 1
+                                    FROM inventory.item_price_master k
+                                   WHERE ${sameKey} AND k.ipm_effective_to < CURRENT_DATE),
+                                 o.ipm_effective_from)),
+               LEAST(o.ipm_effective_to,
+                     COALESCE((SELECT MIN(k.ipm_effective_from) - 1
+                                 FROM inventory.item_price_master k
+                                WHERE ${sameKey} AND k.ipm_effective_from > CURRENT_DATE),
+                              o.ipm_effective_to)),
+               now(), ${by}::uuid, now(), ${by}::uuid
+          FROM inventory.item_price_master o
+         WHERE o.ipm_id = ${row.ipmId}::uuid
+           AND o.ipm_company_id IS NULL
+        RETURNING ipm_id AS "ipmId"
+      `;
+      if (created) {
+        out.set(row.ipmId, { ipmId: created.ipmId, after: null });
+      }
+    }
+    const ids = [...out.values()].map((entry) => entry.ipmId);
+    const after = await this.changeLog.snapshot(tx, 'IPM', ids);
+    for (const row of rows) {
+      const entry = out.get(row.ipmId);
+      if (!entry) {
+        continue;
+      }
+      entry.after = after.get(entry.ipmId) ?? null;
+      await this.changeLog.record(tx, {
+        table: 'IPM',
+        rowId: entry.ipmId,
+        origin: row.reason ? { ...origin, reason: row.reason } : origin,
+        before: null,
+        after: entry.after,
+      });
+    }
+    return out;
   }
 
   // ── item_qty_price — the qty slab screen (ItemsQtyPriceMasterService) ────

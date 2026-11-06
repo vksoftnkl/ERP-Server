@@ -23,6 +23,8 @@ export const PRICE_CHANGE_SOURCES = [
   'IMPORT',
   // a posted purchase bill (purchase.allow_price_update + UPDATE_PRICES); ck_ipcl_source already lists it
   'PURCHASE',
+  // Cost Price – Bulk Change, menu 298 (migration 20261105120000_cost_price_bulk_change)
+  'BULK_COST_CHANGE',
 ] as const;
 export type PriceChangeSource = (typeof PRICE_CHANGE_SOURCES)[number];
 
@@ -48,6 +50,8 @@ export const PRICE_MENU_ID = {
   /** Notes 144 — the Price Change Log report: its VIEW right is the report's access. */
   PRICE_CHANGE_LOG: 290,
   PURCHASE_ENTRY: 24,
+  /** Cost Price – Bulk Change (plan 2026-11-05, migration 20261105120000). */
+  COST_PRICE_BULK: 298,
 } as const;
 
 /** The origins every writer call names — one per screen. */
@@ -60,6 +64,7 @@ export const PRICE_ORIGIN = {
   QTY_PRICE: { source: 'QTY_PRICE', menuId: PRICE_MENU_ID.QTY_PRICE },
   // A re-key runs inside an item card save (its tracking changed).
   BUCKET_REKEY: { source: 'BUCKET_REKEY', menuId: PRICE_MENU_ID.ITEM_MASTER },
+  BULK_COST_CHANGE: { source: 'BULK_COST_CHANGE', menuId: PRICE_MENU_ID.COST_PRICE_BULK },
 } as const satisfies Record<string, PriceWriteOrigin>;
 
 /** One change to record: the row before and after the statement that changed it. */

@@ -1,9 +1,13 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2004 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2049 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
 -- (+ 26..32, ids 2311-2317; 9 retitled Bill rate, 23 Writes hidden, re-ranked), and 56 as
 -- 20261104130000 left it (+ 54..61, ids 2318-2325; HSN, Recd, Dmg, Short visible, re-ranked).
+-- 67 Cost Price – Bulk Change (menu 298) as 20261105120000_cost_price_bulk_change created it
+-- (ids 2326-2370; 0..21 shown, 22..44 hidden), and 17's column 9 (id 265) titled
+-- "Profit Type" by the same migration.
+-- 67 widths as 20261105130000_cost_price_bulk_change_fixes left them (New A-D 6.00, Item 10.68).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -123,7 +127,9 @@ SELECT v.* FROM (VALUES
     ,(262 , 17  , 6  , 'Branch'                , 7.55             , true , true , 7  , false, NULL, NULL, true , false, 'system')
     ,(263 , 17  , 7  , 'Uom'                   , 9.470000000000001, true , true , 8  , false, NULL, NULL, true , false, 'system')
     ,(264 , 17  , 8  , 'Godown'                , 8.34             , true , false, 9  , false, NULL, NULL, true , false, 'system')
-    ,(265 , 17  , 9  , 'Profit'                , 11.17            , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    -- 265 shown and titled "Profit Type" again by 20261105120000_cost_price_bulk_change (it was
+    -- hidden on dev 2026-10-22 through the layout route; this row already said visible).
+    ,(265 , 17  , 9  , 'Profit Type'           , 11.17            , true , false, 10 , false, NULL, NULL, true , false, 'system')
     ,(266 , 17  , 10 , 'R.Off'                 , 6.17             , true , false, 11 , false, NULL, NULL, true , false, 'system')
     ,(267 , 17  , 11 , 'Cost'                  , 9.890000000000001, true , false, 12 , false, NULL, NULL, true , false, 'system')
     ,(268 , 17  , 12 , 'Cost Wot'              , 9.890000000000001, true , false, 13 , false, NULL, NULL, true , false, 'system')
@@ -1736,6 +1742,52 @@ SELECT v.* FROM (VALUES
     ,(2294, 66  , 20 , 'OpenQty'               , 0               , false, false, 20 , false, NULL, NULL, true , false, 'system')
     ,(2295, 66  , 21 , 'Refno'                 , 0               , false, false, 21 , false, NULL, NULL, true , false, 'system')
     ,(2296, 66  , 22 , 'Unit'                  , 0               , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    -- ============ COST PRICE BULK CHANGE - ROWS (id 67) ============
+    ,(2326, 67  , 0  , '#'                     , 1.59             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2327, 67  , 1  , 'Item'                  , 10.68            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2328, 67  , 2  , 'Uom'                   , 5.45             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2329, 67  , 3  , 'Rule'                  , 4.55             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2330, 67  , 4  , 'Cost'                  , 4.20             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2331, 67  , 5  , 'New Cost'              , 5.23             , true , true , 5  , false, NULL, NULL, true , false, 'system')
+    ,(2332, 67  , 6  , 'Δ Cost'                , 3.52             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2333, 67  , 7  , 'MRP'                   , 3.86             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2334, 67  , 8  , 'New MRP'               , 4.32             , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(2335, 67  , 9  , 'Old'                   , 3.75             , true , false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2336, 67  , 10 , 'New'                   , 6.00             , true , true , 10 , false, NULL, NULL, true , false, 'system')
+    ,(2337, 67  , 11 , 'Profit'                , 3.52             , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2338, 67  , 12 , 'Old'                   , 3.75             , true , false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2339, 67  , 13 , 'New'                   , 6.00             , true , true , 13 , false, NULL, NULL, true , false, 'system')
+    ,(2340, 67  , 14 , 'Profit'                , 3.52             , true , false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2341, 67  , 15 , 'Old'                   , 3.75             , true , false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2342, 67  , 16 , 'New'                   , 6.00             , true , true , 16 , false, NULL, NULL, true , false, 'system')
+    ,(2343, 67  , 17 , 'Profit'                , 3.52             , true , false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2344, 67  , 18 , 'Old'                   , 3.75             , true , false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2345, 67  , 19 , 'New'                   , 6.00             , true , true , 19 , false, NULL, NULL, true , false, 'system')
+    ,(2346, 67  , 20 , 'Profit'                , 3.52             , true , false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2347, 67  , 21 , 'Min'                   , 3.52             , true , false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2348, 67  , 22 , 'IpmId'                 , 0                , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2349, 67  , 23 , 'ItemId'                , 0                , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2350, 67  , 24 , 'ItemCode'              , 0                , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2351, 67  , 25 , 'UomId'                 , 0                , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2352, 67  , 26 , 'ParentUomId'           , 0                , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(2353, 67  , 27 , 'UnitsPerParent'        , 0                , false, false, 27 , false, NULL, NULL, true , false, 'system')
+    ,(2354, 67  , 28 , 'UnitSlno'              , 0                , false, false, 28 , false, NULL, NULL, true , false, 'system')
+    ,(2355, 67  , 29 , 'PriceScope'            , 0                , false, false, 29 , false, NULL, NULL, true , false, 'system')
+    ,(2356, 67  , 30 , 'TaxPerc'               , 0                , false, false, 30 , false, NULL, NULL, true , false, 'system')
+    ,(2357, 67  , 31 , 'RoundOff'              , 0                , false, false, 31 , false, NULL, NULL, true , false, 'system')
+    ,(2358, 67  , 32 , 'LoadedCost'            , 0                , false, false, 32 , false, NULL, NULL, true , false, 'system')
+    ,(2359, 67  , 33 , 'LoadedMrp'             , 0                , false, false, 33 , false, NULL, NULL, true , false, 'system')
+    ,(2360, 67  , 34 , 'LoadedA'               , 0                , false, false, 34 , false, NULL, NULL, true , false, 'system')
+    ,(2361, 67  , 35 , 'LoadedB'               , 0                , false, false, 35 , false, NULL, NULL, true , false, 'system')
+    ,(2362, 67  , 36 , 'LoadedC'               , 0                , false, false, 36 , false, NULL, NULL, true , false, 'system')
+    ,(2363, 67  , 37 , 'LoadedD'               , 0                , false, false, 37 , false, NULL, NULL, true , false, 'system')
+    ,(2364, 67  , 38 , 'LoadedMin'             , 0                , false, false, 38 , false, NULL, NULL, true , false, 'system')
+    ,(2365, 67  , 39 , 'LoadedRule'            , 0                , false, false, 39 , false, NULL, NULL, true , false, 'system')
+    ,(2366, 67  , 40 , 'UpdatedOn'             , 0                , false, false, 40 , false, NULL, NULL, true , false, 'system')
+    ,(2367, 67  , 41 , 'FollowFrom'            , 0                , false, false, 41 , false, NULL, NULL, true , false, 'system')
+    ,(2368, 67  , 42 , 'TypedLevels'           , 0                , false, false, 42 , false, NULL, NULL, true , false, 'system')
+    ,(2369, 67  , 43 , 'ScheduledFrom'         , 0                , false, false, 43 , false, NULL, NULL, true , false, 'system')
+    ,(2370, 67  , 44 , 'HasQtySlabs'           , 0                , false, false, 44 , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

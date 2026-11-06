@@ -10,6 +10,7 @@ exports.PRICE_CHANGE_SOURCES = [
     'BUCKET_REKEY',
     'IMPORT',
     'PURCHASE',
+    'BULK_COST_CHANGE',
 ];
 exports.PRICE_MENU_ID = {
     ITEM_MASTER: 29,
@@ -17,6 +18,7 @@ exports.PRICE_MENU_ID = {
     QTY_PRICE: 244,
     PRICE_CHANGE_LOG: 290,
     PURCHASE_ENTRY: 24,
+    COST_PRICE_BULK: 298,
 };
 exports.PRICE_ORIGIN = {
     ITEM_CARD: { source: 'ITEM_CARD', menuId: exports.PRICE_MENU_ID.ITEM_MASTER },
@@ -26,5 +28,6 @@ exports.PRICE_ORIGIN = {
     },
     QTY_PRICE: { source: 'QTY_PRICE', menuId: exports.PRICE_MENU_ID.QTY_PRICE },
     BUCKET_REKEY: { source: 'BUCKET_REKEY', menuId: exports.PRICE_MENU_ID.ITEM_MASTER },
+    BULK_COST_CHANGE: { source: 'BULK_COST_CHANGE', menuId: exports.PRICE_MENU_ID.COST_PRICE_BULK },
 };
 //# sourceMappingURL=price-change-log.types.js.map

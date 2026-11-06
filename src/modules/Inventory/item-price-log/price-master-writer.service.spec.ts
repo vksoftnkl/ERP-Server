@@ -235,11 +235,40 @@ describe('PriceMasterWriter', () => {
         30,
         25.5,
         21.610169,
-        'By User',
+        // Plan 2026-11-05 §1 — no profit type sent: the row keeps its own.
+        null,
         0.5,
         USER_ID,
         IPM_ID,
       ]);
+      expect(statementOf(tx.$executeRaw).sql).toContain(
+        'ipm_profit_type = COALESCE(?::varchar, ipm_profit_type)',
+      );
+    });
+
+    it("keeps the stored profit type (the unit's rule) unless one is passed", async () => {
+      await writer.updateBucketPrice(txClient(), IPM_ID, candidate());
+      await writer.updateBucketPrice(txClient(), IPM_ID, { ...candidate(), profitType: null });
+      await writer.updateBucketPrice(
+        txClient(),
+        IPM_ID,
+        { ...candidate(), profitType: 'By %' },
+        PRICE_ORIGIN.BULK_COST_CHANGE,
+      );
+
+      const typeOf = (call: number) => {
+        const statement = statementOf(tx.$executeRaw, call);
+        // the profit type is the 16th bound value, after min price, cost and cost w/o tax
+        return statement.values[15];
+      };
+      expect(typeOf(0)).toBeNull();
+      expect(typeOf(1)).toBeNull();
+      expect(typeOf(2)).toBe('By %');
+      // Never forced to By User any more.
+      for (const call of [0, 1, 2]) {
+        expect(statementOf(tx.$executeRaw, call).values).not.toContain('By User');
+      }
+      expect(changeLog.record.mock.calls[2][1].origin).toEqual(PRICE_ORIGIN.BULK_COST_CHANGE);
     });
 
     it('stores the nil-uuid actor as NULL, never as a user', async () => {
@@ -268,6 +297,9 @@ describe('PriceMasterWriter', () => {
         25.5,
         21.610169,
       ]);
+      // Plan 2026-11-05 §1 — the type is copied from the headline the
+      // attributes come from; By User only when there is no headline.
+      expect(statement.sql).toContain('COALESCE(?::varchar, h.ipm_profit_type, ?)');
       expect(statement.values).toContain('By User');
       expect(statement.values.filter((value) => value === USER_ID)).toHaveLength(2);
       // The bucket's own MRP becomes the row's max price and its bucket MRP, and
@@ -283,6 +315,22 @@ describe('PriceMasterWriter', () => {
       expect(statement.sql).toContain("DATE '9999-12-31'");
     });
 
+    it("stores a passed profit type ahead of the headline's", async () => {
+      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
+
+      await writer.insertBucketPrice(
+        txClient(),
+        { ...candidate(), profitType: 'By Rs' },
+        branchScope,
+      );
+
+      const statement = statementOf(tx.$queryRaw);
+      const at = statement.values.indexOf('By Rs');
+      expect(at).toBeGreaterThan(-1);
+      // …followed by the fallback, used only when neither it nor the headline has one
+      expect(statement.values[at + 1]).toBe('By User');
+    });
+
     it('stores the nil-uuid actor as NULL on both stamps, at chain scope too', async () => {
       tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
 
@@ -291,6 +339,195 @@ describe('PriceMasterWriter', () => {
       const values = statementOf(tx.$queryRaw).values;
       expect(values).not.toContain(DEFAULT_ACTOR);
       expect(values.slice(0, 2)).toEqual([COMPANY_ID, null]);
+    });
+  });
+
+  // ── the split copies the origin row's type ─────────────────────────────────
+  describe('insertSplitPrice', () => {
+    it("copies the origin row's profit type, else By User", async () => {
+      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
+
+      await writer.insertSplitPrice(txClient(), IPM_ID, candidate(), {
+        from: '2026-11-01',
+        to: '9999-12-31',
+      });
+
+      const statement = statementOf(tx.$queryRaw);
+      expect(statement.sql).toContain('COALESCE(?::varchar, o.ipm_profit_type, ?)');
+      const at = statement.values.indexOf('By User');
+      expect(statement.values[at - 1]).toBeNull();
+    });
+  });
+
+  // ── Cost Price – Bulk Change: the in-place rewrite ─────────────────────────
+  describe('rewritePriceRows', () => {
+    const dec = (value: string) => new Prisma.Decimal(value);
+    const level = (price: string, wot: string, markup: string) => ({
+      price: dec(price),
+      priceWot: dec(wot),
+      markupPerc: dec(markup),
+    });
+    const rewrite = (overrides: Record<string, unknown> = {}) => ({
+      ipmId: IPM_ID,
+      costPrice: dec('152'),
+      costWot: dec('144.761905'),
+      maxPrice: dec('199'),
+      minPrice: dec('150'),
+      profitType: 'By %',
+      levels: [
+        level('167.5', '159.52381', '10.197368'),
+        level('182.5', '173.809524', '20.065789'),
+        level('0', '0', '0'),
+        level('190', '180.952381', '25'),
+      ] as const,
+      ...overrides,
+    });
+
+    it('one UPDATE for all rows, decimals as exact text, the stamps, and one record per row', async () => {
+      const before = new Map([
+        [IPM_ID, ipmRow({ ipm_cost_price: 140 })],
+        [OTHER_IPM_ID, ipmRow({ ipm_id: OTHER_IPM_ID })],
+      ]);
+      const after = new Map([
+        [IPM_ID, ipmRow({ ipm_cost_price: 152 })],
+        [OTHER_IPM_ID, ipmRow({ ipm_id: OTHER_IPM_ID, ipm_cost_price: 10 })],
+      ]);
+      snapshots = [before, after];
+
+      const result = await writer.rewritePriceRows(
+        txClient(),
+        PRICE_ORIGIN.BULK_COST_CHANGE,
+        [
+          rewrite(),
+          rewrite({ ipmId: OTHER_IPM_ID, reason: 'Ticked: below cost', profitType: 'By User' }),
+        ],
+        USER_ID,
+      );
+
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      const statement = statementOf(tx.$executeRaw);
+      expect(statement.sql).toContain('UPDATE inventory.item_price_master p');
+      expect(statement.sql).toContain('ipm_profit_type         = v.profit_type');
+      expect(statement.sql).toContain('ipm_max_price           = v.max_price');
+      // round-off, the period and the bucket are never written
+      expect(statement.sql).not.toMatch(/ipm_round_off|ipm_effective_|ipm_bucket_/);
+      expect(statement.values[0]).toBe(USER_ID);
+      expect(statement.values[1]).toEqual([IPM_ID, OTHER_IPM_ID]);
+      expect(statement.values[2]).toEqual(['152', '152']);
+      expect(statement.values[3]).toEqual(['144.761905', '144.761905']);
+      expect(statement.values[6]).toEqual(['By %', 'By User']);
+      expect(statement.values[7]).toEqual(['167.5', '167.5']);
+      expect(statement.values[9]).toEqual(['0', '0']);
+      expect(statement.values[18]).toEqual(['25', '25']);
+
+      expect(changeLog.record).toHaveBeenCalledTimes(2);
+      expect(recorded(0)).toEqual({
+        table: 'IPM',
+        rowId: IPM_ID,
+        origin: PRICE_ORIGIN.BULK_COST_CHANGE,
+        before: before.get(IPM_ID),
+        after: after.get(IPM_ID),
+      });
+      expect(recorded(1).origin).toEqual({
+        ...PRICE_ORIGIN.BULK_COST_CHANGE,
+        reason: 'Ticked: below cost',
+      });
+      expect(result.before).toBe(before);
+      expect(result.after).toBe(after);
+    });
+
+    it('no rows: no statement, no log', async () => {
+      await expect(
+        writer.rewritePriceRows(txClient(), PRICE_ORIGIN.BULK_COST_CHANGE, [], USER_ID),
+      ).resolves.toEqual({ before: new Map(), after: new Map() });
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(changeLog.snapshot).not.toHaveBeenCalled();
+    });
+
+    it('stores the nil-uuid actor as NULL', async () => {
+      await writer.rewritePriceRows(
+        txClient(),
+        PRICE_ORIGIN.BULK_COST_CHANGE,
+        [rewrite()],
+        DEFAULT_ACTOR,
+      );
+      expect(statementOf(tx.$executeRaw).values[0]).toBeNull();
+    });
+  });
+
+  // ── Cost Price – Bulk Change: a company copy of a company-shared row ───────
+  describe('insertCompanyPriceRows', () => {
+    const dec = (value: string) => new Prisma.Decimal(value);
+    const level = (price: string) => ({
+      price: dec(price),
+      priceWot: dec('0'),
+      markupPerc: dec('0'),
+    });
+    const copy = (overrides: Record<string, unknown> = {}) => ({
+      ipmId: IPM_ID,
+      costPrice: dec('152'),
+      costWot: dec('144.761905'),
+      maxPrice: dec('199'),
+      minPrice: dec('150'),
+      profitType: 'By %',
+      levels: [level('167.5'), level('182.5'), level('175'), level('190')] as const,
+      ...overrides,
+    });
+
+    it('inserts a company row from the shared one (its scope, period, attributes), logged as CREATE', async () => {
+      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
+      const created = ipmRow({ ipm_id: OTHER_IPM_ID, ipm_company_id: COMPANY_ID });
+      snapshots = [new Map([[OTHER_IPM_ID, created]])];
+
+      const result = await writer.insertCompanyPriceRows(
+        txClient(),
+        PRICE_ORIGIN.BULK_COST_CHANGE,
+        COMPANY_ID,
+        [copy({ reason: 'Ticked: below cost' })],
+        USER_ID,
+      );
+
+      const statement = statementOf(tx.$queryRaw);
+      expect(statement.sql).toContain('INSERT INTO inventory.item_price_master');
+      // copied from the shared row, which must still be shared
+      expect(statement.sql).toContain('FROM inventory.item_price_master o');
+      expect(statement.sql).toContain('o.ipm_company_id IS NULL');
+      expect(statement.sql).toContain(
+        'o.ipm_branch_id, o.ipm_item_id, o.ipm_uc_unit_id, o.ipm_godown_id',
+      );
+      expect(statement.sql).toContain('o.ipm_round_off');
+      // the shared row's period, clipped to the company's own rows of the key
+      expect(statement.sql).toContain('GREATEST(o.ipm_effective_from');
+      expect(statement.sql).toContain('LEAST(o.ipm_effective_to');
+      expect(statement.sql).toContain('k.ipm_company_id = ?::uuid');
+      expect(statement.values[0]).toBe(COMPANY_ID);
+      expect(statement.values).toContain('152');
+      expect(statement.values).toContain('By %');
+      expect(statement.values.at(-1)).toBe(IPM_ID);
+      // no UPDATE: the shared row itself is never written
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+
+      expect(recorded()).toEqual({
+        table: 'IPM',
+        rowId: OTHER_IPM_ID,
+        origin: { ...PRICE_ORIGIN.BULK_COST_CHANGE, reason: 'Ticked: below cost' },
+        before: null,
+        after: created,
+      });
+      expect(result.get(IPM_ID)).toEqual({ ipmId: OTHER_IPM_ID, after: created });
+    });
+
+    it('a row that is no longer shared inserts nothing and logs nothing', async () => {
+      tx.$queryRaw.mockResolvedValue([]);
+      const result = await writer.insertCompanyPriceRows(
+        txClient(),
+        PRICE_ORIGIN.BULK_COST_CHANGE,
+        COMPANY_ID,
+        [copy()],
+        USER_ID,
+      );
+      expect(result.size).toBe(0);
+      expect(changeLog.record).not.toHaveBeenCalled();
     });
   });
 });
