@@ -200,6 +200,17 @@ describe('qty-slab.rules', () => {
       );
     });
 
+    // Review 2026-11-06: three figures the Qt port rounded differently. The
+    // server is right — exact Decimal products, half-up at 0.01 — and the Qt
+    // rule must give these same answers (qty_slab_rules).
+    it.each([
+      ['6245.541', '20.61', '4958.33'], // 4958.3349999 exact (a float shows …335)
+      ['41.61', '11.764', '36.71'], // 36.7149996 exact
+      ['2135.353', '90.51', '202.64'], // 202.6449997 exact
+    ])('P on %s at %s%% off is %s (exact, then half-up)', (base, pct, each) => {
+      expect(slabUnitPrice(d(base), slab({ discPct: d(pct) }), inclusive)?.toFixed(2)).toBe(each);
+    });
+
     it('R = base − flat_off, F = price, each moved to the basis when the slab says otherwise', () => {
       const r = slab({ priceMode: 'R', discPct: null, flatOff: d(10) });
       expect(slabUnitPrice(d(118), r, { inclTax: false, taxPerc: d(18) })?.toFixed(2)).toBe(
@@ -353,6 +364,18 @@ describe('qty-slab.rules', () => {
           (j) => j.verdict,
         ),
       ).toEqual(['ZERO_OR_LESS']);
+    });
+
+    // = Qt judgeNotSellingLevel (tests/qtyslab/test_qty_slab_rules.cpp): same inputs, same verdicts.
+    it('a slab whose own level is not an active selling level is not judged at all (C-b)', () => {
+      const f = (priceLevel: number) =>
+        slab({ priceMode: 'F', discPct: null, price: d(500), isTaxIncl: true, priceLevel });
+      // level 3, active [1, 2]: no bill applies it, nothing to judge
+      expect(judgeSlab(f(3), card(), [1, 2])).toEqual([]);
+      // an old row on level 7 (5 / 6 / 7 are never selling levels)
+      expect(judgeSlab(f(7), card(), [1, 2, 3, 4])).toEqual([]);
+      // the same slab on an active level is judged
+      expect(judgeSlab(f(2), card(), [1, 2]).map((j) => j.verdict)).toEqual(['BELOW_MIN']);
     });
 
     it('a slab on a level that is not priced is not judged unless Fixed', () => {

@@ -85,7 +85,10 @@ export class ItemsQtyPriceMasterController {
       'with one (403 ITEM_QTY_PRICE_RIGHT_CREATE / _EDIT). The price level, after the save, must ' +
       'be blank or an active selling level 1–4 (422 ITEM_QTY_PRICE_LEVEL_NOT_SELLING). A slab ' +
       'for all branches (branch blank) needs a head-office user type (403 ' +
-      'ITEM_QTY_PRICE_CHAIN_HQ_ONLY).',
+      'ITEM_QTY_PRICE_CHAIN_HQ_ONLY); any other user type saves only slabs of the branch it ' +
+      'logged in at — the stored branch and the branch after the save (403 ' +
+      'ITEM_QTY_PRICE_OTHER_BRANCH, field <index>.iqp_branch_id). The rights are checked before ' +
+      'the body is validated.',
   })
   @ApiBody({
     schema: {
@@ -98,13 +101,17 @@ export class ItemsQtyPriceMasterController {
   @ApiConflictResponse({ type: ItemQtyPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtyPriceErrorResponseDto })
   async save(@Body() body: unknown): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload[]>> {
+    // Rights first (plan §4.3; review 2026-11-06): read off the raw rows, so a
+    // caller without them is told 403 before any 400 about the body.
+    await this.itemsQtyPriceMasterService.assertSaveRightsOfBody(body);
     const saveItemQtyPriceDtos = await this.resolveSavePayload(body);
     // Plan 2026-11-05 §4.3 (A-13 / A-14 / Q9): menu 244 CREATE for a new row,
     // EDIT for a row with iqp_id; the level blank or an active 1–4; a slab for
-    // all branches from head office only.
+    // all branches from head office only; anyone else their own branch's (D16).
     await this.itemsQtyPriceMasterService.assertSaveRights(saveItemQtyPriceDtos);
     await this.itemsQtyPriceMasterService.assertSellingLevelsOf(saveItemQtyPriceDtos);
     await this.itemsQtyPriceMasterService.assertChainSlabsAllowedOf(saveItemQtyPriceDtos);
+    await this.itemsQtyPriceMasterService.assertOwnBranchSlabsOf(saveItemQtyPriceDtos);
     const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDtos);
 
     return {
@@ -163,7 +170,8 @@ export class ItemsQtyPriceMasterController {
     description:
       'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
       '/item-qty-prices/restore). A batch is all-or-nothing. Needs DELETE on menu 244 (403 ' +
-      'ITEM_QTY_PRICE_RIGHT_DELETE).',
+      'ITEM_QTY_PRICE_RIGHT_DELETE), checked first; a user type that is not head office removes ' +
+      'only slabs of the branch it logged in at (403 ITEM_QTY_PRICE_OTHER_BRANCH).',
   })
   @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
@@ -186,12 +194,14 @@ export class ItemsQtyPriceMasterController {
     @Body() body: unknown,
     @Query('iqp_id') iqpId?: string,
   ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
-    const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
     await this.itemsQtyPriceMasterService.assertRight('delete', 'remove qty-wise prices');
+    const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
     const isArray = Array.isArray(deleteItemQtyPriceDto);
-    const data = await this.itemsQtyPriceMasterService.softDelete(
-      isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,
-    );
+    const ids = isArray
+      ? deleteItemQtyPriceDto.map((item) => item.iqp_id)
+      : deleteItemQtyPriceDto.iqp_id;
+    await this.itemsQtyPriceMasterService.assertOwnBranchSlabIdsOf(ids);
+    const data = await this.itemsQtyPriceMasterService.softDelete(ids);
 
     return {
       success: true,
@@ -206,7 +216,9 @@ export class ItemsQtyPriceMasterController {
     summary: 'Restore soft-deleted item qty price slab(s) by id',
     description:
       '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
-      'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE).',
+      'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE), checked ' +
+      'first; a user type that is not head office restores only slabs of the branch it logged ' +
+      'in at (403 ITEM_QTY_PRICE_OTHER_BRANCH).',
   })
   @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
@@ -229,12 +241,14 @@ export class ItemsQtyPriceMasterController {
     @Body() body: unknown,
     @Query('iqp_id') iqpId?: string,
   ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
-    const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
     await this.itemsQtyPriceMasterService.assertRight('delete', 'restore qty-wise prices');
+    const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
     const isArray = Array.isArray(deleteItemQtyPriceDto);
-    const data = await this.itemsQtyPriceMasterService.restore(
-      isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,
-    );
+    const ids = isArray
+      ? deleteItemQtyPriceDto.map((item) => item.iqp_id)
+      : deleteItemQtyPriceDto.iqp_id;
+    await this.itemsQtyPriceMasterService.assertOwnBranchSlabIdsOf(ids);
+    const data = await this.itemsQtyPriceMasterService.restore(ids);
 
     return {
       success: true,

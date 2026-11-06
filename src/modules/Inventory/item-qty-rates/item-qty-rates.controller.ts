@@ -58,7 +58,8 @@ export class ItemQtyRatesController {
   @ApiOperation({
     summary: "One item's cost + card rate (this branch, today) and its qty slabs, for menu 244",
     description:
-      "item: eligibility by Cost Price – Bulk Change's rule (plainStock, trackedAs, leftOutReason). " +
+      "item: eligibility by Cost Price – Bulk Change's rule (plainStock, trackedAs, leftOutReason), " +
+      'groupName / brandName (null when none). ' +
       'rights: menu 244 view / createSlab / editSlab / deleteSlab, menu 30 editCard, allBranchSlab ' +
       '(HQ user type). levels: the ACTIVE price levels 1–4 (fixed.price_levels). units: the ' +
       '/stock/price-bulk grid rows of the item (one per active unit × live bucket, the headline ' +
@@ -94,7 +95,11 @@ export class ItemQtyRatesController {
       'for deleteSlabIds; menu 30 EDIT for any rates.rows (STOCK_PRICE_RIGHT_EDIT). Shape: nothing ' +
       'to save 400 ITEM_QTY_PRICE_NOTHING_TO_SAVE; a slab of another item 400 _ITEM_MISMATCH; an id ' +
       'twice 400 VALIDATION_ARRAY_UNIQUE; a level not blank / active 1–4 422 _LEVEL_NOT_SELLING; a ' +
-      'slab for all branches from a non-HQ user type 403 _CHAIN_HQ_ONLY. Then, nothing written: ' +
+      'slab for all branches from a non-HQ user type 403 _CHAIN_HQ_ONLY; a non-HQ user type ' +
+      'saving or deleting a slab of another branch than the one it logged in at 403 ' +
+      '_OTHER_BRANCH. Every slab refusal is filed under slabs.<i>.<field>. A card row judges ' +
+      'only its active levels priced above 0; a costPrice equal to the stored cost at 2 decimals ' +
+      'is unchanged (the stored cost and w/o tax are kept). Then, nothing written: ' +
       'costPrice / maxPrice on an item that is not Plain stock 422 _COST_NOT_PLAIN_STOCK / ' +
       "_MRP_NOT_PLAIN_STOCK; Change Selling Price's checks (422 STOCK_PRICE_*); a headline's prices " +
       'above its MRP after the save 422 ITEM_QTY_PRICE_ABOVE_MRP; every live slab in force today or ' +

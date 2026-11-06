@@ -8,6 +8,10 @@ export class QtyRatesItemDto {
   @ApiProperty({ nullable: true, type: String }) itemCode!: string | null;
   @ApiProperty() itemName!: string;
   @ApiProperty({ nullable: true, type: String }) barcode!: string | null;
+  @ApiProperty({ nullable: true, type: String, description: "The item group's name; null when none." })
+  groupName!: string | null;
+  @ApiProperty({ nullable: true, type: String, description: "The item brand's name; null when none." })
+  brandName!: string | null;
   @ApiProperty() taxPerc!: number;
   @ApiProperty() inclTax!: boolean;
   @ApiProperty() hasCess!: boolean;

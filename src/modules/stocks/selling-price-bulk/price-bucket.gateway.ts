@@ -790,15 +790,26 @@ export class PriceBucketGateway {
    * One verdict per level, in that order. Re-run on a confirmed post: cost
    * moves when a purchase posts, and the confirm is the user agreeing to the
    * PRICE, not to a particular cost figure.
+   *
+   * `opts.activeLevels` — Qty-wise Prices (menu 244, review fix C-a) only: a
+   * level is judged only when it is one of these ACTIVE levels and its price
+   * is above 0. The form sends all four levels (an absent one would be written
+   * as 0), so an inactive or unpriced level must not be refused. Absent — menu
+   * 30, Quick Rate, purchase — every level sent is judged, exactly as before.
    */
   validateRows(
     candidates: readonly BucketPriceCandidate[],
     storedMinPrices: readonly number[],
+    opts: { activeLevels?: readonly number[] } = {},
   ): SellingPriceProblem[] {
     const problems: SellingPriceProblem[] = [];
+    const judged = opts.activeLevels ? new Set(opts.activeLevels) : null;
     candidates.forEach((candidate, index) => {
       const minPrice = candidate.minPrice ?? storedMinPrices[index] ?? 0;
       for (const level of candidate.levels) {
+        if (judged && (!judged.has(level.level) || !(level.price > 0))) {
+          continue;
+        }
         const verdict =
           candidate.mrp !== null && level.price > candidate.mrp
             ? {

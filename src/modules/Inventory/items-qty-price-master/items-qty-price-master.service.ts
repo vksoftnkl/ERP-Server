@@ -1,5 +1,5 @@
 import { assertDeleteState } from '../utils/master-tree.helper';
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import { ItemQtyPrice, Prisma } from '@prisma/client';
 import {
   ConfiguredGridListResult,
@@ -31,7 +31,13 @@ import {
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { assertMenuRight, type MenuRight, type MenuRights } from '../../../common/posting/rights';
+import {
+  NO_RIGHTS,
+  assertMenuRight,
+  loadRights,
+  type MenuRight,
+  type MenuRights,
+} from '../../../common/posting/rights';
 import { isHqUserType } from '../../stocks/selling-price-bulk/types/selling-price-bulk.types';
 import { isSellingSlabLevel } from './qty-slab.rules';
 import {
@@ -47,6 +53,12 @@ import { PRICE_ORIGIN } from '../item-price-log/types/price-change-log.types';
 export const QTY_PRICE_MENU_ID = 244;
 /** assertMenuRight's code family: ITEM_QTY_PRICE_RIGHT_VIEW / _CREATE / _EDIT / _DELETE. */
 export const QTY_PRICE_RIGHT_PREFIX = 'ITEM_QTY_PRICE';
+
+/** ItemsQtyPriceMasterService.save's options (save-with-rates passes them; /create none). */
+export interface SlabSaveOptions {
+  /** File each row's refusal under `<fieldPrefix><index>.<field>` (C-e, 'slabs.'). */
+  fieldPrefix?: string;
+}
 
 /** A slab named by id, as the rights / level / HQ checks read it. */
 export interface StoredSlabScope {
@@ -97,39 +109,56 @@ export class ItemsQtyPriceMasterService {
   async save(
     saveItemQtyPriceDto: SaveItemQtyPriceDto,
     tx?: Prisma.TransactionClient,
+    opts?: SlabSaveOptions,
   ): Promise<ItemQtyPricePayload>;
   async save(
     saveItemQtyPriceDto: SaveItemQtyPriceDto[],
     tx?: Prisma.TransactionClient,
+    opts?: SlabSaveOptions,
   ): Promise<ItemQtyPricePayload[]>;
   async save(
     saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[],
     tx?: Prisma.TransactionClient,
+    opts?: SlabSaveOptions,
   ): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]>;
   /**
    * @param tx When supplied, the batch runs inside the caller's transaction
    * instead of opening its own.
+   * @param opts `fieldPrefix` (save-with-rates: 'slabs.') — every refusal of a
+   * row is filed under `<prefix><index>.<field>`; absent, the fields are as
+   * /create has always answered them.
    */
   async save(
     saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[],
     tx?: Prisma.TransactionClient,
+    opts?: SlabSaveOptions,
   ): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]> {
     const saveItems = Array.isArray(saveItemQtyPriceDto)
       ? saveItemQtyPriceDto
       : [saveItemQtyPriceDto];
+    const prefix = opts?.fieldPrefix;
     const saveAll = async (client: Prisma.TransactionClient) => {
       const savedItems: ItemQtyPricePayload[] = [];
-      for (const saveItem of saveItems) {
-        savedItems.push(await this.saveItemQtyPrice(client, saveItem));
+      for (const [index, saveItem] of saveItems.entries()) {
+        try {
+          savedItems.push(await this.saveItemQtyPrice(client, saveItem));
+        } catch (error: unknown) {
+          throw prefix === undefined ? error : this.atRow(error, `${prefix}${index}.`);
+        }
       }
       // After the whole batch, so a ladder re-cut in one save (1–10 → 1–5 and
       // 10–20 → 5–20) is judged on where it ends, not on the order sent.
-      await this.assertNoOverlaps(
-        client,
-        savedItems.map((saved) => saved.iqp_id),
-        Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single',
-        'iqp_from_qty',
-      );
+      try {
+        await this.assertNoOverlaps(
+          client,
+          savedItems.map((saved) => saved.iqp_id),
+          Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single',
+          'iqp_from_qty',
+        );
+      } catch (error: unknown) {
+        // Already `<index>.iqp_from_qty` (indexed): only the prefix goes on.
+        throw prefix === undefined ? error : this.atRow(error, prefix, true);
+      }
       return savedItems;
     };
     try {
@@ -139,6 +168,36 @@ export class ItemsQtyPriceMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+
+  /**
+   * One row's refusal, filed under `at` (review fix C-e): a database error is
+   * worded first (handleWriteError — DUPLICATE / REFERENCE_NOT_FOUND), then
+   * every error's field gets `at` in front — `iqp_to_qty` → `slabs.2.iqp_to_qty`.
+   * `indexed`: the field already starts with its index (`2.iqp_from_qty`), and
+   * `at` is the prefix alone. The exception itself (class, status) is kept.
+   */
+  private atRow(error: unknown, at: string, indexed = false): unknown {
+    let refusal = error;
+    if (!(refusal instanceof HttpException)) {
+      try {
+        this.handleWriteError(refusal);
+      } catch (worded: unknown) {
+        refusal = worded;
+      }
+    }
+    if (!(refusal instanceof HttpException)) {
+      return refusal;
+    }
+    const body = refusal.getResponse();
+    if (typeof body === 'object' && body !== null && Array.isArray((body as { errors?: unknown }).errors)) {
+      const coded = body as { errors: Array<{ field?: unknown }> };
+      coded.errors = coded.errors.map((detail) => {
+        const field = typeof detail.field === 'string' && detail.field ? detail.field : 'request';
+        return { ...detail, field: indexed && !/^\d+\./.test(field) ? field : `${at}${field}` };
+      });
+    }
+    return refusal;
   }
 
   async list(
@@ -297,6 +356,141 @@ export class ItemsQtyPriceMasterService {
     if (rows.some((row) => row.iqp_id)) {
       await this.assertRight('edit', 'change qty-wise prices');
     }
+  }
+
+  /**
+   * POST /create, rights FIRST (plan §4.3; review 2026-11-06): the same
+   * verdict as assertSaveRights, read off the RAW body before it is validated,
+   * so a caller without the right is told 403, not 400. A row names an iqp_id
+   * when the key holds anything but undefined / null / ''. A body that is not
+   * a non-empty array names no row: CREATE or EDIT will do (the shape check
+   * answers next), neither is 403 ITEM_QTY_PRICE_RIGHT_CREATE. A caller who
+   * holds the rights gets exactly the answer it got before.
+   */
+  async assertSaveRightsOfBody(body: unknown): Promise<void> {
+    const rows = Array.isArray(body) ? (body as unknown[]) : [];
+    if (rows.length) {
+      const named = (row: unknown) => {
+        const id =
+          typeof row === 'object' && row !== null ? (row as { iqp_id?: unknown }).iqp_id : undefined;
+        return id !== undefined && id !== null && id !== '';
+      };
+      return this.assertSaveRights(
+        rows.map((row) => ({ iqp_id: named(row) ? 'named' : undefined })),
+      );
+    }
+    const userId = this.requestContextService.getUserId();
+    const rights = userId ? await loadRights(this.prisma, userId, QTY_PRICE_MENU_ID) : NO_RIGHTS;
+    if (!rights.create && !rights.edit) {
+      await this.assertRight('create', 'add qty-wise prices');
+    }
+  }
+
+  /**
+   * D16 (review fix C-d) — a user type that is not head office creates,
+   * changes, deletes and restores only slabs of its OWN branch: the branch the
+   * session logged in at (the access token's branch_id — the registered
+   * device's branch — through the request context; never a body field). A
+   * session with no such branch (no registered device: a web login, an
+   * unregistered counter) owns none.
+   */
+  private ownBranchId(): string | null {
+    return this.requestContextService.getBranchId()?.toLowerCase() ?? null;
+  }
+
+  private throwOtherBranch(fields: readonly string[], own: string | null): never {
+    const message = own
+      ? 'A slab for another branch can only be changed by head office. Pick your own branch for the slab.'
+      : 'This login is not at a branch counter, so only head office can change qty-wise prices.';
+    throwInventoryForbidden<ItemQtyPriceErrorDetail>('A slab of another branch needs head office', [
+      ...fields.map((field) => ({ field, code: ItemQtyPriceErrorCode.OTHER_BRANCH, message })),
+    ]);
+  }
+
+  /**
+   * C-d on a save: a new slab's branch, and a changed slab's stored branch
+   * AND its branch after the save (sent, else stored), must be the session's
+   * own. A branch blank after the save is assertChainSlabsAllowed's
+   * (CHAIN_HQ_ONLY, run first); an id that names no slab is the writer's 404.
+   * 403 `ITEM_QTY_PRICE_OTHER_BRANCH`, field `<prefix><index>.iqp_branch_id`.
+   */
+  async assertOwnBranchSlabs(
+    client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>,
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[],
+    fieldPrefix = '',
+    stored?: ReadonlyMap<string, StoredSlabScope>,
+  ): Promise<void> {
+    if (!rows.length || isHqUserType(this.requestContextService.getUserType())) {
+      return;
+    }
+    const known =
+      stored ??
+      (await this.readStoredSlabs(
+        client,
+        rows.filter((row) => row.iqp_id).map((row) => row.iqp_id!),
+      ));
+    const own = this.ownBranchId();
+    const owned = (branchId: string | null) => own !== null && branchId?.toLowerCase() === own;
+    const wrong = rows
+      .map((row, index) => {
+        const before = row.iqp_id ? known.get(row.iqp_id.toLowerCase()) : undefined;
+        const after =
+          row.iqp_branch_id !== undefined ? row.iqp_branch_id : (before?.branchId ?? null);
+        return {
+          index,
+          ok: (!before || owned(before.branchId)) && (after === null || owned(after)),
+        };
+      })
+      .filter(({ ok }) => !ok);
+    if (wrong.length) {
+      this.throwOtherBranch(
+        wrong.map(({ index }) => `${fieldPrefix}${index}.iqp_branch_id`),
+        own,
+      );
+    }
+  }
+
+  /**
+   * C-d on a delete / restore: each named slab's stored branch must be the
+   * session's own (a branch-blank slab is head office's). An id that names no
+   * slab is skipped — the writer answers its 404. `fieldOf(index)` names the
+   * request path. 403 `ITEM_QTY_PRICE_OTHER_BRANCH`.
+   */
+  async assertOwnBranchSlabIds(
+    client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>,
+    ids: readonly string[],
+    fieldOf: (index: number) => string,
+    stored?: ReadonlyMap<string, StoredSlabScope>,
+  ): Promise<void> {
+    if (!ids.length || isHqUserType(this.requestContextService.getUserType())) {
+      return;
+    }
+    const known = stored ?? (await this.readStoredSlabs(client, ids));
+    const own = this.ownBranchId();
+    const wrong = ids
+      .map((id, index) => ({ index, slab: known.get(id.toLowerCase()) }))
+      .filter(({ slab }) => slab && (own === null || slab.branchId?.toLowerCase() !== own));
+    if (wrong.length) {
+      this.throwOtherBranch(
+        wrong.map(({ index }) => fieldOf(index)),
+        own,
+      );
+    }
+  }
+
+  /** POST /create's C-d check: rows indexed as the batch (`<index>.iqp_branch_id`). */
+  async assertOwnBranchSlabsOf(
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[],
+  ): Promise<void> {
+    return this.assertOwnBranchSlabs(this.prisma, rows);
+  }
+
+  /** DELETE /delete and POST /restore's C-d check: `iqp_id`, or `<index>.iqp_id` for a batch. */
+  async assertOwnBranchSlabIdsOf(ids: string | readonly string[]): Promise<void> {
+    const list = typeof ids === 'string' ? [ids] : ids;
+    return this.assertOwnBranchSlabIds(this.prisma, list, (index) =>
+      typeof ids === 'string' ? 'iqp_id' : `${index}.iqp_id`,
+    );
   }
 
   /** The stored scope of slabs named by id, any state (for the checks below and save-with-rates'). */

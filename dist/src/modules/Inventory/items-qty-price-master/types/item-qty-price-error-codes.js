@@ -31,5 +31,6 @@ var ItemQtyPriceErrorCode;
     ItemQtyPriceErrorCode["BELOW_COST"] = "ITEM_QTY_PRICE_BELOW_COST";
     ItemQtyPriceErrorCode["BY_USER_PRICES_KEPT"] = "ITEM_QTY_PRICE_BY_USER_PRICES_KEPT";
     ItemQtyPriceErrorCode["CHAIN_HQ_ONLY"] = "ITEM_QTY_PRICE_CHAIN_HQ_ONLY";
+    ItemQtyPriceErrorCode["OTHER_BRANCH"] = "ITEM_QTY_PRICE_OTHER_BRANCH";
 })(ItemQtyPriceErrorCode || (exports.ItemQtyPriceErrorCode = ItemQtyPriceErrorCode = {}));
 //# sourceMappingURL=item-qty-price-error-codes.js.map

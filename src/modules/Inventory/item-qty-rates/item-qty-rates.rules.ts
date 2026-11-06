@@ -92,12 +92,23 @@ export function storedCardRowOf(row: CardPriceRecord): StoredCardRow {
   };
 }
 
+/** Two bucket amounts are the same figure — exactly, as Decimals (no epsilon: house rule). */
 const sameAmount = (a: number | null, b: number | null) =>
-  a === null || b === null ? a === b : Math.abs(a - b) < 5e-7;
+  a === null || b === null ? a === b : dec(a).eq(dec(b));
 
 /** Two bucket keys are the same bucket. */
 export function sameKey(a: BucketKey, b: BucketKey): boolean {
   return sameAmount(a.mrp, b.mrp) && sameAmount(a.salePrice, b.salePrice);
+}
+
+/**
+ * Review fix C-c — a cost sent back is UNCHANGED when it and the stored cost
+ * are the same figure at 2 decimals (half-up): the screen shows and sends the
+ * cost as loaded, and a 6-decimal stored cost must not count as typed over.
+ */
+export function sameCost(sent: Dec, stored: Dec): boolean {
+  const at2 = (value: Dec) => value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  return at2(sent).eq(at2(stored));
 }
 
 /**
@@ -398,25 +409,30 @@ export function slabsToJudge(args: {
   branchId: string;
   today: string;
 }): SlabAfterSave[] {
-  const deleted = new Set(args.deleteIds);
-  const sentIds = new Set(args.sent.map((s) => s.iqp_id).filter((id): id is string => !!id));
-  const byId = new Map(args.stored.map((s) => [s.slab.iqpId, s]));
+  // Ids compared lower-cased on both sides: a uuid another client sent in
+  // capitals is the same row (as readStoredSlabs keys them).
+  const low = (id: string) => id.toLowerCase();
+  const deleted = new Set(args.deleteIds.map(low));
+  const sentIds = new Set(
+    args.sent.map((s) => s.iqp_id).filter((id): id is string => !!id).map(low),
+  );
+  const byId = new Map(args.stored.map((s) => [low(s.slab.iqpId), s]));
   const all: SlabAfterSave[] = [
     ...args.stored
-      .filter((s) => !sentIds.has(s.slab.iqpId))
+      .filter((s) => !sentIds.has(low(s.slab.iqpId)))
       .map((s) => ({ ...s, slabIndex: null, iqpId: s.slab.iqpId })),
     ...args.sent.map((dto, index) => {
-      const after = slabAfterSave(dto, dto.iqp_id ? (byId.get(dto.iqp_id) ?? null) : null);
+      const after = slabAfterSave(dto, dto.iqp_id ? (byId.get(low(dto.iqp_id)) ?? null) : null);
       return { ...after, slabIndex: index, iqpId: dto.iqp_id ?? null };
     }),
   ];
   return all.filter(
     ({ slab, iqpId }) =>
-      !(iqpId && deleted.has(iqpId)) &&
+      !(iqpId && deleted.has(low(iqpId))) &&
       slab.isActive &&
       slabInForceOnOrAfter(slab, args.today) &&
-      (slab.companyId === null || slab.companyId === args.companyId) &&
-      (slab.branchId === null || slab.branchId === args.branchId),
+      (slab.companyId === null || low(slab.companyId) === low(args.companyId)) &&
+      (slab.branchId === null || low(slab.branchId) === low(args.branchId)),
   );
 }
 
@@ -432,6 +448,21 @@ const SLAB_CODES: Readonly<Record<SlabJudgement['verdict'], ItemQtyPriceErrorCod
   BELOW_MIN: ItemQtyPriceErrorCode.BELOW_MIN,
   BELOW_COST: ItemQtyPriceErrorCode.BELOW_COST,
 };
+
+/**
+ * Review fix C-e — the request path of a SENT slab's verdict: `slabs.<i>.` and
+ * the figure its mode prices by (P iqp_disc_pct, R iqp_flat_off, F iqp_price),
+ * the cell the user changes to fix it. A stored slab not sent has no index:
+ * `iqp_id` (the problem's iqpId names it).
+ */
+export function slabProblemField(entry: Pick<SlabAfterSave, 'slab' | 'slabIndex'>): string {
+  if (entry.slabIndex === null) {
+    return 'iqp_id';
+  }
+  const mode = (entry.slab.priceMode || 'P').toUpperCase();
+  const figure = mode === 'F' ? 'iqp_price' : mode === 'R' ? 'iqp_flat_off' : 'iqp_disc_pct';
+  return `slabs.${entry.slabIndex}.${figure}`;
+}
 
 /** Below cost by `inventory.below_cost_price`: restrict refuses, warning asks, allow reports. */
 export function belowCostSeverity(policy: BelowCostPolicy): QtyRatesSeverity {
@@ -479,7 +510,7 @@ export function slabProblems(
         level: j.level,
         price: j.each.toNumber(),
         cost: card.cost.gt(0) ? card.cost.toNumber() : null,
-        field: entry.slabIndex !== null ? `slabs.${entry.slabIndex}` : 'iqp_id',
+        field: slabProblemField(entry),
         message: `${name}${at}: ${text}`,
       });
     }

@@ -461,6 +461,28 @@ describe('PriceBucketGateway', () => {
     it('treats a missing stored min price as none', () => {
       expect(gateway.validateRows([candidate({ costRate: 0 })], [])).toEqual([]);
     });
+
+    it('activeLevels (Qty-wise Prices, C-a): judges only an active level priced above 0', () => {
+      const rows = [
+        candidate({
+          bucketId: IPM_ID,
+          minPrice: 30,
+          costRate: 35,
+          // 1 active and above the MRP; 2 active but 0; 3 inactive and below min; 4 inactive, 0
+          levels: [level(41, 1), level(0, 2), level(29, 3), level(0, 4)],
+        }),
+      ];
+      expect(
+        gateway.validateRows(rows, [0], { activeLevels: [1, 2] }).map((p) => [p.level, p.verdict]),
+      ).toEqual([[1, 'ABOVE_MRP']]);
+      // without it (menu 30, Quick Rate, purchase) every level sent is judged, as before
+      expect(gateway.validateRows(rows, [0]).map((p) => [p.level, p.verdict])).toEqual([
+        [1, 'ABOVE_MRP'],
+        [2, 'BELOW_MIN'],
+        [3, 'BELOW_MIN'],
+        [4, 'BELOW_MIN'],
+      ]);
+    });
   });
 
   // ── S1 — find at the target scope ─────────────────────────────────────────

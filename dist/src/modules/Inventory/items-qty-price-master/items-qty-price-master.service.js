@@ -49,16 +49,27 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         this.requestContextService = requestContextService;
         this.priceWriter = priceWriter;
     }
-    async save(saveItemQtyPriceDto, tx) {
+    async save(saveItemQtyPriceDto, tx, opts) {
         const saveItems = Array.isArray(saveItemQtyPriceDto)
             ? saveItemQtyPriceDto
             : [saveItemQtyPriceDto];
+        const prefix = opts?.fieldPrefix;
         const saveAll = async (client) => {
             const savedItems = [];
-            for (const saveItem of saveItems) {
-                savedItems.push(await this.saveItemQtyPrice(client, saveItem));
+            for (const [index, saveItem] of saveItems.entries()) {
+                try {
+                    savedItems.push(await this.saveItemQtyPrice(client, saveItem));
+                }
+                catch (error) {
+                    throw prefix === undefined ? error : this.atRow(error, `${prefix}${index}.`);
+                }
             }
-            await this.assertNoOverlaps(client, savedItems.map((saved) => saved.iqp_id), Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single', 'iqp_from_qty');
+            try {
+                await this.assertNoOverlaps(client, savedItems.map((saved) => saved.iqp_id), Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single', 'iqp_from_qty');
+            }
+            catch (error) {
+                throw prefix === undefined ? error : this.atRow(error, prefix, true);
+            }
             return savedItems;
         };
         try {
@@ -69,6 +80,29 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    atRow(error, at, indexed = false) {
+        let refusal = error;
+        if (!(refusal instanceof common_1.HttpException)) {
+            try {
+                this.handleWriteError(refusal);
+            }
+            catch (worded) {
+                refusal = worded;
+            }
+        }
+        if (!(refusal instanceof common_1.HttpException)) {
+            return refusal;
+        }
+        const body = refusal.getResponse();
+        if (typeof body === 'object' && body !== null && Array.isArray(body.errors)) {
+            const coded = body;
+            coded.errors = coded.errors.map((detail) => {
+                const field = typeof detail.field === 'string' && detail.field ? detail.field : 'request';
+                return { ...detail, field: indexed && !/^\d+\./.test(field) ? field : `${at}${field}` };
+            });
+        }
+        return refusal;
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
@@ -160,6 +194,74 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         if (rows.some((row) => row.iqp_id)) {
             await this.assertRight('edit', 'change qty-wise prices');
         }
+    }
+    async assertSaveRightsOfBody(body) {
+        const rows = Array.isArray(body) ? body : [];
+        if (rows.length) {
+            const named = (row) => {
+                const id = typeof row === 'object' && row !== null ? row.iqp_id : undefined;
+                return id !== undefined && id !== null && id !== '';
+            };
+            return this.assertSaveRights(rows.map((row) => ({ iqp_id: named(row) ? 'named' : undefined })));
+        }
+        const userId = this.requestContextService.getUserId();
+        const rights = userId ? await (0, rights_1.loadRights)(this.prisma, userId, exports.QTY_PRICE_MENU_ID) : rights_1.NO_RIGHTS;
+        if (!rights.create && !rights.edit) {
+            await this.assertRight('create', 'add qty-wise prices');
+        }
+    }
+    ownBranchId() {
+        return this.requestContextService.getBranchId()?.toLowerCase() ?? null;
+    }
+    throwOtherBranch(fields, own) {
+        const message = own
+            ? 'A slab for another branch can only be changed by head office. Pick your own branch for the slab.'
+            : 'This login is not at a branch counter, so only head office can change qty-wise prices.';
+        (0, module_service_utils_1.throwInventoryForbidden)('A slab of another branch needs head office', [
+            ...fields.map((field) => ({ field, code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.OTHER_BRANCH, message })),
+        ]);
+    }
+    async assertOwnBranchSlabs(client, rows, fieldPrefix = '', stored) {
+        if (!rows.length || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContextService.getUserType())) {
+            return;
+        }
+        const known = stored ??
+            (await this.readStoredSlabs(client, rows.filter((row) => row.iqp_id).map((row) => row.iqp_id)));
+        const own = this.ownBranchId();
+        const owned = (branchId) => own !== null && branchId?.toLowerCase() === own;
+        const wrong = rows
+            .map((row, index) => {
+            const before = row.iqp_id ? known.get(row.iqp_id.toLowerCase()) : undefined;
+            const after = row.iqp_branch_id !== undefined ? row.iqp_branch_id : (before?.branchId ?? null);
+            return {
+                index,
+                ok: (!before || owned(before.branchId)) && (after === null || owned(after)),
+            };
+        })
+            .filter(({ ok }) => !ok);
+        if (wrong.length) {
+            this.throwOtherBranch(wrong.map(({ index }) => `${fieldPrefix}${index}.iqp_branch_id`), own);
+        }
+    }
+    async assertOwnBranchSlabIds(client, ids, fieldOf, stored) {
+        if (!ids.length || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContextService.getUserType())) {
+            return;
+        }
+        const known = stored ?? (await this.readStoredSlabs(client, ids));
+        const own = this.ownBranchId();
+        const wrong = ids
+            .map((id, index) => ({ index, slab: known.get(id.toLowerCase()) }))
+            .filter(({ slab }) => slab && (own === null || slab.branchId?.toLowerCase() !== own));
+        if (wrong.length) {
+            this.throwOtherBranch(wrong.map(({ index }) => fieldOf(index)), own);
+        }
+    }
+    async assertOwnBranchSlabsOf(rows) {
+        return this.assertOwnBranchSlabs(this.prisma, rows);
+    }
+    async assertOwnBranchSlabIdsOf(ids) {
+        const list = typeof ids === 'string' ? [ids] : ids;
+        return this.assertOwnBranchSlabIds(this.prisma, list, (index) => typeof ids === 'string' ? 'iqp_id' : `${index}.iqp_id`);
     }
     async readStoredSlabs(client, ids) {
         const unique = [...new Set(ids.filter(Boolean))];

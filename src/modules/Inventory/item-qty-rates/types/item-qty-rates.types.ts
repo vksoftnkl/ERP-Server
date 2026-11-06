@@ -26,6 +26,10 @@ export interface QtyRatesItem {
   itemCode: string | null;
   itemName: string;
   barcode: string | null;
+  /** item_group_master.itg_name of item_group_id; null when none (review fix C-f). */
+  groupName: string | null;
+  /** item_brand_master.brand_name of item_brand_id; null when none (C-f). */
+  brandName: string | null;
   /** As of the database's today (item_tax_history, else the item's default). */
   taxPerc: number;
   /** item_incl_tax — the card's tax footing (slab ₹ amounts are moved to it). */
@@ -158,7 +162,11 @@ export interface QtyRatesProblem {
   /** The price judged: the card level price, or the slab's price each. */
   price: number | null;
   cost: number | null;
-  /** The request path the screen selects (rates.rows.N.levels, slabs.N, iqp_id). */
+  /**
+   * The request path the screen selects: rates.rows.N.levels; a sent slab
+   * slabs.N.<figure> (iqp_disc_pct / iqp_flat_off / iqp_price by its mode);
+   * iqp_id for a stored slab not sent.
+   */
   field: string;
   message: string;
 }

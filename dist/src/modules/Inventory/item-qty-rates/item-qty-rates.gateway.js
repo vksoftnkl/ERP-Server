@@ -80,6 +80,16 @@ let ItemQtyRatesGateway = class ItemQtyRatesGateway {
         });
         return item?.itemDefaultBarcode ?? null;
     }
+    async groupAndBrand(client, itemId) {
+        const [row] = await client.$queryRaw `
+      SELECT NULLIF(btrim(g.itg_name), '')   AS "groupName",
+             NULLIF(btrim(b.brand_name), '') AS "brandName"
+        FROM inventory.item_master i
+        LEFT JOIN inventory.item_group_master g ON g.itg_id = i.item_group_id
+        LEFT JOIN inventory.item_brand_master b ON b.brand_id = i.item_brand_id
+       WHERE i.item_id = ${itemId}::uuid`;
+        return { groupName: row?.groupName ?? null, brandName: row?.brandName ?? null };
+    }
     async today(client) {
         const [row] = await client.$queryRaw `SELECT CURRENT_DATE::text AS today`;
         return row.today;

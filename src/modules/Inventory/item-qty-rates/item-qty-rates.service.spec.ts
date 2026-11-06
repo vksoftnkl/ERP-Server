@@ -207,6 +207,7 @@ describe('ItemQtyRatesService', () => {
       priceRows: jest.fn().mockResolvedValue([priceRow()]),
       liveSlabs: jest.fn().mockResolvedValue([]),
       barcode: jest.fn().mockResolvedValue('8901'),
+      groupAndBrand: jest.fn().mockResolvedValue({ groupName: 'ZT-GRAINS', brandName: null }),
       today: jest.fn().mockResolvedValue(TODAY),
     };
     costGateway = {
@@ -238,6 +239,8 @@ describe('ItemQtyRatesService', () => {
       readStoredSlabs: jest.fn().mockResolvedValue(new Map()),
       assertSellingLevels: step('levels'),
       assertChainSlabsAllowed: step('hq'),
+      assertOwnBranchSlabs: step('branch'),
+      assertOwnBranchSlabIds: step('branch:deletes'),
       softDelete: step('write:delete', (ids: string[]) =>
         ids.map((iqp_id) => ({ iqp_id, deleted: true })),
       ),
@@ -362,6 +365,140 @@ describe('ItemQtyRatesService', () => {
         expect.any(Map),
       );
       expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('levels'));
+    });
+
+    it('D16 (C-d): the own-branch rule runs after the HQ rule, on the slabs and the deletes', async () => {
+      slabs.readStoredSlabs.mockResolvedValue(
+        new Map([
+          [
+            SLAB_ID,
+            { iqpId: SLAB_ID, itemId: ITEM, branchId: BRANCH, priceLevel: 1, isDeleted: false },
+          ],
+        ]),
+      );
+      await service.saveWithRates(body({ slabs: [slabDto()], deleteSlabIds: [SLAB_ID] }));
+      expect(slabs.assertOwnBranchSlabs).toHaveBeenCalledWith(
+        tx,
+        [expect.any(Object)],
+        'slabs.',
+        expect.any(Map),
+      );
+      const [, ids, fieldOf, stored] = slabs.assertOwnBranchSlabIds.mock.calls[0] as [
+        unknown,
+        string[],
+        (index: number) => string,
+        Map<string, unknown>,
+      ];
+      expect([ids, fieldOf(0), stored instanceof Map]).toEqual([
+        [SLAB_ID],
+        'deleteSlabIds.0',
+        true,
+      ]);
+      expect(calls.indexOf('hq')).toBeLessThan(calls.indexOf('branch'));
+      expect(calls.indexOf('branch:deletes')).toBeLessThan(calls.indexOf('write:delete'));
+
+      slabs.assertOwnBranchSlabs.mockRejectedValueOnce(
+        new ForbiddenException({
+          success: false,
+          message: 'no',
+          errors: [
+            { field: 'slabs.0.iqp_branch_id', code: 'ITEM_QTY_PRICE_OTHER_BRANCH', message: 'no' },
+          ],
+        }),
+      );
+      calls.length = 0;
+      expect(
+        await refusalOf(service.saveWithRates(body({ slabs: [slabDto()] }))),
+      ).toMatchObject({ status: 403, codes: ['ITEM_QTY_PRICE_OTHER_BRANCH'] });
+      expect(calls.filter((c) => c.startsWith('write:'))).toEqual([]);
+    });
+  });
+
+  describe('saveWithRates — review fixes C-a / C-c', () => {
+    it('C-a: prepares the card judging only the active levels (price-bulk skips the rest and 0s)', async () => {
+      await service.saveWithRates(
+        body({ rates: { rows: [{ uomId: BOX, levels: [{ level: 1, price: 3600 }] }] } as never }),
+      );
+      const [, , opts] = bulk.prepareBulk.mock.calls[0] as [
+        unknown,
+        unknown,
+        { activeLevels: number[]; keepCost: unknown },
+      ];
+      expect(opts.activeLevels).toEqual([1, 2]);
+      expect(typeof opts.keepCost).toBe('function');
+    });
+
+    it('C-c: a cost equal to the stored one at 2 decimals keeps the stored figures and asks nothing', async () => {
+      // A By User unit whose stored cost has 6 decimals; the screen sends it back rounded.
+      gateway.priceRows.mockResolvedValue([
+        priceRow({
+          ipmProfitType: 'By User',
+          ipmCostPrice: d('3270.004567'),
+          ipmCostWot: d('2771.190311'),
+        }),
+      ]);
+      bulk.prepareBulk.mockResolvedValue(
+        prepared([{ level: 1, price: 3600 }], {}, { costPrice: 3270 }),
+      );
+      const saved = await service.saveWithRates(
+        body({
+          rates: {
+            rows: [{ uomId: BOX, costPrice: 3270, levels: [{ level: 1, price: 3600 }] }],
+          } as never,
+        }),
+      );
+      // no By User question: the cost did not change
+      expect(saved.needsConfirm).toBe(false);
+      expect(saved.problems).toEqual([]);
+      const [, , opts] = bulk.prepareBulk.mock.calls[0] as [
+        unknown,
+        unknown,
+        {
+          keepCost: (
+            index: number,
+            row: { uomId: string; costPrice?: number | null },
+            key: { mrp: number | null; salePrice: number | null },
+          ) => { costRate: number; costWot: number } | null;
+        },
+      ];
+      const headline = { mrp: null, salePrice: null };
+      // the stored 6-decimal cost and its w/o-tax half are what gets written
+      expect(opts.keepCost(0, { uomId: BOX, costPrice: 3270 }, headline)).toEqual({
+        costRate: 3270.004567,
+        costWot: 2771.190311,
+      });
+      expect(opts.keepCost(0, { uomId: BOX, costPrice: 3270.004567 }, headline)).toEqual({
+        costRate: 3270.004567,
+        costWot: 2771.190311,
+      });
+      // a real change (or a row with nothing to keep) is the typed cost
+      expect(opts.keepCost(0, { uomId: BOX, costPrice: 3271 }, headline)).toBeNull();
+      expect(opts.keepCost(0, { uomId: PC, costPrice: 3270 }, headline)).toBeNull();
+    });
+
+    it('C-c: a cost that really changed still asks about a By User unit that kept its prices', async () => {
+      gateway.priceRows.mockResolvedValue([priceRow({ ipmProfitType: 'By User' })]);
+      bulk.prepareBulk.mockResolvedValue(
+        prepared([{ level: 1, price: 3600 }, { level: 2, price: 3760 }], {}, { costPrice: 3300 }),
+      );
+      const asked = await service.saveWithRates(
+        body({
+          rates: {
+            rows: [
+              {
+                uomId: BOX,
+                costPrice: 3300,
+                levels: [
+                  { level: 1, price: 3600 },
+                  { level: 2, price: 3760 },
+                ],
+              },
+            ],
+          } as never,
+        }),
+      );
+      expect(asked.needsConfirm).toBe(true);
+      expect(asked.problems.map((p) => p.code)).toEqual(['ITEM_QTY_PRICE_BY_USER_PRICES_KEPT']);
     });
   });
 
@@ -541,7 +678,8 @@ describe('ItemQtyRatesService', () => {
         policy: 'warning',
       });
       expect(slabs.softDelete).toHaveBeenCalledWith([SLAB_ID], tx);
-      expect(slabs.save).toHaveBeenCalledWith([expect.any(Object)], tx);
+      // C-e: every slab refusal filed under slabs.<i>.
+      expect(slabs.save).toHaveBeenCalledWith([expect.any(Object)], tx, { fieldPrefix: 'slabs.' });
       expect(result).toMatchObject({
         needsConfirm: false,
         rates: { saved: 1 },
@@ -620,6 +758,9 @@ describe('ItemQtyRatesService', () => {
         trackedAs: 'Plain stock',
         leftOutReason: null,
         barcode: '8901',
+        // C-f: the item line's group and brand, null when none
+        groupName: 'ZT-GRAINS',
+        brandName: null,
         taxPerc: 18,
       });
       expect(view.rights).toEqual({

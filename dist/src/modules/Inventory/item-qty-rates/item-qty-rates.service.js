@@ -69,9 +69,10 @@ let ItemQtyRatesService = class ItemQtyRatesService {
         const policy = await this.belowCostPolicy(companyId, branchId);
         const found = await this.findItemOr404(this.prisma, companyId, branchId, itemId);
         const today = await this.gateway.today(this.prisma);
-        const [taxes, barcode, levels, units, priceRows, slabs, grid] = await Promise.all([
+        const [taxes, barcode, names, levels, units, priceRows, slabs, grid] = await Promise.all([
             (0, item_tax_rate_helper_1.resolveItemTaxRates)(this.prisma, [itemId], dayDate(today)),
             this.gateway.barcode(this.prisma, itemId),
+            this.gateway.groupAndBrand(this.prisma, itemId),
             this.gateway.levels(this.prisma),
             this.gateway.units(this.prisma, itemId),
             this.gateway.priceRows(this.prisma, itemId, companyId, branchId),
@@ -163,6 +164,8 @@ let ItemQtyRatesService = class ItemQtyRatesService {
                 itemCode: found.itemCode,
                 itemName: found.itemName,
                 barcode,
+                groupName: names.groupName,
+                brandName: names.brandName,
                 taxPerc: tax?.taxPerc ?? 0,
                 inclTax: tax?.inclTax ?? false,
                 hasCess: tax?.hasCess ?? false,
@@ -216,25 +219,38 @@ let ItemQtyRatesService = class ItemQtyRatesService {
             this.assertNamedSlabs(itemId, slabRows, deleteIds, stored);
             await this.slabService.assertSellingLevels(tx, slabRows, 'slabs.', stored);
             await this.slabService.assertChainSlabsAllowed(tx, slabRows, 'slabs.', stored);
+            await this.slabService.assertOwnBranchSlabs(tx, slabRows, 'slabs.', stored);
+            await this.slabService.assertOwnBranchSlabIds(tx, deleteIds, (index) => `deleteSlabIds.${index}`, stored);
             const found = await this.findItemOr404(tx, companyId, branchId, itemId);
             const plainStock = !found.presetTracks && !found.isBatchBased;
             this.assertPlainStockFields(cardRows, plainStock, (0, cost_price_bulk_rules_1.trackedAsOf)(found.presetName));
-            const prepared = cardRows.length
-                ? await this.bulk.prepareBulk(tx, this.bulkDtoOf(dto, cardRows), { actor, policy })
-                : null;
             const today = await this.gateway.today(tx);
             const caller = { companyId, branchId };
-            const taxes = await (0, item_tax_rate_helper_1.resolveItemTaxRates)(tx, [itemId], dayDate(today));
-            const tax = taxes.get(itemId);
-            const basis = { inclTax: tax?.inclTax ?? false, taxPerc: (0, item_qty_rates_rules_1.dec)(tax?.taxPerc ?? 0) };
             const levels = await this.gateway.levels(tx);
-            const units = await this.gateway.units(tx, itemId);
             const priceRows = await this.gateway.priceRows(tx, itemId, companyId, branchId);
-            const liveSlabs = await this.gateway.liveSlabs(tx, itemId);
             const ctx = {
                 activeLevels: levels.filter((level) => level.active).map((level) => level.level),
                 levelNames: new Map(levels.map((level) => [level.level, level.name])),
             };
+            const prepared = cardRows.length
+                ? await this.bulk.prepareBulk(tx, this.bulkDtoOf(dto, cardRows), {
+                    actor,
+                    policy,
+                    activeLevels: ctx.activeLevels,
+                    keepCost: (_index, row, key) => {
+                        const stored = this.storedRowFor(priceRows, row.uomId, key, today, caller);
+                        return stored && row.costPrice !== undefined && row.costPrice !== null &&
+                            (0, item_qty_rates_rules_1.sameCost)((0, item_qty_rates_rules_1.dec)(row.costPrice), stored.costPrice)
+                            ? { costRate: stored.costPrice.toNumber(), costWot: stored.costWot.toNumber() }
+                            : null;
+                    },
+                })
+                : null;
+            const taxes = await (0, item_tax_rate_helper_1.resolveItemTaxRates)(tx, [itemId], dayDate(today));
+            const tax = taxes.get(itemId);
+            const basis = { inclTax: tax?.inclTax ?? false, taxPerc: (0, item_qty_rates_rules_1.dec)(tax?.taxPerc ?? 0) };
+            const units = await this.gateway.units(tx, itemId);
+            const liveSlabs = await this.gateway.liveSlabs(tx, itemId);
             const unitsById = new Map(units.map((unit) => [unit.uomId, unit]));
             const sent = prepared ? this.sentRowsOf(prepared, priceRows, unitsById, today, caller) : [];
             const problems = [];
@@ -292,7 +308,9 @@ let ItemQtyRatesService = class ItemQtyRatesService {
             const rates = prepared
                 ? await this.bulk.writeBulkInTx(tx, prepared, { confirmed, via, policy })
                 : null;
-            const saved = slabRows.length ? await this.slabService.save(slabRows, tx) : [];
+            const saved = slabRows.length
+                ? await this.slabService.save(slabRows, tx, { fieldPrefix: 'slabs.' })
+                : [];
             return {
                 needsConfirm: false,
                 rates,
@@ -419,9 +437,9 @@ let ItemQtyRatesService = class ItemQtyRatesService {
         return prepared.candidates.map((candidate, index) => {
             const raw = prepared.dto.rows[index];
             const key = { mrp: candidate.mrp, salePrice: candidate.salePrice };
-            const unitRows = priceRows.filter((row) => row.ipmUcUnitId === candidate.uomId);
-            const answer = (0, price_resolver_1.resolveEffectivePrice)(unitRows, key, today, caller);
+            const stored = this.storedRowFor(priceRows, candidate.uomId, key, today, caller);
             const headline = key.mrp === null && key.salePrice === null;
+            const sentCost = raw.costPrice !== undefined && raw.costPrice !== null ? (0, item_qty_rates_rules_1.dec)(raw.costPrice) : null;
             return {
                 index,
                 lineNo: candidate.lineNo,
@@ -429,15 +447,20 @@ let ItemQtyRatesService = class ItemQtyRatesService {
                 unitName: unitsById.get(candidate.uomId)?.unitName ?? null,
                 key,
                 levels: candidate.levels.map((level) => ({ level: level.level, price: (0, item_qty_rates_rules_1.dec)(level.price) })),
-                costPrice: raw.costPrice !== undefined && raw.costPrice !== null ? (0, item_qty_rates_rules_1.dec)(raw.costPrice) : null,
+                costPrice: sentCost && stored && (0, item_qty_rates_rules_1.sameCost)(sentCost, stored.costPrice) ? stored.costPrice : sentCost,
                 maxPrice: headline && raw.maxPrice !== undefined && raw.maxPrice !== null
                     ? (0, item_qty_rates_rules_1.dec)(raw.maxPrice)
                     : null,
                 minPrice: raw.minPrice !== undefined && raw.minPrice !== null ? (0, item_qty_rates_rules_1.dec)(raw.minPrice) : null,
                 profitType: raw.profitType ?? null,
-                stored: answer ? (0, item_qty_rates_rules_1.storedCardRowOf)(answer.row) : null,
+                stored,
             };
         });
+    }
+    storedRowFor(priceRows, uomId, key, today, caller) {
+        const unitRows = priceRows.filter((row) => row.ipmUcUnitId === uomId);
+        const answer = (0, price_resolver_1.resolveEffectivePrice)(unitRows, key, today, caller);
+        return answer ? (0, item_qty_rates_rules_1.storedCardRowOf)(answer.row) : null;
     }
     cardBelowCost(prepared, sent, policy) {
         return prepared.belowCost.map((problem) => {

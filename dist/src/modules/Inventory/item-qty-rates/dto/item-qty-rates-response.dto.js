@@ -17,6 +17,8 @@ class QtyRatesItemDto {
     itemCode;
     itemName;
     barcode;
+    groupName;
+    brandName;
     taxPerc;
     inclTax;
     hasCess;
@@ -41,6 +43,14 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, type: String }),
     __metadata("design:type", Object)
 ], QtyRatesItemDto.prototype, "barcode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, type: String, description: "The item group's name; null when none." }),
+    __metadata("design:type", Object)
+], QtyRatesItemDto.prototype, "groupName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, type: String, description: "The item brand's name; null when none." }),
+    __metadata("design:type", Object)
+], QtyRatesItemDto.prototype, "brandName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)

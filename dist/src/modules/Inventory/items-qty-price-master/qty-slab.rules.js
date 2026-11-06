@@ -142,6 +142,9 @@ function isApplyQtyPricesOn(effective) {
 }
 function judgeSlab(slab, card, activeLevels) {
     const active = new Set(activeLevels);
+    if (slab.priceLevel !== null && !isSellingSlabLevel(slab.priceLevel, active)) {
+        return [];
+    }
     const priced = (level) => card.hasPriceRow && level >= 1 && level <= 4 && card.prices[level - 1].gt(0);
     const levels = slab.priceLevel !== null
         ? [slab.priceLevel]

@@ -4,6 +4,8 @@ export declare class QtyRatesItemDto {
     itemCode: string | null;
     itemName: string;
     barcode: string | null;
+    groupName: string | null;
+    brandName: string | null;
     taxPerc: number;
     inclTax: boolean;
     hasCess: boolean;

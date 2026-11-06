@@ -404,11 +404,15 @@ let PriceBucketGateway = class PriceBucketGateway {
             };
         });
     }
-    validateRows(candidates, storedMinPrices) {
+    validateRows(candidates, storedMinPrices, opts = {}) {
         const problems = [];
+        const judged = opts.activeLevels ? new Set(opts.activeLevels) : null;
         candidates.forEach((candidate, index) => {
             const minPrice = candidate.minPrice ?? storedMinPrices[index] ?? 0;
             for (const level of candidate.levels) {
+                if (judged && (!judged.has(level.level) || !(level.price > 0))) {
+                    continue;
+                }
                 const verdict = candidate.mrp !== null && level.price > candidate.mrp
                     ? {
                         verdict: 'ABOVE_MRP',

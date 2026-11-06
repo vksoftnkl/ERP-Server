@@ -6,7 +6,7 @@ import { AppSettingValueService } from "../../settings/appSettings/app-setting-v
 import { ListSellingPriceQueryDto } from './dto/list-selling-price-query.dto';
 import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
 import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
-import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
+import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-selling-price-bulk.dto';
 import { type ScopeResolution } from './selling-price-scope.helper';
 import { PriceBucketGateway, type BucketPriceCandidate, type RowCost } from './price-bucket.gateway';
 import { type BelowCostPolicy, type ItemTaxRate, type PagedResult, type SellingPriceProblem, type SellingPriceRow, type SellingPriceSaveResult, type SellingPriceScheduleCancelResult, type SellingPriceScheduleRow } from './types/selling-price-bulk.types';
@@ -33,6 +33,18 @@ export interface PreparedBulkSave {
     problems: SellingPriceProblem[];
     belowCost: SellingPriceProblem[];
 }
+export interface PrepareBulkContext {
+    actor: string;
+    policy: BelowCostPolicy;
+    activeLevels?: readonly number[];
+    keepCost?: (index: number, row: SaveSellingPriceRowDto, key: {
+        mrp: number | null;
+        salePrice: number | null;
+    }) => {
+        costRate: number;
+        costWot: number;
+    } | null;
+}
 export declare class SellingPriceBulkService {
     private readonly prisma;
     private readonly auditLogService;
@@ -44,10 +56,7 @@ export declare class SellingPriceBulkService {
     listPrices(queryDto: ListSellingPriceQueryDto): Promise<PagedResult<SellingPriceRow>>;
     listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]>;
     saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult>;
-    prepareBulk(tx: Prisma.TransactionClient, dto: SaveSellingPriceBulkDto, ctx: {
-        actor: string;
-        policy: BelowCostPolicy;
-    }): Promise<PreparedBulkSave>;
+    prepareBulk(tx: Prisma.TransactionClient, dto: SaveSellingPriceBulkDto, ctx: PrepareBulkContext): Promise<PreparedBulkSave>;
     confirmResult(prepared: PreparedBulkSave, policy: BelowCostPolicy): SellingPriceSaveResult;
     writeBulkInTx(tx: Prisma.TransactionClient, prepared: PreparedBulkSave, opts: {
         confirmed: boolean;

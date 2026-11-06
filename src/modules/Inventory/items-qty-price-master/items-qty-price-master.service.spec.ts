@@ -1022,6 +1022,229 @@ describe('ItemsQtyPriceMasterService', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('assertSaveRightsOfBody reads the rights off the raw body, before it is validated', async () => {
+      levelsAre([1, 2, 3, 4]); // VIEW + EDIT, no CREATE
+      // a row with an iqp_id (even one that would not validate) needs EDIT only
+      await expect(service.assertSaveRightsOfBody([{ iqp_id: 'not-a-uuid' }])).resolves.toBeUndefined();
+      // a row without one needs CREATE: 403 before any 400 about the body
+      await expect(
+        refusalOf(service.assertSaveRightsOfBody([{ iqp_price_mode: 'X' }, { iqp_id: '' }])),
+      ).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'ITEM_QTY_PRICE_RIGHT_CREATE' }] },
+      });
+      // a body naming no row: CREATE or EDIT will do (EDIT is held), the shape check answers next
+      await expect(service.assertSaveRightsOfBody({ not: 'an array' })).resolves.toBeUndefined();
+      await expect(service.assertSaveRightsOfBody([])).resolves.toBeUndefined();
+      prisma.$queryRaw.mockResolvedValue([]); // no user_menus row: no rights
+      await expect(refusalOf(service.assertSaveRightsOfBody({}))).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'ITEM_QTY_PRICE_RIGHT_CREATE' }] },
+      });
+    });
+
+    describe('D16 own branch (review fix C-d)', () => {
+      const OTHER_BRANCH = '019c6f6c-be87-7a11-8905-36092c46aa0b';
+      const asUser = (userType: string, branchId: string | null) => {
+        const ctx = context as unknown as { getUserType: jest.Mock; getBranchId: jest.Mock };
+        ctx.getUserType = jest.fn().mockReturnValue(userType);
+        ctx.getBranchId = jest.fn().mockReturnValue(branchId);
+      };
+      const storedAt = (branchId: string | null, iqpId = IQP_ID) => ({
+        iqpId,
+        iqpItemId: ITEM_ID,
+        iqpBranchId: branchId,
+        iqpPriceLevel: null,
+        iqpIsDeleted: false,
+      });
+
+      it('lets a non-HQ user save a slab of its logged-in branch only', async () => {
+        asUser('STORE MANAGER', BRANCH_ID.toUpperCase());
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: BRANCH_ID }]),
+        ).resolves.toBeUndefined();
+        const refusal = await refusalOf(
+          service.assertOwnBranchSlabs(
+            prisma as never,
+            [{ iqp_branch_id: BRANCH_ID }, { iqp_branch_id: OTHER_BRANCH }],
+            'slabs.',
+          ),
+        );
+        expect(refusal).toMatchObject({
+          status: 403,
+          body: {
+            errors: [{ field: 'slabs.1.iqp_branch_id', code: ItemQtyPriceErrorCode.OTHER_BRANCH }],
+          },
+        });
+      });
+
+      it("a change needs the STORED branch to be the user's too, and the branch after the save", async () => {
+        asUser('USER', BRANCH_ID);
+        // another branch's slab, moved to mine: refused (its stored branch is not mine)
+        prisma.itemQtyPrice.findMany.mockResolvedValue([storedAt(OTHER_BRANCH)]);
+        await expect(
+          refusalOf(
+            service.assertOwnBranchSlabs(prisma as never, [
+              { iqp_id: IQP_ID, iqp_branch_id: BRANCH_ID },
+            ]),
+          ),
+        ).resolves.toMatchObject({ status: 403, body: { errors: [{ field: '0.iqp_branch_id' }] } });
+        // an all-branches slab is head office's
+        prisma.itemQtyPrice.findMany.mockResolvedValue([storedAt(null)]);
+        await expect(
+          refusalOf(
+            service.assertOwnBranchSlabs(prisma as never, [
+              { iqp_id: IQP_ID, iqp_branch_id: BRANCH_ID },
+            ]),
+          ),
+        ).resolves.toMatchObject({ status: 403 });
+        // my slab, branch left out: kept, so allowed; moved to another branch: refused
+        prisma.itemQtyPrice.findMany.mockResolvedValue([storedAt(BRANCH_ID)]);
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_id: IQP_ID.toUpperCase() }]),
+        ).resolves.toBeUndefined();
+        await expect(
+          refusalOf(
+            service.assertOwnBranchSlabs(prisma as never, [
+              { iqp_id: IQP_ID, iqp_branch_id: OTHER_BRANCH },
+            ]),
+          ),
+        ).resolves.toMatchObject({ status: 403 });
+        // a blank branch after the save is CHAIN_HQ_ONLY's (run first), not this rule's
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: null }]),
+        ).resolves.toBeUndefined();
+      });
+
+      it('a session with no logged-in branch owns none; head office is not checked', async () => {
+        asUser('USER', null);
+        const refusal = await refusalOf(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: BRANCH_ID }]),
+        );
+        expect(refusal).toMatchObject({
+          status: 403,
+          body: { errors: [{ code: ItemQtyPriceErrorCode.OTHER_BRANCH }] },
+        });
+        expect((refusal.body as { errors: Array<{ message: string }> }).errors[0].message).toContain(
+          'not at a branch counter',
+        );
+        asUser('SUPER ADMIN', null);
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: OTHER_BRANCH }]),
+        ).resolves.toBeUndefined();
+        prisma.itemQtyPrice.findMany.mockResolvedValue([storedAt(OTHER_BRANCH)]);
+        await expect(service.assertOwnBranchSlabIdsOf([IQP_ID])).resolves.toBeUndefined();
+        expect(prisma.itemQtyPrice.findMany).not.toHaveBeenCalled();
+      });
+
+      it('delete / restore: the stored branch must be mine; an unknown id is left to the 404', async () => {
+        asUser('USER', BRANCH_ID);
+        prisma.itemQtyPrice.findMany.mockResolvedValue([
+          storedAt(BRANCH_ID),
+          storedAt(OTHER_BRANCH, OTHER_IQP_ID),
+        ]);
+        await expect(service.assertOwnBranchSlabIdsOf(IQP_ID)).resolves.toBeUndefined();
+        await expect(
+          service.assertOwnBranchSlabIdsOf(['019c6f6c-be87-7a11-8905-36092c46aaff']),
+        ).resolves.toBeUndefined();
+        await expect(refusalOf(service.assertOwnBranchSlabIdsOf(OTHER_IQP_ID))).resolves.toMatchObject(
+          { status: 403, body: { errors: [{ field: 'iqp_id', code: 'ITEM_QTY_PRICE_OTHER_BRANCH' }] } },
+        );
+        await expect(
+          refusalOf(service.assertOwnBranchSlabIdsOf([IQP_ID, OTHER_IQP_ID.toUpperCase()])),
+        ).resolves.toMatchObject({ body: { errors: [{ field: '1.iqp_id' }] } });
+        await expect(
+          refusalOf(
+            service.assertOwnBranchSlabIds(
+              prisma as never,
+              [OTHER_IQP_ID],
+              (index) => `deleteSlabIds.${index}`,
+            ),
+          ),
+        ).resolves.toMatchObject({ body: { errors: [{ field: 'deleteSlabIds.0' }] } });
+      });
+    });
+
+    describe("save's fieldPrefix (save-with-rates, review fix C-e)", () => {
+      /** The overlap probe's answer: OTHER_IQP_ID holds 5–15 from 2026-04-01, open. */
+      const clashWith = (iqpId: string) => [
+        {
+          iqp_id: iqpId,
+          other_id: OTHER_IQP_ID,
+          other_from: '5',
+          other_to: '15',
+          other_effective_from: '2026-04-01',
+          other_effective_to: null,
+        },
+      ];
+
+      it('files a row refusal under <prefix><index>.<field>', async () => {
+        const refusal = await refusalOf(
+          service.save(
+            [newSlab(), newSlab({ iqp_from_qty: 20, iqp_to_qty: 10 })],
+            prisma as never,
+            { fieldPrefix: 'slabs.' },
+          ),
+        );
+        expect(refusal).toMatchObject({
+          status: 400,
+          body: {
+            errors: [
+              { field: 'slabs.1.iqp_to_qty', code: ItemQtyPriceErrorCode.QTY_RANGE_INVALID },
+            ],
+          },
+        });
+      });
+
+      it('words a database refusal first, then files it under the row (DUPLICATE)', async () => {
+        prisma.itemQtyPrice.create
+          .mockResolvedValueOnce(slabRow())
+          .mockRejectedValueOnce(prismaError('P2002'));
+        const refusal = await refusalOf(
+          service.save([newSlab(), newSlab({ iqp_from_qty: 60 })], prisma as never, {
+            fieldPrefix: 'slabs.',
+          }),
+        );
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'slabs.1.iqp_item_id', code: ItemQtyPriceErrorCode.DUPLICATE }] },
+        });
+      });
+
+      it('puts the prefix in front of the overlap index; /create (no prefix) answers as before', async () => {
+        const clash = () => {
+          prisma.itemQtyPrice.create
+            .mockResolvedValueOnce(slabRow({ iqpId: IQP_ID }))
+            .mockResolvedValueOnce(slabRow({ iqpId: OTHER_IQP_ID }));
+          prisma.$queryRaw
+            .mockResolvedValueOnce([{ locked: 1 }])
+            .mockResolvedValueOnce(clashWith(OTHER_IQP_ID));
+        };
+        clash();
+        await expect(
+          refusalOf(
+            service.save([newSlab(), newSlab({ iqp_from_qty: 50 })], prisma as never, {
+              fieldPrefix: 'slabs.',
+            }),
+          ),
+        ).resolves.toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'slabs.1.iqp_from_qty', code: ItemQtyPriceErrorCode.OVERLAP }] },
+        });
+        clash();
+        await expect(
+          refusalOf(service.save([newSlab(), newSlab({ iqp_from_qty: 50 })])),
+        ).resolves.toMatchObject({ body: { errors: [{ field: '1.iqp_from_qty' }] } });
+        prisma.itemQtyPrice.create.mockReset();
+        prisma.itemQtyPrice.create.mockImplementation(
+          async ({ data }: { data: Record<string, unknown> }) => written(data),
+        );
+        await expect(
+          refusalOf(service.save([newSlab({ iqp_from_qty: 20, iqp_to_qty: 10 })])),
+        ).resolves.toMatchObject({ body: { errors: [{ field: 'iqp_to_qty' }] } });
+      });
+    });
+
     it("softDelete / restore run in the caller's transaction when given one", async () => {
       prisma.itemQtyPrice.findFirst.mockResolvedValue(slabRow());
       await service.softDelete([IQP_ID], prisma as never);

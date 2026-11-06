@@ -37,6 +37,10 @@ describe('ItemsQtyPriceMasterController', () => {
     assertSaveRights: jest.Mock;
     assertSellingLevelsOf: jest.Mock;
     assertChainSlabsAllowedOf: jest.Mock;
+    // Review 2026-11-06 — rights before the body; D16 own branch (C-d).
+    assertSaveRightsOfBody: jest.Mock;
+    assertOwnBranchSlabsOf: jest.Mock;
+    assertOwnBranchSlabIdsOf: jest.Mock;
   };
   let controller: ItemsQtyPriceMasterController;
 
@@ -62,6 +66,9 @@ describe('ItemsQtyPriceMasterController', () => {
       assertSaveRights: jest.fn().mockResolvedValue(undefined),
       assertSellingLevelsOf: jest.fn().mockResolvedValue(undefined),
       assertChainSlabsAllowedOf: jest.fn().mockResolvedValue(undefined),
+      assertSaveRightsOfBody: jest.fn().mockResolvedValue(undefined),
+      assertOwnBranchSlabsOf: jest.fn().mockResolvedValue(undefined),
+      assertOwnBranchSlabIdsOf: jest.fn().mockResolvedValue(undefined),
     };
     controller = new ItemsQtyPriceMasterController(
       service as unknown as ItemsQtyPriceMasterService,
@@ -245,11 +252,13 @@ describe('ItemsQtyPriceMasterController', () => {
         errors: [{ field: 'userId', code: 'ITEM_QTY_PRICE_RIGHT_CREATE', message: 'no' }],
       });
 
-    it('checks CREATE / EDIT, the level rule and the HQ rule before the save, in that order', async () => {
+    it('checks CREATE / EDIT, the level rule, the HQ rule and the own branch before the save, in that order', async () => {
       const order: string[] = [];
+      service.assertSaveRightsOfBody.mockImplementation(async () => void order.push('rights:raw'));
       service.assertSaveRights.mockImplementation(async () => void order.push('rights'));
       service.assertSellingLevelsOf.mockImplementation(async () => void order.push('levels'));
       service.assertChainSlabsAllowedOf.mockImplementation(async () => void order.push('hq'));
+      service.assertOwnBranchSlabsOf.mockImplementation(async () => void order.push('branch'));
       service.save.mockImplementation(async () => {
         order.push('save');
         return [PAYLOAD];
@@ -257,9 +266,38 @@ describe('ItemsQtyPriceMasterController', () => {
 
       await controller.save([SLAB]);
 
-      expect(order).toEqual(['rights', 'levels', 'hq', 'save']);
+      expect(order).toEqual(['rights:raw', 'rights', 'levels', 'hq', 'branch', 'save']);
       const [rows] = service.assertSaveRights.mock.calls[0] as [SaveItemQtyPriceDto[]];
       expect(rows[0]).toBeInstanceOf(SaveItemQtyPriceDto);
+    });
+
+    it('answers 403 before 400: the rights are read off the raw body, before it is validated', async () => {
+      service.assertSaveRightsOfBody.mockRejectedValue(refused());
+
+      const refusal = await refusalOf(controller.save([{ iqp_price_mode: 'X' }]));
+
+      expect(refusal.status).toBe(403);
+      expect(service.assertSaveRightsOfBody).toHaveBeenCalledWith([{ iqp_price_mode: 'X' }]);
+      expect(service.assertSaveRights).not.toHaveBeenCalled();
+      expect(service.save).not.toHaveBeenCalled();
+    });
+
+    it('D16: a slab of another branch is refused before the save; deletes and restores too', async () => {
+      const other = new ForbiddenException({
+        success: false,
+        message: 'no',
+        errors: [{ field: '0.iqp_branch_id', code: 'ITEM_QTY_PRICE_OTHER_BRANCH', message: 'no' }],
+      });
+      service.assertOwnBranchSlabsOf.mockRejectedValue(other);
+      expect((await refusalOf(controller.save([SLAB]))).status).toBe(403);
+      expect(service.save).not.toHaveBeenCalled();
+
+      service.assertOwnBranchSlabIdsOf.mockRejectedValue(other);
+      expect((await refusalOf(controller.remove(undefined, IQP_ID))).status).toBe(403);
+      expect((await refusalOf(controller.restore([{ iqp_id: IQP_ID }]))).status).toBe(403);
+      expect(service.assertOwnBranchSlabIdsOf.mock.calls).toEqual([[IQP_ID], [[IQP_ID]]]);
+      expect(service.softDelete).not.toHaveBeenCalled();
+      expect(service.restore).not.toHaveBeenCalled();
     });
 
     it('writes nothing when a right is refused', async () => {
@@ -289,6 +327,10 @@ describe('ItemsQtyPriceMasterController', () => {
       service.assertRight.mockRejectedValue(refused());
       await expect(controller.remove(undefined, IQP_ID)).rejects.toBeInstanceOf(ForbiddenException);
       expect(service.softDelete).toHaveBeenCalledTimes(1);
+      // Rights first: a bad payload from a caller without DELETE is a 403, not a 400.
+      await expect(controller.remove(undefined, 'slab-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
   });
 });

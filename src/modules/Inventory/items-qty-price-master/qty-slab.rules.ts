@@ -345,7 +345,9 @@ export interface SlabJudgement {
  * The levels: the slab's own, else every ACTIVE level priced above 0. A unit
  * with no price row — or a slab whose own level is not priced — has no base:
  * P / R are not judged (no bill can price them), F only against zero and the
- * cost. A slab missing its mode's figure is not judged here.
+ * cost. A slab missing its mode's figure is not judged here. A slab whose own
+ * level is not an active selling level (an inactive 1–4, or 5 / 6 / 7 on an
+ * old row) is not judged at all (review fix C-b): no bill applies it.
  */
 export function judgeSlab(
   slab: QtySlab,
@@ -353,6 +355,9 @@ export function judgeSlab(
   activeLevels: Iterable<number>,
 ): SlabJudgement[] {
   const active = new Set(activeLevels);
+  if (slab.priceLevel !== null && !isSellingSlabLevel(slab.priceLevel, active)) {
+    return [];
+  }
   const priced = (level: number) =>
     card.hasPriceRow && level >= 1 && level <= 4 && card.prices[level - 1].gt(0);
   const levels: Array<number | null> =

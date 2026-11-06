@@ -61,6 +61,7 @@ import {
   cardRowOf,
   dec,
   judgeSlabs,
+  sameCost,
   sameKey,
   scheduledFromOf,
   slabProblems,
@@ -128,9 +129,10 @@ export class ItemQtyRatesService {
     const policy = await this.belowCostPolicy(companyId, branchId);
     const found = await this.findItemOr404(this.prisma, companyId, branchId, itemId);
     const today = await this.gateway.today(this.prisma);
-    const [taxes, barcode, levels, units, priceRows, slabs, grid] = await Promise.all([
+    const [taxes, barcode, names, levels, units, priceRows, slabs, grid] = await Promise.all([
       resolveItemTaxRates(this.prisma, [itemId], dayDate(today)),
       this.gateway.barcode(this.prisma, itemId),
+      this.gateway.groupAndBrand(this.prisma, itemId),
       this.gateway.levels(this.prisma),
       this.gateway.units(this.prisma, itemId),
       this.gateway.priceRows(this.prisma, itemId, companyId, branchId),
@@ -228,6 +230,8 @@ export class ItemQtyRatesService {
         itemCode: found.itemCode,
         itemName: found.itemName,
         barcode,
+        groupName: names.groupName,
+        brandName: names.brandName,
         taxPerc: tax?.taxPerc ?? 0,
         inclTax: tax?.inclTax ?? false,
         hasCess: tax?.hasCess ?? false,
@@ -292,31 +296,54 @@ export class ItemQtyRatesService {
       this.assertNamedSlabs(itemId, slabRows, deleteIds, stored);
       await this.slabService.assertSellingLevels(tx, slabRows, 'slabs.', stored);
       await this.slabService.assertChainSlabsAllowed(tx, slabRows, 'slabs.', stored);
+      // D16 (C-d): not head office → only the logged-in branch's slabs.
+      await this.slabService.assertOwnBranchSlabs(tx, slabRows, 'slabs.', stored);
+      await this.slabService.assertOwnBranchSlabIds(
+        tx,
+        deleteIds,
+        (index) => `deleteSlabIds.${index}`,
+        stored,
+      );
 
       // 3.1 — the item, and what may be typed on it.
       const found = await this.findItemOr404(tx, companyId, branchId, itemId);
       const plainStock = !found.presetTracks && !found.isBatchBased;
       this.assertPlainStockFields(cardRows, plainStock, trackedAsOf(found.presetName));
 
-      // 3.2 — the card: Change Selling Price's own checks (its 422s), nothing written.
-      const prepared = cardRows.length
-        ? await this.bulk.prepareBulk(tx, this.bulkDtoOf(dto, cardRows), { actor, policy })
-        : null;
-
-      // The card as it stands, and as it will stand.
+      // The card as it stands (read before the card is prepared: C-c needs it).
       const today = await this.gateway.today(tx);
       const caller: PriceCallerScope = { companyId, branchId };
-      const taxes = await resolveItemTaxRates(tx, [itemId], dayDate(today));
-      const tax = taxes.get(itemId);
-      const basis = { inclTax: tax?.inclTax ?? false, taxPerc: dec(tax?.taxPerc ?? 0) };
       const levels = await this.gateway.levels(tx);
-      const units = await this.gateway.units(tx, itemId);
       const priceRows = await this.gateway.priceRows(tx, itemId, companyId, branchId);
-      const liveSlabs = await this.gateway.liveSlabs(tx, itemId);
       const ctx = {
         activeLevels: levels.filter((level) => level.active).map((level) => level.level),
         levelNames: new Map(levels.map((level) => [level.level, level.name])),
       };
+
+      // 3.2 — the card: Change Selling Price's own checks (its 422s), nothing
+      // written; only the active levels priced above 0 judged (C-a), and a cost
+      // sent back as loaded kept as stored (C-c).
+      const prepared = cardRows.length
+        ? await this.bulk.prepareBulk(tx, this.bulkDtoOf(dto, cardRows), {
+            actor,
+            policy,
+            activeLevels: ctx.activeLevels,
+            keepCost: (_index, row, key) => {
+              const stored = this.storedRowFor(priceRows, row.uomId, key, today, caller);
+              return stored && row.costPrice !== undefined && row.costPrice !== null &&
+                sameCost(dec(row.costPrice), stored.costPrice)
+                ? { costRate: stored.costPrice.toNumber(), costWot: stored.costWot.toNumber() }
+                : null;
+            },
+          })
+        : null;
+
+      // ... and as it will stand.
+      const taxes = await resolveItemTaxRates(tx, [itemId], dayDate(today));
+      const tax = taxes.get(itemId);
+      const basis = { inclTax: tax?.inclTax ?? false, taxPerc: dec(tax?.taxPerc ?? 0) };
+      const units = await this.gateway.units(tx, itemId);
+      const liveSlabs = await this.gateway.liveSlabs(tx, itemId);
       const unitsById = new Map(units.map((unit) => [unit.uomId, unit]));
       const sent = prepared ? this.sentRowsOf(prepared, priceRows, unitsById, today, caller) : [];
 
@@ -387,7 +414,10 @@ export class ItemQtyRatesService {
       const rates = prepared
         ? await this.bulk.writeBulkInTx(tx, prepared, { confirmed, via, policy })
         : null;
-      const saved = slabRows.length ? await this.slabService.save(slabRows, tx) : [];
+      // Every slab refusal filed under slabs.<i>. (C-e).
+      const saved = slabRows.length
+        ? await this.slabService.save(slabRows, tx, { fieldPrefix: 'slabs.' })
+        : [];
       return {
         needsConfirm: false,
         rates,
@@ -570,9 +600,10 @@ export class ItemQtyRatesService {
     return prepared.candidates.map((candidate, index) => {
       const raw = prepared.dto.rows[index];
       const key: BucketKey = { mrp: candidate.mrp, salePrice: candidate.salePrice };
-      const unitRows = priceRows.filter((row) => row.ipmUcUnitId === candidate.uomId);
-      const answer = resolveEffectivePrice(unitRows, key, today, caller);
+      const stored = this.storedRowFor(priceRows, candidate.uomId, key, today, caller);
       const headline = key.mrp === null && key.salePrice === null;
+      const sentCost =
+        raw.costPrice !== undefined && raw.costPrice !== null ? dec(raw.costPrice) : null;
       return {
         index,
         lineNo: candidate.lineNo,
@@ -580,17 +611,32 @@ export class ItemQtyRatesService {
         unitName: unitsById.get(candidate.uomId)?.unitName ?? null,
         key,
         levels: candidate.levels.map((level) => ({ level: level.level, price: dec(level.price) })),
+        // C-c: a cost equal to the stored one at 2 decimals is the stored one
+        // (no By User question; prepareBulk kept the stored figures too).
         costPrice:
-          raw.costPrice !== undefined && raw.costPrice !== null ? dec(raw.costPrice) : null,
+          sentCost && stored && sameCost(sentCost, stored.costPrice) ? stored.costPrice : sentCost,
         maxPrice:
           headline && raw.maxPrice !== undefined && raw.maxPrice !== null
             ? dec(raw.maxPrice)
             : null,
         minPrice: raw.minPrice !== undefined && raw.minPrice !== null ? dec(raw.minPrice) : null,
         profitType: raw.profitType ?? null,
-        stored: answer ? storedCardRowOf(answer.row) : null,
+        stored,
       };
     });
+  }
+
+  /** The row a card row writes over or copies from: the resolver's answer today here, else null. */
+  private storedRowFor(
+    priceRows: Awaited<ReturnType<ItemQtyRatesGateway['priceRows']>>,
+    uomId: string,
+    key: BucketKey,
+    today: string,
+    caller: PriceCallerScope,
+  ) {
+    const unitRows = priceRows.filter((row) => row.ipmUcUnitId === uomId);
+    const answer = resolveEffectivePrice(unitRows, key, today, caller);
+    return answer ? storedCardRowOf(answer.row) : null;
   }
 
   /** Change Selling Price's below-cost verdicts as the form's problems. */

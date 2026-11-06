@@ -113,7 +113,9 @@ export declare class PriceBucketGateway {
         mrp: number | null;
         salePrice: number | null;
     }>, companyId: string, branchId: string, onDate?: string): Promise<RowCost[]>;
-    validateRows(candidates: readonly BucketPriceCandidate[], storedMinPrices: readonly number[]): SellingPriceProblem[];
+    validateRows(candidates: readonly BucketPriceCandidate[], storedMinPrices: readonly number[], opts?: {
+        activeLevels?: readonly number[];
+    }): SellingPriceProblem[];
     findBucketRowForUpdate(tx: Prisma.TransactionClient, candidate: BucketPriceCandidate, scope: ScopeResolution, onDate?: string): Promise<LockedPriceRow | null>;
     calendar(client: Pick<Prisma.TransactionClient, '$queryRaw'>): Promise<{
         today: string;

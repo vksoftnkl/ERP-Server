@@ -160,6 +160,29 @@ export class ItemQtyRatesGateway {
     return item?.itemDefaultBarcode ?? null;
   }
 
+  /**
+   * Review fix C-f — the item line's group and brand names, display only:
+   * item_master.item_group_id → item_group_master.itg_name (fk
+   * item_master_item_group_id_fkey) and item_master.item_brand_id →
+   * item_brand_master.brand_name (no FK; the column the item card and the
+   * price grids filter by). Null when the item has none (or the row is gone).
+   */
+  async groupAndBrand(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    itemId: string,
+  ): Promise<{ groupName: string | null; brandName: string | null }> {
+    const [row] = await client.$queryRaw<
+      Array<{ groupName: string | null; brandName: string | null }>
+    >`
+      SELECT NULLIF(btrim(g.itg_name), '')   AS "groupName",
+             NULLIF(btrim(b.brand_name), '') AS "brandName"
+        FROM inventory.item_master i
+        LEFT JOIN inventory.item_group_master g ON g.itg_id = i.item_group_id
+        LEFT JOIN inventory.item_brand_master b ON b.brand_id = i.item_brand_id
+       WHERE i.item_id = ${itemId}::uuid`;
+    return { groupName: row?.groupName ?? null, brandName: row?.brandName ?? null };
+  }
+
   /** The database's today, `YYYY-MM-DD` (the session's Asia/Kolkata day). */
   async today(client: Pick<Prisma.TransactionClient, '$queryRaw'>): Promise<string> {
     const [row] = await client.$queryRaw<

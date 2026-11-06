@@ -109,6 +109,31 @@ export interface PreparedBulkSave {
   belowCost: SellingPriceProblem[];
 }
 
+/**
+ * What prepareBulk is told besides the save. `actor` and `policy` always;
+ * the two options only by Qty-wise Prices (menu 244, review fixes C-a / C-c,
+ * 2026-11-06) — absent, the save is checked and costed exactly as before
+ * (menu 30, Quick Rate).
+ */
+export interface PrepareBulkContext {
+  actor: string;
+  policy: BelowCostPolicy;
+  /** C-a: judge a level only when it is one of these active levels and priced above 0. */
+  activeLevels?: readonly number[];
+  /**
+   * C-c: asked once per row that carries a costPrice, with the row's index and
+   * its bucket key after the item's policy blanked it. An answer replaces the
+   * keyed cost and its w/o-tax half — the stored figures, written back as they
+   * are — so a cost sent back as loaded is not re-derived. Null keeps the
+   * keyed cost (a real change).
+   */
+  keepCost?: (
+    index: number,
+    row: SaveSellingPriceRowDto,
+    key: { mrp: number | null; salePrice: number | null },
+  ) => { costRate: number; costWot: number } | null;
+}
+
 /** `YYYY-MM-DD` as the screen says it: `DD-MM-YYYY`. */
 function displayDay(day: string): string {
   return day.split('-').reverse().join('-');
@@ -224,7 +249,7 @@ export class SellingPriceBulkService {
   async prepareBulk(
     tx: Prisma.TransactionClient,
     dto: SaveSellingPriceBulkDto,
-    ctx: { actor: string; policy: BelowCostPolicy },
+    ctx: PrepareBulkContext,
   ): Promise<PreparedBulkSave> {
     // Notes 140 A — undefined for a save that starts today, which then runs
     // exactly as it always has; the day itself for a scheduled one, whose
@@ -249,7 +274,7 @@ export class SellingPriceBulkService {
     this.assertUnitsBelong(dto.rows, costs);
 
     const candidates = dto.rows.map((row, index) =>
-      this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index]),
+      this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index], ctx.keepCost),
     );
     const resolutions = dto.rows.map((row) =>
       resolveTargetScope(dto.scope, this.rowScopeOf(row), dto.branchId),
@@ -260,6 +285,7 @@ export class SellingPriceBulkService {
     const problems = this.gateway.validateRows(
       candidates,
       costs.map((cost) => cost.minPrice),
+      ctx.activeLevels ? { activeLevels: ctx.activeLevels } : {},
     );
 
     const blocking = problems.filter((problem) => !CONFIRMABLE_VERDICTS.includes(problem.verdict));
@@ -1042,15 +1068,26 @@ export class SellingPriceBulkService {
     actor: string,
     taxRates: ReadonlyMap<string, ItemTaxRate>,
     cost: RowCost,
+    keepCost?: PrepareBulkContext['keepCost'],
   ): PriceCandidateWrite {
     const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
     const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
     // Notes 147 B — a keyed costPrice is the price row's own cost for this save:
     // stored with its w/o-tax half, and the markups and the below-cost check
     // are against it. Absent, the cost the grid showed, as before.
-    const keyedCost = row.costPrice ?? null;
+    // Menu 244 (C-c): a keyed cost the caller calls unchanged is the stored
+    // cost and w/o-tax half, kept as they are.
+    const kept =
+      keepCost && row.costPrice !== undefined && row.costPrice !== null
+        ? keepCost(index, row, key)
+        : null;
+    const keyedCost = kept ? kept.costRate : (row.costPrice ?? null);
     const costRate = keyedCost ?? cost.costRate;
-    const costWot = keyedCost !== null ? exclusiveOfTax(keyedCost, taxPerc) : cost.costWot;
+    const costWot = kept
+      ? kept.costWot
+      : keyedCost !== null
+        ? exclusiveOfTax(keyedCost, taxPerc)
+        : cost.costWot;
     return {
       lineNo: row.lineNo ?? index + 1,
       companyId,

@@ -64,4 +64,12 @@ export enum ItemQtyPriceErrorCode {
   BY_USER_PRICES_KEPT = 'ITEM_QTY_PRICE_BY_USER_PRICES_KEPT',
   /** A slab for all branches (branch blank) from a user type that is not HQ (Q9). */
   CHAIN_HQ_ONLY = 'ITEM_QTY_PRICE_CHAIN_HQ_ONLY',
+
+  // ── review fixes 2026-11-06 (wording row catalogue 2026-11-06.2)
+  /**
+   * D16 — a user type that is not HQ created, changed, deleted or restored a
+   * slab of another branch than its own (the session's logged-in branch), or
+   * has no logged-in branch at all.
+   */
+  OTHER_BRANCH = 'ITEM_QTY_PRICE_OTHER_BRANCH',
 }

@@ -61,7 +61,8 @@ card checks, the set of slabs judged (C7) and the problem list.
    `_ITEM_MISMATCH`; one id twice (or saved and deleted) → 400 `VALIDATION_ARRAY_UNIQUE`. In the
    transaction, after the per-item lock: a named slab not there → 404 `_NOT_FOUND`, another item's
    → 400 `_ITEM_MISMATCH`; a level not blank / active 1–4 → 422 `_LEVEL_NOT_SELLING`; a slab for
-   all branches from a non-HQ user type → 403 `_CHAIN_HQ_ONLY`.
+   all branches from a non-HQ user type → 403 `_CHAIN_HQ_ONLY`; a non-HQ user type saving or
+   deleting a slab of another branch than its logged-in one → 403 `_OTHER_BRANCH` (D16).
 3. **Checks, nothing written**: `costPrice` / `maxPrice` on an item that is not Plain stock → 422
    `_COST_NOT_PLAIN_STOCK` / `_MRP_NOT_PLAIN_STOCK`; `prepareBulk` (this branch, from today,
    `originMenuId` 244: its own 422 `STOCK_PRICE_*`, below cost thrown under `restrict`); a
@@ -78,6 +79,21 @@ card checks, the set of slabs judged (C7) and the problem list.
    CHANGE_SELLING_PRICE "via Qty-wise Prices (menu 244)", "Confirmed below cost: …" when
    confirmed), then the slabs. A slab overlap (409 `ITEM_QTY_PRICE_OVERLAP`) rolls back the card
    and the deletes too.
+
+Review fixes (2026-11-06, contract with the Qt screen):
+- **C-a** the card rows are judged by price-bulk only at ACTIVE levels priced above 0
+  (`prepareBulk` option `activeLevels`); all four levels are still written as sent. Menu 30 /
+  Quick Rate pass no option and judge every level, as before.
+- **C-b** a slab on a level that is not an active selling level is not judged.
+- **C-c** a `costPrice` equal to the stored cost at 2 decimals (half-up) is unchanged: no By User
+  question, and the stored cost and its w/o-tax half are written back as they are
+  (`prepareBulk` option `keepCost`).
+- **C-e** every slab refusal names `slabs.<i>.<field>`: the writer's (`slabs.<i>.iqp_to_qty`,
+  `.iqp_item_id`, `.iqp_from_qty`), a judged slab's (`slabs.<i>.iqp_price` / `.iqp_flat_off` /
+  `.iqp_disc_pct` by its mode; a stored slab not sent stays `iqp_id`), and a validation sentence
+  in Nest's old `{ message: [...] }` shape (the filter). Card refusals keep price-bulk's `rows.<lineNo>`.
+- **C-f** `item.groupName` / `item.brandName` (null when none).
+- Ids are matched lower-cased; bucket keys compared as exact Decimals.
 
 `data = { needsConfirm, rates, slabs, deletedSlabIds, problems, belowCostPolicy }` in every 200
 (asking: `rates` null, the lists empty). `rates` is what `POST /stock/price-bulk` answers.

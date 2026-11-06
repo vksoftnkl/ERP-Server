@@ -7,8 +7,11 @@ import {
   cardRowOf,
   judgeSlabs,
   pricesAfter,
+  sameCost,
+  sameKey,
   scheduledFromOf,
   slabAfterSave,
+  slabProblemField,
   slabProblems,
   slabsToJudge,
   storedCardRowOf,
@@ -348,6 +351,56 @@ describe('item-qty-rates.rules', () => {
       ]);
       expect(judged[1].slab.price?.toFixed()).toBe('3000');
     });
+
+    it('matches ids in any case: a sent / deleted uuid in capitals is the stored slab', () => {
+      const id = 'a0000000-0000-7000-8000-0000000000ef';
+      const judged = slabsToJudge({
+        stored: [
+          { uomId: BOX, slab: qtySlab({ iqpId: id }) },
+          { uomId: BOX, slab: qtySlab({ iqpId: 'b0000000-0000-7000-8000-0000000000ee' }) },
+        ],
+        sent: [
+          {
+            iqp_id: id.toUpperCase(),
+            iqp_item_id: 'I',
+            iqp_item_unit_id: BOX,
+            iqp_effective_from: '2026-11-01',
+            iqp_price: 3000,
+          },
+        ] as SaveItemQtyPriceDto[],
+        deleteIds: ['B0000000-0000-7000-8000-0000000000EE'],
+        companyId: COMPANY.toUpperCase(),
+        branchId: BRANCH.toUpperCase(),
+        today: TODAY,
+      });
+      // the stored row is replaced by the sent one (not judged twice), the deleted one is gone
+      expect(judged.map((j) => [j.iqpId, j.slabIndex])).toEqual([[id.toUpperCase(), 0]]);
+      // the edit keeps the stored scope (company / branch) and is judged here
+      expect(judged[0].slab).toMatchObject({ companyId: COMPANY, branchId: BRANCH });
+      expect(judged[0].slab.price?.toFixed()).toBe('3000');
+    });
+  });
+
+  describe('sameKey / sameCost (exact Decimals, no epsilon)', () => {
+    it('sameKey is the same bucket only for the same figures', () => {
+      expect(sameKey({ mrp: null, salePrice: null }, { mrp: null, salePrice: null })).toBe(true);
+      expect(sameKey({ mrp: 99.5, salePrice: null }, { mrp: 99.5, salePrice: null })).toBe(true);
+      expect(sameKey({ mrp: 0.1 + 0.2, salePrice: null }, { mrp: 0.3, salePrice: null })).toBe(
+        false,
+      );
+      expect(sameKey({ mrp: 100, salePrice: null }, { mrp: 100.0000001, salePrice: null })).toBe(
+        false,
+      );
+      expect(sameKey({ mrp: 100, salePrice: null }, { mrp: null, salePrice: null })).toBe(false);
+    });
+
+    it('sameCost: equal at 2 decimals half-up is unchanged (C-c)', () => {
+      expect(sameCost(d('12.345678'), d('12.35'))).toBe(true);
+      expect(sameCost(d('12.345678'), d('12.345678'))).toBe(true);
+      expect(sameCost(d('12.344999'), d('12.35'))).toBe(false);
+      expect(sameCost(d('3270'), d('3270.004'))).toBe(true);
+      expect(sameCost(d('3270.01'), d('3270'))).toBe(false);
+    });
   });
 
   describe('slabProblems', () => {
@@ -379,8 +432,8 @@ describe('item-qty-rates.rules', () => {
       const warn = slabProblems(judged, { ...ctx, policy: 'warning' });
       // Min 3300, cost 3270: 3300 each passes; 3200 each is under the Min at both active levels
       expect(warn.map((p) => [p.code, p.severity, p.level, p.field])).toEqual([
-        ['ITEM_QTY_PRICE_BELOW_MIN', 'REFUSE', 1, 'slabs.2'],
-        ['ITEM_QTY_PRICE_BELOW_MIN', 'REFUSE', 2, 'slabs.2'],
+        ['ITEM_QTY_PRICE_BELOW_MIN', 'REFUSE', 1, 'slabs.2.iqp_price'],
+        ['ITEM_QTY_PRICE_BELOW_MIN', 'REFUSE', 2, 'slabs.2.iqp_price'],
       ]);
       expect(warn[0].message).toBe(
         'Slab 3 · BOX 10 and more at Whole Sale: 3200.00 each is below the Min 3300.00.',
@@ -408,6 +461,18 @@ describe('item-qty-rates.rules', () => {
       });
       expect(slabProblems(cheap, { ...ctx, policy: 'restrict' })[0].severity).toBe('REFUSE');
       expect(slabProblems(cheap, { ...ctx, policy: 'allow' })[0].severity).toBe('INFO');
+    });
+
+    it('names a sent slab slabs.<i>.<the figure its mode prices by>, a stored one iqp_id (C-e)', () => {
+      const at = (priceMode: string, slabIndex: number | null) =>
+        slabProblemField({ slab: qtySlab({ priceMode }), slabIndex });
+      expect([at('P', 0), at('R', 1), at('F', 2), at('p', 3), at('F', null)]).toEqual([
+        'slabs.0.iqp_disc_pct',
+        'slabs.1.iqp_flat_off',
+        'slabs.2.iqp_price',
+        'slabs.3.iqp_disc_pct',
+        'iqp_id',
+      ]);
     });
 
     it('belowCostSeverity maps the three policy values', () => {

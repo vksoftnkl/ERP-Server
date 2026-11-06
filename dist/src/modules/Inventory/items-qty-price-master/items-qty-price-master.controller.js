@@ -32,10 +32,12 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
         this.itemsQtyPriceMasterService = itemsQtyPriceMasterService;
     }
     async save(body) {
+        await this.itemsQtyPriceMasterService.assertSaveRightsOfBody(body);
         const saveItemQtyPriceDtos = await this.resolveSavePayload(body);
         await this.itemsQtyPriceMasterService.assertSaveRights(saveItemQtyPriceDtos);
         await this.itemsQtyPriceMasterService.assertSellingLevelsOf(saveItemQtyPriceDtos);
         await this.itemsQtyPriceMasterService.assertChainSlabsAllowedOf(saveItemQtyPriceDtos);
+        await this.itemsQtyPriceMasterService.assertOwnBranchSlabsOf(saveItemQtyPriceDtos);
         const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDtos);
         return {
             success: true,
@@ -61,10 +63,14 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
         };
     }
     async remove(body, iqpId) {
-        const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
         await this.itemsQtyPriceMasterService.assertRight('delete', 'remove qty-wise prices');
+        const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
         const isArray = Array.isArray(deleteItemQtyPriceDto);
-        const data = await this.itemsQtyPriceMasterService.softDelete(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
+        const ids = isArray
+            ? deleteItemQtyPriceDto.map((item) => item.iqp_id)
+            : deleteItemQtyPriceDto.iqp_id;
+        await this.itemsQtyPriceMasterService.assertOwnBranchSlabIdsOf(ids);
+        const data = await this.itemsQtyPriceMasterService.softDelete(ids);
         return {
             success: true,
             message: this.buildToggleDeleteMessage(data),
@@ -72,10 +78,14 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
         };
     }
     async restore(body, iqpId) {
-        const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
         await this.itemsQtyPriceMasterService.assertRight('delete', 'restore qty-wise prices');
+        const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
         const isArray = Array.isArray(deleteItemQtyPriceDto);
-        const data = await this.itemsQtyPriceMasterService.restore(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
+        const ids = isArray
+            ? deleteItemQtyPriceDto.map((item) => item.iqp_id)
+            : deleteItemQtyPriceDto.iqp_id;
+        await this.itemsQtyPriceMasterService.assertOwnBranchSlabIdsOf(ids);
+        const data = await this.itemsQtyPriceMasterService.restore(ids);
         return {
             success: true,
             message: this.buildToggleDeleteMessage(data),
@@ -134,7 +144,10 @@ __decorate([
             'with one (403 ITEM_QTY_PRICE_RIGHT_CREATE / _EDIT). The price level, after the save, must ' +
             'be blank or an active selling level 1–4 (422 ITEM_QTY_PRICE_LEVEL_NOT_SELLING). A slab ' +
             'for all branches (branch blank) needs a head-office user type (403 ' +
-            'ITEM_QTY_PRICE_CHAIN_HQ_ONLY).',
+            'ITEM_QTY_PRICE_CHAIN_HQ_ONLY); any other user type saves only slabs of the branch it ' +
+            'logged in at — the stored branch and the branch after the save (403 ' +
+            'ITEM_QTY_PRICE_OTHER_BRANCH, field <index>.iqp_branch_id). The rights are checked before ' +
+            'the body is validated.',
     }),
     (0, swagger_1.ApiBody)({
         schema: {
@@ -181,7 +194,8 @@ __decorate([
         summary: 'Soft delete item qty price slab(s) by id',
         description: 'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
             '/item-qty-prices/restore). A batch is all-or-nothing. Needs DELETE on menu 244 (403 ' +
-            'ITEM_QTY_PRICE_RIGHT_DELETE).',
+            'ITEM_QTY_PRICE_RIGHT_DELETE), checked first; a user type that is not head office removes ' +
+            'only slabs of the branch it logged in at (403 ITEM_QTY_PRICE_OTHER_BRANCH).',
     }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
@@ -212,7 +226,9 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Restore soft-deleted item qty price slab(s) by id',
         description: '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
-            'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE).',
+            'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE), checked ' +
+            'first; a user type that is not head office restores only slabs of the branch it logged ' +
+            'in at (403 ITEM_QTY_PRICE_OTHER_BRANCH).',
     }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({

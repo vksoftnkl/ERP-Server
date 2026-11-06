@@ -23,6 +23,10 @@ export declare class ItemQtyRatesGateway {
     priceRows(client: Pick<Prisma.TransactionClient, 'itemPriceMaster'>, itemId: string, companyId: string, branchId: string): Promise<ItemPriceMaster[]>;
     liveSlabs(client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>, itemId: string): Promise<ItemQtyPrice[]>;
     barcode(client: Pick<Prisma.TransactionClient, 'itemMaster'>, itemId: string): Promise<string | null>;
+    groupAndBrand(client: Pick<Prisma.TransactionClient, '$queryRaw'>, itemId: string): Promise<{
+        groupName: string | null;
+        brandName: string | null;
+    }>;
     today(client: Pick<Prisma.TransactionClient, '$queryRaw'>): Promise<string>;
 }
 export type { Client as QtyRatesClient };

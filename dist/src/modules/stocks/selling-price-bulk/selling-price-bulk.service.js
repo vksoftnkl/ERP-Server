@@ -112,10 +112,10 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             salePrice: row.salePrice ?? null,
         })), dto.companyId, dto.branchId, scheduledFrom);
         this.assertUnitsBelong(dto.rows, costs);
-        const candidates = dto.rows.map((row, index) => this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index]));
+        const candidates = dto.rows.map((row, index) => this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index], ctx.keepCost));
         const resolutions = dto.rows.map((row) => (0, selling_price_scope_helper_1.resolveTargetScope)(dto.scope, this.rowScopeOf(row), dto.branchId));
         this.assertOneRowPerBucket(candidates, resolutions);
-        const problems = this.gateway.validateRows(candidates, costs.map((cost) => cost.minPrice));
+        const problems = this.gateway.validateRows(candidates, costs.map((cost) => cost.minPrice), ctx.activeLevels ? { activeLevels: ctx.activeLevels } : {});
         const blocking = problems.filter((problem) => !selling_price_bulk_types_1.CONFIRMABLE_VERDICTS.includes(problem.verdict));
         if (blocking.length) {
             this.throwProblems(blocking, 'These prices cannot be saved');
@@ -576,12 +576,19 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             firstAt.set(key, index);
         });
     }
-    toCandidate(row, index, companyId, actor, taxRates, cost) {
+    toCandidate(row, index, companyId, actor, taxRates, cost, keepCost) {
         const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
         const key = (0, stock_voucher_posting_helper_1.bucketKeyFor)(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
-        const keyedCost = row.costPrice ?? null;
+        const kept = keepCost && row.costPrice !== undefined && row.costPrice !== null
+            ? keepCost(index, row, key)
+            : null;
+        const keyedCost = kept ? kept.costRate : (row.costPrice ?? null);
         const costRate = keyedCost ?? cost.costRate;
-        const costWot = keyedCost !== null ? (0, selling_price_math_helper_1.exclusiveOfTax)(keyedCost, taxPerc) : cost.costWot;
+        const costWot = kept
+            ? kept.costWot
+            : keyedCost !== null
+                ? (0, selling_price_math_helper_1.exclusiveOfTax)(keyedCost, taxPerc)
+                : cost.costWot;
         return {
             lineNo: row.lineNo ?? index + 1,
             companyId,

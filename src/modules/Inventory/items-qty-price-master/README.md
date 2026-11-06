@@ -50,6 +50,20 @@ selling levels), and a slab for all branches (branch blank) from a user type tha
 `ITEM_QTY_PRICE_CHAIN_HQ_ONLY`, Q9). The routes are no longer cached (`@CacheTTL` dropped): the
 HTTP cache key ignores the user, so a cached answer would pass a caller the right refuses.
 
+Review fixes (2026-11-06):
+- `/create` reads its CREATE / EDIT rights off the RAW body before validating it
+  (`assertSaveRightsOfBody`), so a caller without them gets 403 before any 400; `/delete` and
+  `/restore` check DELETE before the payload. An allowed caller's answers are unchanged.
+- D16: a user type that is not HQ creates, changes, deletes and restores only slabs of its OWN
+  branch — the request context's branch (the token's `branch_id`, the registered device's; never
+  a body field). A change needs the stored branch AND the branch after the save to be it. A
+  session with no device branch owns none. 403 `ITEM_QTY_PRICE_OTHER_BRANCH`, field
+  `<index>.iqp_branch_id` (`/create`), `iqp_id` / `<index>.iqp_id` (`/delete`, `/restore`).
+  `CHAIN_HQ_ONLY` (branch blank) is checked first and stays.
+- `save(rows, tx, { fieldPrefix })` files every row refusal under `<prefix><index>.<field>`
+  (save-with-rates passes `slabs.`); without it `/create` answers exactly as before.
+- `judgeSlab` skips a slab whose own level is not an active selling level (no bill applies it).
+
 `save(rows, tx)`, `softDelete(ids, tx)` and `restore(ids, tx)` run in a caller's transaction —
 Qty-wise Prices' `save-with-rates` (`Inventory/item-qty-rates/`). `qty-slab.rules.ts` is the pure
 slab rule (filter, rank, pick, price, judge) shared with `/master-lookups/item-price`'s

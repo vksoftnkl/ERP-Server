@@ -327,6 +327,45 @@ describe('SellingPriceBulkService', () => {
       );
       expect(sent.candidates[0]).toMatchObject({ profitType: 'By Rs', maxPrice: 150, mrp: null });
     });
+
+    it('menu 244 options (C-a / C-c): activeLevels reach Q26; keepCost replaces a keyed cost', async () => {
+      await service.prepareBulk(tx as never, payload({ rows: [headlineRow()] as never }), {
+        ...ctx,
+        activeLevels: [1, 2],
+      });
+      expect(gateway.validateRows.mock.calls[0][2]).toEqual({ activeLevels: [1, 2] });
+
+      const keepCost = jest.fn().mockReturnValue({ costRate: 95.004567, costWot: 80.512345 });
+      const kept = await service.prepareBulk(
+        tx as never,
+        payload({ rows: [headlineRow({ costPrice: 95 })] as never }),
+        { ...ctx, keepCost },
+      );
+      expect(keepCost).toHaveBeenCalledWith(0, expect.objectContaining({ costPrice: 95 }), {
+        mrp: null,
+        salePrice: null,
+      });
+      expect(kept.candidates[0]).toMatchObject({ costRate: 95.004567, costWot: 80.512345 });
+
+      // null keeps the keyed cost (a real change); a row without costPrice is never asked
+      keepCost.mockReset().mockReturnValue(null);
+      const typed = await service.prepareBulk(
+        tx as never,
+        payload({ rows: [headlineRow({ costPrice: 99 })] as never }),
+        { ...ctx, keepCost },
+      );
+      await service.prepareBulk(tx as never, payload({ rows: [headlineRow()] as never }), {
+        ...ctx,
+        keepCost,
+      });
+      expect(keepCost).toHaveBeenCalledTimes(1);
+      expect(typed.candidates[0]).toMatchObject({ costRate: 99, costWot: exclusiveOfTax(99, TAX_PERC) });
+
+      // menu 30 / Quick Rate pass neither: Q26 gets no option
+      gateway.validateRows.mockClear();
+      await service.prepareBulk(tx as never, payload({ rows: [headlineRow()] as never }), ctx);
+      expect(gateway.validateRows.mock.calls[0][2]).toEqual({});
+    });
   });
 
   // ── one price table: no fan-out ─────────────────────────────────────────

@@ -4,6 +4,7 @@ exports.BY_USER = void 0;
 exports.dec = dec;
 exports.storedCardRowOf = storedCardRowOf;
 exports.sameKey = sameKey;
+exports.sameCost = sameCost;
 exports.cardRowOf = cardRowOf;
 exports.scheduledFromOf = scheduledFromOf;
 exports.pricesAfter = pricesAfter;
@@ -12,6 +13,7 @@ exports.unitCardAfter = unitCardAfter;
 exports.storedSlabOf = storedSlabOf;
 exports.slabAfterSave = slabAfterSave;
 exports.slabsToJudge = slabsToJudge;
+exports.slabProblemField = slabProblemField;
 exports.belowCostSeverity = belowCostSeverity;
 exports.slabProblems = slabProblems;
 exports.judgeSlabs = judgeSlabs;
@@ -44,9 +46,13 @@ function storedCardRowOf(row) {
         ],
     };
 }
-const sameAmount = (a, b) => a === null || b === null ? a === b : Math.abs(a - b) < 5e-7;
+const sameAmount = (a, b) => a === null || b === null ? a === b : dec(a).eq(dec(b));
 function sameKey(a, b) {
     return sameAmount(a.mrp, b.mrp) && sameAmount(a.salePrice, b.salePrice);
+}
+function sameCost(sent, stored) {
+    const at2 = (value) => value.toDecimalPlaces(2, client_1.Prisma.Decimal.ROUND_HALF_UP);
+    return at2(sent).eq(at2(stored));
 }
 function cardRowOf(unitRows, today, caller) {
     const headline = (0, price_resolver_1.resolveEffectivePrice)(unitRows, price_resolver_1.HEADLINE_KEY, today, caller);
@@ -210,23 +216,24 @@ function slabAfterSave(dto, stored) {
     };
 }
 function slabsToJudge(args) {
-    const deleted = new Set(args.deleteIds);
-    const sentIds = new Set(args.sent.map((s) => s.iqp_id).filter((id) => !!id));
-    const byId = new Map(args.stored.map((s) => [s.slab.iqpId, s]));
+    const low = (id) => id.toLowerCase();
+    const deleted = new Set(args.deleteIds.map(low));
+    const sentIds = new Set(args.sent.map((s) => s.iqp_id).filter((id) => !!id).map(low));
+    const byId = new Map(args.stored.map((s) => [low(s.slab.iqpId), s]));
     const all = [
         ...args.stored
-            .filter((s) => !sentIds.has(s.slab.iqpId))
+            .filter((s) => !sentIds.has(low(s.slab.iqpId)))
             .map((s) => ({ ...s, slabIndex: null, iqpId: s.slab.iqpId })),
         ...args.sent.map((dto, index) => {
-            const after = slabAfterSave(dto, dto.iqp_id ? (byId.get(dto.iqp_id) ?? null) : null);
+            const after = slabAfterSave(dto, dto.iqp_id ? (byId.get(low(dto.iqp_id)) ?? null) : null);
             return { ...after, slabIndex: index, iqpId: dto.iqp_id ?? null };
         }),
     ];
-    return all.filter(({ slab, iqpId }) => !(iqpId && deleted.has(iqpId)) &&
+    return all.filter(({ slab, iqpId }) => !(iqpId && deleted.has(low(iqpId))) &&
         slab.isActive &&
         (0, qty_slab_rules_1.slabInForceOnOrAfter)(slab, args.today) &&
-        (slab.companyId === null || slab.companyId === args.companyId) &&
-        (slab.branchId === null || slab.branchId === args.branchId));
+        (slab.companyId === null || low(slab.companyId) === low(args.companyId)) &&
+        (slab.branchId === null || low(slab.branchId) === low(args.branchId)));
 }
 function rangeText(slab) {
     const from = slab.fromQty.toFixed();
@@ -238,6 +245,14 @@ const SLAB_CODES = {
     BELOW_MIN: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.BELOW_MIN,
     BELOW_COST: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.BELOW_COST,
 };
+function slabProblemField(entry) {
+    if (entry.slabIndex === null) {
+        return 'iqp_id';
+    }
+    const mode = (entry.slab.priceMode || 'P').toUpperCase();
+    const figure = mode === 'F' ? 'iqp_price' : mode === 'R' ? 'iqp_flat_off' : 'iqp_disc_pct';
+    return `slabs.${entry.slabIndex}.${figure}`;
+}
 function belowCostSeverity(policy) {
     return policy === 'restrict' ? 'REFUSE' : policy === 'warning' ? 'ASK' : 'INFO';
 }
@@ -268,7 +283,7 @@ function slabProblems(judged, ctx) {
                 level: j.level,
                 price: j.each.toNumber(),
                 cost: card.cost.gt(0) ? card.cost.toNumber() : null,
-                field: entry.slabIndex !== null ? `slabs.${entry.slabIndex}` : 'iqp_id',
+                field: slabProblemField(entry),
                 message: `${name}${at}: ${text}`,
             });
         }

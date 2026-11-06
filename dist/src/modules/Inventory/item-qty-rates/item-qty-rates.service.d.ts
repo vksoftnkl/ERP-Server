@@ -27,6 +27,7 @@ export declare class ItemQtyRatesService {
     private assertPlainStockFields;
     private bulkDtoOf;
     private sentRowsOf;
+    private storedRowFor;
     private cardBelowCost;
     private unitCards;
     private findItemOr404;

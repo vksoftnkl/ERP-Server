@@ -32,6 +32,7 @@ export interface StoredCardRow {
 }
 export declare function storedCardRowOf(row: CardPriceRecord): StoredCardRow;
 export declare function sameKey(a: BucketKey, b: BucketKey): boolean;
+export declare function sameCost(sent: Dec, stored: Dec): boolean;
 export declare function cardRowOf<R extends CardPriceRecord>(unitRows: readonly R[], today: string, caller: PriceCallerScope): {
     key: BucketKey;
     row: R;
@@ -91,6 +92,7 @@ export declare function slabsToJudge(args: {
     branchId: string;
     today: string;
 }): SlabAfterSave[];
+export declare function slabProblemField(entry: Pick<SlabAfterSave, 'slab' | 'slabIndex'>): string;
 export declare function belowCostSeverity(policy: BelowCostPolicy): QtyRatesSeverity;
 export declare function slabProblems(judged: ReadonlyArray<{
     entry: SlabAfterSave;
