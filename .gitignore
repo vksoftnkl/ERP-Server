@@ -15,6 +15,9 @@ logs
 release/erp-server
 release/erp-server-linux
 release/erp-server-win.exe
+release/erp-server-win/
+release/erp-server-linux-x64/
+release/.pkg-build/
 
 # Reporting: rendered samples, spike outputs, and bulk-print output
 artifacts/reporting-samples

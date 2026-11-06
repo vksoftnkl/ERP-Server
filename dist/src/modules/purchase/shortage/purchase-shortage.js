@@ -756,10 +756,16 @@ let PurchaseShortageService = class PurchaseShortageService {
         const men = people.length ? await this.prisma.$queryRaw `
       SELECT emp_id AS id, emp_name AS name FROM public.employee_master WHERE emp_id = ANY(${people}::uuid[])` : [];
         const manName = new Map(men.map((m) => [m.id, m.name]));
+        const auditIds = [header.psrCreatedBy, header.psrModifiedBy].filter((x) => !!x);
+        const users = auditIds.length ? await this.prisma.$queryRaw `
+      SELECT usr_id::text AS id, usr_login_name AS name FROM public.user_master WHERE usr_id::text = ANY(${auditIds}::text[])` : [];
+        const userName = new Map(users.map((u) => [u.id.toLowerCase(), u.name]));
         return (0, purchase_doc_helpers_1.jsonSafe)({
             header: { ...header, supplierName: sup[0]?.sup_name ?? null, godownName: gd?.gdl_name ?? null,
                 receivedBy: header.psrReceivedBy.map((id) => ({ id, name: manName.get(id) ?? id })),
-                supervisorName: header.psrSupervisorId ? manName.get(header.psrSupervisorId) ?? null : null },
+                supervisorName: header.psrSupervisorId ? manName.get(header.psrSupervisorId) ?? null : null,
+                createdByName: header.psrCreatedBy ? userName.get(header.psrCreatedBy.toLowerCase()) ?? null : null,
+                modifiedByName: header.psrModifiedBy ? userName.get(header.psrModifiedBy.toLowerCase()) ?? null : null },
             lines: lines.map((l) => {
                 const mine = allocs.filter((x) => x.piaLineId === l.psriId).sort((x, y) => x.piaRowNo - y.piaRowNo);
                 const a = mine[0];

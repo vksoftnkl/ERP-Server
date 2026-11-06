@@ -2817,7 +2817,7 @@ model AccVoucherSeq {
   // Running number
   lastNo        BigInt   @default(0) @map("seq_last_no")
   // Applied format snapshot
-  voucherPrefix String?  @db.VarChar(20) @map("seq_voucher_prefix")
+  voucherPrefix String?  @db.VarChar(60) @map("seq_voucher_prefix")
   companyCode   String?  @db.VarChar(20) @map("seq_company_code")
   branchCode    String?  @db.VarChar(20) @map("seq_branch_code")
   voucherSuffix String?  @db.VarChar(20) @map("seq_voucher_suffix")
@@ -5409,7 +5409,7 @@ model ItemPriceChangeLog {
   ipclRowId        String    @db.Uuid @map("ipcl_row_id")
   /// CREATE | UPDATE | DELETE | RESTORE | REKEY
   ipclAction       String    @db.VarChar(10) @map("ipcl_action")
-  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT
+  /// ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT | PURCHASE | BULK_COST_CHANGE
   ipclSource       String    @db.VarChar(30) @map("ipcl_source")
   ipclMenuId       Int?      @map("ipcl_menu_id")
 
@@ -9378,9 +9378,11 @@ model TransporterMaster {
 
   vehicles          VehicleMaster[] @relation("VehicleTransporter")
 
-  // DB-only (expression key, NULLS NOT DISTINCT, partial):
-  //   CREATE UNIQUE INDEX ux_trn_name ON public.transporter_master
-  //       (trn_company_id, lower(trn_name)) NULLS NOT DISTINCT
+  // DB-only (expression key, partial) — NOT unique since 20261104130000 (offline
+  // rule: two branches may add the same name; the service checks online,
+  // TRN_NAME_TAKEN). It replaced UNIQUE ux_trn_name on the same key.
+  //   CREATE INDEX ix_trn_name ON public.transporter_master
+  //       (trn_company_id, lower(trn_name))
   //       WHERE trn_is_deleted = false;
   //
   // CHECK constraints (DB-only): ck_trn_mode, ck_trn_gstin_len
@@ -10145,7 +10147,7 @@ model PurGrn {
   grnDocDate          DateTime     @db.Date @map("grn_doc_date")
   grnDocDatetime      DateTime     @default(now()) @db.Timestamptz(6) @map("grn_doc_datetime")
   grnStatus           String       @default("DRAFT") @db.VarChar(20) @map("grn_status")
-  grnSupplierId       String       @db.Uuid @map("grn_supplier_id")
+  grnSupplierId       String?      @db.Uuid @map("grn_supplier_id")
   grnGodownId         String       @db.Uuid @map("grn_godown_id")
   grnChallanNo        String?      @db.VarChar(60) @map("grn_challan_no")
   grnChallanDate      DateTime?    @db.Date @map("grn_challan_date")
@@ -10382,7 +10384,17 @@ model PurInvoiceItem {
   piiModifiedBy        String?    @db.VarChar(50) @map("pii_modified_by")
   /// MSP typed on the line; written to item_price_master.ipm_min_price on Post (price policy on).
   piiMinPrice          Decimal?   @db.Decimal(15, 2) @map("pii_min_price")
+  /// Wastage per 1 billed unit (0.100 = 100 g per kg): typed, else item_shortage_pct / 100. Own loss: no claim, not in stock, cost up, full ITC.
+  piiWastagePerQty     Decimal    @default(0) @db.Decimal(18, 6) @map("pii_wastage_per_qty")
+  /// Billed × piiWastagePerQty, rounded to the unit's decimals (server).
+  piiWastageQty        Decimal    @default(0) @db.Decimal(18, 6) @map("pii_wastage_qty")
+  /// Source line qty snapshot at save (PO poi_qty · GRN received + damaged); null = direct line.
+  piiSrcQty            Decimal?   @db.Decimal(18, 6) @map("pii_src_qty")
+  /// Source line rate snapshot at save (PO poi_rate · GRN its PO rate, else provisional); null = direct line.
+  piiSrcRate           Decimal?   @db.Decimal(18, 6) @map("pii_src_rate")
   purInvoice           PurInvoice @relation(fields: [piiPiId, piiAccYear], references: [piId, piAccYear], map: "fk_pii_pi")
+
+  // CHECK (DB-only): ck_pii_wastage — 0 <= pii_wastage_per_qty < 1 AND pii_wastage_qty >= 0 (20261104130000).
 
   @@id([piiId, piiAccYear], map: "pk_pur_invoice_item")
   @@map("pur_invoice_item")

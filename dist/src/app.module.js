@@ -116,6 +116,7 @@ const lot_by_batch_module_1 = require("./modules/stocks/lot-by-batch/lot-by-batc
 const batch_detail_module_1 = require("./modules/stocks/batch-detail/batch-detail.module");
 const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/stock-adjustment.module");
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
+const cost_price_bulk_module_1 = require("./modules/stocks/cost-price-bulk/cost-price-bulk.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
@@ -142,6 +143,7 @@ const items_price_master_module_1 = require("./modules/Inventory/items-price-mas
 const item_unit_conversion_module_1 = require("./modules/Inventory/item-unit-conversion/item-unit-conversion.module");
 const items_reorder_master_module_1 = require("./modules/Inventory/items-reorder-master/items-reorder-master.module");
 const items_qty_price_master_module_1 = require("./modules/Inventory/items-qty-price-master/items-qty-price-master.module");
+const item_qty_rates_module_1 = require("./modules/Inventory/item-qty-rates/item-qty-rates.module");
 const items_tax_history_master_module_1 = require("./modules/Inventory/items-tax-history-master/items-tax-history-master.module");
 const items_master_module_1 = require("./modules/Inventory/items-master/items-master.module");
 const parseNumber = (value, fallback) => {
@@ -206,6 +208,7 @@ exports.AppModule = AppModule = __decorate([
             item_price_details_module_1.ItemPriceDetailsModule,
             items_reorder_master_module_1.ItemsReorderMasterModule,
             items_qty_price_master_module_1.ItemsQtyPriceMasterModule,
+            item_qty_rates_module_1.ItemQtyRatesModule,
             items_tax_history_master_module_1.ItemsTaxHistoryMasterModule,
             items_master_module_1.ItemsMasterModule,
             acc_group_master_module_1.AccGroupMasterModule,
@@ -288,6 +291,7 @@ exports.AppModule = AppModule = __decorate([
             batch_detail_module_1.BatchDetailModule,
             stock_adjustment_module_1.StockAdjustmentModule,
             selling_price_bulk_module_1.SellingPriceBulkModule,
+            cost_price_bulk_module_1.CostPriceBulkModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,

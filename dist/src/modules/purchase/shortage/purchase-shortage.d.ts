@@ -167,6 +167,8 @@ export declare class PurchaseShortageService {
                 name: string;
             }[];
             supervisorName: string | null;
+            createdByName: string | null;
+            modifiedByName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -255,6 +257,8 @@ export declare class PurchaseShortageService {
                 name: string;
             }[];
             supervisorName: string | null;
+            createdByName: string | null;
+            modifiedByName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -344,6 +348,8 @@ export declare class PurchaseShortageService {
                 name: string;
             }[];
             supervisorName: string | null;
+            createdByName: string | null;
+            modifiedByName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -432,6 +438,8 @@ export declare class PurchaseShortageService {
                 name: string;
             }[];
             supervisorName: string | null;
+            createdByName: string | null;
+            modifiedByName: string | null;
             psrId: string;
             psrCompanyId: string;
             psrBranchId: string;
@@ -625,6 +633,8 @@ export declare class PurchaseShortageController {
                     name: string;
                 }[];
                 supervisorName: string | null;
+                createdByName: string | null;
+                modifiedByName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -717,6 +727,8 @@ export declare class PurchaseShortageController {
                     name: string;
                 }[];
                 supervisorName: string | null;
+                createdByName: string | null;
+                modifiedByName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -809,6 +821,8 @@ export declare class PurchaseShortageController {
                     name: string;
                 }[];
                 supervisorName: string | null;
+                createdByName: string | null;
+                modifiedByName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;
@@ -901,6 +915,8 @@ export declare class PurchaseShortageController {
                     name: string;
                 }[];
                 supervisorName: string | null;
+                createdByName: string | null;
+                modifiedByName: string | null;
                 psrId: string;
                 psrCompanyId: string;
                 psrBranchId: string;

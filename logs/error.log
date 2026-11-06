@@ -21099,3 +21099,19 @@ Raw query failed. Code: `23505`. Message: `Key (avh_company_id, avh_branch_id, a
     at async PurchaseInvoiceController.save (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:30:18)
 2026-11-04T10:44:16.385Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-11-04T10:55:12.709Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-05T14:24:44.125Z ERROR [ModuleExceptionFilter] POST /api/v1/stock/cost-bulk
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `22003`. Message: `ERROR: numeric field overflow
+DETAIL: A field with precision 18, scale 6 must round to an absolute value less than 10^12.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PriceMasterWriter.rewritePriceRows (/home/vk/Dev/erp/ERP server/src/modules/Inventory/item-price-log/price-master-writer.service.ts:426:5)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/stocks/cost-price-bulk/cost-price-bulk.service.ts:301:33)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async CostPriceBulkController.save (/home/vk/Dev/erp/ERP server/src/modules/stocks/cost-price-bulk/cost-price-bulk.controller.ts:148:18)
+2026-11-06T04:55:04.950Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
