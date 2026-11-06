@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DocumentNumberSuccessDto = exports.DocumentNumberDto = exports.ItemUnitCycleSuccessDto = exports.ItemUnitCycleDto = exports.ItemPriceLookupSuccessDto = exports.ItemPriceLookupPayloadDto = exports.ItemPriceBucketDto = exports.CustomerDetailSuccessDto = exports.CustomerDetailDto = exports.ItemUnitOptionListSuccessDto = exports.ItemUnitOptionDto = exports.BarcodeItemLookupSuccessDto = exports.BarcodeItemLookupDto = exports.FreightChargeListSuccessDto = exports.FreightChargeDto = exports.FiscalYearOptionListSuccessDto = exports.FiscalYearOptionDto = exports.NameIdOptionListSuccessDto = exports.MasterLookupSuccessDto = exports.MasterLookupPayloadDto = exports.MastersLookupPayloadDto = exports.AccountsLookupPayloadDto = exports.NameIdOptionDto = void 0;
+exports.DocumentNumberSuccessDto = exports.DocumentNumberDto = exports.ItemUnitCycleSuccessDto = exports.ItemUnitCycleDto = exports.ItemPriceLookupSuccessDto = exports.ItemPriceLookupPayloadDto = exports.ItemQtySlabDto = exports.ItemPriceBucketDto = exports.CustomerDetailSuccessDto = exports.CustomerDetailDto = exports.ItemUnitOptionListSuccessDto = exports.ItemUnitOptionDto = exports.BarcodeItemLookupSuccessDto = exports.BarcodeItemLookupDto = exports.FreightChargeListSuccessDto = exports.FreightChargeDto = exports.FiscalYearOptionListSuccessDto = exports.FiscalYearOptionDto = exports.NameIdOptionListSuccessDto = exports.MasterLookupSuccessDto = exports.MasterLookupPayloadDto = exports.MastersLookupPayloadDto = exports.AccountsLookupPayloadDto = exports.NameIdOptionDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class NameIdOptionDto {
     id;
@@ -715,6 +715,105 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)
 ], ItemPriceBucketDto.prototype, "min_price", void 0);
+class ItemQtySlabDto {
+    iqp_id;
+    from_qty;
+    to_qty;
+    price_mode;
+    disc_pct;
+    flat_off;
+    price;
+    is_tax_incl;
+    price_level;
+    party_id;
+    branch_id;
+    company_id;
+    effective_from;
+    effective_to;
+    specificity;
+}
+exports.ItemQtySlabDto = ItemQtySlabDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], ItemQtySlabDto.prototype, "iqp_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 10, description: "Inclusive lower bound, in the line's own unit." }),
+    __metadata("design:type", Number)
+], ItemQtySlabDto.prototype, "from_qty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: Number,
+        nullable: true,
+        example: 50,
+        description: 'EXCLUSIVE upper bound: the slab holds from_qty ≤ qty < to_qty; null = and above.',
+    }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "to_qty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['P', 'R', 'F'],
+        description: 'P = % off, R = ₹ off each, F = a fixed price each.',
+    }),
+    __metadata("design:type", String)
+], ItemQtySlabDto.prototype, "price_mode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "disc_pct", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "flat_off", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "price", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The R / F amount includes tax.' }),
+    __metadata("design:type", Boolean)
+], ItemQtySlabDto.prototype, "is_tax_incl", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true, description: 'null = every level.' }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "price_level", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, format: 'uuid', nullable: true, description: 'null = every party.' }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "party_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        description: 'null = every branch.',
+    }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "branch_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        description: 'null = every company.',
+    }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "company_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date' }),
+    __metadata("design:type", String)
+], ItemQtySlabDto.prototype, "effective_from", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, format: 'date', nullable: true }),
+    __metadata("design:type", Object)
+], ItemQtySlabDto.prototype, "effective_to", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 12,
+        description: '8 × party set + 4 × level set + 2 × branch set + 1 × company set (Q3).',
+    }),
+    __metadata("design:type", Number)
+], ItemQtySlabDto.prototype, "specificity", void 0);
 class ItemPriceLookupPayloadDto {
     item_id;
     item_uc_id;
@@ -744,6 +843,7 @@ class ItemPriceLookupPayloadDto {
     price_scope;
     price_row_id;
     buckets;
+    qty_slabs;
     disc_perc;
     disc_qty;
     sch_discount;
@@ -908,6 +1008,18 @@ __decorate([
     }),
     __metadata("design:type", Array)
 ], ItemPriceLookupPayloadDto.prototype, "buckets", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: ItemQtySlabDto,
+        isArray: true,
+        description: 'Plan 2026-11-05 §4.4 — the qty-wise price slabs (menu 244) that can price this line: live and active, ' +
+            'of this item and of the unit this answer priced (item_uc_id), in force on doc_date (default today), ' +
+            "company / branch / party (customer_id) blank or the line's, level blank or price_level — only when " +
+            'price_level is 1–4. Ranked most specific first (specificity), then from_qty; the client takes the FIRST ' +
+            "whose range holds the line's qty. [] when sales.apply_qty_prices is off for the company.",
+    }),
+    __metadata("design:type", Array)
+], ItemPriceLookupPayloadDto.prototype, "qty_slabs", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)

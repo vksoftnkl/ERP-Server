@@ -17,5 +17,8 @@ import { CostPriceBulkService } from './cost-price-bulk.service';
   imports: [AuditLogModule, AppSettingsModule, ItemPriceLogModule],
   controllers: [CostPriceBulkController],
   providers: [CostPriceBulkService, CostPriceBulkGateway, CostPriceBulkExceptionFilter],
+  // Qty-wise Prices (menu 244, plan 2026-11-05 §4.6 item 6) reads an item's
+  // Plain-stock eligibility through findItem — the one rule, not a copy.
+  exports: [CostPriceBulkGateway],
 })
 export class CostPriceBulkModule {}

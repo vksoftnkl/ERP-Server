@@ -99,6 +99,11 @@ model SaleDcItem {
   sdiIsPromo            Boolean   @default(false)                      @map("sdi_is_promo")
   sdiActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_act_price")
   sdiMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_min_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a challan posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sdiQtyPriceId         String?   @db.Uuid                             @map("sdi_qty_price_id")
   sdiItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_item_disc_perc")
   sdiItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_item_disc_amt")
   sdiSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_spl_disc_perc")

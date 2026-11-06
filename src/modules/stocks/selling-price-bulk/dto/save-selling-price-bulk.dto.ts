@@ -26,6 +26,9 @@ import { PRICE_LEVELS, PRICE_SCOPES } from '../types/selling-price-bulk.types';
 /** One save is one screen-full of dirty rows, not a catalogue reprice. */
 export const MAX_SAVE_ROWS = 1000;
 
+/** ipm_profit_type's three values — the item card's Profit Type, the unit's Rule (menu 298). */
+export const SELLING_PROFIT_TYPES = ['By %', 'By Rs', 'By User'] as const;
+
 export class SaveSellingPriceLevelDto {
   @ApiProperty({
     enum: PRICE_LEVELS,
@@ -155,6 +158,31 @@ export class SaveSellingPriceRowDto {
   @ApiPropertyOptional({ type: Number, nullable: true })
   @NullableNumber()
   roundOff?: number | null;
+
+  @ApiPropertyOptional({
+    enum: SELLING_PROFIT_TYPES,
+    nullable: true,
+    description:
+      "Plan 2026-11-05 §4.6 item 2 — the unit's Rule (ipm_profit_type), when it changed. Absent " +
+      "or null: the row keeps its own (an update) or copies the headline's (a new row). Menu 30 " +
+      'and Quick Rate send none.',
+  })
+  @IsOptional()
+  @IsIn(SELLING_PROFIT_TYPES)
+  profitType?: (typeof SELLING_PROFIT_TYPES)[number] | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 4600,
+    description:
+      'Plan 2026-11-05 §4.6 item 2 — a typed MRP (ipm_max_price) for a HEADLINE row only (no ' +
+      'bucket after the policy blanks it): S2 stores it, S3 / a split start from it. Ignored on a ' +
+      "bucket row, whose MRP is its bucket's. Qty-wise Prices sends it on Plain-stock items only. " +
+      'Absent or null: unchanged.',
+  })
+  @NullableNumber(0)
+  maxPrice?: number | null;
 }
 
 export class SaveSellingPriceBulkDto {

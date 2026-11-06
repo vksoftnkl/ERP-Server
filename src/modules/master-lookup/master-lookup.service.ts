@@ -1,9 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { MasterErrorDetail, throwMasterNotFound } from '../../common/utils/module-service.utils';
 import { MasterLookupErrorCode } from './types/master-lookup-error-codes';
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AppSettingValueService } from '../settings/appSettings/app-setting-value.service';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
 import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from './dto/item-price-refresh-query.dto';
@@ -55,11 +56,13 @@ export class MasterLookupService {
   constructor(
     private readonly prisma: PrismaService,
     pg: PgService,
+    // Plan 2026-11-05 §4.4 — sales.apply_qty_prices for the item-price lookup's qty_slabs.
+    @Optional() appSettings?: AppSettingValueService,
   ) {
     this.moduleFetchers = buildModuleFetchers(prisma);
     this.configuredDropdowns = new ConfiguredDropdownLookup(prisma, pg);
     this.customerDetail = new CustomerDetailLookup(prisma);
-    this.itemPrice = new ItemPriceLookup(prisma);
+    this.itemPrice = new ItemPriceLookup(prisma, appSettings);
     this.documentNumber = new DocumentNumberLookup(prisma);
   }
   // ─── Module option lookups ──────────────────────────────────────────────────

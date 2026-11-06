@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MasterLookupModule = void 0;
 const common_1 = require("@nestjs/common");
 const bill_balance_module_1 = require("../accountsModule/billBalance/bill-balance.module");
+const app_settings_module_1 = require("../settings/appSettings/app-settings.module");
 const master_lookup_controller_1 = require("./master-lookup.controller");
 const master_lookup_service_1 = require("./master-lookup.service");
 let MasterLookupModule = class MasterLookupModule {
@@ -16,7 +17,7 @@ let MasterLookupModule = class MasterLookupModule {
 exports.MasterLookupModule = MasterLookupModule;
 exports.MasterLookupModule = MasterLookupModule = __decorate([
     (0, common_1.Module)({
-        imports: [bill_balance_module_1.BillBalanceModule],
+        imports: [bill_balance_module_1.BillBalanceModule, app_settings_module_1.AppSettingsModule],
         controllers: [master_lookup_controller_1.MasterLookupController],
         providers: [master_lookup_service_1.MasterLookupService],
     })

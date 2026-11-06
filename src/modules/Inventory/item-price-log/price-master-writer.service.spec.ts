@@ -342,6 +342,58 @@ describe('PriceMasterWriter', () => {
     });
   });
 
+  // ── Qty-wise Prices plan 2026-11-05 §4.6 item 3 — a typed MRP on a headline ─
+  describe('maxPrice (a typed MRP, headline candidates only)', () => {
+    const headline = (maxPrice: number | null) => ({ ...candidate({ mrp: null }), maxPrice });
+
+    it('S2 stores it on a headline, and the statement is unchanged without one', async () => {
+      await writer.updateBucketPrice(txClient(), IPM_ID, headline(4600));
+      await writer.updateBucketPrice(txClient(), IPM_ID, headline(null));
+      await writer.updateBucketPrice(txClient(), IPM_ID, candidate({ mrp: null }));
+
+      const typed = statementOf(tx.$executeRaw, 0);
+      expect(typed.sql).toContain('ipm_max_price   = ?::numeric,');
+      expect(typed.values).toContain(4600);
+      for (const call of [1, 2]) {
+        expect(statementOf(tx.$executeRaw, call).sql).not.toContain('ipm_max_price');
+      }
+      expect(statementOf(tx.$executeRaw, 1).values).toEqual(statementOf(tx.$executeRaw, 2).values);
+    });
+
+    it('never touches a bucket row: its max price is its bucket MRP', async () => {
+      await writer.updateBucketPrice(txClient(), IPM_ID, { ...candidate(), maxPrice: 99 });
+      const statement = statementOf(tx.$executeRaw);
+      expect(statement.sql).not.toContain('ipm_max_price');
+      expect(statement.values).not.toContain(99);
+    });
+
+    it("S3 and a split start from it, before the headline's / the origin row's own", async () => {
+      tx.$queryRaw.mockResolvedValue([{ ipmId: OTHER_IPM_ID }]);
+      await writer.insertBucketPrice(txClient(), headline(4600), branchScope);
+      const inserted = statementOf(tx.$queryRaw, 0);
+      expect(inserted.sql).toContain('COALESCE(?::numeric, ?::numeric, h.ipm_max_price, 0)');
+      expect(inserted.values).toContain(4600);
+
+      await writer.insertBucketPrice(txClient(), headline(null), branchScope);
+      expect(statementOf(tx.$queryRaw, 1).sql).toContain(
+        'COALESCE(?::numeric, h.ipm_max_price, 0)',
+      );
+
+      await writer.insertSplitPrice(txClient(), IPM_ID, headline(4600), {
+        from: '2026-12-01',
+        to: '9999-12-31',
+      });
+      const split = statementOf(tx.$queryRaw, 2);
+      expect(split.sql).not.toContain('o.ipm_max_price, COALESCE');
+      expect(split.values).toContain(4600);
+      await writer.insertSplitPrice(txClient(), IPM_ID, headline(null), {
+        from: '2026-12-01',
+        to: '9999-12-31',
+      });
+      expect(statementOf(tx.$queryRaw, 3).sql).toContain('o.ipm_max_price, COALESCE');
+    });
+  });
+
   // ── the split copies the origin row's type ─────────────────────────────────
   describe('insertSplitPrice', () => {
     it("copies the origin row's profit type, else By User", async () => {

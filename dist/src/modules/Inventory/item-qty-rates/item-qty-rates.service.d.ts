@@ -1,0 +1,34 @@
+import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AppSettingValueService } from "../../settings/appSettings/app-setting-value.service";
+import { CostPriceBulkGateway } from '../../stocks/cost-price-bulk/cost-price-bulk.gateway';
+import { PriceBucketGateway } from '../../stocks/selling-price-bulk/price-bucket.gateway';
+import { SellingPriceBulkService } from '../../stocks/selling-price-bulk/selling-price-bulk.service';
+import { ItemsQtyPriceMasterService } from '../items-qty-price-master/items-qty-price-master.service';
+import type { GetItemQtyRatesQueryDto } from './dto/get-item-qty-rates-query.dto';
+import type { SaveItemQtyRatesDto } from './dto/save-item-qty-rates.dto';
+import { ItemQtyRatesGateway } from './item-qty-rates.gateway';
+import { type QtyRatesSaveResult, type QtyRatesView } from './types/item-qty-rates.types';
+export declare class ItemQtyRatesService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly appSettingValueService;
+    private readonly gateway;
+    private readonly costGateway;
+    private readonly bulk;
+    private readonly bulkGateway;
+    private readonly slabService;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, appSettingValueService: AppSettingValueService, gateway: ItemQtyRatesGateway, costGateway: CostPriceBulkGateway, bulk: SellingPriceBulkService, bulkGateway: PriceBucketGateway, slabService: ItemsQtyPriceMasterService);
+    getWithRates(query: GetItemQtyRatesQueryDto): Promise<QtyRatesView>;
+    saveWithRates(dto: SaveItemQtyRatesDto): Promise<QtyRatesSaveResult>;
+    buildSaveMessage(result: QtyRatesSaveResult): string;
+    private assertShape;
+    private assertNamedSlabs;
+    private assertPlainStockFields;
+    private bulkDtoOf;
+    private sentRowsOf;
+    private cardBelowCost;
+    private unitCards;
+    private findItemOr404;
+    private belowCostPolicy;
+}

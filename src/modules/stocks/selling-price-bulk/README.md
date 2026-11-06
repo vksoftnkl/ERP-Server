@@ -99,6 +99,19 @@ Each `rows[]` entry in the response carries `costRate` / `costWot` / `costBasis`
 back after the write by the grid's own rule, so a keyed cost shows there only while the
 item has no stock.
 
+### The save in two halves (Qty-wise Prices plan 2026-11-05 §4.6)
+
+`saveBulk` is rights + scope + via + policy around one transaction of `prepareBulk(tx, dto)`
+(start day, tax, costs, candidates, the unit / one-row-per-bucket refusals, Q26 — writes nothing;
+above MRP / below min thrown, below cost thrown under `restrict`, else handed back) → the confirm
+verdict → `writeBulkInTx(tx, prepared, { confirmed, via, policy })` (S1 → S2/S3, Q27, audit, the
+answer). Qty-wise Prices (menu 244) runs the same two inside its own transaction with its slab
+checks between them; menu 30 and Quick Rate answer exactly as before.
+
+A row may also carry `profitType` (the unit's Rule, stored in `ipm_profit_type`) and `maxPrice`
+(a typed MRP, stored in `ipm_max_price` on a HEADLINE row only). Neither is sent by menu 30 or
+Quick Rate, whose candidates and statements are unchanged.
+
 ## Five traps worth reading before editing
 
 **1. A raw-query failure is `P2010`.** Same trap as the voucher

@@ -1,5 +1,6 @@
 import { PRICE_SCOPES } from '../types/selling-price-bulk.types';
 export declare const MAX_SAVE_ROWS = 1000;
+export declare const SELLING_PROFIT_TYPES: readonly ["By %", "By Rs", "By User"];
 export declare class SaveSellingPriceLevelDto {
     level: number;
     price: number;
@@ -18,6 +19,8 @@ export declare class SaveSellingPriceRowDto {
     costPrice?: number | null;
     minPrice?: number | null;
     roundOff?: number | null;
+    profitType?: (typeof SELLING_PROFIT_TYPES)[number] | null;
+    maxPrice?: number | null;
 }
 export declare class SaveSellingPriceBulkDto {
     companyId: string;

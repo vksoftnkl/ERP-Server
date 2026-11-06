@@ -30,4 +30,38 @@ export enum ItemQtyPriceErrorCode {
   VALUE_REQUIRED = 'ITEM_QTY_PRICE_VALUE_REQUIRED',
   /** The slab's qty range overlaps a live slab of the same item, unit and scope on a shared date. */
   OVERLAP = 'ITEM_QTY_PRICE_OVERLAP',
+
+  // ── Qty-wise Prices + card rate, one form (plan 2026-11-05 §4.5; wording rows
+  //    catalogue 2026-11-06.1). The four RIGHT_* codes are built by
+  //    assertMenuRight from the ITEM_QTY_PRICE prefix (menu 244).
+  /** No VIEW on menu 244. */
+  RIGHT_VIEW = 'ITEM_QTY_PRICE_RIGHT_VIEW',
+  /** A new slab without CREATE on menu 244. */
+  RIGHT_CREATE = 'ITEM_QTY_PRICE_RIGHT_CREATE',
+  /** A saved slab changed without EDIT on menu 244. */
+  RIGHT_EDIT = 'ITEM_QTY_PRICE_RIGHT_EDIT',
+  /** A slab deleted / restored without DELETE on menu 244. */
+  RIGHT_DELETE = 'ITEM_QTY_PRICE_RIGHT_DELETE',
+  /** save-with-rates with no card row, no slab and no delete. */
+  NOTHING_TO_SAVE = 'ITEM_QTY_PRICE_NOTHING_TO_SAVE',
+  /** A slab (sent or named for delete) of another item than the form's. */
+  ITEM_MISMATCH = 'ITEM_QTY_PRICE_ITEM_MISMATCH',
+  /** A slab's price level is not blank / an active selling level 1–4 (C6, Q12). */
+  LEVEL_NOT_SELLING = 'ITEM_QTY_PRICE_LEVEL_NOT_SELLING',
+  /** A typed cost on an item that is not Plain stock. */
+  COST_NOT_PLAIN_STOCK = 'ITEM_QTY_PRICE_COST_NOT_PLAIN_STOCK',
+  /** A typed MRP on an item that is not Plain stock. */
+  MRP_NOT_PLAIN_STOCK = 'ITEM_QTY_PRICE_MRP_NOT_PLAIN_STOCK',
+  /** A card price or a slab price above the unit's MRP. */
+  ABOVE_MRP = 'ITEM_QTY_PRICE_ABOVE_MRP',
+  /** A slab price below the unit's minimum. */
+  BELOW_MIN = 'ITEM_QTY_PRICE_BELOW_MIN',
+  /** A slab that takes the price to zero or less. */
+  ZERO_OR_LESS = 'ITEM_QTY_PRICE_ZERO_OR_LESS',
+  /** A slab price below the unit's cost (inventory.below_cost_price decides). */
+  BELOW_COST = 'ITEM_QTY_PRICE_BELOW_COST',
+  /** A By User unit whose cost changed while its prices did not (confirmable). */
+  BY_USER_PRICES_KEPT = 'ITEM_QTY_PRICE_BY_USER_PRICES_KEPT',
+  /** A slab for all branches (branch blank) from a user type that is not HQ (Q9). */
+  CHAIN_HQ_ONLY = 'ITEM_QTY_PRICE_CHAIN_HQ_ONLY',
 }

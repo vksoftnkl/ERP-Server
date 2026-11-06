@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { ForbiddenException, HttpException } from '@nestjs/common';
 import { SaveItemQtyPriceDto } from './dto/save-item-qty-price.dto';
 import { ItemsQtyPriceMasterController } from './items-qty-price-master.controller';
 import { ItemsQtyPriceMasterService } from './items-qty-price-master.service';
@@ -32,6 +32,11 @@ describe('ItemsQtyPriceMasterController', () => {
     list: jest.Mock;
     softDelete: jest.Mock;
     restore: jest.Mock;
+    // Plan 2026-11-05 §4.3 — the menu 244 rights and the slab rules (C6, Q9).
+    assertRight: jest.Mock;
+    assertSaveRights: jest.Mock;
+    assertSellingLevelsOf: jest.Mock;
+    assertChainSlabsAllowedOf: jest.Mock;
   };
   let controller: ItemsQtyPriceMasterController;
 
@@ -53,6 +58,10 @@ describe('ItemsQtyPriceMasterController', () => {
           ? ids.map((iqp_id) => ({ iqp_id, deleted: false }))
           : { iqp_id: ids, deleted: false },
       ),
+      assertRight: jest.fn().mockResolvedValue({}),
+      assertSaveRights: jest.fn().mockResolvedValue(undefined),
+      assertSellingLevelsOf: jest.fn().mockResolvedValue(undefined),
+      assertChainSlabsAllowedOf: jest.fn().mockResolvedValue(undefined),
     };
     controller = new ItemsQtyPriceMasterController(
       service as unknown as ItemsQtyPriceMasterService,
@@ -224,6 +233,62 @@ describe('ItemsQtyPriceMasterController', () => {
       await expect(
         controller.restore([{ iqp_id: IQP_ID }, { iqp_id: OTHER_IQP_ID }]),
       ).resolves.toMatchObject({ message: 'Item qty prices updated successfully' });
+    });
+  });
+
+  // ── plan 2026-11-05 §4.3 — menu 244 rights on the existing routes (A-13 / A-14 / Q9) ─
+  describe('rights', () => {
+    const refused = () =>
+      new ForbiddenException({
+        success: false,
+        message: 'no',
+        errors: [{ field: 'userId', code: 'ITEM_QTY_PRICE_RIGHT_CREATE', message: 'no' }],
+      });
+
+    it('checks CREATE / EDIT, the level rule and the HQ rule before the save, in that order', async () => {
+      const order: string[] = [];
+      service.assertSaveRights.mockImplementation(async () => void order.push('rights'));
+      service.assertSellingLevelsOf.mockImplementation(async () => void order.push('levels'));
+      service.assertChainSlabsAllowedOf.mockImplementation(async () => void order.push('hq'));
+      service.save.mockImplementation(async () => {
+        order.push('save');
+        return [PAYLOAD];
+      });
+
+      await controller.save([SLAB]);
+
+      expect(order).toEqual(['rights', 'levels', 'hq', 'save']);
+      const [rows] = service.assertSaveRights.mock.calls[0] as [SaveItemQtyPriceDto[]];
+      expect(rows[0]).toBeInstanceOf(SaveItemQtyPriceDto);
+    });
+
+    it('writes nothing when a right is refused', async () => {
+      service.assertSaveRights.mockRejectedValue(refused());
+
+      const refusal = await refusalOf(controller.save([SLAB]));
+
+      expect(refusal.status).toBe(403);
+      expect(service.save).not.toHaveBeenCalled();
+    });
+
+    it('needs VIEW to read', async () => {
+      await controller.getById({ iqp_id: IQP_ID });
+      expect(service.assertRight).toHaveBeenCalledWith('view', expect.any(String));
+
+      service.assertRight.mockRejectedValue(refused());
+      await expect(controller.getById({ iqp_id: IQP_ID })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('needs DELETE to delete and to restore', async () => {
+      await controller.remove(undefined, IQP_ID);
+      await controller.restore(undefined, IQP_ID);
+      expect(service.assertRight.mock.calls.map((call) => call[0])).toEqual(['delete', 'delete']);
+
+      service.assertRight.mockRejectedValue(refused());
+      await expect(controller.remove(undefined, IQP_ID)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(service.softDelete).toHaveBeenCalledTimes(1);
     });
   });
 });

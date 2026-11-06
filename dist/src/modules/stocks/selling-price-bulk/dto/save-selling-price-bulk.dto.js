@@ -9,13 +9,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveSellingPriceBulkDto = exports.SaveSellingPriceRowDto = exports.SaveSellingPriceLevelDto = exports.MAX_SAVE_ROWS = void 0;
+exports.SaveSellingPriceBulkDto = exports.SaveSellingPriceRowDto = exports.SaveSellingPriceLevelDto = exports.SELLING_PROFIT_TYPES = exports.MAX_SAVE_ROWS = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const selling_price_bulk_types_1 = require("../types/selling-price-bulk.types");
 exports.MAX_SAVE_ROWS = 1000;
+exports.SELLING_PROFIT_TYPES = ['By %', 'By Rs', 'By User'];
 class SaveSellingPriceLevelDto {
     level;
     price;
@@ -69,6 +70,8 @@ class SaveSellingPriceRowDto {
     costPrice;
     minPrice;
     roundOff;
+    profitType;
+    maxPrice;
 }
 exports.SaveSellingPriceRowDto = SaveSellingPriceRowDto;
 __decorate([
@@ -171,6 +174,31 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], SaveSellingPriceRowDto.prototype, "roundOff", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: exports.SELLING_PROFIT_TYPES,
+        nullable: true,
+        description: "Plan 2026-11-05 §4.6 item 2 — the unit's Rule (ipm_profit_type), when it changed. Absent " +
+            "or null: the row keeps its own (an update) or copies the headline's (a new row). Menu 30 " +
+            'and Quick Rate send none.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(exports.SELLING_PROFIT_TYPES),
+    __metadata("design:type", Object)
+], SaveSellingPriceRowDto.prototype, "profitType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Number,
+        nullable: true,
+        example: 4600,
+        description: 'Plan 2026-11-05 §4.6 item 2 — a typed MRP (ipm_max_price) for a HEADLINE row only (no ' +
+            'bucket after the policy blanks it): S2 stores it, S3 / a split start from it. Ignored on a ' +
+            "bucket row, whose MRP is its bucket's. Qty-wise Prices sends it on Plain-stock items only. " +
+            'Absent or null: unchanged.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], SaveSellingPriceRowDto.prototype, "maxPrice", void 0);
 class SaveSellingPriceBulkDto {
     companyId;
     branchId;

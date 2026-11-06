@@ -18,6 +18,11 @@ const selling_price_bulk_types_1 = require("../../stocks/selling-price-bulk/type
 const price_change_log_service_1 = require("./price-change-log.service");
 const price_change_log_types_1 = require("./types/price-change-log.types");
 const DEFAULT_PROFIT_TYPE = 'By User';
+function headlineMaxPrice(candidate) {
+    return candidate.mrp === null && candidate.maxPrice !== undefined && candidate.maxPrice !== null
+        ? candidate.maxPrice
+        : null;
+}
 let PriceMasterWriter = class PriceMasterWriter {
     changeLog;
     constructor(changeLog) {
@@ -45,6 +50,11 @@ let PriceMasterWriter = class PriceMasterWriter {
     async updateBucketPrice(tx, ipmId, candidate, origin = price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE) {
         const before = await this.changeLog.snapshot(tx, 'IPM', [ipmId]);
         const l = levelColumns(candidate);
+        const typedMax = headlineMaxPrice(candidate);
+        const maxSet = typedMax === null
+            ? client_1.Prisma.empty
+            : client_1.Prisma.sql `
+             ipm_max_price   = ${typedMax}::numeric,`;
         await tx.$executeRaw `
       UPDATE inventory.item_price_master
          SET ipm_sales_price_a = COALESCE(${l.a.price}::numeric, ipm_sales_price_a),
@@ -63,7 +73,7 @@ let PriceMasterWriter = class PriceMasterWriter {
              ipm_cost_price  = ${candidate.costRate},
              ipm_cost_wot    = ${candidate.costWot},
              ipm_profit_type = COALESCE(${candidate.profitType ?? null}::varchar, ipm_profit_type),
-             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),
+             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),${maxSet}
              ipm_updated_on  = now(),
              ipm_updated_by  = ${actorColumn(candidate.actor)}::uuid
        WHERE ipm_id = ${ipmId}::uuid
@@ -75,6 +85,10 @@ let PriceMasterWriter = class PriceMasterWriter {
         const l = levelColumns(candidate);
         const actor = actorColumn(candidate.actor);
         const day = (0, price_bucket_gateway_1.daySql)(onDate);
+        const typedMax = headlineMaxPrice(candidate);
+        const maxFrom = typedMax === null
+            ? client_1.Prisma.sql `COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0)`
+            : client_1.Prisma.sql `COALESCE(${candidate.mrp}::numeric, ${typedMax}::numeric, h.ipm_max_price, 0)`;
         const sameKey = client_1.Prisma.sql `
              k.ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
          AND k.ipm_branch_id  IS NOT DISTINCT FROM ${scope.targetBranchId}::uuid
@@ -112,7 +126,7 @@ let PriceMasterWriter = class PriceMasterWriter {
              COALESCE(${l.c.priceWot}::numeric, 0), COALESCE(${l.d.priceWot}::numeric, 0),
              COALESCE(${l.a.markupPerc}::numeric, 0), COALESCE(${l.b.markupPerc}::numeric, 0),
              COALESCE(${l.c.markupPerc}::numeric, 0), COALESCE(${l.d.markupPerc}::numeric, 0),
-             COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0),
+             ${maxFrom},
              COALESCE(${candidate.minPrice}::numeric, h.ipm_min_price, 0),
              COALESCE(h.ipm_disc_perc, 0), COALESCE(h.ipm_disc_qty, 0), COALESCE(h.ipm_addl_cess, 0),
              COALESCE(${candidate.profitType ?? null}::varchar, h.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
@@ -159,6 +173,8 @@ let PriceMasterWriter = class PriceMasterWriter {
     async insertSplitPrice(tx, sourceId, candidate, period, origin = price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE) {
         const l = levelColumns(candidate);
         const actor = actorColumn(candidate.actor);
+        const typedMax = headlineMaxPrice(candidate);
+        const splitMax = typedMax === null ? client_1.Prisma.raw('o.ipm_max_price') : client_1.Prisma.sql `${typedMax}::numeric`;
         const [row] = await tx.$queryRaw `
       INSERT INTO inventory.item_price_master (
         ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id, ipm_godown_id, ipm_sl_no,
@@ -186,7 +202,7 @@ let PriceMasterWriter = class PriceMasterWriter {
              COALESCE(${l.b.markupPerc}::numeric, o.ipm_price_b_markup_perc),
              COALESCE(${l.c.markupPerc}::numeric, o.ipm_price_c_markup_perc),
              COALESCE(${l.d.markupPerc}::numeric, o.ipm_price_d_markup_perc),
-             o.ipm_max_price, COALESCE(${candidate.minPrice}::numeric, o.ipm_min_price),
+             ${splitMax}, COALESCE(${candidate.minPrice}::numeric, o.ipm_min_price),
              o.ipm_disc_perc, o.ipm_disc_qty, o.ipm_addl_cess,
              COALESCE(${candidate.profitType ?? null}::varchar, o.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
              COALESCE(${candidate.roundOff}::numeric, o.ipm_round_off),

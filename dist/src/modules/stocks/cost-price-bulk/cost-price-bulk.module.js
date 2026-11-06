@@ -23,6 +23,7 @@ exports.CostPriceBulkModule = CostPriceBulkModule = __decorate([
         imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, item_price_log_module_1.ItemPriceLogModule],
         controllers: [cost_price_bulk_controller_1.CostPriceBulkController],
         providers: [cost_price_bulk_service_1.CostPriceBulkService, cost_price_bulk_gateway_1.CostPriceBulkGateway, cost_price_bulk_exception_filter_1.CostPriceBulkExceptionFilter],
+        exports: [cost_price_bulk_gateway_1.CostPriceBulkGateway],
     })
 ], CostPriceBulkModule);
 //# sourceMappingURL=cost-price-bulk.module.js.map

@@ -98,6 +98,11 @@ model SaleQuotationItem {
   sqiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_max_price")
   sqiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_min_price")
   sqiActPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_act_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a document saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sqiQtyPriceId      String?   @db.Uuid @map("sqi_qty_price_id")
   sqiQuotePrice      Decimal?  @db.Decimal(15, 4) @map("sqi_quote_price")
   sqiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sqi_item_profit")
   sqiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sqi_cost_pre_tax")

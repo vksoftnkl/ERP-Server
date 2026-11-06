@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { MasterLookupService } from './master-lookup.service';
@@ -697,6 +698,8 @@ describe('MasterLookupService', () => {
       Object.assign(prisma as unknown as Record<string, unknown>, {
         itemMaster: { ...prisma.itemMaster, findFirst: jest.fn().mockResolvedValue(item) },
         itemPriceMaster: { findMany: jest.fn().mockResolvedValue(rows) },
+        // Plan 2026-11-05 §4.4 — the qty slabs of the priced unit (none here).
+        itemQtyPrice: { findMany: jest.fn().mockResolvedValue([]) },
         godownLocation: { findFirst: jest.fn().mockResolvedValue(null) },
         // A godown-less rate falls back to the branch default (notes 51).
         branchMaster: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -798,6 +801,113 @@ describe('MasterLookupService', () => {
       });
       expect(result.gst_rate).toBe(0);
       expect(result.item_incl_tax).toBe(true);
+    });
+    // Plan 2026-11-05 §4.4 — the additive qty_slabs key (B-01).
+    describe('qty_slabs', () => {
+      const BRANCH = 'BR-1';
+      const slabRow = (overrides: Record<string, unknown> = {}) => ({
+        iqpId: 'S-ALL',
+        iqpCompanyId: null,
+        iqpBranchId: null,
+        iqpPartyId: null,
+        iqpPriceLevel: null,
+        iqpFromQty: new Prisma.Decimal(10),
+        iqpToQty: null,
+        iqpPriceMode: 'P',
+        iqpDiscPct: new Prisma.Decimal(2),
+        iqpFlatOff: null,
+        iqpPrice: null,
+        iqpIsTaxIncl: false,
+        iqpEffectiveFrom: new Date('2026-01-01T00:00:00Z'),
+        iqpEffectiveTo: null,
+        iqpIsActive: true,
+        iqpModifiedOn: new Date('2026-01-01T00:00:00Z'),
+        ...overrides,
+      });
+      const slabsAre = (rows: unknown[]) =>
+        Object.assign(prisma as unknown as Record<string, unknown>, {
+          itemQtyPrice: { findMany: jest.fn().mockResolvedValue(rows) },
+        });
+
+      it('lists the slabs of the priced unit that apply, most specific first, as snake_case', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        slabsAre([
+          slabRow(),
+          slabRow({ iqpId: 'S-BRANCH', iqpBranchId: BRANCH, iqpFromQty: new Prisma.Decimal(20) }),
+          slabRow({ iqpId: 'S-OTHER-BRANCH', iqpBranchId: 'BR-9' }),
+          slabRow({ iqpId: 'S-LEVEL-2', iqpPriceLevel: 2 }),
+          slabRow({ iqpId: 'S-LATER', iqpEffectiveFrom: new Date('2099-01-01T00:00:00Z') }),
+        ]);
+        const result = await service.getItemPriceLookup({
+          item_id: ITEM_ID,
+          price_level: 1,
+          branch_id: BRANCH,
+          doc_date: '2026-11-06',
+        });
+        expect(result.qty_slabs.map((s) => s.iqp_id)).toEqual(['S-BRANCH', 'S-ALL']);
+        expect(result.qty_slabs[0]).toEqual({
+          iqp_id: 'S-BRANCH',
+          from_qty: 20,
+          to_qty: null,
+          price_mode: 'P',
+          disc_pct: 2,
+          flat_off: null,
+          price: null,
+          is_tax_incl: false,
+          price_level: null,
+          party_id: null,
+          branch_id: BRANCH,
+          company_id: null,
+          effective_from: '2026-01-01',
+          effective_to: null,
+          specificity: 2,
+        });
+        const { where } = (prisma as unknown as { itemQtyPrice: { findMany: jest.Mock } })
+          .itemQtyPrice.findMany.mock.calls[0][0] as { where: Record<string, unknown> };
+        expect(where).toEqual({
+          iqpItemId: ITEM_ID,
+          iqpItemUnitId: 'IUC-1',
+          iqpIsDeleted: false,
+          iqpIsActive: true,
+        });
+      });
+
+      it('gives a line at level 5 / 6 / 7 no slab, and reads none', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        slabsAre([slabRow()]);
+        const result = await service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 5 });
+        expect(result.qty_slabs).toEqual([]);
+        expect(
+          (prisma as unknown as { itemQtyPrice: { findMany: jest.Mock } }).itemQtyPrice.findMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('is empty when sales.apply_qty_prices is off, read only when a slab applies', async () => {
+        const settings = { resolveEffective: jest.fn() };
+        const withSettings = new MasterLookupService(
+          prisma as unknown as PrismaService,
+          pg as never,
+          settings as never,
+        );
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        slabsAre([]);
+        await withSettings.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1 });
+        expect(settings.resolveEffective).not.toHaveBeenCalled();
+
+        slabsAre([slabRow()]);
+        settings.resolveEffective.mockResolvedValue([
+          { asdKey: 'sales.apply_qty_prices', value: 'false' },
+        ]);
+        expect(
+          (await withSettings.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1 })).qty_slabs,
+        ).toEqual([]);
+        settings.resolveEffective.mockResolvedValue([
+          { asdKey: 'sales.apply_qty_prices', value: 'true' },
+        ]);
+        expect(
+          (await withSettings.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1 })).qty_slabs,
+        ).toHaveLength(1);
+      });
     });
     describe('loading charge resolution', () => {
       const COMPANY_ID = 'COMP-1';

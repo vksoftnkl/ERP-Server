@@ -296,6 +296,60 @@ export class ItemPriceBucketDto {
   @ApiProperty({ example: 0 })
   min_price!: number;
 }
+/** Plan 2026-11-05 §4.4 — one qty-wise price slab that can price this line (menu 244). */
+export class ItemQtySlabDto {
+  @ApiProperty({ format: 'uuid' })
+  iqp_id!: string;
+  @ApiProperty({ example: 10, description: "Inclusive lower bound, in the line's own unit." })
+  from_qty!: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 50,
+    description: 'EXCLUSIVE upper bound: the slab holds from_qty ≤ qty < to_qty; null = and above.',
+  })
+  to_qty!: number | null;
+  @ApiProperty({
+    enum: ['P', 'R', 'F'],
+    description: 'P = % off, R = ₹ off each, F = a fixed price each.',
+  })
+  price_mode!: string;
+  @ApiProperty({ type: Number, nullable: true })
+  disc_pct!: number | null;
+  @ApiProperty({ type: Number, nullable: true })
+  flat_off!: number | null;
+  @ApiProperty({ type: Number, nullable: true })
+  price!: number | null;
+  @ApiProperty({ description: 'The R / F amount includes tax.' })
+  is_tax_incl!: boolean;
+  @ApiProperty({ type: Number, nullable: true, description: 'null = every level.' })
+  price_level!: number | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true, description: 'null = every party.' })
+  party_id!: string | null;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'null = every branch.',
+  })
+  branch_id!: string | null;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'null = every company.',
+  })
+  company_id!: string | null;
+  @ApiProperty({ format: 'date' })
+  effective_from!: string;
+  @ApiProperty({ type: String, format: 'date', nullable: true })
+  effective_to!: string | null;
+  @ApiProperty({
+    example: 12,
+    description: '8 × party set + 4 × level set + 2 × branch set + 1 × company set (Q3).',
+  })
+  specificity!: number;
+}
 export class ItemPriceLookupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
@@ -377,6 +431,17 @@ export class ItemPriceLookupPayloadDto {
       'Every live bucket at this branch with stock, each with its resolved prices — only for items whose stock track policy tracks MRP or sale price; [] otherwise. With no stock at all, every PRICED bucket at quantity 0, so an item priced but not yet received can still be sold.',
   })
   buckets!: ItemPriceBucketDto[];
+  @ApiProperty({
+    type: ItemQtySlabDto,
+    isArray: true,
+    description:
+      'Plan 2026-11-05 §4.4 — the qty-wise price slabs (menu 244) that can price this line: live and active, ' +
+      'of this item and of the unit this answer priced (item_uc_id), in force on doc_date (default today), ' +
+      "company / branch / party (customer_id) blank or the line's, level blank or price_level — only when " +
+      'price_level is 1–4. Ranked most specific first (specificity), then from_qty; the client takes the FIRST ' +
+      "whose range holds the line's qty. [] when sales.apply_qty_prices is off for the company.",
+  })
+  qty_slabs!: ItemQtySlabDto[];
   @ApiProperty({ example: 0 })
   disc_perc!: number;
   @ApiProperty({ example: 0 })

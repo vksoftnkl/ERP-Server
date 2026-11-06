@@ -17,6 +17,7 @@ import { DEFAULT_FREIGHT_TYPE, DEFAULT_LOADING_TYPE } from '../master-lookup.con
 import {
   ItemPriceBucketPayload,
   ItemPriceLookupPayload,
+  ItemQtySlabPayload,
   ItemUnitCyclePayload,
 } from '../types/master-lookup-api.types';
 import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
@@ -41,6 +42,24 @@ import {
 } from '../../stocks/stock-voucher/stock-voucher-posting.helper';
 import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
 import { branchDefaultGodownId } from '../../../common/utils/sale-line-godown.utils';
+import {
+  isApplyQtyPricesOn,
+  qtySlabOf,
+  slabSpecificity,
+  slabsFor,
+} from '../../Inventory/items-qty-price-master/qty-slab.rules';
+
+/**
+ * What the lookup asks of the settings resolver (AppSettingValueService) — for
+ * `sales.apply_qty_prices`. Absent (a unit test, a bare e2e), the setting's
+ * seeded default stands: On.
+ */
+export interface QtyPriceSettingReader {
+  resolveEffective(scope: {
+    companyId?: string;
+    branchId?: string;
+  }): Promise<ReadonlyArray<{ asdKey: string; value: string | null }>>;
+}
 
 /**
  * The posting roles the payload names a ledger for, keyed by the payload field.
@@ -101,7 +120,79 @@ type LoadingChargeResolution = Pick<ItemPriceLookupPayload, 'loading_charge' | '
  *    is always null.
  */
 export class ItemPriceLookup {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /** Plan 2026-11-05 §4.4 — reads `sales.apply_qty_prices`; absent = On. */
+    private readonly settings?: QtyPriceSettingReader,
+  ) {}
+
+  /**
+   * Plan 2026-11-05 §4.4 (B-01) — the qty-wise price slabs that can price this
+   * line, ranked: live and active, of the item and of the unit this answer
+   * priced (`iucId`), in force on the document's date (Q6), company / branch /
+   * party blank or the line's (no customer → party-blank slabs only), level
+   * blank or the line's — and none at all when the line's level is not a
+   * selling level 1–4 (Q12). Ranked most specific first (Q3), then by
+   * from_qty: the client takes the FIRST whose range holds its qty. Empty when
+   * `sales.apply_qty_prices` is off for the company (read only when there is a
+   * slab to hide). ADDITIVE (D21): a caller that ignores the key gets today's
+   * answer.
+   */
+  private async resolveQtySlabs(
+    query: ItemPriceLookupQueryDto,
+    iucId: string,
+    docDate: string,
+  ): Promise<ItemQtySlabPayload[]> {
+    if (query.price_level < 1 || query.price_level > 4) {
+      return [];
+    }
+    const rows = await this.prisma.itemQtyPrice.findMany({
+      where: {
+        iqpItemId: query.item_id,
+        iqpItemUnitId: iucId,
+        iqpIsDeleted: false,
+        iqpIsActive: true,
+      },
+      orderBy: [{ iqpFromQty: 'asc' }, { iqpId: 'asc' }],
+    });
+    const ranked = slabsFor(rows.map(qtySlabOf), {
+      companyId: query.company_id ?? null,
+      branchId: query.branch_id ?? null,
+      partyId: query.customer_id ?? null,
+      priceLevel: query.price_level,
+      onDate: docDate,
+    });
+    if (!ranked.length) {
+      return [];
+    }
+    if (this.settings) {
+      const effective = await this.settings.resolveEffective({
+        companyId: query.company_id,
+        branchId: query.branch_id,
+      });
+      if (!isApplyQtyPricesOn(effective)) {
+        return [];
+      }
+    }
+    const amount = (value: Prisma.Decimal | null) => (value === null ? null : value.toNumber());
+    return ranked.map((slab) => ({
+      iqp_id: slab.iqpId,
+      from_qty: slab.fromQty.toNumber(),
+      to_qty: amount(slab.toQty),
+      price_mode: slab.priceMode,
+      disc_pct: amount(slab.discPct),
+      flat_off: amount(slab.flatOff),
+      price: amount(slab.price),
+      is_tax_incl: slab.isTaxIncl,
+      price_level: slab.priceLevel,
+      party_id: slab.partyId,
+      branch_id: slab.branchId,
+      company_id: slab.companyId,
+      effective_from: slab.effectiveFrom,
+      effective_to: slab.effectiveTo,
+      specificity: slabSpecificity(slab),
+    }));
+  }
 
   /**
    * "Cycle unit" on an entry screen: step from the conversion the caller
@@ -603,6 +694,7 @@ export class ItemPriceLookup {
       policy.trackMrp || policy.trackSalePrice
         ? await this.resolveStockBuckets(query, policy, unitRows, docDate, caller)
         : [];
+    const qtySlabs = await this.resolveQtySlabs(query, rate.itemUnitConversion.iucId, docDate);
     // 4. Derived values.
     // Without a company there is nothing to switch GST off, so the item's own
     // tax block stands; a supplied company still decides as before.
@@ -660,6 +752,7 @@ export class ItemPriceLookup {
       price_scope: resolved.scope,
       price_row_id: rate.ipmId,
       buckets,
+      qty_slabs: qtySlabs,
       disc_perc: toNumber(rate.ipmDiscPerc),
       disc_qty: toNumber(rate.ipmDiscQty),
       sch_discount: null,

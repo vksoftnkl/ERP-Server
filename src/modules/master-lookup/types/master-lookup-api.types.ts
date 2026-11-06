@@ -147,6 +147,33 @@ export interface ItemPriceBucketPayload {
   max_price: number;
   min_price: number;
 }
+/**
+ * Plan 2026-11-05 §4.4 — one qty-wise price slab (inventory.item_qty_price,
+ * menu 244) that can price the looked-up line. Ranked in `qty_slabs[]`: the
+ * client takes the first whose [from_qty, to_qty) holds the line's qty.
+ */
+export interface ItemQtySlabPayload {
+  iqp_id: string;
+  from_qty: number;
+  /** Exclusive; null = and above. */
+  to_qty: number | null;
+  /** P = % off, R = ₹ off each, F = a fixed price each. */
+  price_mode: string;
+  disc_pct: number | null;
+  flat_off: number | null;
+  price: number | null;
+  is_tax_incl: boolean;
+  /** null = every level / party / branch / company. */
+  price_level: number | null;
+  party_id: string | null;
+  branch_id: string | null;
+  company_id: string | null;
+  /** `YYYY-MM-DD`. */
+  effective_from: string;
+  effective_to: string | null;
+  /** 8 × party + 4 × level + 2 × branch + 1 × company (Q3). */
+  specificity: number;
+}
 export interface ItemPriceLookupPayload {
   item_id: string;
   /**
@@ -206,6 +233,13 @@ export interface ItemPriceLookupPayload {
    * and re-asks with mrp. None: the headline stands.
    */
   buckets: ItemPriceBucketPayload[];
+  /**
+   * Plan 2026-11-05 §4.4 — the qty slabs that can price this line (unit =
+   * item_uc_id, doc_date, scope, level 1–4), ranked most specific first. []
+   * when sales.apply_qty_prices is off. Additive: a client that ignores it
+   * gets today's answer.
+   */
+  qty_slabs: ItemQtySlabPayload[];
   disc_perc: number;
   disc_qty: number;
   /** Legacy item-group price-level scheme discount — no equivalent column in the current schema, always null. */

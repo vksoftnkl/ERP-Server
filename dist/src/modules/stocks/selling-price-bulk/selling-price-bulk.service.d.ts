@@ -8,9 +8,9 @@ import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
 import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
 import { type ScopeResolution } from './selling-price-scope.helper';
-import { PriceBucketGateway, type BucketPriceCandidate } from './price-bucket.gateway';
-import { type ItemTaxRate, type PagedResult, type SellingPriceRow, type SellingPriceSaveResult, type SellingPriceScheduleCancelResult, type SellingPriceScheduleRow } from './types/selling-price-bulk.types';
-import { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
+import { PriceBucketGateway, type BucketPriceCandidate, type RowCost } from './price-bucket.gateway';
+import { type BelowCostPolicy, type ItemTaxRate, type PagedResult, type SellingPriceProblem, type SellingPriceRow, type SellingPriceSaveResult, type SellingPriceScheduleCancelResult, type SellingPriceScheduleRow } from './types/selling-price-bulk.types';
+import { PriceMasterWriter, type PriceCandidateWrite } from '../../Inventory/item-price-log/price-master-writer.service';
 import { type PriceWriteOrigin } from '../../Inventory/item-price-log/types/price-change-log.types';
 export interface AppliedBucketPrice {
     ipmId: string;
@@ -21,6 +21,17 @@ export interface AppliedBucketPrice {
         ipmId: string;
         before: Prisma.JsonObject | null;
     };
+}
+export interface PreparedBulkSave {
+    dto: SaveSellingPriceBulkDto;
+    actor: string;
+    from: string;
+    scheduledFrom: string | undefined;
+    costs: RowCost[];
+    candidates: PriceCandidateWrite[];
+    resolutions: ScopeResolution[];
+    problems: SellingPriceProblem[];
+    belowCost: SellingPriceProblem[];
 }
 export declare class SellingPriceBulkService {
     private readonly prisma;
@@ -33,6 +44,16 @@ export declare class SellingPriceBulkService {
     listPrices(queryDto: ListSellingPriceQueryDto): Promise<PagedResult<SellingPriceRow>>;
     listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]>;
     saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult>;
+    prepareBulk(tx: Prisma.TransactionClient, dto: SaveSellingPriceBulkDto, ctx: {
+        actor: string;
+        policy: BelowCostPolicy;
+    }): Promise<PreparedBulkSave>;
+    confirmResult(prepared: PreparedBulkSave, policy: BelowCostPolicy): SellingPriceSaveResult;
+    writeBulkInTx(tx: Prisma.TransactionClient, prepared: PreparedBulkSave, opts: {
+        confirmed: boolean;
+        via: string | null;
+        policy: BelowCostPolicy;
+    }): Promise<SellingPriceSaveResult>;
     applyPurchasePrices(tx: Prisma.TransactionClient, args: {
         companyId: string;
         branchId: string;
@@ -69,8 +90,8 @@ export declare class SellingPriceBulkService {
     private resolveStartDay;
     private toSavedRow;
     private assertScopeAllowed;
-    private assertCanEditPrices;
-    private describeOriginMenu;
+    assertCanEditPrices(): Promise<void>;
+    describeOriginMenu(menuId: number): Promise<string>;
     private resolveBelowCostPolicy;
     private rowScopeOf;
     private assertUnitsBelong;

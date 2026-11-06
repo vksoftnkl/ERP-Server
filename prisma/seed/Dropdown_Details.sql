@@ -1,4 +1,7 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (62 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (63 rows).
+--
+-- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
+-- 20261106160000_qty_price_layout_fixes inserts it.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -492,6 +495,13 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
    AND pte_is_active = true
    AND (pte_company_id IS NULL OR pte_company_id::text = 'icompany_id')
  ORDER BY pte_sort, pte_name$seed$, NULL)
+    ,(75, 'QTY PRICE - SELLING LEVELS', 'Qty-wise Prices (menu 244) Price level picker: the active selling levels 1-4 of fixed.price_levels (plan C6 / D19). Same keys as 34 PRICE LEVELS (ipl_id, ipl_name); 34 stays the list every other screen reads.', 'ipl_id'              , 'asc'      , 10, false, 0   , 'Desktop', 'ipl_name'          , 'system', $seed$SELECT price_lvl_id AS ipl_id,
+       price_lvl_name AS ipl_name
+  FROM fixed.price_levels
+ WHERE price_lvl_is_active = true
+   AND "price_lvl_isDeleted" = false
+   AND price_lvl_id BETWEEN 1 AND 4
+ ORDER BY price_lvl_id$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

@@ -265,6 +265,70 @@ describe('SellingPriceBulkService', () => {
       ...overrides,
     }) as unknown as SaveSellingPriceBulkDto;
 
+  // ── Qty-wise Prices plan 2026-11-05 §4.6 items 1–2 — the split save ────────
+  describe('prepareBulk / writeBulkInTx (menu 244 runs them in its own transaction)', () => {
+    const ctx = { actor: USER_ID, policy: 'warning' as BelowCostPolicy };
+
+    it('prepareBulk checks and writes nothing; it hands back below cost for the caller', async () => {
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_COST' })]);
+      const prepared = await service.prepareBulk(tx as never, payload(), ctx);
+
+      expect(prepared.belowCost).toHaveLength(1);
+      expect(prepared.candidates).toHaveLength(1);
+      expect(prepared.from).toBe(TODAY);
+      expect(writer.updateBucketPrice).not.toHaveBeenCalled();
+      expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+      expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('prepareBulk still refuses above MRP / below min always, and below cost under restrict', async () => {
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_MIN' })]);
+      await expect(service.prepareBulk(tx as never, payload(), ctx)).rejects.toBeInstanceOf(
+        HttpException,
+      );
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_COST' })]);
+      await expect(
+        service.prepareBulk(tx as never, payload(), { ...ctx, policy: 'restrict' }),
+      ).rejects.toBeInstanceOf(HttpException);
+    });
+
+    it('writeBulkInTx writes the prepared rows with the via note and answers as saveBulk does', async () => {
+      s1Finds('BRANCH');
+      const prepared = await service.prepareBulk(
+        tx as never,
+        payload({ rows: [bucketRow({ priceScope: 'BRANCH' })] as never }),
+        ctx,
+      );
+      const result = await service.writeBulkInTx(tx as never, prepared, {
+        confirmed: false,
+        via: 'via Qty-wise Prices (menu 244)',
+        policy: 'warning',
+      });
+
+      expect(result).toMatchObject({ saved: 1, needsConfirm: false, belowCostPolicy: 'warning' });
+      const [, , , origin] = writer.updateBucketPrice.mock.calls[0];
+      expect(origin).toMatchObject({ reason: 'via Qty-wise Prices (menu 244)' });
+      expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
+    });
+
+    it("carries the Rule and a typed MRP onto the candidate only when sent (menu 30's is unchanged)", async () => {
+      const plain = await service.prepareBulk(
+        tx as never,
+        payload({ rows: [headlineRow()] as never }),
+        ctx,
+      );
+      expect(plain.candidates[0]).not.toHaveProperty('profitType');
+      expect(plain.candidates[0]).not.toHaveProperty('maxPrice');
+
+      const sent = await service.prepareBulk(
+        tx as never,
+        payload({ rows: [headlineRow({ profitType: 'By Rs', maxPrice: 150 })] as never }),
+        ctx,
+      );
+      expect(sent.candidates[0]).toMatchObject({ profitType: 'By Rs', maxPrice: 150, mrp: null });
+    });
+  });
+
   // ── one price table: no fan-out ─────────────────────────────────────────
   describe('one price table — plan-nestjs-one-price-table.md §5', () => {
     it('saves a bucket row and a headline row through the SAME statements', async () => {

@@ -39,6 +39,22 @@ item + unit, optionally scoped by company, branch, party and price level.
     batch is judged after all its rows are written, under one advisory lock per item, so a ladder
     re-cut in one save passes.
 
+## Rights and the slab rules (plan 2026-11-05 §4.3, since 2026-11-06)
+
+Every route checks the caller's `user_menus` flags on menu 244 (Qty-wise Prices), no SUPER ADMIN
+bypass: `/get` VIEW, `/create` CREATE for a row without `iqp_id` and EDIT for a row with one,
+`/delete` and `/restore` DELETE — 403 `ITEM_QTY_PRICE_RIGHT_<RIGHT>`. `/create` also refuses a
+price level (after the save: sent, else stored) that is not blank or an ACTIVE level 1–4 of
+`fixed.price_levels` (422 `ITEM_QTY_PRICE_LEVEL_NOT_SELLING`, C6 / Q12: levels 5 / 6 / 7 are not
+selling levels), and a slab for all branches (branch blank) from a user type that is not HQ (403
+`ITEM_QTY_PRICE_CHAIN_HQ_ONLY`, Q9). The routes are no longer cached (`@CacheTTL` dropped): the
+HTTP cache key ignores the user, so a cached answer would pass a caller the right refuses.
+
+`save(rows, tx)`, `softDelete(ids, tx)` and `restore(ids, tx)` run in a caller's transaction —
+Qty-wise Prices' `save-with-rates` (`Inventory/item-qty-rates/`). `qty-slab.rules.ts` is the pure
+slab rule (filter, rank, pick, price, judge) shared with `/master-lookups/item-price`'s
+`qty_slabs` and the Qt port.
+
 ## Resolved names
 
 The payload carries the display name for each foreign key alongside its id, resolved via

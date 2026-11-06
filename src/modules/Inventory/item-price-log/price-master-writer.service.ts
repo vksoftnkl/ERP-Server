@@ -38,8 +38,25 @@ const DEFAULT_PROFIT_TYPE = 'By User';
  * unit's profit type (rule) to store. Absent or null keeps the stored one on an
  * update and copies the source row's on an insert (plan 2026-11-05 §1). Menu
  * 30 and the purchase price update send none.
+ *
+ * `maxPrice` (Qty-wise Prices plan 2026-11-05 §4.6 item 3) — a typed MRP for a
+ * HEADLINE candidate only (`mrp` null after policy blanking): S2 stores it as
+ * `ipm_max_price`, S3 and a split start from it before the headline's / the
+ * origin row's own. A bucket candidate never uses it: its max price is its
+ * bucket's MRP (`ck_ipm_bucket_mrp_is_max`). Absent or null: every statement is
+ * exactly the one it was.
  */
-export type PriceCandidateWrite = BucketPriceCandidate & { profitType?: string | null };
+export type PriceCandidateWrite = BucketPriceCandidate & {
+  profitType?: string | null;
+  maxPrice?: number | null;
+};
+
+/** The typed MRP a candidate may store: headline candidates only, else null. */
+function headlineMaxPrice(candidate: PriceCandidateWrite): number | null {
+  return candidate.mrp === null && candidate.maxPrice !== undefined && candidate.maxPrice !== null
+    ? candidate.maxPrice
+    : null;
+}
 
 /** One level's three stored figures, as Cost Price – Bulk Change writes them. */
 export interface PriceRowLevelWrite {
@@ -146,6 +163,13 @@ export class PriceMasterWriter {
   ): Promise<string> {
     const before = await this.changeLog.snapshot(tx, 'IPM', [ipmId]);
     const l = levelColumns(candidate);
+    // §4.6 item 3 — only a headline candidate with a typed MRP adds the clause.
+    const typedMax = headlineMaxPrice(candidate);
+    const maxSet =
+      typedMax === null
+        ? Prisma.empty
+        : Prisma.sql`
+             ipm_max_price   = ${typedMax}::numeric,`;
     await tx.$executeRaw`
       UPDATE inventory.item_price_master
          SET ipm_sales_price_a = COALESCE(${l.a.price}::numeric, ipm_sales_price_a),
@@ -164,7 +188,7 @@ export class PriceMasterWriter {
              ipm_cost_price  = ${candidate.costRate},
              ipm_cost_wot    = ${candidate.costWot},
              ipm_profit_type = COALESCE(${candidate.profitType ?? null}::varchar, ipm_profit_type),
-             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),
+             ipm_round_off   = COALESCE(${candidate.roundOff}::numeric, ipm_round_off),${maxSet}
              ipm_updated_on  = now(),
              ipm_updated_by  = ${actorColumn(candidate.actor)}::uuid
        WHERE ipm_id = ${ipmId}::uuid
@@ -201,6 +225,12 @@ export class PriceMasterWriter {
     const l = levelColumns(candidate);
     const actor = actorColumn(candidate.actor);
     const day = daySql(onDate);
+    // §4.6 item 3 — a headline's typed MRP before the headline's own.
+    const typedMax = headlineMaxPrice(candidate);
+    const maxFrom =
+      typedMax === null
+        ? Prisma.sql`COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0)`
+        : Prisma.sql`COALESCE(${candidate.mrp}::numeric, ${typedMax}::numeric, h.ipm_max_price, 0)`;
     const sameKey = Prisma.sql`
              k.ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
          AND k.ipm_branch_id  IS NOT DISTINCT FROM ${scope.targetBranchId}::uuid
@@ -238,7 +268,7 @@ export class PriceMasterWriter {
              COALESCE(${l.c.priceWot}::numeric, 0), COALESCE(${l.d.priceWot}::numeric, 0),
              COALESCE(${l.a.markupPerc}::numeric, 0), COALESCE(${l.b.markupPerc}::numeric, 0),
              COALESCE(${l.c.markupPerc}::numeric, 0), COALESCE(${l.d.markupPerc}::numeric, 0),
-             COALESCE(${candidate.mrp}::numeric, h.ipm_max_price, 0),
+             ${maxFrom},
              COALESCE(${candidate.minPrice}::numeric, h.ipm_min_price, 0),
              COALESCE(h.ipm_disc_perc, 0), COALESCE(h.ipm_disc_qty, 0), COALESCE(h.ipm_addl_cess, 0),
              COALESCE(${candidate.profitType ?? null}::varchar, h.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
@@ -311,6 +341,11 @@ export class PriceMasterWriter {
   ): Promise<string> {
     const l = levelColumns(candidate);
     const actor = actorColumn(candidate.actor);
+    // §4.6 item 3 — a headline's typed MRP over the origin row's (the split of
+    // a headline is a headline: same key).
+    const typedMax = headlineMaxPrice(candidate);
+    const splitMax =
+      typedMax === null ? Prisma.raw('o.ipm_max_price') : Prisma.sql`${typedMax}::numeric`;
     const [row] = await tx.$queryRaw<Array<{ ipmId: string }>>`
       INSERT INTO inventory.item_price_master (
         ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id, ipm_godown_id, ipm_sl_no,
@@ -338,7 +373,7 @@ export class PriceMasterWriter {
              COALESCE(${l.b.markupPerc}::numeric, o.ipm_price_b_markup_perc),
              COALESCE(${l.c.markupPerc}::numeric, o.ipm_price_c_markup_perc),
              COALESCE(${l.d.markupPerc}::numeric, o.ipm_price_d_markup_perc),
-             o.ipm_max_price, COALESCE(${candidate.minPrice}::numeric, o.ipm_min_price),
+             ${splitMax}, COALESCE(${candidate.minPrice}::numeric, o.ipm_min_price),
              o.ipm_disc_perc, o.ipm_disc_qty, o.ipm_addl_cess,
              COALESCE(${candidate.profitType ?? null}::varchar, o.ipm_profit_type, ${DEFAULT_PROFIT_TYPE}),
              COALESCE(${candidate.roundOff}::numeric, o.ipm_round_off),

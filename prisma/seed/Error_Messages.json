@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-05.3",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05",
+  "version": "2026-11-06.1",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05; Qty-wise Prices + Cost + Card Rate, menu 244 (Shared/Prathap/inventory/plan-qty-price-card-rate-one-form.md section 4.5, addendum-1 Q9 = A, migration 20261106140000_qty_price_card_rate_form): the new codes ITEM_QTY_PRICE_NOTHING_TO_SAVE / _ITEM_MISMATCH / _LEVEL_NOT_SELLING / _COST_NOT_PLAIN_STOCK / _MRP_NOT_PLAIN_STOCK / _ABOVE_MRP / _BELOW_MIN / _ZERO_OR_LESS / _BELOW_COST / _BY_USER_PRICES_KEPT / _CHAIN_HQ_ONLY and the right codes assertMenuRight builds from the prefix ITEM_QTY_PRICE (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE), plus wording for the slab codes the server already throws (ITEM_QTY_PRICE_OVERLAP / _QTY_RANGE_INVALID / _VALUE_REQUIRED / _DUPLICATE / _DATE_RANGE_INVALID / _UNIT_NOT_OF_ITEM / _NOT_FOUND / _ALREADY_DELETED / _REFERENCE_NOT_FOUND / _DATE_INVALID / _NOT_DELETED / _ID_REQUIRED / _PAYLOAD_NOT_ARRAY) and the card codes the form and Quick Rate show (STOCK_PRICE_ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _UNIT_NOT_OF_ITEM / _DUPLICATE_BUCKET / _CHAIN_HQ_ONLY), worded 2026-11-05, loaded 2026-11-06",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -4313,6 +4313,278 @@
       "title": "Cost too low for these prices",
       "line": "The new cost is so low that the profit on these prices cannot be stored — the figure is probably mistyped.",
       "todo": "Check the New Cost."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open Qty-wise Prices.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_RIGHT_CREATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to add a qty-wise price.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_RIGHT_EDIT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to change a qty-wise price.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_RIGHT_DELETE",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to remove a qty-wise price.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_NOTHING_TO_SAVE",
+      "variant": "",
+      "lang": "en",
+      "title": "Nothing to save",
+      "line": "Nothing was changed on this form.",
+      "todo": "Change a price or a slab, then save."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_ITEM_MISMATCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent rows of another item.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_LEVEL_NOT_SELLING",
+      "variant": "",
+      "lang": "en",
+      "title": "Price level not allowed",
+      "line": "A slab names a price level that is not an active selling level.",
+      "todo": "Pick an active level, or leave it blank for all levels."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_COST_NOT_PLAIN_STOCK",
+      "variant": "",
+      "lang": "en",
+      "title": "Cost comes from stock",
+      "line": "This item keeps its stock by batch, MRP, sale price or serial, so its cost can't be typed here.",
+      "todo": "Leave the cost as it is."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_MRP_NOT_PLAIN_STOCK",
+      "variant": "",
+      "lang": "en",
+      "title": "MRP can't be typed here",
+      "line": "This item's stock is kept by MRP (or batch, sale price, serial), so its MRP belongs to the stock.",
+      "todo": "Leave the MRP as it is."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_ABOVE_MRP",
+      "variant": "",
+      "lang": "en",
+      "title": "Price above MRP",
+      "line": "A price or a slab price is above this unit's MRP.",
+      "todo": "Lower the price, or type a higher MRP."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_BELOW_MIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab price below minimum",
+      "line": "A slab gives a price below this unit's minimum price.",
+      "todo": "Change the slab, or lower the Min."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_ZERO_OR_LESS",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab price is zero",
+      "line": "A slab takes more off than the price, so the item would sell for nothing.",
+      "todo": "Lower the ₹ off or the %."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_BELOW_COST",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab price below cost",
+      "line": "A slab gives a price below this unit's cost, so it sells at a loss.",
+      "todo": "Change the slab, or check it before you save."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_BY_USER_PRICES_KEPT",
+      "variant": "",
+      "lang": "en",
+      "title": "Prices not typed",
+      "line": "The cost changed on a By User unit, but its prices are still the old ones.",
+      "todo": "Type the new prices, or save anyway to keep them."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_CHAIN_HQ_ONLY",
+      "variant": "",
+      "lang": "en",
+      "title": "Head office only",
+      "line": "A slab for all branches can only be saved by head office.",
+      "todo": "Pick this branch for the slab, or ask head office."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_OVERLAP",
+      "variant": "",
+      "lang": "en",
+      "title": "Slabs overlap",
+      "line": "Two slabs of this unit cover the same quantity on the same days.",
+      "todo": "End one slab where the next starts."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_QTY_RANGE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong quantity range",
+      "line": "The To quantity must be above the From quantity.",
+      "todo": "Fix the range."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_VALUE_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Value missing",
+      "line": "This slab has no % off, ₹ off or fixed price.",
+      "todo": "Type the value."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_DUPLICATE",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab already there",
+      "line": "The same slab is saved already.",
+      "todo": "Change the range or the dates."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_DATE_RANGE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong dates",
+      "line": "The To date is before the From date.",
+      "todo": "Fix the dates."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_UNIT_NOT_OF_ITEM",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong unit",
+      "line": "This unit is not one of the item's units.",
+      "todo": "Pick the unit again."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab not found",
+      "line": "This slab is not there now.",
+      "todo": "Load the item again."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_ALREADY_DELETED",
+      "variant": "",
+      "lang": "en",
+      "title": "Slab already removed",
+      "line": "This slab was removed already.",
+      "todo": "Load the item again."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_REFERENCE_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_DATE_INVALID",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_NOT_DELETED",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_ID_REQUIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "ITEM_QTY_PRICE_PAYLOAD_NOT_ARRAY",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "STOCK_PRICE_ABOVE_MRP",
+      "variant": "",
+      "lang": "en",
+      "title": "Price above MRP",
+      "line": "A price is above this stock's MRP.",
+      "todo": "Lower the price."
+    },
+    {
+      "code": "STOCK_PRICE_BELOW_MIN",
+      "variant": "",
+      "lang": "en",
+      "title": "Price below minimum",
+      "line": "A price is below this unit's minimum price.",
+      "todo": "Raise the price, or lower the Min."
+    },
+    {
+      "code": "STOCK_PRICE_BELOW_COST",
+      "variant": "",
+      "lang": "en",
+      "title": "Price below cost",
+      "line": "A price is below its cost, so it sells at a loss.",
+      "todo": "Raise the price, or check it before you save."
+    },
+    {
+      "code": "STOCK_PRICE_UNIT_NOT_OF_ITEM",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "STOCK_PRICE_DUPLICATE_BUCKET",
+      "variant": "",
+      "lang": "en",
+      "title": "Something went wrong",
+      "line": "The app sent a wrong request.",
+      "todo": "Send a photo of this to support."
+    },
+    {
+      "code": "STOCK_PRICE_CHAIN_HQ_ONLY",
+      "variant": "",
+      "lang": "en",
+      "title": "Head office only",
+      "line": "Prices for all branches can only be saved by head office.",
+      "todo": "Save for this branch."
     }
   ]
 }

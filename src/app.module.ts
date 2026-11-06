@@ -135,6 +135,7 @@ import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/i
 import { ItemUnitConversionModule } from './modules/Inventory/item-unit-conversion/item-unit-conversion.module';
 import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-master/items-reorder-master.module';
 import { ItemsQtyPriceMasterModule } from './modules/Inventory/items-qty-price-master/items-qty-price-master.module';
+import { ItemQtyRatesModule } from './modules/Inventory/item-qty-rates/item-qty-rates.module';
 import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
@@ -193,6 +194,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemPriceDetailsModule,
     ItemsReorderMasterModule,
     ItemsQtyPriceMasterModule,
+    ItemQtyRatesModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
     AccGroupMasterModule,

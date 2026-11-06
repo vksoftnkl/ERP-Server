@@ -922,4 +922,111 @@ describe('ItemsQtyPriceMasterService', () => {
       ]);
     });
   });
+  // ── plan 2026-11-05 §4.3 / §4.6 items 4–5 — rights, C6, Q9, tx ─────────────
+  describe('menu 244 rights and the slab rules (Qty-wise Prices one form)', () => {
+    const levelsAre = (ids: number[]) =>
+      prisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('fixed.price_levels')
+            ? ids.map((id) => ({ id }))
+            : strings.join('?').includes('public.user_menus')
+              ? [
+                  {
+                    um_can_view: true,
+                    um_can_create: false,
+                    um_can_edit: true,
+                    um_can_delete: false,
+                  },
+                ]
+              : [],
+        ),
+      );
+
+    it('assertSaveRights asks CREATE for a new row and EDIT for a row with an id', async () => {
+      levelsAre([1, 2, 3, 4]);
+      await expect(service.assertSaveRights([{ iqp_id: IQP_ID }])).resolves.toBeUndefined();
+      const refusal = await refusalOf(service.assertSaveRights([{}, { iqp_id: IQP_ID }]));
+      expect(refusal.status).toBe(403);
+      expect(refusal.body).toMatchObject({ errors: [{ code: 'ITEM_QTY_PRICE_RIGHT_CREATE' }] });
+      await expect(refusalOf(service.assertRight('delete', 'remove'))).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: 'ITEM_QTY_PRICE_RIGHT_DELETE' }] },
+      });
+    });
+
+    it('assertSellingLevels refuses 5 / 6 / 7 and an inactive level, the stored one on an update', async () => {
+      levelsAre([1, 2]);
+      await expect(
+        service.assertSellingLevels(prisma as never, [
+          { iqp_price_level: null },
+          { iqp_price_level: 2 },
+        ]),
+      ).resolves.toBeUndefined();
+      const refusal = await refusalOf(
+        service.assertSellingLevels(
+          prisma as never,
+          [{ iqp_price_level: 1 }, { iqp_price_level: 3 }],
+          'slabs.',
+        ),
+      );
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: {
+          errors: [{ field: 'slabs.1.iqp_price_level', code: 'ITEM_QTY_PRICE_LEVEL_NOT_SELLING' }],
+        },
+      });
+      // an update that leaves the level out keeps the stored 7 (a CHILLI POWDER test row): refused
+      prisma.itemQtyPrice.findMany.mockResolvedValue([
+        {
+          iqpId: IQP_ID,
+          iqpItemId: ITEM_ID,
+          iqpBranchId: null,
+          iqpPriceLevel: 7,
+          iqpIsDeleted: false,
+        },
+      ]);
+      await expect(
+        refusalOf(service.assertSellingLevels(prisma as never, [{ iqp_id: IQP_ID }])),
+      ).resolves.toMatchObject({ status: 422 });
+    });
+
+    it('assertChainSlabsAllowed (Q9): a branch-blank slab needs an HQ user type', async () => {
+      const userType = jest.fn().mockReturnValue('USER');
+      (context as unknown as { getUserType: jest.Mock }).getUserType = userType;
+      const refusal = await refusalOf(
+        service.assertChainSlabsAllowed(prisma as never, [
+          { iqp_branch_id: 'B1' },
+          { iqp_branch_id: null },
+        ]),
+      );
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ field: '1.iqp_branch_id', code: 'ITEM_QTY_PRICE_CHAIN_HQ_ONLY' }] },
+      });
+      // an update that leaves the branch out keeps the stored one
+      prisma.itemQtyPrice.findMany.mockResolvedValue([
+        {
+          iqpId: IQP_ID,
+          iqpItemId: ITEM_ID,
+          iqpBranchId: null,
+          iqpPriceLevel: null,
+          iqpIsDeleted: false,
+        },
+      ]);
+      await expect(
+        refusalOf(service.assertChainSlabsAllowed(prisma as never, [{ iqp_id: IQP_ID }])),
+      ).resolves.toMatchObject({ status: 403 });
+      userType.mockReturnValue('SUPER ADMIN');
+      await expect(
+        service.assertChainSlabsAllowed(prisma as never, [{ iqp_branch_id: null }]),
+      ).resolves.toBeUndefined();
+    });
+
+    it("softDelete / restore run in the caller's transaction when given one", async () => {
+      prisma.itemQtyPrice.findFirst.mockResolvedValue(slabRow());
+      await service.softDelete([IQP_ID], prisma as never);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.itemQtyPrice.updateMany).toHaveBeenCalledTimes(1);
+    });
+  });
 });

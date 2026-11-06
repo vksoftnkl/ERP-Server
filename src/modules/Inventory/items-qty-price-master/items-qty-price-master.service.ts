@@ -24,11 +24,16 @@ import {
   resolveActor,
   throwInventoryBadRequest,
   throwInventoryConflict,
+  throwInventoryForbidden,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
+  throwUnprocessable,
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { assertMenuRight, type MenuRight, type MenuRights } from '../../../common/posting/rights';
+import { isHqUserType } from '../../stocks/selling-price-bulk/types/selling-price-bulk.types';
+import { isSellingSlabLevel } from './qty-slab.rules';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -37,6 +42,20 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
 import { PRICE_ORIGIN } from '../item-price-log/types/price-change-log.types';
+
+/** Qty-wise Prices — the menu whose user_menus flags gate every slab route (§4.3). */
+export const QTY_PRICE_MENU_ID = 244;
+/** assertMenuRight's code family: ITEM_QTY_PRICE_RIGHT_VIEW / _CREATE / _EDIT / _DELETE. */
+export const QTY_PRICE_RIGHT_PREFIX = 'ITEM_QTY_PRICE';
+
+/** A slab named by id, as the rights / level / HQ checks read it. */
+export interface StoredSlabScope {
+  iqpId: string;
+  itemId: string;
+  branchId: string | null;
+  priceLevel: number | null;
+  isDeleted: boolean;
+}
 
 const ITEM_QTY_PRICE_TABLE_NAME = 'item qty price';
 const ITEM_QTY_PRICE_AUDIT_SCREEN_NAME = 'Item Qty Price Master';
@@ -185,34 +204,50 @@ export class ItemsQtyPriceMasterService {
    * already deleted is a 409, and restore() (POST /item-qty-prices/restore)
    * brings one back. A batch is all-or-nothing, like the save.
    */
-  async softDelete(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
-  async softDelete(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
+  /**
+   * @param tx When supplied, the batch runs inside the caller's transaction
+   * instead of opening its own (Qty-wise Prices' save-with-rates: the deletes,
+   * the card and the slabs commit or roll back together).
+   */
+  async softDelete(iqpId: string, tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult>;
+  async softDelete(
+    iqpId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemQtyPriceDeleteResult[]>;
   async softDelete(
     iqpId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
   async softDelete(
     iqpId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
-    return this.setDeleted(iqpId, true);
+    return this.setDeleted(iqpId, true, tx);
   }
   /**
    * Restore deleted slabs. 409 when one is not deleted, or when a live slab now
-   * holds the same key (uq_iqp_slab).
+   * holds the same key (uq_iqp_slab). `tx` as softDelete.
    */
-  async restore(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
-  async restore(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
+  async restore(iqpId: string, tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult>;
+  async restore(
+    iqpId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemQtyPriceDeleteResult[]>;
   async restore(
     iqpId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
   async restore(
     iqpId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
-    return this.setDeleted(iqpId, false);
+    return this.setDeleted(iqpId, false, tx);
   }
 
   private async setDeleted(
     iqpId: string | string[],
     wantDeleted: boolean,
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
     const ids = Array.isArray(iqpId) ? iqpId : [iqpId];
     const applyAll = async (client: Prisma.TransactionClient) => {
@@ -231,12 +266,211 @@ export class ItemsQtyPriceMasterService {
       return results;
     };
     try {
-      const results = await this.prisma.$transaction(applyAll);
+      const results = tx ? await applyAll(tx) : await this.prisma.$transaction(applyAll);
       return Array.isArray(iqpId) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
     }
+  }
+
+  // ── menu 244 rights and the slab rules shared with save-with-rates ────────
+  // Plan 2026-11-05 §4.3 / §4.6 item 5 (A-13, A-14): until then the routes
+  // checked only the login token.
+
+  /** 403 `ITEM_QTY_PRICE_RIGHT_<RIGHT>` unless the caller holds `right` on menu 244. */
+  async assertRight(right: MenuRight, action: string): Promise<MenuRights> {
+    return assertMenuRight(this.prisma, {
+      userId: this.requestContextService.getUserId(),
+      menuId: QTY_PRICE_MENU_ID,
+      right,
+      codePrefix: QTY_PRICE_RIGHT_PREFIX,
+      action,
+    });
+  }
+
+  /** POST /create — CREATE for a row without iqp_id, EDIT for a row with one. */
+  async assertSaveRights(rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id'>[]): Promise<void> {
+    if (rows.some((row) => !row.iqp_id)) {
+      await this.assertRight('create', 'add qty-wise prices');
+    }
+    if (rows.some((row) => row.iqp_id)) {
+      await this.assertRight('edit', 'change qty-wise prices');
+    }
+  }
+
+  /** The stored scope of slabs named by id, any state (for the checks below and save-with-rates'). */
+  async readStoredSlabs(
+    client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>,
+    ids: readonly string[],
+  ): Promise<Map<string, StoredSlabScope>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length) {
+      return new Map();
+    }
+    const rows = await client.itemQtyPrice.findMany({
+      where: { iqpId: { in: unique } },
+      select: {
+        iqpId: true,
+        iqpItemId: true,
+        iqpBranchId: true,
+        iqpPriceLevel: true,
+        iqpIsDeleted: true,
+      },
+    });
+    // Keyed by the lower-case id: a uuid the client sent in capitals is the same row.
+    return new Map(
+      rows.map((row) => [
+        row.iqpId.toLowerCase(),
+        {
+          iqpId: row.iqpId,
+          itemId: row.iqpItemId,
+          branchId: row.iqpBranchId,
+          priceLevel: row.iqpPriceLevel,
+          isDeleted: row.iqpIsDeleted,
+        },
+      ]),
+    );
+  }
+
+  /**
+   * C6 / Q12 — a slab's price level, as it will stand after the save (sent,
+   * else the stored one on an update), must be blank (all levels) or an ACTIVE
+   * level 1–4 of the Price Level master (`fixed.price_levels`, what the screens
+   * read). 422 `ITEM_QTY_PRICE_LEVEL_NOT_SELLING`, field `<prefix><index>.iqp_price_level`.
+   */
+  async assertSellingLevels(
+    client: Pick<Prisma.TransactionClient, '$queryRaw' | 'itemQtyPrice'>,
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_price_level'>[],
+    fieldPrefix = '',
+    stored?: ReadonlyMap<string, StoredSlabScope>,
+  ): Promise<void> {
+    if (!rows.length) {
+      return;
+    }
+    const known =
+      stored ??
+      (await this.readStoredSlabs(
+        client,
+        rows
+          .filter((row) => row.iqp_id && row.iqp_price_level === undefined)
+          .map((row) => row.iqp_id!),
+      ));
+    const active = await this.activeSellingLevels(client);
+    const wrong = rows
+      .map((row, index) => ({
+        index,
+        level:
+          row.iqp_price_level !== undefined
+            ? row.iqp_price_level
+            : row.iqp_id
+              ? (known.get(row.iqp_id.toLowerCase())?.priceLevel ?? null)
+              : null,
+      }))
+      .filter(({ level }) => !isSellingSlabLevel(level, active));
+    if (!wrong.length) {
+      return;
+    }
+    throwUnprocessable<ItemQtyPriceErrorDetail>('A slab names a price level that is not for sale', [
+      ...wrong.map(({ index, level }) => ({
+        field: `${fieldPrefix}${index}.iqp_price_level`,
+        code: ItemQtyPriceErrorCode.LEVEL_NOT_SELLING,
+        message:
+          `Price level ${level} is not an active selling level. Pick an active level 1–4 ` +
+          `(${active.length ? active.join(', ') : 'none is active'}), or leave it blank for all levels.`,
+      })),
+    ]);
+  }
+
+  /**
+   * Q9 (D16) — a slab for ALL branches (branch blank after the save: sent, else
+   * stored) may only be saved by a head-office user type (`isHqUserType`, menu
+   * 30's list): two branches working offline could otherwise both save the
+   * same slab and break `uq_iqp_slab` at sync. 403 `ITEM_QTY_PRICE_CHAIN_HQ_ONLY`.
+   */
+  async assertChainSlabsAllowed(
+    client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>,
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[],
+    fieldPrefix = '',
+    stored?: ReadonlyMap<string, StoredSlabScope>,
+  ): Promise<void> {
+    if (!rows.length || isHqUserType(this.requestContextService.getUserType())) {
+      return;
+    }
+    const known =
+      stored ??
+      (await this.readStoredSlabs(
+        client,
+        rows
+          .filter((row) => row.iqp_id && row.iqp_branch_id === undefined)
+          .map((row) => row.iqp_id!),
+      ));
+    const chain = rows
+      .map((row, index) => ({
+        index,
+        branchId:
+          row.iqp_branch_id !== undefined
+            ? row.iqp_branch_id
+            : row.iqp_id
+              ? (known.get(row.iqp_id.toLowerCase())?.branchId ?? null)
+              : null,
+      }))
+      .filter(({ branchId }) => branchId === null);
+    if (!chain.length) {
+      return;
+    }
+    throwInventoryForbidden<ItemQtyPriceErrorDetail>('A slab for all branches needs head office', [
+      ...chain.map(({ index }) => ({
+        field: `${fieldPrefix}${index}.iqp_branch_id`,
+        code: ItemQtyPriceErrorCode.CHAIN_HQ_ONLY,
+        message:
+          'A slab for all branches can only be saved by head office. Pick this branch for the slab.',
+      })),
+    ]);
+  }
+
+  /** POST /create's C6 check: rows indexed as the batch (`<index>.iqp_price_level`). */
+  async assertSellingLevelsOf(
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_price_level'>[],
+  ): Promise<void> {
+    return this.assertSellingLevels(this.prisma, rows);
+  }
+
+  /** POST /create's Q9 check: rows indexed as the batch (`<index>.iqp_branch_id`). */
+  async assertChainSlabsAllowedOf(
+    rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[],
+  ): Promise<void> {
+    return this.assertChainSlabsAllowed(this.prisma, rows);
+  }
+
+  /** Price levels 1–4 that are active on the Price Level master (fixed.price_levels). */
+  async activeSellingLevels(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  ): Promise<number[]> {
+    const rows = await client.$queryRaw<Array<{ id: number }>>`
+      SELECT price_lvl_id::int AS id
+        FROM fixed.price_levels
+       WHERE price_lvl_id BETWEEN 1 AND 4
+         AND price_lvl_is_active IS TRUE
+         AND "price_lvl_isDeleted" IS NOT TRUE
+       ORDER BY 1`;
+    return rows.map((row) => Number(row.id));
+  }
+
+  /**
+   * Every live slab of one item, all scopes, in the /get payload shape (names
+   * resolved), unit → lower bound → id. Qty-wise Prices' get-with-rates.
+   */
+  async listForItem(
+    itemId: string,
+    client: Pick<Prisma.TransactionClient, 'itemQtyPrice'> = this.prisma,
+  ): Promise<ItemQtyPricePayload[]> {
+    const rows = await client.itemQtyPrice.findMany({
+      where: { iqpItemId: itemId, iqpIsDeleted: false },
+      include: ITEM_QTY_PRICE_INCLUDE,
+      orderBy: [{ iqpItemUnitId: 'asc' }, { iqpFromQty: 'asc' }, { iqpId: 'asc' }],
+    });
+    return rows.map((row) => this.toPayload(row));
   }
 
   private async saveItemQtyPrice(

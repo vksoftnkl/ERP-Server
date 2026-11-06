@@ -91,86 +91,106 @@ let SellingPriceBulkService = class SellingPriceBulkService {
         const policy = await this.resolveBelowCostPolicy(dto);
         const actor = (0, module_service_utils_1.resolveActor)(dto.userId, this.requestContext.getUserId());
         return this.prisma.$transaction(async (tx) => {
-            const { from, scheduledFrom } = await this.resolveStartDay(tx, dto.effectiveFrom);
-            const itemIds = dto.rows.map((row) => row.itemId);
-            const taxRates = scheduledFrom
-                ? await this.resolveItemTaxRates(tx, itemIds, dayDate(scheduledFrom))
-                : await this.resolveItemTaxRates(tx, itemIds);
-            const costs = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
-                itemId: row.itemId,
-                uomId: row.uomId,
-                mrp: row.mrp ?? null,
-                salePrice: row.salePrice ?? null,
-            })), dto.companyId, dto.branchId, scheduledFrom);
-            this.assertUnitsBelong(dto.rows, costs);
-            const candidates = dto.rows.map((row, index) => this.toCandidate(row, index, dto.companyId, actor, taxRates, costs[index]));
-            const resolutions = dto.rows.map((row) => (0, selling_price_scope_helper_1.resolveTargetScope)(dto.scope, this.rowScopeOf(row), dto.branchId));
-            this.assertOneRowPerBucket(candidates, resolutions);
-            const problems = this.gateway.validateRows(candidates, costs.map((cost) => cost.minPrice));
-            const blocking = problems.filter((problem) => !selling_price_bulk_types_1.CONFIRMABLE_VERDICTS.includes(problem.verdict));
-            if (blocking.length) {
-                this.throwProblems(blocking, 'These prices cannot be saved');
+            const prepared = await this.prepareBulk(tx, dto, { actor, policy });
+            if (prepared.belowCost.length &&
+                (0, below_cost_policy_helper_1.resolveBelowCostAction)(policy, confirmed) === 'CONFIRM') {
+                return this.confirmResult(prepared, policy);
             }
-            const belowCost = problems.filter((problem) => problem.verdict === 'BELOW_COST');
-            if (belowCost.length) {
-                const action = (0, below_cost_policy_helper_1.resolveBelowCostAction)(policy, confirmed);
-                if (action === 'ABORT') {
-                    this.throwProblems(belowCost, 'Prices below cost are not allowed (inventory.below_cost_price = restrict)');
-                }
-                if (action === 'CONFIRM') {
-                    return {
-                        saved: 0,
-                        effectiveFrom: from,
-                        rows: [],
-                        masterRowsSaved: 0,
-                        noStock: [],
-                        needsConfirm: true,
-                        problems: belowCost,
-                        belowCostPolicy: policy,
-                    };
-                }
-            }
-            const applied = [];
-            for (let index = 0; index < candidates.length; index += 1) {
-                const confirmedHere = confirmed
-                    ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
-                    : [];
-                const reason = [
-                    confirmedHere.length
-                        ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
-                        : null,
-                    via,
-                ]
-                    .filter(Boolean)
-                    .join(' · ');
-                applied.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index], scheduledFrom, reason
-                    ? { ...price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE, reason }
-                    : price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE));
-            }
-            const ipmIds = applied.map((row) => row.ipmId);
-            const shown = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
-                itemId: row.itemId,
-                uomId: row.uomId,
-                mrp: row.mrp ?? null,
-                salePrice: row.salePrice ?? null,
-            })), dto.companyId, dto.branchId, scheduledFrom);
-            const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
-            const after = await this.auditWrites(tx, dto, applied, {
-                actor,
-                confirmedBelowCost: confirmed ? belowCost : [],
-                scheduledFrom,
-            });
-            return {
-                saved: ipmIds.length,
-                effectiveFrom: from,
-                rows: applied.map((row, index) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index])),
-                masterRowsSaved: 0,
-                noStock,
-                needsConfirm: false,
-                problems,
-                belowCostPolicy: policy,
-            };
+            return this.writeBulkInTx(tx, prepared, { confirmed, via, policy });
         });
+    }
+    async prepareBulk(tx, dto, ctx) {
+        const { from, scheduledFrom } = await this.resolveStartDay(tx, dto.effectiveFrom);
+        const itemIds = dto.rows.map((row) => row.itemId);
+        const taxRates = scheduledFrom
+            ? await this.resolveItemTaxRates(tx, itemIds, dayDate(scheduledFrom))
+            : await this.resolveItemTaxRates(tx, itemIds);
+        const costs = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
+            itemId: row.itemId,
+            uomId: row.uomId,
+            mrp: row.mrp ?? null,
+            salePrice: row.salePrice ?? null,
+        })), dto.companyId, dto.branchId, scheduledFrom);
+        this.assertUnitsBelong(dto.rows, costs);
+        const candidates = dto.rows.map((row, index) => this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index]));
+        const resolutions = dto.rows.map((row) => (0, selling_price_scope_helper_1.resolveTargetScope)(dto.scope, this.rowScopeOf(row), dto.branchId));
+        this.assertOneRowPerBucket(candidates, resolutions);
+        const problems = this.gateway.validateRows(candidates, costs.map((cost) => cost.minPrice));
+        const blocking = problems.filter((problem) => !selling_price_bulk_types_1.CONFIRMABLE_VERDICTS.includes(problem.verdict));
+        if (blocking.length) {
+            this.throwProblems(blocking, 'These prices cannot be saved');
+        }
+        const belowCost = problems.filter((problem) => problem.verdict === 'BELOW_COST');
+        if (belowCost.length && (0, below_cost_policy_helper_1.resolveBelowCostAction)(ctx.policy, false) === 'ABORT') {
+            this.throwProblems(belowCost, 'Prices below cost are not allowed (inventory.below_cost_price = restrict)');
+        }
+        return {
+            dto,
+            actor: ctx.actor,
+            from,
+            scheduledFrom,
+            costs,
+            candidates,
+            resolutions,
+            problems,
+            belowCost,
+        };
+    }
+    confirmResult(prepared, policy) {
+        return {
+            saved: 0,
+            effectiveFrom: prepared.from,
+            rows: [],
+            masterRowsSaved: 0,
+            noStock: [],
+            needsConfirm: true,
+            problems: prepared.belowCost,
+            belowCostPolicy: policy,
+        };
+    }
+    async writeBulkInTx(tx, prepared, opts) {
+        const { dto, candidates, resolutions, scheduledFrom, belowCost, actor } = prepared;
+        const { confirmed, via, policy } = opts;
+        const applied = [];
+        for (let index = 0; index < candidates.length; index += 1) {
+            const confirmedHere = confirmed
+                ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
+                : [];
+            const reason = [
+                confirmedHere.length
+                    ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
+                    : null,
+                via,
+            ]
+                .filter(Boolean)
+                .join(' · ');
+            applied.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index], scheduledFrom, reason
+                ? { ...price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE, reason }
+                : price_change_log_types_1.PRICE_ORIGIN.CHANGE_SELLING_PRICE));
+        }
+        const ipmIds = applied.map((row) => row.ipmId);
+        const shown = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
+            itemId: row.itemId,
+            uomId: row.uomId,
+            mrp: row.mrp ?? null,
+            salePrice: row.salePrice ?? null,
+        })), dto.companyId, dto.branchId, scheduledFrom);
+        const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
+        const after = await this.auditWrites(tx, dto, applied, {
+            actor,
+            confirmedBelowCost: confirmed ? belowCost : [],
+            scheduledFrom,
+        });
+        return {
+            saved: ipmIds.length,
+            effectiveFrom: prepared.from,
+            rows: applied.map((row, index) => this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index])),
+            masterRowsSaved: 0,
+            noStock,
+            needsConfirm: false,
+            problems: prepared.problems,
+            belowCostPolicy: policy,
+        };
     }
     async applyPurchasePrices(tx, args) {
         const out = new Map();
@@ -577,6 +597,10 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             costRate,
             costWot,
             actor,
+            ...(row.profitType !== undefined && row.profitType !== null
+                ? { profitType: row.profitType }
+                : {}),
+            ...(row.maxPrice !== undefined && row.maxPrice !== null ? { maxPrice: row.maxPrice } : {}),
             levels: row.levels.map((level) => {
                 const value = (0, selling_price_math_helper_1.recomputeLevel)(level.level, level.price, taxPerc, costRate);
                 return {

@@ -50,7 +50,10 @@ import {
   type StockErrorDetail,
 } from './types/selling-price-bulk.types';
 import { StockErrorCode } from '../types/stock-error-codes';
-import { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
+import {
+  PriceMasterWriter,
+  type PriceCandidateWrite,
+} from '../../Inventory/item-price-log/price-master-writer.service';
 import {
   PRICE_MENU_ID,
   PRICE_ORIGIN,
@@ -83,6 +86,27 @@ export interface AppliedBucketPrice {
    * one starts, with its to_jsonb from before the split.
    */
   closed?: { ipmId: string; before: Prisma.JsonObject | null };
+}
+
+/**
+ * A save checked and not yet written (prepareBulk → writeBulkInTx), so a caller
+ * with checks of its own — Qty-wise Prices, menu 244 — can run them between the
+ * two, in the same transaction. `belowCost` is what Q26 found below cost and the
+ * policy has not refused: the caller asks, or writes.
+ */
+export interface PreparedBulkSave {
+  dto: SaveSellingPriceBulkDto;
+  actor: string;
+  /** `YYYY-MM-DD` — the day the prices start. */
+  from: string;
+  scheduledFrom: string | undefined;
+  /** Per row, in dto.rows order. */
+  costs: RowCost[];
+  candidates: PriceCandidateWrite[];
+  resolutions: ScopeResolution[];
+  /** Everything Q26 said (below cost included). */
+  problems: SellingPriceProblem[];
+  belowCost: SellingPriceProblem[];
 }
 
 /** `YYYY-MM-DD` as the screen says it: `DD-MM-YYYY`. */
@@ -156,7 +180,12 @@ export class SellingPriceBulkService {
     return this.toGridRows(records, 0);
   }
 
-  /** §5 — one POST, one transaction, one commit. */
+  /**
+   * §5 — one POST, one transaction, one commit: rights + scope + via + policy,
+   * then prepare → verdict → write in the one transaction. Qty-wise Prices
+   * (menu 244, plan 2026-11-05 §4.6 item 1) runs the same prepareBulk and
+   * writeBulkInTx inside ITS transaction, around its own slab checks.
+   */
   async saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult> {
     // BEFORE anything reads or writes: the right to change prices at all, then
     // the scope. A downgraded scope would be a save that silently did something
@@ -171,143 +200,188 @@ export class SellingPriceBulkService {
     const actor = resolveActor(dto.userId, this.requestContext.getUserId());
 
     return this.prisma.$transaction(async (tx) => {
-      // Notes 140 A — undefined for a save that starts today, which then runs
-      // exactly as it always has; the day itself for a scheduled one, whose
-      // tax, policy, minimum and target row are all read as of that day.
-      const { from, scheduledFrom } = await this.resolveStartDay(tx, dto.effectiveFrom);
-      const itemIds = dto.rows.map((row) => row.itemId);
-      const taxRates = scheduledFrom
-        ? await this.resolveItemTaxRates(tx, itemIds, dayDate(scheduledFrom))
-        : await this.resolveItemTaxRates(tx, itemIds);
-      const costs = await this.gateway.loadRowCosts(
-        tx,
-        dto.rows.map((row) => ({
-          itemId: row.itemId,
-          uomId: row.uomId,
-          mrp: row.mrp ?? null,
-          salePrice: row.salePrice ?? null,
-        })),
-        dto.companyId,
-        dto.branchId,
-        scheduledFrom,
-      );
-      this.assertUnitsBelong(dto.rows, costs);
-
-      const candidates = dto.rows.map((row, index) =>
-        this.toCandidate(row, index, dto.companyId, actor, taxRates, costs[index]),
-      );
-      const resolutions = dto.rows.map((row) =>
-        resolveTargetScope(dto.scope, this.rowScopeOf(row), dto.branchId),
-      );
-      this.assertOneRowPerBucket(candidates, resolutions);
-
-      // ── Step 1 — Q26. §5.2 ─────────────────────────────────────────────────
-      const problems = this.gateway.validateRows(
-        candidates,
-        costs.map((cost) => cost.minPrice),
-      );
-
-      const blocking = problems.filter(
-        (problem) => !CONFIRMABLE_VERDICTS.includes(problem.verdict),
-      );
-      if (blocking.length) {
-        // Above MRP and below min abort ALWAYS — `confirmed` never reaches
-        // here. `ck_ipm_not_above_mrp` would refuse the first anyway; the
-        // second has NO constraint behind it, so this is its only enforcement.
-        this.throwProblems(blocking, 'These prices cannot be saved');
+      const prepared = await this.prepareBulk(tx, dto, { actor, policy });
+      if (
+        prepared.belowCost.length &&
+        resolveBelowCostAction(policy, confirmed) === 'CONFIRM'
+      ) {
+        // 200, not an error: nothing is wrong yet, the user is being asked.
+        // Nothing has been written, so returning out of the transaction
+        // commits an empty unit of work.
+        return this.confirmResult(prepared, policy);
       }
-
-      const belowCost = problems.filter((problem) => problem.verdict === 'BELOW_COST');
-      if (belowCost.length) {
-        const action = resolveBelowCostAction(policy, confirmed);
-        if (action === 'ABORT') {
-          this.throwProblems(
-            belowCost,
-            'Prices below cost are not allowed (inventory.below_cost_price = restrict)',
-          );
-        }
-        if (action === 'CONFIRM') {
-          // 200, not an error: nothing is wrong yet, the user is being asked.
-          // Nothing has been written, so returning out of the transaction
-          // commits an empty unit of work.
-          return {
-            saved: 0,
-            effectiveFrom: from,
-            rows: [],
-            masterRowsSaved: 0,
-            noStock: [],
-            needsConfirm: true,
-            problems: belowCost,
-            belowCostPolicy: policy,
-          };
-        }
-      }
-
-      // ── Steps 2–4 — write, report, commit. §5.4 ───────────────────────────
-      const applied: AppliedBucketPrice[] = [];
-      for (let index = 0; index < candidates.length; index += 1) {
-        // Notes 144 — a price saved below cost on the user's confirmation says
-        // so on its log row, as it does on its audit row.
-        const confirmedHere = confirmed
-          ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
-          : [];
-        const reason = [
-          confirmedHere.length
-            ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
-            : null,
-          via,
-        ]
-          .filter(Boolean)
-          .join(' · ');
-        applied.push(
-          await this.applyBucketPrice(
-            tx,
-            candidates[index],
-            resolutions[index],
-            scheduledFrom,
-            reason
-              ? { ...PRICE_ORIGIN.CHANGE_SELLING_PRICE, reason }
-              : PRICE_ORIGIN.CHANGE_SELLING_PRICE,
-          ),
-        );
-      }
-      const ipmIds = applied.map((row) => row.ipmId);
-      // Notes 147 B — what each row's cost reads as now, by the grid's rule,
-      // so the popup shows it without a reload.
-      const shown = await this.gateway.loadRowCosts(
-        tx,
-        dto.rows.map((row) => ({
-          itemId: row.itemId,
-          uomId: row.uomId,
-          mrp: row.mrp ?? null,
-          salePrice: row.salePrice ?? null,
-        })),
-        dto.companyId,
-        dto.branchId,
-        scheduledFrom,
-      );
-
-      const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
-
-      const after = await this.auditWrites(tx, dto, applied, {
-        actor,
-        confirmedBelowCost: confirmed ? belowCost : [],
-        scheduledFrom,
-      });
-
-      return {
-        saved: ipmIds.length,
-        effectiveFrom: from,
-        rows: applied.map((row, index) =>
-          this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index]),
-        ),
-        masterRowsSaved: 0,
-        noStock,
-        needsConfirm: false,
-        problems,
-        belowCostPolicy: policy,
-      };
+      return this.writeBulkInTx(tx, prepared, { confirmed, via, policy });
     });
+  }
+
+  /**
+   * The checks of a save, in the caller's transaction, WRITING NOTHING: the
+   * start day, tax, each row's cost (loadRowCosts), the candidates, the unit
+   * and one-row-per-bucket refusals, then Q26 (§5.2). Above MRP and below min
+   * are thrown here (always refusals); below cost is thrown under `restrict`
+   * and otherwise handed back in `belowCost` for the caller's verdict.
+   */
+  async prepareBulk(
+    tx: Prisma.TransactionClient,
+    dto: SaveSellingPriceBulkDto,
+    ctx: { actor: string; policy: BelowCostPolicy },
+  ): Promise<PreparedBulkSave> {
+    // Notes 140 A — undefined for a save that starts today, which then runs
+    // exactly as it always has; the day itself for a scheduled one, whose
+    // tax, policy, minimum and target row are all read as of that day.
+    const { from, scheduledFrom } = await this.resolveStartDay(tx, dto.effectiveFrom);
+    const itemIds = dto.rows.map((row) => row.itemId);
+    const taxRates = scheduledFrom
+      ? await this.resolveItemTaxRates(tx, itemIds, dayDate(scheduledFrom))
+      : await this.resolveItemTaxRates(tx, itemIds);
+    const costs = await this.gateway.loadRowCosts(
+      tx,
+      dto.rows.map((row) => ({
+        itemId: row.itemId,
+        uomId: row.uomId,
+        mrp: row.mrp ?? null,
+        salePrice: row.salePrice ?? null,
+      })),
+      dto.companyId,
+      dto.branchId,
+      scheduledFrom,
+    );
+    this.assertUnitsBelong(dto.rows, costs);
+
+    const candidates = dto.rows.map((row, index) =>
+      this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index]),
+    );
+    const resolutions = dto.rows.map((row) =>
+      resolveTargetScope(dto.scope, this.rowScopeOf(row), dto.branchId),
+    );
+    this.assertOneRowPerBucket(candidates, resolutions);
+
+    // ── Step 1 — Q26. §5.2 ─────────────────────────────────────────────────
+    const problems = this.gateway.validateRows(
+      candidates,
+      costs.map((cost) => cost.minPrice),
+    );
+
+    const blocking = problems.filter((problem) => !CONFIRMABLE_VERDICTS.includes(problem.verdict));
+    if (blocking.length) {
+      // Above MRP and below min abort ALWAYS — `confirmed` never reaches
+      // here. `ck_ipm_not_above_mrp` would refuse the first anyway; the
+      // second has NO constraint behind it, so this is its only enforcement.
+      this.throwProblems(blocking, 'These prices cannot be saved');
+    }
+
+    const belowCost = problems.filter((problem) => problem.verdict === 'BELOW_COST');
+    if (belowCost.length && resolveBelowCostAction(ctx.policy, false) === 'ABORT') {
+      this.throwProblems(
+        belowCost,
+        'Prices below cost are not allowed (inventory.below_cost_price = restrict)',
+      );
+    }
+    return {
+      dto,
+      actor: ctx.actor,
+      from,
+      scheduledFrom,
+      costs,
+      candidates,
+      resolutions,
+      problems,
+      belowCost,
+    };
+  }
+
+  /** The `needsConfirm` answer of a prepared save: nothing written, the below-cost rows asked about. */
+  confirmResult(prepared: PreparedBulkSave, policy: BelowCostPolicy): SellingPriceSaveResult {
+    return {
+      saved: 0,
+      effectiveFrom: prepared.from,
+      rows: [],
+      masterRowsSaved: 0,
+      noStock: [],
+      needsConfirm: true,
+      problems: prepared.belowCost,
+      belowCostPolicy: policy,
+    };
+  }
+
+  /**
+   * §5.4 — write a prepared save in the caller's transaction: S1 → S2/S3 per
+   * row (the Price Change Log reason names a confirmed below-cost verdict and
+   * `via`), the costs read back, Q27, one audit row per row written, and the
+   * answer. The caller has decided the verdict: a below-cost row reaching here
+   * is allowed, or confirmed.
+   */
+  async writeBulkInTx(
+    tx: Prisma.TransactionClient,
+    prepared: PreparedBulkSave,
+    opts: { confirmed: boolean; via: string | null; policy: BelowCostPolicy },
+  ): Promise<SellingPriceSaveResult> {
+    const { dto, candidates, resolutions, scheduledFrom, belowCost, actor } = prepared;
+    const { confirmed, via, policy } = opts;
+    // ── Steps 2–4 — write, report, commit. §5.4 ───────────────────────────
+    const applied: AppliedBucketPrice[] = [];
+    for (let index = 0; index < candidates.length; index += 1) {
+      // Notes 144 — a price saved below cost on the user's confirmation says
+      // so on its log row, as it does on its audit row.
+      const confirmedHere = confirmed
+        ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
+        : [];
+      const reason = [
+        confirmedHere.length
+          ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
+          : null,
+        via,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      applied.push(
+        await this.applyBucketPrice(
+          tx,
+          candidates[index],
+          resolutions[index],
+          scheduledFrom,
+          reason
+            ? { ...PRICE_ORIGIN.CHANGE_SELLING_PRICE, reason }
+            : PRICE_ORIGIN.CHANGE_SELLING_PRICE,
+        ),
+      );
+    }
+    const ipmIds = applied.map((row) => row.ipmId);
+    // Notes 147 B — what each row's cost reads as now, by the grid's rule,
+    // so the popup shows it without a reload.
+    const shown = await this.gateway.loadRowCosts(
+      tx,
+      dto.rows.map((row) => ({
+        itemId: row.itemId,
+        uomId: row.uomId,
+        mrp: row.mrp ?? null,
+        salePrice: row.salePrice ?? null,
+      })),
+      dto.companyId,
+      dto.branchId,
+      scheduledFrom,
+    );
+
+    const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
+
+    const after = await this.auditWrites(tx, dto, applied, {
+      actor,
+      confirmedBelowCost: confirmed ? belowCost : [],
+      scheduledFrom,
+    });
+
+    return {
+      saved: ipmIds.length,
+      effectiveFrom: prepared.from,
+      rows: applied.map((row, index) =>
+        this.toSavedRow(row, after.get(row.ipmId), scheduledFrom, shown[index]),
+      ),
+      masterRowsSaved: 0,
+      noStock,
+      needsConfirm: false,
+      problems: prepared.problems,
+      belowCostPolicy: policy,
+    };
   }
 
   /**
@@ -849,9 +923,10 @@ export class SellingPriceBulkService {
    * wherever it is made from: this screen, or the quick rate popup opened from
    * a bill line or the item list (plan 2026-10-23), which goes read-only
    * without it. Until then the route checked no right at all, so any login
-   * could change any price. No user in the request has no rights.
+   * could change any price. No user in the request has no rights. Public:
+   * Qty-wise Prices (menu 244) asks it for a save that carries card rows.
    */
-  private async assertCanEditPrices(): Promise<void> {
+  async assertCanEditPrices(): Promise<void> {
     await assertMenuRight(this.prisma, {
       userId: this.requestContext.getUserId(),
       menuId: PRICE_MENU_ID.CHANGE_SELLING_PRICE,
@@ -862,7 +937,7 @@ export class SellingPriceBulkService {
   }
 
   /** "via Sales Entry (menu 12)" — the price log's note of the screen a popup save came from. */
-  private async describeOriginMenu(menuId: number): Promise<string> {
+  async describeOriginMenu(menuId: number): Promise<string> {
     const [menu] = await this.prisma.$queryRaw<Array<{ menu_name: string }>>`
       SELECT menu_name FROM fixed.menu_master WHERE menu_id = ${menuId}::int`;
     const name = menu?.menu_name.replace(/&/g, '').trim();
@@ -967,7 +1042,7 @@ export class SellingPriceBulkService {
     actor: string,
     taxRates: ReadonlyMap<string, ItemTaxRate>,
     cost: RowCost,
-  ): BucketPriceCandidate {
+  ): PriceCandidateWrite {
     const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
     const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
     // Notes 147 B — a keyed costPrice is the price row's own cost for this save:
@@ -991,6 +1066,13 @@ export class SellingPriceBulkService {
       costRate,
       costWot,
       actor,
+      // Plan 2026-11-05 §4.6 item 2 — the unit's Rule and a typed MRP ride only
+      // when sent (Qty-wise Prices); menu 30 and Quick Rate send neither, so
+      // their candidate is exactly what it was.
+      ...(row.profitType !== undefined && row.profitType !== null
+        ? { profitType: row.profitType }
+        : {}),
+      ...(row.maxPrice !== undefined && row.maxPrice !== null ? { maxPrice: row.maxPrice } : {}),
       levels: row.levels.map((level) => {
         const value = recomputeLevel(level.level as PriceLevel, level.price, taxPerc, costRate);
         return {

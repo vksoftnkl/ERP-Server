@@ -67,6 +67,11 @@ model SaleOrderItem {
   soiMinPrice         Decimal?  @db.Decimal(15, 4) @map("soi_min_price")
   soiCostPrice        Decimal?  @db.Decimal(15, 4) @map("soi_cost_price")
   soiCostPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because an order saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  soiQtyPriceId       String?   @db.Uuid @map("soi_qty_price_id")
   // A confirmed order holds its price even if the price master moves; false
   // lets the bill re-price at delivery (long-lead custom orders).
   soiIsRateLocked     Boolean   @default(true) @map("soi_is_rate_locked")

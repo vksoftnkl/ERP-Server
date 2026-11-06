@@ -162,6 +162,23 @@ export declare class ItemPriceBucketDto {
     max_price: number;
     min_price: number;
 }
+export declare class ItemQtySlabDto {
+    iqp_id: string;
+    from_qty: number;
+    to_qty: number | null;
+    price_mode: string;
+    disc_pct: number | null;
+    flat_off: number | null;
+    price: number | null;
+    is_tax_incl: boolean;
+    price_level: number | null;
+    party_id: string | null;
+    branch_id: string | null;
+    company_id: string | null;
+    effective_from: string;
+    effective_to: string | null;
+    specificity: number;
+}
 export declare class ItemPriceLookupPayloadDto {
     item_id: string;
     item_uc_id: string;
@@ -191,6 +208,7 @@ export declare class ItemPriceLookupPayloadDto {
     price_scope: 'BRANCH' | 'CHAIN';
     price_row_id: string;
     buckets: ItemPriceBucketDto[];
+    qty_slabs: ItemQtySlabDto[];
     disc_perc: number;
     disc_qty: number;
     sch_discount: number | null;

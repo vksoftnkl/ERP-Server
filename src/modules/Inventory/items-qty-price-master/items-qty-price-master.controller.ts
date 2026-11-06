@@ -1,4 +1,3 @@
-import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -16,6 +15,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiExtraModels,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -67,7 +67,10 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemQtyPriceSuccessSingleDto,
   ItemQtyPriceSuccessListDto,
 )
-@CacheTTL(1)
+@ApiForbiddenResponse({ type: ItemQtyPriceErrorResponseDto })
+// No @CacheTTL since plan 2026-11-05 §4.3: every route checks the caller's
+// menu 244 right, and the HTTP cache key ignores the user — a cached /get
+// would answer a caller the right would refuse.
 @Controller('item-qty-prices')
 @UseFilters(ItemQtyPriceExceptionFilter)
 export class ItemsQtyPriceMasterController {
@@ -77,6 +80,12 @@ export class ItemsQtyPriceMasterController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update item qty prices (array; each row updates when iqp_id is present)',
+    description:
+      'Menu 244 rights (plan 2026-11-05 §4.3): CREATE for a row without iqp_id, EDIT for a row ' +
+      'with one (403 ITEM_QTY_PRICE_RIGHT_CREATE / _EDIT). The price level, after the save, must ' +
+      'be blank or an active selling level 1–4 (422 ITEM_QTY_PRICE_LEVEL_NOT_SELLING). A slab ' +
+      'for all branches (branch blank) needs a head-office user type (403 ' +
+      'ITEM_QTY_PRICE_CHAIN_HQ_ONLY).',
   })
   @ApiBody({
     schema: {
@@ -90,6 +99,12 @@ export class ItemsQtyPriceMasterController {
   @ApiNotFoundResponse({ type: ItemQtyPriceErrorResponseDto })
   async save(@Body() body: unknown): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload[]>> {
     const saveItemQtyPriceDtos = await this.resolveSavePayload(body);
+    // Plan 2026-11-05 §4.3 (A-13 / A-14 / Q9): menu 244 CREATE for a new row,
+    // EDIT for a row with iqp_id; the level blank or an active 1–4; a slab for
+    // all branches from head office only.
+    await this.itemsQtyPriceMasterService.assertSaveRights(saveItemQtyPriceDtos);
+    await this.itemsQtyPriceMasterService.assertSellingLevelsOf(saveItemQtyPriceDtos);
+    await this.itemsQtyPriceMasterService.assertChainSlabsAllowedOf(saveItemQtyPriceDtos);
     const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDtos);
 
     return {
@@ -103,6 +118,7 @@ export class ItemsQtyPriceMasterController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get item qty price by iqp_id, or list with optional filters/pagination',
+    description: 'Needs VIEW on menu 244 (403 ITEM_QTY_PRICE_RIGHT_VIEW).',
   })
   @ApiQuery({ name: 'iqp_item_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({
@@ -124,6 +140,7 @@ export class ItemsQtyPriceMasterController {
     const queryDto = await validateDto(query, GetItemQtyPriceQueryDto, {
       type: 'query',
     });
+    await this.itemsQtyPriceMasterService.assertRight('view', 'open Qty-wise Prices');
 
     if (queryDto.iqp_id) {
       const data = await this.itemsQtyPriceMasterService.getById(queryDto.iqp_id);
@@ -145,7 +162,8 @@ export class ItemsQtyPriceMasterController {
     summary: 'Soft delete item qty price slab(s) by id',
     description:
       'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
-      '/item-qty-prices/restore). A batch is all-or-nothing.',
+      '/item-qty-prices/restore). A batch is all-or-nothing. Needs DELETE on menu 244 (403 ' +
+      'ITEM_QTY_PRICE_RIGHT_DELETE).',
   })
   @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
@@ -169,6 +187,7 @@ export class ItemsQtyPriceMasterController {
     @Query('iqp_id') iqpId?: string,
   ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
     const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+    await this.itemsQtyPriceMasterService.assertRight('delete', 'remove qty-wise prices');
     const isArray = Array.isArray(deleteItemQtyPriceDto);
     const data = await this.itemsQtyPriceMasterService.softDelete(
       isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,
@@ -187,7 +206,7 @@ export class ItemsQtyPriceMasterController {
     summary: 'Restore soft-deleted item qty price slab(s) by id',
     description:
       '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
-      'all-or-nothing.',
+      'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE).',
   })
   @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
@@ -211,6 +230,7 @@ export class ItemsQtyPriceMasterController {
     @Query('iqp_id') iqpId?: string,
   ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
     const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+    await this.itemsQtyPriceMasterService.assertRight('delete', 'restore qty-wise prices');
     const isArray = Array.isArray(deleteItemQtyPriceDto);
     const data = await this.itemsQtyPriceMasterService.restore(
       isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,

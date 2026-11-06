@@ -1,4 +1,4 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2049 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2074 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
@@ -8,6 +8,12 @@
 -- (ids 2326-2370; 0..21 shown, 22..44 hidden), and 17's column 9 (id 265) titled
 -- "Profit Type" by the same migration.
 -- 67 widths as 20261105130000_cost_price_bulk_change_fixes left them (New A-D 6.00, Item 10.68).
+-- 68 Qty-wise Prices card rate band (menu 244) as 20261106140000_qty_price_card_rate_form created it
+-- (ids 2371-2391, 0..20 shown), and 19's columns 23..26 (ids 2392-2395: Level, Each, With saved
+-- card, What moves it) added by the same migration.
+-- 19 and 68 as 20261106160000_qty_price_layout_fixes left them: 19's column 22 (id 417) live
+-- again as "Value", 1..4 and 9..15 hidden, the nine shown add up to 100.00; 68 Unit 5.00,
+-- Stock 4.00, Stock avg 5.00, Changed 3.88.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -254,28 +260,32 @@ SELECT v.* FROM (VALUES
     ,(668 , 18  , 91 , 'SerialNo'              , 9.98             , false, false, 91 , false, NULL, NULL, true , false, 'system')
     -- ============ ITEM QTY WISE PRICE (id 19) ============
     ,(395 , 19  , 0  , 'Id'                    , 2.12             , false, false, 0  , false, NULL, NULL, true , false, 'system')
-    ,(396 , 19  , 1  , 'Company'               , 11.93            , true , true , 1  , false, NULL, NULL, true , false, 'system')
-    ,(397 , 19  , 2  , 'Branch'                , 7.9              , true , true , 2  , false, NULL, NULL, true , false, 'system')
-    ,(398 , 19  , 3  , 'Customer'              , 9.970000000000001, true , true , 3  , false, NULL, NULL, true , false, 'system')
-    ,(399 , 19  , 4  , 'Price Level'           , 6.32             , true , true , 4  , false, NULL, NULL, true , false, 'system')
-    ,(400 , 19  , 5  , 'Uom'                   , 4.85             , true , true , 5  , false, NULL, NULL, true , false, 'system')
-    ,(401 , 19  , 6  , 'From Qty'              , 6.54             , true , true , 6  , false, NULL, NULL, true , false, 'system')
-    ,(402 , 19  , 7  , 'To Qty'                , 5.83             , true , true , 7  , false, NULL, NULL, true , false, 'system')
-    ,(403 , 19  , 8  , 'Mode'                  , 5.45             , true , true , 8  , false, NULL, NULL, true , false, 'system')
-    ,(404 , 19  , 9  , 'Disc %'                , 4.96             , true , true , 9  , false, NULL, NULL, true , false, 'system')
-    ,(405 , 19  , 10 , 'Disc Rs'               , 4.96             , true , true , 10 , false, NULL, NULL, true , false, 'system')
-    ,(406 , 19  , 11 , 'Price'                 , 5.83             , true , true , 11 , false, NULL, NULL, true , false, 'system')
-    ,(407 , 19  , 12 , 'From Date'             , 6.59             , true , true , 12 , false, NULL, NULL, true , false, 'system')
-    ,(408 , 19  , 13 , 'To Date'               , 5.72             , true , true , 13 , false, NULL, NULL, true , false, 'system')
-    ,(409 , 19  , 14 , 'Active'                , 3.54             , true , true , 14 , false, NULL, NULL, true , false, 'system')
-    ,(410 , 19  , 15 , 'Incl Tax'              , 4.14             , true , false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(396 , 19  , 1  , 'Company'               , 11.93            , false, false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(397 , 19  , 2  , 'Branch'                , 7.9              , false, false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(398 , 19  , 3  , 'Customer'              , 9.970000000000001, false, false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(399 , 19  , 4  , 'Price Level'           , 6.32             , false, false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(400 , 19  , 5  , 'Uom'                   , 6.37             , true , true , 5  , false, NULL, NULL, true , false, 'system')
+    ,(401 , 19  , 6  , 'From Qty'              , 7.43             , true , true , 6  , false, NULL, NULL, true , false, 'system')
+    ,(402 , 19  , 7  , 'To Qty'                , 7.43             , true , true , 7  , false, NULL, NULL, true , false, 'system')
+    ,(403 , 19  , 8  , 'Mode'                  , 12.53            , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(404 , 19  , 9  , 'Disc %'                , 4.96             , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(405 , 19  , 10 , 'Disc Rs'               , 4.96             , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(406 , 19  , 11 , 'Price'                 , 5.83             , false, false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(407 , 19  , 12 , 'From Date'             , 6.59             , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(408 , 19  , 13 , 'To Date'               , 5.72             , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(409 , 19  , 14 , 'Active'                , 3.54             , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(410 , 19  , 15 , 'Incl Tax'              , 4.14             , false, false, 15 , false, NULL, NULL, true , false, 'system')
     ,(411 , 19  , 16 , 'Notes'                 , 9.970000000000001, false, false, 16 , false, NULL, NULL, true , false, 'system')
     ,(412 , 19  , 17 , 'company_id'            , 9.970000000000001, false, false, 17 , false, NULL, NULL, true , false, 'system')
     ,(413 , 19  , 18 , 'branch_id'             , 9.970000000000001, false, false, 18 , false, NULL, NULL, true , false, 'system')
     ,(414 , 19  , 19 , 'party_id'              , 9.970000000000001, false, false, 19 , false, NULL, NULL, true , false, 'system')
     ,(415 , 19  , 20 , 'price_level_id'        , 5.99             , false, false, 20 , false, NULL, NULL, true , false, 'system')
     ,(416 , 19  , 21 , 'item_unit_id'          , 9.970000000000001, false, false, 21 , false, NULL, NULL, true , false, 'system')
-    ,(417 , 19  , 22 , 'item_unit_id'          , 10               , true , false, 22 , false, NULL, NULL, false, true , 'system')
+    ,(417 , 19  , 22 , 'Value'                 , 9.13             , true , true , 22 , false, NULL, NULL, true , false, 'system')
+    ,(2392, 19  , 23 , 'Level'                 , 6.32             , true , false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2393, 19  , 24 , 'Each'                  , 9.49             , true , false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2394, 19  , 25 , 'With saved card'       , 11.66            , true , false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2395, 19  , 26 , 'What moves it'         , 29.64            , true , false, 26 , false, NULL, NULL, true , false, 'system')
     -- ============ CHARGES (id 21) ============
     ,(441 , 21  , 0  , '#'                     , 4.34             , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(442 , 21  , 1  , 'Charge Name'           , 52.35            , true , true , 1  , false, NULL, NULL, true , false, 'system')
@@ -1788,6 +1798,28 @@ SELECT v.* FROM (VALUES
     ,(2368, 67  , 42 , 'TypedLevels'           , 0                , false, false, 42 , false, NULL, NULL, true , false, 'system')
     ,(2369, 67  , 43 , 'ScheduledFrom'         , 0                , false, false, 43 , false, NULL, NULL, true , false, 'system')
     ,(2370, 67  , 44 , 'HasQtySlabs'           , 0                , false, false, 44 , false, NULL, NULL, true , false, 'system')
+    -- ============ QTY-WISE PRICES - CARD RATE (id 68) ============
+    ,(2371, 68  , 0  , 'Unit'                  , 5.00             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2372, 68  , 1  , 'Rule'                  , 3.79             , true , true , 1  , false, NULL, NULL, true , false, 'system')
+    ,(2373, 68  , 2  , 'MRP'                   , 6.42             , true , true , 2  , false, NULL, NULL, true , false, 'system')
+    ,(2374, 68  , 3  , 'Stock'                 , 4.00             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2375, 68  , 4  , 'Stock avg'             , 5.00             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2376, 68  , 5  , 'Cost w/o tax'          , 5.05             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2377, 68  , 6  , 'Cost'                  , 6.19             , true , true , 6  , false, NULL, NULL, true , false, 'system')
+    ,(2378, 68  , 7  , 'L1 Profit %'           , 4.24             , true , true , 7  , false, NULL, NULL, true , false, 'system')
+    ,(2379, 68  , 8  , 'L1 W/o tax'            , 4.24             , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(2380, 68  , 9  , 'L1 Price'              , 5.74             , true , true , 9  , false, NULL, NULL, true , false, 'system')
+    ,(2381, 68  , 10 , 'L2 Profit %'           , 4.24             , true , true , 10 , false, NULL, NULL, true , false, 'system')
+    ,(2382, 68  , 11 , 'L2 W/o tax'            , 4.24             , true , true , 11 , false, NULL, NULL, true , false, 'system')
+    ,(2383, 68  , 12 , 'L2 Price'              , 5.74             , true , true , 12 , false, NULL, NULL, true , false, 'system')
+    ,(2384, 68  , 13 , 'L3 Profit %'           , 4.24             , true , true , 13 , false, NULL, NULL, true , false, 'system')
+    ,(2385, 68  , 14 , 'L3 W/o tax'            , 4.24             , true , true , 14 , false, NULL, NULL, true , false, 'system')
+    ,(2386, 68  , 15 , 'L3 Price'              , 5.74             , true , true , 15 , false, NULL, NULL, true , false, 'system')
+    ,(2387, 68  , 16 , 'L4 Profit %'           , 4.24             , true , true , 16 , false, NULL, NULL, true , false, 'system')
+    ,(2388, 68  , 17 , 'L4 W/o tax'            , 4.24             , true , true , 17 , false, NULL, NULL, true , false, 'system')
+    ,(2389, 68  , 18 , 'L4 Price'              , 5.74             , true , true , 18 , false, NULL, NULL, true , false, 'system')
+    ,(2390, 68  , 19 , 'Min'                   , 3.79             , true , true , 19 , false, NULL, NULL, true , false, 'system')
+    ,(2391, 68  , 20 , 'Changed'               , 3.88             , true , false, 20 , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

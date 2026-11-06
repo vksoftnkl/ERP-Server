@@ -11,6 +11,7 @@ const price_bucket_service_1 = require("../../Inventory/items-price-master/price
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const loading_charge_utils_1 = require("../utils/loading-charge.utils");
 const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
+const qty_slab_rules_1 = require("../../Inventory/items-qty-price-master/qty-slab.rules");
 const TAX_LEDGER_ROLES = {
     sales_ledger_id: 'SALES',
     sgst_output_ledger_id: 'OUTPUT_SGST',
@@ -20,8 +21,61 @@ const TAX_LEDGER_ROLES = {
 };
 class ItemPriceLookup {
     prisma;
-    constructor(prisma) {
+    settings;
+    constructor(prisma, settings) {
         this.prisma = prisma;
+        this.settings = settings;
+    }
+    async resolveQtySlabs(query, iucId, docDate) {
+        if (query.price_level < 1 || query.price_level > 4) {
+            return [];
+        }
+        const rows = await this.prisma.itemQtyPrice.findMany({
+            where: {
+                iqpItemId: query.item_id,
+                iqpItemUnitId: iucId,
+                iqpIsDeleted: false,
+                iqpIsActive: true,
+            },
+            orderBy: [{ iqpFromQty: 'asc' }, { iqpId: 'asc' }],
+        });
+        const ranked = (0, qty_slab_rules_1.slabsFor)(rows.map(qty_slab_rules_1.qtySlabOf), {
+            companyId: query.company_id ?? null,
+            branchId: query.branch_id ?? null,
+            partyId: query.customer_id ?? null,
+            priceLevel: query.price_level,
+            onDate: docDate,
+        });
+        if (!ranked.length) {
+            return [];
+        }
+        if (this.settings) {
+            const effective = await this.settings.resolveEffective({
+                companyId: query.company_id,
+                branchId: query.branch_id,
+            });
+            if (!(0, qty_slab_rules_1.isApplyQtyPricesOn)(effective)) {
+                return [];
+            }
+        }
+        const amount = (value) => (value === null ? null : value.toNumber());
+        return ranked.map((slab) => ({
+            iqp_id: slab.iqpId,
+            from_qty: slab.fromQty.toNumber(),
+            to_qty: amount(slab.toQty),
+            price_mode: slab.priceMode,
+            disc_pct: amount(slab.discPct),
+            flat_off: amount(slab.flatOff),
+            price: amount(slab.price),
+            is_tax_incl: slab.isTaxIncl,
+            price_level: slab.priceLevel,
+            party_id: slab.partyId,
+            branch_id: slab.branchId,
+            company_id: slab.companyId,
+            effective_from: slab.effectiveFrom,
+            effective_to: slab.effectiveTo,
+            specificity: (0, qty_slab_rules_1.slabSpecificity)(slab),
+        }));
     }
     async refreshItemPriceLookup(query) {
         return {
@@ -318,6 +372,7 @@ class ItemPriceLookup {
         const buckets = policy.trackMrp || policy.trackSalePrice
             ? await this.resolveStockBuckets(query, policy, unitRows, docDate, caller)
             : [];
+        const qtySlabs = await this.resolveQtySlabs(query, rate.itemUnitConversion.iucId, docDate);
         const gstApplicable = company_id ? (company?.compGstApplicable ?? false) : true;
         const basePrice = (0, item_price_utils_1.priceForLevel)(rate, priceLevel);
         const customerDiscQty = custRate && priceLevel >= 1 && priceLevel <= 4 ? (0, module_service_utils_1.toNumber)(custRate.csrDiscQty) : 0;
@@ -361,6 +416,7 @@ class ItemPriceLookup {
             price_scope: resolved.scope,
             price_row_id: rate.ipmId,
             buckets,
+            qty_slabs: qtySlabs,
             disc_perc: (0, module_service_utils_1.toNumber)(rate.ipmDiscPerc),
             disc_qty: (0, module_service_utils_1.toNumber)(rate.ipmDiscQty),
             sch_discount: null,

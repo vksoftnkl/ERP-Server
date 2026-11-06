@@ -119,7 +119,7 @@ export class ItemPriceLookupQueryDto {
   @ApiPropertyOptional({
     format: 'date',
     description:
-      "The document's date, for the price rows' effective window and the stock track policy. Defaults to today.",
+      "The document's date, for the price rows' effective window, the stock track policy and the qty_slabs (plan 2026-11-05 Q6). Defaults to today.",
   })
   @OptionalDateString()
   doc_date?: string;

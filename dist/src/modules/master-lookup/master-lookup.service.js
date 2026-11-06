@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MasterLookupService = void 0;
 const common_1 = require("@nestjs/common");
@@ -15,6 +18,7 @@ const module_service_utils_1 = require("../../common/utils/module-service.utils"
 const master_lookup_error_codes_1 = require("./types/master-lookup-error-codes");
 const pg_service_1 = require("../../database/pg/pg.service");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
+const app_setting_value_service_1 = require("../settings/appSettings/app-setting-value.service");
 const configured_dropdown_lookup_1 = require("./lookups/configured-dropdown.lookup");
 const customer_detail_lookup_1 = require("./lookups/customer-detail.lookup");
 const document_number_lookup_1 = require("./lookups/document-number.lookup");
@@ -30,12 +34,12 @@ let MasterLookupService = class MasterLookupService {
     customerDetail;
     itemPrice;
     documentNumber;
-    constructor(prisma, pg) {
+    constructor(prisma, pg, appSettings) {
         this.prisma = prisma;
         this.moduleFetchers = (0, module_fetchers_1.buildModuleFetchers)(prisma);
         this.configuredDropdowns = new configured_dropdown_lookup_1.ConfiguredDropdownLookup(prisma, pg);
         this.customerDetail = new customer_detail_lookup_1.CustomerDetailLookup(prisma);
-        this.itemPrice = new item_price_lookup_1.ItemPriceLookup(prisma);
+        this.itemPrice = new item_price_lookup_1.ItemPriceLookup(prisma, appSettings);
         this.documentNumber = new document_number_lookup_1.DocumentNumberLookup(prisma);
     }
     async getAllAccountsAndMasterNameIds(module, id) {
@@ -252,8 +256,10 @@ let MasterLookupService = class MasterLookupService {
 exports.MasterLookupService = MasterLookupService;
 exports.MasterLookupService = MasterLookupService = __decorate([
     (0, common_1.Injectable)(),
+    __param(2, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        pg_service_1.PgService])
+        pg_service_1.PgService,
+        app_setting_value_service_1.AppSettingValueService])
 ], MasterLookupService);
 function pickModules(byModule, moduleKeys) {
     return Object.fromEntries(moduleKeys.map((key) => [key, byModule[key]]));

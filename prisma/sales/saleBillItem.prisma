@@ -79,6 +79,11 @@ model SaleBillItem {
   sbiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_min_price")
   sbiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_cost_price")
   sbiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a bill posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sbiQtyPriceId      String?   @db.Uuid @map("sbi_qty_price_id")
   // Discounts
   sbiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_item_disc_perc")
   sbiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_item_disc_qty")

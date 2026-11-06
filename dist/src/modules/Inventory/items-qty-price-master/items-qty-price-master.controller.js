@@ -13,7 +13,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemsQtyPriceMasterController = void 0;
-const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const item_qty_price_response_dto_1 = require("./dto/item-qty-price-response.dto");
@@ -34,6 +33,9 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
     }
     async save(body) {
         const saveItemQtyPriceDtos = await this.resolveSavePayload(body);
+        await this.itemsQtyPriceMasterService.assertSaveRights(saveItemQtyPriceDtos);
+        await this.itemsQtyPriceMasterService.assertSellingLevelsOf(saveItemQtyPriceDtos);
+        await this.itemsQtyPriceMasterService.assertChainSlabsAllowedOf(saveItemQtyPriceDtos);
         const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDtos);
         return {
             success: true,
@@ -45,6 +47,7 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
         const queryDto = await (0, request_payload_validation_util_1.validateDto)(query, get_item_qty_price_query_dto_1.GetItemQtyPriceQueryDto, {
             type: 'query',
         });
+        await this.itemsQtyPriceMasterService.assertRight('view', 'open Qty-wise Prices');
         if (queryDto.iqp_id) {
             const data = await this.itemsQtyPriceMasterService.getById(queryDto.iqp_id);
             return { success: true, message: 'Item qty price fetched successfully', data };
@@ -59,6 +62,7 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
     }
     async remove(body, iqpId) {
         const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+        await this.itemsQtyPriceMasterService.assertRight('delete', 'remove qty-wise prices');
         const isArray = Array.isArray(deleteItemQtyPriceDto);
         const data = await this.itemsQtyPriceMasterService.softDelete(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
         return {
@@ -69,6 +73,7 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
     }
     async restore(body, iqpId) {
         const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+        await this.itemsQtyPriceMasterService.assertRight('delete', 'restore qty-wise prices');
         const isArray = Array.isArray(deleteItemQtyPriceDto);
         const data = await this.itemsQtyPriceMasterService.restore(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
         return {
@@ -125,6 +130,11 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update item qty prices (array; each row updates when iqp_id is present)',
+        description: 'Menu 244 rights (plan 2026-11-05 §4.3): CREATE for a row without iqp_id, EDIT for a row ' +
+            'with one (403 ITEM_QTY_PRICE_RIGHT_CREATE / _EDIT). The price level, after the save, must ' +
+            'be blank or an active selling level 1–4 (422 ITEM_QTY_PRICE_LEVEL_NOT_SELLING). A slab ' +
+            'for all branches (branch blank) needs a head-office user type (403 ' +
+            'ITEM_QTY_PRICE_CHAIN_HQ_ONLY).',
     }),
     (0, swagger_1.ApiBody)({
         schema: {
@@ -146,6 +156,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Get item qty price by iqp_id, or list with optional filters/pagination',
+        description: 'Needs VIEW on menu 244 (403 ITEM_QTY_PRICE_RIGHT_VIEW).',
     }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_item_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({
@@ -169,7 +180,8 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Soft delete item qty price slab(s) by id',
         description: 'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
-            '/item-qty-prices/restore). A batch is all-or-nothing.',
+            '/item-qty-prices/restore). A batch is all-or-nothing. Needs DELETE on menu 244 (403 ' +
+            'ITEM_QTY_PRICE_RIGHT_DELETE).',
     }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
@@ -200,7 +212,7 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Restore soft-deleted item qty price slab(s) by id',
         description: '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
-            'all-or-nothing.',
+            'all-or-nothing. Needs DELETE on menu 244 (403 ITEM_QTY_PRICE_RIGHT_DELETE).',
     }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
@@ -230,7 +242,7 @@ exports.ItemsQtyPriceMasterController = ItemsQtyPriceMasterController = __decora
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, swagger_1.ApiExtraModels)(save_item_qty_price_dto_1.SaveItemQtyPriceDto, delete_item_qty_price_dto_1.DeleteItemQtyPriceDto, item_qty_price_response_dto_1.ItemQtyPricePayloadDto, item_qty_price_response_dto_1.ItemQtyPriceDeleteResultDto, item_qty_price_response_dto_1.ItemQtyPriceSuccessSingleDto, item_qty_price_response_dto_1.ItemQtyPriceSuccessListDto),
-    (0, cache_manager_1.CacheTTL)(1),
+    (0, swagger_1.ApiForbiddenResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
     (0, common_1.Controller)('item-qty-prices'),
     (0, common_1.UseFilters)(item_qty_price_exception_filter_1.ItemQtyPriceExceptionFilter),
     __metadata("design:paramtypes", [items_qty_price_master_service_1.ItemsQtyPriceMasterService])

@@ -5,6 +5,7 @@ import { PriceChangeLogService } from './price-change-log.service';
 import { type PriceRowSnapshot, type PriceWriteOrigin } from './types/price-change-log.types';
 export type PriceCandidateWrite = BucketPriceCandidate & {
     profitType?: string | null;
+    maxPrice?: number | null;
 };
 export interface PriceRowLevelWrite {
     price: Prisma.Decimal;
