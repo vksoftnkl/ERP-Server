@@ -91,6 +91,7 @@ type PrismaMock = {
     updateMany: jest.Mock;
   };
   itemUnitConversion: { findFirst: jest.Mock };
+  userMaster: { findUnique: jest.Mock };
   $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
@@ -107,6 +108,8 @@ const makePrisma = (): PrismaMock => {
     },
     // The slab's unit row is a live unit of its item.
     itemUnitConversion: { findFirst: jest.fn().mockResolvedValue({ iucId: UNIT_ID }) },
+    // D16: the user has no branch of its own unless a test gives one.
+    userMaster: { findUnique: jest.fn().mockResolvedValue({ usrBranchId: null }) },
     // The per-item lock, then the overlap probe: no clash.
     $queryRaw: jest.fn().mockResolvedValue([]),
     $transaction: jest.fn(),
@@ -1126,7 +1129,7 @@ describe('ItemsQtyPriceMasterService', () => {
           body: { errors: [{ code: ItemQtyPriceErrorCode.OTHER_BRANCH }] },
         });
         expect((refusal.body as { errors: Array<{ message: string }> }).errors[0].message).toContain(
-          'not at a branch counter',
+          'This login has no branch',
         );
         asUser('SUPER ADMIN', null);
         await expect(
@@ -1135,6 +1138,39 @@ describe('ItemsQtyPriceMasterService', () => {
         prisma.itemQtyPrice.findMany.mockResolvedValue([storedAt(OTHER_BRANCH)]);
         await expect(service.assertOwnBranchSlabIdsOf([IQP_ID])).resolves.toBeUndefined();
         expect(prisma.itemQtyPrice.findMany).not.toHaveBeenCalled();
+      });
+
+      it("no logged-in branch: the user's own branch (usr_branch_id) stands in (user 2026-11-07)", async () => {
+        asUser('USER', null);
+        prisma.userMaster.findUnique.mockResolvedValue({ usrBranchId: BRANCH_ID.toUpperCase() });
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: BRANCH_ID }]),
+        ).resolves.toBeUndefined();
+        expect(prisma.userMaster.findUnique).toHaveBeenCalledWith({
+          where: { usrId: USER_ID },
+          select: { usrBranchId: true },
+        });
+        await expect(
+          refusalOf(service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: OTHER_BRANCH }])),
+        ).resolves.toMatchObject({
+          status: 403,
+          body: { errors: [{ field: '0.iqp_branch_id', code: ItemQtyPriceErrorCode.OTHER_BRANCH }] },
+        });
+        prisma.itemQtyPrice.findMany.mockResolvedValue([
+          storedAt(BRANCH_ID),
+          storedAt(OTHER_BRANCH, OTHER_IQP_ID),
+        ]);
+        await expect(service.assertOwnBranchSlabIdsOf(IQP_ID)).resolves.toBeUndefined();
+        await expect(refusalOf(service.assertOwnBranchSlabIdsOf(OTHER_IQP_ID))).resolves.toMatchObject(
+          { status: 403 },
+        );
+        // a logged-in branch wins: the user's own branch is not read
+        prisma.userMaster.findUnique.mockClear();
+        asUser('USER', OTHER_BRANCH);
+        await expect(
+          service.assertOwnBranchSlabs(prisma as never, [{ iqp_branch_id: OTHER_BRANCH }]),
+        ).resolves.toBeUndefined();
+        expect(prisma.userMaster.findUnique).not.toHaveBeenCalled();
       });
 
       it('delete / restore: the stored branch must be mine; an unknown id is left to the 404', async () => {

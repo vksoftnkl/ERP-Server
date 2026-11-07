@@ -791,6 +791,22 @@ describe('ItemQtyRatesService', () => {
       );
     });
 
+    it("names a slab's level from fixed.price_levels (the card's levels), not the joined item_price_levels", async () => {
+      slabs.listForItem.mockResolvedValue([
+        { iqp_id: 'S1', iqp_price_level: 1, iqp_price_level_name: 'WS Price' },
+        { iqp_id: 'S2', iqp_price_level: null, iqp_price_level_name: null },
+        { iqp_id: 'S3', iqp_price_level: 3, iqp_price_level_name: 'Bulk Whole Sale' },
+        { iqp_id: 'S4', iqp_price_level: 6, iqp_price_level_name: 'Min.Price Sale' },
+      ]);
+      const view = await service.getWithRates({ itemId: ITEM, companyId: COMPANY, branchId: BRANCH });
+      expect(view.slabs.map((s) => s.iqp_price_level_name)).toEqual([
+        'Whole Sale',
+        null,
+        'Price C', // an inactive level 1–4 still gets the screen's name
+        'Min.Price Sale', // outside 1–4: the joined name stays
+      ]);
+    });
+
     it('locks the band without menu 30 EDIT, and the cost on an item that is not Plain stock', async () => {
       prisma.$queryRaw.mockResolvedValue([{ um_can_edit: false }]);
       let view = await service.getWithRates({ itemId: ITEM, companyId: COMPANY, branchId: BRANCH });

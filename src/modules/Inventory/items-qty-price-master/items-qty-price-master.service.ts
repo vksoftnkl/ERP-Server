@@ -392,16 +392,25 @@ export class ItemsQtyPriceMasterService {
    * session logged in at (the access token's branch_id — the registered
    * device's branch — through the request context; never a body field). A
    * session with no such branch (no registered device: a web login, an
-   * unregistered counter) owns none.
+   * unregistered counter) falls back to the user's own branch
+   * (`user_master.usr_branch_id`, user 2026-11-07); with neither it owns none.
    */
-  private ownBranchId(): string | null {
-    return this.requestContextService.getBranchId()?.toLowerCase() ?? null;
+  private async ownBranchId(): Promise<string | null> {
+    const loggedIn = this.requestContextService.getBranchId();
+    if (loggedIn) return loggedIn.toLowerCase();
+    const userId = this.requestContextService.getUserId();
+    if (!userId) return null;
+    const user = await this.prisma.userMaster.findUnique({
+      where: { usrId: userId },
+      select: { usrBranchId: true },
+    });
+    return user?.usrBranchId?.toLowerCase() ?? null;
   }
 
   private throwOtherBranch(fields: readonly string[], own: string | null): never {
     const message = own
       ? 'A slab for another branch can only be changed by head office. Pick your own branch for the slab.'
-      : 'This login is not at a branch counter, so only head office can change qty-wise prices.';
+      : 'This login has no branch (no branch counter, no branch on the user), so only head office can change qty-wise prices.';
     throwInventoryForbidden<ItemQtyPriceErrorDetail>('A slab of another branch needs head office', [
       ...fields.map((field) => ({ field, code: ItemQtyPriceErrorCode.OTHER_BRANCH, message })),
     ]);
@@ -429,7 +438,7 @@ export class ItemsQtyPriceMasterService {
         client,
         rows.filter((row) => row.iqp_id).map((row) => row.iqp_id!),
       ));
-    const own = this.ownBranchId();
+    const own = await this.ownBranchId();
     const owned = (branchId: string | null) => own !== null && branchId?.toLowerCase() === own;
     const wrong = rows
       .map((row, index) => {
@@ -466,7 +475,7 @@ export class ItemsQtyPriceMasterService {
       return;
     }
     const known = stored ?? (await this.readStoredSlabs(client, ids));
-    const own = this.ownBranchId();
+    const own = await this.ownBranchId();
     const wrong = ids
       .map((id, index) => ({ index, slab: known.get(id.toLowerCase()) }))
       .filter(({ slab }) => slab && (own === null || slab.branchId?.toLowerCase() !== own));

@@ -14,6 +14,10 @@
 -- 19 and 68 as 20261106160000_qty_price_layout_fixes left them: 19's column 22 (id 417) live
 -- again as "Value", 1..4 and 9..15 hidden, the nine shown add up to 100.00; 68 Unit 5.00,
 -- Stock 4.00, Stock avg 5.00, Changed 3.88.
+-- 19 as 20261106200000_qty_price_line_scope_layout left it: every slab line holds its own scope,
+-- so 1..4 and 12..15 are shown again (column 4 titled "Level"); 23 Level and 25 With saved card
+-- hidden; the fifteen shown add up to 100.00; focus on for every column typed or picked in the
+-- line, off for Each and What moves it.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -260,32 +264,32 @@ SELECT v.* FROM (VALUES
     ,(668 , 18  , 91 , 'SerialNo'              , 9.98             , false, false, 91 , false, NULL, NULL, true , false, 'system')
     -- ============ ITEM QTY WISE PRICE (id 19) ============
     ,(395 , 19  , 0  , 'Id'                    , 2.12             , false, false, 0  , false, NULL, NULL, true , false, 'system')
-    ,(396 , 19  , 1  , 'Company'               , 11.93            , false, false, 1  , false, NULL, NULL, true , false, 'system')
-    ,(397 , 19  , 2  , 'Branch'                , 7.9              , false, false, 2  , false, NULL, NULL, true , false, 'system')
-    ,(398 , 19  , 3  , 'Customer'              , 9.970000000000001, false, false, 3  , false, NULL, NULL, true , false, 'system')
-    ,(399 , 19  , 4  , 'Price Level'           , 6.32             , false, false, 4  , false, NULL, NULL, true , false, 'system')
-    ,(400 , 19  , 5  , 'Uom'                   , 6.37             , true , true , 5  , false, NULL, NULL, true , false, 'system')
-    ,(401 , 19  , 6  , 'From Qty'              , 7.43             , true , true , 6  , false, NULL, NULL, true , false, 'system')
-    ,(402 , 19  , 7  , 'To Qty'                , 7.43             , true , true , 7  , false, NULL, NULL, true , false, 'system')
-    ,(403 , 19  , 8  , 'Mode'                  , 12.53            , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(396 , 19  , 1  , 'Company'               , 9.00             , true , true , 1  , false, NULL, NULL, true , false, 'system')
+    ,(397 , 19  , 2  , 'Branch'                , 8.00             , true , true , 2  , false, NULL, NULL, true , false, 'system')
+    ,(398 , 19  , 3  , 'Customer'              , 9.00             , true , true , 3  , false, NULL, NULL, true , false, 'system')
+    ,(399 , 19  , 4  , 'Level'                 , 6.00             , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(400 , 19  , 5  , 'Uom'                   , 6.00             , true , true , 5  , false, NULL, NULL, true , false, 'system')
+    ,(401 , 19  , 6  , 'From Qty'              , 5.50             , true , true , 6  , false, NULL, NULL, true , false, 'system')
+    ,(402 , 19  , 7  , 'To Qty'                , 5.50             , true , true , 7  , false, NULL, NULL, true , false, 'system')
+    ,(403 , 19  , 8  , 'Mode'                  , 6.50             , true , true , 8  , false, NULL, NULL, true , false, 'system')
     ,(404 , 19  , 9  , 'Disc %'                , 4.96             , false, false, 9  , false, NULL, NULL, true , false, 'system')
     ,(405 , 19  , 10 , 'Disc Rs'               , 4.96             , false, false, 10 , false, NULL, NULL, true , false, 'system')
     ,(406 , 19  , 11 , 'Price'                 , 5.83             , false, false, 11 , false, NULL, NULL, true , false, 'system')
-    ,(407 , 19  , 12 , 'From Date'             , 6.59             , false, false, 12 , false, NULL, NULL, true , false, 'system')
-    ,(408 , 19  , 13 , 'To Date'               , 5.72             , false, false, 13 , false, NULL, NULL, true , false, 'system')
-    ,(409 , 19  , 14 , 'Active'                , 3.54             , false, false, 14 , false, NULL, NULL, true , false, 'system')
-    ,(410 , 19  , 15 , 'Incl Tax'              , 4.14             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(407 , 19  , 12 , 'From Date'             , 7.00             , true , true , 12 , false, NULL, NULL, true , false, 'system')
+    ,(408 , 19  , 13 , 'To Date'               , 7.00             , true , true , 13 , false, NULL, NULL, true , false, 'system')
+    ,(409 , 19  , 14 , 'Active'                , 3.50             , true , true , 14 , false, NULL, NULL, true , false, 'system')
+    ,(410 , 19  , 15 , 'Incl Tax'              , 3.50             , true , true , 15 , false, NULL, NULL, true , false, 'system')
     ,(411 , 19  , 16 , 'Notes'                 , 9.970000000000001, false, false, 16 , false, NULL, NULL, true , false, 'system')
     ,(412 , 19  , 17 , 'company_id'            , 9.970000000000001, false, false, 17 , false, NULL, NULL, true , false, 'system')
     ,(413 , 19  , 18 , 'branch_id'             , 9.970000000000001, false, false, 18 , false, NULL, NULL, true , false, 'system')
     ,(414 , 19  , 19 , 'party_id'              , 9.970000000000001, false, false, 19 , false, NULL, NULL, true , false, 'system')
     ,(415 , 19  , 20 , 'price_level_id'        , 5.99             , false, false, 20 , false, NULL, NULL, true , false, 'system')
     ,(416 , 19  , 21 , 'item_unit_id'          , 9.970000000000001, false, false, 21 , false, NULL, NULL, true , false, 'system')
-    ,(417 , 19  , 22 , 'Value'                 , 9.13             , true , true , 22 , false, NULL, NULL, true , false, 'system')
-    ,(2392, 19  , 23 , 'Level'                 , 6.32             , true , false, 23 , false, NULL, NULL, true , false, 'system')
-    ,(2393, 19  , 24 , 'Each'                  , 9.49             , true , false, 24 , false, NULL, NULL, true , false, 'system')
-    ,(2394, 19  , 25 , 'With saved card'       , 11.66            , true , false, 25 , false, NULL, NULL, true , false, 'system')
-    ,(2395, 19  , 26 , 'What moves it'         , 29.64            , true , false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(417 , 19  , 22 , 'Value'                 , 6.50             , true , true , 22 , false, NULL, NULL, true , false, 'system')
+    ,(2392, 19  , 23 , 'Level'                 , 6.32             , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2393, 19  , 24 , 'Each'                  , 6.50             , true , false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2394, 19  , 25 , 'With saved card'       , 11.66            , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2395, 19  , 26 , 'What moves it'         , 10.50            , true , false, 26 , false, NULL, NULL, true , false, 'system')
     -- ============ CHARGES (id 21) ============
     ,(441 , 21  , 0  , '#'                     , 4.34             , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(442 , 21  , 1  , 'Charge Name'           , 52.35            , true , true , 1  , false, NULL, NULL, true , false, 'system')

@@ -54,7 +54,11 @@ import { ItemQtyPriceErrorCode } from '../items-qty-price-master/types/item-qty-
 import { resolveItemTaxRates } from '../utils/item-tax-rate.helper';
 import type { GetItemQtyRatesQueryDto } from './dto/get-item-qty-rates-query.dto';
 import type { SaveItemQtyRatesDto, SaveQtyRatesCardRowDto } from './dto/save-item-qty-rates.dto';
-import { ItemQtyRatesGateway, type QtyRatesUnitRecord } from './item-qty-rates.gateway';
+import {
+  ItemQtyRatesGateway,
+  type QtyRatesLevelRecord,
+  type QtyRatesUnitRecord,
+} from './item-qty-rates.gateway';
 import {
   belowCostSeverity,
   cardProblems,
@@ -84,6 +88,24 @@ const TX = { timeout: 60_000, maxWait: 10_000 } as const;
 
 const num = (value: Prisma.Decimal | number | null | undefined): number =>
   value === null || value === undefined ? 0 : typeof value === 'number' ? value : value.toNumber();
+
+/**
+ * A slab's level named as menu 244 names it everywhere else: `fixed.price_levels`,
+ * the table of the card's `levels` and the Level menu (dropdown 75). The slab's
+ * own FK join is `inventory.item_price_levels`, whose names differ (1 = "WS Price"
+ * there, "Whole Sale" here), so the line changed name after a reload
+ * (qt-tester L3, 2026-11-07). A level outside 1–4 keeps the joined name.
+ */
+function withScreenLevelNames<
+  T extends { iqp_price_level: number | null; iqp_price_level_name: string | null },
+>(slabs: readonly T[], levels: readonly QtyRatesLevelRecord[]): T[] {
+  const names = new Map(levels.map((level) => [level.level, level.name]));
+  return slabs.map((slab) =>
+    slab.iqp_price_level == null || !names.has(slab.iqp_price_level)
+      ? slab
+      : { ...slab, iqp_price_level_name: names.get(slab.iqp_price_level)! },
+  );
+}
 
 /** `YYYY-MM-DD` as the UTC midnight resolveItemTaxRates reads its day from. */
 function dayDate(day: string): Date {
@@ -250,7 +272,7 @@ export class ItemQtyRatesService {
         .filter((level) => level.active)
         .map((level) => ({ level: level.level, name: level.name, short: level.short })),
       units: rows,
-      slabs,
+      slabs: withScreenLevelNames(slabs, levels),
     };
   }
 
@@ -421,7 +443,7 @@ export class ItemQtyRatesService {
       return {
         needsConfirm: false,
         rates,
-        slabs: saved,
+        slabs: withScreenLevelNames(saved, levels),
         deletedSlabIds: deleted.map((entry) => entry.iqp_id),
         problems,
         belowCostPolicy: policy,
