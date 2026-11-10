@@ -322,6 +322,12 @@ export class SaleOrderItemPayloadDto {
   soiSalesmanName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   soiSchemeId!: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The qty slab (inventory.item_qty_price.iqp_id) that priced the line, as saved',
+  })
+  soiQtyPriceId!: string | null;
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   soiSchemeName!: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
@@ -716,6 +722,18 @@ export class SaleOrderPayloadDto {
   soModifiedOn!: string | null;
   @ApiPropertyOptional({ nullable: true })
   soModifiedBy!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'soCreatedBy as a login name: a user id resolves through user_master; any other text ' +
+      '(older rows) is already a name and is returned unchanged.',
+  })
+  createdByName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'soModifiedBy as a login name, resolved the same way as createdByName.',
+  })
+  modifiedByName?: string | null;
   @ApiProperty({ type: SaleOrderItemPayloadDto, isArray: true })
   items!: SaleOrderItemPayloadDto[];
   @ApiProperty({ type: SaleOrderChargePayloadDto, isArray: true })

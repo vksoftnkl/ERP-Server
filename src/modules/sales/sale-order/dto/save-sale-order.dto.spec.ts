@@ -1,6 +1,8 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CancelSaleOrderDto } from './sale-order-lifecycle.dto';
+import { BadRequestException } from '@nestjs/common';
+import { createHouseValidationPipe } from '../../../../common/validation/house-validation';
+import { AmendSaleOrderDto, CancelSaleOrderDto } from './sale-order-lifecycle.dto';
 import { SaveSaleOrderDto } from './save-sale-order.dto';
 
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46a702';
@@ -107,5 +109,56 @@ describe('CancelSaleOrderDto', () => {
     expect(fields({})).toEqual(['reason']);
     expect(fields({ reason: '   ' })).toEqual(['reason']);
     expect(fields({ reason: 'Customer withdrew' })).toEqual([]);
+  });
+});
+
+/**
+ * /sale-orders/amend names the order it edits, so soId is REQUIRED there while
+ * the create body keeps it optional. It used to be narrowed with `declare`,
+ * which drops the decorators (no validation, no Swagger `required`) — these run
+ * the house pipe exactly as main.ts does, so a bad or missing id is the coded
+ * 400 the Qt screen words.
+ */
+describe('AmendSaleOrderDto — soId', () => {
+  const ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46a709';
+  const AMEND = { ...REQUIRED, baseRevision: 1, editRemark: 'ZT- qty change' };
+  const pipe = createHouseValidationPipe();
+  const run = (plain: object) =>
+    pipe.transform(plain, { type: 'body', metatype: AmendSaleOrderDto, data: undefined });
+  const refusal = async (plain: object) => {
+    try {
+      await run(plain);
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (
+        (error as BadRequestException).getResponse() as {
+          errors: { field: string; code: string }[];
+        }
+      ).errors;
+    }
+    throw new Error('expected a 400');
+  };
+
+  it('accepts a valid order id', async () => {
+    await expect(run({ ...AMEND, soId: ORDER_ID })).resolves.toEqual(
+      expect.objectContaining({ soId: ORDER_ID, baseRevision: 1 }),
+    );
+  });
+  it('refuses a missing soId with a coded 400', async () => {
+    const errors = await refusal(AMEND);
+    expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'soId' })]));
+    expect(errors.find((e) => e.field === 'soId')!.code).toMatch(/^VALIDATION_/);
+  });
+  it('refuses a soId that is not a uuid with a coded 400', async () => {
+    const errors = await refusal({ ...AMEND, soId: 'not-a-uuid' });
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'soId', code: 'VALIDATION_IS_UUID' }),
+      ]),
+    );
+  });
+  it('still validates the inherited body (a bad soCustId is refused)', async () => {
+    const errors = await refusal({ ...AMEND, soId: ORDER_ID, soCustId: 'x' });
+    expect(errors.map((e) => e.field)).toContain('soCustId');
   });
 });

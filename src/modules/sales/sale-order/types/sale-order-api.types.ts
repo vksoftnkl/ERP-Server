@@ -177,6 +177,11 @@ export type SaleOrderPayload = Omit<
   // so_salesman_id is a uuid[]: the names come back in the same order, carrying
   // a null wherever the employee row is missing.
   soSalesmanName?: (string | null)[] | null;
+  // Plan SO-5: soCreatedBy / soModifiedBy as a login name. A user id resolves
+  // through user_master; any other text (rows from before SO-5) is
+  // already a name and comes back unchanged; null when there is none.
+  createdByName?: string | null;
+  modifiedByName?: string | null;
   items?: SaleOrderItemPayload[];
   charges?: SaleOrderChargePayload[];
   tenders?: SaleOrderTenderPayload[];

@@ -13802,6 +13802,11 @@ model SaleBillItem {
   sbiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_min_price")
   sbiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_cost_price")
   sbiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a bill posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sbiQtyPriceId      String?   @db.Uuid @map("sbi_qty_price_id")
   // Discounts
   sbiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_item_disc_perc")
   sbiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_item_disc_qty")
@@ -14192,6 +14197,11 @@ model SaleDcItem {
   sdiIsPromo            Boolean   @default(false)                      @map("sdi_is_promo")
   sdiActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_act_price")
   sdiMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_min_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a challan posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sdiQtyPriceId         String?   @db.Uuid                             @map("sdi_qty_price_id")
   sdiItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_item_disc_perc")
   sdiItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_item_disc_amt")
   sdiSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_spl_disc_perc")
@@ -14826,6 +14836,11 @@ model SaleOrderItem {
   soiMinPrice         Decimal?  @db.Decimal(15, 4) @map("soi_min_price")
   soiCostPrice        Decimal?  @db.Decimal(15, 4) @map("soi_cost_price")
   soiCostPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because an order saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  soiQtyPriceId       String?   @db.Uuid @map("soi_qty_price_id")
   // A confirmed order holds its price even if the price master moves; false
   // lets the bill re-price at delivery (long-lead custom orders).
   soiIsRateLocked     Boolean   @default(true) @map("soi_is_rate_locked")
@@ -15197,6 +15212,11 @@ model SaleQuotationItem {
   sqiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_max_price")
   sqiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_min_price")
   sqiActPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_act_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a document saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sqiQtyPriceId      String?   @db.Uuid @map("sqi_qty_price_id")
   sqiQuotePrice      Decimal?  @db.Decimal(15, 4) @map("sqi_quote_price")
   sqiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sqi_item_profit")
   sqiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sqi_cost_pre_tax")

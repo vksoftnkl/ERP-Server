@@ -3332,7 +3332,7 @@ Table item_price_change_log {
   ipclPriceTable String [not null, note: 'IPM item_price_master | IQP item_qty_price']
   ipclRowId String [not null, note: 'ipm_id / iqp_id']
   ipclAction String [not null, note: 'CREATE | UPDATE | DELETE | RESTORE | REKEY']
-  ipclSource String [not null, note: 'ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT']
+  ipclSource String [not null, note: 'ITEM_CARD | CHANGE_SELLING_PRICE | QTY_PRICE | BUCKET_REKEY | IMPORT | PURCHASE | BULK_COST_CHANGE']
   ipclMenuId Int
   ipclCompanyId String [note: 'NULL = shared item / chain price.']
   ipclBranchId String [note: 'NULL = all branches.']
@@ -6414,7 +6414,7 @@ Table pur_grn {
   grnDocDate DateTime [not null]
   grnDocDatetime DateTime [default: `now()`, not null]
   grnStatus String [not null, default: 'DRAFT']
-  grnSupplierId String [not null]
+  grnSupplierId String
   grnGodownId String [not null]
   grnChallanNo String
   grnChallanDate DateTime
@@ -6651,6 +6651,11 @@ Table pur_invoice_item {
   piiCreatedBy String [not null]
   piiModifiedOn DateTime
   piiModifiedBy String
+  piiMinPrice Decimal [note: 'MSP typed on the line; written to item_price_master.ipm_min_price on Post (price policy on).']
+  piiWastagePerQty Decimal [not null, default: 0, note: 'Wastage per 1 billed unit (0.100 = 100 g per kg): typed, else item_shortage_pct / 100. Own loss: no claim, not in stock, cost up, full ITC.']
+  piiWastageQty Decimal [not null, default: 0, note: 'Billed × piiWastagePerQty, rounded to the unit\'s decimals (server).']
+  piiSrcQty Decimal [note: 'Source line qty snapshot at save (PO poi_qty · GRN received + damaged); null = direct line.']
+  piiSrcRate Decimal [note: 'Source line rate snapshot at save (PO poi_rate · GRN its PO rate, else provisional); null = direct line.']
   purInvoice pur_invoice [not null]
 
   indexes {
@@ -9070,6 +9075,10 @@ because the challan already posted it.']
   sbiMinPrice Decimal
   sbiCostPrice Decimal
   sbiCostPreTax Decimal
+  sbiQtyPriceId String [note: 'The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+this line, or NULL. Informational only: no FK and no index on purpose,
+because a bill posted offline can reach the cloud before its slab
+(20261106140100_qty_price_bills).']
   sbiItemDiscPerc Decimal [not null, default: 0]
   sbiItemDiscQty Decimal [not null, default: 0]
   sbiItemDiscAmt Decimal [not null, default: 0]
@@ -9348,6 +9357,10 @@ would abort a sync batch for goods that already moved.']
   sdiIsPromo Boolean [not null, default: false]
   sdiActPrice Decimal
   sdiMinPrice Decimal
+  sdiQtyPriceId String [note: 'The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+this line, or NULL. Informational only: no FK and no index on purpose,
+because a challan posted offline can reach the cloud before its slab
+(20261106140100_qty_price_bills).']
   sdiItemDiscPerc Decimal [not null, default: 0]
   sdiItemDiscAmt Decimal [not null, default: 0]
   sdiSplDiscPerc Decimal [not null, default: 0]
@@ -9791,6 +9804,10 @@ Table sale_order_item {
   soiMinPrice Decimal
   soiCostPrice Decimal
   soiCostPreTax Decimal
+  soiQtyPriceId String [note: 'The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+this line, or NULL. Informational only: no FK and no index on purpose,
+because an order saved offline can reach the cloud before its slab
+(20261106140100_qty_price_bills).']
   soiIsRateLocked Boolean [not null, default: true]
   soiItemDiscPerc Decimal [not null, default: 0]
   soiItemDiscQty Decimal [not null, default: 0]
@@ -10071,6 +10088,10 @@ Table sale_quotation_item {
   sqiMaxPrice Decimal
   sqiMinPrice Decimal
   sqiActPrice Decimal
+  sqiQtyPriceId String [note: 'The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+this line, or NULL. Informational only: no FK and no index on purpose,
+because a document saved offline can reach the cloud before its slab
+(20261106140100_qty_price_bills).']
   sqiQuotePrice Decimal
   sqiItemProfit Decimal
   sqiCostPreTax Decimal

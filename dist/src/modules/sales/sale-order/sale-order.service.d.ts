@@ -1,4 +1,4 @@
-import { Prisma, SaleOrder } from '@prisma/client';
+import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
@@ -7,6 +7,11 @@ import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+export interface SaleOrderAmounts {
+    soPendingAmt: Prisma.Decimal;
+    soCancelledAmt: Prisma.Decimal;
+    soBilledAmt: Prisma.Decimal;
+}
 export declare class SaleOrderService {
     private readonly prisma;
     private readonly auditLogService;
@@ -16,6 +21,7 @@ export declare class SaleOrderService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService);
     save(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
     prepareSave(saveOrderDto: SaveSaleOrderDto): void;
+    private signedInActor;
     throwIfDuplicate(error: unknown): void;
     getById(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<SaleOrderPayload>;
     getSrcDocPendingAmount(ablSrcDocType: string, ablSrcDocId: string, ablSrcAccYear: string): Promise<SaleOrderSrcDocPendingAmount>;
@@ -33,6 +39,8 @@ export declare class SaleOrderService {
         actor: string;
         now: Date;
     }): Promise<SaleOrderCancelLinesResult>;
+    orderAmountsOf(lines: readonly SaleOrderItem[]): SaleOrderAmounts;
+    private restateOrderAmounts;
     private summariseOrderLines;
     private deriveLineStatus;
     private deriveOrderStatus;
@@ -65,6 +73,7 @@ export declare class SaleOrderService {
     private toTenderScope;
     private applyOptionalFields;
     private resolveGodowns;
+    private resolveActorNames;
     private resolveDisplayNames;
     private toPayload;
     private toItemPayload;

@@ -1,8 +1,9 @@
--- Seed: fixed.ui_tables -- the registry of entry-screen item grids (59 rows).
+-- Seed: fixed.ui_tables -- the registry of entry-screen item grids (60 rows).
 --
 -- 56-59 / 62 / 65 / 66: the purchase screens and Supplier Dues (migration 20261029140000).
 -- 67: Cost Price – Bulk Change, menu 298 (migration 20261105120000_cost_price_bulk_change).
 -- 68: Qty-wise Prices card rate band, menu 244 (migration 20261106140000_qty_price_card_rate_form).
+-- 69: Sales Order charges grid, tblCharges (migration 20261110100000_sales_order_charges_layout).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
@@ -81,6 +82,7 @@ VALUES
     ,(66, 'SUPPLIER DUES - SHORTAGES'   , false, 'Desktop', true , false, 'system')
     ,(67, 'COST PRICE BULK CHANGE - ROWS', true , 'Desktop', true , false, 'system')
     ,(68, 'QTY-WISE PRICES - CARD RATE'  , true , 'Desktop', true , false, 'system')
+    ,(69, 'SALES ORDER - CHARGES'        , true , 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

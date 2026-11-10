@@ -104,6 +104,7 @@ export declare class SaveSaleOrderItemDto {
     soiLineStatus?: string | null;
     soiSalesmanId?: string | null;
     soiSchemeId?: string | null;
+    soiQtyPriceId?: string | null;
     soiSchemeName?: string | null;
     soiRemarks?: string | null;
     soiCreatedBy?: string | null;

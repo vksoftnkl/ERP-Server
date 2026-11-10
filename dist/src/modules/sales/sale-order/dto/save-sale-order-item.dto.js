@@ -118,6 +118,7 @@ class SaveSaleOrderItemDto {
     soiLineStatus;
     soiSalesmanId;
     soiSchemeId;
+    soiQtyPriceId;
     soiSchemeName;
     soiRemarks;
     soiCreatedBy;
@@ -705,6 +706,17 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleOrderItemDto.prototype, "soiSchemeId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The qty slab (inventory.item_qty_price.iqp_id) the client priced this line with, as ' +
+            'the lookup answered it in qty_slabs[]. Stored as sent; the server does no price ' +
+            'logic with it. null clears it on an edit; omitted keeps the stored value.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSaleOrderItemDto.prototype, "soiQtyPriceId", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 150, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(150),
     __metadata("design:type", Object)
@@ -715,12 +727,18 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleOrderItemDto.prototype, "soiRemarks", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Actor id or name; defaults to the caller' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Ignored: the server stamps the signed-in user',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
 ], SaveSaleOrderItemDto.prototype, "soiCreatedBy", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Actor id or name; defaults to the caller' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Ignored: the server stamps the signed-in user',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
 ], SaveSaleOrderItemDto.prototype, "soiModifiedBy", void 0);

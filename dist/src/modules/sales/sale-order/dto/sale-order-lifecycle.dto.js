@@ -55,13 +55,14 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], CancelSaleOrderDto.prototype, "reason", void 0);
-class AmendSaleOrderDto extends save_sale_order_dto_1.SaveSaleOrderDto {
+class AmendSaleOrderDto extends (0, swagger_1.OmitType)(save_sale_order_dto_1.SaveSaleOrderDto, ['soId']) {
+    soId;
     baseRevision;
     editRemark;
 }
 exports.AmendSaleOrderDto = AmendSaleOrderDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'Required on amend' }),
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The order being amended. Required on amend' }),
     (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)
 ], AmendSaleOrderDto.prototype, "soId", void 0);

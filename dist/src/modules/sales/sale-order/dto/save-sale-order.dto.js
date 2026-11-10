@@ -944,12 +944,18 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveSaleOrderDto.prototype, "soPrintCount", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Actor id or name; defaults to the caller' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Ignored: the server stamps the signed-in user (see createdByName on /get)',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soCreatedBy", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Actor id or name; defaults to the caller' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Ignored: the server stamps the signed-in user (see modifiedByName on /get)',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soModifiedBy", void 0);

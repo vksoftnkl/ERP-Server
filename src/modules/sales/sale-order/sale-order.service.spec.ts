@@ -45,6 +45,9 @@ const LINE_A_ID = '019c6f6c-be87-7a11-8905-36092c46fb10';
 const LINE_B_ID = '019c6f6c-be87-7a11-8905-36092c46fb11';
 const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fb12';
 const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fb13';
+// inventory.item_qty_price.iqp_id — the qty slab a client priced a line with (plan SO-7).
+// Its own value: shared with GODOWN_ID, a godown id copied into the field would pass.
+const QTY_PRICE_ID = '019c6f6c-be87-7a11-8905-36092c46fbe1';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fb14';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fb16';
 // so_salesman_id is a uuid[]: an order can be credited to more than one person.
@@ -500,7 +503,10 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<{ empId: string; empName: string }[]>, unknown[]>;
   };
   userMaster: {
-    findMany: jest.Mock<Promise<{ usrId: string; usrDisplayName: string }[]>, unknown[]>;
+    findMany: jest.Mock<
+      Promise<{ usrId: string; usrDisplayName: string; usrLoginName: string }[]>,
+      unknown[]
+    >;
   };
   godownLocation: {
     findMany: jest.Mock<Promise<{ gdlId: string; gdlName: string }[]>, unknown[]>;
@@ -692,7 +698,11 @@ const makePrismaMock = (): PrismaMock => {
       ),
     },
     userMaster: {
-      findMany: jest.fn(() => Promise.resolve([{ usrId: USER_ID, usrDisplayName: 'Counter 1' }])),
+      findMany: jest.fn(() =>
+        Promise.resolve([
+          { usrId: USER_ID, usrDisplayName: 'Counter 1', usrLoginName: 'counter1' },
+        ]),
+      ),
     },
     godownLocation: {
       findMany: jest.fn(() => Promise.resolve([{ gdlId: GODOWN_ID, gdlName: 'Main Godown' }])),
@@ -753,6 +763,44 @@ describe('SaleOrderService', () => {
       });
       expect(result.soOrderSlno).toBe(SALE_ORDER_SLNO.toString());
       expect(result.soOrderRefno).toBe(SALE_ORDER_REFNO);
+    });
+
+    // Plan SO-5: created_by is the signed-in user's id, as GRN / PI stamp it;
+    // whatever the body says is ignored. Plan SO-7: the line keeps its qty slab.
+    it('stamps the signed-in user on the header and lines and keeps the qty slab id', async () => {
+      const result = await service.save(
+        baseDto({
+          soCreatedBy: 'VKPOS',
+          soModifiedBy: 'VKPOS',
+          items: [
+            {
+              soiItemId: ITEM_MASTER_ID,
+              soiItemUnitId: ITEM_UNIT_ID,
+              soiOrderQty: 5,
+              soiCreatedBy: 'VKPOS',
+              soiQtyPriceId: QTY_PRICE_ID,
+              // A second uuid on the same line, so one copied into the other shows.
+              soiGodownId: GODOWN_ID,
+            },
+          ],
+        }),
+      );
+      expect(prisma.saleOrder.create).toHaveBeenCalledWith({
+        data: containing({ soCreatedBy: USER_ID }),
+      });
+      expect(prisma.saleOrderItem.create).toHaveBeenCalledWith({
+        data: containing({
+          soiCreatedBy: USER_ID,
+          soiQtyPriceId: QTY_PRICE_ID,
+          soiGodownId: GODOWN_ID,
+        }),
+      });
+      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+        containing({ tableName: 'sale_order', userId: USER_ID }),
+        expect.anything(),
+      );
+      expect(result.createdByName).toBe('counter1');
+      expect(result.items![0].soiQtyPriceId).toBe(QTY_PRICE_ID);
     });
 
     // soi_pending_qty is GENERATED from soi_net_qty − delivered − cancelled, so
@@ -1627,6 +1675,48 @@ describe('SaleOrderService', () => {
       expect(prisma.accVoucherSeq.update).not.toHaveBeenCalled();
     });
 
+    it('stamps the signed-in user as modifier and clears or keeps the qty slab id', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder());
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({ soiId: LINE_A_ID, soiLineNo: 1 }),
+        makeItem({ soiId: LINE_B_ID, soiLineNo: 2 }),
+      ]);
+      const result = await service.save(
+        baseDto({
+          soId: SALE_ORDER_ID,
+          soModifiedBy: 'someone-else',
+          items: [
+            { soiId: LINE_A_ID, soiLineNo: 1, soiQtyPriceId: null } as SaveSaleOrderItemDto,
+            { soiId: LINE_B_ID, soiLineNo: 2, soiModifiedBy: 'x' } as SaveSaleOrderItemDto,
+          ],
+        }),
+      );
+      expect(prisma.saleOrder.update).toHaveBeenCalledWith(
+        containing({ data: containing({ soModifiedBy: USER_ID }) }),
+      );
+      const lineData = (id: string) =>
+        prisma.saleOrderItem.update.mock.calls.find(
+          ([args]) => args.where.soiId_soiAccYear.soiId === id,
+        )![0].data;
+      expect(lineData(LINE_A_ID)).toEqual(
+        containing({ soiModifiedBy: USER_ID, soiQtyPriceId: null }),
+      );
+      // Absent keeps the stored value: undefined never reaches Prisma.
+      expect(lineData(LINE_B_ID).soiQtyPriceId).toBeUndefined();
+      expect(lineData(LINE_B_ID).soiModifiedBy).toBe(USER_ID);
+      expect(result.modifiedByName).toBe('counter1');
+      // Reviewer (SO-5): the display-only labels stay out of the audit row, so
+      // log_changed_fields never reads "createdByName: null → counter1".
+      const headerAudit = auditLogService.logEntityChange.mock.calls.find(
+        ([input]) => input.tableName === 'sale_order',
+      )![0] as { originalRecord: object; modifiedRecord: object };
+      for (const record of [headerAudit.originalRecord, headerAudit.modifiedRecord]) {
+        expect(record).not.toHaveProperty('createdByName');
+        expect(record).not.toHaveProperty('modifiedByName');
+        expect(record).toHaveProperty('soCreatedBy', USER_ID);
+      }
+    });
+
     it('answers 404 for an unknown or deleted order', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue(null);
       await expect(service.save(baseDto({ soId: SALE_ORDER_ID }))).rejects.toBeInstanceOf(
@@ -1807,6 +1897,148 @@ describe('SaleOrderService', () => {
       const result = await service.getById(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
       expect(result.soCompanyName).toBeNull();
       expect(result.soSalesmanName).toEqual([null]);
+    });
+
+    // Plan SO-5: the audit line's names, as purchase GRN answers them.
+    it('names who created and modified the order from the user id', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({
+          soCreatedBy: USER_ID,
+          soModifiedBy: USER_ID.toUpperCase(),
+        }) as unknown as SaleOrder,
+      );
+      const result = await service.getById(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(result.createdByName).toBe('counter1');
+      expect(result.modifiedByName).toBe('counter1');
+      expect(prisma.userMaster.findMany).toHaveBeenCalledWith(
+        containing({ where: { usrId: { in: [USER_ID] } } }),
+      );
+    });
+
+    // Rows written before plan SO-5 hold a login name: shown as
+    // it is, and never handed to the uuid column.
+    it('returns a stored name unchanged and a missing user as null', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({
+          soCreatedBy: 'VKPOS',
+          soModifiedBy: '00000000-0000-0000-0000-000000000000',
+        }) as unknown as SaleOrder,
+      );
+      prisma.userMaster.findMany.mockResolvedValue([]);
+      const result = await service.getById(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(result.createdByName).toBe('VKPOS');
+      expect(result.modifiedByName).toBeNull();
+      for (const [args] of prisma.userMaster.findMany.mock.calls as unknown as [
+        { where: { usrId: { in: string[] } } },
+      ][]) {
+        expect(args.where.usrId.in).not.toContain('VKPOS');
+      }
+    });
+  });
+
+  // so_pending_amt / so_cancelled_amt / so_billed_amt used to be written only by
+  // the bill recompute and the line cancel, so an order nobody had billed read
+  // 0.00 pending with every unit still to deliver. The save paths now restate
+  // them off the lines, with the same pro-rata roll-up.
+  describe('order amounts (so_pending_amt) on save', () => {
+    const headerAmountWrite = () =>
+      prisma.saleOrder.update.mock.calls
+        .map(([args]) => args.data)
+        .find((data) => data.soPendingAmt !== undefined);
+
+    it('states the whole order as pending on create, whatever the body said', async () => {
+      const result = await service.save(
+        baseDto({
+          // A fulfilment cache the body has no business stating.
+          soPendingAmt: 0,
+          items: [
+            {
+              soiItemId: ITEM_MASTER_ID,
+              soiItemUnitId: ITEM_UNIT_ID,
+              soiOrderQty: 24,
+              soiNetAmt: '2267.99',
+            },
+          ],
+        }),
+      );
+      expect(headerAmountWrite()).toEqual({
+        soPendingAmt: new Prisma.Decimal('2267.99'),
+        soCancelledAmt: new Prisma.Decimal('0.00'),
+        soBilledAmt: new Prisma.Decimal('0.00'),
+      });
+      expect(result.soPendingAmt).toEqual(new Prisma.Decimal('2267.99'));
+    });
+
+    it('restates the pending amount when an edit changes a line', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soPendingAmt: new Prisma.Decimal('1000.00') } as Partial<SaleOrder>),
+      );
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiId: LINE_A_ID,
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      await service.save(
+        baseDto({
+          soId: SALE_ORDER_ID,
+          items: [
+            {
+              soiId: LINE_A_ID,
+              soiLineNo: 1,
+              soiOrderQty: 12,
+              soiNetQty: 12,
+              soiNetAmt: '1200.00',
+            } as SaveSaleOrderItemDto,
+          ],
+        }),
+      );
+      expect(headerAmountWrite()).toEqual(
+        expect.objectContaining({ soPendingAmt: new Prisma.Decimal('1200.00') }),
+      );
+    });
+
+    it('writes nothing more when the stored amounts already agree', async () => {
+      const stored = {
+        soPendingAmt: new Prisma.Decimal('1000.00'),
+        soCancelledAmt: new Prisma.Decimal('0.00'),
+        soBilledAmt: new Prisma.Decimal('0.00'),
+      } as Partial<SaleOrder>;
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder(stored));
+      // As Postgres does: the update answers the whole row, stored amounts included.
+      prisma.saleOrder.update.mockImplementation(({ data }) =>
+        Promise.resolve(makeOrder({ ...stored, ...(data as unknown as Partial<SaleOrder>) })),
+      );
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({ soiNetAmt: new Prisma.Decimal('1000.00') } as Partial<SaleOrderItem>),
+      ]);
+      // Lines omitted: the stored ones stand, and so do the amounts.
+      await service.save(baseDto({ soId: SALE_ORDER_ID, soRemarks: 'note only' }));
+      expect(headerAmountWrite()).toBeUndefined();
+    });
+
+    it('splits a part-settled line pro rata, as the bill recompute does', () => {
+      const amounts = service.orderAmountsOf([
+        makeItem({
+          soiNetQty: new Prisma.Decimal('12.000'),
+          soiDeliveredQty: new Prisma.Decimal('4.000'),
+          soiCancelledQty: new Prisma.Decimal('2.000'),
+          soiNetAmt: new Prisma.Decimal('1200.00'),
+          soiBilledAmt: new Prisma.Decimal('400.00'),
+        } as Partial<SaleOrderItem>),
+        makeItem({
+          soiId: LINE_B_ID,
+          soiLineNo: 2,
+          soiNetQty: new Prisma.Decimal('3.000'),
+          soiNetAmt: new Prisma.Decimal('100.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      expect(amounts).toEqual({
+        // 6 of 12 left at 100 each, plus all 3 of line 2 (100.00 whole).
+        soPendingAmt: new Prisma.Decimal('700.00'),
+        soCancelledAmt: new Prisma.Decimal('200.00'),
+        soBilledAmt: new Prisma.Decimal('400.00'),
+      });
     });
   });
 

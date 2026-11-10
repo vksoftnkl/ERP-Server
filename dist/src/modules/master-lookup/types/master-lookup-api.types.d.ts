@@ -14,7 +14,7 @@ export interface FiscalYearOption {
     isCurrent: boolean;
 }
 export type LoadingType = 'manual' | 'item_basis' | 'auto';
-export type FreightType = 'manual' | 'item_basis';
+export type FreightType = 'manual' | 'item_basis' | 'auto';
 export interface FreightChargeOption {
     id: string;
     fromKm: number | null;

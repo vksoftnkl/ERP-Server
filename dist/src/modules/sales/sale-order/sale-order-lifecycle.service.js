@@ -110,7 +110,12 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         }
         await tx.saleOrder.update({
             where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-            data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actorName },
+            data: {
+                soStatus: ORDER_STATUS.CONFIRMED,
+                soModifiedOn: now,
+                soModifiedBy: ctx.actor,
+                ...this.orders.orderAmountsOf(lines),
+            },
         });
         await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.POSTED, order.soStatus, ORDER_STATUS.CONFIRMED, ctx.actor, now, warnings.length ? `${warnings.length} line(s) short on reservation` : null);
         await this.audit.logEntityChange({
@@ -171,7 +176,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                     data: {
                         soStatus: ORDER_STATUS.CANCELLED,
                         soModifiedOn: now,
-                        soModifiedBy: ctx.actorName,
+                        soModifiedBy: ctx.actor,
                     },
                 });
                 await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.CANCELLED, order.soStatus, ORDER_STATUS.CANCELLED, ctx.actor, now, dto.reason);
@@ -255,7 +260,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                 data: {
                     soRevisionNo: order.soRevisionNo + 1,
                     soModifiedOn: now,
-                    soModifiedBy: ctx.actorName,
+                    soModifiedBy: ctx.actor,
                 },
             });
             await this.trail(tx, fresh, txn_status_log_helper_1.TxnStatusEvent.AMENDED, fresh.soStatus, fresh.soStatus, ctx.actor, now, dto.editRemark);

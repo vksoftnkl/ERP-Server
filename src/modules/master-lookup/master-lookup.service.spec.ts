@@ -1084,12 +1084,20 @@ describe('MasterLookupService', () => {
         expect(where.ilcFromWeight.lte.toString()).toBe('48.505');
         expect(where.ilcToWeight.gt.toString()).toBe('48.505');
       });
-      it('rejects auto when the conversion carries no UOM weight to match on', async () => {
-        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 0)]);
-        await expect(
-          lookup({ loading_type: 'auto', company_id: COMPANY_ID, branch_id: BRANCH_ID }),
-        ).rejects.toBeInstanceOf(BadRequestException);
+      // A unit with no UOM weight has nothing to match a slab on. It used to
+      // 400 the whole lookup, which blocked item pick on loading auto; now it
+      // resolves as manual does and the user types the charge in.
+      it('resolves a weightless unit under auto as manual, without a 400', async () => {
+        mockItemPricePrisma(itemRow(), [
+          { ...withUomWeight(priceRow('IPM-1', 1, 115), 0), ipmLoadingCharge: 40 },
+        ]);
+        const scope = { company_id: COMPANY_ID, branch_id: BRANCH_ID };
+        const auto = await lookup({ ...scope, loading_type: 'auto' });
+        expect(auto.loading_charge).toBeNull();
+        expect(auto.resolved_weight).toBeNull();
         expect(slabQuery()).not.toHaveBeenCalled();
+        const manual = await lookup({ ...scope, loading_type: 'manual' });
+        expect(auto).toEqual(manual);
       });
       it('rejects auto without the company and branch scope the slab match needs', async () => {
         mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
@@ -1157,11 +1165,30 @@ describe('MasterLookupService', () => {
         expect(result.freight_charge).toBe(120);
         expect(result.add_freight).toBe(false);
       });
-      it('returns the same keys in both modes', async () => {
+      // auto = the distance bands, which the lookup has no distance for: the
+      // client applies the band, so no per-item charge comes back — the same
+      // null manual answers, never the price row's own charge.
+      it('resolves nothing for auto, even with a charge on the price row', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const result = await lookup({ freight_type: 'auto' });
+        expect(result.freight_charge).toBeNull();
+      });
+      it('leaves loading alone under freight auto — each mode resolves its own key', async () => {
+        mockItemPricePrisma(itemRow(), [
+          { ...withFreight(priceRow('IPM-1', 1, 115), 120), ipmLoadingCharge: 15 },
+        ]);
+        const result = await lookup({ freight_type: 'auto', loading_type: 'item_basis' });
+        expect(result.freight_charge).toBeNull();
+        expect(result.loading_charge).toBe(15);
+      });
+      it('returns the same keys in all three modes', async () => {
         mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
         const manual = await lookup({ freight_type: 'manual' });
         const itemBasis = await lookup({ freight_type: 'item_basis' });
+        const auto = await lookup({ freight_type: 'auto' });
         expect(Object.keys(itemBasis)).toEqual(Object.keys(manual));
+        expect(Object.keys(auto)).toEqual(Object.keys(manual));
+        expect(auto).toEqual(manual);
       });
     });
     describe('refreshItemPriceLookup (unit cycling)', () => {

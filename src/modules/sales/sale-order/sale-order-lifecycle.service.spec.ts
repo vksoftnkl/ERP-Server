@@ -35,6 +35,12 @@ const ITEM_B = '019c6f6c-be87-7a11-8905-36092c46a322';
 const UNIT = '019c6f6c-be87-7a11-8905-36092c46a323';
 const ACC_YEAR = '2026-2027';
 const LOGIN_NAME = 'tester1';
+// What SaleOrderService.orderAmountsOf answers for the lines /post confirms.
+const AMOUNTS = {
+  soPendingAmt: new Prisma.Decimal('1250.00'),
+  soCancelledAmt: new Prisma.Decimal('0.00'),
+  soBilledAmt: new Prisma.Decimal('0.00'),
+};
 const KEYS = {
   soId: ORDER_ID,
   soCompanyId: COMPANY_ID,
@@ -104,6 +110,7 @@ describe('SaleOrderLifecycleService', () => {
     save: jest.Mock;
     softDelete: jest.Mock;
     cancelOrderOpenLines: jest.Mock;
+    orderAmountsOf: jest.Mock;
   };
   let ctx: {
     actor: string;
@@ -139,6 +146,7 @@ describe('SaleOrderLifecycleService', () => {
       save: jest.fn().mockResolvedValue({ soId: ORDER_ID, soRevisionNo: 1 }),
       softDelete: jest.fn().mockResolvedValue({ soId: ORDER_ID, deleted: true }),
       cancelOrderOpenLines: jest.fn().mockResolvedValue({ cancelledLines: 1 }),
+      orderAmountsOf: jest.fn().mockReturnValue(AMOUNTS),
     };
     ctx = {
       actor: USER_ID,
@@ -224,11 +232,22 @@ describe('SaleOrderLifecycleService', () => {
           soiModifiedBy: USER_ID,
         },
       });
-      // The text column takes the login name, never the uuid.
+      // Plan SO-5: the user id, as the save paths stamp it; /get names it.
+      // ctx.actorName (LOGIN_NAME) is no longer written anywhere on the order.
+      // so_pending_amt & co. are restated off the very lines being confirmed.
       expect(prisma.saleOrder.update).toHaveBeenCalledWith({
         where: { soId_soAccYear: { soId: ORDER_ID, soAccYear: ACC_YEAR } },
-        data: { soStatus: 'CONFIRMED', soModifiedOn: expect.any(Date), soModifiedBy: LOGIN_NAME },
+        data: {
+          soStatus: 'CONFIRMED',
+          soModifiedOn: expect.any(Date),
+          soModifiedBy: USER_ID,
+          ...AMOUNTS,
+        },
       });
+      expect(orders.orderAmountsOf).toHaveBeenCalledWith([
+        expect.objectContaining({ soiId: LINE_1 }),
+        expect.objectContaining({ soiId: LINE_2 }),
+      ]);
       expect(trailStep()).toMatchObject({
         event: TxnStatusEvent.POSTED,
         fromStatus: 'DRAFT',
@@ -483,7 +502,7 @@ describe('SaleOrderLifecycleService', () => {
 
       expect(prisma.saleOrder.update).toHaveBeenCalledWith({
         where: { soId_soAccYear: { soId: ORDER_ID, soAccYear: ACC_YEAR } },
-        data: { soStatus: 'CANCELLED', soModifiedOn: expect.any(Date), soModifiedBy: LOGIN_NAME },
+        data: { soStatus: 'CANCELLED', soModifiedOn: expect.any(Date), soModifiedBy: USER_ID },
       });
       expect(trailStep()).toMatchObject({
         event: TxnStatusEvent.CANCELLED,
@@ -608,7 +627,7 @@ describe('SaleOrderLifecycleService', () => {
       expect(reservations.reserve).not.toHaveBeenCalled();
       expect(prisma.saleOrder.update).toHaveBeenCalledWith({
         where: { soId_soAccYear: { soId: ORDER_ID, soAccYear: ACC_YEAR } },
-        data: { soRevisionNo: 2, soModifiedOn: expect.any(Date), soModifiedBy: LOGIN_NAME },
+        data: { soRevisionNo: 2, soModifiedOn: expect.any(Date), soModifiedBy: USER_ID },
       });
       expect(trailStep()).toMatchObject({
         event: TxnStatusEvent.AMENDED,

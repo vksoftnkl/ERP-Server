@@ -248,7 +248,12 @@ export class ItemPriceLookup {
    *    conversion's own UOM weight — the lookup takes no weight or qty from the
    *    caller. Both scope columns are required here even though they are
    *    optional on the lookup itself: an unscoped slab match would be a
-   *    cross-tenant read.
+   *    cross-tenant read. A unit with no UOM weight has nothing to match a
+   *    slab on, so it answers exactly what `manual` answers (both keys null)
+   *    and the user types the charge in. It used to be a 400
+   *    (LOOKUP_LOADING_WEIGHT_MISSING), which failed the whole item pick for a
+   *    company on loading `auto` (2026-11-10: 397 of 411 dev units carry no
+   *    weight). The payload has no warnings[] to carry a note in.
    */
   private async resolveLoadingCharge(
     query: ItemPriceLookupQueryDto,
@@ -281,13 +286,11 @@ export class ItemPriceLookup {
     }
     const weight = resolveLoadingWeight(rate.itemUnitConversion.iucUomWeight);
     if (weight === null) {
-      throwMasterBadRequest<MasterErrorDetail>('Validation failed', [
-        {
-          field: 'item_id',
-          message: `loading_type 'auto' needs a weight: the item's unit conversion carries no UOM weight to match a slab on`,
-          code: MasterLookupErrorCode.LOADING_WEIGHT_MISSING,
-        },
-      ]);
+      // No weight, no slab: resolved as `manual` would, so the pick goes on.
+      return {
+        loading_charge: null,
+        resolved_weight: null,
+      };
     }
     // Half-open slab match (from <= weight < to), so a weight sitting exactly on
     // a boundary belongs to one slab only — the one it opens, not the one it
@@ -336,17 +339,20 @@ export class ItemPriceLookup {
    *  - `item_basis` reads item_price_master.ipm_freight_charge off the rate row
    *    already selected. The column is NOT NULL DEFAULT 0, so "not configured"
    *    is indistinguishable from a stored 0 — 0 is reported as null.
+   *  - `auto`       resolves nothing either, exactly like `manual`: the
+   *    distance bands (sale_freight_charges) are matched on distance, which
+   *    this lookup is never given, so the client applies the band itself from
+   *    GET /master-lookups/freight-charges/charge?distance=. Accepted (not a
+   *    400) so a company whose sales.freight_calc_type is `auto` can pick items.
    *
-   * There is no `auto` mode: sale_freight_charges is distance-slab based and
-   * this lookup is never given a distance — /freight-charges/charge resolves
-   * those. item_allow_freight does not gate this either; it rides along as
-   * `add_freight` for the screen to act on.
+   * item_allow_freight does not gate this; it rides along as `add_freight` for
+   * the screen to act on.
    */
   private resolveFreightCharge(
     query: ItemPriceLookupQueryDto,
     rate: PriceRowWithUnit,
   ): number | null {
-    if ((query.freight_type ?? DEFAULT_FREIGHT_TYPE) === 'manual') {
+    if ((query.freight_type ?? DEFAULT_FREIGHT_TYPE) !== 'item_basis') {
       return null;
     }
     const charge = toNumber(rate.ipmFreightCharge);

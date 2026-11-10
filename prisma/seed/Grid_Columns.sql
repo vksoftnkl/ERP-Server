@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (1580 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (1582 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -683,15 +683,17 @@ SELECT v.* FROM (VALUES
     ,('019feac1-bb94-767b-b95e-ba3e340d8c87', 87 , 3 , 'Branch#'            , 'so_branch_id'              , 'Text'          , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb95-7120-a3df-0d1ee808db39', 87 , 4 , 'Year#'              , 'so_acc_year'               , 'Text'          , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb95-7bf4-b33a-f5c19ef4a8c1', 87 , 5 , 'Date'               , 'so_order_date'             , 'Text'          , 9.00  , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb96-75ac-96ad-61e7d1380e7b', 87 , 6 , 'Order No'           , 'so_order_refno'            , 'Text'          , 11.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb96-75ac-96ad-61e7d1380e7b', 87 , 6 , 'Order No'           , 'so_order_refno'            , 'Text'          , 11.00 , 6.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb96-7f59-9235-dcedb888d591', 87 , 7 , 'Type'               , 'so_order_type'             , 'Text'          , 10.00 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb97-7777-bf9e-16aa421d13a5', 87 , 8 , 'Customer'           , 'cus_name'                  , 'Text'          , 19.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb97-7777-bf9e-16aa421d13a5', 87 , 8 , 'Customer'           , 'cus_name'                  , 'Text'          , 19.00 , 8.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb97-7f98-add5-2ac79b41de51', 87 , 9 , 'Place'              , 'cus_addr3'                 , 'Text'          , 10.00 , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb98-7858-8cc0-df69a27d0839', 87 , 10, 'Items'              , 'so_tot_items'              , 'Text'          , 6.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb98-7fc3-ae42-748685cb5720', 87 , 11, 'Total'              , 'so_order_amt'              , 'Text'          , 9.00  , 11.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb98-7fc3-ae42-748685cb5720', 87 , 11, 'Total'              , 'so_order_amt'              , 'Text'          , 9.00  , 11.00, 'Right' , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb99-77bd-aead-c8319173da11', 87 , 12, 'Status'             , 'so_status'                 , 'Text'          , 9.00  , 12.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb99-7f37-8715-7a4fc854e604', 87 , 13, 'Print'              , 'so_print_count'            , 'Text'          , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb9a-764c-923f-39e139b05973', 87 , 14, 'By'                 , 'so_created_by'             , 'Text'          , 8.00  , 14.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a1c46e-6051-76af-9658-aeb520a4f152', 87 , 15, 'Delivery'           , 'so_fulfil_status'          , 'Text'          , 9.00  , 15.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a1c46e-6051-76c3-a97d-c0acafe18c7b', 87 , 16, 'Pending'            , 'so_pending_amt'            , 'Text'          , 9.00  , 16.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ POPUP - CUST AREAS (id 88) ============
     ,('01a0322f-d992-7a25-88fb-767e98512188', 88 , 1 , '#'                  , 'arm_id'                    , 'Text'          , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a0322f-d99a-7a3b-8e28-0de575532813', 88 , 2 , 'Code'               , 'arm_short'                 , 'Text'          , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')

@@ -391,19 +391,35 @@ export class SaveSaleOrderItemDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   soiSchemeId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The qty slab (inventory.item_qty_price.iqp_id) the client priced this line with, as ' +
+      'the lookup answered it in qty_slabs[]. Stored as sent; the server does no price ' +
+      'logic with it. null clears it on an edit; omitted keeps the stored value.',
+  })
+  @NullableUuid()
+  soiQtyPriceId?: string | null;
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableStringStrict(150)
   soiSchemeName?: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   soiRemarks?: string | null;
-  // VarChar(50) columns, exactly like the header's soCreatedBy / soModifiedBy:
-  // the actor is whatever resolveActor settles on — a user id, but equally a
-  // name or login the caller passed — so the uuid pattern does not fit.
-  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  // Still accepted (the house ValidationPipe forbids unknown keys and clients
+  // send them), but IGNORED since plan SO-5 (2026-11-10): the server stamps the
+  // signed-in user's id, as GRN / PI do.
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Ignored: the server stamps the signed-in user',
+  })
   @NullableStringStrict(50)
   soiCreatedBy?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Ignored: the server stamps the signed-in user',
+  })
   @NullableStringStrict(50)
   soiModifiedBy?: string | null;
 }

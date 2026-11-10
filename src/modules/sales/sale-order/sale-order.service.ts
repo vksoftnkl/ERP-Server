@@ -441,6 +441,10 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiSchemeId',
   'soiSchemeName',
   'soiRemarks',
+  // The qty slab (inventory.item_qty_price.iqp_id) that priced the line,
+  // picked in the client (plan SO-7 / qty-price B4). Stored as sent: no FK and
+  // no price logic here. null clears it on an edit, absent keeps it.
+  'soiQtyPriceId',
 ];
 // Every date / timestamptz column reachable from the payload. JSON carries them
 // as ISO strings, Prisma wants Date objects, so each one is converted on the way
@@ -584,6 +588,9 @@ interface SaleOrderNameMaps {
   employeeNameById: Map<string, string>;
   ledgerNameById: Map<string, string>;
   userNameById: Map<string, string>;
+  // so_created_by / so_modified_by → usr_login_name, keyed by the lower-cased
+  // user id (plan SO-5, the GRN way). See actorLabel.
+  actorNameById: Map<string, string>;
   godownById: Map<string, OrderLineGodown>;
   // notes (51): what soiAllowNegativeStock needs beyond the line — the
   // company's switch, and for a line with no godown of its own the godown a
@@ -598,10 +605,42 @@ const EMPTY_NAME_MAPS: SaleOrderNameMaps = {
   employeeNameById: new Map(),
   ledgerNameById: new Map(),
   userNameById: new Map(),
+  actorNameById: new Map(),
   godownById: new Map(),
   companyAllowsNegStock: null,
   defaultGodownByLine: new Map(),
 };
+// Plan SO-5 (2026-11-10): so_created_by / so_modified_by are text columns. The
+// save paths and the lifecycle verbs (confirm / cancel / amend) stamp the
+// signed-in user's id; rows written before that hold a login name instead.
+// So only a uuid-shaped value is looked up — never cast, so a name cannot fail
+// the query — and any other text is already a name and is shown as it is.
+const ACTOR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function actorLabel(value: string | null | undefined, names: Map<string, string>): string | null {
+  const actor = value?.trim();
+  if (!actor) {
+    return null;
+  }
+  return ACTOR_UUID.test(actor) ? (names.get(actor.toLowerCase()) ?? null) : actor;
+}
+// What an audit row records of an order: the /get payload WITHOUT the two
+// display-only labels. The audit keeps the ids (soCreatedBy / soModifiedBy);
+// the labels are resolved only where names were looked up, so a before built
+// without them read "createdByName: null → VKPOS" in every update's
+// log_changed_fields (reviewer, plan SO-5).
+type SaleOrderAuditRecord = Omit<SaleOrderPayload, 'createdByName' | 'modifiedByName'>;
+// The three fulfilment money caches the header carries (see orderAmountsOf).
+export interface SaleOrderAmounts {
+  soPendingAmt: Prisma.Decimal;
+  soCancelledAmt: Prisma.Decimal;
+  soBilledAmt: Prisma.Decimal;
+}
+function auditRecordOf(payload: SaleOrderPayload): SaleOrderAuditRecord {
+  const { createdByName: _createdByName, modifiedByName: _modifiedByName, ...record } = payload;
+  void _createdByName;
+  void _modifiedByName;
+  return record;
+}
 // The distinct, present ids out of a column gathered across header, lines,
 // charges and tenders — nulls dropped, so an all-null column costs no
 // query at all.
@@ -637,6 +676,15 @@ export class SaleOrderService {
    */
   prepareSave(saveOrderDto: SaveSaleOrderDto): void {
     this.ensureOrderValuesAreAllowed(saveOrderDto);
+  }
+  /**
+   * Who a save is stamped with (plan SO-5): the authenticated request's user
+   * id — the same source purchase GRN / PI use — never a body field. The nil
+   * DEFAULT_ACTOR only when the request carries no user (a guarded route
+   * always does).
+   */
+  private signedInActor(): string {
+    return resolveActor(null, this.requestContextService.getUserId());
   }
   /**
    * Re-throws a unique-index clash as the 409 `/sale-orders/create` answers;
@@ -927,8 +975,8 @@ export class SaleOrderService {
       // receipt in accounts.acc_voucher_header and its acc_vouchers ledger
       // lines. Nothing may keep pointing at a document that is gone.
       await deleteOrderAdvancePosting(tx, { soId, soCompanyId, soAccYear }, actor, modifiedOn);
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
+      const originalRecord = auditRecordOf(this.toPayload(existing));
+      const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
       await this.auditLogService.logEntityChange(
         {
           // A soft delete is logged as 'cancel', the way every other module logs
@@ -1334,8 +1382,10 @@ export class SaleOrderService {
         now,
       );
     }
-    const originalRecord = this.toPayload(existing);
-    const modifiedRecord = this.toPayload({ ...existing, ...headerChanges } as SaleOrder);
+    const originalRecord = auditRecordOf(this.toPayload(existing));
+    const modifiedRecord = auditRecordOf(
+      this.toPayload({ ...existing, ...headerChanges } as SaleOrder),
+    );
     await this.auditLogService.logEntityChange(
       {
         action: 'cancel',
@@ -1374,6 +1424,63 @@ export class SaleOrderService {
       soPendingAmt: rollup.pendingAmt.toNumber(),
       lines: cancelledLines,
     };
+  }
+  /**
+   * so_pending_amt / so_cancelled_amt / so_billed_amt as the given lines stand,
+   * by the SAME pro-rata roll-up (summariseOrderLines) the bill recompute and
+   * the line cancel write. Before 2026-11-10 only those two paths wrote them,
+   * so an order nobody had billed or cancelled against read so_pending_amt
+   * 0.00 with every unit still to deliver: the save took the three from the
+   * body (fulfilment caches the Qt screen rightly never sends) and /post did
+   * not touch them. Amounts only — the status columns stay with the paths that
+   * settle lines, and so_tot_items / so_delivered_items are left as they are.
+   *
+   * Public because /post (SaleOrderLifecycleService) restates them too.
+   */
+  orderAmountsOf(lines: readonly SaleOrderItem[]): SaleOrderAmounts {
+    const rollup = this.summariseOrderLines(
+      lines.map((line) => {
+        const netQty = roundQty(line.soiNetQty);
+        const delivered = roundQty(line.soiDeliveredQty);
+        const cancelled = roundQty(line.soiCancelledQty);
+        return {
+          line,
+          netQty,
+          delivered,
+          cancelled,
+          // soi_pending_qty's own GENERATED expression, so the answer does not
+          // depend on whether the row in hand was read back with it.
+          pending: roundQty(netQty.minus(delivered).minus(cancelled)),
+          billedAmt: roundAmount(line.soiBilledAmt),
+        };
+      }),
+    );
+    return {
+      soPendingAmt: rollup.pendingAmt,
+      soCancelledAmt: rollup.cancelledAmt,
+      soBilledAmt: rollup.billedAmt,
+    };
+  }
+  // Writes orderAmountsOf back onto the header when it differs, in the same
+  // spirit as restateAdvanceRollups: whatever the body stated for the three
+  // caches is replaced by what the lines say.
+  private async restateOrderAmounts(
+    tx: SaleOrderWriteClient,
+    order: SaleOrder,
+    lines: readonly SaleOrderItem[],
+  ): Promise<SaleOrder> {
+    const amounts = this.orderAmountsOf(lines);
+    if (
+      amounts.soPendingAmt.equals(roundAmount(order.soPendingAmt)) &&
+      amounts.soCancelledAmt.equals(roundAmount(order.soCancelledAmt)) &&
+      amounts.soBilledAmt.equals(roundAmount(order.soBilledAmt))
+    ) {
+      return order;
+    }
+    return tx.saleOrder.update({
+      where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
+      data: amounts,
+    });
   }
   // The header roll-ups, derived from what the lines will hold once the caller's
   // write has been applied — a cancel, or a bill's recompute. sale_order carries
@@ -2021,8 +2128,8 @@ export class SaleOrderService {
         screenType: 'transaction',
         pk: order.soId,
         displayName: order.soOrderRefno || order.soId,
-        originalRecord: this.toPayload(order),
-        modifiedRecord: this.toPayload({ ...order, ...headerChanges } as SaleOrder),
+        originalRecord: auditRecordOf(this.toPayload(order)),
+        modifiedRecord: auditRecordOf(this.toPayload({ ...order, ...headerChanges } as SaleOrder)),
         userId: actor,
         notes: `Order fulfilment recomputed from its bills (${fulfilledLines.length} line(s))`,
       },
@@ -2102,10 +2209,9 @@ export class SaleOrderService {
     );
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, undefined);
     const now = new Date();
-    const createdBy = resolveActor(
-      saveOrderDto.soCreatedBy,
-      this.requestContextService.getUserId(),
-    );
+    // Plan SO-5: the signed-in user's id, as GRN / PI stamp it. The body's
+    // soCreatedBy (Qt sends a login name, other callers an id) is ignored.
+    const createdBy = this.signedInActor();
     const orderDate = saveOrderDto.soOrderDate ? new Date(saveOrderDto.soOrderDate) : now;
     // Voucher type 4 numbers the document: the running number consumed from
     // accounts.acc_voucher_seq becomes soOrderSlno and its printable form
@@ -2184,7 +2290,9 @@ export class SaleOrderService {
       now,
       matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
     );
-    const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+    const advanced = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+    // so_pending_amt & co. off the lines just written (see orderAmountsOf).
+    const restated = await this.restateOrderAmounts(tx, advanced, items);
     // The first row of the order's trail. Every other document logs its
     // birth; orders did not, and a day-end "what is still unposted" walk
     // over txn_status_log could not see a single draft order (§1.10).
@@ -2195,12 +2303,18 @@ export class SaleOrderService {
       createdBy,
       now,
     );
-    const payload = this.toPayload({
-      ...restated,
-      items,
-      charges,
-      tenders: await this.withChequeDetails(tx, tenders),
-    });
+    const payload = this.toPayload(
+      {
+        ...restated,
+        items,
+        charges,
+        tenders: await this.withChequeDetails(tx, tenders),
+      },
+      {
+        ...EMPTY_NAME_MAPS,
+        actorNameById: await this.resolveActorNames(tx, [restated.soCreatedBy]),
+      },
+    );
     await this.auditLogService.logEntityChange(
       {
         action: 'New',
@@ -2210,7 +2324,7 @@ export class SaleOrderService {
         pk: payload.soId,
         displayName: payload.soOrderRefno || payload.soId,
         originalRecord: null,
-        modifiedRecord: payload,
+        modifiedRecord: auditRecordOf(payload),
         userId: createdBy,
         notes: 'Order created',
       },
@@ -2253,10 +2367,8 @@ export class SaleOrderService {
     }
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
     const now = new Date();
-    const modifiedBy = resolveActor(
-      saveOrderDto.soModifiedBy,
-      this.requestContextService.getUserId(),
-    );
+    // Plan SO-5: the signed-in user's id; the body's soModifiedBy is ignored.
+    const modifiedBy = this.signedInActor();
     const data: Prisma.SaleOrderUncheckedUpdateInput = {
       soModifiedOn: now,
       soModifiedBy: modifiedBy,
@@ -2325,13 +2437,25 @@ export class SaleOrderService {
       now,
       matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
     );
-    const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
-    const payload = this.toPayload({
-      ...restated,
-      items,
-      charges,
-      tenders: await this.withChequeDetails(tx, tenders),
-    });
+    const advanced = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+    // An edit (or an amend, which saves through here) can change what is
+    // left to deliver — a quantity, a rate, a line added or dropped.
+    const restated = await this.restateOrderAmounts(tx, advanced, items);
+    const payload = this.toPayload(
+      {
+        ...restated,
+        items,
+        charges,
+        tenders: await this.withChequeDetails(tx, tenders),
+      },
+      {
+        ...EMPTY_NAME_MAPS,
+        actorNameById: await this.resolveActorNames(tx, [
+          restated.soCreatedBy,
+          restated.soModifiedBy,
+        ]),
+      },
+    );
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -2340,9 +2464,9 @@ export class SaleOrderService {
         screenType: 'transaction',
         pk: soId,
         displayName: payload.soOrderRefno || payload.soId,
-        originalRecord: this.toPayload(existing),
-        modifiedRecord: payload,
-        userId: payload.soModifiedBy || payload.soCreatedBy,
+        originalRecord: auditRecordOf(this.toPayload(existing)),
+        modifiedRecord: auditRecordOf(payload),
+        userId: modifiedBy,
         notes: 'Order updated',
       },
       tx,
@@ -2459,7 +2583,8 @@ export class SaleOrderService {
           soiItemUnitId: inputItem.soiItemUnitId ?? existingItem.soiItemUnitId,
           soiPriceLevel: inputItem.soiPriceLevel ?? scope.soPriceLevel,
           soiModifiedOn: now,
-          soiModifiedBy: resolveActor(inputItem.soiModifiedBy, actorId),
+          // Plan SO-5: the line carries the saver too; the body's soiModifiedBy is ignored.
+          soiModifiedBy: actorId,
         };
         applyPresentFields(
           updateData,
@@ -2484,7 +2609,7 @@ export class SaleOrderService {
             displayName: `Line ${updated.soiLineNo}`,
             originalRecord: this.toItemPayload(existingItem),
             modifiedRecord: this.toItemPayload(updated),
-            userId: resolveActor(inputItem.soiModifiedBy, actorId),
+            userId: actorId,
             notes: 'Order item updated',
           },
           tx,
@@ -2504,7 +2629,8 @@ export class SaleOrderService {
         soiItemUnitId: this.requireItemField(inputItem.soiItemUnitId, 'soiItemUnitId'),
         soiPriceLevel: inputItem.soiPriceLevel ?? scope.soPriceLevel,
         soiCreatedOn: now,
-        soiCreatedBy: resolveActor(inputItem.soiCreatedBy, actorId),
+        // Plan SO-5: the body's soiCreatedBy is ignored.
+        soiCreatedBy: actorId,
       };
       applyPresentFields(
         createData,
@@ -3159,6 +3285,27 @@ export class SaleOrderService {
       ]),
     );
   }
+  // The login names behind the header's created_by / modified_by (plan SO-5,
+  // as purchase-grn's getById). Only uuid-shaped values are looked up — a row
+  // holding a name is labelled by actorLabel without a query.
+  private async resolveActorNames(
+    client: SaleOrderWriteClient,
+    actors: readonly (string | null | undefined)[],
+  ): Promise<Map<string, string>> {
+    const ids = distinctIds(
+      actors
+        .map((actor) => actor?.trim().toLowerCase())
+        .filter((actor): actor is string => typeof actor === 'string' && ACTOR_UUID.test(actor)),
+    );
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const users = await client.userMaster.findMany({
+      where: { usrId: { in: ids } },
+      select: { usrId: true, usrLoginName: true },
+    });
+    return new Map(users.map((user) => [user.usrId.toLowerCase(), user.usrLoginName.trim()]));
+  }
   // One batched read per master over every id the order and its children point
   // at, run concurrently. An id column that is empty across the whole document
   // (no salesman on any line, no tenders at all) issues no query.
@@ -3187,49 +3334,58 @@ export class SaleOrderService {
     ]);
     const ledgerIds = distinctIds(tenders.map((tender) => tender.tdPartyLedgerId));
     const userIds = distinctIds(tenders.map((tender) => tender.tdUserId));
-    const [companies, branches, employees, ledgers, users, godownById, defaultGodownByLine] =
-      await Promise.all([
-        companyIds.length
-          ? this.prisma.company.findMany({
-              where: { compId: { in: companyIds } },
-              select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
-            })
-          : [],
-        branchIds.length
-          ? this.prisma.branchMaster.findMany({
-              where: { brId: { in: branchIds } },
-              select: { brId: true, brName: true },
-            })
-          : [],
-        employeeIds.length
-          ? this.prisma.employeeMaster.findMany({
-              where: { empId: { in: employeeIds } },
-              select: { empId: true, empName: true },
-            })
-          : [],
-        ledgerIds.length
-          ? this.prisma.accLedgerMaster.findMany({
-              where: { ledId: { in: ledgerIds } },
-              select: { ledId: true, ledName: true },
-            })
-          : [],
-        userIds.length
-          ? this.prisma.userMaster.findMany({
-              where: { usrId: { in: userIds } },
-              select: { usrId: true, usrDisplayName: true },
-            })
-          : [],
-        this.resolveGodowns(items),
-        // A line with no godown of its own takes the one a bill line of that
-        // item would default to (notes 51, sale-line-godown.utils).
-        resolveDefaultSaleGodowns(
-          this.prisma,
-          record.soBranchId,
-          items
-            .filter((item) => item.soiGodownId === null)
-            .map((item) => ({ itemId: item.soiItemId, iucId: item.soiItemUnitId })),
-        ),
-      ]);
+    const [
+      companies,
+      branches,
+      employees,
+      ledgers,
+      users,
+      actorNameById,
+      godownById,
+      defaultGodownByLine,
+    ] = await Promise.all([
+      companyIds.length
+        ? this.prisma.company.findMany({
+            where: { compId: { in: companyIds } },
+            select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
+          })
+        : [],
+      branchIds.length
+        ? this.prisma.branchMaster.findMany({
+            where: { brId: { in: branchIds } },
+            select: { brId: true, brName: true },
+          })
+        : [],
+      employeeIds.length
+        ? this.prisma.employeeMaster.findMany({
+            where: { empId: { in: employeeIds } },
+            select: { empId: true, empName: true },
+          })
+        : [],
+      ledgerIds.length
+        ? this.prisma.accLedgerMaster.findMany({
+            where: { ledId: { in: ledgerIds } },
+            select: { ledId: true, ledName: true },
+          })
+        : [],
+      userIds.length
+        ? this.prisma.userMaster.findMany({
+            where: { usrId: { in: userIds } },
+            select: { usrId: true, usrDisplayName: true },
+          })
+        : [],
+      this.resolveActorNames(this.prisma, [record.soCreatedBy, record.soModifiedBy]),
+      this.resolveGodowns(items),
+      // A line with no godown of its own takes the one a bill line of that
+      // item would default to (notes 51, sale-line-godown.utils).
+      resolveDefaultSaleGodowns(
+        this.prisma,
+        record.soBranchId,
+        items
+          .filter((item) => item.soiGodownId === null)
+          .map((item) => ({ itemId: item.soiItemId, iucId: item.soiItemUnitId })),
+      ),
+    ]);
     // company.comp_negstk_apl, the second of the three switches behind a
     // line's soiAllowNegativeStock. A missing or retired company is not a
     // "no" — the godown and the item still decide — so it answers null.
@@ -3242,6 +3398,7 @@ export class SaleOrderService {
       employeeNameById: new Map(employees.map((employee) => [employee.empId, employee.empName])),
       ledgerNameById: new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName])),
       userNameById: new Map(users.map((user) => [user.usrId, user.usrDisplayName])),
+      actorNameById,
       godownById,
       companyAllowsNegStock: orderCompany?.compNegStkApl ?? null,
       defaultGodownByLine,
@@ -3285,6 +3442,9 @@ export class SaleOrderService {
       soSalesmanName: Array.isArray(rest.soSalesmanId)
         ? rest.soSalesmanId.map((salesmanId) => names.employeeNameById.get(salesmanId) ?? null)
         : null,
+      // Plan SO-5: who saved it, as a name — see actorLabel.
+      createdByName: actorLabel(rest.soCreatedBy, names.actorNameById),
+      modifiedByName: actorLabel(rest.soModifiedBy, names.actorNameById),
       items: items ? items.map((item) => this.toItemPayload(item, names)) : [],
       charges: (charges ?? []).map((charge) => this.withChargeNames(charge, names)),
       tenders: (tenders ?? []).map((tender) => this.withTenderNames(tender, names)),

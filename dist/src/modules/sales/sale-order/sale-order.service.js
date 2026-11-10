@@ -306,6 +306,7 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
     'soiSchemeId',
     'soiSchemeName',
     'soiRemarks',
+    'soiQtyPriceId',
 ];
 const SALE_ORDER_DATE_FIELDS = [
     'soOrderDate',
@@ -377,10 +378,25 @@ const EMPTY_NAME_MAPS = {
     employeeNameById: new Map(),
     ledgerNameById: new Map(),
     userNameById: new Map(),
+    actorNameById: new Map(),
     godownById: new Map(),
     companyAllowsNegStock: null,
     defaultGodownByLine: new Map(),
 };
+const ACTOR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function actorLabel(value, names) {
+    const actor = value?.trim();
+    if (!actor) {
+        return null;
+    }
+    return ACTOR_UUID.test(actor) ? (names.get(actor.toLowerCase()) ?? null) : actor;
+}
+function auditRecordOf(payload) {
+    const { createdByName: _createdByName, modifiedByName: _modifiedByName, ...record } = payload;
+    void _createdByName;
+    void _modifiedByName;
+    return record;
+}
 function distinctIds(values) {
     return [...new Set(values.filter((value) => !!value))];
 }
@@ -406,6 +422,9 @@ let SaleOrderService = class SaleOrderService {
     }
     prepareSave(saveOrderDto) {
         this.ensureOrderValuesAreAllowed(saveOrderDto);
+    }
+    signedInActor() {
+        return (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId());
     }
     throwIfDuplicate(error) {
         const duplicate = this.describeDuplicate(error);
@@ -552,8 +571,8 @@ let SaleOrderService = class SaleOrderService {
             await this.chargeDetailService.softDeleteDocumentCharges(tx, sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId, actor, modifiedOn);
             await this.tenderDetailService.softDeleteDocumentTenders(tx, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId, actor, modifiedOn);
             await (0, order_advance_posting_helper_1.deleteOrderAdvancePosting)(tx, { soId, soCompanyId, soAccYear }, actor, modifiedOn);
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
+            const originalRecord = auditRecordOf(this.toPayload(existing));
+            const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
             await this.auditLogService.logEntityChange({
                 action: 'cancel',
                 tableName: SALE_ORDER_TABLE_NAME,
@@ -772,8 +791,8 @@ let SaleOrderService = class SaleOrderService {
                 remarks: cancelReason,
             }, actor, now);
         }
-        const originalRecord = this.toPayload(existing);
-        const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
+        const originalRecord = auditRecordOf(this.toPayload(existing));
+        const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
         await this.auditLogService.logEntityChange({
             action: 'cancel',
             tableName: SALE_ORDER_TABLE_NAME,
@@ -799,6 +818,38 @@ let SaleOrderService = class SaleOrderService {
             soPendingAmt: rollup.pendingAmt.toNumber(),
             lines: cancelledLines,
         };
+    }
+    orderAmountsOf(lines) {
+        const rollup = this.summariseOrderLines(lines.map((line) => {
+            const netQty = roundQty(line.soiNetQty);
+            const delivered = roundQty(line.soiDeliveredQty);
+            const cancelled = roundQty(line.soiCancelledQty);
+            return {
+                line,
+                netQty,
+                delivered,
+                cancelled,
+                pending: roundQty(netQty.minus(delivered).minus(cancelled)),
+                billedAmt: roundAmount(line.soiBilledAmt),
+            };
+        }));
+        return {
+            soPendingAmt: rollup.pendingAmt,
+            soCancelledAmt: rollup.cancelledAmt,
+            soBilledAmt: rollup.billedAmt,
+        };
+    }
+    async restateOrderAmounts(tx, order, lines) {
+        const amounts = this.orderAmountsOf(lines);
+        if (amounts.soPendingAmt.equals(roundAmount(order.soPendingAmt)) &&
+            amounts.soCancelledAmt.equals(roundAmount(order.soCancelledAmt)) &&
+            amounts.soBilledAmt.equals(roundAmount(order.soBilledAmt))) {
+            return order;
+        }
+        return tx.saleOrder.update({
+            where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
+            data: amounts,
+        });
     }
     summariseOrderLines(settledLines) {
         let totalBilledAmt = ZERO;
@@ -1135,8 +1186,8 @@ let SaleOrderService = class SaleOrderService {
             screenType: 'transaction',
             pk: order.soId,
             displayName: order.soOrderRefno || order.soId,
-            originalRecord: this.toPayload(order),
-            modifiedRecord: this.toPayload({ ...order, ...headerChanges }),
+            originalRecord: auditRecordOf(this.toPayload(order)),
+            modifiedRecord: auditRecordOf(this.toPayload({ ...order, ...headerChanges })),
             userId: actor,
             notes: `Order fulfilment recomputed from its bills (${fulfilledLines.length} line(s))`,
         }, tx);
@@ -1182,7 +1233,7 @@ let SaleOrderService = class SaleOrderService {
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveOrderDto.soCustName ?? '', 'soCustName');
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, undefined);
         const now = new Date();
-        const createdBy = (0, module_service_utils_1.resolveActor)(saveOrderDto.soCreatedBy, this.requestContextService.getUserId());
+        const createdBy = this.signedInActor();
         const orderDate = saveOrderDto.soOrderDate ? new Date(saveOrderDto.soOrderDate) : now;
         const orderNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
             vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
@@ -1233,13 +1284,17 @@ let SaleOrderService = class SaleOrderService {
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, createdBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
         const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
-        const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+        const advanced = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+        const restated = await this.restateOrderAmounts(tx, advanced, items);
         await this.logStatusStep(tx, restated, { event: txn_status_log_helper_1.TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus }, createdBy, now);
         const payload = this.toPayload({
             ...restated,
             items,
             charges,
             tenders: await this.withChequeDetails(tx, tenders),
+        }, {
+            ...EMPTY_NAME_MAPS,
+            actorNameById: await this.resolveActorNames(tx, [restated.soCreatedBy]),
         });
         await this.auditLogService.logEntityChange({
             action: 'New',
@@ -1249,7 +1304,7 @@ let SaleOrderService = class SaleOrderService {
             pk: payload.soId,
             displayName: payload.soOrderRefno || payload.soId,
             originalRecord: null,
-            modifiedRecord: payload,
+            modifiedRecord: auditRecordOf(payload),
             userId: createdBy,
             notes: 'Order created',
         }, tx);
@@ -1278,7 +1333,7 @@ let SaleOrderService = class SaleOrderService {
         }
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
         const now = new Date();
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveOrderDto.soModifiedBy, this.requestContextService.getUserId());
+        const modifiedBy = this.signedInActor();
         const data = {
             soModifiedOn: now,
             soModifiedBy: modifiedBy,
@@ -1316,12 +1371,19 @@ let SaleOrderService = class SaleOrderService {
             ? { ...updated, soAdvanceRecdAmt: ZERO }
             : updated;
         const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
-        const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+        const advanced = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+        const restated = await this.restateOrderAmounts(tx, advanced, items);
         const payload = this.toPayload({
             ...restated,
             items,
             charges,
             tenders: await this.withChequeDetails(tx, tenders),
+        }, {
+            ...EMPTY_NAME_MAPS,
+            actorNameById: await this.resolveActorNames(tx, [
+                restated.soCreatedBy,
+                restated.soModifiedBy,
+            ]),
         });
         await this.auditLogService.logEntityChange({
             action: 'update',
@@ -1330,9 +1392,9 @@ let SaleOrderService = class SaleOrderService {
             screenType: 'transaction',
             pk: soId,
             displayName: payload.soOrderRefno || payload.soId,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.soModifiedBy || payload.soCreatedBy,
+            originalRecord: auditRecordOf(this.toPayload(existing)),
+            modifiedRecord: auditRecordOf(payload),
+            userId: modifiedBy,
             notes: 'Order updated',
         }, tx);
         return payload;
@@ -1391,7 +1453,7 @@ let SaleOrderService = class SaleOrderService {
                     soiItemUnitId: inputItem.soiItemUnitId ?? existingItem.soiItemUnitId,
                     soiPriceLevel: inputItem.soiPriceLevel ?? scope.soPriceLevel,
                     soiModifiedOn: now,
-                    soiModifiedBy: (0, module_service_utils_1.resolveActor)(inputItem.soiModifiedBy, actorId),
+                    soiModifiedBy: actorId,
                 };
                 (0, module_service_utils_1.applyPresentFields)(updateData, inputItem, SALE_ORDER_ITEM_OPTIONAL_FIELDS, SALE_ORDER_ITEM_DATE_TRANSFORMS);
                 this.applyDerivedItemQuantities(updateData, inputItem, existingItem);
@@ -1410,7 +1472,7 @@ let SaleOrderService = class SaleOrderService {
                     displayName: `Line ${updated.soiLineNo}`,
                     originalRecord: this.toItemPayload(existingItem),
                     modifiedRecord: this.toItemPayload(updated),
-                    userId: (0, module_service_utils_1.resolveActor)(inputItem.soiModifiedBy, actorId),
+                    userId: actorId,
                     notes: 'Order item updated',
                 }, tx);
                 persisted.push(updated);
@@ -1428,7 +1490,7 @@ let SaleOrderService = class SaleOrderService {
                 soiItemUnitId: this.requireItemField(inputItem.soiItemUnitId, 'soiItemUnitId'),
                 soiPriceLevel: inputItem.soiPriceLevel ?? scope.soPriceLevel,
                 soiCreatedOn: now,
-                soiCreatedBy: (0, module_service_utils_1.resolveActor)(inputItem.soiCreatedBy, actorId),
+                soiCreatedBy: actorId,
             };
             (0, module_service_utils_1.applyPresentFields)(createData, inputItem, SALE_ORDER_ITEM_OPTIONAL_FIELDS, SALE_ORDER_ITEM_DATE_TRANSFORMS);
             this.applyDerivedItemQuantities(createData, inputItem, undefined);
@@ -1861,6 +1923,19 @@ let SaleOrderService = class SaleOrderService {
             { gdlName: godown.gdlName, gdlNegativeStock: godown.gdlNegativeStock },
         ]));
     }
+    async resolveActorNames(client, actors) {
+        const ids = distinctIds(actors
+            .map((actor) => actor?.trim().toLowerCase())
+            .filter((actor) => typeof actor === 'string' && ACTOR_UUID.test(actor)));
+        if (ids.length === 0) {
+            return new Map();
+        }
+        const users = await client.userMaster.findMany({
+            where: { usrId: { in: ids } },
+            select: { usrId: true, usrLoginName: true },
+        });
+        return new Map(users.map((user) => [user.usrId.toLowerCase(), user.usrLoginName.trim()]));
+    }
     async resolveDisplayNames(record, charges, tenders) {
         const items = record.items ?? [];
         const companyIds = distinctIds([
@@ -1880,7 +1955,7 @@ let SaleOrderService = class SaleOrderService {
         ]);
         const ledgerIds = distinctIds(tenders.map((tender) => tender.tdPartyLedgerId));
         const userIds = distinctIds(tenders.map((tender) => tender.tdUserId));
-        const [companies, branches, employees, ledgers, users, godownById, defaultGodownByLine] = await Promise.all([
+        const [companies, branches, employees, ledgers, users, actorNameById, godownById, defaultGodownByLine,] = await Promise.all([
             companyIds.length
                 ? this.prisma.company.findMany({
                     where: { compId: { in: companyIds } },
@@ -1911,6 +1986,7 @@ let SaleOrderService = class SaleOrderService {
                     select: { usrId: true, usrDisplayName: true },
                 })
                 : [],
+            this.resolveActorNames(this.prisma, [record.soCreatedBy, record.soModifiedBy]),
             this.resolveGodowns(items),
             (0, sale_line_godown_utils_1.resolveDefaultSaleGodowns)(this.prisma, record.soBranchId, items
                 .filter((item) => item.soiGodownId === null)
@@ -1923,6 +1999,7 @@ let SaleOrderService = class SaleOrderService {
             employeeNameById: new Map(employees.map((employee) => [employee.empId, employee.empName])),
             ledgerNameById: new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName])),
             userNameById: new Map(users.map((user) => [user.usrId, user.usrDisplayName])),
+            actorNameById,
             godownById,
             companyAllowsNegStock: orderCompany?.compNegStkApl ?? null,
             defaultGodownByLine,
@@ -1942,6 +2019,8 @@ let SaleOrderService = class SaleOrderService {
             soSalesmanName: Array.isArray(rest.soSalesmanId)
                 ? rest.soSalesmanId.map((salesmanId) => names.employeeNameById.get(salesmanId) ?? null)
                 : null,
+            createdByName: actorLabel(rest.soCreatedBy, names.actorNameById),
+            modifiedByName: actorLabel(rest.soModifiedBy, names.actorNameById),
             items: items ? items.map((item) => this.toItemPayload(item, names)) : [],
             charges: (charges ?? []).map((charge) => this.withChargeNames(charge, names)),
             tenders: (tenders ?? []).map((tender) => this.withTenderNames(tender, names)),

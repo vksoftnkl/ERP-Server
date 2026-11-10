@@ -162,7 +162,16 @@ export class SaleOrderLifecycleService {
     }
     await tx.saleOrder.update({
       where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-      data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actorName },
+      data: {
+        soStatus: ORDER_STATUS.CONFIRMED,
+        soModifiedOn: now,
+        // Plan SO-5: the signed-in user's id, as the save paths stamp it; /get
+        // names it (createdByName / modifiedByName).
+        soModifiedBy: ctx.actor,
+        // so_pending_amt & co. off the lines being confirmed, so an order saved
+        // before the save paths restated them comes out right too.
+        ...this.orders.orderAmountsOf(lines),
+      },
     });
     await this.trail(
       tx,
@@ -250,7 +259,7 @@ export class SaleOrderLifecycleService {
           data: {
             soStatus: ORDER_STATUS.CANCELLED,
             soModifiedOn: now,
-            soModifiedBy: ctx.actorName,
+            soModifiedBy: ctx.actor, // plan SO-5: the user id
           },
         });
         await this.trail(
@@ -369,7 +378,7 @@ export class SaleOrderLifecycleService {
         data: {
           soRevisionNo: order.soRevisionNo + 1,
           soModifiedOn: now,
-          soModifiedBy: ctx.actorName,
+          soModifiedBy: ctx.actor, // plan SO-5: the user id
         },
       });
       await this.trail(

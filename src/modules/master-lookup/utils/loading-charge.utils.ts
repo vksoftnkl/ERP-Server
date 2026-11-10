@@ -11,8 +11,9 @@ import { LoadingSlabRow } from '../types/master-lookup-internal.types';
  * by qty would only push a line into a heavier slab, not multiply the charge.
  *
  * Returns null when there is nothing to match on — a conversion row without a
- * UOM weight cannot be slab-matched, which the caller turns into a 400 rather
- * than silently charging nothing.
+ * UOM weight cannot be slab-matched. The caller then resolves nothing (null
+ * charge, as `manual`), so the user types the charge in; since 2026-11-10 that
+ * is no longer a 400, which blocked item pick on loading `auto`.
  *
  * The value stays a Prisma.Decimal so a 3-decimal UOM weight reaches the
  * numeric comparison in the query without a binary-float tail.

@@ -127,6 +127,7 @@ export declare class SaleOrderItemPayloadDto {
     soiSalesmanId: string | null;
     soiSalesmanName?: string | null;
     soiSchemeId: string | null;
+    soiQtyPriceId: string | null;
     soiSchemeName: string | null;
     soiRemarks: string | null;
     soiCancelReason: string | null;
@@ -284,6 +285,8 @@ export declare class SaleOrderPayloadDto {
     soCreatedBy: string;
     soModifiedOn: string | null;
     soModifiedBy: string | null;
+    createdByName?: string | null;
+    modifiedByName?: string | null;
     items: SaleOrderItemPayloadDto[];
     charges: SaleOrderChargePayloadDto[];
     tenders: SaleOrderTenderPayloadDto[];

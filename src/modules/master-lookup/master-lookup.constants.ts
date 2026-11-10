@@ -11,10 +11,13 @@ export const LOADING_TYPES: readonly LoadingType[] = ['manual', 'item_basis', 'a
 export const DEFAULT_LOADING_TYPE: LoadingType = 'manual';
 
 /**
- * Accepted `freight_type` values. No `auto`: freight slabs are matched on
- * distance, which the item-price lookup is never given.
+ * Accepted `freight_type` values, in the order the 400 message lists them — the
+ * same three `sales.freight_calc_type` allows, since clients pass the setting
+ * straight through. `auto` (the distance bands) resolves no per-item freight:
+ * the lookup is never given a distance, so the client applies the band itself
+ * (GET /master-lookups/freight-charges/charge?distance=).
  */
-export const FREIGHT_TYPES: readonly FreightType[] = ['manual', 'item_basis'];
+export const FREIGHT_TYPES: readonly FreightType[] = ['manual', 'item_basis', 'auto'];
 
 /** `freight_type` a request without one is resolved as. */
 export const DEFAULT_FREIGHT_TYPE: FreightType = 'manual';

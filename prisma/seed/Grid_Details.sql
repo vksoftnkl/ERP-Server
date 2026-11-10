@@ -830,16 +830,20 @@ ORDER BY
 	b.so_order_amt,
 	b.so_status,
 	b.so_print_count,
-	b.so_created_by
+	COALESCE(u.usr_login_name, b.so_created_by) AS so_created_by,
+	b.so_fulfil_status,
+	b.so_pending_amt
 FROM
 	sales.sale_order b
 	INNER JOIN sales.customers c on c.cus_id = b.so_cust_id
+	LEFT JOIN public.user_master u ON u.usr_id::text = lower(b.so_created_by)
  WHERE
- 	b.so_company_id = 'icompany_id'::uuid
+ 	b.so_is_deleted = false
+ 	AND b.so_company_id = 'icompany_id'::uuid
   	AND b.so_branch_id  = 'ibranch_id'::uuid
-  	 
   	AND (NULLIF('ifrom_date', '') IS NULL OR b.so_order_date >= 'ifrom_date'::date)
   	AND (NULLIF('ito_date',   '') IS NULL OR b.so_order_date <= 'ito_date'::date)
+  	AND (lower(NULLIF('ipending_only', '')) IS DISTINCT FROM 'true' OR (b.so_status IN ('CONFIRMED', 'PARTIAL') AND b.so_fulfil_status IN ('PENDING', 'PARTIAL')))
 ORDER BY
 	b.so_order_date DESC, b.so_order_slno DESC$seed$)
     ,(88 , 'POPUP - CUST AREAS', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT

@@ -293,6 +293,10 @@ export declare class PurchaseInvoiceService {
             piiModifiedOn: Date | null;
             piiModifiedBy: string | null;
             piiMinPrice: Prisma.Decimal | null;
+            piiWastagePerQty: Prisma.Decimal;
+            piiWastageQty: Prisma.Decimal;
+            piiSrcQty: Prisma.Decimal | null;
+            piiSrcRate: Prisma.Decimal | null;
         }[];
         charges: Record<string, unknown>[];
         totals: {
@@ -537,6 +541,10 @@ export declare class PurchaseInvoiceService {
             piiModifiedOn: Date | null;
             piiModifiedBy: string | null;
             piiMinPrice: Prisma.Decimal | null;
+            piiWastagePerQty: Prisma.Decimal;
+            piiWastageQty: Prisma.Decimal;
+            piiSrcQty: Prisma.Decimal | null;
+            piiSrcRate: Prisma.Decimal | null;
         }[];
         charges: Record<string, unknown>[];
         totals: {
@@ -783,6 +791,10 @@ export declare class PurchaseInvoiceService {
             piiModifiedOn: Date | null;
             piiModifiedBy: string | null;
             piiMinPrice: Prisma.Decimal | null;
+            piiWastagePerQty: Prisma.Decimal;
+            piiWastageQty: Prisma.Decimal;
+            piiSrcQty: Prisma.Decimal | null;
+            piiSrcRate: Prisma.Decimal | null;
         }[];
         charges: Record<string, unknown>[];
         totals: {
@@ -1029,6 +1041,10 @@ export declare class PurchaseInvoiceService {
             piiModifiedOn: Date | null;
             piiModifiedBy: string | null;
             piiMinPrice: Prisma.Decimal | null;
+            piiWastagePerQty: Prisma.Decimal;
+            piiWastageQty: Prisma.Decimal;
+            piiSrcQty: Prisma.Decimal | null;
+            piiSrcRate: Prisma.Decimal | null;
         }[];
         charges: Record<string, unknown>[];
         totals: {
@@ -1270,6 +1286,10 @@ export declare class PurchaseInvoiceService {
             piiModifiedOn: Date | null;
             piiModifiedBy: string | null;
             piiMinPrice: Prisma.Decimal | null;
+            piiWastagePerQty: Prisma.Decimal;
+            piiWastageQty: Prisma.Decimal;
+            piiSrcQty: Prisma.Decimal | null;
+            piiSrcRate: Prisma.Decimal | null;
         }[];
         charges: Record<string, unknown>[];
         totals: {

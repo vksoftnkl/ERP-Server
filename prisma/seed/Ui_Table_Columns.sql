@@ -1,4 +1,4 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2074 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2107 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
@@ -18,6 +18,12 @@
 -- so 1..4 and 12..15 are shown again (column 4 titled "Level"); 23 Level and 25 With saved card
 -- hidden; the fifteen shown add up to 100.00; focus on for every column typed or picked in the
 -- line, off for Each and What moves it.
+-- 69 Sales Order charges grid (tblCharges) as 20261110100000_sales_order_charges_layout created it
+-- (ids 2396-2428): numbers 0..32 are ChargeCols, as in table 21; shown in this order Charge (1) ·
+-- Basis (3) · Before/After tax (27) · Rate (9) · Amount (10) · GST (13) · Net (22), focus on
+-- Charge, Rate, Amount; the other 26 hidden with 21's titles. Widths as
+-- 20261110140000_sales_order_charges_widths left them (20 · 15 · 14 · 10 · 13 · 10 · 13 = 95.00,
+-- room for the "#" gutter as in table 21).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -1824,6 +1830,40 @@ SELECT v.* FROM (VALUES
     ,(2389, 68  , 18 , 'L4 Price'              , 5.74             , true , true , 18 , false, NULL, NULL, true , false, 'system')
     ,(2390, 68  , 19 , 'Min'                   , 3.79             , true , true , 19 , false, NULL, NULL, true , false, 'system')
     ,(2391, 68  , 20 , 'Changed'               , 3.88             , true , false, 20 , false, NULL, NULL, true , false, 'system')
+    -- ============ SALES ORDER - CHARGES (id 69) ============
+    ,(2396, 69  , 0  , '#'                     , 0                , false, false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2397, 69  , 1  , 'Charge'                , 20               , true , true , 0  , false, NULL, NULL, true , false, 'system')
+    ,(2398, 69  , 2  , 'Ledger Name'           , 0                , false, false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2399, 69  , 3  , 'Basis'                 , 15               , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2400, 69  , 4  , 'Type'                  , 0                , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2401, 69  , 5  , 'Apply On'              , 0                , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2402, 69  , 6  , 'Unit'                  , 0                , false, false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2403, 69  , 7  , 'QtyVal'                , 0                , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2404, 69  , 8  , 'Weight'                , 0                , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2405, 69  , 9  , 'Rate'                  , 10               , true , true , 3  , false, NULL, NULL, true , false, 'system')
+    ,(2406, 69  , 10 , 'Amount'                , 13               , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(2407, 69  , 11 , 'Hsn'                   , 0                , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2408, 69  , 12 , 'TaxPerc'               , 0                , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2409, 69  , 13 , 'GST'                   , 10               , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2410, 69  , 14 , 'SgstPerc'              , 0                , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2411, 69  , 15 , 'SgstAmt'               , 0                , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2412, 69  , 16 , 'CgstPerc'              , 0                , false, false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2413, 69  , 17 , 'CgstAmt'               , 0                , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2414, 69  , 18 , 'IgstPerc'              , 0                , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2415, 69  , 19 , 'IgstAmt'               , 0                , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2416, 69  , 20 , 'CessPerc'              , 0                , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2417, 69  , 21 , 'CessAmt'               , 0                , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2418, 69  , 22 , 'Net'                   , 13               , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2419, 69  , 23 , 'Remarks'               , 0                , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2420, 69  , 24 , 'Role'                  , 0                , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2421, 69  , 25 , 'LandingCost'           , 0                , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(2422, 69  , 26 , 'CostAlloc'             , 0                , false, false, 27 , false, NULL, NULL, true , false, 'system')
+    ,(2423, 69  , 27 , 'Before/After tax'      , 14               , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2424, 69  , 28 , 'SepPost'               , 0                , false, false, 28 , false, NULL, NULL, true , false, 'system')
+    ,(2425, 69  , 29 , 'ChargeId'              , 0                , false, false, 29 , false, NULL, NULL, true , false, 'system')
+    ,(2426, 69  , 30 , 'LedgerCode'            , 0                , false, false, 30 , false, NULL, NULL, true , false, 'system')
+    ,(2427, 69  , 31 , 'TaxCode'               , 0                , false, false, 31 , false, NULL, NULL, true , false, 'system')
+    ,(2428, 69  , 32 , 'TaxApl'                , 0                , false, false, 32 , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

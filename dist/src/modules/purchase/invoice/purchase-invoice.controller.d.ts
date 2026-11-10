@@ -214,6 +214,10 @@ export declare class PurchaseInvoiceController {
                 piiModifiedOn: Date | null;
                 piiModifiedBy: string | null;
                 piiMinPrice: import("@prisma/client/runtime/library").Decimal | null;
+                piiWastagePerQty: import("@prisma/client/runtime/library").Decimal;
+                piiWastageQty: import("@prisma/client/runtime/library").Decimal;
+                piiSrcQty: import("@prisma/client/runtime/library").Decimal | null;
+                piiSrcRate: import("@prisma/client/runtime/library").Decimal | null;
             }[];
             charges: Record<string, unknown>[];
             totals: {
@@ -539,6 +543,10 @@ export declare class PurchaseInvoiceController {
                 piiModifiedOn: Date | null;
                 piiModifiedBy: string | null;
                 piiMinPrice: import("@prisma/client/runtime/library").Decimal | null;
+                piiWastagePerQty: import("@prisma/client/runtime/library").Decimal;
+                piiWastageQty: import("@prisma/client/runtime/library").Decimal;
+                piiSrcQty: import("@prisma/client/runtime/library").Decimal | null;
+                piiSrcRate: import("@prisma/client/runtime/library").Decimal | null;
             }[];
             charges: Record<string, unknown>[];
             totals: {
@@ -784,6 +792,10 @@ export declare class PurchaseInvoiceController {
                 piiModifiedOn: Date | null;
                 piiModifiedBy: string | null;
                 piiMinPrice: import("@prisma/client/runtime/library").Decimal | null;
+                piiWastagePerQty: import("@prisma/client/runtime/library").Decimal;
+                piiWastageQty: import("@prisma/client/runtime/library").Decimal;
+                piiSrcQty: import("@prisma/client/runtime/library").Decimal | null;
+                piiSrcRate: import("@prisma/client/runtime/library").Decimal | null;
             }[];
             charges: Record<string, unknown>[];
             totals: {
@@ -1029,6 +1041,10 @@ export declare class PurchaseInvoiceController {
                 piiModifiedOn: Date | null;
                 piiModifiedBy: string | null;
                 piiMinPrice: import("@prisma/client/runtime/library").Decimal | null;
+                piiWastagePerQty: import("@prisma/client/runtime/library").Decimal;
+                piiWastageQty: import("@prisma/client/runtime/library").Decimal;
+                piiSrcQty: import("@prisma/client/runtime/library").Decimal | null;
+                piiSrcRate: import("@prisma/client/runtime/library").Decimal | null;
             }[];
             charges: Record<string, unknown>[];
             totals: {
@@ -1315,6 +1331,10 @@ export declare class PurchaseInvoiceController {
                 piiModifiedOn: Date | null;
                 piiModifiedBy: string | null;
                 piiMinPrice: import("@prisma/client/runtime/library").Decimal | null;
+                piiWastagePerQty: import("@prisma/client/runtime/library").Decimal;
+                piiWastageQty: import("@prisma/client/runtime/library").Decimal;
+                piiSrcQty: import("@prisma/client/runtime/library").Decimal | null;
+                piiSrcRate: import("@prisma/client/runtime/library").Decimal | null;
             }[];
             charges: Record<string, unknown>[];
             totals: {

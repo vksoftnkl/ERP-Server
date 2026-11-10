@@ -210,13 +210,23 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             await this.assertRight('create', 'add qty-wise prices');
         }
     }
-    ownBranchId() {
-        return this.requestContextService.getBranchId()?.toLowerCase() ?? null;
+    async ownBranchId() {
+        const loggedIn = this.requestContextService.getBranchId();
+        if (loggedIn)
+            return loggedIn.toLowerCase();
+        const userId = this.requestContextService.getUserId();
+        if (!userId)
+            return null;
+        const user = await this.prisma.userMaster.findUnique({
+            where: { usrId: userId },
+            select: { usrBranchId: true },
+        });
+        return user?.usrBranchId?.toLowerCase() ?? null;
     }
     throwOtherBranch(fields, own) {
         const message = own
             ? 'A slab for another branch can only be changed by head office. Pick your own branch for the slab.'
-            : 'This login is not at a branch counter, so only head office can change qty-wise prices.';
+            : 'This login has no branch (no branch counter, no branch on the user), so only head office can change qty-wise prices.';
         (0, module_service_utils_1.throwInventoryForbidden)('A slab of another branch needs head office', [
             ...fields.map((field) => ({ field, code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.OTHER_BRANCH, message })),
         ]);
@@ -227,7 +237,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         }
         const known = stored ??
             (await this.readStoredSlabs(client, rows.filter((row) => row.iqp_id).map((row) => row.iqp_id)));
-        const own = this.ownBranchId();
+        const own = await this.ownBranchId();
         const owned = (branchId) => own !== null && branchId?.toLowerCase() === own;
         const wrong = rows
             .map((row, index) => {
@@ -248,7 +258,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             return;
         }
         const known = stored ?? (await this.readStoredSlabs(client, ids));
-        const own = this.ownBranchId();
+        const own = await this.ownBranchId();
         const wrong = ids
             .map((id, index) => ({ index, slab: known.get(id.toLowerCase()) }))
             .filter(({ slab }) => slab && (own === null || slab.branchId?.toLowerCase() !== own));

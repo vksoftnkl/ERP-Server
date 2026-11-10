@@ -118,13 +118,10 @@ class ItemPriceLookup {
         }
         const weight = (0, loading_charge_utils_1.resolveLoadingWeight)(rate.itemUnitConversion.iucUomWeight);
         if (weight === null) {
-            (0, module_service_utils_1.throwMasterBadRequest)('Validation failed', [
-                {
-                    field: 'item_id',
-                    message: `loading_type 'auto' needs a weight: the item's unit conversion carries no UOM weight to match a slab on`,
-                    code: master_lookup_error_codes_1.MasterLookupErrorCode.LOADING_WEIGHT_MISSING,
-                },
-            ]);
+            return {
+                loading_charge: null,
+                resolved_weight: null,
+            };
         }
         const slabs = await this.prisma.saleLoadingCharge.findMany({
             where: {
@@ -154,7 +151,7 @@ class ItemPriceLookup {
         };
     }
     resolveFreightCharge(query, rate) {
-        if ((query.freight_type ?? master_lookup_constants_1.DEFAULT_FREIGHT_TYPE) === 'manual') {
+        if ((query.freight_type ?? master_lookup_constants_1.DEFAULT_FREIGHT_TYPE) !== 'item_basis') {
             return null;
         }
         const charge = (0, module_service_utils_1.toNumber)(rate.ipmFreightCharge);

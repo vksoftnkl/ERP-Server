@@ -93,7 +93,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: master_lookup_constants_1.LOADING_TYPES,
         default: master_lookup_constants_1.DEFAULT_LOADING_TYPE,
-        description: "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id. Omitted is manual.",
+        description: "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id; a unit with no UOM weight resolves nothing (null, as manual). Omitted is manual.",
     }),
     OptionalChargeMode('loading_type', master_lookup_constants_1.LOADING_TYPES),
     __metadata("design:type", String)
@@ -102,7 +102,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: master_lookup_constants_1.FREIGHT_TYPES,
         default: master_lookup_constants_1.DEFAULT_FREIGHT_TYPE,
-        description: "Voucher-level freight mode the freight charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own ipm_freight_charge. Omitted is manual. There is no auto: freight slabs are matched on distance, which this lookup is not given.",
+        description: "Voucher-level freight mode the freight charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own ipm_freight_charge; auto = the distance bands, which this lookup is not given a distance for, so nothing is resolved here (freight_charge null) and the client applies the band from GET /master-lookups/freight-charges/charge?distance=. Omitted is manual.",
     }),
     OptionalChargeMode('freight_type', master_lookup_constants_1.FREIGHT_TYPES),
     __metadata("design:type", String)

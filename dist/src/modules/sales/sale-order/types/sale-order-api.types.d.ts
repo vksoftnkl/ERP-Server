@@ -52,6 +52,8 @@ export type SaleOrderPayload = Omit<SaleOrder, 'soCreatedOn' | 'soModifiedOn' | 
     soCompanyName?: string | null;
     soBranchName?: string | null;
     soSalesmanName?: (string | null)[] | null;
+    createdByName?: string | null;
+    modifiedByName?: string | null;
     items?: SaleOrderItemPayload[];
     charges?: SaleOrderChargePayload[];
     tenders?: SaleOrderTenderPayload[];

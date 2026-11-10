@@ -36,6 +36,12 @@ const item_qty_rates_rules_1 = require("./item-qty-rates.rules");
 const item_qty_rates_types_1 = require("./types/item-qty-rates.types");
 const TX = { timeout: 60_000, maxWait: 10_000 };
 const num = (value) => value === null || value === undefined ? 0 : typeof value === 'number' ? value : value.toNumber();
+function withScreenLevelNames(slabs, levels) {
+    const names = new Map(levels.map((level) => [level.level, level.name]));
+    return slabs.map((slab) => slab.iqp_price_level == null || !names.has(slab.iqp_price_level)
+        ? slab
+        : { ...slab, iqp_price_level_name: names.get(slab.iqp_price_level) });
+}
 function dayDate(day) {
     return new Date(`${day}T00:00:00.000Z`);
 }
@@ -184,7 +190,7 @@ let ItemQtyRatesService = class ItemQtyRatesService {
                 .filter((level) => level.active)
                 .map((level) => ({ level: level.level, name: level.name, short: level.short })),
             units: rows,
-            slabs,
+            slabs: withScreenLevelNames(slabs, levels),
         };
     }
     async saveWithRates(dto) {
@@ -314,7 +320,7 @@ let ItemQtyRatesService = class ItemQtyRatesService {
             return {
                 needsConfirm: false,
                 rates,
-                slabs: saved,
+                slabs: withScreenLevelNames(saved, levels),
                 deletedSlabIds: deleted.map((entry) => entry.iqp_id),
                 problems,
                 belowCostPolicy: policy,

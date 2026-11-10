@@ -27,12 +27,14 @@ export type LoadingType = 'manual' | 'item_basis' | 'auto';
  * `freight_charge` from:
  *  - `manual`     — nothing is resolved; the user types the charge in.
  *  - `item_basis` — the charge stored on the item's price row.
- *
- * There is no `auto` counterpart to `LoadingType`'s: freight slabs
- * (`sale_freight_charges`) are matched on distance, which this lookup is never
- * given — `GET /freight-charges/charge?distance=` resolves those.
+ *  - `auto`       — the distance bands (`sale_freight_charges`). Unlike
+ *    `LoadingType`'s `auto`, nothing is resolved here either: the bands are
+ *    matched on distance, which this lookup is never given, so the CLIENT
+ *    applies them (`GET /master-lookups/freight-charges/charge?distance=`).
+ *    Accepted so a company whose `sales.freight_calc_type` is `auto` can
+ *    still pick items.
  */
-export type FreightType = 'manual' | 'item_basis';
+export type FreightType = 'manual' | 'item_basis' | 'auto';
 
 /**
  * A freight-charge slab row (`sale_freight_charges`). `iflag = 9` returns the
@@ -260,9 +262,9 @@ export interface ItemPriceLookupPayload {
   loading_charge: number | null;
   /** Weight the slab was matched on — `auto` only, else null (manual / item_basis ignore weight). */
   resolved_weight: number | null;
-  // Freight charge — resolved server-side from `freight_type`. Present in both
-  // modes; only the value differs.
-  /** Resolved charge (item_price_master.ipm_freight_charge). NULL means "nothing to apply" — manual entry or an unset master value. */
+  // Freight charge — resolved server-side from `freight_type`. Present in all
+  // three modes; only the value differs.
+  /** Resolved charge (item_price_master.ipm_freight_charge). NULL means "nothing to apply" — manual entry, `auto` (the client applies the distance band) or an unset master value. */
   freight_charge: number | null;
   // Loyalty
   loyalty_pv: number;

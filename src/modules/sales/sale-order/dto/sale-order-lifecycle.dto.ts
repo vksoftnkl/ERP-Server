@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsNotEmpty } from 'class-validator';
 import { RequiredInteger, RequiredUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
 import { SaveSaleOrderDto } from './save-sale-order.dto';
@@ -32,10 +32,17 @@ export class CancelSaleOrderDto extends SaleOrderKeysDto {
   reason!: string;
 }
 
-export class AmendSaleOrderDto extends SaveSaleOrderDto {
-  @ApiProperty({ format: 'uuid', description: 'Required on amend' })
+/**
+ * The full create body, but soId is REQUIRED: an amend names the order it edits.
+ * soId is OMITTED from the base and declared fresh rather than narrowed with
+ * `declare`, which drops the decorators (no validation, no Swagger `required`)
+ * and left the base's IsOptional in force, so a missing soId got through.
+ * OmitType copies every other property's validators, transforms and docs.
+ */
+export class AmendSaleOrderDto extends OmitType(SaveSaleOrderDto, ['soId'] as const) {
+  @ApiProperty({ format: 'uuid', description: 'The order being amended. Required on amend' })
   @RequiredUuid()
-  declare soId: string;
+  soId!: string;
 
   @ApiProperty({ description: 'The soRevisionNo the client loaded — the optimistic lock' })
   @RequiredInteger(1)

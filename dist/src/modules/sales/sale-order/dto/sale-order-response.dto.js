@@ -162,6 +162,7 @@ class SaleOrderItemPayloadDto {
     soiSalesmanId;
     soiSalesmanName;
     soiSchemeId;
+    soiQtyPriceId;
     soiSchemeName;
     soiRemarks;
     soiCancelReason;
@@ -706,6 +707,14 @@ __decorate([
     __metadata("design:type", Object)
 ], SaleOrderItemPayloadDto.prototype, "soiSchemeId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The qty slab (inventory.item_qty_price.iqp_id) that priced the line, as saved',
+    }),
+    __metadata("design:type", Object)
+], SaleOrderItemPayloadDto.prototype, "soiQtyPriceId", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 150, nullable: true }),
     __metadata("design:type", Object)
 ], SaleOrderItemPayloadDto.prototype, "soiSchemeName", void 0);
@@ -929,6 +938,8 @@ class SaleOrderPayloadDto {
     soCreatedBy;
     soModifiedOn;
     soModifiedBy;
+    createdByName;
+    modifiedByName;
     items;
     charges;
     tenders;
@@ -1544,6 +1555,21 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], SaleOrderPayloadDto.prototype, "soModifiedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'soCreatedBy as a login name: a user id resolves through user_master; any other text ' +
+            '(older rows) is already a name and is returned unchanged.',
+    }),
+    __metadata("design:type", Object)
+], SaleOrderPayloadDto.prototype, "createdByName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'soModifiedBy as a login name, resolved the same way as createdByName.',
+    }),
+    __metadata("design:type", Object)
+], SaleOrderPayloadDto.prototype, "modifiedByName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: SaleOrderItemPayloadDto, isArray: true }),
     __metadata("design:type", Array)

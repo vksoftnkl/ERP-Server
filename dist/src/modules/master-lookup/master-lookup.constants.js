@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MODULE_DROPDOWN_NAME_ALIASES = exports.CONFIGURED_SQL_TABLE_REPLACEMENTS = exports.ID_ORDERED_LOOKUP_MODULES = exports.LOOKUP_NAME_NOISE_TOKENS = exports.DEFAULT_FREIGHT_TYPE = exports.FREIGHT_TYPES = exports.DEFAULT_LOADING_TYPE = exports.LOADING_TYPES = void 0;
 exports.LOADING_TYPES = ['manual', 'item_basis', 'auto'];
 exports.DEFAULT_LOADING_TYPE = 'manual';
-exports.FREIGHT_TYPES = ['manual', 'item_basis'];
+exports.FREIGHT_TYPES = ['manual', 'item_basis', 'auto'];
 exports.DEFAULT_FREIGHT_TYPE = 'manual';
 exports.LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);
 exports.ID_ORDERED_LOOKUP_MODULES = new Set([

@@ -282,14 +282,14 @@ __decorate([
     (0, swagger_1.ApiQuery)({
         name: 'loading_type',
         required: false,
-        description: "How loading_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own charge; auto = the sale_loading_charges weight slab matched on the resolved unit's iuc_uom_weight, which additionally requires company_id and branch_id. Omitted is manual.",
+        description: "How loading_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own charge; auto = the sale_loading_charges weight slab matched on the resolved unit's iuc_uom_weight, which additionally requires company_id and branch_id; a unit with no UOM weight resolves nothing (loading_charge and resolved_weight null, as manual). Omitted is manual.",
         schema: { type: 'string', enum: ['manual', 'item_basis', 'auto'], default: 'manual' },
     }),
     (0, swagger_1.ApiQuery)({
         name: 'freight_type',
         required: false,
-        description: "How freight_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own ipm_freight_charge. Omitted is manual. No auto: freight slabs are distance-matched, which this lookup has no distance for — use /freight-charges/charge.",
-        schema: { type: 'string', enum: ['manual', 'item_basis'], default: 'manual' },
+        description: "How freight_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own ipm_freight_charge; auto = the distance bands: not resolved here either (freight_charge null), because this lookup has no distance — the client applies the band from GET /master-lookups/freight-charges/charge?distance=. Omitted is manual.",
+        schema: { type: 'string', enum: ['manual', 'item_basis', 'auto'], default: 'manual' },
     }),
     (0, swagger_1.ApiQuery)({
         name: 'regional',

@@ -21115,3 +21115,21 @@ DETAIL: A field with precision 18, scale 6 must round to an absolute value less 
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async CostPriceBulkController.save (/home/vk/Dev/erp/ERP server/src/modules/stocks/cost-price-bulk/cost-price-bulk.controller.ts:148:18)
 2026-11-06T04:55:04.950Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-07T04:58:09.619Z ERROR [AllExceptionsFilter] GET /api/v1/purchase/invoices/get?piId=01a1af59-6b26-76c9-9bc7-ddcf51804e4d&accYear=2026-2027
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.purInvoiceItem.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:413:34
+
+  410 const header = await this.prisma.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
+  411 if (!header) purNotFound(`Purchase invoice ${piId} not found`);
+  412 const [lines, allocs, charges, supplier] = await Promise.all([
+→ 413   this.prisma.purInvoiceItem.findMany(
+The column `pur_invoice_item.pii_wastage_per_qty` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PurchaseInvoiceService.get (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:412:48)
+    at async PurchaseInvoiceController.get (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:58:72)
+2026-11-10T05:09:41.278Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

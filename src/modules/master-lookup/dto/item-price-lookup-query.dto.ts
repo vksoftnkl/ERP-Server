@@ -77,7 +77,7 @@ export class ItemPriceLookupQueryDto {
     enum: LOADING_TYPES,
     default: DEFAULT_LOADING_TYPE,
     description:
-      "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id. Omitted is manual.",
+      "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id; a unit with no UOM weight resolves nothing (null, as manual). Omitted is manual.",
   })
   @OptionalChargeMode('loading_type', LOADING_TYPES)
   loading_type?: LoadingType;
@@ -85,7 +85,7 @@ export class ItemPriceLookupQueryDto {
     enum: FREIGHT_TYPES,
     default: DEFAULT_FREIGHT_TYPE,
     description:
-      "Voucher-level freight mode the freight charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own ipm_freight_charge. Omitted is manual. There is no auto: freight slabs are matched on distance, which this lookup is not given.",
+      "Voucher-level freight mode the freight charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own ipm_freight_charge; auto = the distance bands, which this lookup is not given a distance for, so nothing is resolved here (freight_charge null) and the client applies the band from GET /master-lookups/freight-charges/charge?distance=. Omitted is manual.",
   })
   @OptionalChargeMode('freight_type', FREIGHT_TYPES)
   freight_type?: FreightType;

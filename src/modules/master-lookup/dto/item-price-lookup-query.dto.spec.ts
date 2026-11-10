@@ -51,11 +51,15 @@ describe('ItemPriceLookupQueryDto charge modes', () => {
       const errors = validate('xyz');
       expect(errors).toHaveLength(1);
       expect(Object.values(errors[0].constraints ?? {})).toContain(
-        'freight_type must be one of: manual, item_basis',
+        'freight_type must be one of: manual, item_basis, auto',
       );
     });
-    it("rejects 'auto', which loading_type has but freight has no distance for", () => {
-      expect(validate('auto')).toHaveLength(1);
+    // sales.freight_calc_type allows auto and clients pass the setting through,
+    // so a company set to the distance bands must still be able to pick items.
+    it("accepts 'auto' in any case, as sales.freight_calc_type allows it", () => {
+      const dto = build({ freight_type: ' AUTO ' });
+      expect(validateSync(dto)).toHaveLength(0);
+      expect(dto.freight_type).toBe('auto');
     });
   });
 });

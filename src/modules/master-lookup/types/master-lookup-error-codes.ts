@@ -16,7 +16,11 @@ export enum MasterLookupErrorCode {
   BUCKET_PRICE_NOT_FOUND = 'LOOKUP_BUCKET_PRICE_NOT_FOUND',
   /** loading_type 'auto' was asked without both company_id and branch_id. */
   LOADING_SCOPE_REQUIRED = 'LOOKUP_LOADING_SCOPE_REQUIRED',
-  /** loading_type 'auto': the item's unit conversion has no UOM weight to match a slab on. */
+  /**
+   * loading_type 'auto': the item's unit conversion has no UOM weight to match a slab on.
+   * NO LONGER RAISED since 2026-11-10 (a weightless unit now resolves as `manual`);
+   * kept because its Error_Messages.json wording row still ships.
+   */
   LOADING_WEIGHT_MISSING = 'LOOKUP_LOADING_WEIGHT_MISSING',
   /** No live barcode (EAN) row has this code. */
   BARCODE_NOT_FOUND = 'LOOKUP_BARCODE_NOT_FOUND',

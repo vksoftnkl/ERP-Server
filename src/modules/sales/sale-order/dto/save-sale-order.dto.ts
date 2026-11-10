@@ -581,13 +581,20 @@ export class SaveSaleOrderDto {
   @ApiPropertyOptional()
   @OptionalInteger()
   soPrintCount?: number;
-  // so_created_by / so_modified_by are VarChar(50) columns, not uuid: the actor
-  // is whatever resolveActor settles on — a user id, but equally a name or
-  // login the caller passed — so the uuid pattern does not fit.
-  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  // Still accepted (the house ValidationPipe forbids unknown keys and clients
+  // send them), but IGNORED since plan SO-5 (2026-11-10): /create stamps the
+  // signed-in user's id, as GRN / PI do, and /get answers createdByName /
+  // modifiedByName for the screen.
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Ignored: the server stamps the signed-in user (see createdByName on /get)',
+  })
   @NullableStringStrict(50)
   soCreatedBy?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Ignored: the server stamps the signed-in user (see modifiedByName on /get)',
+  })
   @NullableStringStrict(50)
   soModifiedBy?: string | null;
   @ApiPropertyOptional({
