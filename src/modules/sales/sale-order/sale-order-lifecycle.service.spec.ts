@@ -308,15 +308,22 @@ describe('SaleOrderLifecycleService', () => {
       expect(prisma.saleOrder.update).not.toHaveBeenCalled();
     });
 
-    it.each(['CANCELLED', 'COMPLETED'])('refuses to confirm a %s order', async (soStatus) => {
+    it.each([
+      ['CANCELLED', 'SALES_DOC_CANCELLED'],
+      ['COMPLETED', 'SALES_DOC_NOT_DRAFT'],
+      ['CLOSED', 'SALES_DOC_NOT_DRAFT'],
+      ['EXPIRED', 'SALES_DOC_NOT_DRAFT'],
+      ['PARTIAL', 'SALES_DOC_NOT_DRAFT'],
+    ])('refuses to confirm a %s order with %s', async (soStatus, code) => {
       prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
 
       const refusal = await refusalOf(service.post(KEYS));
 
       expect(refusal).toMatchObject({
         status: 409,
-        body: { errors: [{ field: 'soId', code: 'SALES_DOC_NOT_DRAFT' }] },
+        body: { errors: [{ field: 'soId', code }] },
       });
+      expect(salesContext.resolve).not.toHaveBeenCalled();
     });
 
     it('refuses a user without the Post right on the order menu', async () => {
@@ -463,6 +470,22 @@ describe('SaleOrderLifecycleService', () => {
       expect(orders.cancelOrderOpenLines).not.toHaveBeenCalled();
     });
 
+    it.each(['CLOSED', 'EXPIRED'])(
+      'refuses a %s order with nothing delivered, before releasing a thing',
+      async (soStatus) => {
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+        const refusal = await refusalOf(service.cancel(CANCEL));
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'soId', code: 'SALES_DOC_NOT_DRAFT', status: soStatus }] },
+        });
+        expect(reservations.release).not.toHaveBeenCalled();
+        expect(orders.cancelOrderOpenLines).not.toHaveBeenCalled();
+      },
+    );
+
     it('releases the reservations and writes off every open line', async () => {
       prisma.saleOrder.findFirst
         .mockResolvedValueOnce(orderRow({ soStatus: 'CONFIRMED' }))
@@ -537,6 +560,22 @@ describe('SaleOrderLifecycleService', () => {
         body: { errors: [{ code: 'SALES_DOC_CANCELLED' }] },
       });
     });
+
+    it.each(['COMPLETED', 'CLOSED', 'EXPIRED'])(
+      'refuses a %s order before the right or the save',
+      async (soStatus) => {
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+        const refusal = await refusalOf(service.amend(amend()));
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'soId', code: 'SALES_DOC_NOT_DRAFT', status: soStatus }] },
+        });
+        expect(salesContext.resolve).not.toHaveBeenCalled();
+        expect(orders.save).not.toHaveBeenCalled();
+      },
+    );
 
     it('refuses a user without the Amend right', async () => {
       ctx.rights.amend = false;

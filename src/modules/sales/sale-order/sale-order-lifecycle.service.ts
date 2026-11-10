@@ -16,7 +16,7 @@ import { assertAccYearWritable, assertSalesmen, loadDayClosed } from '../posting
 import { throwSalesLocked, throwSalesRight } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { SALES_MENU_ID, isoDate, isoToday, num } from '../posting/sales-doc.utils';
-import { SaleOrderService } from './sale-order.service';
+import { SaleOrderService, assertSaleOrderNotTerminal } from './sale-order.service';
 import type {
   AmendSaleOrderDto,
   CancelSaleOrderDto,
@@ -42,6 +42,10 @@ import {
  *   /amend   after a partial delivery only undelivered lines may change
  *            (`SALES_ORDER_LINE_DELIVERED`); `soRevisionNo + 1`.
  *   /delete  DRAFT only (`SALES_ORDER_CONFIRMED`).
+ *
+ * A finished order (COMPLETED / CANCELLED / CLOSED / EXPIRED) is refused by
+ * /post, /amend and /cancel as by the save: `assertSaleOrderNotTerminal`
+ * (CANCELLED → SALES_DOC_CANCELLED, the rest → SALES_DOC_NOT_DRAFT).
  */
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' } as const;
 
@@ -116,6 +120,8 @@ export class SaleOrderLifecycleService {
     if (order.soStatus === ORDER_STATUS.CONFIRMED) {
       return { soStatus: order.soStatus, warnings: [] };
     }
+    // CANCELLED → SALES_DOC_CANCELLED, as the save and /amend answer it.
+    assertSaleOrderNotTerminal(order);
     if (order.soStatus !== ORDER_STATUS.DRAFT) {
       throwSalesLocked(`This order is ${order.soStatus}`, SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId');
     }
@@ -234,6 +240,8 @@ export class SaleOrderLifecycleService {
           'soId',
         );
       }
+      // Any other finished order (CLOSED / EXPIRED …) is not moved to CANCELLED.
+      assertSaleOrderNotTerminal(order);
       await this.reservations.release(
         tx,
         { docType: 'SALES_ORDER', docId: order.soId },
@@ -287,9 +295,8 @@ export class SaleOrderLifecycleService {
         soBranchId: dto.soBranchId,
         soAccYear: dto.soAccYear,
       });
-      if (order.soStatus === ORDER_STATUS.CANCELLED) {
-        throwSalesLocked('This order is CANCELLED', SALES_ERROR_CODES.DOC_CANCELLED, 'soId');
-      }
+      // COMPLETED / CANCELLED / CLOSED / EXPIRED: a finished order is not amended.
+      assertSaleOrderNotTerminal(order);
       const ctx = await this.salesContext.resolve(
         { companyId: order.soCompanyId, branchId: order.soBranchId },
         SALES_MENU_ID.SALES_ORDER,

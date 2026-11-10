@@ -39,6 +39,7 @@ import {
 } from './types/sale-order-api.types';
 import { SaleOrderErrorCode } from './types/sale-order-error-codes';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
+import { throwSalesLocked } from '../posting/sales.errors';
 // Which sale bills draw quantity down off an order line. Imported rather than
 // restated so the two modules can never disagree about what "billed" means; the
 // dependency only points this way, so it adds no cycle to the sale-bill module
@@ -124,6 +125,38 @@ const SALE_ORDER_STATUSES = [
 // columns of its own — who cancelled and why is public.txn_status_log's fact —
 // so the status move is all the header records.
 const SALE_ORDER_STATUS_CANCELLED = 'CANCELLED';
+/**
+ * The ck_so_status values that mean the order is finished: delivered in full,
+ * cancelled, closed or expired. DRAFT / CONFIRMED / PARTIAL are still open.
+ * An order in one of these is not edited again (plan SO 2026-11-10, Answers 6
+ * item 1): /create with a soId, /amend and /cancel refuse it.
+ */
+export const SALE_ORDER_TERMINAL_STATUSES: readonly string[] = [
+  'COMPLETED',
+  SALE_ORDER_STATUS_CANCELLED,
+  'CLOSED',
+  'EXPIRED',
+];
+/**
+ * 409 when the order's STORED status is terminal. Pass the row the caller read
+ * under its own transaction, never the request body: a body may say DRAFT for
+ * an order that is cancelled. CANCELLED answers SALES_DOC_CANCELLED (as /amend
+ * always has); COMPLETED / CLOSED / EXPIRED answer SALES_DOC_NOT_DRAFT. Both
+ * carry the stored status on the detail.
+ */
+export function assertSaleOrderNotTerminal(order: Pick<SaleOrder, 'soStatus'>): void {
+  if (!SALE_ORDER_TERMINAL_STATUSES.includes(order.soStatus)) {
+    return;
+  }
+  throwSalesLocked(
+    `This order is ${order.soStatus} and cannot be changed`,
+    order.soStatus === SALE_ORDER_STATUS_CANCELLED
+      ? SALES_ERROR_CODES.DOC_CANCELLED
+      : SALES_ERROR_CODES.DOC_NOT_DRAFT,
+    'soId',
+    { status: order.soStatus },
+  );
+}
 const SALE_ORDER_FULFIL_STATUSES = ['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED'] as const;
 const SALE_ORDER_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const SALE_ORDER_ADVANCE_POLICIES = ['NONE', 'FIXED', 'PERC', 'FULL'] as const;
@@ -2351,6 +2384,12 @@ export class SaleOrderService {
   ): Promise<SaleOrderPayload> {
     saveOrderDto.soSessionId = await tillSessionIdOrNull(tx, saveOrderDto.soSessionId);
     const soId = saveOrderDto.soId!;
+    // Row lock first, as the lifecycle verbs take it, so the status read below
+    // cannot be overtaken by a /cancel committing in between.
+    await tx.$queryRaw`
+      SELECT so_id FROM sales.sale_order
+       WHERE so_id = ${soId}::uuid AND so_is_deleted = false
+       FOR UPDATE`;
     const existing = await tx.saleOrder.findFirst({
       where: {
         soId,
@@ -2365,6 +2404,8 @@ export class SaleOrderService {
         SALES_ERROR_CODES.NOT_FOUND,
       );
     }
+    // A finished order is not edited (409), whatever soStatus the body sends.
+    assertSaleOrderNotTerminal(existing);
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
     const now = new Date();
     // Plan SO-5: the signed-in user's id; the body's soModifiedBy is ignored.

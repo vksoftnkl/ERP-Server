@@ -9,7 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaleOrderService = void 0;
+exports.SaleOrderService = exports.SALE_ORDER_TERMINAL_STATUSES = void 0;
+exports.assertSaleOrderNotTerminal = assertSaleOrderNotTerminal;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -19,6 +20,7 @@ const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const sale_order_error_codes_1 = require("./types/sale-order-error-codes");
 const posting_types_1 = require("../posting/types/posting.types");
+const sales_errors_1 = require("../posting/sales.errors");
 const bill_api_types_1 = require("../bill/types/bill-api.types");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const charge_detail_service_1 = require("../../master/charge-detail/charge-detail.service");
@@ -52,6 +54,20 @@ const SALE_ORDER_STATUSES = [
     'EXPIRED',
 ];
 const SALE_ORDER_STATUS_CANCELLED = 'CANCELLED';
+exports.SALE_ORDER_TERMINAL_STATUSES = [
+    'COMPLETED',
+    SALE_ORDER_STATUS_CANCELLED,
+    'CLOSED',
+    'EXPIRED',
+];
+function assertSaleOrderNotTerminal(order) {
+    if (!exports.SALE_ORDER_TERMINAL_STATUSES.includes(order.soStatus)) {
+        return;
+    }
+    (0, sales_errors_1.throwSalesLocked)(`This order is ${order.soStatus} and cannot be changed`, order.soStatus === SALE_ORDER_STATUS_CANCELLED
+        ? posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED
+        : posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId', { status: order.soStatus });
+}
 const SALE_ORDER_FULFIL_STATUSES = ['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
 const SALE_ORDER_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
 const SALE_ORDER_ADVANCE_POLICIES = ['NONE', 'FIXED', 'PERC', 'FULL'];
@@ -1322,6 +1338,10 @@ let SaleOrderService = class SaleOrderService {
     async updateOrderInTx(tx, saveOrderDto) {
         saveOrderDto.soSessionId = await (0, till_session_id_1.tillSessionIdOrNull)(tx, saveOrderDto.soSessionId);
         const soId = saveOrderDto.soId;
+        await tx.$queryRaw `
+      SELECT so_id FROM sales.sale_order
+       WHERE so_id = ${soId}::uuid AND so_is_deleted = false
+       FOR UPDATE`;
         const existing = await tx.saleOrder.findFirst({
             where: {
                 soId,
@@ -1331,6 +1351,7 @@ let SaleOrderService = class SaleOrderService {
         if (!existing) {
             (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
         }
+        assertSaleOrderNotTerminal(existing);
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
         const now = new Date();
         const modifiedBy = this.signedInActor();

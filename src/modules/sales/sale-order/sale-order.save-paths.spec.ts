@@ -190,6 +190,7 @@ type PrismaMock = {
   userMaster: { findMany: jest.Mock };
   godownLocation: { findMany: jest.Mock };
   accBillBalance: { aggregate: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
 
@@ -246,6 +247,8 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       userMaster: { findMany: jest.fn().mockResolvedValue([]) },
       godownLocation: { findMany: jest.fn().mockResolvedValue([]) },
       accBillBalance: { aggregate: jest.fn() },
+      // updateOrderInTx's row lock (SELECT … FOR UPDATE).
+      $queryRaw: jest.fn().mockResolvedValue([{ so_id: ORDER_ID }]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
@@ -501,6 +504,41 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       expect(prisma.saleOrderItem.create).not.toHaveBeenCalled();
     });
 
+    describe('terminal orders (plan SO 2026-11-10, Answers 6 item 1)', () => {
+      it.each([
+        ['CANCELLED', 'SALES_DOC_CANCELLED'],
+        ['COMPLETED', 'SALES_DOC_NOT_DRAFT'],
+        ['CLOSED', 'SALES_DOC_NOT_DRAFT'],
+        ['EXPIRED', 'SALES_DOC_NOT_DRAFT'],
+      ])('refuses to save over a stored %s order with %s', async (soStatus, code) => {
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+        // The body's soStatus is not what is judged.
+        const refusal = await refusalOf(
+          service.save(updateDto({ soStatus: 'DRAFT', soRemarks: 'Reopen it' })),
+        );
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: { errors: [{ field: 'soId', code, status: soStatus }] },
+        });
+        // Refused under the row lock, before anything is written.
+        expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+        expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+        expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+        expect(prisma.saleOrderItem.create).not.toHaveBeenCalled();
+        expect(jest.mocked(syncOrderAdvancePosting)).not.toHaveBeenCalled();
+      });
+
+      it.each(['DRAFT', 'CONFIRMED', 'PARTIAL'])('still saves a %s order', async (soStatus) => {
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+        await service.save(updateDto({ soRemarks: 'Call first' }));
+
+        expect(prisma.saleOrder.update).toHaveBeenCalled();
+      });
+    });
+
     it('leaves the lines alone when an update omits items', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([lineRow()]);
 
@@ -629,8 +667,10 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
     });
 
     it('keeps what a cancelled order stated when its receipt goes', async () => {
+      // The save that cancels it: the row is still CONFIRMED (a stored
+      // CANCELLED is refused, see "terminal orders" below).
       const cancelled = {
-        soStatus: 'CANCELLED',
+        soStatus: 'CONFIRMED',
         soAdvanceRecdAmt: D('500.00'),
         soAdvanceRefundAmt: D('500.00'),
         soAdvanceStatus: 'REFUNDED',
@@ -641,7 +681,7 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       );
       jest.mocked(syncOrderAdvancePosting).mockResolvedValue({ ...UNCHANGED, action: 'cancelled' });
 
-      await service.save(updateDto({ tenders: [] }));
+      await service.save(updateDto({ tenders: [], soStatus: 'CANCELLED' }));
 
       // Only the edit itself; no restatement.
       expect(prisma.saleOrder.update).toHaveBeenCalledTimes(1);

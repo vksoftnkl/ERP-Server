@@ -78,6 +78,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         if (order.soStatus === ORDER_STATUS.CONFIRMED) {
             return { soStatus: order.soStatus, warnings: [] };
         }
+        (0, sale_order_service_1.assertSaleOrderNotTerminal)(order);
         if (order.soStatus !== ORDER_STATUS.DRAFT) {
             (0, sales_errors_1.throwSalesLocked)(`This order is ${order.soStatus}`, posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId');
         }
@@ -157,6 +158,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
             if (delivered > 0) {
                 (0, sales_errors_1.throwSalesLocked)(`${delivered} line(s) have been delivered — an order with deliveries is closed by cancelling its open lines, not cancelled whole`, posting_types_1.SALES_ERROR_CODES.ORDER_DELIVERED, 'soId');
             }
+            (0, sale_order_service_1.assertSaleOrderNotTerminal)(order);
             await this.reservations.release(tx, { docType: 'SALES_ORDER', docId: order.soId }, dto.reason, ctx.actor, now);
             const result = await this.orders.cancelOrderOpenLines(tx, {
                 order,
@@ -193,9 +195,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                 soBranchId: dto.soBranchId,
                 soAccYear: dto.soAccYear,
             });
-            if (order.soStatus === ORDER_STATUS.CANCELLED) {
-                (0, sales_errors_1.throwSalesLocked)('This order is CANCELLED', posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED, 'soId');
-            }
+            (0, sale_order_service_1.assertSaleOrderNotTerminal)(order);
             const ctx = await this.salesContext.resolve({ companyId: order.soCompanyId, branchId: order.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
             if (!ctx.rights.amend) {
                 (0, sales_errors_1.throwSalesRight)('This user may not amend on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_AMEND);

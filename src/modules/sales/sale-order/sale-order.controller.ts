@@ -72,7 +72,9 @@ export class SaleOrderController {
       "With `post: true` (or `soStatus: 'CONFIRMED'`, the same instruction) the save and the whole " +
       'of /sale-orders/post — the reservations, CONFIRMED, the trail — run in ONE transaction, and a ' +
       'refusal rolls all of it back: no header, no lines, no number consumed. The response is the ' +
-      'order plus warnings[] (SALES_RESERVE_SHORT lines). Notes 94 B / 106.',
+      'order plus warnings[] (SALES_RESERVE_SHORT lines). Notes 94 B / 106. ' +
+      'With a soId, an order whose stored status is finished answers 409: CANCELLED → ' +
+      'SALES_DOC_CANCELLED; COMPLETED / CLOSED / EXPIRED → SALES_DOC_NOT_DRAFT (errors[0].status).',
   })
   @ApiCreatedResponse({ type: SaleOrderSuccessSingleDto })
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })

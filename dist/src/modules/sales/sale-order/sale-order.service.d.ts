@@ -7,6 +7,8 @@ import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare const SALE_ORDER_TERMINAL_STATUSES: readonly string[];
+export declare function assertSaleOrderNotTerminal(order: Pick<SaleOrder, 'soStatus'>): void;
 export interface SaleOrderAmounts {
     soPendingAmt: Prisma.Decimal;
     soCancelledAmt: Prisma.Decimal;
