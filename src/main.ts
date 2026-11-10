@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { createClientInfoMiddleware } from './common/client-info/client-info.middleware';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { createHouseValidationPipe } from './common/validation/house-validation';
 import { PrismaService } from './database/prisma/prisma.service';
@@ -128,6 +129,11 @@ async function bootstrap(): Promise<void> {
   });
   const swaggerModuleDocs = swaggerModuleDocuments;
   app.enableShutdownHooks();
+  // Part B Step 2: read the X-App-* / X-Device-* headers into request.clientInfo
+  // and log every 4xx/5xx (except 401/404) with the client's platform + build.
+  // Registered first, before the body parser and every route, so it sees every
+  // request. It never refuses one.
+  app.use(createClientInfoMiddleware());
   app.use(json({ limit: requestBodyLimit }));
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
   app.use(
@@ -159,6 +165,13 @@ async function bootstrap(): Promise<void> {
     app.enableCors({
       origin: allowAnyCorsOrigin ? true : corsOrigins,
       credentials: corsCredentials,
+      /*
+       * Request headers: deliberately NO `allowedHeaders` list. Without one,
+       * the cors package echoes whatever a preflight asks for, which already
+       * covers Part B's X-App-Platform / -Build / -Version / -Commit and
+       * X-Device-Id / -Os. A hand-written list would have to name every header
+       * the web client sends today (Authorization, X-User-Id, …) or break it.
+       */
       /*
        * Response headers a cross-origin caller may READ.
        *

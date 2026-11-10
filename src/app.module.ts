@@ -19,6 +19,7 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { PgModule } from './database/pg/pg.module';
 import { HealthModule } from './modules/health/health.module';
+import { AppVersionModule } from './modules/app-version/app-version.module';
 //import { CloudSyncModule } from './modules/cloud-sync/cloud-sync.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -177,6 +178,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PgModule,
     AuditLogModule,
     HealthModule,
+    // Part B Step 2: client build tracking + the optional update notice.
+    AppVersionModule,
     //CloudSyncModule,
     UsersModule,
     ItemsGroupMasterModule,
