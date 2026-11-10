@@ -1,0 +1,46 @@
+// Part B — app versioning, migration 20261110170000_app_versioning.
+// Step 1 adds the tables only; nothing in the API reads or writes them yet
+// (Step 2 adds the login recording and the update check).
+// No relations on purpose: company / branch / user ids are plain uuids, with no
+// foreign key in this version.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_arl_platform   arl_platform IN (web, desktop, mobile)
+//   ck_arl_build      arl_build > 0
+//   ck_arl_severity   arl_severity IN (normal, recommended, critical)
+
+/// public.app_release — one row per released client build, per platform.
+/// The latest available build = the highest arlBuild where arlIsDeleted = false.
+/// arlIsDeleted = true yanks a bad release; its build number stays taken
+/// (ux_arl_platform_build is not partial).
+model AppRelease {
+  arlId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("arl_id")
+  /// web | desktop | mobile
+  arlPlatform     String    @db.VarChar(16)                     @map("arl_platform")
+  /// > 0. The number clients compare; unique per platform.
+  arlBuild        Int                                           @map("arl_build")
+  /// Display label only, e.g. 1.2.0.
+  arlVersion      String    @db.VarChar(32)                     @map("arl_version")
+  /// Short git hash.
+  arlCommit       String?   @db.VarChar(40)                     @map("arl_commit")
+  /// normal | recommended | critical
+  arlSeverity     String    @default("normal") @db.VarChar(16)  @map("arl_severity")
+  /// Release notes.
+  arlNotes        String?   @db.Text                            @map("arl_notes")
+  /// Installer / store / updater link.
+  arlDownloadUrl  String?   @db.VarChar(500)                    @map("arl_download_url")
+  arlReleasedAt   DateTime  @default(now()) @db.Timestamptz(6)  @map("arl_released_at")
+
+  arlIsActive     Boolean   @default(true)                      @map("arl_is_active")
+  /// true = yanked: never offered as the latest build.
+  arlIsDeleted    Boolean   @default(false)                     @map("arl_is_deleted")
+  arlSyncDate     DateTime? @db.Timestamptz(6)                  @map("arl_sync_date")
+  arlCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("arl_created_on")
+  arlCreatedBy    String?   @db.Text                            @map("arl_created_by")
+  arlModifiedOn   DateTime? @db.Timestamptz(6)                  @map("arl_modified_on")
+  arlModifiedBy   String?   @db.Text                            @map("arl_modified_by")
+
+  @@unique([arlPlatform, arlBuild], map: "ux_arl_platform_build")
+  @@map("app_release")
+  @@schema("public")
+}

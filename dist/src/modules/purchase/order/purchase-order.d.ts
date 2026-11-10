@@ -76,8 +76,8 @@ export declare class PendingPoLinesQueryDto {
     supplierId: string;
 }
 type Db = Prisma.TransactionClient | PrismaService;
-export declare function poLineStatus(qty: Prisma.Decimal, received: Prisma.Decimal, shortClosed: Prisma.Decimal): "OPEN" | "DONE" | "SHORT_CLOSED" | "PART";
-export declare function poDocStatus(status: string, approval: string, lineStatuses: string[]): "CLOSED" | "DRAFT" | "CANCELLED" | "CONFIRMED" | "RECEIVED" | "AWAITING_APPROVAL" | "NOT_APPROVED" | "PART_RECEIVED";
+export declare function poLineStatus(qty: Prisma.Decimal, received: Prisma.Decimal, shortClosed: Prisma.Decimal): "PART" | "OPEN" | "DONE" | "SHORT_CLOSED";
+export declare function poDocStatus(status: string, approval: string, lineStatuses: string[]): "DRAFT" | "CANCELLED" | "CLOSED" | "AWAITING_APPROVAL" | "NOT_APPROVED" | "RECEIVED" | "PART_RECEIVED" | "CONFIRMED";
 export declare function poApprovalStatus(a: {
     limit: Prisma.Decimal;
     goods: {

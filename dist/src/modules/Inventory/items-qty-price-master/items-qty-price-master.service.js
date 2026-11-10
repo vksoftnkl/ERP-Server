@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ItemsQtyPriceMasterService = exports.QTY_PRICE_RIGHT_PREFIX = exports.QTY_PRICE_MENU_ID = void 0;
+exports.ItemsQtyPriceMasterService = void 0;
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const common_1 = require("@nestjs/common");
 const configured_grid_sql_service_1 = require("../../../common/configured-grid-sql/configured-grid-sql.service");
@@ -17,15 +17,10 @@ const item_qty_price_error_codes_1 = require("./types/item-qty-price-error-codes
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
-const rights_1 = require("../../../common/posting/rights");
-const selling_price_bulk_types_1 = require("../../stocks/selling-price-bulk/types/selling-price-bulk.types");
-const qty_slab_rules_1 = require("./qty-slab.rules");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const price_master_writer_service_1 = require("../item-price-log/price-master-writer.service");
 const price_change_log_types_1 = require("../item-price-log/types/price-change-log.types");
-exports.QTY_PRICE_MENU_ID = 244;
-exports.QTY_PRICE_RIGHT_PREFIX = 'ITEM_QTY_PRICE';
 const ITEM_QTY_PRICE_TABLE_NAME = 'item qty price';
 const ITEM_QTY_PRICE_AUDIT_SCREEN_NAME = 'Item Qty Price Master';
 const ITEM_QTY_PRICE_INCLUDE = {
@@ -49,27 +44,16 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         this.requestContextService = requestContextService;
         this.priceWriter = priceWriter;
     }
-    async save(saveItemQtyPriceDto, tx, opts) {
+    async save(saveItemQtyPriceDto, tx) {
         const saveItems = Array.isArray(saveItemQtyPriceDto)
             ? saveItemQtyPriceDto
             : [saveItemQtyPriceDto];
-        const prefix = opts?.fieldPrefix;
         const saveAll = async (client) => {
             const savedItems = [];
-            for (const [index, saveItem] of saveItems.entries()) {
-                try {
-                    savedItems.push(await this.saveItemQtyPrice(client, saveItem));
-                }
-                catch (error) {
-                    throw prefix === undefined ? error : this.atRow(error, `${prefix}${index}.`);
-                }
+            for (const saveItem of saveItems) {
+                savedItems.push(await this.saveItemQtyPrice(client, saveItem));
             }
-            try {
-                await this.assertNoOverlaps(client, savedItems.map((saved) => saved.iqp_id), Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single', 'iqp_from_qty');
-            }
-            catch (error) {
-                throw prefix === undefined ? error : this.atRow(error, prefix, true);
-            }
+            await this.assertNoOverlaps(client, savedItems.map((saved) => saved.iqp_id), Array.isArray(saveItemQtyPriceDto) ? 'indexed' : 'single', 'iqp_from_qty');
             return savedItems;
         };
         try {
@@ -80,29 +64,6 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             this.handleWriteError(error);
             throw error;
         }
-    }
-    atRow(error, at, indexed = false) {
-        let refusal = error;
-        if (!(refusal instanceof common_1.HttpException)) {
-            try {
-                this.handleWriteError(refusal);
-            }
-            catch (worded) {
-                refusal = worded;
-            }
-        }
-        if (!(refusal instanceof common_1.HttpException)) {
-            return refusal;
-        }
-        const body = refusal.getResponse();
-        if (typeof body === 'object' && body !== null && Array.isArray(body.errors)) {
-            const coded = body;
-            coded.errors = coded.errors.map((detail) => {
-                const field = typeof detail.field === 'string' && detail.field ? detail.field : 'request';
-                return { ...detail, field: indexed && !/^\d+\./.test(field) ? field : `${at}${field}` };
-            });
-        }
-        return refusal;
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
@@ -151,13 +112,13 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         }
         return this.toPayload(record);
     }
-    async softDelete(iqpId, tx) {
-        return this.setDeleted(iqpId, true, tx);
+    async softDelete(iqpId) {
+        return this.setDeleted(iqpId, true);
     }
-    async restore(iqpId, tx) {
-        return this.setDeleted(iqpId, false, tx);
+    async restore(iqpId) {
+        return this.setDeleted(iqpId, false);
     }
-    async setDeleted(iqpId, wantDeleted, tx) {
+    async setDeleted(iqpId, wantDeleted) {
         const ids = Array.isArray(iqpId) ? iqpId : [iqpId];
         const applyAll = async (client) => {
             const results = [];
@@ -170,218 +131,13 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
             return results;
         };
         try {
-            const results = tx ? await applyAll(tx) : await this.prisma.$transaction(applyAll);
+            const results = await this.prisma.$transaction(applyAll);
             return Array.isArray(iqpId) ? results : results[0];
         }
         catch (error) {
             this.handleWriteError(error);
             throw error;
         }
-    }
-    async assertRight(right, action) {
-        return (0, rights_1.assertMenuRight)(this.prisma, {
-            userId: this.requestContextService.getUserId(),
-            menuId: exports.QTY_PRICE_MENU_ID,
-            right,
-            codePrefix: exports.QTY_PRICE_RIGHT_PREFIX,
-            action,
-        });
-    }
-    async assertSaveRights(rows) {
-        if (rows.some((row) => !row.iqp_id)) {
-            await this.assertRight('create', 'add qty-wise prices');
-        }
-        if (rows.some((row) => row.iqp_id)) {
-            await this.assertRight('edit', 'change qty-wise prices');
-        }
-    }
-    async assertSaveRightsOfBody(body) {
-        const rows = Array.isArray(body) ? body : [];
-        if (rows.length) {
-            const named = (row) => {
-                const id = typeof row === 'object' && row !== null ? row.iqp_id : undefined;
-                return id !== undefined && id !== null && id !== '';
-            };
-            return this.assertSaveRights(rows.map((row) => ({ iqp_id: named(row) ? 'named' : undefined })));
-        }
-        const userId = this.requestContextService.getUserId();
-        const rights = userId ? await (0, rights_1.loadRights)(this.prisma, userId, exports.QTY_PRICE_MENU_ID) : rights_1.NO_RIGHTS;
-        if (!rights.create && !rights.edit) {
-            await this.assertRight('create', 'add qty-wise prices');
-        }
-    }
-    async ownBranchId() {
-        const loggedIn = this.requestContextService.getBranchId();
-        if (loggedIn)
-            return loggedIn.toLowerCase();
-        const userId = this.requestContextService.getUserId();
-        if (!userId)
-            return null;
-        const user = await this.prisma.userMaster.findUnique({
-            where: { usrId: userId },
-            select: { usrBranchId: true },
-        });
-        return user?.usrBranchId?.toLowerCase() ?? null;
-    }
-    throwOtherBranch(fields, own) {
-        const message = own
-            ? 'A slab for another branch can only be changed by head office. Pick your own branch for the slab.'
-            : 'This login has no branch (no branch counter, no branch on the user), so only head office can change qty-wise prices.';
-        (0, module_service_utils_1.throwInventoryForbidden)('A slab of another branch needs head office', [
-            ...fields.map((field) => ({ field, code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.OTHER_BRANCH, message })),
-        ]);
-    }
-    async assertOwnBranchSlabs(client, rows, fieldPrefix = '', stored) {
-        if (!rows.length || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContextService.getUserType())) {
-            return;
-        }
-        const known = stored ??
-            (await this.readStoredSlabs(client, rows.filter((row) => row.iqp_id).map((row) => row.iqp_id)));
-        const own = await this.ownBranchId();
-        const owned = (branchId) => own !== null && branchId?.toLowerCase() === own;
-        const wrong = rows
-            .map((row, index) => {
-            const before = row.iqp_id ? known.get(row.iqp_id.toLowerCase()) : undefined;
-            const after = row.iqp_branch_id !== undefined ? row.iqp_branch_id : (before?.branchId ?? null);
-            return {
-                index,
-                ok: (!before || owned(before.branchId)) && (after === null || owned(after)),
-            };
-        })
-            .filter(({ ok }) => !ok);
-        if (wrong.length) {
-            this.throwOtherBranch(wrong.map(({ index }) => `${fieldPrefix}${index}.iqp_branch_id`), own);
-        }
-    }
-    async assertOwnBranchSlabIds(client, ids, fieldOf, stored) {
-        if (!ids.length || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContextService.getUserType())) {
-            return;
-        }
-        const known = stored ?? (await this.readStoredSlabs(client, ids));
-        const own = await this.ownBranchId();
-        const wrong = ids
-            .map((id, index) => ({ index, slab: known.get(id.toLowerCase()) }))
-            .filter(({ slab }) => slab && (own === null || slab.branchId?.toLowerCase() !== own));
-        if (wrong.length) {
-            this.throwOtherBranch(wrong.map(({ index }) => fieldOf(index)), own);
-        }
-    }
-    async assertOwnBranchSlabsOf(rows) {
-        return this.assertOwnBranchSlabs(this.prisma, rows);
-    }
-    async assertOwnBranchSlabIdsOf(ids) {
-        const list = typeof ids === 'string' ? [ids] : ids;
-        return this.assertOwnBranchSlabIds(this.prisma, list, (index) => typeof ids === 'string' ? 'iqp_id' : `${index}.iqp_id`);
-    }
-    async readStoredSlabs(client, ids) {
-        const unique = [...new Set(ids.filter(Boolean))];
-        if (!unique.length) {
-            return new Map();
-        }
-        const rows = await client.itemQtyPrice.findMany({
-            where: { iqpId: { in: unique } },
-            select: {
-                iqpId: true,
-                iqpItemId: true,
-                iqpBranchId: true,
-                iqpPriceLevel: true,
-                iqpIsDeleted: true,
-            },
-        });
-        return new Map(rows.map((row) => [
-            row.iqpId.toLowerCase(),
-            {
-                iqpId: row.iqpId,
-                itemId: row.iqpItemId,
-                branchId: row.iqpBranchId,
-                priceLevel: row.iqpPriceLevel,
-                isDeleted: row.iqpIsDeleted,
-            },
-        ]));
-    }
-    async assertSellingLevels(client, rows, fieldPrefix = '', stored) {
-        if (!rows.length) {
-            return;
-        }
-        const known = stored ??
-            (await this.readStoredSlabs(client, rows
-                .filter((row) => row.iqp_id && row.iqp_price_level === undefined)
-                .map((row) => row.iqp_id)));
-        const active = await this.activeSellingLevels(client);
-        const wrong = rows
-            .map((row, index) => ({
-            index,
-            level: row.iqp_price_level !== undefined
-                ? row.iqp_price_level
-                : row.iqp_id
-                    ? (known.get(row.iqp_id.toLowerCase())?.priceLevel ?? null)
-                    : null,
-        }))
-            .filter(({ level }) => !(0, qty_slab_rules_1.isSellingSlabLevel)(level, active));
-        if (!wrong.length) {
-            return;
-        }
-        (0, module_service_utils_1.throwUnprocessable)('A slab names a price level that is not for sale', [
-            ...wrong.map(({ index, level }) => ({
-                field: `${fieldPrefix}${index}.iqp_price_level`,
-                code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.LEVEL_NOT_SELLING,
-                message: `Price level ${level} is not an active selling level. Pick an active level 1–4 ` +
-                    `(${active.length ? active.join(', ') : 'none is active'}), or leave it blank for all levels.`,
-            })),
-        ]);
-    }
-    async assertChainSlabsAllowed(client, rows, fieldPrefix = '', stored) {
-        if (!rows.length || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContextService.getUserType())) {
-            return;
-        }
-        const known = stored ??
-            (await this.readStoredSlabs(client, rows
-                .filter((row) => row.iqp_id && row.iqp_branch_id === undefined)
-                .map((row) => row.iqp_id)));
-        const chain = rows
-            .map((row, index) => ({
-            index,
-            branchId: row.iqp_branch_id !== undefined
-                ? row.iqp_branch_id
-                : row.iqp_id
-                    ? (known.get(row.iqp_id.toLowerCase())?.branchId ?? null)
-                    : null,
-        }))
-            .filter(({ branchId }) => branchId === null);
-        if (!chain.length) {
-            return;
-        }
-        (0, module_service_utils_1.throwInventoryForbidden)('A slab for all branches needs head office', [
-            ...chain.map(({ index }) => ({
-                field: `${fieldPrefix}${index}.iqp_branch_id`,
-                code: item_qty_price_error_codes_1.ItemQtyPriceErrorCode.CHAIN_HQ_ONLY,
-                message: 'A slab for all branches can only be saved by head office. Pick this branch for the slab.',
-            })),
-        ]);
-    }
-    async assertSellingLevelsOf(rows) {
-        return this.assertSellingLevels(this.prisma, rows);
-    }
-    async assertChainSlabsAllowedOf(rows) {
-        return this.assertChainSlabsAllowed(this.prisma, rows);
-    }
-    async activeSellingLevels(client) {
-        const rows = await client.$queryRaw `
-      SELECT price_lvl_id::int AS id
-        FROM fixed.price_levels
-       WHERE price_lvl_id BETWEEN 1 AND 4
-         AND price_lvl_is_active IS TRUE
-         AND "price_lvl_isDeleted" IS NOT TRUE
-       ORDER BY 1`;
-        return rows.map((row) => Number(row.id));
-    }
-    async listForItem(itemId, client = this.prisma) {
-        const rows = await client.itemQtyPrice.findMany({
-            where: { iqpItemId: itemId, iqpIsDeleted: false },
-            include: ITEM_QTY_PRICE_INCLUDE,
-            orderBy: [{ iqpItemUnitId: 'asc' }, { iqpFromQty: 'asc' }, { iqpId: 'asc' }],
-        });
-        return rows.map((row) => this.toPayload(row));
     }
     async saveItemQtyPrice(tx, saveItemQtyPriceDto) {
         if (saveItemQtyPriceDto.iqp_id) {

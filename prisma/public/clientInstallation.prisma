@@ -1,0 +1,47 @@
+// Part B — app versioning, migration 20261110170000_app_versioning.
+// Step 1 adds the tables only; nothing in the API reads or writes them yet
+// (Step 2 adds the login recording and the update check).
+// No relations on purpose: company / branch / user ids are plain uuids, with no
+// foreign key in this version.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_cin_platform   cin_platform IN (web, desktop, mobile)
+
+/// public.client_installation — which build each user / device is running.
+/// One row per (company, user, device, platform), upserted at login (Step 2)
+/// on ux_cin_device.
+model ClientInstallation {
+  cinId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("cin_id")
+  /// Tenant.
+  cinCompanyId    String    @db.Uuid                            @map("cin_company_id")
+  cinBranchId     String?   @db.Uuid                            @map("cin_branch_id")
+  cinUserId       String    @db.Uuid                            @map("cin_user_id")
+  /// The client's own device id; 'unknown' when it sends none.
+  cinDeviceId     String    @default("unknown") @db.VarChar(100) @map("cin_device_id")
+  /// web | desktop | mobile
+  cinPlatform     String    @db.VarChar(16)                     @map("cin_platform")
+  /// NULL = the client sent no build.
+  cinBuild        Int?                                          @map("cin_build")
+  // Support info, as the client sent it.
+  cinVersion      String?   @db.VarChar(32)                     @map("cin_version")
+  cinCommit       String?   @db.VarChar(40)                     @map("cin_commit")
+  cinOs           String?   @db.VarChar(100)                    @map("cin_os")
+  cinIp           String?   @db.VarChar(60)                     @map("cin_ip")
+  cinFirstSeen    DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_first_seen")
+  cinLastSeen     DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_last_seen")
+  cinLastLogin    DateTime? @db.Timestamptz(6)                  @map("cin_last_login")
+
+  cinIsActive     Boolean   @default(true)                      @map("cin_is_active")
+  cinIsDeleted    Boolean   @default(false)                     @map("cin_is_deleted")
+  cinSyncDate     DateTime? @db.Timestamptz(6)                  @map("cin_sync_date")
+  cinCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_created_on")
+  cinCreatedBy    String?   @db.Text                            @map("cin_created_by")
+  cinModifiedOn   DateTime? @db.Timestamptz(6)                  @map("cin_modified_on")
+  cinModifiedBy   String?   @db.Text                            @map("cin_modified_by")
+
+  @@unique([cinCompanyId, cinUserId, cinDeviceId, cinPlatform], map: "ux_cin_device")
+  @@index([cinPlatform, cinBuild], map: "ix_cin_platform_build")
+  @@index([cinLastSeen], map: "ix_cin_last_seen")
+  @@map("client_installation")
+  @@schema("public")
+}

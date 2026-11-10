@@ -1,0 +1,37 @@
+// Part B — app versioning, migration 20261110170000_app_versioning.
+// Step 1 adds the tables only; nothing in the API reads or writes them yet
+// (Step 2 adds the login recording and the update check).
+// No relations on purpose: company / branch / user ids are plain uuids, with no
+// foreign key in this version.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_alu_platform   alu_platform IN (web, desktop, mobile, unknown)
+
+/// public.app_legacy_usage — how often old builds still use a legacy field.
+/// One counter per (field, platform, build); a field can be removed once no
+/// build still in use counts against it.
+model AppLegacyUsage {
+  aluId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("alu_id")
+  /// The legacy field, e.g. sale-bill.request.rate
+  aluName         String    @db.VarChar(100)                    @map("alu_name")
+  /// web | desktop | mobile | unknown
+  aluPlatform     String    @default("unknown") @db.VarChar(16) @map("alu_platform")
+  /// -1 = unknown build.
+  aluBuild        Int       @default(-1)                        @map("alu_build")
+  /// Usage count.
+  aluCount        Int       @default(0)                         @map("alu_count")
+  aluFirstSeen    DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_first_seen")
+  aluLastSeen     DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_last_seen")
+
+  aluIsActive     Boolean   @default(true)                      @map("alu_is_active")
+  aluIsDeleted    Boolean   @default(false)                     @map("alu_is_deleted")
+  aluSyncDate     DateTime? @db.Timestamptz(6)                  @map("alu_sync_date")
+  aluCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_created_on")
+  aluCreatedBy    String?   @db.Text                            @map("alu_created_by")
+  aluModifiedOn   DateTime? @db.Timestamptz(6)                  @map("alu_modified_on")
+  aluModifiedBy   String?   @db.Text                            @map("alu_modified_by")
+
+  @@unique([aluName, aluPlatform, aluBuild], map: "ux_alu_key")
+  @@map("app_legacy_usage")
+  @@schema("public")
+}

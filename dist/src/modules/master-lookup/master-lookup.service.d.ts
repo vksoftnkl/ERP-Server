@@ -1,6 +1,5 @@
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import { AppSettingValueService } from '../settings/appSettings/app-setting-value.service';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
 import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from './dto/item-price-refresh-query.dto';
@@ -13,7 +12,7 @@ export declare class MasterLookupService {
     private readonly customerDetail;
     private readonly itemPrice;
     private readonly documentNumber;
-    constructor(prisma: PrismaService, pg: PgService, appSettings?: AppSettingValueService);
+    constructor(prisma: PrismaService, pg: PgService);
     getAllAccountsAndMasterNameIds(module?: LookupModuleKey, id?: string): Promise<MasterLookupDataPayload>;
     getAllMasters(module?: LookupModuleKey, id?: string): Promise<NameIdOption[]>;
     getDropdownSqlData(dropdownId: number): Promise<NameIdOption[]>;
