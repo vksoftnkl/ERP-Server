@@ -6521,6 +6521,125 @@ model AppThemeTemplate {
   @@schema("public")
 }
 
+// ----- prisma/public/appVersioning.prisma -----
+// Part B — app versioning: the three tables of migration
+// 20261110160000_app_versioning. Step 1 adds the tables only; nothing in the API
+// reads or writes them yet (Step 2 adds the login recording and the update check).
+//
+// No relations on purpose: company / branch / user ids are plain uuids, with no
+// foreign key in this version.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_arl_platform   arl_platform IN (web, desktop, mobile)
+//   ck_arl_build      arl_build > 0
+//   ck_arl_severity   arl_severity IN (normal, recommended, critical)
+//   ck_cin_platform   cin_platform IN (web, desktop, mobile)
+//   ck_alu_platform   alu_platform IN (web, desktop, mobile, unknown)
+
+/// public.app_release — one row per released client build, per platform.
+/// The latest available build = the highest arlBuild where arlIsDeleted = false.
+/// arlIsDeleted = true yanks a bad release; its build number stays taken
+/// (ux_arl_platform_build is not partial).
+model AppRelease {
+  arlId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("arl_id")
+  /// web | desktop | mobile
+  arlPlatform     String    @db.VarChar(16)                     @map("arl_platform")
+  /// > 0. The number clients compare; unique per platform.
+  arlBuild        Int                                           @map("arl_build")
+  /// Display label only, e.g. 1.2.0.
+  arlVersion      String    @db.VarChar(32)                     @map("arl_version")
+  /// Short git hash.
+  arlCommit       String?   @db.VarChar(40)                     @map("arl_commit")
+  /// normal | recommended | critical
+  arlSeverity     String    @default("normal") @db.VarChar(16)  @map("arl_severity")
+  /// Release notes.
+  arlNotes        String?   @db.Text                            @map("arl_notes")
+  /// Installer / store / updater link.
+  arlDownloadUrl  String?   @db.VarChar(500)                    @map("arl_download_url")
+  arlReleasedAt   DateTime  @default(now()) @db.Timestamptz(6)  @map("arl_released_at")
+
+  arlIsActive     Boolean   @default(true)                      @map("arl_is_active")
+  /// true = yanked: never offered as the latest build.
+  arlIsDeleted    Boolean   @default(false)                     @map("arl_is_deleted")
+  arlSyncDate     DateTime? @db.Timestamptz(6)                  @map("arl_sync_date")
+  arlCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("arl_created_on")
+  arlCreatedBy    String?   @db.Text                            @map("arl_created_by")
+  arlModifiedOn   DateTime? @db.Timestamptz(6)                  @map("arl_modified_on")
+  arlModifiedBy   String?   @db.Text                            @map("arl_modified_by")
+
+  @@unique([arlPlatform, arlBuild], map: "ux_arl_platform_build")
+  @@map("app_release")
+  @@schema("public")
+}
+
+/// public.client_installation — which build each user / device is running.
+/// One row per (company, user, device, platform), upserted at login (Step 2)
+/// on ux_cin_device.
+model ClientInstallation {
+  cinId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("cin_id")
+  /// Tenant.
+  cinCompanyId    String    @db.Uuid                            @map("cin_company_id")
+  cinBranchId     String?   @db.Uuid                            @map("cin_branch_id")
+  cinUserId       String    @db.Uuid                            @map("cin_user_id")
+  /// The client's own device id; 'unknown' when it sends none.
+  cinDeviceId     String    @default("unknown") @db.VarChar(100) @map("cin_device_id")
+  /// web | desktop | mobile
+  cinPlatform     String    @db.VarChar(16)                     @map("cin_platform")
+  /// NULL = the client sent no build.
+  cinBuild        Int?                                          @map("cin_build")
+  // Support info, as the client sent it.
+  cinVersion      String?   @db.VarChar(32)                     @map("cin_version")
+  cinCommit       String?   @db.VarChar(40)                     @map("cin_commit")
+  cinOs           String?   @db.VarChar(100)                    @map("cin_os")
+  cinIp           String?   @db.VarChar(60)                     @map("cin_ip")
+  cinFirstSeen    DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_first_seen")
+  cinLastSeen     DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_last_seen")
+  cinLastLogin    DateTime? @db.Timestamptz(6)                  @map("cin_last_login")
+
+  cinIsActive     Boolean   @default(true)                      @map("cin_is_active")
+  cinIsDeleted    Boolean   @default(false)                     @map("cin_is_deleted")
+  cinSyncDate     DateTime? @db.Timestamptz(6)                  @map("cin_sync_date")
+  cinCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("cin_created_on")
+  cinCreatedBy    String?   @db.Text                            @map("cin_created_by")
+  cinModifiedOn   DateTime? @db.Timestamptz(6)                  @map("cin_modified_on")
+  cinModifiedBy   String?   @db.Text                            @map("cin_modified_by")
+
+  @@unique([cinCompanyId, cinUserId, cinDeviceId, cinPlatform], map: "ux_cin_device")
+  @@index([cinPlatform, cinBuild], map: "ix_cin_platform_build")
+  @@index([cinLastSeen], map: "ix_cin_last_seen")
+  @@map("client_installation")
+  @@schema("public")
+}
+
+/// public.app_legacy_usage — how often old builds still use a legacy field.
+/// One counter per (field, platform, build); a field can be removed once no
+/// build still in use counts against it.
+model AppLegacyUsage {
+  aluId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("alu_id")
+  /// The legacy field, e.g. sale-bill.request.rate
+  aluName         String    @db.VarChar(100)                    @map("alu_name")
+  /// web | desktop | mobile | unknown
+  aluPlatform     String    @default("unknown") @db.VarChar(16) @map("alu_platform")
+  /// -1 = unknown build.
+  aluBuild        Int       @default(-1)                        @map("alu_build")
+  /// Usage count.
+  aluCount        Int       @default(0)                         @map("alu_count")
+  aluFirstSeen    DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_first_seen")
+  aluLastSeen     DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_last_seen")
+
+  aluIsActive     Boolean   @default(true)                      @map("alu_is_active")
+  aluIsDeleted    Boolean   @default(false)                     @map("alu_is_deleted")
+  aluSyncDate     DateTime? @db.Timestamptz(6)                  @map("alu_sync_date")
+  aluCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)  @map("alu_created_on")
+  aluCreatedBy    String?   @db.Text                            @map("alu_created_by")
+  aluModifiedOn   DateTime? @db.Timestamptz(6)                  @map("alu_modified_on")
+  aluModifiedBy   String?   @db.Text                            @map("alu_modified_by")
+
+  @@unique([aluName, aluPlatform, aluBuild], map: "ux_alu_key")
+  @@map("app_legacy_usage")
+  @@schema("public")
+}
+
 // ----- prisma/public/batch.prisma -----
 model BatchPrefix {
   id           String    @id @default(uuid(7)) @db.Uuid
@@ -13802,6 +13921,11 @@ model SaleBillItem {
   sbiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_min_price")
   sbiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_cost_price")
   sbiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a bill posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sbiQtyPriceId      String?   @db.Uuid @map("sbi_qty_price_id")
   // Discounts
   sbiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_item_disc_perc")
   sbiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_item_disc_qty")
@@ -14192,6 +14316,11 @@ model SaleDcItem {
   sdiIsPromo            Boolean   @default(false)                      @map("sdi_is_promo")
   sdiActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_act_price")
   sdiMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_min_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a challan posted offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sdiQtyPriceId         String?   @db.Uuid                             @map("sdi_qty_price_id")
   sdiItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_item_disc_perc")
   sdiItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_item_disc_amt")
   sdiSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_spl_disc_perc")
@@ -14826,6 +14955,11 @@ model SaleOrderItem {
   soiMinPrice         Decimal?  @db.Decimal(15, 4) @map("soi_min_price")
   soiCostPrice        Decimal?  @db.Decimal(15, 4) @map("soi_cost_price")
   soiCostPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_cost_pre_tax")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because an order saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  soiQtyPriceId       String?   @db.Uuid @map("soi_qty_price_id")
   // A confirmed order holds its price even if the price master moves; false
   // lets the bill re-price at delivery (long-lead custom orders).
   soiIsRateLocked     Boolean   @default(true) @map("soi_is_rate_locked")
@@ -15197,6 +15331,11 @@ model SaleQuotationItem {
   sqiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_max_price")
   sqiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_min_price")
   sqiActPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_act_price")
+  /// The qty-wise price slab (inventory.item_qty_price.iqp_id) that priced
+  /// this line, or NULL. Informational only: no FK and no index on purpose,
+  /// because a document saved offline can reach the cloud before its slab
+  /// (20261106140100_qty_price_bills).
+  sqiQtyPriceId      String?   @db.Uuid @map("sqi_qty_price_id")
   sqiQuotePrice      Decimal?  @db.Decimal(15, 4) @map("sqi_quote_price")
   sqiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sqi_item_profit")
   sqiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sqi_cost_pre_tax")
