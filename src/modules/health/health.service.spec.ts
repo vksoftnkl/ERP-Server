@@ -27,6 +27,15 @@ describe('HealthService', () => {
     });
   });
 
+  it('reports the backend build and dbOk (Part B Step 2)', async () => {
+    const status = await service.check();
+    expect(status).toMatchObject({ dbOk: true, version: expect.any(String) });
+    expect(status).toHaveProperty('build');
+    expect(status).toHaveProperty('commit');
+    prismaService.$queryRawUnsafe.mockRejectedValue(new Error('down'));
+    await expect(service.check()).resolves.toMatchObject({ dbOk: false });
+  });
+
   it('returns degraded when database is unreachable', async () => {
     prismaService.$queryRawUnsafe.mockRejectedValue(new Error('database unavailable'));
 

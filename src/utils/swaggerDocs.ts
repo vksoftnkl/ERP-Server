@@ -48,6 +48,7 @@ import { TxnHoldModule } from '../modules/sales/txn-hold/txn-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { HealthModule } from '../modules/health/health.module';
+import { AppVersionModule } from '../modules/app-version/app-version.module';
 import { ItemsCustRatesMasterModule } from '../modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/item-price-details.module';
 import { UsersModule } from '../modules/users/users.module';
@@ -118,6 +119,12 @@ export const swaggerModuleDocuments = [
     title: 'Health API',
     description: 'Health module endpoints',
     include: [HealthModule],
+  },
+  {
+    path: 'app-version',
+    title: 'App Version API',
+    description: 'Client build tracking, update check, release registration (Part B Step 2)',
+    include: [AppVersionModule],
   },
   {
     path: 'users',

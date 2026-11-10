@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AppUpdateInfoDto } from '../../app-version/dto/check-update.dto';
 export class LoginResponseDto {
   @ApiProperty()
   access_token!: string;
@@ -27,4 +28,11 @@ export class LoginResponseDto {
   dev_user_id!: string | null;
   @ApiPropertyOptional({ description: 'Device type (e.g. Desktop, Mobile)' })
   device_type!: string | null;
+  @ApiPropertyOptional({
+    type: AppUpdateInfoDto,
+    description:
+      'Login only, and only when the request sent X-App-Platform + X-App-Build: whether a ' +
+      'newer build is available. A notice only; the key is absent for every other client.',
+  })
+  appUpdate?: AppUpdateInfoDto;
 }

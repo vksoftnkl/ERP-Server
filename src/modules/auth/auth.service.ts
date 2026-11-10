@@ -2,8 +2,10 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { DeviceMaster, Prisma, UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import type { ClientInfo } from '../../common/client-info/client-info';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { ClientTrackingService } from '../app-version/services/client-tracking.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
@@ -14,7 +16,15 @@ const SESSION_TOKEN_MAX_LENGTH = 200;
 type LoginRequestMetadata = {
   userAgent: string | null;
   appVersion: string | null;
+  /**
+   * Part B Step 2: the X-App-* / X-Device-* headers. Only a client that sent
+   * BOTH platform and build is recorded and gets `appUpdate`. Without them
+   * the response is exactly what it always was.
+   */
+  client?: ClientInfo | null;
 };
+/** Part B Step 2: the login body's `app_version`, superseded by the X-App-Version header. */
+export const LEGACY_LOGIN_APP_VERSION_FIELD = 'auth.login.app_version';
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -23,6 +33,7 @@ export class AuthService {
     private readonly authSessionService: AuthSessionService,
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
+    private readonly clientTracking: ClientTrackingService,
   ) {}
   async login(
     loginAuthDto: LoginAuthDto,
@@ -131,7 +142,7 @@ export class AuthService {
         )}`,
       );
     }
-    return {
+    const response: LoginResponseDto = {
       access_token: issuedAccessToken.token,
       refresh_token: issuedRefreshToken.token,
       token_type: 'Bearer',
@@ -145,8 +156,24 @@ export class AuthService {
       dev_user_id: device?.devUserId ?? null,
       device_type: device?.devDeviceType ?? null,
     };
+    // Part B Step 2: record the build and attach the update notice, but only
+    // for a client that sent X-App-Platform + X-App-Build. onLogin never
+    // throws, and a null leaves the response exactly as before (no
+    // `appUpdate` key at all).
+    if (loginAuthDto.app_version !== undefined && loginAuthDto.app_version !== null) {
+      this.clientTracking.legacyField(LEGACY_LOGIN_APP_VERSION_FIELD, requestMetadata.client);
+    }
+    const appUpdate = await this.clientTracking.onLogin({
+      client: requestMetadata.client,
+      userId: user.usrId,
+      userName: user.usrLoginName,
+      companyId: user.usrCompanyId ?? null,
+      branchId: device?.devBranchId ?? user.usrBranchId ?? null,
+      ip: this.requestContextService.getIpAddress(),
+    });
+    return appUpdate ? { ...response, appUpdate } : response;
   }
-  async refresh(refreshToken: string): Promise<LoginResponseDto> {
+  async refresh(refreshToken: string, client: ClientInfo | null = null): Promise<LoginResponseDto> {
     const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
     await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
     // Re-read the user so role/company changes and lockouts take effect on the
@@ -183,6 +210,16 @@ export class AuthService {
       issuedAccessToken.payload,
       refreshToken,
     );
+    // Part B Step 2: record the build (at most once per 10 minutes per
+    // device). No-op without X-App-Platform + X-App-Build; never throws.
+    await this.clientTracking.onRefresh({
+      client,
+      userId: refreshPayload.sub,
+      userName: refreshPayload.user_name,
+      companyId: user.usrCompanyId ?? null,
+      branchId: refreshPayload.branch_id ?? null,
+      ip: this.requestContextService.getIpAddress(),
+    });
     return {
       access_token: issuedAccessToken.token,
       refresh_token: refreshToken,

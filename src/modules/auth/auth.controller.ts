@@ -7,6 +7,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Request } from 'express';
+import { clientInfoOf } from '../../common/client-info/client-info';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { AuthService } from './auth.service';
@@ -33,6 +34,7 @@ export class AuthController {
     return this.authService.login(loginAuthDto, {
       userAgent: this.extractHeader(request.headers['user-agent']),
       appVersion: this.extractHeader(request.headers['x-app-version']),
+      client: clientInfoOf(request),
     });
   }
   @Public()
@@ -43,8 +45,11 @@ export class AuthController {
   @ApiOkResponse({ type: LoginResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
   @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<LoginResponseDto> {
-    return this.authService.refresh(refreshTokenDto.refresh_token);
+  async refresh(
+    @Body() refreshTokenDto: RefreshTokenDto,
+    @Req() request: Request,
+  ): Promise<LoginResponseDto> {
+    return this.authService.refresh(refreshTokenDto.refresh_token, clientInfoOf(request));
   }
   private extractHeader(headerValue: string | string[] | undefined): string | null {
     if (typeof headerValue === 'string') {

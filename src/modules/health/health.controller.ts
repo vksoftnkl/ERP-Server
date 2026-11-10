@@ -9,7 +9,7 @@ import {
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { HealthResponseDto } from './dto/health-response.dto';
-import { HealthService } from './health.service';
+import { HealthService, type HealthStatus } from './health.service';
 import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Health')
 @CacheTTL(0)
@@ -22,12 +22,7 @@ export class HealthController {
   @ApiOperation({ summary: 'Get API health status' })
   @ApiOkResponse({ type: HealthResponseDto })
   @ApiServiceUnavailableResponse({ type: HttpErrorResponseDto })
-  async getHealth(): Promise<{
-    status: 'ok' | 'degraded';
-    timestamp: string;
-    database: { status: 'up' | 'down' };
-    cache: { status: 'up' | 'down' | 'disabled' };
-  }> {
+  async getHealth(): Promise<HealthStatus> {
     const status = await this.healthService.check();
     if (status.database.status === 'down' || status.cache.status === 'down') {
       throw new ServiceUnavailableException(status);
