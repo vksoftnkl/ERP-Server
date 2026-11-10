@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { allocateVoucherNumber } from '../../../common/Sequence/voucher-sequence.helper';
+import { appendTxnStatusLog } from '../../../common/txn-status-log/txn-status-log.helper';
 import { resolveDefaultSaleGodowns } from '../../../common/utils/sale-line-godown.utils';
 import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import { readPdcChequeDetails } from '../posting/pdc-register.helper';
@@ -208,10 +209,17 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
     getByDocument: jest.Mock;
     softDeleteDocumentTenders: jest.Mock;
   };
+  // The Sales Order menu rights a save over a confirmed order is judged on.
+  let rights: { amend: boolean };
+  let salesContext: { resolve: jest.Mock };
   let service: SaleOrderService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    rights = { amend: true };
+    salesContext = {
+      resolve: jest.fn(() => Promise.resolve({ actor: USER_ID, rights: { ...rights } })),
+    };
     jest.mocked(syncOrderAdvancePosting).mockResolvedValue(UNCHANGED);
     jest.mocked(readOrderAdvanceBalance).mockResolvedValue(null);
     jest.mocked(deleteOrderAdvancePosting).mockResolvedValue({
@@ -269,6 +277,7 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       { getUserId: () => USER_ID } as never,
       charges as never,
       tenders as never,
+      salesContext as never,
     );
   });
 
@@ -539,6 +548,235 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       });
     });
 
+    // 2026-11-10: a save never writes soStatus. Only the verbs move it —
+    // /post (or the one-call confirm), /cancel, delivery / billing — so a body
+    // cannot skip the Cancel right and /cancel's checks, nor call an order
+    // COMPLETED that delivered nothing.
+    describe("the status is the server's, never the body's", () => {
+      const BODY_STATUSES = ['CANCELLED', 'COMPLETED', 'CLOSED', 'EXPIRED', 'PARTIAL', 'CONFIRMED'];
+
+      it.each([...BODY_STATUSES, 'DRAFT', undefined])(
+        'saves a new order DRAFT when the body says %s',
+        async (soStatus) => {
+          const payload = await service.save(createDto({ soStatus }));
+
+          expect(prisma.saleOrder.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ soStatus: 'DRAFT' }) as object,
+          });
+          expect(payload.soStatus).toBe('DRAFT');
+          // The birth step of the trail says DRAFT too.
+          expect(jest.mocked(appendTxnStatusLog)).toHaveBeenCalledTimes(1);
+          expect(jest.mocked(appendTxnStatusLog)).toHaveBeenCalledWith(
+            prisma,
+            expect.objectContaining({ fromStatus: null, toStatus: 'DRAFT' }),
+          );
+        },
+      );
+
+      const matrix = ['DRAFT', 'CONFIRMED', 'PARTIAL'].flatMap((stored) =>
+        [...BODY_STATUSES, 'DRAFT'].map((body) => [stored, body] as const),
+      );
+      it.each(matrix)(
+        'keeps a stored %s order as it is when the body says %s',
+        async (stored, body) => {
+          prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: stored }));
+          // As Prisma answers an update: the stored row with the data on top.
+          prisma.saleOrder.update.mockImplementation(({ data }: { data: Partial<SaleOrder> }) =>
+            Promise.resolve(orderRow({ soStatus: stored, ...data })),
+          );
+
+          const payload = await service.save(updateDto({ soStatus: body, soRemarks: 'Edited' }));
+
+          const { data } = prisma.saleOrder.update.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+          };
+          expect(data).toMatchObject({ soRemarks: 'Edited' });
+          expect(data).not.toHaveProperty('soStatus');
+          expect(payload.soStatus).toBe(stored);
+          // No status move, so no step in the trail.
+          expect(jest.mocked(appendTxnStatusLog)).not.toHaveBeenCalled();
+        },
+      );
+
+      it('still refuses a soStatus outside ck_so_status, before anything is written', async () => {
+        const refusal = await refusalOf(service.save(updateDto({ soStatus: 'POSTED' })));
+
+        expect(refusal.status).toBe(400);
+        expect(codesOf(refusal.body)).toEqual([
+          expect.objectContaining({ field: 'soStatus' }) as object,
+        ]);
+        expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+      });
+    });
+
+    // 2026-11-10 round 2: a save over a confirmed order is an edit of a
+    // confirmed document, judged on /amend's Amend right (same resolve, same
+    // 403 SALES_RIGHT_AMEND). No revision is written here.
+    describe('a confirmed order needs the Amend right', () => {
+      it.each(['CONFIRMED', 'PARTIAL'])(
+        'refuses a plain save over a stored %s order without it, before anything is written',
+        async (soStatus) => {
+          rights.amend = false;
+          prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+          const refusal = await refusalOf(
+            service.save(updateDto({ soStatus, soRemarks: 'Call first', items: [newLine()] })),
+          );
+
+          expect(refusal).toMatchObject({
+            status: 403,
+            body: { errors: [{ field: 'userId', code: 'SALES_RIGHT_AMEND' }] },
+          });
+          // Judged on the Sales Order menu (11), inside the save's transaction,
+          // after the row lock.
+          expect(salesContext.resolve).toHaveBeenCalledWith(
+            { companyId: COMPANY_ID, branchId: BRANCH_ID },
+            11,
+            prisma,
+          );
+          expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+            salesContext.resolve.mock.invocationCallOrder[0],
+          );
+          expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+          expect(prisma.saleOrderItem.create).not.toHaveBeenCalled();
+          expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+          expect(charges.syncDocumentCharges).not.toHaveBeenCalled();
+          expect(tenders.syncDocumentTenders).not.toHaveBeenCalled();
+          expect(jest.mocked(syncOrderAdvancePosting)).not.toHaveBeenCalled();
+          expect(audit.logEntityChange).not.toHaveBeenCalled();
+        },
+      );
+
+      // The one-call confirm (post:true / soStatus CONFIRMED) edits through
+      // updateOrderInTx inside saveAndPost's transaction: the same refusal.
+      it.each(['CONFIRMED', 'PARTIAL'])(
+        'refuses the one-call confirm path over a stored %s order without it',
+        async (soStatus) => {
+          rights.amend = false;
+          prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+          const refusal = await refusalOf(
+            service.updateOrderInTx(
+              prisma as unknown as Prisma.TransactionClient,
+              updateDto({ soRemarks: 'Call first' }),
+            ),
+          );
+
+          expect(refusal).toMatchObject({
+            status: 403,
+            body: { errors: [{ field: 'userId', code: 'SALES_RIGHT_AMEND' }] },
+          });
+          expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['CONFIRMED', 'PARTIAL'])(
+        'saves over a stored %s order with it, writing no revision',
+        async (soStatus) => {
+          prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus, soRevisionNo: 1 }));
+
+          await service.save(updateDto({ soRemarks: 'Call first' }));
+
+          expect(salesContext.resolve).toHaveBeenCalledTimes(1);
+          const { data } = prisma.saleOrder.update.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+          };
+          expect(data).toMatchObject({ soRemarks: 'Call first' });
+          expect(data).not.toHaveProperty('soRevisionNo');
+        },
+      );
+
+      it('asks no right for a DRAFT, as before', async () => {
+        rights.amend = false;
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'DRAFT' }));
+
+        await service.save(updateDto({ soRemarks: 'Call first' }));
+
+        expect(salesContext.resolve).not.toHaveBeenCalled();
+        expect(prisma.saleOrder.update).toHaveBeenCalled();
+      });
+
+      it('asks no right for a new order', async () => {
+        rights.amend = false;
+
+        await service.save(createDto());
+
+        expect(salesContext.resolve).not.toHaveBeenCalled();
+        expect(prisma.saleOrder.create).toHaveBeenCalled();
+      });
+
+      it('answers a finished order 409 before the right is asked', async () => {
+        rights.amend = false;
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'COMPLETED' }));
+
+        const refusal = await refusalOf(service.save(updateDto({ soRemarks: 'Call first' })));
+
+        expect(refusal.status).toBe(409);
+        expect(salesContext.resolve).not.toHaveBeenCalled();
+      });
+    });
+
+    // 2026-11-10 round 2: the fulfilment caches only deliveries and bills move
+    // are validated, never written from the body. soTotItems / soPayStatus,
+    // which the Qt screen computes, still are.
+    describe('fulfilment caches belong to the server', () => {
+      const FULFILMENT_BODY = {
+        soFulfilStatus: 'COMPLETED',
+        soDeliveredItems: 5,
+        soCompletedOn: '2026-11-10T05:00:00.000Z',
+        soLastBilledOn: '2026-11-10T05:00:00.000Z',
+      };
+      const FULFILMENT_KEYS = [
+        'soFulfilStatus',
+        'soDeliveredItems',
+        'soCompletedOn',
+        'soLastBilledOn',
+      ];
+
+      it('leaves them to the column defaults on a new order', async () => {
+        await service.save(
+          createDto({ ...FULFILMENT_BODY, soTotItems: 3, soPayStatus: 'PARTIAL' }),
+        );
+
+        const { data } = prisma.saleOrder.create.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        };
+        for (const key of FULFILMENT_KEYS) {
+          expect(data).not.toHaveProperty(key);
+        }
+        expect(data).toMatchObject({ soTotItems: 3, soPayStatus: 'PARTIAL' });
+      });
+
+      it.each(['DRAFT', 'CONFIRMED', 'PARTIAL'])(
+        'keeps what a stored %s order holds on an update',
+        async (soStatus) => {
+          prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
+
+          await service.save(
+            updateDto({ ...FULFILMENT_BODY, soTotItems: 3, soPayStatus: 'PAID', soRemarks: 'x' }),
+          );
+
+          const { data } = prisma.saleOrder.update.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+          };
+          for (const key of FULFILMENT_KEYS) {
+            expect(data).not.toHaveProperty(key);
+          }
+          expect(data).toMatchObject({ soTotItems: 3, soPayStatus: 'PAID', soRemarks: 'x' });
+        },
+      );
+
+      it('still refuses a soFulfilStatus outside ck_so_fulfil_status', async () => {
+        const refusal = await refusalOf(service.save(updateDto({ soFulfilStatus: 'DONE' })));
+
+        expect(refusal.status).toBe(400);
+        expect(codesOf(refusal.body)).toEqual([
+          expect.objectContaining({ field: 'soFulfilStatus' }) as object,
+        ]);
+        expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+      });
+    });
+
     it('leaves the lines alone when an update omits items', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([lineRow()]);
 
@@ -666,25 +904,29 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       });
     });
 
-    it('keeps what a cancelled order stated when its receipt goes', async () => {
-      // The save that cancels it: the row is still CONFIRMED (a stored
-      // CANCELLED is refused, see "terminal orders" below).
-      const cancelled = {
+    it('keeps the refund an order states when its receipt goes', async () => {
+      // A body soStatus is not written (see "the status is the server's"
+      // below), so the order stays CONFIRMED; the stated refund is what keeps
+      // the roll-ups from being zeroed.
+      const refunded = {
         soStatus: 'CONFIRMED',
         soAdvanceRecdAmt: D('500.00'),
         soAdvanceRefundAmt: D('500.00'),
         soAdvanceStatus: 'REFUNDED',
       };
-      prisma.saleOrder.findFirst.mockResolvedValue(orderRow(cancelled));
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow(refunded));
       prisma.saleOrder.update.mockImplementation(({ data }: { data: Partial<SaleOrder> }) =>
-        Promise.resolve(orderRow({ ...cancelled, ...data })),
+        Promise.resolve(orderRow({ ...refunded, ...data })),
       );
       jest.mocked(syncOrderAdvancePosting).mockResolvedValue({ ...UNCHANGED, action: 'cancelled' });
 
       await service.save(updateDto({ tenders: [], soStatus: 'CANCELLED' }));
 
-      // Only the edit itself; no restatement.
+      // Only the edit itself; no restatement, and no status written.
       expect(prisma.saleOrder.update).toHaveBeenCalledTimes(1);
+      expect(rollupWrite(0)).not.toHaveProperty('soStatus');
+      const [, source] = jest.mocked(syncOrderAdvancePosting).mock.calls[0];
+      expect(source.soStatus).toBe('CONFIRMED');
     });
 
     it("hands the books each cheque row's payload details by the id it was saved under", async () => {

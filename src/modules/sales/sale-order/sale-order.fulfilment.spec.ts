@@ -171,6 +171,7 @@ describe('SaleOrderService — bill-driven paths', () => {
       { getUserId: () => ACTOR } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
   });
 

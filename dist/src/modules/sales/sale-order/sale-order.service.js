@@ -21,6 +21,8 @@ const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const sale_order_error_codes_1 = require("./types/sale-order-error-codes");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_errors_1 = require("../posting/sales.errors");
+const sales_context_service_1 = require("../posting/sales-context.service");
+const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_api_types_1 = require("../bill/types/bill-api.types");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const charge_detail_service_1 = require("../../master/charge-detail/charge-detail.service");
@@ -68,6 +70,7 @@ function assertSaleOrderNotTerminal(order) {
         ? posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED
         : posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId', { status: order.soStatus });
 }
+const SALE_ORDER_AMEND_RIGHT_STATUSES = ['CONFIRMED', 'PARTIAL'];
 const SALE_ORDER_FULFIL_STATUSES = ['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
 const SALE_ORDER_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
 const SALE_ORDER_ADVANCE_POLICIES = ['NONE', 'FIXED', 'PERC', 'FULL'];
@@ -158,7 +161,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
     'soAgentCommAmt',
     'soPackedId',
     'soTotItems',
-    'soDeliveredItems',
     'soTotWeight',
     'soTotBags',
     'soGrossAmt',
@@ -211,9 +213,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
     'soBilledAmt',
     'soCancelledAmt',
     'soPendingAmt',
-    'soFulfilStatus',
-    'soLastBilledOn',
-    'soCompletedOn',
     'soPaymentTerms',
     'soDeliveryTerms',
     'soTermsConditions',
@@ -222,7 +221,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
     'soLoadingCalcType',
     'soDiscAlterBase',
     'soRoundOffStep',
-    'soStatus',
     'soVersionNo',
     'soPrintCount',
 ];
@@ -422,12 +420,14 @@ let SaleOrderService = class SaleOrderService {
     requestContextService;
     chargeDetailService;
     tenderDetailService;
-    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService) {
+    salesContext;
+    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, salesContext) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
         this.chargeDetailService = chargeDetailService;
         this.tenderDetailService = tenderDetailService;
+        this.salesContext = salesContext;
     }
     async save(saveOrderDto) {
         this.prepareSave(saveOrderDto);
@@ -441,6 +441,15 @@ let SaleOrderService = class SaleOrderService {
     }
     signedInActor() {
         return (0, module_service_utils_1.resolveActor)(null, this.requestContextService.getUserId());
+    }
+    async assertAmendRightToEdit(tx, stored) {
+        if (!SALE_ORDER_AMEND_RIGHT_STATUSES.includes(stored.soStatus)) {
+            return;
+        }
+        const ctx = await this.salesContext.resolve({ companyId: stored.soCompanyId, branchId: stored.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
+        if (!ctx.rights.amend) {
+            (0, sales_errors_1.throwSalesRight)('This user may not amend on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_AMEND);
+        }
     }
     throwIfDuplicate(error) {
         const duplicate = this.describeDuplicate(error);
@@ -1273,7 +1282,7 @@ let SaleOrderService = class SaleOrderService {
             soUserId: saveOrderDto.soUserId,
             soCreatedOn: now,
             soCreatedBy: createdBy,
-            soStatus: saveOrderDto.soStatus || 'DRAFT',
+            soStatus: 'DRAFT',
         };
         this.applyOptionalFields(data, saveOrderDto);
         data.soCustName = normalizedCustName;
@@ -1352,6 +1361,7 @@ let SaleOrderService = class SaleOrderService {
             (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
         }
         assertSaleOrderNotTerminal(existing);
+        await this.assertAmendRightToEdit(tx, existing);
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
         const now = new Date();
         const modifiedBy = this.signedInActor();
@@ -2099,6 +2109,7 @@ exports.SaleOrderService = SaleOrderService = __decorate([
         audit_log_service_1.AuditLogService,
         request_context_service_1.RequestContextService,
         charge_detail_service_1.ChargeDetailService,
-        tender_detail_service_1.TenderDetailService])
+        tender_detail_service_1.TenderDetailService,
+        sales_context_service_1.SalesContextService])
 ], SaleOrderService);
 //# sourceMappingURL=sale-order.service.js.map

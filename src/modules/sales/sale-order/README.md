@@ -93,14 +93,30 @@ below).
   targets that compound key (`soId_soAccYear`), resolved from the row `findFirst` already loaded.
 - On **create**, `soCustName` is normalized via `normalizeRequiredText`, `soOrderSlno` /
   `soOrderRefno` are allocated from the voucher sequence, `soOrderDate` defaults to *now* when
-  omitted, and `soStatus` defaults to `'DRAFT'`.
+  omitted, and `soStatus` is always `'DRAFT'`.
 - **Save and confirm in one call (notes 94 B / 106).** `post: true` — or `soStatus: 'CONFIRMED'`,
   which is now the INSTRUCTION rather than a column value — runs the draft save and the whole of
   `/sale-orders/post` (the reservations, CONFIRMED, the trail) in ONE transaction
   (`SaleOrderLifecycleService.saveAndPost`, sharing `postInTx` with `/post`). A refusal rolls all of
   it back: no header, no lines, no number consumed. The response is the order plus `warnings[]`
-  (`SALES_RESERVE_SHORT` lines). Judged on the Post right (94 A). A plain save still honours the
-  other `soStatus` values as before (a save with `CANCELLED` still cancels the advance receipt).
+  (`SALES_RESERVE_SHORT` lines). Judged on the Post right (94 A).
+- **A save never writes the status (2026-11-10).** `soStatus` is not in `SALE_ORDER_OPTIONAL_FIELDS`:
+  the body's value is checked against `ck_so_status` and then ignored. A new order is born `DRAFT`;
+  an existing one keeps its STORED status (DRAFT / CONFIRMED / PARTIAL). Only the verbs move it —
+  `/post` (or `post: true` / `soStatus: 'CONFIRMED'`), `/cancel`, and the delivery / billing paths
+  (PARTIAL / COMPLETED). A body `CANCELLED` therefore no longer cancels the order or its advance
+  receipt; use `/sale-orders/cancel`.
+- **Nor the fulfilment caches.** `soFulfilStatus`, `soDeliveredItems`, `soCompletedOn` and
+  `soLastBilledOn` are out of `SALE_ORDER_OPTIONAL_FIELDS` too: still validated (the value guard, the
+  DTO's integer / date checks), never written from the body. A new order takes the column defaults
+  (`PENDING` / `0` / NULL / NULL); only `syncOrderFulfilment` (bills) and `cancelOrderOpenLines` move
+  them. `soTotItems` and `soPayStatus` stay writable: the Qt screen computes and sends them.
+- **A confirmed order needs the Amend right.** A save with a soId over a stored `CONFIRMED` /
+  `PARTIAL` order — plain, or the one-call confirm — is judged on the Amend right exactly as
+  `/amend` judges it (`SalesContextService.resolve` on the Sales Order menu → **403**
+  `SALES_RIGHT_AMEND`, field `userId`), under the save's row lock, after the terminal check. A DRAFT
+  keeps the rights a save had before. Only the right: no `soRevisionNo` is written and no
+  `baseRevision` is asked; revisions are left for SO Management's planned History / Revisions step.
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `SALE_ORDER_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`soCompanyId`, `soBranchId`, `soTenantId`, `soAccYear`,
@@ -273,7 +289,7 @@ Other details worth knowing:
 | --- | --- | --- |
 | no receipt | live order with tendered money | **created** — header + lines written |
 | live receipt | tenders edited | **updated** — header amounts re-synced, lines soft-deleted and rebuilt from the current tenders (`ux_av_voucher_row` ignores deleted rows, so numbering restarts at 1). The voucher's identity — number, refno, date, posted-on — is fixed at first post |
-| live receipt | last tender gone, **or** `soStatus = 'CANCELLED'` | **cancelled** — lines retired, header `CANCELLED` with a reason (`ck_avh_cancel`), `td_voucher_id` cleared |
+| live receipt | last tender gone, **or** the stored `soStatus` is `'CANCELLED'` (a save no longer writes it, see above) | **cancelled** — lines retired, header `CANCELLED` with a reason (`ck_avh_cancel`), `td_voucher_id` cleared |
 | no receipt | no money | **unchanged** |
 
 Two cases answer **400** rather than a raw Postgres error: a tender that charges a surcharge whose
@@ -497,9 +513,10 @@ whatever the client last posted. This one owns `soi_cancelled_qty`; the bill con
 money held against an order that did deliver is legitimate. The call is refused with a **400** only
 when it would take the header all the way to `CANCELLED` while `soAdvanceBalanceAmt > 0`. That
 guard is also what keeps the accounting safe: this endpoint does **not** touch the advance posting
-(the order is not deleted and its receipt is a real one), but once `so_status` is `CANCELLED` the
-next save runs `syncOrderAdvancePosting`, which cancels the receipt, after which
-`ensureNotPreviouslyCancelled` blocks re-posting for good.
+(the order is not deleted and its receipt is a real one), and nothing touches it later either: a
+`CANCELLED` order is not saved again (409 `SALES_DOC_CANCELLED`) and no save writes `CANCELLED`
+(2026-11-10), so the receipt stays as it is. What a cancel should do to the receipt is a separate,
+planned job; meanwhile the header only reaches `CANCELLED` here when no advance is held.
 
 **Idempotent.** A second call finds nothing open, writes no line, appends no trail step and answers
 `cancelledLines: 0`. It still reconciles the header caches — cheap, and they were caller-stated

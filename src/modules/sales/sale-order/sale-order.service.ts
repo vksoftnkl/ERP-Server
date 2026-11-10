@@ -39,7 +39,9 @@ import {
 } from './types/sale-order-api.types';
 import { SaleOrderErrorCode } from './types/sale-order-error-codes';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
-import { throwSalesLocked } from '../posting/sales.errors';
+import { throwSalesLocked, throwSalesRight } from '../posting/sales.errors';
+import { SalesContextService } from '../posting/sales-context.service';
+import { SALES_MENU_ID } from '../posting/sales-doc.utils';
 // Which sale bills draw quantity down off an order line. Imported rather than
 // restated so the two modules can never disagree about what "billed" means; the
 // dependency only points this way, so it adds no cycle to the sale-bill module
@@ -157,6 +159,13 @@ export function assertSaleOrderNotTerminal(order: Pick<SaleOrder, 'soStatus'>): 
     { status: order.soStatus },
   );
 }
+/**
+ * The stored statuses a save over the order counts as an amendment for: it is
+ * confirmed (reserved, billable), so `/create` with its soId — plain, or the
+ * one-call confirm — needs the Amend right, judged exactly as `/amend` judges
+ * it. A DRAFT keeps the rights a save had before (2026-11-10).
+ */
+const SALE_ORDER_AMEND_RIGHT_STATUSES: readonly string[] = ['CONFIRMED', 'PARTIAL'];
 const SALE_ORDER_FULFIL_STATUSES = ['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED'] as const;
 const SALE_ORDER_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const SALE_ORDER_ADVANCE_POLICIES = ['NONE', 'FIXED', 'PERC', 'FULL'] as const;
@@ -247,6 +256,20 @@ const QTY_SCALE = 3;
 // soPriceLevel, soUserId) and the server-assigned number (soOrderSlno /
 // soOrderRefno) are intentionally excluded — see the README's "Order numbering"
 // section.
+//
+// soStatus is excluded too (2026-11-10): a save never writes the body's status.
+// A new order is born DRAFT and an existing one keeps its STORED status; only
+// the verbs move it — /post (or post:true / soStatus 'CONFIRMED', the one-call
+// confirm), /cancel, and the delivery / billing paths (PARTIAL / COMPLETED).
+// The body's soStatus is still validated against ck_so_status, then ignored.
+//
+// So are the fulfilment caches only deliveries and bills move (2026-11-10):
+// soFulfilStatus, soDeliveredItems, soCompletedOn, soLastBilledOn. They are
+// still validated (the soFulfilStatus value guard, the DTO's integer / date
+// checks) and never written from the body: a new order takes the column
+// defaults (PENDING / 0 / NULL / NULL), an existing one keeps what
+// syncOrderFulfilment and cancelOrderOpenLines last wrote. soTotItems and
+// soPayStatus stay writable: the Qt screen computes and sends them.
 const SALE_ORDER_OPTIONAL_FIELDS = [
   'soSessionId',
   'soDeviceId',
@@ -300,7 +323,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
   'soAgentCommAmt',
   'soPackedId',
   'soTotItems',
-  'soDeliveredItems',
   'soTotWeight',
   'soTotBags',
   'soGrossAmt',
@@ -353,9 +375,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
   'soBilledAmt',
   'soCancelledAmt',
   'soPendingAmt',
-  'soFulfilStatus',
-  'soLastBilledOn',
-  'soCompletedOn',
   'soPaymentTerms',
   'soDeliveryTerms',
   'soTermsConditions',
@@ -364,7 +383,6 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
   'soLoadingCalcType',
   'soDiscAlterBase',
   'soRoundOffStep',
-  'soStatus',
   'soVersionNo',
   'soPrintCount',
 ];
@@ -693,6 +711,10 @@ export class SaleOrderService {
     // Same arrangement for acc_tender_detail and the tenders[] array — the
     // advance money the customer handed over against the order.
     private readonly tenderDetailService: TenderDetailService,
+    // The menu rights, as the lifecycle verbs read them: a save over a
+    // confirmed order is judged on /amend's Amend right (see
+    // assertAmendRightToEdit).
+    private readonly salesContext: SalesContextService,
   ) {}
   async save(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
     this.prepareSave(saveOrderDto);
@@ -718,6 +740,36 @@ export class SaleOrderService {
    */
   private signedInActor(): string {
     return resolveActor(null, this.requestContextService.getUserId());
+  }
+  /**
+   * A save over a CONFIRMED / PARTIAL order (`/create` with its soId, plain or
+   * the one-call confirm) is an edit of a confirmed document, so it needs the
+   * Amend right, judged exactly as `/sale-orders/amend` judges it: the same
+   * context resolve on the Sales Order menu, the same 403 SALES_RIGHT_AMEND.
+   * Pass the row read under the save's own lock. A DRAFT keeps the rights a
+   * save had before. `/amend` checks the right under its own lock first and
+   * then saves through here, so it is simply asked twice.
+   *
+   * Only the right: this save writes no revision (soRevisionNo) and asks for
+   * no baseRevision. Revisions are left for SO Management's planned History /
+   * Revisions step (plan-sales-order-management-qt-2026-11-10-addendum-1 §6,
+   * phase P6); `/amend` keeps its own revision check meanwhile.
+   */
+  private async assertAmendRightToEdit(
+    tx: Prisma.TransactionClient,
+    stored: SaleOrder,
+  ): Promise<void> {
+    if (!SALE_ORDER_AMEND_RIGHT_STATUSES.includes(stored.soStatus)) {
+      return;
+    }
+    const ctx = await this.salesContext.resolve(
+      { companyId: stored.soCompanyId, branchId: stored.soBranchId },
+      SALES_MENU_ID.SALES_ORDER,
+      tx,
+    );
+    if (!ctx.rights.amend) {
+      throwSalesRight('This user may not amend on this menu', SALES_ERROR_CODES.RIGHT_AMEND);
+    }
   }
   /**
    * Re-throws a unique-index clash as the 409 `/sale-orders/create` answers;
@@ -1438,12 +1490,13 @@ export class SaleOrderService {
     );
     // The advance posting is deliberately NOT touched. The order is not being
     // deleted and its receipt in accounts.acc_voucher_header is a real one, so
-    // deleteOrderAdvancePosting would be wrong here. Be aware of the knock-on:
-    // once so_status is CANCELLED, the next save runs syncOrderAdvancePosting,
-    // which cancels the advance receipt, and ensureNotPreviouslyCancelled then
-    // blocks re-posting it for good. The advance guard above is what keeps
-    // that safe — the header can only reach CANCELLED here when the balance is
-    // already zero.
+    // deleteOrderAdvancePosting would be wrong here. Nothing touches it later
+    // either: a CANCELLED order is not saved again (409 SALES_DOC_CANCELLED,
+    // assertSaleOrderNotTerminal) and no save writes CANCELLED (2026-11-10),
+    // so syncOrderAdvancePosting never meets this order cancelled and its
+    // receipt stays as it is. What a cancel should do to the receipt is a
+    // separate, planned job. The advance guard above keeps that safe meanwhile:
+    // the header can only reach CANCELLED here when no advance is held.
     return {
       soId: existing.soId,
       soAccYear: existing.soAccYear,
@@ -2273,7 +2326,10 @@ export class SaleOrderService {
       soUserId: saveOrderDto.soUserId,
       soCreatedOn: now,
       soCreatedBy: createdBy,
-      soStatus: saveOrderDto.soStatus || 'DRAFT',
+      // Always DRAFT, whatever the body says: the one-call confirm
+      // (saveAndPost) moves it to CONFIRMED through /post's own path, and no
+      // save may give birth to a CANCELLED / COMPLETED order.
+      soStatus: 'DRAFT',
     };
     this.applyOptionalFields(data, saveOrderDto);
     data.soCustName = normalizedCustName;
@@ -2406,6 +2462,8 @@ export class SaleOrderService {
     }
     // A finished order is not edited (409), whatever soStatus the body sends.
     assertSaleOrderNotTerminal(existing);
+    // A confirmed one (CONFIRMED / PARTIAL) only with the Amend right (403).
+    await this.assertAmendRightToEdit(tx, existing);
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
     const now = new Date();
     // Plan SO-5: the signed-in user's id; the body's soModifiedBy is ignored.
@@ -2461,7 +2519,8 @@ export class SaleOrderService {
     );
     // Brings the receipt in line with whatever the edit did to the tenders:
     // creates one for money just taken, re-syncs an existing one, or cancels
-    // it when the last tender is gone or the order was cancelled.
+    // it when the last tender is gone. (A save never meets a CANCELLED order:
+    // the terminal check above refuses it, and no save writes CANCELLED.)
     // A payload that re-sends the tenders but not soAdvanceRecdAmt lets the
     // tenders decide what is held. The stored figure is otherwise the one
     // restateAdvanceRollups wrote off the LAST tenders, and resolveAdvanceHeld

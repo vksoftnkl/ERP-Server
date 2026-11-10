@@ -552,7 +552,9 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveSaleOrderDto.prototype, "soTotItems", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Fully delivered LINES' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Fully delivered LINES. Validated, never written: deliveries and bills set it',
+    }),
     (0, dtoDecorators_1.OptionalInteger)(),
     __metadata("design:type", Number)
 ], SaveSaleOrderDto.prototype, "soDeliveredItems", void 0);
@@ -850,13 +852,19 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 20,
         nullable: true,
-        description: "PENDING / PARTIAL / COMPLETED / CANCELLED — defaults to 'PENDING'",
+        description: "PENDING / PARTIAL / COMPLETED / CANCELLED — 'PENDING' on a new order. Validated, never " +
+            'written: deliveries, bills and /cancel-lines set it',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(20),
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soFulfilStatus", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'Validated, never written: server-owned',
+    }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soLastBilledOn", void 0);
@@ -865,7 +873,7 @@ __decorate([
         type: 'string',
         format: 'date-time',
         nullable: true,
-        description: 'Last line delivered',
+        description: 'Last line delivered. Validated, never written: the delivery that completes it sets it',
     }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
@@ -925,10 +933,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 20,
         nullable: true,
-        description: 'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — ' +
-            "defaults to 'DRAFT'. 'CONFIRMED' is the one-call instruction (same as post: true): " +
-            'the order is saved and confirmed in one transaction through /sale-orders/post. The ' +
-            'status TRAIL lives in public.txn_status_log; this column is the current state only.',
+        description: 'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — checked ' +
+            "against that list, then NOT written: a save never sets the status. 'CONFIRMED' is " +
+            'the one-call instruction (same as post: true): the order is saved and confirmed in ' +
+            'one transaction through /sale-orders/post. Any other value is ignored: a new order ' +
+            'is saved DRAFT, an existing one keeps its stored status. Only /post, /cancel and the ' +
+            'delivery / billing paths move it. The status TRAIL lives in public.txn_status_log; ' +
+            'this column is the current state only.',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(20),
     __metadata("design:type", Object)

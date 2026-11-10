@@ -78,13 +78,19 @@ describe('SaleOrderController', () => {
     });
 
     it('treats a status the post would leave as a save-and-confirm too', async () => {
-      // A non-confirming status is just a column value for the plain save.
+      // Any other status goes to the plain save, which ignores it (a save
+      // never writes soStatus, 2026-11-10) — CANCELLED is not a cancel.
       await controller.save(saveDto({ soStatus: 'DRAFT' }));
       expect(orders.save).toHaveBeenCalledTimes(1);
 
       await controller.save(saveDto({ soStatus: 'confirmed' }));
       expect(lifecycle.saveAndPost).toHaveBeenCalledTimes(1);
       expect(orders.save).toHaveBeenCalledTimes(1);
+
+      await controller.save(saveDto({ soId: ORDER_ID, soStatus: 'CANCELLED' }));
+      expect(orders.save).toHaveBeenCalledTimes(2);
+      expect(lifecycle.saveAndPost).toHaveBeenCalledTimes(1);
+      expect(lifecycle.cancel).not.toHaveBeenCalled();
     });
 
     it('confirms in one call on post: true and says so', async () => {

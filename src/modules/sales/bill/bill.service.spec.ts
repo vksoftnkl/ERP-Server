@@ -815,6 +815,8 @@ describe('BillService', () => {
           auditLogService as unknown as AuditLogService,
           requestContextService,
         ),
+        // Only an order save asks it (the Amend right); a bill never saves one.
+        {} as unknown as SalesContextService,
       ),
       // Real too: what a bill converted from a quotation does is judged by what
       // lands on prisma.saleQuotation.

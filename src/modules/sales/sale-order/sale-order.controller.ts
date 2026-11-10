@@ -74,7 +74,13 @@ export class SaleOrderController {
       'refusal rolls all of it back: no header, no lines, no number consumed. The response is the ' +
       'order plus warnings[] (SALES_RESERVE_SHORT lines). Notes 94 B / 106. ' +
       'With a soId, an order whose stored status is finished answers 409: CANCELLED → ' +
-      'SALES_DOC_CANCELLED; COMPLETED / CLOSED / EXPIRED → SALES_DOC_NOT_DRAFT (errors[0].status).',
+      'SALES_DOC_CANCELLED; COMPLETED / CLOSED / EXPIRED → SALES_DOC_NOT_DRAFT (errors[0].status). ' +
+      'A save never writes the status: any soStatus other than CONFIRMED is ignored — a new ' +
+      'order is saved DRAFT, an existing one keeps its stored status. To cancel use ' +
+      '/sale-orders/cancel. Nor the fulfilment caches (soFulfilStatus, soDeliveredItems, ' +
+      'soCompletedOn, soLastBilledOn): validated, never written; deliveries and bills move them. ' +
+      'With a soId, a stored CONFIRMED / PARTIAL order needs the Amend right, as /amend does ' +
+      '(403 SALES_RIGHT_AMEND, field userId); no revision is written here.',
   })
   @ApiCreatedResponse({ type: SaleOrderSuccessSingleDto })
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })

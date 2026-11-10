@@ -319,7 +319,9 @@ export class SaveSaleOrderDto {
   @ApiPropertyOptional({ description: 'Ordered LINES' })
   @OptionalInteger()
   soTotItems?: number;
-  @ApiPropertyOptional({ description: 'Fully delivered LINES' })
+  @ApiPropertyOptional({
+    description: 'Fully delivered LINES. Validated, never written: deliveries and bills set it',
+  })
   @OptionalInteger()
   soDeliveredItems?: number;
   @ApiPropertyOptional()
@@ -514,18 +516,26 @@ export class SaveSaleOrderDto {
   @ApiPropertyOptional({
     maxLength: 20,
     nullable: true,
-    description: "PENDING / PARTIAL / COMPLETED / CANCELLED — defaults to 'PENDING'",
+    description:
+      "PENDING / PARTIAL / COMPLETED / CANCELLED — 'PENDING' on a new order. Validated, never " +
+      'written: deliveries, bills and /cancel-lines set it',
   })
   @NullableStringStrict(20)
   soFulfilStatus?: string | null;
-  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description: 'Validated, never written: server-owned',
+  })
   @NullableDateString()
   soLastBilledOn?: string | null;
   @ApiPropertyOptional({
     type: 'string',
     format: 'date-time',
     nullable: true,
-    description: 'Last line delivered',
+    description:
+      'Last line delivered. Validated, never written: the delivery that completes it sets it',
   })
   @NullableDateString()
   soCompletedOn?: string | null;
@@ -568,10 +578,13 @@ export class SaveSaleOrderDto {
     maxLength: 20,
     nullable: true,
     description:
-      'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — ' +
-      "defaults to 'DRAFT'. 'CONFIRMED' is the one-call instruction (same as post: true): " +
-      'the order is saved and confirmed in one transaction through /sale-orders/post. The ' +
-      'status TRAIL lives in public.txn_status_log; this column is the current state only.',
+      'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — checked ' +
+      "against that list, then NOT written: a save never sets the status. 'CONFIRMED' is " +
+      'the one-call instruction (same as post: true): the order is saved and confirmed in ' +
+      'one transaction through /sale-orders/post. Any other value is ignored: a new order ' +
+      'is saved DRAFT, an existing one keeps its stored status. Only /post, /cancel and the ' +
+      'delivery / billing paths move it. The status TRAIL lives in public.txn_status_log; ' +
+      'this column is the current state only.',
   })
   @NullableStringStrict(20)
   soStatus?: string | null;

@@ -12,6 +12,7 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { SalesContextService } from '../posting/sales-context.service';
 import { SaleOrderService } from './sale-order.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
@@ -743,6 +744,11 @@ describe('SaleOrderService', () => {
         auditLogService as unknown as AuditLogService,
         requestContextService,
       ),
+      // A save over a CONFIRMED / PARTIAL order asks for the Amend right; this
+      // suite's user holds it (the refusal is in sale-order.save-paths.spec).
+      {
+        resolve: jest.fn(() => Promise.resolve({ rights: { amend: true } })),
+      } as unknown as SalesContextService,
     );
   });
 
@@ -1242,14 +1248,20 @@ describe('SaleOrderService', () => {
       );
     });
 
-    it('cancels the receipt when the order itself is cancelled', async () => {
+    // 2026-11-10: a save never writes the status, so a body CANCELLED is not a
+    // cancel — the order stays open and its receipt is re-synced, not
+    // cancelled. Cancelling is /sale-orders/cancel's (Cancel right, delivered
+    // check, line write-off, trail).
+    it('neither cancels the order nor its receipt for a body soStatus CANCELLED', async () => {
       prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
       prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
-      await service.save(baseDto({ soId: SALE_ORDER_ID, soStatus: 'CANCELLED' }));
-      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
-        data: containing({ avhVoucherStatus: 'CANCELLED' }),
-      });
-      expect(prisma.accVoucher.create).not.toHaveBeenCalled();
+      const result = await service.save(baseDto({ soId: SALE_ORDER_ID, soStatus: 'CANCELLED' }));
+      expect(prisma.saleOrder.update.mock.calls[0][0].data).not.toHaveProperty('soStatus');
+      expect(result.soStatus).toBe('DRAFT');
+      for (const [args] of prisma.accVoucherHeader.update.mock.calls) {
+        expect(args).not.toMatchObject({ data: { avhVoucherStatus: 'CANCELLED' } });
+      }
+      expect(prisma.accVoucher.create).toHaveBeenCalled();
     });
 
     it('retires the receipt and its lines when the order is soft deleted', async () => {
@@ -1643,10 +1655,13 @@ describe('SaleOrderService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('accepts every allowed status value', async () => {
+    // An allowed soStatus passes the guard, but the save does not write it
+    // (2026-11-10): a new order is born DRAFT. 'CONFIRMED' is the controller's
+    // one-call confirm (saveAndPost), which never reaches this save with it.
+    it('accepts an allowed status value and still saves the new order DRAFT', async () => {
       await service.save(baseDto({ soStatus: 'CONFIRMED', soDocType: 'BOOKING' }));
       expect(prisma.saleOrder.create).toHaveBeenCalledWith({
-        data: containing({ soStatus: 'CONFIRMED', soDocType: 'BOOKING' }),
+        data: containing({ soStatus: 'DRAFT', soDocType: 'BOOKING' }),
       });
     });
 
