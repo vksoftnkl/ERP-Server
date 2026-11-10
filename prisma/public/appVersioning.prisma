@@ -1,5 +1,5 @@
 // Part B — app versioning: the three tables of migration
-// 20261110160000_app_versioning. Step 1 adds the tables only; nothing in the API
+// 20261110170000_app_versioning. Step 1 adds the tables only; nothing in the API
 // reads or writes them yet (Step 2 adds the login recording and the update check).
 //
 // No relations on purpose: company / branch / user ids are plain uuids, with no

@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- 20261110160000_app_versioning — Part B Step 1: the three app-versioning tables
+-- 20261110170000_app_versioning — Part B Step 1: the three app-versioning tables
 --
 -- Spec:   Part B Step 1 (2026-11-10), §4 table definitions.
 --         app_release          one row per released client build, per platform
