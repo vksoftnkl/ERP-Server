@@ -7,6 +7,20 @@ export class HealthCacheStatusDto {
   @ApiProperty({ enum: ['up', 'down', 'disabled'], example: 'up' })
   status!: 'up' | 'down' | 'disabled';
 }
+export class HealthExpectedClientBuildDto {
+  @ApiProperty({ example: false, description: 'true = a login on any other build gets 426' })
+  enforce!: boolean;
+  @ApiProperty({ example: 12, nullable: true, type: Number })
+  expectedBuild!: number | null;
+}
+export class HealthExpectedClientBuildsDto {
+  @ApiProperty({ type: HealthExpectedClientBuildDto })
+  web!: HealthExpectedClientBuildDto;
+  @ApiProperty({ type: HealthExpectedClientBuildDto })
+  desktop!: HealthExpectedClientBuildDto;
+  @ApiProperty({ type: HealthExpectedClientBuildDto })
+  mobile!: HealthExpectedClientBuildDto;
+}
 export class HealthResponseDto {
   @ApiProperty({ enum: ['ok', 'degraded'], example: 'ok' })
   status!: 'ok' | 'degraded';
@@ -20,6 +34,10 @@ export class HealthResponseDto {
   commit!: string | null;
   @ApiProperty({ example: true, description: 'The database answered SELECT 1' })
   dbOk!: boolean;
+  @ApiProperty({ example: 1, description: 'Tokens minted under a lower epoch are refused' })
+  tokenEpoch!: number;
+  @ApiProperty({ type: HealthExpectedClientBuildsDto })
+  expectedClientBuilds!: HealthExpectedClientBuildsDto;
   @ApiProperty({ type: HealthDatabaseStatusDto })
   database!: HealthDatabaseStatusDto;
   @ApiProperty({ type: HealthCacheStatusDto })

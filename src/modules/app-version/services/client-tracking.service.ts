@@ -7,8 +7,9 @@ import { LegacyUsageService } from './legacy-usage.service';
 
 export interface SessionTrackingContext {
   client: ClientInfo | null | undefined;
+  /** Also what cin_created_by / cin_modified_by record (Rev 2: the user id). */
   userId: string;
-  /** Login name, stamped into cin_created_by / cin_modified_by. */
+  /** Login name, for log lines. */
   userName: string;
   companyId: string | null;
   branchId: string | null;
@@ -38,7 +39,7 @@ export class ClientTrackingService {
       if (!hasClientBuild(client)) {
         return null;
       }
-      const sighting = { ...context, client, actor: context.userName };
+      const sighting = { ...context, client, actor: context.userId };
       const [, update] = await Promise.all([
         this.guard('record the login installation', () => this.installations.recordLogin(sighting)),
         this.guard('check for an update', () => this.updates.check(client.platform, client.build)),
@@ -58,7 +59,7 @@ export class ClientTrackingService {
         return;
       }
       await this.guard('record the refresh installation', () =>
-        this.installations.recordRefresh({ ...context, client, actor: context.userName }),
+        this.installations.recordRefresh({ ...context, client, actor: context.userId }),
       );
     } catch (error: unknown) {
       this.warn('track the refresh', error);

@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AuthEpochService } from '../../app-version/services/auth-epoch.service';
 import { AuthSessionService } from '../auth-session.service';
 import { AccessTokenPayload, TokenService } from '../token.service';
 import { AuthErrorCode, authErrorBody } from '../types/auth-error-codes';
@@ -16,6 +17,7 @@ export class AccessTokenGuard implements CanActivate {
     private readonly tokenService: TokenService,
     private readonly authSessionService: AuthSessionService,
     private readonly requestContextService: RequestContextService,
+    private readonly authEpoch: AuthEpochService,
   ) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -40,6 +42,10 @@ export class AccessTokenGuard implements CanActivate {
       );
     }
     request.user = this.tokenService.verifyAccessToken(accessToken);
+    // Part B Step 2 Rev 2: a token minted before the last backend update is
+    // dead (401 AUTH_BACKEND_UPDATED), whatever Redis still holds. In memory,
+    // no DB read. The build itself is checked only at login + refresh (D7).
+    this.authEpoch.assertTokenEpoch(request.user.ep, 'access');
     await this.authSessionService.assertAccessTokenIsActive(accessToken, request.user);
     this.requestContextService.setUserId(request.user.sub);
     this.requestContextService.setUserType(request.user.user_type);

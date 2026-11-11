@@ -33,6 +33,13 @@ export enum AuthErrorCode {
   REFRESH_SESSION_ENDED = 'AUTH_REFRESH_SESSION_ENDED',
   /** The refresh token's stored session could not be read back (corrupt Redis entry). */
   REFRESH_SESSION_INVALID = 'AUTH_REFRESH_SESSION_INVALID',
+  /**
+   * Part B Step 2 Rev 2 (401): the token was minted before the backend was
+   * updated (its `ep` claim is below the current token epoch). Refreshing will
+   * not help; the user must log in again, which also runs the build check.
+   * Raised for both token kinds; `field` says which (authorization | refresh_token).
+   */
+  BACKEND_UPDATED = 'AUTH_BACKEND_UPDATED',
   /** 500 — the server has no JWT secret configured, so it can neither sign nor verify a token. */
   JWT_SECRET_MISSING = 'AUTH_JWT_SECRET_MISSING',
   /** Login device lookup: no device_master row for this device (or no web device for the user). */

@@ -1,0 +1,14 @@
+{
+  "comment": "Part B Step 2 Rev 2. CI writes this as compat-manifest.json beside package.json (or the exe). Per platform: the one client build this backend expects. enforce defaults to false; turn a platform on only once its client handles 426/401 (Rev 2 section 9). A platform left out expects nothing.",
+  "backendBuild": 57,
+  "clients": {
+    "web": { "expectedBuild": 57, "enforce": false },
+    "desktop": {
+      "expectedBuild": 120,
+      "enforce": false,
+      "message": "Please update VK Nex Desktop to continue.",
+      "downloadUrl": "https://downloads.example.com/vknex-desktop-120.exe"
+    },
+    "mobile": { "expectedBuild": 20, "enforce": false }
+  }
+}

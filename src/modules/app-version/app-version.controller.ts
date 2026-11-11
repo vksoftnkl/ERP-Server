@@ -16,10 +16,10 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
-  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -31,6 +31,11 @@ import { clientInfoOf } from '../../common/client-info/client-info';
 import { API_VERSION } from '../../common/constants/api-version';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
+import {
+  BuildPolicyResponseDto,
+  PolicyPlatformParamsDto,
+  UpdateBuildPolicyDto,
+} from './dto/build-policy.dto';
 import { AppUpdateInfoDto, CheckUpdateQueryDto } from './dto/check-update.dto';
 import {
   CreateReleaseDto,
@@ -44,8 +49,11 @@ import {
   LegacyUsageQueryDto,
   ListInstallationsQueryDto,
 } from './dto/support-query.dto';
-import { OpsKeyGuard, opsActorOf } from './guards/ops-key.guard';
+import { actorOf, AppVersionAdminGuard } from './guards/app-version-admin.guard';
 import { AppUpdateService } from './services/app-update.service';
+import type { BuildPolicy } from './services/app-version-state.store';
+import { BackendUpdateService } from './services/backend-update.service';
+import { BuildPolicyService } from './services/build-policy.service';
 import {
   ClientInstallationService,
   type InstallationRow,
@@ -54,41 +62,39 @@ import {
 import { LegacyUsageService, type LegacyUsageRow } from './services/legacy-usage.service';
 import { AppVersionErrorCode, appVersionErrorBody } from './types/app-version-error-codes';
 
-/** A release / support route: X-Ops-Key instead of a JWT (OpsKeyGuard). */
-const OpsRoute = (): MethodDecorator =>
+/**
+ * A release / policy / support route (Rev 2, decision D5): a JWT (the global
+ * AccessTokenGuard, 401) of an ADMIN or SUPER ADMIN user (AppVersionAdminGuard, 403).
+ */
+const AdminRoute = (): MethodDecorator =>
   applyDecorators(
-    UseGuards(OpsKeyGuard),
-    ApiHeader({ name: 'X-Ops-Key', required: true, description: 'Must equal env OPS_API_KEY' }),
-    ApiHeader({
-      name: 'X-Ops-Actor',
-      required: false,
-      description: 'Who is calling, e.g. ci:run-123; stamped into created_by / modified_by',
-    }),
-    ApiUnauthorizedResponse({
-      type: HttpErrorResponseDto,
-      description: 'APP_VERSION_OPS_KEY_INVALID',
-    }),
-    ApiForbiddenResponse({ type: HttpErrorResponseDto, description: 'APP_VERSION_OPS_DISABLED' }),
+    UseGuards(AppVersionAdminGuard),
+    ApiBearerAuth('access-token'),
+    ApiUnauthorizedResponse({ type: HttpErrorResponseDto, description: 'No or a dead token' }),
+    ApiForbiddenResponse({ type: HttpErrorResponseDto, description: 'APP_VERSION_ADMIN_ONLY' }),
   );
 
 /**
- * Part B Step 2: version tracking and the optional update notice.
+ * Part B Step 2: version tracking, the update notice, and (Rev 2) the
+ * enforced build policy.
  *
- * @Public() for the whole controller: /check must answer before login, and CI
- * holds no JWT. Every other route is guarded by the ops key instead. Nothing
- * here ever refuses a client because of its version. There is no 426 and no
- * minimum build.
+ * Only /check is public: it must answer before login and is never blocked by
+ * the build check. Every other route needs a signed-in ADMIN / SUPER ADMIN;
+ * the X-Ops-Key of the first version is gone. Writes stamp the user's id into
+ * *_created_by / *_modified_by.
  */
 @ApiTags('App Version')
-@Public()
 @Controller('app-version')
 export class AppVersionController {
   constructor(
     private readonly updates: AppUpdateService,
     private readonly installations: ClientInstallationService,
     private readonly legacyUsage: LegacyUsageService,
+    private readonly policies: BuildPolicyService,
+    private readonly backendUpdate: BackendUpdateService,
   ) {}
 
+  @Public()
   @Get('check')
   @Version(API_VERSION)
   @ApiOperation({
@@ -126,7 +132,7 @@ export class AppVersionController {
   @Post('releases')
   @Version(API_VERSION)
   @HttpCode(HttpStatus.CREATED)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({ summary: 'Register a released build (CI)' })
   @ApiCreatedResponse({ type: ReleaseResponseDto })
   @ApiConflictResponse({
@@ -137,12 +143,12 @@ export class AppVersionController {
     @Body() dto: CreateReleaseDto,
     @Req() request: Request,
   ): Promise<ReleaseResponseDto> {
-    return this.updates.createRelease(dto, opsActorOf(request));
+    return this.updates.createRelease(dto, actorOf(request));
   }
 
   @Patch('releases/:platform/:build')
   @Version(API_VERSION)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({ summary: 'Change a release: severity, notes, link; isDeleted:true yanks it' })
   @ApiOkResponse({ type: ReleaseResponseDto })
   @ApiNotFoundResponse({ type: HttpErrorResponseDto, description: 'APP_RELEASE_NOT_FOUND' })
@@ -151,12 +157,12 @@ export class AppVersionController {
     @Body() dto: UpdateReleaseDto,
     @Req() request: Request,
   ): Promise<ReleaseResponseDto> {
-    return this.updates.updateRelease(params.platform, params.build, dto, opsActorOf(request));
+    return this.updates.updateRelease(params.platform, params.build, dto, actorOf(request));
   }
 
   @Get('releases')
   @Version(API_VERSION)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({ summary: 'Live releases, newest build first' })
   @ApiOkResponse({ type: ReleaseResponseDto, isArray: true })
   listReleases(@Query() query: ListReleasesQueryDto): Promise<ReleaseResponseDto[]> {
@@ -165,7 +171,7 @@ export class AppVersionController {
 
   @Get('installations')
   @Version(API_VERSION)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({ summary: 'Which user / device runs which build, last seen first (support)' })
   listInstallations(
     @Query() query: ListInstallationsQueryDto,
@@ -175,7 +181,7 @@ export class AppVersionController {
 
   @Get('installations/summary')
   @Version(API_VERSION)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({
     summary: 'Per platform: builds in use, the oldest active build, how many are behind (support)',
   })
@@ -187,9 +193,70 @@ export class AppVersionController {
 
   @Get('legacy-usage')
   @Version(API_VERSION)
-  @OpsRoute()
+  @AdminRoute()
   @ApiOperation({ summary: 'How often each legacy field is still used, per build (support)' })
   legacyUsageList(@Query() query: LegacyUsageQueryDto): Promise<LegacyUsageRow[]> {
     return this.legacyUsage.list(query);
   }
+
+  @Get('policy')
+  @Version(API_VERSION)
+  @AdminRoute()
+  @ApiOperation({ summary: 'The build policy of every platform (Rev 2 §5.4)' })
+  @ApiOkResponse({ type: BuildPolicyResponseDto, isArray: true })
+  listPolicies(): BuildPolicyResponseDto[] {
+    return this.policies.list().map(toPolicyResponse);
+  }
+
+  @Patch('policy/:platform')
+  @Version(API_VERSION)
+  @AdminRoute()
+  @ApiOperation({
+    summary:
+      "Change a platform's build policy; the row becomes manual (enforce:false = emergency switch)",
+  })
+  @ApiOkResponse({ type: BuildPolicyResponseDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto, description: 'APP_POLICY_BUILD_REQUIRED' })
+  async updatePolicy(
+    @Param() params: PolicyPlatformParamsDto,
+    @Body() dto: UpdateBuildPolicyDto,
+    @Req() request: Request,
+  ): Promise<BuildPolicyResponseDto> {
+    return toPolicyResponse(await this.policies.update(params.platform, dto, actorOf(request)));
+  }
+
+  @Post('policy/:platform/use-manifest')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @AdminRoute()
+  @ApiOperation({
+    summary: 'Hand a platform back to the bundled compat manifest (its values, source manifest)',
+  })
+  @ApiOkResponse({ type: BuildPolicyResponseDto })
+  @ApiConflictResponse({ type: HttpErrorResponseDto, description: 'APP_POLICY_NO_MANIFEST' })
+  async usePolicyManifest(
+    @Param() params: PolicyPlatformParamsDto,
+    @Req() request: Request,
+  ): Promise<BuildPolicyResponseDto> {
+    return toPolicyResponse(
+      await this.policies.useManifest(
+        params.platform,
+        this.backendUpdate.bundledManifest(),
+        actorOf(request),
+      ),
+    );
+  }
+}
+
+function toPolicyResponse(policy: BuildPolicy): BuildPolicyResponseDto {
+  return {
+    platform: policy.platform,
+    enforce: policy.enforce,
+    expectedBuild: policy.expectedBuild,
+    message: policy.message,
+    downloadUrl: policy.downloadUrl,
+    source: policy.source,
+    changedOn: policy.changedOn ? policy.changedOn.toISOString() : null,
+    changedBy: policy.changedBy,
+  };
 }

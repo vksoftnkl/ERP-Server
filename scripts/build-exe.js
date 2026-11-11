@@ -292,6 +292,20 @@ function main() {
   fs.rmSync(fontsOut, { recursive: true, force: true });
   fs.cpSync(path.join(ROOT, 'assets', 'fonts'), fontsOut, { recursive: true });
 
+  // Part B Step 2 Rev 2: the compat manifest CI wrote (the client builds this
+  // backend expects) goes beside the exe, where the backend looks for it. No
+  // manifest = none shipped, and the exe then changes no build policy and logs
+  // nobody out on its first start (src/modules/app-version/compat).
+  const manifestOut = path.join(outDir, 'compat-manifest.json');
+  fs.rmSync(manifestOut, { force: true });
+  const manifest = path.join(ROOT, 'compat-manifest.json');
+  if (fs.existsSync(manifest)) {
+    fs.copyFileSync(manifest, manifestOut);
+    console.log('[build-exe] compat-manifest.json copied beside the exe');
+  } else {
+    console.log('[build-exe] no compat-manifest.json in the repo root: none shipped');
+  }
+
   copyTemplate('.env.example', outDir, target.eol);
   for (const script of [target.launcher, ...target.extras]) {
     copyTemplate(script, outDir, target.eol);

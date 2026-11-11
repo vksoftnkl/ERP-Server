@@ -21,13 +21,16 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.string().trim().allow('').default(''),
   }),
   HTTPS_PASSPHRASE: Joi.string().allow('').default(''),
-  // Part B Step 2. OPS_API_KEY unset = the release / support APIs answer 403.
-  // APP_VERSION / APP_BUILD / APP_COMMIT describe this backend build (/health);
-  // CI sets them. Plain strings on purpose: a bad value must not stop the boot.
-  OPS_API_KEY: Joi.string().allow('').optional(),
+  // Part B Step 2. APP_VERSION / APP_BUILD / APP_COMMIT describe this backend
+  // build (/health); CI sets them. Rev 2: a start on a new APP_BUILD logs every
+  // user out and loads the compat manifest's expected client builds (found
+  // beside package.json / the exe, or at APP_COMPAT_MANIFEST). Plain strings on
+  // purpose: a bad value must not stop the boot. (OPS_API_KEY is gone: the
+  // release / support routes take an ADMIN's JWT. A leftover value is ignored.)
   APP_VERSION: Joi.string().allow('').optional(),
   APP_BUILD: Joi.string().allow('').optional(),
   APP_COMMIT: Joi.string().allow('').optional(),
+  APP_COMPAT_MANIFEST: Joi.string().allow('').optional(),
   DATABASE_URL: Joi.string()
     .uri({
       scheme: ['postgres', 'postgresql'],

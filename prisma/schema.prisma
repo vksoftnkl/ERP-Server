@@ -6298,6 +6298,90 @@ model TaxRateLedger {
   @@schema("inventory")
 }
 
+// ----- prisma/public/appAuthState.prisma -----
+// Part B Step 2 Rev 2 — migration 20261111103000_app_build_policy (decision D2).
+// The token epoch: raised by one when the backend starts on a new APP_BUILD,
+// which logs every user out. Read and written with raw SQL by
+// src/modules/app-version (app-version-state.store.ts), cached in memory.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_aas_key          aas_key IN (auth)
+//   ck_aas_token_epoch  aas_token_epoch >= 0
+//   ck_aas_last_build   aas_last_build IS NULL OR > 0
+//   seed row            aas_key = 'auth', epoch 0
+
+/// public.app_auth_state — one row (aasKey = 'auth'). A token whose `ep` claim
+/// is below aasTokenEpoch is refused with 401 AUTH_BACKEND_UPDATED.
+model AppAuthState {
+  aasId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("aas_id")
+  /// 'auth', the only row (ux_aas_key).
+  aasKey             String    @db.VarChar(32)                     @map("aas_key")
+  /// Tokens minted under a lower epoch are dead. A token with no `ep` reads as 0.
+  aasTokenEpoch      Int       @default(0)                         @map("aas_token_epoch")
+  /// The APP_BUILD the epoch was last raised for; NULL = never.
+  aasLastBuild       Int?                                          @map("aas_last_build")
+  /// APP_VERSION / APP_COMMIT at that start (support info).
+  aasLastVersion     String?   @db.VarChar(32)                     @map("aas_last_version")
+  aasLastCommit      String?   @db.VarChar(40)                     @map("aas_last_commit")
+  aasEpochChangedOn  DateTime? @db.Timestamptz(6)                  @map("aas_epoch_changed_on")
+
+  aasIsActive        Boolean   @default(true)                      @map("aas_is_active")
+  aasIsDeleted       Boolean   @default(false)                     @map("aas_is_deleted")
+  aasSyncDate        DateTime? @db.Timestamptz(6)                  @map("aas_sync_date")
+  aasCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)  @map("aas_created_on")
+  aasCreatedBy       String?   @db.Text                            @map("aas_created_by")
+  aasModifiedOn      DateTime? @db.Timestamptz(6)                  @map("aas_modified_on")
+  aasModifiedBy      String?   @db.Text                            @map("aas_modified_by")
+
+  @@unique([aasKey], map: "ux_aas_key")
+  @@map("app_auth_state")
+  @@schema("public")
+}
+
+// ----- prisma/public/appBuildPolicy.prisma -----
+// Part B Step 2 Rev 2 — migration 20261111103000_app_build_policy.
+// The client build the backend expects, per platform. Read and written with
+// raw SQL by src/modules/app-version (app-version-state.store.ts), cached in memory.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_abp_platform        abp_platform IN (web, desktop, mobile)
+//   ck_abp_expected_build  abp_expected_build IS NULL OR > 0
+//   ck_abp_source          abp_source IN (manifest, manual)
+//   ck_abp_enforce_build   NOT abp_enforce OR abp_expected_build IS NOT NULL
+//   seed rows              web / desktop / mobile, enforce = false
+
+/// public.app_build_policy — one row per platform. abpEnforce = true: a login or
+/// refresh whose X-App-Build is not exactly abpExpectedBuild gets 426
+/// UPDATE_REQUIRED. 'manifest' rows are rewritten at startup when the backend
+/// build changes; 'manual' rows (admin API) are left alone.
+model AppBuildPolicy {
+  abpId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("abp_id")
+  /// web | desktop | mobile; one row each (ux_abp_platform, not partial).
+  abpPlatform       String    @db.VarChar(16)                       @map("abp_platform")
+  /// false = no build check for this platform.
+  abpEnforce        Boolean   @default(false)                       @map("abp_enforce")
+  /// > 0. The one build a client must run while abpEnforce is true.
+  abpExpectedBuild  Int?                                            @map("abp_expected_build")
+  /// Shown to the user on 426, e.g. "Please update VK Nex Desktop".
+  abpMessage        String?   @db.Text                              @map("abp_message")
+  /// Installer / Play Store / reload URL.
+  abpDownloadUrl    String?   @db.VarChar(500)                      @map("abp_download_url")
+  /// manifest (written at startup) | manual (admin API).
+  abpSource         String    @default("manifest") @db.VarChar(16)  @map("abp_source")
+
+  abpIsActive       Boolean   @default(true)                        @map("abp_is_active")
+  abpIsDeleted      Boolean   @default(false)                       @map("abp_is_deleted")
+  abpSyncDate       DateTime? @db.Timestamptz(6)                    @map("abp_sync_date")
+  abpCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)    @map("abp_created_on")
+  abpCreatedBy      String?   @db.Text                              @map("abp_created_by")
+  abpModifiedOn     DateTime? @db.Timestamptz(6)                    @map("abp_modified_on")
+  abpModifiedBy     String?   @db.Text                              @map("abp_modified_by")
+
+  @@unique([abpPlatform], map: "ux_abp_platform")
+  @@map("app_build_policy")
+  @@schema("public")
+}
+
 // ----- prisma/public/appLegacyUsage.prisma -----
 // Part B — app versioning, migration 20261110170000_app_versioning.
 // Step 1 adds the tables only; nothing in the API reads or writes them yet

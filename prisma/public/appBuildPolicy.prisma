@@ -1,0 +1,42 @@
+// Part B Step 2 Rev 2 — migration 20261111103000_app_build_policy.
+// The client build the backend expects, per platform. Read and written with
+// raw SQL by src/modules/app-version (app-version-state.store.ts), cached in memory.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_abp_platform        abp_platform IN (web, desktop, mobile)
+//   ck_abp_expected_build  abp_expected_build IS NULL OR > 0
+//   ck_abp_source          abp_source IN (manifest, manual)
+//   ck_abp_enforce_build   NOT abp_enforce OR abp_expected_build IS NOT NULL
+//   seed rows              web / desktop / mobile, enforce = false
+
+/// public.app_build_policy — one row per platform. abpEnforce = true: a login or
+/// refresh whose X-App-Build is not exactly abpExpectedBuild gets 426
+/// UPDATE_REQUIRED. 'manifest' rows are rewritten at startup when the backend
+/// build changes; 'manual' rows (admin API) are left alone.
+model AppBuildPolicy {
+  abpId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("abp_id")
+  /// web | desktop | mobile; one row each (ux_abp_platform, not partial).
+  abpPlatform       String    @db.VarChar(16)                       @map("abp_platform")
+  /// false = no build check for this platform.
+  abpEnforce        Boolean   @default(false)                       @map("abp_enforce")
+  /// > 0. The one build a client must run while abpEnforce is true.
+  abpExpectedBuild  Int?                                            @map("abp_expected_build")
+  /// Shown to the user on 426, e.g. "Please update VK Nex Desktop".
+  abpMessage        String?   @db.Text                              @map("abp_message")
+  /// Installer / Play Store / reload URL.
+  abpDownloadUrl    String?   @db.VarChar(500)                      @map("abp_download_url")
+  /// manifest (written at startup) | manual (admin API).
+  abpSource         String    @default("manifest") @db.VarChar(16)  @map("abp_source")
+
+  abpIsActive       Boolean   @default(true)                        @map("abp_is_active")
+  abpIsDeleted      Boolean   @default(false)                       @map("abp_is_deleted")
+  abpSyncDate       DateTime? @db.Timestamptz(6)                    @map("abp_sync_date")
+  abpCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)    @map("abp_created_on")
+  abpCreatedBy      String?   @db.Text                              @map("abp_created_by")
+  abpModifiedOn     DateTime? @db.Timestamptz(6)                    @map("abp_modified_on")
+  abpModifiedBy     String?   @db.Text                              @map("abp_modified_by")
+
+  @@unique([abpPlatform], map: "ux_abp_platform")
+  @@map("app_build_policy")
+  @@schema("public")
+}
