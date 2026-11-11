@@ -14889,7 +14889,8 @@ model SaleOrder {
   // CHECK constraints (DB-only): ck_so_doc_type, ck_so_order_type,
   // ck_so_priority, ck_so_delivery_mode, ck_so_status, ck_so_fulfil_status,
   // ck_so_pay_status, ck_so_advance_policy, ck_so_advance_status,
-  // ck_so_advance_amounts, ck_so_advance_balance, ck_so_advance_policy_input.
+  // ck_so_advance_amounts, ck_so_advance_balance, ck_so_advance_policy_input,
+  // ck_so_delivery_hold.
   @@id([soId, soAccYear], map: "pk_sale_order")
   @@index([soCustId], map: "ix_so_cust")
   // ── Sales plan (20260921220000) ───────────────────────────────────────
@@ -14897,6 +14898,17 @@ model SaleOrder {
   /// and bumps this.
   soRevisionNo       Int       @default(1) @map("so_revision_no")
   soUsrRefdate       DateTime? @db.Date @map("so_usr_refdate")
+  // ── Delivery hold (20261110180000_sale_order_desk, Sales Order Management) ──
+  /// Not to be billed or delivered: the bill and the challan refuse a held order
+  /// (SALES_ORDER_DELIVERY_HOLD). Never "hold", which is txn_hold's parked draft.
+  /// Set and cleared only by POST /sale-order-desk/delivery-hold (menu 11 Edit).
+  /// ck_so_delivery_hold (DB-only): a held order names a non-blank reason and a time.
+  soDeliveryHold       Boolean   @default(false) @map("so_delivery_hold")
+  /// Reason of the last hold or release.
+  soDeliveryHoldReason String?   @db.VarChar(250) @map("so_delivery_hold_reason")
+  /// Who last held or released, as text like soModifiedBy.
+  soDeliveryHoldBy     String?   @db.VarChar(50) @map("so_delivery_hold_by")
+  soDeliveryHoldOn     DateTime? @db.Timestamptz(6) @map("so_delivery_hold_on")
 
   @@map("sale_order")
   @@schema("sales")
@@ -17267,9 +17279,13 @@ model StockReorderPolicy {
 ///   * NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
 ///   * NEVER write StockBalance.sblReservedQty; write here and let the trigger
 ///     aggregate.
-///   * One reservation per source line per lot — ux_srv_source — so a re-post
-///     UPDATES rather than stacking a second hold on the same stock. Getting
-///     this wrong double-reserves and makes stock vanish from the sale screen.
+///   * One LIVE reservation (OPEN or PARTIAL) per source line per lot —
+///     ux_srv_source — so a line never stacks a second hold on the same
+///     stock. Getting this wrong double-reserves and makes stock vanish from
+///     the sale screen. RELEASED, CONSUMED and EXPIRED rows are history and
+///     are NOT covered (20261111100000): an amend releases the line's open
+///     row and inserts a fresh one with the same key, and the old index,
+///     which ignored status, refused that insert with 23505.
 ///
 /// Vocabularies, enforced by CHECK constraints in the migration:
 ///   srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
@@ -17281,7 +17297,7 @@ model StockReorderPolicy {
 ///
 /// DB-only objects Prisma cannot express — hand-authored in the migration and
 /// deliberately NOT declared here (every one carries a WHERE):
-///   ux_srv_source   one hold per source line per lot
+///   ux_srv_source   one live (OPEN/PARTIAL) hold per source line per lot
 ///   ix_srv_balance  the trigger's aggregate: open holds against one balance
 ///   ix_srv_expiring the expiry sweep
 model StockReservation {

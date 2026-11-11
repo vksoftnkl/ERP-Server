@@ -148,6 +148,14 @@ describe('DeliveryChallanService', () => {
   let db: {
     company: { comp_dc_purposes: string[] | null; comp_state_code: string | null } | undefined;
     orderLines: { soi_id: string; soi_pending_qty: Prisma.Decimal | null }[];
+    // Orders on delivery hold the challan names (Sales Order Management, D18).
+    heldOrders: {
+      so_id: string;
+      so_order_refno: string | null;
+      so_delivery_hold_reason: string | null;
+      so_status?: string;
+      so_delivery_hold?: boolean;
+    }[];
   };
   let tx: { $queryRaw: jest.Mock; $transaction: jest.Mock };
   let store: Record<string, jest.Mock>;
@@ -188,11 +196,19 @@ describe('DeliveryChallanService', () => {
     db = {
       company: { comp_dc_purposes: ['SUPPLY', 'JOB_WORK'], comp_state_code: '33' },
       orderLines: [],
+      heldOrders: [],
     };
     tx = {
       $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
         const sql = strings.join('?');
         if (sql.includes('FROM public.companys')) return db.company ? [db.company] : [];
+        // The source orders, read under their row lock (lockSourceOrders).
+        if (sql.includes('FOR UPDATE OF h'))
+          return db.heldOrders.map((o) => ({
+            so_status: 'CONFIRMED',
+            so_delivery_hold: true,
+            ...o,
+          }));
         if (sql.includes('sales.sale_order_item')) return db.orderLines;
         if (sql.includes('accounts.acc_voucher_header'))
           return [{ avh_voucher_refno: 'dch-r-0003' }];
@@ -594,6 +610,34 @@ describe('DeliveryChallanService', () => {
       expect(assertSalesmen).toHaveBeenLastCalledWith(tx, COMPANY_ID, [USER_ID], {
         field: 'sdcSalesmanId',
       });
+    });
+
+    it('refuses a challan whose order is on delivery hold, with no override (D18)', async () => {
+      ctx.rights.override = true;
+      db.orderLines = [{ soi_id: ORDER_LINE, soi_pending_qty: D(2) }];
+      db.heldOrders = [
+        { so_id: ORDER_LINE, so_order_refno: 'SO/1043', so_delivery_hold_reason: 'After 15th' },
+      ];
+      items = [dcItem({ sdiSrcDocType: 'SALES_ORDER', sdiSrcItemId: ORDER_LINE })];
+
+      const refusal = await refusalOf(
+        service.post({ ...KEYS, overrides: [SALES_ERROR_CODES.ORDER_DELIVERY_HOLD] }),
+      );
+
+      expect(refusal.status).toBe(422);
+      expect(refusal.body.errors).toEqual([
+        expect.objectContaining({
+          code: SALES_ERROR_CODES.ORDER_DELIVERY_HOLD,
+          field: 'items',
+          message:
+            'Order SO/1043 is on delivery hold: After 15th. Release it on Sales Order Management first.',
+        }),
+      ]);
+      // Asked by the order line id the challan line carries.
+      const heldCall = tx.$queryRaw.mock.calls.find((c) =>
+        (c[0] as string[]).join('?').includes('FOR UPDATE OF h'),
+      );
+      expect(heldCall?.slice(1)).toEqual([[], [ORDER_LINE]]);
     });
 
     it('lets order lines within what is pending through', async () => {
@@ -1065,6 +1109,69 @@ describe('DeliveryChallanService', () => {
         body: { errors: [{ code: SALES_ERROR_CODES.EWB_LIVE }] },
       });
       expect(legs.reverseLegs).not.toHaveBeenCalled();
+    });
+
+    describe('on an order put on delivery hold after the challan was posted (user, 2026-11-11)', () => {
+      const HELD_ORDER = '019c6f6c-be87-7a11-8905-36092c46d0f1';
+      const line = (qty: number) =>
+        dcItem({
+          sdiSrcDocType: 'SALES_ORDER',
+          sdiSrcDocId: HELD_ORDER,
+          sdiSrcItemId: ORDER_LINE,
+          sdiDcQty: D(qty),
+        });
+      const posted = (now: number, before = 2) => {
+        db.orderLines = [{ soi_id: ORDER_LINE, soi_pending_qty: D(10) }];
+        db.heldOrders = [
+          { so_id: HELD_ORDER, so_order_refno: 'SO/1043', so_delivery_hold_reason: 'After 15th' },
+        ];
+        // The first load is the posted challan's lines, the second the amended ones.
+        store.loadItems
+          .mockImplementationOnce(async () => [line(before)])
+          .mockImplementationOnce(async () => [line(now)]);
+        const route = tx.$queryRaw.getMockImplementation()!;
+        tx.$queryRaw.mockImplementation(async (strings: TemplateStringsArray, ...v: unknown[]) =>
+          strings.join('?').includes('SELECT soi_id, soi_order_id')
+            ? [{ soi_id: ORDER_LINE, soi_order_id: HELD_ORDER }]
+            : route(strings, ...v),
+        );
+      };
+
+      it('locks the source orders before the unwind touches stock', async () => {
+        posted(2);
+
+        await service.amend(amendDto());
+
+        const lockIdx = tx.$queryRaw.mock.calls.findIndex((c) =>
+          (c[0] as string[]).join('?').includes('FOR UPDATE OF h'),
+        );
+        expect(lockIdx).toBeGreaterThanOrEqual(0);
+        expect(tx.$queryRaw.mock.invocationCallOrder[lockIdx]).toBeLessThan(
+          legs.reverseLegs.mock.invocationCallOrder[0],
+        );
+      });
+
+      it.each([
+        ['the same qty', 2],
+        ['a lower qty', 1],
+      ])('lets an amend with %s through', async (_label, qty) => {
+        posted(qty);
+
+        await service.amend(amendDto());
+
+        expect(lastSetStatus()[2]).toBe('POSTED');
+      });
+
+      it('refuses an amend that delivers more from the held order (422 SALES_ORDER_DELIVERY_HOLD)', async () => {
+        posted(3);
+
+        const refusal = await refusalOf(service.amend(amendDto()));
+
+        expect(refusal.status).toBe(422);
+        expect(refusal.body.errors).toEqual([
+          expect.objectContaining({ code: SALES_ERROR_CODES.ORDER_DELIVERY_HOLD }),
+        ]);
+      });
     });
 
     it('unwinds, saves the new body over the same id and re-posts it as the next revision', async () => {

@@ -92,9 +92,12 @@ import {
 // (prefix / width / reset frequency) seeds the acc_voucher_seq row the order
 // numbers are drawn from.
 const SALE_ORDER_VCHR_TYPE_ID = 4;
-const SALE_ORDER_TABLE_NAME = 'sale_order';
+export const SALE_ORDER_TABLE_NAME = 'sale_order';
 const SALE_ORDER_ITEM_TABLE_NAME = 'sale_order_item';
-const SALE_ORDER_AUDIT_SCREEN_NAME = 'Sale Order';
+// audit.audit_screen 87. EVERY sales-order audit row files here — the saves'
+// revisions, the lifecycle verbs and the order desk (user, 2026-11-11). The
+// older rows under 103 'Sales Order' stay where they are.
+export const SALE_ORDER_AUDIT_SCREEN_NAME = 'Sale Order';
 // Allowed-value sets mirroring the DB CHECK constraints on sale_order /
 // sale_order_item (migration 20260808132323). Unlike
 // sale_bill — whose ck_sb_* constraints were dropped before ever being applied —
@@ -160,6 +163,50 @@ export function assertSaleOrderNotTerminal(order: Pick<SaleOrder, 'soStatus'>): 
   );
 }
 /**
+ * What PUT /sale-orders/cancel-lines refuses (409 SALES_ORDER_CLOSED, the
+ * status on the detail). CANCELLED / COMPLETED stay its idempotent no-op.
+ */
+const SALE_ORDER_CANCEL_LINES_REFUSED_STATUSES: readonly string[] = ['CLOSED', 'EXPIRED'];
+/**
+ * A finished order is not left on delivery hold (Sales Order Management,
+ * user 2026-11-10). When an order that IS held reaches a terminal status —
+ * cancelled, closed by cancelling its open lines, completed by its bills, or
+ * deleted — the hold is released exactly as the desk's release writes it (the
+ * four so_delivery_hold* columns: off, the remark as the reason, the actor,
+ * now), and the caller appends a DELIVERY_RELEASED step with `remarks`
+ * (from = to = the end status). The DELIVERY_HOLD step stays in the trail. A
+ * non-held order gives null: nothing is written and no step is added.
+ */
+export function finishedOrderHoldRelease(
+  order: Pick<SaleOrder, 'soDeliveryHold'>,
+  endStatus: string,
+  cause: 'cancelled' | 'closed' | 'completed' | 'deleted',
+  actor: string,
+  now: Date,
+): {
+  data: {
+    soDeliveryHold: false;
+    soDeliveryHoldReason: string;
+    soDeliveryHoldBy: string;
+    soDeliveryHoldOn: Date;
+  };
+  remarks: string;
+} | null {
+  if (!order.soDeliveryHold || !SALE_ORDER_TERMINAL_STATUSES.includes(endStatus)) {
+    return null;
+  }
+  const remarks = `Delivery hold released because the order was ${cause}`;
+  return {
+    data: {
+      soDeliveryHold: false,
+      soDeliveryHoldReason: remarks,
+      soDeliveryHoldBy: actor,
+      soDeliveryHoldOn: now,
+    },
+    remarks,
+  };
+}
+/**
  * The stored statuses a save over the order counts as an amendment for: it is
  * confirmed (reserved, billable), so `/create` with its soId — plain, or the
  * one-call confirm — needs the Amend right, judged exactly as `/amend` judges
@@ -202,6 +249,10 @@ const SALE_ORDER_FULFIL_CANCELLED = 'CANCELLED';
 // wants one on a CANCELLED step, and an order whose status moved because a bill
 // was raised or retired against it has no reason of its own to give.
 const SALE_ORDER_FULFIL_STATUS_REMARK = 'Order fulfilment recomputed from its sale bills';
+// The REOPENED step of a COMPLETED order that got quantity back from its bills,
+// when the caller names no bill (syncOrderFulfilment's reopenRemark).
+const SALE_ORDER_REOPEN_REMARK = 'Reopened: a bill against it no longer delivers all of it';
+const SALE_ORDER_STATUS_CONFIRMED = 'CONFIRMED';
 // One order a fulfilment recompute has to visit, with every reference the
 // calling document made to it folded into a single visit: the line numbers it
 // named, and the field names each rejection should be worded from.
@@ -680,6 +731,15 @@ function actorLabel(value: string | null | undefined, names: Map<string, string>
 // without them read "createdByName: null → VKPOS" in every update's
 // log_changed_fields (reviewer, plan SO-5).
 type SaleOrderAuditRecord = Omit<SaleOrderPayload, 'createdByName' | 'modifiedByName'>;
+/** How `updateOrderInTx` runs inside a caller's transaction. */
+export interface SaleOrderSaveInTxOptions {
+  /**
+   * false: write no revision (P6). `/amend` saves through here and then writes
+   * ONE revision itself, after the revision number and the reservations, so an
+   * amend reads as one save in History. Default true.
+   */
+  revision?: boolean;
+}
 // The three fulfilment money caches the header carries (see orderAmountsOf).
 export interface SaleOrderAmounts {
   soPendingAmt: Prisma.Decimal;
@@ -750,10 +810,10 @@ export class SaleOrderService {
    * save had before. `/amend` checks the right under its own lock first and
    * then saves through here, so it is simply asked twice.
    *
-   * Only the right: this save writes no revision (soRevisionNo) and asks for
-   * no baseRevision. Revisions are left for SO Management's planned History /
-   * Revisions step (plan-sales-order-management-qt-2026-11-10-addendum-1 §6,
-   * phase P6); `/amend` keeps its own revision check meanwhile.
+   * Only the right: this save does not bump soRevisionNo and asks for no
+   * baseRevision — `/amend` keeps that optimistic lock. What every save does
+   * write is its History revision (P6: an audit row with log_rev_no, see
+   * writeRevision).
    */
   private async assertAmendRightToEdit(
     tx: Prisma.TransactionClient,
@@ -784,13 +844,19 @@ export class SaleOrderService {
       duplicate.errors,
     );
   }
+  /**
+   * The /get payload. `client` is a save's transaction when a revision reads
+   * the order before / after that save (P6, notes 89): every read below goes
+   * through it, so the uncommitted header and lines are seen.
+   */
   async getById(
     soId: string,
     soCompanyId: string,
     soBranchId: string,
     soAccYear: string,
+    client: SaleOrderWriteClient = this.prisma,
   ): Promise<SaleOrderPayload> {
-    const record = await this.prisma.saleOrder.findFirst({
+    const record = await client.saleOrder.findFirst({
       where: {
         soId,
         soCompanyId,
@@ -834,7 +900,12 @@ export class SaleOrderService {
     // txn_charge_detail is polymorphic (no FK to sale_order), so the applied
     // charges are fetched by discriminator rather than by `include` — through
     // the charge-detail module, which also resolves each line's ledger name.
-    const charges = await this.chargeDetailService.getByDocument(SALE_ORDER_CHARGE_DOC_TYPE, soId);
+    const charges = await this.chargeDetailService.getByDocument(
+      SALE_ORDER_CHARGE_DOC_TYPE,
+      soId,
+      undefined,
+      client,
+    );
     // acc_tender_detail is polymorphic for the same reason, and read the same
     // way — through its own module, which resolves each line's tender and
     // ledger names.
@@ -842,17 +913,18 @@ export class SaleOrderService {
       SALE_ORDER_TENDER_SRC_MODULE,
       SALE_ORDER_TENDER_SRC_DOC_TYPE,
       soId,
+      client,
     );
     // The remaining ids — the godown, the company / branch / salesman columns on
     // the header and its lines, and the company / party ledger / user the charge
     // and tender rows carry — have no FK to ride an `include` on, so they are
     // resolved in one batched lookup per master over the ids this order uses.
-    const names = await this.resolveDisplayNames(record, charges, tenders);
-    const tendersWithCheques = await this.withChequeDetails(this.prisma, tenders);
+    const names = await this.resolveDisplayNames(record, charges, tenders, client);
+    const tendersWithCheques = await this.withChequeDetails(client, tenders);
     // The header's advance roll-ups are a cache; the ADVANCE row is the truth,
     // and a bill setting the advance off moves only the row. A bill importing
     // this order sets off soAdvanceBalanceAmt, so it has to be what is open.
-    const live = await readOrderAdvanceBalance(this.prisma, record);
+    const live = await readOrderAdvanceBalance(client, record);
     return this.toPayload(
       {
         ...record,
@@ -997,11 +1069,21 @@ export class SaleOrderService {
       // fact (sale_order carries no cancellation columns of its own). This path
       // does not append a trail step yet — cancelOpenLines is the only writer so
       // far — so the audit log entry below is this operation's record.
+      // A held order leaves its delivery hold behind (in practice only a
+      // DRAFT is deleted, and a draft is never held).
+      const holdRelease = finishedOrderHoldRelease(
+        existing,
+        SALE_ORDER_STATUS_CANCELLED,
+        'deleted',
+        actor,
+        modifiedOn,
+      );
       const headerChanges = {
         soStatus: SALE_ORDER_STATUS_CANCELLED,
         soIsDeleted: true,
         soModifiedOn: modifiedOn,
         soModifiedBy: actor,
+        ...(holdRelease?.data ?? {}),
       };
       const result = await tx.saleOrder.updateMany({
         where: {
@@ -1060,6 +1142,20 @@ export class SaleOrderService {
       // receipt in accounts.acc_voucher_header and its acc_vouchers ledger
       // lines. Nothing may keep pointing at a document that is gone.
       await deleteOrderAdvancePosting(tx, { soId, soCompanyId, soAccYear }, actor, modifiedOn);
+      if (holdRelease) {
+        await this.logStatusStep(
+          tx,
+          existing,
+          {
+            event: TxnStatusEvent.DELIVERY_RELEASED,
+            fromStatus: SALE_ORDER_STATUS_CANCELLED,
+            toStatus: SALE_ORDER_STATUS_CANCELLED,
+            remarks: holdRelease.remarks,
+          },
+          actor,
+          modifiedOn,
+        );
+      }
       const originalRecord = auditRecordOf(this.toPayload(existing));
       const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
       await this.auditLogService.logEntityChange(
@@ -1176,6 +1272,17 @@ export class SaleOrderService {
           'srcDocId',
           `No active order or order line found with id ${srcDocId} in accounting year ${srcAccYear}`,
           SALES_ERROR_CODES.NOT_FOUND,
+        );
+      }
+      // A CLOSED / EXPIRED order is finished without being settled line by
+      // line: its open lines are not written off here (user 2026-11-10). A
+      // CANCELLED / COMPLETED one stays the idempotent no-op below.
+      if (SALE_ORDER_CANCEL_LINES_REFUSED_STATUSES.includes(existing.soStatus)) {
+        throwSalesLocked(
+          `This order is ${existing.soStatus}: nothing is left open on it`,
+          SALES_ERROR_CODES.ORDER_CLOSED,
+          'srcDocId',
+          { status: existing.soStatus },
         );
       }
       return this.cancelOrderOpenLines(tx, {
@@ -1426,6 +1533,19 @@ export class SaleOrderService {
     if (rollup.headerStatus) {
       headerChanges.soStatus = rollup.headerStatus;
     }
+    // Settled → no longer on delivery hold (the same write as a desk release).
+    const holdRelease = rollup.headerStatus
+      ? finishedOrderHoldRelease(
+          existing,
+          rollup.headerStatus,
+          rollup.headerStatus === SALE_ORDER_STATUS_CANCELLED ? 'cancelled' : 'closed',
+          actor,
+          now,
+        )
+      : null;
+    if (holdRelease) {
+      Object.assign(headerChanges, holdRelease.data);
+    }
     // so_completed_on means completed, not closed: a cancelled order's
     // timestamp is the status trail's row, not this column. Only set once.
     if (rollup.fulfilStatus === SALE_ORDER_FULFIL_COMPLETED && !existing.soCompletedOn) {
@@ -1462,6 +1582,20 @@ export class SaleOrderService {
           fromStatus: existing.soStatus,
           toStatus: soStatus,
           remarks: cancelReason,
+        },
+        actor,
+        now,
+      );
+    }
+    if (holdRelease) {
+      await this.logStatusStep(
+        tx,
+        existing,
+        {
+          event: TxnStatusEvent.DELIVERY_RELEASED,
+          fromStatus: soStatus,
+          toStatus: soStatus,
+          remarks: holdRelease.remarks,
         },
         actor,
         now,
@@ -1768,7 +1902,12 @@ export class SaleOrderService {
   // status telling the truth.
   async syncOrderFulfilment(
     tx: Prisma.TransactionClient,
-    request: { refs: SaleOrderLineRef[] },
+    request: {
+      refs: SaleOrderLineRef[];
+      // The REOPENED step's remark when a COMPLETED order gets quantity back
+      // (e.g. "Reopened: bill BIL/0040 cancelled"); a generic one otherwise.
+      reopenRemark?: string;
+    },
     actor: string,
     now: Date,
   ): Promise<SaleOrderFulfilmentResult[]> {
@@ -1778,7 +1917,7 @@ export class SaleOrderService {
     const targets = await this.resolveOrderRefs(tx, request.refs);
     const results: SaleOrderFulfilmentResult[] = [];
     for (const order of targets) {
-      results.push(await this.syncOneOrderFulfilment(tx, order, actor, now));
+      results.push(await this.syncOneOrderFulfilment(tx, order, actor, now, request.reopenRemark));
     }
     return results;
   }
@@ -1882,6 +2021,7 @@ export class SaleOrderService {
     target: OrderFulfilmentTarget,
     actor: string,
     now: Date,
+    reopenRemark?: string,
   ): Promise<SaleOrderFulfilmentResult> {
     const { soId, soAccYear, lineNos, fields } = target;
     // Serialises concurrent recomputes of ONE order, and is taken before
@@ -2123,8 +2263,25 @@ export class SaleOrderService {
     }
     const rollup = this.summariseOrderLines(settledLines);
     // A still-open order keeps whatever it was (DRAFT / CONFIRMED): only a
-    // settled one has a header status its lines can dictate.
-    const soStatus = rollup.headerStatus ?? order.soStatus;
+    // settled one has a header status its lines can dictate — with one
+    // exception, the REOPEN (user 2026-11-10). A COMPLETED order whose bills no
+    // longer deliver all of it (a bill cancelled, deleted or amended down after
+    // the rest was closed) has pending quantity again, so it is open again, and
+    // ALWAYS as CONFIRMED, like every other open order (user 2026-11-10): what
+    // is still delivered shows in so_fulfil_status (PARTIAL / PENDING, off the
+    // lines), never in so_status. The reopened quantity is NOT re-reserved: the
+    // close released the order's reservations and only a bill cancel's give-back
+    // to a fully consumed row restores any (re-reserving is on the backlog).
+    // Only COMPLETED reopens — a CANCELLED order is final (and never had
+    // anything delivered: a cancel with deliveries ends COMPLETED), and CLOSED /
+    // EXPIRED are not this method's to undo; their lines take the quantity back
+    // as pending, which no bill, challan or desk can draw on while the header
+    // stays shut.
+    const reopenStatus: string | null =
+      rollup.headerStatus === null && order.soStatus === SALE_ORDER_FULFIL_COMPLETED
+        ? SALE_ORDER_STATUS_CONFIRMED
+        : null;
+    const soStatus = rollup.headerStatus ?? reopenStatus ?? order.soStatus;
     // The header is only rewritten when it has something new to say. A draft
     // bill saved over and over against the same order reaches here every time,
     // and must not leave an audit row and a bumped so_modified_on each time.
@@ -2158,6 +2315,26 @@ export class SaleOrderService {
     };
     if (rollup.headerStatus) {
       headerChanges.soStatus = rollup.headerStatus;
+    } else if (reopenStatus) {
+      headerChanges.soStatus = reopenStatus;
+      // Not completed any more; the next completion stamps its own date.
+      headerChanges.soCompletedOn = null;
+    }
+    // Settled by its bills → no longer on delivery hold (a held order is not
+    // billed, so this is the safety net, not the flow). A reopen leaves the
+    // hold alone: the order was released when it finished, so it reopens
+    // un-held.
+    const holdRelease = rollup.headerStatus
+      ? finishedOrderHoldRelease(
+          order,
+          rollup.headerStatus,
+          rollup.headerStatus === SALE_ORDER_STATUS_CANCELLED ? 'cancelled' : 'completed',
+          actor,
+          now,
+        )
+      : null;
+    if (holdRelease) {
+      Object.assign(headerChanges, holdRelease.data);
     }
     // so_completed_on means completed, not closed, and is only ever set once —
     // the same rule the cancel path follows.
@@ -2194,13 +2371,30 @@ export class SaleOrderService {
           // A recompute that RETIRES a bill can move the status back the other
           // way; that is the same fact read in reverse and carries the same
           // event, with the remark saying which direction it went.
-          event:
-            soStatus === SALE_ORDER_STATUS_CANCELLED
+          event: reopenStatus
+            ? TxnStatusEvent.REOPENED
+            : soStatus === SALE_ORDER_STATUS_CANCELLED
               ? TxnStatusEvent.CANCELLED
               : TxnStatusEvent.CONVERTED,
           fromStatus: order.soStatus,
           toStatus: soStatus,
-          remarks: SALE_ORDER_FULFIL_STATUS_REMARK,
+          remarks: reopenStatus
+            ? (reopenRemark ?? SALE_ORDER_REOPEN_REMARK)
+            : SALE_ORDER_FULFIL_STATUS_REMARK,
+        },
+        actor,
+        now,
+      );
+    }
+    if (holdRelease) {
+      await this.logStatusStep(
+        tx,
+        order,
+        {
+          event: TxnStatusEvent.DELIVERY_RELEASED,
+          fromStatus: soStatus,
+          toStatus: soStatus,
+          remarks: holdRelease.remarks,
         },
         actor,
         now,
@@ -2404,22 +2598,52 @@ export class SaleOrderService {
         actorNameById: await this.resolveActorNames(tx, [restated.soCreatedBy]),
       },
     );
-    await this.auditLogService.logEntityChange(
+    // P6 / notes 89 — Rev 1: the order as /get answers it, nothing before.
+    // A merge's new order (sale-order-desk) is born here too, so it gets it.
+    await this.writeRevision(tx, created, null, createdBy, 'Order created');
+    return payload;
+  }
+  /**
+   * P6 (plan-sales-order-management-qt-2026-11-10-addendum-1 §6.2), notes 89 —
+   * the ONE audit row of an order save: the whole order AFTER it, read through
+   * the save's own transaction in the /get shape, beside the `before` the save
+   * read first (null on a create). History diffs the two; nothing here lists
+   * the changes. Screen 87 'Sale Order', table sale_order, log_rev_no counted
+   * per order. Both snapshots go through auditRecordOf — the /get payload
+   * without the two display-only labels (plan SO-5: the audit keeps the ids).
+   * Public for `/amend`, which writes ONE revision after its own writes (the
+   * revision number and the reservations) instead of the save's.
+   */
+  async writeRevision(
+    tx: Prisma.TransactionClient,
+    order: Pick<SaleOrder, 'soId' | 'soCompanyId' | 'soBranchId' | 'soAccYear'>,
+    before: SaleOrderPayload | null,
+    actor: string,
+    notes: string,
+  ): Promise<{ revNo: number; after: SaleOrderPayload }> {
+    const after = await this.getById(
+      order.soId,
+      order.soCompanyId,
+      order.soBranchId,
+      order.soAccYear,
+      tx,
+    );
+    const { revNo } = await this.auditLogService.logDocumentRevision(
       {
-        action: 'New',
-        tableName: SALE_ORDER_TABLE_NAME,
         screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-        screenType: 'transaction',
-        pk: payload.soId,
-        displayName: payload.soOrderRefno || payload.soId,
-        originalRecord: null,
-        modifiedRecord: auditRecordOf(payload),
-        userId: createdBy,
-        notes: 'Order created',
+        tableName: SALE_ORDER_TABLE_NAME,
+        docId: order.soId,
+        displayName: after.soOrderRefno || order.soId,
+        before: before === null ? null : auditRecordOf(before),
+        after: auditRecordOf(after),
+        userId: actor,
+        branchId: order.soBranchId,
+        deviceId: after.soDeviceId ?? null,
+        notes,
       },
       tx,
     );
-    return payload;
+    return { revNo, after };
   }
   private async updateOrder(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
     try {
@@ -2437,6 +2661,7 @@ export class SaleOrderService {
   async updateOrderInTx(
     tx: Prisma.TransactionClient,
     saveOrderDto: SaveSaleOrderDto,
+    options: SaleOrderSaveInTxOptions = {},
   ): Promise<SaleOrderPayload> {
     saveOrderDto.soSessionId = await tillSessionIdOrNull(tx, saveOrderDto.soSessionId);
     const soId = saveOrderDto.soId!;
@@ -2464,6 +2689,18 @@ export class SaleOrderService {
     assertSaleOrderNotTerminal(existing);
     // A confirmed one (CONFIRMED / PARTIAL) only with the Amend right (403).
     await this.assertAmendRightToEdit(tx, existing);
+    // P6 — the order as /get answered it, under the lock and before anything
+    // is touched: the revision's `before`. /amend reads its own.
+    const writesRevision = options.revision !== false;
+    const before = writesRevision
+      ? await this.getById(
+          existing.soId,
+          existing.soCompanyId,
+          existing.soBranchId,
+          existing.soAccYear,
+          tx,
+        )
+      : null;
     this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
     const now = new Date();
     // Plan SO-5: the signed-in user's id; the body's soModifiedBy is ignored.
@@ -2556,21 +2793,10 @@ export class SaleOrderService {
         ]),
       },
     );
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'update',
-        tableName: SALE_ORDER_TABLE_NAME,
-        screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-        screenType: 'transaction',
-        pk: soId,
-        displayName: payload.soOrderRefno || payload.soId,
-        originalRecord: auditRecordOf(this.toPayload(existing)),
-        modifiedRecord: auditRecordOf(payload),
-        userId: modifiedBy,
-        notes: 'Order updated',
-      },
-      tx,
-    );
+    // P6 / notes 89 — the next revision: the whole order before and after.
+    if (writesRevision) {
+      await this.writeRevision(tx, restated, before, modifiedBy, 'Order updated');
+    }
     return payload;
   }
   // Reconciles the order's line items with the payload array:
@@ -2699,21 +2925,8 @@ export class SaleOrderService {
           },
           data: updateData,
         });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: SALE_ORDER_ITEM_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: updated.soiId,
-            displayName: `Line ${updated.soiLineNo}`,
-            originalRecord: this.toItemPayload(existingItem),
-            modifiedRecord: this.toItemPayload(updated),
-            userId: actorId,
-            notes: 'Order item updated',
-          },
-          tx,
-        );
+        // No audit row per line (notes 89 A.5): the save's revision holds the
+        // whole order before and after, lines included.
         persisted.push(updated);
         continue;
       }
@@ -2740,21 +2953,6 @@ export class SaleOrderService {
       );
       this.applyDerivedItemQuantities(createData, inputItem, undefined);
       const created = await tx.saleOrderItem.create({ data: createData });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'New',
-          tableName: SALE_ORDER_ITEM_TABLE_NAME,
-          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: created.soiId,
-          displayName: `Line ${created.soiLineNo}`,
-          originalRecord: null,
-          modifiedRecord: this.toItemPayload(created),
-          userId: created.soiCreatedBy,
-          notes: 'Order item created',
-        },
-        tx,
-      );
       persisted.push(created);
     }
     return persisted.sort((left, right) => left.soiLineNo - right.soiLineNo);
@@ -2768,7 +2966,8 @@ export class SaleOrderService {
     now: Date,
   ): Promise<void> {
     for (const removedItem of removed) {
-      const deleted = await tx.saleOrderItem.update({
+      // Only an order save drops lines, and its revision records the drop.
+      await tx.saleOrderItem.update({
         where: {
           soiId_soiAccYear: { soiId: removedItem.soiId, soiAccYear: removedItem.soiAccYear },
         },
@@ -2778,21 +2977,6 @@ export class SaleOrderService {
           soiModifiedBy: actorId,
         },
       });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: SALE_ORDER_ITEM_TABLE_NAME,
-          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: deleted.soiId,
-          displayName: `Line ${removedItem.soiLineNo}`,
-          originalRecord: this.toItemPayload(removedItem),
-          modifiedRecord: this.toItemPayload(deleted),
-          userId: actorId,
-          notes: 'Order item soft deleted',
-        },
-        tx,
-      );
     }
   }
   // Posts the order's tendered money to accounts, or brings an already-posted
@@ -3363,6 +3547,7 @@ export class SaleOrderService {
   // create/update paths, which do not resolve display names — see toItemPayload.
   private async resolveGodowns(
     items: readonly Pick<SaleOrderItem, 'soiGodownId'>[] = [],
+    client: SaleOrderWriteClient = this.prisma,
   ): Promise<Map<string, OrderLineGodown>> {
     const godownIds = [
       ...new Set(
@@ -3374,7 +3559,7 @@ export class SaleOrderService {
     if (godownIds.length === 0) {
       return new Map();
     }
-    const godowns = await this.prisma.godownLocation.findMany({
+    const godowns = await client.godownLocation.findMany({
       where: { gdlId: { in: godownIds } },
       select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
     });
@@ -3413,6 +3598,7 @@ export class SaleOrderService {
     record: SaleOrder & { items?: SaleOrderItemWithNames[] },
     charges: readonly SaleOrderChargePayload[],
     tenders: readonly SaleOrderTenderPayload[],
+    client: SaleOrderWriteClient = this.prisma,
   ): Promise<SaleOrderNameMaps> {
     const items = record.items ?? [];
     const companyIds = distinctIds([
@@ -3445,41 +3631,41 @@ export class SaleOrderService {
       defaultGodownByLine,
     ] = await Promise.all([
       companyIds.length
-        ? this.prisma.company.findMany({
+        ? client.company.findMany({
             where: { compId: { in: companyIds } },
             select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
           })
         : [],
       branchIds.length
-        ? this.prisma.branchMaster.findMany({
+        ? client.branchMaster.findMany({
             where: { brId: { in: branchIds } },
             select: { brId: true, brName: true },
           })
         : [],
       employeeIds.length
-        ? this.prisma.employeeMaster.findMany({
+        ? client.employeeMaster.findMany({
             where: { empId: { in: employeeIds } },
             select: { empId: true, empName: true },
           })
         : [],
       ledgerIds.length
-        ? this.prisma.accLedgerMaster.findMany({
+        ? client.accLedgerMaster.findMany({
             where: { ledId: { in: ledgerIds } },
             select: { ledId: true, ledName: true },
           })
         : [],
       userIds.length
-        ? this.prisma.userMaster.findMany({
+        ? client.userMaster.findMany({
             where: { usrId: { in: userIds } },
             select: { usrId: true, usrDisplayName: true },
           })
         : [],
-      this.resolveActorNames(this.prisma, [record.soCreatedBy, record.soModifiedBy]),
-      this.resolveGodowns(items),
+      this.resolveActorNames(client, [record.soCreatedBy, record.soModifiedBy]),
+      this.resolveGodowns(items, client),
       // A line with no godown of its own takes the one a bill line of that
       // item would default to (notes 51, sale-line-godown.utils).
       resolveDefaultSaleGodowns(
-        this.prisma,
+        client,
         record.soBranchId,
         items
           .filter((item) => item.soiGodownId === null)

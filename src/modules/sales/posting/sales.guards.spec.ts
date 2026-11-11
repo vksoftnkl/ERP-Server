@@ -12,7 +12,12 @@ import {
   assertSalesmen,
   assertTenderTotal,
   loadDayClosed,
+  heldOrdersDrawnMore,
+  loadHeldOrders,
+  lockSourceOrders,
+  ordersDrawnMore,
   refuse,
+  refuseHeldOrders,
   warn,
   type SalesWriteClient,
 } from './sales.guards';
@@ -131,9 +136,7 @@ describe('sales.guards', () => {
 
     it('throws a 422 on document when no field is named, carrying the line', async () => {
       const refusal = await refusalOf(
-        Promise.resolve().then(() =>
-          refuse(createGuardContext(), 'SALES_A', 'Stop', { line: 7 }),
-        ),
+        Promise.resolve().then(() => refuse(createGuardContext(), 'SALES_A', 'Stop', { line: 7 })),
       );
 
       expect(refusal).toMatchObject({
@@ -258,9 +261,7 @@ describe('sales.guards', () => {
         queryRawUnsafe,
       );
 
-      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(
-        true,
-      );
+      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(true);
       expect(queryRawUnsafe).not.toHaveBeenCalled();
     });
 
@@ -274,9 +275,7 @@ describe('sales.guards', () => {
         queryRawUnsafe,
       );
 
-      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(
-        false,
-      );
+      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(false);
       expect(queryRawUnsafe).not.toHaveBeenCalled();
     });
 
@@ -290,9 +289,7 @@ describe('sales.guards', () => {
         queryRawUnsafe,
       );
 
-      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(
-        true,
-      );
+      await expect(loadDayClosed(client, COMPANY_ID, BRANCH_ID, '2026-10-19')).resolves.toBe(true);
       expect(queryRawUnsafe).toHaveBeenCalledWith(
         expect.stringContaining('FROM accounts.acc_day_close'),
         COMPANY_ID,
@@ -327,6 +324,27 @@ describe('sales.guards', () => {
           ['accounts.acc_bill_balance', [open]],
         ]),
       );
+
+    it('counts part-paid bills: money left on a live DR bill, not abl_status OPEN (Q7)', async () => {
+      const query = routedQuery([
+        ['FROM sales.customers', [{ cus_credit_amt_limit: new Prisma.Decimal(10000) }]],
+        [
+          'accounts.acc_bill_balance',
+          [{ pending: new Prisma.Decimal(9000), bills: 1n, oldest: null }],
+        ],
+      ]);
+      const ctx = createGuardContext({ dryRun: true });
+
+      await assertCreditLimit(clientOf(query), ctx, party, COMPANY_ID, 1500, settings());
+
+      const sql = (query.mock.calls[1][0] as string[]).join('?');
+      expect(sql).toContain('abl_pending_amount > 0');
+      expect(sql).toContain('abl_is_active  = true');
+      expect(sql).not.toContain('abl_status');
+      expect(ctx.warnings).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.CREDIT_LIMIT }),
+      ]);
+    });
 
     it('reads nothing when the mode is OFF', async () => {
       const query = routedQuery([]);
@@ -442,7 +460,11 @@ describe('sales.guards', () => {
 
       await assertCreditLimit(
         limitsClient(
-          { cus_credit_amt_limit: new Prisma.Decimal(0), cus_credit_bill_limit: 0, cus_credit_days: 0 },
+          {
+            cus_credit_amt_limit: new Prisma.Decimal(0),
+            cus_credit_bill_limit: 0,
+            cus_credit_days: 0,
+          },
           {
             pending: new Prisma.Decimal(999999),
             bills: 99n,
@@ -458,6 +480,154 @@ describe('sales.guards', () => {
       );
 
       expect(ctx.refusals).toEqual([]);
+    });
+  });
+
+  describe('loadHeldOrders / refuseHeldOrders — the delivery hold (D18)', () => {
+    it('reads nothing when the document names no order', async () => {
+      const query = routedQuery([]);
+
+      expect(await loadHeldOrders(clientOf(query), [], [])).toEqual([]);
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('asks by order id and by order-line id under the row lock, and lists every held order', async () => {
+      const query = routedQuery([
+        [
+          'FOR UPDATE OF h',
+          [
+            {
+              so_id: 'o1',
+              so_order_refno: 'SO/1',
+              so_status: 'CONFIRMED',
+              so_delivery_hold: true,
+              so_delivery_hold_reason: 'After 15th',
+            },
+            {
+              so_id: 'o2',
+              so_order_refno: null,
+              so_status: 'CONFIRMED',
+              so_delivery_hold: true,
+              so_delivery_hold_reason: null,
+            },
+            {
+              so_id: 'o3',
+              so_order_refno: 'SO/3',
+              so_status: 'CONFIRMED',
+              so_delivery_hold: false,
+              so_delivery_hold_reason: null,
+            },
+          ],
+        ],
+      ]);
+      const ctx = createGuardContext({ throwOnRefusal: false });
+
+      const held = await loadHeldOrders(clientOf(query), ['o1'], ['l9']);
+      refuseHeldOrders(ctx, held);
+
+      expect(query.mock.calls[0].slice(1)).toEqual([['o1'], ['l9']]);
+      expect(ctx.refusals).toEqual([
+        {
+          code: SALES_ERROR_CODES.ORDER_DELIVERY_HOLD,
+          field: 'items',
+          message:
+            'Order SO/1 is on delivery hold: After 15th. Release it on Sales Order Management first.',
+          line: undefined,
+          statutory: undefined,
+        },
+        {
+          code: SALES_ERROR_CODES.ORDER_DELIVERY_HOLD,
+          field: 'items',
+          message: 'Order o2 is on delivery hold. Release it on Sales Order Management first.',
+          line: undefined,
+          statutory: undefined,
+        },
+      ]);
+    });
+  });
+
+  describe('lockSourceOrders / the hold on an amend (review 2026-11-11)', () => {
+    const D = (v: number) => new Prisma.Decimal(v);
+
+    it('locks nothing when the document names no order', async () => {
+      const query = routedQuery([]);
+
+      expect(await lockSourceOrders(clientOf(query), [], [])).toEqual([]);
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('locks the orders FOR UPDATE in so_id order and reads status and hold under the lock', async () => {
+      const query = routedQuery([
+        [
+          'FOR UPDATE OF h',
+          [
+            {
+              so_id: 'o1',
+              so_order_refno: 'SO/1',
+              so_status: 'CONFIRMED',
+              so_delivery_hold: false,
+              so_delivery_hold_reason: null,
+            },
+          ],
+        ],
+      ]);
+
+      const rows = await lockSourceOrders(clientOf(query), ['o1'], ['l1']);
+
+      const sql = (query.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toContain('ORDER BY h.so_id');
+      expect(sql).not.toContain('FOR SHARE');
+      expect(rows).toEqual([
+        { soId: 'o1', refno: 'SO/1', status: 'CONFIRMED', hold: false, holdReason: null },
+      ]);
+    });
+
+    it('ordersDrawnMore: compares line by line in base units, a line with no order line by its order', () => {
+      const ids = new Set(['o1']);
+      const owner = new Map([
+        ['l1', 'o1'],
+        ['l2', 'o1'],
+      ]);
+      const draw = (soiId: string | null, qty: number, soId: string | null = 'o1') => ({
+        soId,
+        soiId,
+        baseQty: D(qty),
+      });
+
+      expect(ordersDrawnMore(ids, owner, [draw('l1', 4)], [draw('l1', 4)])).toEqual(new Set());
+      expect(ordersDrawnMore(ids, owner, [draw('l1', 3)], [draw('l1', 4)])).toEqual(new Set());
+      expect(ordersDrawnMore(ids, owner, [], [draw('l1', 4)])).toEqual(new Set());
+      expect(ordersDrawnMore(ids, owner, [draw('l1', 5)], [draw('l1', 4)])).toEqual(
+        new Set(['o1']),
+      );
+      // A move from one line to another is drawing more from the second.
+      expect(ordersDrawnMore(ids, owner, [draw('l1', 2), draw('l2', 2)], [draw('l1', 4)])).toEqual(
+        new Set(['o1']),
+      );
+      // A line naming only the order counts against the order as a whole.
+      expect(ordersDrawnMore(ids, owner, [draw(null, 1)], [])).toEqual(new Set(['o1']));
+      // Another order's lines are not this check's business.
+      expect(ordersDrawnMore(ids, owner, [draw(null, 9, 'o2')], [])).toEqual(new Set());
+    });
+
+    it('heldOrdersDrawnMore maps order lines to their orders, and reads nothing with no held order', async () => {
+      const query = routedQuery([
+        ['SELECT soi_id, soi_order_id', [{ soi_id: 'l1', soi_order_id: 'o1' }]],
+      ]);
+      const held = [{ soId: 'o1', refno: 'SO/1', reason: null }];
+
+      expect(
+        await heldOrdersDrawnMore(
+          clientOf(query),
+          held,
+          [{ soId: null, soiId: 'l1', baseQty: D(5) }],
+          [{ soId: null, soiId: 'l1', baseQty: D(4) }],
+        ),
+      ).toEqual(held);
+
+      const none = routedQuery([]);
+      expect(await heldOrdersDrawnMore(clientOf(none), [], [], [])).toEqual([]);
+      expect(none).not.toHaveBeenCalled();
     });
   });
 
@@ -553,7 +723,8 @@ describe('sales.guards', () => {
       expect(ctx.refusals).toEqual([
         expect.objectContaining({
           field: 'sdcAmount',
-          message: 'The bill does not add up: the lines and charges make 1000.02, the bill says 1000',
+          message:
+            'The bill does not add up: the lines and charges make 1000.02, the bill says 1000',
         }),
       ]);
     });
@@ -561,9 +732,7 @@ describe('sales.guards', () => {
 
   describe('the declared locks', () => {
     const locksClient = (irn: boolean, ewb: boolean) =>
-      clientOf(
-        routedQuery([['acc_voucher_doc_einvoice', [{ irn_live: irn, ewb_live: ewb }]]]),
-      );
+      clientOf(routedQuery([['acc_voucher_doc_einvoice', [{ irn_live: irn, ewb_live: ewb }]]]));
 
     it('reads nothing for a document with no register row', async () => {
       const query = routedQuery([]);

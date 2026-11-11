@@ -32,9 +32,13 @@
 ///   * NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
 ///   * NEVER write StockBalance.sblReservedQty; write here and let the trigger
 ///     aggregate.
-///   * One reservation per source line per lot — ux_srv_source — so a re-post
-///     UPDATES rather than stacking a second hold on the same stock. Getting
-///     this wrong double-reserves and makes stock vanish from the sale screen.
+///   * One LIVE reservation (OPEN or PARTIAL) per source line per lot —
+///     ux_srv_source — so a line never stacks a second hold on the same
+///     stock. Getting this wrong double-reserves and makes stock vanish from
+///     the sale screen. RELEASED, CONSUMED and EXPIRED rows are history and
+///     are NOT covered (20261111100000): an amend releases the line's open
+///     row and inserts a fresh one with the same key, and the old index,
+///     which ignored status, refused that insert with 23505.
 ///
 /// Vocabularies, enforced by CHECK constraints in the migration:
 ///   srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
@@ -46,7 +50,7 @@
 ///
 /// DB-only objects Prisma cannot express — hand-authored in the migration and
 /// deliberately NOT declared here (every one carries a WHERE):
-///   ux_srv_source   one hold per source line per lot
+///   ux_srv_source   one live (OPEN/PARTIAL) hold per source line per lot
 ///   ix_srv_balance  the trigger's aggregate: open holds against one balance
 ///   ix_srv_expiring the expiry sweep
 model StockReservation {

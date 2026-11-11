@@ -112,6 +112,17 @@ export enum TxnStatusEvent {
   HOLD_OVERRIDE = 'HOLD_OVERRIDE',
   // Purchase — Post went past WARN items that need a right (overrideWarnings + Override on menu 24); remarks list what.
   WARN_OVERRIDE = 'WARN_OVERRIDE',
+  // Sales Order Management (menu 299). An order's delivery hold put on / taken
+  // off (from = to = the order's status, remarks = the reason). Named apart
+  // from HOLD / RELEASED, which are a purchase bill's payment hold, and from
+  // txn_hold, which parks a draft.
+  DELIVERY_HOLD = 'DELIVERY_HOLD',
+  DELIVERY_RELEASED = 'DELIVERY_RELEASED',
+  // The order's so_priority moved (Quick delivery on / off). Not a status.
+  PRIORITY_CHANGED = 'PRIORITY_CHANGED',
+  // Orders merged on the desk: on each old order ("Merged into …") and on the
+  // new one ("Made from …").
+  MERGED = 'MERGED',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

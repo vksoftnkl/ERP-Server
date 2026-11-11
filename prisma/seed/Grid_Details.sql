@@ -843,7 +843,7 @@ FROM
   	AND b.so_branch_id  = 'ibranch_id'::uuid
   	AND (NULLIF('ifrom_date', '') IS NULL OR b.so_order_date >= 'ifrom_date'::date)
   	AND (NULLIF('ito_date',   '') IS NULL OR b.so_order_date <= 'ito_date'::date)
-  	AND (lower(NULLIF('ipending_only', '')) IS DISTINCT FROM 'true' OR (b.so_status IN ('CONFIRMED', 'PARTIAL') AND b.so_fulfil_status IN ('PENDING', 'PARTIAL')))
+  	AND (lower(NULLIF('ipending_only', '')) IS DISTINCT FROM 'true' OR (b.so_status IN ('CONFIRMED', 'PARTIAL') AND b.so_fulfil_status IN ('PENDING', 'PARTIAL') AND b.so_delivery_hold = false))
 ORDER BY
 	b.so_order_date DESC, b.so_order_slno DESC$seed$)
     ,(88 , 'POPUP - CUST AREAS', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT

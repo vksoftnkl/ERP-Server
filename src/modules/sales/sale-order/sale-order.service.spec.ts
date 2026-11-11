@@ -718,12 +718,15 @@ const makePrismaMock = (): PrismaMock => {
 describe('SaleOrderService', () => {
   let service: SaleOrderService;
   let prisma: PrismaMock;
-  let auditLogService: { logEntityChange: jest.Mock };
+  let auditLogService: { logEntityChange: jest.Mock; logDocumentRevision: jest.Mock };
 
   beforeEach(() => {
     prisma = makePrismaMock();
     appendTxnStatusLog.mockClear();
-    auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+    auditLogService = {
+      logEntityChange: jest.fn(() => Promise.resolve(undefined)),
+      logDocumentRevision: jest.fn(() => Promise.resolve({ revNo: 1 })),
+    };
     const requestContextService = {
       getUserId: () => USER_ID,
     } as unknown as RequestContextService;
@@ -801,8 +804,15 @@ describe('SaleOrderService', () => {
           soiGodownId: GODOWN_ID,
         }),
       });
-      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
-        containing({ tableName: 'sale_order', userId: USER_ID }),
+      // P6 — Rev 1 of the order, nothing before it, filed by the signed-in user.
+      expect(auditLogService.logDocumentRevision).toHaveBeenCalledWith(
+        containing({
+          screenName: 'Sale Order',
+          tableName: 'sale_order',
+          docId: result.soId,
+          before: null,
+          userId: USER_ID,
+        }),
         expect.anything(),
       );
       expect(result.createdByName).toBe('counter1');
@@ -1721,11 +1731,13 @@ describe('SaleOrderService', () => {
       expect(lineData(LINE_B_ID).soiModifiedBy).toBe(USER_ID);
       expect(result.modifiedByName).toBe('counter1');
       // Reviewer (SO-5): the display-only labels stay out of the audit row, so
-      // log_changed_fields never reads "createdByName: null → counter1".
-      const headerAudit = auditLogService.logEntityChange.mock.calls.find(
-        ([input]) => input.tableName === 'sale_order',
-      )![0] as { originalRecord: object; modifiedRecord: object };
-      for (const record of [headerAudit.originalRecord, headerAudit.modifiedRecord]) {
+      // log_changed_fields never reads "createdByName: null → counter1". P6:
+      // the row is the save's revision, both snapshots /get payloads.
+      const revision = auditLogService.logDocumentRevision.mock.calls[0][0] as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      };
+      for (const record of [revision.before, revision.after]) {
         expect(record).not.toHaveProperty('createdByName');
         expect(record).not.toHaveProperty('modifiedByName');
         expect(record).toHaveProperty('soCreatedBy', USER_ID);
@@ -2161,6 +2173,41 @@ describe('SaleOrderService', () => {
         service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    // A finished order is not left on delivery hold (user 2026-11-10).
+    it('releases a delivery hold with the delete, and adds the DELIVERY_RELEASED step', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soDeliveryHold: true, soDeliveryHoldReason: 'After 15th' }),
+      );
+      await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(prisma.saleOrder.updateMany).toHaveBeenCalledWith(
+        containing({
+          data: containing({
+            soIsDeleted: true,
+            soDeliveryHold: false,
+            soDeliveryHoldReason: 'Delivery hold released because the order was deleted',
+            soDeliveryHoldBy: expect.any(String),
+            soDeliveryHoldOn: expect.any(Date),
+          }),
+        }),
+      );
+      expect(appendTxnStatusLog).toHaveBeenCalledWith(
+        expect.anything(),
+        containing({
+          event: 'DELIVERY_RELEASED',
+          fromStatus: 'CANCELLED',
+          toStatus: 'CANCELLED',
+          remarks: 'Delivery hold released because the order was deleted',
+        }),
+      );
+    });
+
+    it('adds no step and no hold columns for an order that was not held', async () => {
+      await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      const data = (prisma.saleOrder.updateMany.mock.calls[0][0] as { data: object }).data;
+      expect(data).not.toHaveProperty('soDeliveryHold');
+      expect(appendTxnStatusLog).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancelOpenLines', () => {
@@ -2324,6 +2371,125 @@ describe('SaleOrderService', () => {
       );
       expect(result.cancelledLines).toBe(1);
     });
+
+    describe('a finished order clears its delivery hold (user 2026-11-10)', () => {
+      const openLine = (overrides: Partial<SaleOrderItem> = {}) =>
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('10.000'),
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+          ...overrides,
+        } as Partial<SaleOrderItem>);
+      const steps = () => appendTxnStatusLog.mock.calls.map((c) => c[1] as Record<string, unknown>);
+
+      it('cancelled: releases the hold in the same header write, after the CANCELLED step', async () => {
+        prisma.saleOrder.findFirst.mockResolvedValue(
+          makeOrder({ soStatus: 'CONFIRMED', soDeliveryHold: true, soDeliveryHoldReason: 'Wait' }),
+        );
+        prisma.saleOrderItem.findMany.mockResolvedValue([openLine()]);
+
+        await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {
+          soiCancelReason: 'Gone',
+        });
+
+        expect(headerUpdate()).toEqual(
+          containing({
+            soStatus: 'CANCELLED',
+            soDeliveryHold: false,
+            soDeliveryHoldReason: 'Delivery hold released because the order was cancelled',
+            soDeliveryHoldBy: expect.any(String),
+            soDeliveryHoldOn: expect.any(Date),
+          }),
+        );
+        expect(steps()).toEqual([
+          containing({ event: 'CANCELLED', fromStatus: 'CONFIRMED', toStatus: 'CANCELLED' }),
+          containing({
+            event: 'DELIVERY_RELEASED',
+            fromStatus: 'CANCELLED',
+            toStatus: 'CANCELLED',
+            remarks: 'Delivery hold released because the order was cancelled',
+          }),
+        ]);
+      });
+
+      it('part-billed, rest closed → COMPLETED: released "because the order was closed"', async () => {
+        prisma.saleOrder.findFirst.mockResolvedValue(
+          makeOrder({ soStatus: 'PARTIAL', soDeliveryHold: true }),
+        );
+        prisma.saleOrderItem.findMany.mockResolvedValue([
+          openLine({
+            soiDeliveredQty: new Prisma.Decimal('2.000'),
+            soiPendingQty: new Prisma.Decimal('8.000'),
+          }),
+        ]);
+
+        await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+
+        expect(headerUpdate()).toEqual(
+          containing({ soStatus: 'COMPLETED', soDeliveryHold: false }),
+        );
+        expect(steps()[1]).toEqual(
+          containing({
+            event: 'DELIVERY_RELEASED',
+            toStatus: 'COMPLETED',
+            remarks: 'Delivery hold released because the order was closed',
+          }),
+        );
+      });
+
+      it('leaves the hold alone while the order stays open (one line of two)', async () => {
+        prisma.saleOrder.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(makeOrder({ soStatus: 'CONFIRMED', soDeliveryHold: true }));
+        prisma.saleOrderItem.findFirst.mockResolvedValue(
+          makeItem({ soiId: LINE_A_ID, soiOrderId: SALE_ORDER_ID }),
+        );
+        prisma.saleOrderItem.findMany.mockResolvedValue([
+          openLine({ soiId: LINE_A_ID, soiLineNo: 1 }),
+          openLine({ soiId: LINE_B_ID, soiLineNo: 2 }),
+        ]);
+
+        await service.cancelOpenLines('SALES', LINE_A_ID, ACC_YEAR, {});
+
+        expect(headerUpdate()).not.toHaveProperty('soDeliveryHold');
+        expect(steps().map((s) => s.event)).not.toContain('DELIVERY_RELEASED');
+      });
+
+      it('adds no step for an order that was not held', async () => {
+        prisma.saleOrderItem.findMany.mockResolvedValue([openLine()]);
+
+        await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+
+        expect(headerUpdate()).not.toHaveProperty('soDeliveryHold');
+        expect(steps().map((s) => s.event)).toEqual(['CANCELLED']);
+      });
+    });
+
+    it.each(['CLOSED', 'EXPIRED'])(
+      'refuses a %s order with 409 SALES_ORDER_CLOSED, writing nothing',
+      async (soStatus) => {
+        prisma.saleOrder.findFirst.mockResolvedValue(makeOrder({ soStatus }));
+        prisma.saleOrderItem.findMany.mockResolvedValue([makeItem()]);
+
+        const error = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {}).then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toEqual(
+          containing({
+            errors: [
+              containing({ field: 'srcDocId', code: 'SALES_ORDER_CLOSED', status: soStatus }),
+            ],
+          }),
+        );
+        expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+        expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
+      },
+    );
 
     // PUT, so a repeat must be a no-op rather than a second cancellation.
     it('is idempotent: a second call finds nothing open and writes no line', async () => {

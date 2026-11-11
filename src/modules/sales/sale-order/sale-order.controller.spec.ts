@@ -30,6 +30,7 @@ describe('SaleOrderController', () => {
     cancelOpenLines: jest.Mock;
   };
   let lifecycle: {
+    save: jest.Mock;
     saveAndPost: jest.Mock;
     deleteDraft: jest.Mock;
     post: jest.Mock;
@@ -46,6 +47,7 @@ describe('SaleOrderController', () => {
       cancelOpenLines: jest.fn().mockResolvedValue({ cancelledLines: 2 }),
     };
     lifecycle = {
+      save: jest.fn().mockResolvedValue(PAYLOAD),
       saveAndPost: jest.fn().mockResolvedValue({ ...PAYLOAD, warnings: [] }),
       deleteDraft: jest.fn().mockResolvedValue({ soId: ORDER_ID, deleted: true }),
       post: jest.fn().mockResolvedValue({ soStatus: 'CONFIRMED', warnings: [] }),
@@ -59,7 +61,9 @@ describe('SaleOrderController', () => {
   });
 
   describe('save', () => {
-    it('saves a plain create as a draft through the order service', async () => {
+    it('saves without the confirm instruction through the lifecycle’s save', async () => {
+      // The lifecycle hands a new order to the order service, and moves the
+      // reservations of an edited CONFIRMED order (2026-11-11).
       const dto = saveDto();
 
       await expect(controller.save(dto)).resolves.toEqual({
@@ -67,7 +71,8 @@ describe('SaleOrderController', () => {
         message: 'Order created successfully',
         data: PAYLOAD,
       });
-      expect(orders.save).toHaveBeenCalledWith(dto);
+      expect(lifecycle.save).toHaveBeenCalledWith(dto);
+      expect(orders.save).not.toHaveBeenCalled();
       expect(lifecycle.saveAndPost).not.toHaveBeenCalled();
     });
 
@@ -81,14 +86,14 @@ describe('SaleOrderController', () => {
       // Any other status goes to the plain save, which ignores it (a save
       // never writes soStatus, 2026-11-10) — CANCELLED is not a cancel.
       await controller.save(saveDto({ soStatus: 'DRAFT' }));
-      expect(orders.save).toHaveBeenCalledTimes(1);
+      expect(lifecycle.save).toHaveBeenCalledTimes(1);
 
       await controller.save(saveDto({ soStatus: 'confirmed' }));
       expect(lifecycle.saveAndPost).toHaveBeenCalledTimes(1);
-      expect(orders.save).toHaveBeenCalledTimes(1);
+      expect(lifecycle.save).toHaveBeenCalledTimes(1);
 
       await controller.save(saveDto({ soId: ORDER_ID, soStatus: 'CANCELLED' }));
-      expect(orders.save).toHaveBeenCalledTimes(2);
+      expect(lifecycle.save).toHaveBeenCalledTimes(2);
       expect(lifecycle.saveAndPost).toHaveBeenCalledTimes(1);
       expect(lifecycle.cancel).not.toHaveBeenCalled();
     });
@@ -102,7 +107,7 @@ describe('SaleOrderController', () => {
         data: { ...PAYLOAD, warnings: [] },
       });
       expect(lifecycle.saveAndPost).toHaveBeenCalledWith(dto);
-      expect(orders.save).not.toHaveBeenCalled();
+      expect(lifecycle.save).not.toHaveBeenCalled();
     });
 
     it('counts the reservation shortfalls into the message', async () => {

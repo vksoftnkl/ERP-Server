@@ -20,7 +20,11 @@ import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { buildBillLegs, splitRegisterCharges } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
-import { StockReservationService } from '../posting/stock-reservation.service';
+import {
+  netOrderLineMoves,
+  StockReservationService,
+  type OrderLineQty,
+} from '../posting/stock-reservation.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import {
@@ -34,7 +38,12 @@ import {
   assertVoucherPartitionExists,
   loadDayClosed,
   loadDeclaredLocks,
+  heldAmong,
+  heldOrdersDrawnMore,
+  lockSourceOrders,
+  type OrderDraw,
   refuse,
+  refuseHeldOrders,
   // warn, — the bill's warnings are commented out below; restore with them.
 } from '../posting/sales.guards';
 import { throwSalesLocked, throwSalesRefusals, throwSalesRight } from '../posting/sales.errors';
@@ -445,6 +454,9 @@ export class BillLifecycleService {
     const items = await tx.saleBillItem.findMany({
       where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
     });
+    // The source orders first, before the unwind's stock writes (lock order:
+    // sale_order, then stock — lockSourceOrders).
+    await lockBillOrders(tx, [bill], items);
     const reversal = await this.unwind(tx, bill, items, ctx, reason, now);
     const cancelled = await tx.saleBill.update({
       where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
@@ -583,6 +595,10 @@ export class BillLifecycleService {
         bill.sbAccYear,
       );
 
+      // 0 · the source orders, old and new, locked BEFORE the unwind's stock
+      //     writes (lock order: sale_order, then stock — lockSourceOrders).
+      await lockBillOrders(tx, [bill, dto], [...priorItems, ...(dto.items ?? [])]);
+
       // 1 · unwind — the old money leaves, the old goods come back, DRAFT again.
       //     The voucher is not mirrored: it is restated in place at step 3.
       const { restateVoucherId } = await this.unwind(
@@ -653,7 +669,7 @@ export class BillLifecycleService {
         canOverride: ctx.rights.override,
         throwOnRefusal: false,
       });
-      await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+      await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments, priorItems });
       if (guard.refusals.length > 0) {
         throwSalesRefusals('Bill cannot be amended', guard.refusals);
       }
@@ -663,6 +679,9 @@ export class BillLifecycleService {
         fromStatus: BILL_STATUS_DRAFT,
         revisionNo: bill.sbRevisionNo + 1,
         restateVoucherId,
+        // The unwind gave nothing back to the orders' reservations: the
+        // re-post moves them by new − old (afterStatusChange).
+        priorItems,
       });
       await this.audit.logEntityChange(
         {
@@ -700,7 +719,11 @@ export class BillLifecycleService {
     snap: BillSnapshot,
     ctx: SalesCallContext,
     g: SalesGuardContext,
-    opts: { adjustments?: SaveBillAdjustmentDto[] },
+    opts: {
+      adjustments?: SaveBillAdjustmentDto[];
+      /** Amend: the lines as they were posted (the delivery hold allows less, not more). */
+      priorItems?: SaleBillItem[];
+    },
   ): Promise<void> {
     const s = ctx.settings;
     const today = isoToday();
@@ -973,7 +996,7 @@ export class BillLifecycleService {
     // }
 
     // 9 · the sources — an order line and a challan line may not be over-taken.
-    await this.guardSources(tx, snap, g, s.allowBillOverOrderQty);
+    await this.guardSources(tx, snap, g, s.allowBillOverOrderQty, opts.priorItems);
 
     // 10 · promotions live?
     // const schemeIds = [
@@ -1176,6 +1199,7 @@ export class BillLifecycleService {
     snap: BillSnapshot,
     g: SalesGuardContext,
     allowOverOrder: boolean,
+    priorItems?: SaleBillItem[],
   ): Promise<void> {
     const orderLines = snap.items.filter((i) => i.srcDocType === 'SALES_ORDER' && i.srcItemId);
     const dcLines = snap.items.filter((i) => i.srcDocType === 'DELIVERY_CHALLAN' && i.srcItemId);
@@ -1192,27 +1216,45 @@ export class BillLifecycleService {
         ].filter((id): id is string => !!id),
       ),
     ];
+    // Every source order — by id and by order-line id — locked FOR UPDATE in
+    // so_id order and read under that lock: the status and the delivery hold
+    // below come off these rows, and a bill takes the order rows before any
+    // stock lock (lockSourceOrders; review 2026-11-11).
+    const sources = await lockSourceOrders(
+      tx,
+      orderIds,
+      orderLines.map((l) => l.srcItemId!),
+    );
     if (orderIds.length > 0) {
-      const orders = await tx.$queryRaw<
-        { so_id: string; so_order_refno: string | null; so_status: string }[]
-      >`
-        SELECT so_id, so_order_refno, so_status FROM sales.sale_order
-         WHERE so_id = ANY(${orderIds}::uuid[]) AND so_is_deleted = false`;
-      const byId = new Map(orders.map((o) => [o.so_id, o]));
+      const byId = new Map(sources.map((o) => [o.soId, o]));
       for (const id of orderIds) {
         const o = byId.get(id);
-        if (!o || !['CONFIRMED', 'PARTIAL'].includes(o.so_status)) {
+        if (!o || !['CONFIRMED', 'PARTIAL'].includes(o.status)) {
           refuse(
             g,
             SALES_ERROR_CODES.ORDER_NOT_OPEN,
             o
-              ? `Order ${o.so_order_refno ?? id} is ${o.so_status} — only a CONFIRMED or PARTIAL order can be billed`
+              ? `Order ${o.refno} is ${o.status} — only a CONFIRMED or PARTIAL order can be billed`
               : `Order ${id} does not exist`,
             { field: 'items' },
           );
         }
       }
     }
+    // An order on delivery hold (Sales Order Management, D18) is not billed:
+    // /validate lists it, /post refuses it (422), with no override. A draft
+    // may still be saved. Reached by the order id or by a line's order-line
+    // id, so a line that names only its soi_id is caught too. An AMEND of a
+    // bill posted before the hold is refused only when it draws MORE from the
+    // held order than the bill did (user, 2026-11-11): a rate fix, a lower
+    // quantity or a dropped line goes through.
+    const held = heldAmong(sources);
+    refuseHeldOrders(
+      g,
+      priorItems
+        ? await heldOrdersDrawnMore(tx, held, snapshotDraws(snap), billItemDraws(priorItems))
+        : held,
+    );
     if (orderLines.length > 0) {
       const rows = await tx.$queryRaw<
         { soi_id: string; soi_pending_qty: Prisma.Decimal | null; so_status: string }[]
@@ -1341,6 +1383,12 @@ export class BillLifecycleService {
       revisionNo?: number;
       /** Amend: the bill's own voucher, back in DRAFT, to restate in place. */
       restateVoucherId?: string | null;
+      /**
+       * Amend: the bill's lines as they were POSTED. The order reservations
+       * move by the difference between these and `items`, never by `items`
+       * on top of what the posted bill already consumed.
+       */
+      priorItems?: SaleBillItem[];
     },
   ): Promise<PostResult> {
     const { now } = opts;
@@ -1777,7 +1825,7 @@ export class BillLifecycleService {
     });
 
     // 11 · the sources — only a POSTED bill draws down an order or a challan.
-    await this.afterStatusChange(tx, posted, items, actor, now);
+    await this.afterStatusChange(tx, posted, items, actor, now, opts.priorItems);
 
     // 12 · the trail.
     await appendTxnStatusLog(tx, {
@@ -2117,25 +2165,47 @@ export class BillLifecycleService {
     items: SaleBillItem[],
     actor: string,
     now: Date,
+    priorItems: SaleBillItem[] = [],
   ): Promise<void> {
-    // The order's reservations: a post consumes, a cancel gives back.
+    // The order's reservations: a post consumes, a cancel gives back, and an
+    // amend's re-post moves them by the NET change per order line — the bill
+    // as it is now (`items`) less the bill as it was posted (`priorItems`).
+    // The amend's unwind gives nothing back, so taking `items` alone consumed
+    // the old quantity a second time (2026-11-11). Net, not give-back-all then
+    // take-all: an amend that leaves a line's quantity alone writes nothing,
+    // and a CONSUMED row is not handed over and re-taken on every amend.
+    // A give-back runs through consume(), so the newer-hold hand-over and the
+    // released-hold rule apply as on a cancel.
     const sign = bill.sbStatus === BILL_STATUS_POSTED ? 1 : -1;
-    for (const i of items) {
-      if (i.sbiSrcDocType !== 'SALES_ORDER' || !i.sbiSrcDocId || i.sbiSrcDocLineNo === null) {
-        continue;
-      }
-      const factor = num(i.sbiToBaseFactor) || 1;
+    const moves = netOrderLineMoves([
+      ...orderLineQtys(items, sign),
+      ...orderLineQtys(priorItems, -1),
+    ]);
+    for (const m of moves) {
       await this.reservations.consume(
         tx,
-        { docId: i.sbiSrcDocId, lineNo: i.sbiSrcDocLineNo },
-        sign * num(i.sbiBillQty) * factor,
+        { docId: m.docId, lineNo: m.lineNo },
+        m.baseQty,
         actor,
         now,
       );
     }
     await this.saleOrders.syncOrderFulfilment(
       tx,
-      { refs: this.bills.orderRefsOf(bill, items) },
+      {
+        // The orders the bill names now AND those it named before an amend, so
+        // an order whose line the amend dropped is re-derived here too (the
+        // draft save already did it once, with the bill out of the count).
+        refs: [
+          ...this.bills.orderRefsOf(bill, items),
+          ...(priorItems.length > 0 ? this.bills.orderRefsOf(bill, priorItems) : []),
+        ],
+        // A cancel can hand a COMPLETED order quantity back: it reopens, and its
+        // REOPENED step names the bill (Sales Order Management, 2026-11-10).
+        reopenRemark: `Reopened: bill ${bill.sbBillRefno || bill.sbId} ${
+          bill.sbStatus === BILL_STATUS_CANCELLED ? 'cancelled' : bill.sbStatus.toLowerCase()
+        }`,
+      },
       actor,
       now,
     );
@@ -2666,3 +2736,85 @@ function isUuid(v: string | null | undefined): v is string {
 
 // Referenced so the lock-2 helper stays importable for the band verb.
 void assertBandWritable;
+
+/**
+ * The base quantity each bill line draws on its sales-order line, signed
+ * (+ take, − give back). Lines without an order source are skipped, as is a
+ * line whose source names no line number (the reservations key on it).
+ */
+export function orderLineQtys(items: SaleBillItem[], sign: 1 | -1): OrderLineQty[] {
+  const out: OrderLineQty[] = [];
+  for (const i of items) {
+    if (i.sbiSrcDocType !== 'SALES_ORDER' || !i.sbiSrcDocId || i.sbiSrcDocLineNo === null) {
+      continue;
+    }
+    const factor = new Prisma.Decimal(i.sbiToBaseFactor ?? 0);
+    out.push({
+      docId: i.sbiSrcDocId,
+      lineNo: i.sbiSrcDocLineNo,
+      baseQty: new Prisma.Decimal(i.sbiBillQty ?? 0)
+        .times(factor.isZero() ? 1 : factor)
+        .times(sign),
+    });
+  }
+  return out;
+}
+
+/** The order draws of a bill snapshot's lines, in base units. */
+function snapshotDraws(snap: BillSnapshot): OrderDraw[] {
+  return snap.items
+    .filter((i) => i.srcDocType === 'SALES_ORDER')
+    .map((i) => ({
+      soId: i.srcDocId,
+      soiId: i.srcItemId,
+      baseQty: new Prisma.Decimal(i.qty).times(new Prisma.Decimal(i.toBaseFactor || 1)),
+    }));
+}
+
+/** The order draws of posted bill lines, in base units. */
+function billItemDraws(items: SaleBillItem[]): OrderDraw[] {
+  return items
+    .filter((i) => i.sbiSrcDocType === 'SALES_ORDER')
+    .map((i) => {
+      const factor = new Prisma.Decimal(i.sbiToBaseFactor ?? 0);
+      return {
+        soId: i.sbiSrcDocId,
+        soiId: i.sbiSrcItemId,
+        baseQty: new Prisma.Decimal(i.sbiBillQty ?? 0).times(factor.isZero() ? 1 : factor),
+      };
+    });
+}
+
+/**
+ * Locks the sales orders a bill names — on its header(s) and on its lines,
+ * by order id and by order-line id — before any stock write (lockSourceOrders).
+ */
+async function lockBillOrders(
+  tx: Prisma.TransactionClient,
+  headers: Array<{ sbSrcDocType?: string | null; sbSrcDocId?: string | null }>,
+  lines: Array<{
+    sbiSrcDocType?: string | null;
+    sbiSrcDocId?: string | null;
+    sbiSrcItemId?: string | null;
+  }>,
+): Promise<void> {
+  const ids = new Set<string>();
+  const lineIds = new Set<string>();
+  for (const h of headers) {
+    if (h.sbSrcDocType === 'SALES_ORDER' && h.sbSrcDocId) {
+      ids.add(h.sbSrcDocId);
+    }
+  }
+  for (const l of lines) {
+    if (l.sbiSrcDocType !== 'SALES_ORDER') {
+      continue;
+    }
+    if (l.sbiSrcDocId) {
+      ids.add(l.sbiSrcDocId);
+    }
+    if (l.sbiSrcItemId) {
+      lineIds.add(l.sbiSrcItemId);
+    }
+  }
+  await lockSourceOrders(tx, [...ids], [...lineIds]);
+}

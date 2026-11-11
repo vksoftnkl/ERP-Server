@@ -143,6 +143,14 @@
       "description": "fixed.form_section + fixed.form_field for menu 22 (Suppliers) — the supplier master's Visible Settings config, matched by name rather than the hardcoded ids Form_Section.sql / Form_Field.sql use, so a live database with a missing or half-built menu-22 config gets only what it lacks; after Form_Field.sql, so a fresh database keeps the exported ids"
     },
     {
+      "file": "Sale_Order_Entry_Grids_204_205.sql",
+      "description": "fixed.grid_details + fixed.grid_columns for grids 204 (POPUP - GODOWN STOCK (SALES), the Sales Order F12 stock-by-godown popup) and 205 (SO ENTRY - CUSTOMER PENDING LINES, the customer's open order lines); the same rows as migration 20261110200000, pinned column ids; after Grid_Details.sql / Grid_Columns.sql, which do not carry them"
+    },
+    {
+      "file": "Sale_Order_Widget_Config_Menu11_Desktop.sql",
+      "description": "fixed.form_section + fixed.form_field for menu 11 (Sales Order), platform Desktop: 6 sections / 27 fields for the Qt screen's Visibility Settings, matched by name, ids from the sequences; the same rows as migration 20261110200000; after Menu_Master.sql (FK) and Form_Section.sql / Form_Field.sql"
+    },
+    {
       "file": "Gsp_Providers.sql",
       "description": "public.gst_provider + service/account/endpoint/field-map/error-map — the GSP catalogue (NIC direct, CHARTERED wrapper seeded INACTIVE). Depends only on 20260921120000_add_gst_provider_integration, so it can run anywhere in the order; kept last because nothing else reads it"
     }

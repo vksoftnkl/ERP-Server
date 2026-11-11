@@ -168,6 +168,51 @@ describe('ConfiguredGridSqlService', () => {
     });
   });
 
+  describe('WITH … SELECT (a CTE query, the order desk grids 201 / 202)', () => {
+    const cte =
+      "WITH ord AS (SELECT so.so_id, so.so_cust_id FROM sales.sale_order so WHERE so.so_status = 'CONFIRMED'), " +
+      "dues AS (SELECT b.abl_party_id FROM accounts.acc_bill_balance b WHERE b.abl_note = ' select x ') " +
+      'SELECT o.so_id, o.so_cust_id AS cust_id, (SELECT 1) AS one FROM ord o LEFT JOIN dues d ON d.abl_party_id = o.so_cust_id';
+
+    it('accepts it, anchored on its main SELECT', () => {
+      expect(service.extractTopLevelFromTableName(cte)).toBe('ord');
+      expect(service.validateBaseSql({ sql: cte, tableName: 'ord' })).toEqual({
+        isValid: true,
+        normalizedSql: cte,
+      });
+    });
+
+    it('still refuses a data-modifying CTE', () => {
+      expect(
+        service.validateBaseSql({
+          sql: 'WITH x AS (DELETE FROM units RETURNING *) SELECT * FROM x',
+          tableName: 'x',
+        }),
+      ).toEqual({ isValid: false, message: 'Write/DDL statements are not allowed' });
+      expect(
+        service.validateBaseSql({
+          sql: 'WITH x AS (MERGE INTO units u USING src s ON true WHEN MATCHED THEN DO NOTHING RETURNING u.*) SELECT * FROM x',
+          tableName: 'x',
+        }),
+      ).toEqual({ isValid: false, message: 'Write/DDL statements are not allowed' });
+    });
+
+    it('still refuses a second statement', () => {
+      expect(
+        service.validateBaseSql({
+          sql: 'WITH x AS (SELECT 1 AS a FROM units) SELECT * FROM x; SELECT 2',
+          tableName: 'x',
+        }),
+      ).toEqual({ isValid: false, message: 'Multiple statements are not allowed' });
+    });
+
+    it('refuses a WITH with no main SELECT', () => {
+      expect(
+        service.validateBaseSql({ sql: 'WITH x AS (SELECT 1 FROM units) TABLE x', tableName: 'x' }),
+      ).toEqual({ isValid: false, message: 'Only SELECT query is allowed' });
+    });
+  });
+
   it('rejects sql with semicolon', () => {
     const result = service.validateBaseSql({
       sql: 'SELECT * FROM units; SELECT 1',

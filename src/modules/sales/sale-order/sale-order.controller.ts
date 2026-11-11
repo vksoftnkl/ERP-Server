@@ -49,6 +49,11 @@ import {
 } from './types/sale-order-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 /** Notes 94 B / 106 — `post: true`, or the status the post would leave, asks for save-and-confirm. */
+/** The message's note on reservation shortfalls (warnings[] carries each line). */
+function shortNote(warnings: readonly unknown[] | undefined): string {
+  return warnings?.length ? ` — ${warnings.length} line(s) short on reservation` : '';
+}
+
 function wantsPost(dto: SaveSaleOrderDto): boolean {
   return dto.post === true || (dto.soStatus ?? '').toUpperCase() === 'CONFIRMED';
 }
@@ -80,7 +85,9 @@ export class SaleOrderController {
       '/sale-orders/cancel. Nor the fulfilment caches (soFulfilStatus, soDeliveredItems, ' +
       'soCompletedOn, soLastBilledOn): validated, never written; deliveries and bills move them. ' +
       'With a soId, a stored CONFIRMED / PARTIAL order needs the Amend right, as /amend does ' +
-      '(403 SALES_RIGHT_AMEND, field userId); no revision is written here.',
+      '(403 SALES_RIGHT_AMEND, field userId), and its stock reservations follow the edit as on ' +
+      '/amend (every hold released, the pending lines re-reserved, soiReservedQty rewritten); ' +
+      'no revision NUMBER moves and no AMENDED step is written here.',
   })
   @ApiCreatedResponse({ type: SaleOrderSuccessSingleDto })
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })
@@ -95,14 +102,18 @@ export class SaleOrderController {
         success: true,
         message:
           (saveOrderDto.soId ? 'Order updated and confirmed' : 'Order created and confirmed') +
-          (data.warnings.length ? ` — ${data.warnings.length} line(s) short on reservation` : ''),
+          shortNote(data.warnings),
         data,
       };
     }
-    const data = await this.orderService.save(saveOrderDto);
+    // An edit of a CONFIRMED order also moves its reservations (the
+    // lifecycle's save); a new order is the order service's plain save.
+    const data = await this.lifecycle.save(saveOrderDto);
     return {
       success: true,
-      message: saveOrderDto.soId ? 'Order updated successfully' : 'Order created successfully',
+      message:
+        (saveOrderDto.soId ? 'Order updated successfully' : 'Order created successfully') +
+        shortNote(data.warnings),
       data,
     };
   }
@@ -310,6 +321,10 @@ export class SaleOrderController {
     @Body() dto: AmendSaleOrderDto,
   ): Promise<SaleOrderSuccessResponse<SaleOrderPayload>> {
     const data = await this.lifecycle.amend(dto);
-    return { success: true, message: 'Order amended successfully', data };
+    return {
+      success: true,
+      message: 'Order amended successfully' + shortNote(data.warnings),
+      data,
+    };
   }
 }

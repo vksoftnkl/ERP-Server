@@ -288,6 +288,157 @@ describe('SaleOrderService — bill-driven paths', () => {
       expect(result).toMatchObject({ soStatus: 'COMPLETED', soFulfilStatus: 'COMPLETED' });
     });
 
+    it('releases a delivery hold when its bills complete the order (the safety net)', async () => {
+      tx.saleOrder.findFirst.mockResolvedValue(orderRow({ soDeliveryHold: true }));
+      tx.saleBillItem.findMany.mockResolvedValue([
+        billed(ORDER_ID, 1, '10', '1000'),
+        billed(ORDER_ID, 2, '5', '260'),
+      ]);
+
+      await sync([headerRef()]);
+
+      expect(headerWrite()).toMatchObject({
+        soStatus: 'COMPLETED',
+        soDeliveryHold: false,
+        soDeliveryHoldReason: 'Delivery hold released because the order was completed',
+        soDeliveryHoldBy: ACTOR,
+        soDeliveryHoldOn: NOW,
+      });
+      expect(jest.mocked(appendTxnStatusLog).mock.calls.map((c) => c[1].event)).toEqual([
+        TxnStatusEvent.CONVERTED,
+        TxnStatusEvent.DELIVERY_RELEASED,
+      ]);
+      expect(jest.mocked(appendTxnStatusLog).mock.calls[1][1]).toMatchObject({
+        fromStatus: 'COMPLETED',
+        toStatus: 'COMPLETED',
+        remarks: 'Delivery hold released because the order was completed',
+      });
+    });
+
+    describe('reopen: a COMPLETED order that gets quantity back is open again (user 2026-11-10)', () => {
+      // Line 1: 10 ordered, 2 billed, the other 8 closed on the desk → COMPLETED.
+      // The bill is then cancelled: no POSTED bill draws on it any more.
+      const closedAfterBilling = () => [
+        lineRow({
+          soiDeliveredQty: D('2'),
+          soiCancelledQty: D('8'),
+          soiPendingQty: D('0'),
+          soiBilledAmt: D('200'),
+        }),
+      ];
+      const completed = (overrides: Partial<SaleOrder> = {}) =>
+        orderRow({
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
+          soCompletedOn: new Date('2026-10-01T00:00:00.000Z'),
+          soTotItems: 1,
+          soDeliveredItems: 1,
+          soBilledAmt: D('200'),
+          soCancelledAmt: D('800'),
+          soPendingAmt: D('0'),
+          ...overrides,
+        });
+
+      it('reopens to CONFIRMED when nothing is delivered any more, with a REOPENED step', async () => {
+        lines = closedAfterBilling();
+        tx.saleOrder.findFirst.mockResolvedValue(completed());
+        tx.saleBillItem.findMany.mockResolvedValue([]);
+
+        const [result] = await service.syncOrderFulfilment(
+          TX(),
+          { refs: [lineRef(LINE_1)], reopenRemark: 'Reopened: bill BIL/0040 cancelled' },
+          ACTOR,
+          NOW,
+        );
+
+        // The restore-pending rule stands: delivered back to 0, so 2 is pending.
+        expect(tx.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+          soiDeliveredQty: D('0'),
+          soiBilledAmt: D('0'),
+        });
+        expect(headerWrite()).toMatchObject({
+          soStatus: 'CONFIRMED',
+          soFulfilStatus: 'PENDING',
+          soCompletedOn: null,
+          soPendingAmt: D('200'),
+          soDeliveredItems: 0,
+        });
+        expect(headerWrite()).not.toHaveProperty('soDeliveryHold');
+        expect(jest.mocked(appendTxnStatusLog).mock.calls).toHaveLength(1);
+        expect(jest.mocked(appendTxnStatusLog).mock.calls[0][1]).toMatchObject({
+          event: TxnStatusEvent.REOPENED,
+          fromStatus: 'COMPLETED',
+          toStatus: 'CONFIRMED',
+          remarks: 'Reopened: bill BIL/0040 cancelled',
+        });
+        expect(result).toMatchObject({ soStatus: 'CONFIRMED', soFulfilStatus: 'PENDING' });
+      });
+
+      it('part-delivered reopen → CONFIRMED, fulfil PARTIAL (the status never says PARTIAL)', async () => {
+        lines = [
+          lineRow({
+            soiDeliveredQty: D('4'),
+            soiCancelledQty: D('6'),
+            soiPendingQty: D('0'),
+            soiBilledAmt: D('400'),
+          }),
+        ];
+        tx.saleOrder.findFirst.mockResolvedValue(completed());
+        // Two bills had delivered 2 each; one of them is cancelled.
+        tx.saleBillItem.findMany.mockResolvedValue([billed(LINE_1, null, '2', '200')]);
+
+        await sync([lineRef(LINE_1)]);
+
+        expect(headerWrite()).toMatchObject({
+          soStatus: 'CONFIRMED',
+          soFulfilStatus: 'PARTIAL',
+          soCompletedOn: null,
+        });
+        expect(jest.mocked(appendTxnStatusLog).mock.calls[0][1]).toMatchObject({
+          event: TxnStatusEvent.REOPENED,
+          fromStatus: 'COMPLETED',
+          toStatus: 'CONFIRMED',
+          remarks: 'Reopened: a bill against it no longer delivers all of it',
+        });
+      });
+
+      it('never reopens a CANCELLED order: the quantity comes back as pending, the header stays shut', async () => {
+        lines = closedAfterBilling();
+        tx.saleOrder.findFirst.mockResolvedValue(completed({ soStatus: 'CANCELLED' }));
+        tx.saleBillItem.findMany.mockResolvedValue([]);
+
+        const [result] = await sync([lineRef(LINE_1)]);
+
+        expect(headerWrite()).not.toHaveProperty('soStatus');
+        expect(headerWrite()).not.toHaveProperty('soCompletedOn');
+        expect(appendTxnStatusLog).not.toHaveBeenCalled();
+        expect(result.soStatus).toBe('CANCELLED');
+      });
+
+      it.each(['CLOSED', 'EXPIRED'])('leaves a %s order shut too', async (soStatus) => {
+        lines = closedAfterBilling();
+        tx.saleOrder.findFirst.mockResolvedValue(completed({ soStatus }));
+        tx.saleBillItem.findMany.mockResolvedValue([]);
+
+        const [result] = await sync([lineRef(LINE_1)]);
+
+        expect(result.soStatus).toBe(soStatus);
+        expect(appendTxnStatusLog).not.toHaveBeenCalled();
+      });
+
+      it('leaves a COMPLETED order completed while its bills still settle every line', async () => {
+        lines = closedAfterBilling();
+        tx.saleOrder.findFirst.mockResolvedValue(completed());
+        tx.saleBillItem.findMany.mockResolvedValue([billed(LINE_1, null, '2', '200')]);
+
+        const [result] = await sync([lineRef(LINE_1)]);
+
+        expect(result.soStatus).toBe('COMPLETED');
+        expect(tx.saleOrder.updateMany).not.toHaveBeenCalled();
+        expect(appendTxnStatusLog).not.toHaveBeenCalled();
+      });
+    });
+
     it('keeps the first completion date of an order that was completed before', async () => {
       tx.saleOrder.findFirst.mockResolvedValue(
         orderRow({ soCompletedOn: new Date('2026-10-01T00:00:00.000Z') }),

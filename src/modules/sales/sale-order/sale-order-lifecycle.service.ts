@@ -16,7 +16,12 @@ import { assertAccYearWritable, assertSalesmen, loadDayClosed } from '../posting
 import { throwSalesLocked, throwSalesRight } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { SALES_MENU_ID, isoDate, isoToday, num } from '../posting/sales-doc.utils';
-import { SaleOrderService, assertSaleOrderNotTerminal } from './sale-order.service';
+import {
+  SALE_ORDER_AUDIT_SCREEN_NAME,
+  SaleOrderService,
+  assertSaleOrderNotTerminal,
+  finishedOrderHoldRelease,
+} from './sale-order.service';
 import type {
   AmendSaleOrderDto,
   CancelSaleOrderDto,
@@ -24,6 +29,7 @@ import type {
   SaleOrderKeysDto,
 } from './dto/sale-order-lifecycle.dto';
 import type { SaveSaleOrderDto } from './dto/save-sale-order.dto';
+import { ORDER_TX_OPTIONS } from './sale-order-tx.options';
 import {
   SALE_ORDER_STATUS_SRC_DOC_TYPE,
   SALE_ORDER_STATUS_SRC_MODULE,
@@ -40,7 +46,8 @@ import {
  *   /cancel  refused once anything is delivered (`SALES_ORDER_DELIVERED`);
  *            releases reservations, writes off every open line.
  *   /amend   after a partial delivery only undelivered lines may change
- *            (`SALES_ORDER_LINE_DELIVERED`); `soRevisionNo + 1`.
+ *            (`SALES_ORDER_LINE_DELIVERED`); `soRevisionNo + 1`; ONE History
+ *            revision and the AMENDED step "Rev n: <edit remark>" (P6).
  *   /delete  DRAFT only (`SALES_ORDER_CONFIRMED`).
  *
  * A finished order (COMPLETED / CANCELLED / CLOSED / EXPIRED) is refused by
@@ -48,6 +55,8 @@ import {
  * (CANCELLED → SALES_DOC_CANCELLED, the rest → SALES_DOC_NOT_DRAFT).
  */
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' } as const;
+/** The statuses whose lines hold stock reservations (a DRAFT holds none). */
+const RESERVING_STATUSES: readonly string[] = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
 
 @Injectable()
 export class SaleOrderLifecycleService {
@@ -61,7 +70,7 @@ export class SaleOrderLifecycleService {
 
   async post(dto: PostSaleOrderDto): Promise<{ soStatus: string; warnings: ReservationShort[] }> {
     const now = new Date();
-    return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now));
+    return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now), ORDER_TX_OPTIONS);
   }
 
   /**
@@ -86,17 +95,27 @@ export class SaleOrderLifecycleService {
     let warnings: ReservationShort[] = [];
     try {
       await this.prisma.$transaction(async (tx) => {
-        const saved = saveDto.soId
-          ? await this.orders.updateOrderInTx(tx, saveDto)
-          : await this.orders.createOrderInTx(tx, saveDto);
+        // An edit of a CONFIRMED order (the Qt entry sends its status back,
+        // so its saves arrive here) moves the reservations as /amend does,
+        // and its shortfalls are the answer's warnings; postInTx then answers
+        // the confirmed order as it is.
+        let saved: SaleOrderPayload;
+        let reserveWarnings: ReservationShort[] = [];
+        if (saveDto.soId) {
+          const over = await this.saveOverInTx(tx, saveDto, now);
+          saved = over;
+          reserveWarnings = over.warnings;
+        } else {
+          saved = await this.orders.createOrderInTx(tx, saveDto);
+        }
         keys = {
           soId: saved.soId,
           soCompanyId: saved.soCompanyId,
           soBranchId: saved.soBranchId,
           soAccYear: saved.soAccYear,
         };
-        warnings = (await this.postInTx(tx, keys, now)).warnings;
-      });
+        warnings = [...reserveWarnings, ...(await this.postInTx(tx, keys, now)).warnings];
+      }, ORDER_TX_OPTIONS);
     } catch (error: unknown) {
       this.orders.throwIfDuplicate(error);
       throw error;
@@ -107,17 +126,156 @@ export class SaleOrderLifecycleService {
   }
 
   /**
+   * `/create` WITHOUT the confirm instruction. A new order is the order
+   * service's plain save; an edit goes through saveOverInTx, so an edit of a
+   * CONFIRMED order moves its reservations (2026-11-11).
+   */
+  async save(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & { warnings: ReservationShort[] }> {
+    if (!dto.soId) {
+      return { ...(await this.orders.save(dto)), warnings: [] };
+    }
+    this.orders.prepareSave(dto);
+    try {
+      return await this.prisma.$transaction(
+        (tx) => this.saveOverInTx(tx, dto, new Date()),
+        ORDER_TX_OPTIONS,
+      );
+    } catch (error: unknown) {
+      this.orders.throwIfDuplicate(error);
+      throw error;
+    }
+  }
+
+  /**
+   * A save over an existing order (`/create` with its soId, plain or with the
+   * confirm instruction), in the caller's transaction. Run `prepareSave` first.
+   *
+   * An order that holds no stock (DRAFT, or one the save refuses: not found,
+   * finished) is the order service's update exactly as before. A CONFIRMED /
+   * PARTIAL order takes the same reservation steps as /amend: the reserved
+   * figures capped before the save, the update WITHOUT its own revision, the
+   * order's holds released and its pending lines re-reserved, then the save's
+   * ONE revision ('Order updated'), so its `after` shows what the lines hold.
+   * Unlike /amend: no baseRevision, no revision-number bump, no AMENDED step.
+   * The Amend right is still judged inside the update (403 SALES_RIGHT_AMEND).
+   * `warnings` are the re-reserve's shortfalls (SALES_RESERVE_SHORT), as a
+   * fresh confirm reports them.
+   */
+  async saveOverInTx(
+    tx: Prisma.TransactionClient,
+    dto: SaveSaleOrderDto,
+    now: Date,
+  ): Promise<SaleOrderPayload & { warnings: ReservationShort[] }> {
+    await tx.$queryRaw`
+      SELECT so_id FROM sales.sale_order
+       WHERE so_id = ${dto.soId}::uuid AND so_is_deleted = false
+       FOR UPDATE`;
+    const stored = await tx.saleOrder.findFirst({ where: { soId: dto.soId, soIsDeleted: false } });
+    if (!stored || !RESERVING_STATUSES.includes(stored.soStatus)) {
+      return { ...(await this.orders.updateOrderInTx(tx, dto)), warnings: [] };
+    }
+    const lines = await tx.saleOrderItem.findMany({
+      where: { soiOrderId: stored.soId, soiAccYear: stored.soAccYear, soiIsDeleted: false },
+    });
+    capReservedQty(dto, lines);
+    const before = await this.orders.getById(
+      stored.soId,
+      stored.soCompanyId,
+      stored.soBranchId,
+      stored.soAccYear,
+      tx,
+    );
+    const payload = await this.orders.updateOrderInTx(tx, dto, { revision: false });
+    const keys = {
+      soId: stored.soId,
+      soCompanyId: stored.soCompanyId,
+      soBranchId: stored.soBranchId,
+      soAccYear: stored.soAccYear,
+    };
+    const fresh = await this.lock(tx, keys);
+    const ctx = await this.salesContext.resolve(
+      { companyId: fresh.soCompanyId, branchId: fresh.soBranchId },
+      SALES_MENU_ID.SALES_ORDER,
+      tx,
+    );
+    const { held, warnings } = await this.rereserveInTx(tx, fresh, ctx.actor, now);
+    await this.orders.writeRevision(tx, fresh, before, ctx.actor, 'Order updated');
+    return { ...withHeld(payload, held), warnings };
+  }
+
+  /**
+   * The reservations of a CONFIRMED / PARTIAL order whose lines may have
+   * changed (/amend, or a save over the order). Every live hold of the order
+   * is released ('Re-reserved'), not only those of the lines re-reserved: a
+   * line dropped or renumbered, or one with nothing pending, kept its OPEN
+   * rows under a line number reserve() never visits (2026-11-11). The pending
+   * lines are then reserved afresh, FEFO, and each line's soi_is_reserved /
+   * soi_reserved_qty is written from what it now holds (capped at pending),
+   * in Decimal. Any other status holds nothing and is left alone. `warnings`
+   * are reserve()'s shortfalls (SALES_RESERVE_SHORT): never a refusal.
+   */
+  private async rereserveInTx(
+    tx: Prisma.TransactionClient,
+    order: SaleOrder,
+    actor: string,
+    now: Date,
+  ): Promise<{ held: Map<string, HeldFigures>; warnings: ReservationShort[] }> {
+    const held = new Map<string, HeldFigures>();
+    if (!RESERVING_STATUSES.includes(order.soStatus)) {
+      return { held, warnings: [] };
+    }
+    const current = await tx.saleOrderItem.findMany({
+      where: { soiOrderId: order.soId, soiAccYear: order.soAccYear, soiIsDeleted: false },
+      orderBy: { soiLineNo: 'asc' },
+    });
+    await this.reservations.release(
+      tx,
+      { docType: 'SALES_ORDER', docId: order.soId },
+      'Re-reserved',
+      actor,
+      now,
+    );
+    const pendingOf = (l: SaleOrderItem) => new Prisma.Decimal(l.soiPendingQty ?? 0);
+    const { reserved, warnings } = await this.reserve(
+      tx,
+      order,
+      current.filter((l) => pendingOf(l).greaterThan(0)),
+      actor,
+      now,
+    );
+    for (const l of current) {
+      const got = new Prisma.Decimal(reserved.get(l.soiId) ?? 0);
+      const figures: HeldFigures = {
+        soiIsReserved: got.greaterThan(0),
+        soiReservedQty: Prisma.Decimal.min(got, pendingOf(l)).toDecimalPlaces(3),
+      };
+      await tx.saleOrderItem.update({
+        where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
+        data: figures,
+      });
+      held.set(l.soiId, figures);
+    }
+    return { held, warnings };
+  }
+
+  /**
    * The confirmation itself, inside a transaction the caller owns: the lock,
    * the status gates, the right, the day, the reservations, CONFIRMED and the
-   * trail. Shared by `/post` and the one-call save-and-confirm.
+   * trail. Shared by `/post` and the one-call save-and-confirm. Public for
+   * the order desk's merge (`/sale-order-desk/merge`), which confirms the new
+   * order inside the same transaction that closes the old ones.
    */
-  private async postInTx(
+  async postInTx(
     tx: Prisma.TransactionClient,
     dto: SaleOrderKeysDto,
     now: Date,
   ): Promise<{ soStatus: string; warnings: ReservationShort[] }> {
     const order = await this.lock(tx, dto);
-    if (order.soStatus === ORDER_STATUS.CONFIRMED) {
+    // Already confirmed (CONFIRMED, or the older PARTIAL): answered as it is,
+    // a harmless repeat. A save-and-confirm over such an order has moved its
+    // reservations in saveOverInTx already; refusing PARTIAL here (409
+    // SALES_DOC_NOT_DRAFT) rolled that whole save back (review 2026-11-11).
+    if (RESERVING_STATUSES.includes(order.soStatus)) {
       return { soStatus: order.soStatus, warnings: [] };
     }
     // CANCELLED → SALES_DOC_CANCELLED, as the save and /amend answer it.
@@ -155,12 +313,12 @@ export class SaleOrderLifecycleService {
     });
     const { reserved, warnings } = await this.reserve(tx, order, lines, ctx.actor, now);
     for (const l of lines) {
-      const got = reserved.get(l.soiId) ?? 0;
+      const got = new Prisma.Decimal(reserved.get(l.soiId) ?? 0);
       await tx.saleOrderItem.update({
         where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
         data: {
-          soiIsReserved: got > 0,
-          soiReservedQty: new Prisma.Decimal(Math.min(got, num(l.soiOrderQty)).toFixed(3)),
+          soiIsReserved: got.greaterThan(0),
+          soiReservedQty: Prisma.Decimal.min(got, l.soiOrderQty).toDecimalPlaces(3),
           soiModifiedOn: now,
           soiModifiedBy: ctx.actor,
         },
@@ -193,7 +351,8 @@ export class SaleOrderLifecycleService {
       {
         action: 'approve',
         tableName: 'sale_order',
-        screenName: 'Sales Order',
+        // Screen 87, as every sales-order audit row (user, 2026-11-11).
+        screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
         screenType: 'transaction',
         pk: order.soId,
         displayName: order.soOrderRefno,
@@ -259,15 +418,26 @@ export class SaleOrderLifecycleService {
       });
       const after = await tx.saleOrder.findFirst({
         where: { soId: order.soId, soAccYear: order.soAccYear },
-        select: { soStatus: true },
+        select: { soStatus: true, soDeliveryHold: true },
       });
       if (after?.soStatus !== ORDER_STATUS.CANCELLED) {
+        // The line cancel left it open, so this write finishes it — and a held
+        // order is released with it (cancelOrderOpenLines does the same when
+        // IT is what ends the order).
+        const holdRelease = finishedOrderHoldRelease(
+          { soDeliveryHold: after?.soDeliveryHold ?? order.soDeliveryHold },
+          ORDER_STATUS.CANCELLED,
+          'cancelled',
+          ctx.actor,
+          now,
+        );
         await tx.saleOrder.update({
           where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
           data: {
             soStatus: ORDER_STATUS.CANCELLED,
             soModifiedOn: now,
             soModifiedBy: ctx.actor, // plan SO-5: the user id
+            ...(holdRelease?.data ?? {}),
           },
         });
         await this.trail(
@@ -280,15 +450,40 @@ export class SaleOrderLifecycleService {
           now,
           dto.reason,
         );
+        if (holdRelease) {
+          await this.trail(
+            tx,
+            order,
+            TxnStatusEvent.DELIVERY_RELEASED,
+            ORDER_STATUS.CANCELLED,
+            ORDER_STATUS.CANCELLED,
+            ctx.actor,
+            now,
+            holdRelease.remarks,
+          );
+        }
       }
       return { soStatus: ORDER_STATUS.CANCELLED, cancelledLines: result.cancelledLines };
-    });
+    }, ORDER_TX_OPTIONS);
   }
 
-  async amend(dto: AmendSaleOrderDto): Promise<SaleOrderPayload> {
+  /**
+   * One transaction, so the edit, the revision number, the reservations, the
+   * History revision and the AMENDED step commit or roll back together (P6).
+   * The save inside writes no revision of its own: the amend writes ONE, after
+   * its own writes, and its number heads the step's remarks ("Rev 3: …").
+   */
+  async amend(
+    dto: AmendSaleOrderDto,
+  ): Promise<SaleOrderPayload & { warnings: ReservationShort[] }> {
     const now = new Date();
-    // 1 · the gates, under the row lock.
-    const { order, ctx } = await this.prisma.$transaction(async (tx) => {
+    const { baseRevision: _b, editRemark: _e, ...saveDto } = dto;
+    void _b;
+    void _e;
+    const s = saveDto as SaveSaleOrderDto;
+    delete (s as unknown as Record<string, unknown>).soStatus;
+    return this.prisma.$transaction(async (tx) => {
+      // 1 · the gates, under the row lock.
       const order = await this.lock(tx, {
         soId: dto.soId,
         soCompanyId: dto.soCompanyId,
@@ -338,48 +533,44 @@ export class SaleOrderLifecycleService {
           }
         }
       }
-      return { order, ctx };
-    });
+      // soi_reserved_qty is the reservations' figure, not the payload's
+      // (capReservedQty): step 3 writes what the re-reserve really holds.
+      capReservedQty(s, lines);
+      // The order as /get answered it before the amend: the revision's `before`.
+      const before = await this.orders.getById(
+        order.soId,
+        order.soCompanyId,
+        order.soBranchId,
+        order.soAccYear,
+        tx,
+      );
 
-    // 2 · the edit, through the ONE definition of an order save.
-    const { baseRevision: _b, editRemark: _e, ...saveDto } = dto;
-    void _b;
-    void _e;
-    const s = saveDto as SaveSaleOrderDto;
-    delete (s as unknown as Record<string, unknown>).soStatus;
-    const payload = await this.orders.save({ ...s, soId: order.soId });
+      // 2 · the edit, through the ONE definition of an order save — in this
+      // transaction, and without a revision of its own.
+      this.orders.prepareSave(s);
+      let payload: SaleOrderPayload;
+      try {
+        payload = await this.orders.updateOrderInTx(
+          tx,
+          { ...s, soId: order.soId },
+          { revision: false },
+        );
+      } catch (error: unknown) {
+        // The save's own unique clash answers as the save route does; one
+        // further on (a reservation) is not relabelled as an order number.
+        this.orders.throwIfDuplicate(error);
+        throw error;
+      }
 
-    // 3 · the revision, the reservations and the trail.
-    await this.prisma.$transaction(async (tx) => {
+      // 3 · the reservations, the revision number, the History revision and
+      // the trail.
       const fresh = await this.lock(tx, {
         soId: order.soId,
         soCompanyId: order.soCompanyId,
         soBranchId: order.soBranchId,
         soAccYear: order.soAccYear,
       });
-      if (fresh.soStatus === ORDER_STATUS.CONFIRMED || fresh.soStatus === 'PARTIAL') {
-        const lines = await tx.saleOrderItem.findMany({
-          where: { soiOrderId: fresh.soId, soiAccYear: fresh.soAccYear, soiIsDeleted: false },
-          orderBy: { soiLineNo: 'asc' },
-        });
-        const { reserved } = await this.reserve(
-          tx,
-          fresh,
-          lines.filter((l) => num(l.soiPendingQty) > 0),
-          ctx.actor,
-          now,
-        );
-        for (const l of lines) {
-          const got = reserved.get(l.soiId) ?? 0;
-          await tx.saleOrderItem.update({
-            where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
-            data: {
-              soiIsReserved: got > 0,
-              soiReservedQty: new Prisma.Decimal(Math.min(got, num(l.soiPendingQty)).toFixed(3)),
-            },
-          });
-        }
-      }
+      const { held, warnings } = await this.rereserveInTx(tx, fresh, ctx.actor, now);
       await tx.saleOrder.update({
         where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
         data: {
@@ -388,6 +579,13 @@ export class SaleOrderLifecycleService {
           soModifiedBy: ctx.actor, // plan SO-5: the user id
         },
       });
+      const { revNo } = await this.orders.writeRevision(
+        tx,
+        order,
+        before,
+        ctx.actor,
+        `Order amended: ${dto.editRemark}`,
+      );
       await this.trail(
         tx,
         fresh,
@@ -396,10 +594,10 @@ export class SaleOrderLifecycleService {
         fresh.soStatus,
         ctx.actor,
         now,
-        dto.editRemark,
+        `Rev ${revNo}: ${dto.editRemark}`,
       );
-    });
-    return { ...payload, soRevisionNo: order.soRevisionNo + 1 } as SaleOrderPayload;
+      return { ...withHeld(payload, held), soRevisionNo: order.soRevisionNo + 1, warnings };
+    }, ORDER_TX_OPTIONS);
   }
 
   async deleteDraft(keys: SaleOrderKeysDto): Promise<{ soId: string; deleted: true }> {
@@ -512,4 +710,45 @@ export class SaleOrderLifecycleService {
       sessionId: order.soSessionId,
     });
   }
+}
+
+/** What one order line holds after a re-reserve, as written to its row. */
+interface HeldFigures {
+  soiIsReserved: boolean;
+  soiReservedQty: Prisma.Decimal;
+}
+
+/**
+ * soi_reserved_qty is the reservations' figure, not the payload's: the
+ * re-reserve after the save writes what each line really holds. Until then
+ * the save carries the stored figure capped at the line's new quantity, so an
+ * edit that takes a reserved line DOWN passes ck_soi_reserved (it answered 400
+ * SALE_ORDER_RESERVED_OUT_OF_RANGE, 2026-11-11). A new line holds 0; whatever
+ * a client sends is overridden.
+ */
+function capReservedQty(dto: SaveSaleOrderDto, lines: SaleOrderItem[]): void {
+  if (!dto.items) {
+    return;
+  }
+  const stored = new Map(lines.map((l) => [l.soiId, l]));
+  for (const it of dto.items) {
+    const prev = it.soiId ? stored.get(it.soiId) : undefined;
+    const qty = new Prisma.Decimal(it.soiOrderQty ?? prev?.soiOrderQty ?? 0);
+    const heldQty = new Prisma.Decimal(prev?.soiReservedQty ?? 0);
+    it.soiReservedQty = Prisma.Decimal.max(0, Prisma.Decimal.min(heldQty, qty)).toFixed(3);
+  }
+}
+
+/** The save's answer with each line's reserved figures as the re-reserve wrote them. */
+function withHeld<T extends SaleOrderPayload>(payload: T, held: Map<string, HeldFigures>): T {
+  if (held.size === 0 || !payload.items) {
+    return payload;
+  }
+  return {
+    ...payload,
+    items: payload.items.map((i) => {
+      const h = held.get(i.soiId);
+      return h ? { ...i, ...h } : i;
+    }),
+  };
 }

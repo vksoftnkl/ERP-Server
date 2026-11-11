@@ -1,4 +1,4 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2107 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2155 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
@@ -24,6 +24,12 @@
 -- Charge, Rate, Amount; the other 26 hidden with 21's titles. Widths as
 -- 20261110140000_sales_order_charges_widths left them (20 · 15 · 14 · 10 · 13 · 10 · 13 = 95.00,
 -- room for the "#" gutter as in table 21).
+-- 70 Sales Order Management list (menu 299) as 20261110180000_sale_order_desk created it (ids
+-- 2429-2476): numbers 0..47 are SaleOrderDeskCols; 0..13 shown (tick, Ord #, Status, Date, Customer,
+-- Place, Items, Bags, Wt kg, Value, Packing, Prt, Days, Log; mockup v5 widths with Customer 11.95 and
+-- Place 7.11, adding up to 95.00 so the row gutter fits, as table 69),
+-- 14..47 hidden; no column takes focus. Value and the six money columns are filled from
+-- POST /sale-order-desk/figures, never from grid 201.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -1864,6 +1870,55 @@ SELECT v.* FROM (VALUES
     ,(2426, 69  , 30 , 'LedgerCode'            , 0                , false, false, 30 , false, NULL, NULL, true , false, 'system')
     ,(2427, 69  , 31 , 'TaxCode'               , 0                , false, false, 31 , false, NULL, NULL, true , false, 'system')
     ,(2428, 69  , 32 , 'TaxApl'                , 0                , false, false, 32 , false, NULL, NULL, true , false, 'system')
+    -- ============ SALE ORDER DESK - LIST (id 70) ============
+    ,(2429, 70  , 0  , '✓'                     , 2.58             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2430, 70  , 1  , 'Ord #'                 , 7.73             , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2431, 70  , 2  , 'Status'                , 10.31            , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2432, 70  , 3  , 'Date'                  , 7.22             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2433, 70  , 4  , 'Customer'              , 11.95            , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2434, 70  , 5  , 'Place'                 , 7.11             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2435, 70  , 6  , 'Items'                 , 4.47             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2436, 70  , 7  , 'Bags'                  , 4.47             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2437, 70  , 8  , 'Wt kg'                 , 6.01             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2438, 70  , 9  , 'Value'                 , 8.93             , true , false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2439, 70  , 10 , 'Packing'               , 6.7              , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2440, 70  , 11 , 'Prt'                   , 3.44             , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2441, 70  , 12 , 'Days'                  , 4.12             , true , false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2442, 70  , 13 , 'Log'                   , 9.96             , true , false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2443, 70  , 14 , 'SoId'                  , 0                , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2444, 70  , 15 , 'CompanyId'             , 0                , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2445, 70  , 16 , 'BranchId'              , 0                , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2446, 70  , 17 , 'AccYear'               , 0                , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2447, 70  , 18 , 'CustId'                , 0                , false, false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2448, 70  , 19 , 'AreaId'                , 0                , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2449, 70  , 20 , 'AreaName'              , 0                , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2450, 70  , 21 , 'CityId'                , 0                , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2451, 70  , 22 , 'CityName'              , 0                , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2452, 70  , 23 , 'CustPhone'             , 0                , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2453, 70  , 24 , 'SoStatus'              , 0                , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2454, 70  , 25 , 'Priority'              , 0                , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2455, 70  , 26 , 'IsQuick'               , 0                , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(2456, 70  , 27 , 'IsPartBilled'          , 0                , false, false, 27 , false, NULL, NULL, true , false, 'system')
+    ,(2457, 70  , 28 , 'DeliveryHold'          , 0                , false, false, 28 , false, NULL, NULL, true , false, 'system')
+    ,(2458, 70  , 29 , 'HoldReason'            , 0                , false, false, 29 , false, NULL, NULL, true , false, 'system')
+    ,(2459, 70  , 30 , 'HoldByName'            , 0                , false, false, 30 , false, NULL, NULL, true , false, 'system')
+    ,(2460, 70  , 31 , 'HoldOn'                , 0                , false, false, 31 , false, NULL, NULL, true , false, 'system')
+    ,(2461, 70  , 32 , 'RateChanged'           , 0                , false, false, 32 , false, NULL, NULL, true , false, 'system')
+    ,(2462, 70  , 33 , 'OrderOpenValue'        , 0                , false, false, 33 , false, NULL, NULL, true , false, 'system')
+    ,(2463, 70  , 34 , 'OrderAmt'              , 0                , false, false, 34 , false, NULL, NULL, true , false, 'system')
+    ,(2464, 70  , 35 , 'CustOpenOrders'        , 0                , false, false, 35 , false, NULL, NULL, true , false, 'system')
+    ,(2465, 70  , 36 , 'CusPending'            , 0                , false, false, 36 , false, NULL, NULL, true , false, 'system')
+    ,(2466, 70  , 37 , 'CusOpenBills'          , 0                , false, false, 37 , false, NULL, NULL, true , false, 'system')
+    ,(2467, 70  , 38 , 'CusOverdue'            , 0                , false, false, 38 , false, NULL, NULL, true , false, 'system')
+    ,(2468, 70  , 39 , 'CusOverdueBills'       , 0                , false, false, 39 , false, NULL, NULL, true , false, 'system')
+    ,(2469, 70  , 40 , 'CreditAmtLimit'        , 0                , false, false, 40 , false, NULL, NULL, true , false, 'system')
+    ,(2470, 70  , 41 , 'CreditBillLimit'       , 0                , false, false, 41 , false, NULL, NULL, true , false, 'system')
+    ,(2471, 70  , 42 , 'CreditDays'            , 0                , false, false, 42 , false, NULL, NULL, true , false, 'system')
+    ,(2472, 70  , 43 , 'AvailCredit'           , 0                , false, false, 43 , false, NULL, NULL, true , false, 'system')
+    ,(2473, 70  , 44 , 'IsCreditLimit'         , 0                , false, false, 44 , false, NULL, NULL, true , false, 'system')
+    ,(2474, 70  , 45 , 'IsBillLimit'           , 0                , false, false, 45 , false, NULL, NULL, true , false, 'system')
+    ,(2475, 70  , 46 , 'IsDaysOver'            , 0                , false, false, 46 , false, NULL, NULL, true , false, 'system')
+    ,(2476, 70  , 47 , 'HasCreditLimit'        , 0                , false, false, 47 , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

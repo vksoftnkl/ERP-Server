@@ -107,6 +107,7 @@ describe('SaleOrderLifecycleService', () => {
     updateOrderInTx: jest.Mock;
     throwIfDuplicate: jest.Mock;
     getById: jest.Mock;
+    writeRevision: jest.Mock;
     save: jest.Mock;
     softDelete: jest.Mock;
     cancelOrderOpenLines: jest.Mock;
@@ -143,6 +144,7 @@ describe('SaleOrderLifecycleService', () => {
       updateOrderInTx: jest.fn().mockResolvedValue(orderRow()),
       throwIfDuplicate: jest.fn(),
       getById: jest.fn().mockResolvedValue({ soId: ORDER_ID, soStatus: 'CONFIRMED' }),
+      writeRevision: jest.fn().mockResolvedValue({ revNo: 3, after: { soId: ORDER_ID } }),
       save: jest.fn().mockResolvedValue({ soId: ORDER_ID, soRevisionNo: 1 }),
       softDelete: jest.fn().mockResolvedValue({ soId: ORDER_ID, deleted: true }),
       cancelOrderOpenLines: jest.fn().mockResolvedValue({ cancelledLines: 1 }),
@@ -256,8 +258,14 @@ describe('SaleOrderLifecycleService', () => {
         remarks: null,
         srcDocId: ORDER_ID,
       });
+      // Screen 87, as every sales-order audit row (user, 2026-11-11).
       expect(audit.logEntityChange).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'approve', pk: ORDER_ID, userId: USER_ID }),
+        expect.objectContaining({
+          action: 'approve',
+          screenName: 'Sale Order',
+          pk: ORDER_ID,
+          userId: USER_ID,
+        }),
         prisma,
       );
     });
@@ -299,21 +307,25 @@ describe('SaleOrderLifecycleService', () => {
       );
     });
 
-    it('answers an already confirmed order as it is, writing nothing', async () => {
-      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+    it.each(['CONFIRMED', 'PARTIAL'])(
+      'answers an already %s order as it is, writing nothing',
+      async (soStatus) => {
+        // PARTIAL too (review 2026-11-11): a save-and-confirm over it has moved
+        // its reservations already, and a 409 here rolled that save back.
+        prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
 
-      await expect(service.post(KEYS)).resolves.toEqual({ soStatus: 'CONFIRMED', warnings: [] });
-      expect(salesContext.resolve).not.toHaveBeenCalled();
-      expect(reservations.reserve).not.toHaveBeenCalled();
-      expect(prisma.saleOrder.update).not.toHaveBeenCalled();
-    });
+        await expect(service.post(KEYS)).resolves.toEqual({ soStatus, warnings: [] });
+        expect(salesContext.resolve).not.toHaveBeenCalled();
+        expect(reservations.reserve).not.toHaveBeenCalled();
+        expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       ['CANCELLED', 'SALES_DOC_CANCELLED'],
       ['COMPLETED', 'SALES_DOC_NOT_DRAFT'],
       ['CLOSED', 'SALES_DOC_NOT_DRAFT'],
       ['EXPIRED', 'SALES_DOC_NOT_DRAFT'],
-      ['PARTIAL', 'SALES_DOC_NOT_DRAFT'],
     ])('refuses to confirm a %s order with %s', async (soStatus, code) => {
       prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus }));
 
@@ -410,6 +422,21 @@ describe('SaleOrderLifecycleService', () => {
       expect(orders.createOrderInTx).not.toHaveBeenCalled();
     });
 
+    it('moves the reservations of a CONFIRMED order it saves over, then leaves it confirmed', async () => {
+      // The Qt entry sends a loaded order's status back, so its edits of a
+      // confirmed order arrive here.
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+
+      const result = await service.saveAndPost(dto({ soId: ORDER_ID }));
+
+      expect(orders.updateOrderInTx.mock.calls[0][2]).toEqual({ revision: false });
+      expect(reservations.release).toHaveBeenCalledTimes(1);
+      expect(reservations.reserve).toHaveBeenCalledTimes(1);
+      expect(orders.writeRevision).toHaveBeenCalledTimes(1);
+      // postInTx answers a confirmed order as it is: no second reserve.
+      expect(result.warnings).toEqual([]);
+    });
+
     it('lets a refusal from the post roll the save back with it', async () => {
       ctx.rights.post = false;
 
@@ -430,6 +457,209 @@ describe('SaleOrderLifecycleService', () => {
 
       await expect(service.saveAndPost(dto())).rejects.toBe(clash);
       expect(orders.throwIfDuplicate).toHaveBeenCalledWith(clash);
+    });
+  });
+
+  describe('save (/create without the confirm instruction)', () => {
+    const dto = (overrides: Partial<SaveSaleOrderDto> = {}): SaveSaleOrderDto =>
+      ({
+        soCompanyId: COMPANY_ID,
+        soBranchId: BRANCH_ID,
+        soAccYear: ACC_YEAR,
+        ...overrides,
+      }) as SaveSaleOrderDto;
+
+    it('hands a new order to the order service’s plain save', async () => {
+      const body = dto();
+
+      await service.save(body);
+
+      expect(orders.save).toHaveBeenCalledWith(body);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('saves over a DRAFT exactly as before: the update with its own revision, no reservations', async () => {
+      await service.save(dto({ soId: ORDER_ID }));
+
+      expect(orders.prepareSave).toHaveBeenCalledTimes(1);
+      expect(orders.updateOrderInTx).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ soId: ORDER_ID }),
+      );
+      expect(orders.updateOrderInTx.mock.calls[0]).toHaveLength(2);
+      expect(reservations.release).not.toHaveBeenCalled();
+      expect(reservations.reserve).not.toHaveBeenCalled();
+      expect(orders.writeRevision).not.toHaveBeenCalled();
+    });
+
+    it('lets the update answer an order it cannot find', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+
+      await service.save(dto({ soId: ORDER_ID }));
+
+      expect(orders.updateOrderInTx.mock.calls[0]).toHaveLength(2);
+      expect(reservations.reserve).not.toHaveBeenCalled();
+    });
+
+    it('saves over a CONFIRMED order with the amend’s reservation steps, in one transaction', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      const held = lineRow({
+        soiOrderQty: new Prisma.Decimal('5'),
+        soiPendingQty: new Prisma.Decimal('3'),
+        soiReservedQty: new Prisma.Decimal('5'),
+      });
+      prisma.saleOrderItem.findMany.mockResolvedValue([held]);
+      reservations.reserve.mockResolvedValue({ reserved: new Map([[LINE_1, 3]]), warnings: [] });
+      orders.getById.mockResolvedValue({ soId: ORDER_ID, soStatus: 'CONFIRMED', items: [] });
+      orders.updateOrderInTx.mockResolvedValue({
+        soId: ORDER_ID,
+        items: [{ soiId: LINE_1, soiIsReserved: true, soiReservedQty: new Prisma.Decimal('3') }],
+      });
+
+      const result = await service.save(
+        dto({
+          soId: ORDER_ID,
+          items: [{ soiId: LINE_1, soiOrderQty: 3, soiReservedQty: 9 }],
+        } as never),
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      // 1 · capped before the save, and the save writes no revision of its own.
+      const [, saved, options] = orders.updateOrderInTx.mock.calls[0] as [
+        unknown,
+        { items: Array<{ soiReservedQty: string }> },
+        unknown,
+      ];
+      expect(saved.items[0].soiReservedQty).toBe('3.000');
+      expect(options).toEqual({ revision: false });
+      // 2 · every hold released, then the pending line re-reserved.
+      expect(reservations.release).toHaveBeenCalledWith(
+        prisma,
+        { docType: 'SALES_ORDER', docId: ORDER_ID },
+        'Re-reserved',
+        USER_ID,
+        expect.any(Date),
+      );
+      expect(reservations.release.mock.invocationCallOrder[0]).toBeLessThan(
+        reservations.reserve.mock.invocationCallOrder[0],
+      );
+      expect(prisma.saleOrderItem.update).toHaveBeenCalledWith({
+        where: { soiId_soiAccYear: { soiId: LINE_1, soiAccYear: ACC_YEAR } },
+        data: { soiIsReserved: true, soiReservedQty: new Prisma.Decimal('3.000') },
+      });
+      // 3 · the save's ONE revision, after the reservations, with the before read first.
+      expect(orders.writeRevision).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ soId: ORDER_ID }),
+        { soId: ORDER_ID, soStatus: 'CONFIRMED', items: [] },
+        USER_ID,
+        'Order updated',
+      );
+      expect(orders.writeRevision.mock.invocationCallOrder[0]).toBeGreaterThan(
+        reservations.reserve.mock.invocationCallOrder[0],
+      );
+      // Not an amend: no revision number, no AMENDED step.
+      expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+      expect(appendTxnStatusLog).not.toHaveBeenCalled();
+      // The answer carries what the line now holds.
+      expect(result.items?.[0]).toMatchObject({
+        soiIsReserved: true,
+        soiReservedQty: new Prisma.Decimal('3.000'),
+      });
+    });
+
+    it('turns a unique-index clash on the save into the save route answer', async () => {
+      const clash = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      orders.updateOrderInTx.mockRejectedValue(clash);
+
+      await expect(service.save(dto({ soId: ORDER_ID }))).rejects.toBe(clash);
+      expect(orders.throwIfDuplicate).toHaveBeenCalledWith(clash);
+    });
+  });
+
+  describe('review 2026-11-11: transaction options, shortfall warnings, Decimal', () => {
+    const TX = { timeout: 30_000, maxWait: 10_000 };
+    const SHORT = {
+      code: 'SALES_RESERVE_SHORT' as const,
+      line: 1,
+      short: 30,
+      message: 'Line 1: only 20 of 50 could be reserved (30 short)',
+    };
+    const body = (overrides: Partial<SaveSaleOrderDto> = {}) =>
+      ({
+        soCompanyId: COMPANY_ID,
+        soBranchId: BRANCH_ID,
+        soAccYear: ACC_YEAR,
+        ...overrides,
+      }) as SaveSaleOrderDto;
+    const amendBody = () =>
+      ({
+        ...KEYS,
+        baseRevision: 1,
+        editRemark: 'More',
+        soStatus: 'CONFIRMED',
+      }) as AmendSaleOrderDto;
+
+    it('gives every order-side transaction 30 s (timeout) and 10 s (maxWait)', async () => {
+      await service.post(KEYS);
+      await service.saveAndPost(body({ post: true }));
+      await service.save(body({ soId: ORDER_ID }));
+      await service.amend(amendBody());
+      await service.cancel({ ...KEYS, reason: 'x' });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(5);
+      for (const call of prisma.$transaction.mock.calls) {
+        expect(call[1]).toEqual(TX);
+      }
+    });
+
+    it('passes the re-reserve shortfalls out of a save over a CONFIRMED order', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      reservations.reserve.mockResolvedValue({
+        reserved: new Map([[LINE_1, 20]]),
+        warnings: [SHORT],
+      });
+
+      const result = await service.save(body({ soId: ORDER_ID }));
+
+      expect(result.warnings).toEqual([SHORT]);
+    });
+
+    it('passes them out of a save-and-confirm over a CONFIRMED order, and of an amend', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      reservations.reserve.mockResolvedValue({
+        reserved: new Map([[LINE_1, 20]]),
+        warnings: [SHORT],
+      });
+
+      const saved = await service.saveAndPost(body({ soId: ORDER_ID, post: true }));
+      const amended = await service.amend(amendBody());
+
+      expect(saved.warnings).toEqual([SHORT]);
+      expect(amended.warnings).toEqual([SHORT]);
+    });
+
+    it('a new or DRAFT save has no warnings', async () => {
+      expect((await service.save(body())).warnings).toEqual([]);
+      expect((await service.save(body({ soId: ORDER_ID }))).warnings).toEqual([]);
+    });
+
+    it('writes the reserved figure in Decimal, not float', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        lineRow({ soiPendingQty: new Prisma.Decimal('0.3') }),
+      ]);
+      reservations.reserve.mockResolvedValue({
+        reserved: new Map([[LINE_1, 0.1 + 0.2]]),
+        warnings: [],
+      });
+
+      await service.save(body({ soId: ORDER_ID }));
+
+      const data = prisma.saleOrderItem.update.mock.calls[0][0].data as {
+        soiReservedQty: Prisma.Decimal;
+      };
+      expect(data.soiReservedQty.toString()).toBe('0.3');
     });
   });
 
@@ -516,6 +746,41 @@ describe('SaleOrderLifecycleService', () => {
       expect(appendTxnStatusLog).not.toHaveBeenCalled();
     });
 
+    it('releases a delivery hold when it closes the header itself', async () => {
+      prisma.saleOrder.findFirst
+        .mockResolvedValueOnce(orderRow({ soStatus: 'CONFIRMED' }))
+        .mockResolvedValueOnce({ soStatus: 'CONFIRMED', soDeliveryHold: true });
+
+      await service.cancel(CANCEL);
+
+      expect(prisma.saleOrder.findFirst).toHaveBeenLastCalledWith({
+        where: { soId: ORDER_ID, soAccYear: ACC_YEAR },
+        select: { soStatus: true, soDeliveryHold: true },
+      });
+      expect(prisma.saleOrder.update).toHaveBeenCalledWith({
+        where: { soId_soAccYear: { soId: ORDER_ID, soAccYear: ACC_YEAR } },
+        data: {
+          soStatus: 'CANCELLED',
+          soModifiedOn: expect.any(Date),
+          soModifiedBy: USER_ID,
+          soDeliveryHold: false,
+          soDeliveryHoldReason: 'Delivery hold released because the order was cancelled',
+          soDeliveryHoldBy: USER_ID,
+          soDeliveryHoldOn: expect.any(Date),
+        },
+      });
+      expect(trailStep(0)).toMatchObject({
+        event: TxnStatusEvent.CANCELLED,
+        toStatus: 'CANCELLED',
+      });
+      expect(trailStep(1)).toMatchObject({
+        event: TxnStatusEvent.DELIVERY_RELEASED,
+        fromStatus: 'CANCELLED',
+        toStatus: 'CANCELLED',
+        remarks: 'Delivery hold released because the order was cancelled',
+      });
+    });
+
     it('closes the header itself when the line cancel left it open', async () => {
       prisma.saleOrder.findFirst
         .mockResolvedValueOnce(orderRow({ soStatus: 'CONFIRMED' }))
@@ -573,7 +838,7 @@ describe('SaleOrderLifecycleService', () => {
           body: { errors: [{ field: 'soId', code: 'SALES_DOC_NOT_DRAFT', status: soStatus }] },
         });
         expect(salesContext.resolve).not.toHaveBeenCalled();
-        expect(orders.save).not.toHaveBeenCalled();
+        expect(orders.updateOrderInTx).not.toHaveBeenCalled();
       },
     );
 
@@ -597,7 +862,7 @@ describe('SaleOrderLifecycleService', () => {
         status: 409,
         body: { errors: [{ field: 'baseRevision', code: 'SALES_REVISION_STALE' }] },
       });
-      expect(orders.save).not.toHaveBeenCalled();
+      expect(orders.updateOrderInTx).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -614,7 +879,7 @@ describe('SaleOrderLifecycleService', () => {
         status: 409,
         body: { errors: [{ field: 'items.1', code: 'SALES_ORDER_LINE_DELIVERED' }] },
       });
-      expect(orders.save).not.toHaveBeenCalled();
+      expect(orders.updateOrderInTx).not.toHaveBeenCalled();
     });
 
     it('lets a delivered line be cut down to exactly what was delivered', async () => {
@@ -622,7 +887,7 @@ describe('SaleOrderLifecycleService', () => {
 
       await service.amend(amend({ items: [{ soiId: LINE_1, soiOrderQty: 3 }] } as never));
 
-      expect(orders.save).toHaveBeenCalledTimes(1);
+      expect(orders.updateOrderInTx).toHaveBeenCalledTimes(1);
     });
 
     it('lets an undelivered line be dropped or re-itemed beside a delivered one', async () => {
@@ -641,7 +906,7 @@ describe('SaleOrderLifecycleService', () => {
         } as never),
       );
 
-      expect(orders.save).toHaveBeenCalledTimes(2);
+      expect(orders.updateOrderInTx).toHaveBeenCalledTimes(2);
     });
 
     it('does not judge the lines when the amend leaves them out', async () => {
@@ -649,15 +914,20 @@ describe('SaleOrderLifecycleService', () => {
 
       await service.amend(amend());
 
-      expect(orders.save).toHaveBeenCalledTimes(1);
+      expect(orders.updateOrderInTx).toHaveBeenCalledTimes(1);
     });
 
     it('saves through the one order save, bumps the revision and logs the remark', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'DRAFT' }));
+      orders.updateOrderInTx.mockResolvedValue({ soId: ORDER_ID, soRevisionNo: 1 });
 
       const result = await service.amend(amend({ soRemarks: 'Deliver after 5' }));
 
-      const saved = orders.save.mock.calls[0][0] as Record<string, unknown>;
+      // In the amend's own transaction, and without the save's own revision.
+      expect(orders.prepareSave).toHaveBeenCalledTimes(1);
+      expect(orders.updateOrderInTx.mock.calls[0][0]).toBe(prisma);
+      expect(orders.updateOrderInTx.mock.calls[0][2]).toEqual({ revision: false });
+      const saved = orders.updateOrderInTx.mock.calls[0][1] as Record<string, unknown>;
       expect(saved).toMatchObject({ soId: ORDER_ID, soRemarks: 'Deliver after 5' });
       expect(saved).not.toHaveProperty('baseRevision');
       expect(saved).not.toHaveProperty('editRemark');
@@ -672,9 +942,75 @@ describe('SaleOrderLifecycleService', () => {
         event: TxnStatusEvent.AMENDED,
         fromStatus: 'DRAFT',
         toStatus: 'DRAFT',
-        remarks: 'Customer added a carton',
+        remarks: 'Rev 3: Customer added a carton',
       });
-      expect(result).toEqual({ soId: ORDER_ID, soRevisionNo: 2 });
+      expect(orders.save).not.toHaveBeenCalled();
+      expect(result).toEqual({ soId: ORDER_ID, soRevisionNo: 2, warnings: [] });
+    });
+
+    // P6 (addendum-1 §6.2) — ONE History revision per amend: the /get payload
+    // read under the lock before the edit, and the order after every write.
+    it('writes one revision after its own writes, in one transaction', async () => {
+      const before = { soId: ORDER_ID, soRemarks: 'old' };
+      orders.getById.mockResolvedValue(before);
+
+      await service.amend(amend());
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(orders.getById).toHaveBeenCalledWith(
+        ORDER_ID,
+        COMPANY_ID,
+        BRANCH_ID,
+        ACC_YEAR,
+        prisma,
+      );
+      expect(orders.writeRevision).toHaveBeenCalledTimes(1);
+      expect(orders.writeRevision).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ soId: ORDER_ID, soAccYear: ACC_YEAR }),
+        before,
+        USER_ID,
+        'Order amended: Customer added a carton',
+      );
+      // before → the save → the revision number → the revision → the step.
+      const order = (mock: jest.Mock) => mock.mock.invocationCallOrder[0];
+      expect(order(orders.getById)).toBeLessThan(order(orders.updateOrderInTx));
+      expect(order(orders.updateOrderInTx)).toBeLessThan(order(prisma.saleOrder.update));
+      expect(order(prisma.saleOrder.update)).toBeLessThan(order(orders.writeRevision));
+      expect(order(orders.writeRevision)).toBeLessThan(
+        jest.mocked(appendTxnStatusLog).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('writes no revision when a gate refuses', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soRevisionNo: 3 }));
+
+      await refusalOf(service.amend(amend({ baseRevision: 2 })));
+
+      expect(orders.getById).not.toHaveBeenCalled();
+      expect(orders.writeRevision).not.toHaveBeenCalled();
+      expect(appendTxnStatusLog).not.toHaveBeenCalled();
+    });
+
+    it('turns a unique-index clash on the save into the save route answer', async () => {
+      const clash = new Error('P2002');
+      orders.updateOrderInTx.mockRejectedValueOnce(clash);
+
+      await expect(service.amend(amend())).rejects.toBe(clash);
+
+      expect(orders.throwIfDuplicate).toHaveBeenCalledWith(clash);
+      expect(orders.writeRevision).not.toHaveBeenCalled();
+    });
+
+    it('does not relabel a clash after the save (a reservation) as the save route answer', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      const clash = new Error('P2010 23505 ux_srv_source');
+      reservations.reserve.mockRejectedValueOnce(clash);
+
+      await expect(service.amend(amend())).rejects.toBe(clash);
+
+      expect(orders.throwIfDuplicate).not.toHaveBeenCalled();
+      expect(orders.writeRevision).not.toHaveBeenCalled();
     });
 
     it('re-reserves only what is still pending on a confirmed order', async () => {
@@ -700,6 +1036,68 @@ describe('SaleOrderLifecycleService', () => {
         where: { soiId_soiAccYear: { soiId: LINE_2, soiAccYear: ACC_YEAR } },
         data: { soiIsReserved: false, soiReservedQty: new Prisma.Decimal('0.000') },
       });
+    });
+
+    // 2026-11-11: amending a reserved line DOWN answered 400
+    // SALE_ORDER_RESERVED_OUT_OF_RANGE — the save merged the stored
+    // soi_reserved_qty with the lower order quantity.
+    it('caps each line’s reserved figure at its new quantity before the save', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+      const held = lineRow({
+        soiOrderQty: new Prisma.Decimal('5'),
+        soiPendingQty: new Prisma.Decimal('5'),
+        soiReservedQty: new Prisma.Decimal('5'),
+      });
+      const up = lineRow({
+        soiId: LINE_2,
+        soiLineNo: 2,
+        soiOrderQty: new Prisma.Decimal('4'),
+        soiReservedQty: new Prisma.Decimal('4'),
+      });
+      prisma.saleOrderItem.findMany.mockResolvedValue([held, up]);
+
+      await service.amend(
+        amend({
+          items: [
+            { soiId: LINE_1, soiOrderQty: 3, soiReservedQty: 5 },
+            { soiId: LINE_2, soiOrderQty: '8' },
+            { soiLineNo: 3, soiItemId: ITEM_B, soiOrderQty: 2, soiReservedQty: 2 },
+          ],
+        } as never),
+      );
+
+      const saved = orders.updateOrderInTx.mock.calls[0][1] as {
+        items: Array<{ soiReservedQty: string }>;
+      };
+      // Down: capped at the new 3, whatever the client sent. Up: the stored
+      // 4 stands until the re-reserve. A new line holds nothing yet.
+      expect(saved.items.map((i) => i.soiReservedQty)).toEqual(['3.000', '4.000', '0.000']);
+    });
+
+    it('releases every live hold of the order before it re-reserves the pending lines', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'CONFIRMED' }));
+
+      await service.amend(amend());
+
+      expect(reservations.release).toHaveBeenCalledWith(
+        prisma,
+        { docType: 'SALES_ORDER', docId: ORDER_ID },
+        'Re-reserved',
+        USER_ID,
+        expect.any(Date),
+      );
+      expect(reservations.release.mock.invocationCallOrder[0]).toBeLessThan(
+        reservations.reserve.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('leaves a draft’s reservations alone (it holds none)', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus: 'DRAFT' }));
+
+      await service.amend(amend());
+
+      expect(reservations.release).not.toHaveBeenCalled();
+      expect(reservations.reserve).not.toHaveBeenCalled();
     });
   });
 

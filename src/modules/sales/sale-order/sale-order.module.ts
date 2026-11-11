@@ -14,6 +14,8 @@ import { SalesPostingModule } from '../posting/posting.module';
   imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule, SalesPostingModule],
   controllers: [SaleOrderController],
   providers: [SaleOrderService, SaleOrderLifecycleService, SaleOrderExceptionFilter],
-  exports: [SaleOrderService],
+  // The lifecycle is exported for the order desk (sale-order-desk), whose
+  // merge confirms its new order through postInTx.
+  exports: [SaleOrderService, SaleOrderLifecycleService],
 })
 export class SaleOrderModule {}

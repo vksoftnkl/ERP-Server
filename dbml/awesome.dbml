@@ -9749,6 +9749,13 @@ Table sale_order {
   soRevisionNo Int [not null, default: 1, note: 'Amend counter: an in-place amendment re-posts against the same number
 and bumps this.']
   soUsrRefdate DateTime
+  soDeliveryHold Boolean [not null, default: false, note: 'Not to be billed or delivered: the bill and the challan refuse a held order
+(SALES_ORDER_DELIVERY_HOLD). Never "hold", which is txn_hold\'s parked draft.
+Set and cleared only by POST /sale-order-desk/delivery-hold (menu 11 Edit).
+ck_so_delivery_hold (DB-only): a held order names a non-blank reason and a time.']
+  soDeliveryHoldReason String [note: 'Reason of the last hold or release.']
+  soDeliveryHoldBy String [note: 'Who last held or released, as text like soModifiedBy.']
+  soDeliveryHoldOn DateTime
 
   indexes {
     (soId, soAccYear) [pk]

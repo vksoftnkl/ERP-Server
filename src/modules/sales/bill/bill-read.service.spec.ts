@@ -363,6 +363,19 @@ describe('BillReadService', () => {
       expect(loyalty.preview).not.toHaveBeenCalled();
     });
 
+    it('counts part-paid bills in the outstanding and leaves held orders out of the count', async () => {
+      prisma.$queryRaw = routedRaw(routes());
+
+      await service.partyContext(query());
+
+      const sqls = prisma.$queryRaw.mock.calls.map((c) => (c[0] as string[]).join('?'));
+      const outstanding = sqls.find((q) => q.includes('SUM(abl_pending_amount) AS pending'))!;
+      // Q7 / D22: money left on a live DR bill, not an untouched (OPEN) bill only.
+      expect(outstanding).toContain('abl_pending_amount > 0');
+      expect(outstanding).not.toContain('abl_status');
+      expect(sqls.find((q) => q.includes('AS orders'))).toContain('h.so_delivery_hold = false');
+    });
+
     it('raises no credit flag when the customer has no limits', async () => {
       prisma.$queryRaw = routedRaw(
         routes({
@@ -558,6 +571,15 @@ describe('BillReadService', () => {
       ]);
       expect(docs[0]).not.toHaveProperty('convertRequired');
       expect(docs[0].lines[0].allowNegativeStock).toBe(false);
+    });
+
+    it('leaves an order on delivery hold out of the open orders (D18)', async () => {
+      prisma.$queryRaw = routedRaw([['FROM sales.sale_order h', []]]);
+
+      await service.openSources({ ...q, kind: 'ORDER' });
+
+      const sql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+      expect(sql).toContain('h.so_delivery_hold = false');
     });
   });
 

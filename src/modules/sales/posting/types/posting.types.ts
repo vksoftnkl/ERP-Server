@@ -56,6 +56,31 @@ export const SALES_ERROR_CODES = {
   ORDER_NOT_OPEN: 'SALES_ORDER_NOT_OPEN',
   RESERVE_SHORT: 'SALES_RESERVE_SHORT',
 
+  // Sales Order Management, the order desk (menu 299; plan 2026-11-10 +
+  // addendum-1 §4.5). Wording rows in fixed.error_message since migration
+  // 20261110180000_sale_order_desk.
+  /** The order is on delivery hold: no bill, no challan, no merge until it is released. */
+  ORDER_DELIVERY_HOLD: 'SALES_ORDER_DELIVERY_HOLD',
+  /** The order is already in the delivery-hold state asked for (someone got there first). */
+  ORDER_HOLD_UNCHANGED: 'SALES_ORDER_HOLD_UNCHANGED',
+  /** The order already has the priority asked for. */
+  ORDER_PRIORITY_UNCHANGED: 'SALES_ORDER_PRIORITY_UNCHANGED',
+  /** Not CONFIRMED / PARTIAL, or no line left open: nothing for the desk to act on. */
+  ORDER_CLOSED: 'SALES_ORDER_CLOSED',
+  /** A desk action that must say why was sent no reason. */
+  ORDER_REASON_REQUIRED: 'SALES_ORDER_REASON_REQUIRED',
+  ORDER_MERGE_TOO_FEW: 'SALES_ORDER_MERGE_TOO_FEW',
+  ORDER_MERGE_ONE_PARTY: 'SALES_ORDER_MERGE_ONE_PARTY',
+  /** so_order_type, so_doc_type or so_pos_stcd differ between the orders. */
+  ORDER_MERGE_TERMS_DIFFER: 'SALES_ORDER_MERGE_TERMS_DIFFER',
+  ORDER_MERGE_ADVANCE: 'SALES_ORDER_MERGE_ADVANCE',
+  /** A source carries order-level charges (txn_charge_detail ORDER rows, so_other_amt1/2). */
+  ORDER_MERGE_CHARGES: 'SALES_ORDER_MERGE_CHARGES',
+  /** The sources changed between merge-preview and merge (the fingerprint differs). */
+  ORDER_MERGE_SOURCE_CHANGED: 'SALES_ORDER_MERGE_SOURCE_CHANGED',
+  /** Amounts on the desk need menu 99 (Receipt) View. */
+  ORDER_MONEY_RIGHT: 'SALES_ORDER_MONEY_RIGHT',
+
   // Challans and DC returns
   DC_PURPOSE_NOT_ALLOWED: 'SALES_DC_PURPOSE_NOT_ALLOWED',
   DC_REQUIRES_ORDER: 'SALES_DC_REQUIRES_ORDER',

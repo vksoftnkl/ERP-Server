@@ -97,7 +97,12 @@ export class ConfiguredGridSqlService {
   }
   validateBaseSql(options: ValidateConfiguredGridSqlOptions): ConfiguredGridSqlValidationResult {
     const normalizedSql = this.prepareBaseSql(options.sql);
-    if (!/^select\b/i.test(normalizedSql)) {
+    // A SELECT, or a WITH … SELECT (a CTE query, e.g. the order desk's grids
+    // 201 / 202). Safe: the base SQL only ever runs wrapped as
+    // `SELECT * FROM (<base>) AS x` through queryReadOnly, where PostgreSQL
+    // refuses a data-modifying WITH anyway, and the `;`, comment and write-token
+    // checks below still apply to the whole text.
+    if (this.mainSelectOf(normalizedSql) === null) {
       return {
         isValid: false,
         message: 'Only SELECT query is allowed',
@@ -116,6 +121,15 @@ export class ConfiguredGridSqlService {
       };
     }
     if (GRID_SQL_FORBIDDEN_TOKENS.test(normalizedSql)) {
+      return {
+        isValid: false,
+        message: 'Write/DDL statements are not allowed',
+      };
+    }
+    // MERGE is the one data-modifying statement a CTE may hold that the token
+    // list does not name; refused in a WITH query only, so no existing SELECT
+    // grid changes meaning.
+    if (/^with\b/i.test(normalizedSql) && /\bmerge\b/i.test(normalizedSql)) {
       return {
         isValid: false,
         message: 'Write/DDL statements are not allowed',
@@ -658,6 +672,62 @@ export class ConfiguredGridSqlService {
   extractTopLevelFromTableName(sql: string): string | null {
     return this.extractTopLevelFromRelation(sql)?.tableName ?? null;
   }
+  /**
+   * The main SELECT of a configured query: the query itself when it starts
+   * with SELECT; for a `WITH … SELECT` query, the text from its first
+   * top-level SELECT on (every CTE body sits in parentheses, so that is the
+   * statement after the CTE list). Null when there is none. Quotes are
+   * skipped, so a `select` inside a string or a quoted name does not count.
+   */
+  private mainSelectOf(sql: string): string | null {
+    const trimmed = sql.trim();
+    if (/^select\b/i.test(trimmed)) {
+      return trimmed;
+    }
+    const withMatch = trimmed.match(/^with\b/i);
+    if (!withMatch) {
+      return null;
+    }
+    let depth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+    for (let index = withMatch[0].length; index < trimmed.length; index += 1) {
+      const current = trimmed[index];
+      const next = trimmed[index + 1];
+      if (insideSingleQuote) {
+        if (current === "'" && next === "'") {
+          index += 1;
+        } else if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+      if (insideDoubleQuote) {
+        if (current === '"' && next === '"') {
+          index += 1;
+        } else if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+      if (current === "'") {
+        insideSingleQuote = true;
+      } else if (current === '"') {
+        insideDoubleQuote = true;
+      } else if (current === '(') {
+        depth += 1;
+      } else if (current === ')') {
+        depth = Math.max(0, depth - 1);
+      } else if (
+        depth === 0 &&
+        !/[a-z0-9_$]/i.test(trimmed[index - 1] ?? '') &&
+        /^select\b/i.test(trimmed.slice(index))
+      ) {
+        return trimmed.slice(index);
+      }
+    }
+    return null;
+  }
   private tokenizeSearchColumnName(value: string): string[] {
     const normalizedSpacing = value
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -737,7 +807,11 @@ export class ConfiguredGridSqlService {
     return fieldNames;
   }
   private extractTopLevelSelectClause(sql: string): string | null {
-    const trimmed = sql.trim();
+    // A WITH query's columns are its main SELECT's.
+    const trimmed = this.mainSelectOf(sql);
+    if (trimmed === null) {
+      return null;
+    }
     const selectMatch = trimmed.match(/^select\b/i);
     if (!selectMatch) {
       return null;
@@ -879,7 +953,11 @@ export class ConfiguredGridSqlService {
     return null;
   }
   private extractTopLevelFromRelation(sql: string): SqlRelationReference | null {
-    const trimmed = sql.trim();
+    // A WITH query's top-level FROM is its main SELECT's (often a CTE name).
+    const trimmed = this.mainSelectOf(sql);
+    if (trimmed === null) {
+      return null;
+    }
     const selectMatch = trimmed.match(/^select\b/i);
     if (!selectMatch) {
       return null;

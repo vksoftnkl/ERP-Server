@@ -698,13 +698,26 @@ partition — an order taken in one accounting year is routinely billed in the n
 
 ### Audit logging
 
-Every mutation is audited via `AuditLogService.logEntityChange` inside the same transaction —
-header actions `New` / `update` / `cancel` against `tableName = 'sale_order'`,
-`screenName = 'Sale Order'`, `screenType = 'transaction'`; each line-item, charge and tender
-write is logged separately against its own table name. The acting user is
-resolved from the payload's `soCreatedBy` / `soModifiedBy`, then the request context user, falling
-back to `DEFAULT_ACTOR`. All `*CreatedBy` / `*ModifiedBy` columns on the three order tables are
-`VarChar(50)` free text (not uuid).
+Every sales-order audit row files under screen **87 'Sale Order'** (`SALE_ORDER_AUDIT_SCREEN_NAME`;
+user, 2026-11-11 — the confirm row and the order desk's rows moved off 103 'Sales Order'; older
+rows stay where they are), inside the writing transaction.
+
+- **Saves write ONE revision** (P6, notes 89) — `createOrderInTx`, `updateOrderInTx` and `/amend`
+  go through `SaleOrderService.writeRevision` → `AuditLogService.logDocumentRevision`:
+  `tableName 'sale_order'`, `log_pk` = so_id, `log_rev_no` 1, 2, 3 … per order,
+  `log_original_record` = the `/get` payload before (SQL NULL on a create), `log_modified_record`
+  = after, both without the display-only `createdByName` / `modifiedByName` (plan SO-5),
+  `log_changed_fields` = the header's `{field:{from,to}}`. No per-line `sale_order_item` rows and
+  no separate header row are written for a save any more. `/amend` saves with
+  `{ revision: false }` and writes its one revision after the revision number and the
+  reservations; its AMENDED step reads `Rev n: <edit remark>`. A desk merge's new order gets Rev 1
+  through `createOrderInTx`. The charge / tender modules still log their own rows.
+- **Status verbs and fulfilment write plain rows** (`logEntityChange`): confirm (`approve`),
+  cancel, delete, cancel-lines, the desk's hold / priority, and the fulfilment roll-ups.
+
+History reads them through `GET /audit-log/list?screen_id=87&record_pk=<so_id>`. The acting user
+is the signed-in user's id (plan SO-5). All `*CreatedBy` / `*ModifiedBy` columns on the three order
+tables are `VarChar(50)` free text (not uuid).
 
 ### Response shape
 

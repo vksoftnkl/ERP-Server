@@ -27,7 +27,12 @@ import {
   assertVoucherPartitionExists,
   loadDayClosed,
   loadDeclaredLocks,
+  heldAmong,
+  heldOrdersDrawnMore,
+  lockSourceOrders,
+  type OrderDraw,
   refuse,
+  refuseHeldOrders,
   warn,
 } from '../posting/sales.guards';
 import { throwSalesLocked, throwSalesRefusals, throwSalesRight } from '../posting/sales.errors';
@@ -378,6 +383,8 @@ export class DeliveryChallanService {
     items: DocRow[],
     ctx: SalesCallContext,
     g: SalesGuardContext,
+    /** Amend: the lines as they were posted (the delivery hold allows less, not more). */
+    priorItems?: DocRow[],
   ): Promise<void> {
     const companyId = row.sdcCompanyId as string;
     const accYear = row.sdcAccYear as string;
@@ -455,6 +462,37 @@ export class DeliveryChallanService {
         { field: 'sdcSrcDocId' },
       );
     }
+    // An order on delivery hold is not delivered either (Sales Order
+    // Management, Q3 / D18), with no override: named by the header, by a line's
+    // order id or by a line's order-line id. Read under the order's row lock
+    // (lockSourceOrders), taken here before any stock write. An AMEND of a
+    // challan posted before the hold is refused only when it delivers MORE
+    // from the held order than the challan did (user, 2026-11-11).
+    const heldOrderIds = [
+      ...new Set(
+        [
+          row.sdcSrcDocType === 'SALES_ORDER' ? (row.sdcSrcDocId as string | null) : null,
+          ...items.map((i) =>
+            i.sdiSrcDocType === 'SALES_ORDER' ? (i.sdiSrcDocId as string | null) : null,
+          ),
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+    const held = heldAmong(
+      await lockSourceOrders(
+        tx,
+        heldOrderIds,
+        items
+          .filter((i) => i.sdiSrcDocType === 'SALES_ORDER' && i.sdiSrcItemId)
+          .map((i) => i.sdiSrcItemId as string),
+      ),
+    );
+    refuseHeldOrders(
+      g,
+      priorItems
+        ? await heldOrdersDrawnMore(tx, held, dcItemDraws(items), dcItemDraws(priorItems))
+        : held,
+    );
     // Lines against an order may not exceed what is pending.
     const orderLines = items.filter((i) => i.sdiSrcDocType === 'SALES_ORDER' && i.sdiSrcItemId);
     if (orderLines.length > 0) {
@@ -868,6 +906,13 @@ export class DeliveryChallanService {
       const items = await this.store.loadItems(tx, row);
       await this.assertUnwindable(tx, row, items, dto.editRemark);
       const before = this.store.plain(row);
+      // The source orders, old and new, locked BEFORE the unwind's stock
+      // writes (lock order: sale_order, then stock — lockSourceOrders).
+      await lockDcOrders(
+        tx,
+        [row, dto as unknown as DocRow],
+        [...items, ...((dto.items ?? []) as unknown as DocRow[])],
+      );
       await this.unwind(tx, row, ctx.actor, `Amended: ${dto.editRemark}`, now);
       const draft = await this.store.setStatus(
         tx,
@@ -903,7 +948,7 @@ export class DeliveryChallanService {
         canOverride: ctx.rights.override,
         throwOnRefusal: false,
       });
-      await this.guards(tx, saved, newItems, ctx, g);
+      await this.guards(tx, saved, newItems, ctx, g, items);
       if (g.refusals.length > 0) {
         throwSalesRefusals('Challan cannot be amended', g.refusals);
       }
@@ -1160,4 +1205,50 @@ export class DeliveryChallanService {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v: string | null | undefined): v is string {
   return !!v && UUID.test(v);
+}
+
+/** The order draws of challan lines, in base units. */
+function dcItemDraws(items: DocRow[]): OrderDraw[] {
+  return items
+    .filter((i) => i.sdiSrcDocType === 'SALES_ORDER')
+    .map((i) => {
+      const factor = new Prisma.Decimal((i.sdiToBaseFactor as Prisma.Decimal.Value | null) ?? 0);
+      return {
+        soId: (i.sdiSrcDocId as string | null) ?? null,
+        soiId: (i.sdiSrcItemId as string | null) ?? null,
+        baseQty: new Prisma.Decimal((i.sdiDcQty as Prisma.Decimal.Value | null) ?? 0).times(
+          factor.isZero() ? 1 : factor,
+        ),
+      };
+    });
+}
+
+/**
+ * Locks the sales orders a challan names — on its header(s) and on its lines,
+ * by order id and by order-line id — before any stock write (lockSourceOrders).
+ */
+async function lockDcOrders(
+  tx: Prisma.TransactionClient,
+  headers: DocRow[],
+  lines: DocRow[],
+): Promise<void> {
+  const ids = new Set<string>();
+  const lineIds = new Set<string>();
+  for (const h of headers) {
+    if (h.sdcSrcDocType === 'SALES_ORDER' && h.sdcSrcDocId) {
+      ids.add(h.sdcSrcDocId as string);
+    }
+  }
+  for (const l of lines) {
+    if (l.sdiSrcDocType !== 'SALES_ORDER') {
+      continue;
+    }
+    if (l.sdiSrcDocId) {
+      ids.add(l.sdiSrcDocId as string);
+    }
+    if (l.sdiSrcItemId) {
+      lineIds.add(l.sdiSrcItemId as string);
+    }
+  }
+  await lockSourceOrders(tx, [...ids], [...lineIds]);
 }

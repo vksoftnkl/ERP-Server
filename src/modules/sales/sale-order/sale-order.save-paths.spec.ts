@@ -197,7 +197,7 @@ type PrismaMock = {
 
 describe('SaleOrderService — save, delete and read paths the older suite skips', () => {
   let prisma: PrismaMock;
-  let audit: { logEntityChange: jest.Mock };
+  let audit: { logEntityChange: jest.Mock; logDocumentRevision: jest.Mock };
   let charges: {
     syncDocumentCharges: jest.Mock;
     getByDocument: jest.Mock;
@@ -259,7 +259,10 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       $queryRaw: jest.fn().mockResolvedValue([{ so_id: ORDER_ID }]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
-    audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    audit = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+      logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 2 }),
+    };
     charges = {
       syncDocumentCharges: jest.fn().mockResolvedValue([]),
       getByDocument: jest.fn().mockResolvedValue([]),
@@ -644,6 +647,7 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
           expect(tenders.syncDocumentTenders).not.toHaveBeenCalled();
           expect(jest.mocked(syncOrderAdvancePosting)).not.toHaveBeenCalled();
           expect(audit.logEntityChange).not.toHaveBeenCalled();
+          expect(audit.logDocumentRevision).not.toHaveBeenCalled();
         },
       );
 
@@ -671,7 +675,7 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       );
 
       it.each(['CONFIRMED', 'PARTIAL'])(
-        'saves over a stored %s order with it, writing no revision',
+        'saves over a stored %s order with it, leaving soRevisionNo alone',
         async (soStatus) => {
           prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soStatus, soRevisionNo: 1 }));
 
@@ -956,6 +960,101 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
     });
   });
 
+  // P6 (addendum-1 §6.2) / notes 89 — one History revision per save: the /get
+  // payload before (null on a create) and after, read through the save's own
+  // transaction, filed on screen 87 'Sale Order'. No per-line rows any more.
+  describe('revisions (P6)', () => {
+    const revision = () =>
+      audit.logDocumentRevision.mock.calls[0][0] as {
+        screenName: string;
+        tableName: string;
+        docId: string;
+        displayName: string;
+        before: Record<string, unknown> | null;
+        after: Record<string, unknown>;
+        userId: string;
+        branchId: string;
+        deviceId: string | null;
+        notes: string;
+      };
+
+    it('writes Rev 1 of a new order, before null, in the save transaction', async () => {
+      await service.save(createDto({ items: [newLine()] }));
+
+      expect(audit.logDocumentRevision).toHaveBeenCalledTimes(1);
+      expect(audit.logDocumentRevision.mock.calls[0][1]).toBe(prisma);
+      expect(revision()).toMatchObject({
+        screenName: 'Sale Order',
+        tableName: 'sale_order',
+        docId: ORDER_ID,
+        displayName: 'sor00101',
+        before: null,
+        userId: USER_ID,
+        branchId: BRANCH_ID,
+        deviceId: DEVICE_ID,
+        notes: 'Order created',
+      });
+      // The after is the /get payload: the header with its lines, without the
+      // two display-only labels (plan SO-5).
+      expect(revision().after).toMatchObject({ soId: ORDER_ID, soOrderRefno: 'sor00101' });
+      expect(revision().after).toHaveProperty('items');
+      expect(revision().after).not.toHaveProperty('createdByName');
+      expect(revision().after).not.toHaveProperty('modifiedByName');
+      // The old per-entity rows of a save are gone: header and lines.
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('reads the before under the lock and ahead of every write, then writes the next revision', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([lineRow()]);
+
+      await service.save(
+        updateDto({
+          soRemarks: 'Call first',
+          items: [newLine({ soiId: LINE_1, soiLineNo: 1 }), newLine({ soiLineNo: 2 })],
+        }),
+      );
+
+      expect(audit.logDocumentRevision).toHaveBeenCalledTimes(1);
+      expect(revision()).toMatchObject({
+        tableName: 'sale_order',
+        docId: ORDER_ID,
+        notes: 'Order updated',
+        userId: USER_ID,
+      });
+      expect(revision().before).toMatchObject({ soId: ORDER_ID });
+      expect(revision().after).toMatchObject({ soId: ORDER_ID });
+      // lock → existing → before (a /get read) → the first write.
+      const findFirstOrder = prisma.saleOrder.findFirst.mock.invocationCallOrder;
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(findFirstOrder[0]);
+      expect(findFirstOrder[1]).toBeLessThan(prisma.saleOrder.update.mock.invocationCallOrder[0]);
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('writes none when the caller writes its own (/amend)', async () => {
+      await service.updateOrderInTx(
+        prisma as unknown as Prisma.TransactionClient,
+        updateDto({ soRemarks: 'Call first' }),
+        { revision: false },
+      );
+
+      expect(audit.logDocumentRevision).not.toHaveBeenCalled();
+      expect(prisma.saleOrder.update).toHaveBeenCalled();
+    });
+
+    it('answers the revision number writeRevision filed', async () => {
+      const result = await service.writeRevision(
+        prisma as unknown as Prisma.TransactionClient,
+        orderRow(),
+        null,
+        USER_ID,
+        'Order amended: x',
+      );
+
+      expect(result.revNo).toBe(2);
+      expect(result.after).toMatchObject({ soId: ORDER_ID });
+    });
+  });
+
   describe('softDelete', () => {
     const remove = () => service.softDelete(ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
@@ -1060,7 +1159,7 @@ describe('SaleOrderService — save, delete and read paths the older suite skips
       const result = await get();
 
       expect(jest.mocked(readPdcChequeDetails)).toHaveBeenCalledWith(prisma, ['td-chq']);
-      expect(tenders.getByDocument).toHaveBeenCalledWith('SALES', 'SALES_ORDER', ORDER_ID);
+      expect(tenders.getByDocument).toHaveBeenCalledWith('SALES', 'SALES_ORDER', ORDER_ID, prisma);
       expect(result.tenders?.map((t) => (t as { cheque: unknown }).cheque)).toEqual([detail, null]);
     });
 

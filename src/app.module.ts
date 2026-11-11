@@ -81,6 +81,7 @@ import { QuotationModule } from './modules/sales/quotation/quotation.module';
 import { BillModule } from './modules/sales/bill/bill.module';
 import { SalesPostingModule } from './modules/sales/posting/posting.module';
 import { SaleOrderModule } from './modules/sales/sale-order/sale-order.module';
+import { SaleOrderDeskModule } from './modules/sales/sale-order-desk/sale-order-desk.module';
 import { DeliveryChallanModule } from './modules/sales/delivery-challan/delivery-challan.module';
 import { DcReturnModule } from './modules/sales/dc-return/dc-return.module';
 import { SaleReturnModule } from './modules/sales/sale-return/sale-return.module';
@@ -259,6 +260,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     SalesPostingModule,
     BillModule,
     SaleOrderModule,
+    // Sales Order Management — the order desk (menu 299), /sale-order-desk/*.
+    SaleOrderDeskModule,
     // A3 — the four documents of HANDOVER 2026-09-20 §4–§7.
     DeliveryChallanModule,
     DcReturnModule,

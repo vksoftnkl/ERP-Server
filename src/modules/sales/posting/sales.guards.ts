@@ -306,6 +306,11 @@ export async function assertCreditLimit(
     return;
   }
 
+  // What the customer still owes: every live DR bill with money left on it,
+  // part-paid ones included (plan SO Management 2026-11-10, Q7 / D22). It used
+  // to be abl_status = 'OPEN', which is only an UNTOUCHED bill, so a bill paid
+  // in part dropped out of the outstanding. The predicate is
+  // ix_abl_party_credit's own, and the order desk's dues read the same rows.
   const [open] = await client.$queryRaw<
     { pending: Prisma.Decimal | null; bills: bigint; oldest: Date | null }[]
   >`
@@ -316,8 +321,9 @@ export async function assertCreditLimit(
      WHERE abl_company_id = ${companyId}::uuid
        AND abl_party_id   = ${party.partyLedgerId}::uuid
        AND abl_dr_cr      = 'DR'
-       AND abl_status     = 'OPEN'
-       AND abl_is_deleted = false`;
+       AND abl_pending_amount > 0
+       AND abl_is_deleted = false
+       AND abl_is_active  = true`;
 
   const pending = Number(open?.pending ?? 0);
   const bills = Number(open?.bills ?? 0);
@@ -355,6 +361,194 @@ export async function assertCreditLimit(
         { field: 'custId' },
       );
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  The delivery hold (Sales Order Management, menu 299)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** An order on delivery hold that a document names. */
+export interface HeldOrder {
+  soId: string;
+  refno: string;
+  reason: string | null;
+}
+
+/** A sales order a bill or a challan draws on, as read under its row lock. */
+export interface SourceOrder {
+  soId: string;
+  refno: string;
+  status: string;
+  hold: boolean;
+  holdReason: string | null;
+}
+
+/**
+ * Locks every sales order a bill or a challan draws on, FOR UPDATE and in
+ * so_id order, and reads them under that lock. Named by order id (header /
+ * line `*_src_doc_id`) or by order LINE id (`*_src_item_id`); nothing to lock
+ * when the document names no order.
+ *
+ * LOCK ORDER (review, 2026-11-11). Call it FIRST in a bill or challan post,
+ * amend or cancel, before any stock write. The order side (save, amend,
+ * cancel, the desk) takes the sale_order row, then its reservations, then the
+ * per-item advisory locks (refreshReserved). A bill used to take the item
+ * locks in its stock posting and the order row last (syncOneOrderFulfilment),
+ * so the two could wait on each other. Taken here first, a bill waits for the
+ * order before it touches stock; re-taking a row lock the transaction already
+ * holds costs nothing. FOR UPDATE, not FOR SHARE: the status and the delivery
+ * hold read here are what the guards decide on, and a /delivery-hold or an
+ * order save must wait for this document, not slip in under it.
+ */
+export async function lockSourceOrders(
+  client: SalesWriteClient,
+  orderIds: readonly string[],
+  orderLineIds: readonly string[],
+): Promise<SourceOrder[]> {
+  if (orderIds.length === 0 && orderLineIds.length === 0) {
+    return [];
+  }
+  const rows = await client.$queryRaw<
+    {
+      so_id: string;
+      so_order_refno: string | null;
+      so_status: string;
+      so_delivery_hold: boolean;
+      so_delivery_hold_reason: string | null;
+    }[]
+  >`
+    SELECT h.so_id, h.so_order_refno, h.so_status, h.so_delivery_hold, h.so_delivery_hold_reason
+      FROM sales.sale_order h
+     WHERE h.so_is_deleted = false
+       AND h.so_id IN (SELECT unnest(${[...orderIds]}::uuid[])
+                       UNION
+                       SELECT d.soi_order_id FROM sales.sale_order_item d
+                        WHERE d.soi_id = ANY(${[...orderLineIds]}::uuid[]))
+     ORDER BY h.so_id
+       FOR UPDATE OF h`;
+  return rows.map((r) => ({
+    soId: r.so_id,
+    refno: r.so_order_refno ?? r.so_id,
+    status: r.so_status,
+    hold: r.so_delivery_hold === true,
+    holdReason: r.so_delivery_hold_reason,
+  }));
+}
+
+/** The held orders among locked source orders, by order number (one without a number last). */
+export function heldAmong(orders: readonly SourceOrder[]): HeldOrder[] {
+  const unnumbered = (o: SourceOrder) => (o.refno === o.soId ? 1 : 0);
+  return orders
+    .filter((o) => o.hold)
+    .sort(
+      (a, b) =>
+        unnumbered(a) - unnumbered(b) || (a.refno < b.refno ? -1 : a.refno > b.refno ? 1 : 0),
+    )
+    .map((o) => ({ soId: o.soId, refno: o.refno, reason: o.holdReason }));
+}
+
+/**
+ * The orders on delivery hold among those a bill or a challan names, by order
+ * id or by order LINE id — read under the row lock (lockSourceOrders).
+ */
+export async function loadHeldOrders(
+  client: SalesWriteClient,
+  orderIds: readonly string[],
+  orderLineIds: readonly string[],
+): Promise<HeldOrder[]> {
+  return heldAmong(await lockSourceOrders(client, orderIds, orderLineIds));
+}
+
+/** One bill or challan line's draw on a sales order, in base units. */
+export interface OrderDraw {
+  /** The order the line names (`*_src_doc_id`), when it names one. */
+  soId: string | null;
+  /** The order LINE it draws on (`*_src_item_id`), when it names one. */
+  soiId: string | null;
+  baseQty: Prisma.Decimal;
+}
+
+/**
+ * The delivery hold on an AMEND (user, 2026-11-11). A held order may not be
+ * drawn on MORE than the posted document drew on it: a raised quantity or a
+ * new line from that order is refused, a rate fix, a lower quantity or a
+ * dropped line is allowed. Compared line by line (a line that names no order
+ * line counts against its order as a whole), in base units. Answers the held
+ * orders the amend would draw more from; a new post refuses every held order
+ * without asking this.
+ */
+export async function heldOrdersDrawnMore(
+  client: SalesWriteClient,
+  held: readonly HeldOrder[],
+  current: readonly OrderDraw[],
+  prior: readonly OrderDraw[],
+): Promise<HeldOrder[]> {
+  if (held.length === 0) {
+    return [];
+  }
+  const soiIds = [
+    ...new Set([...current, ...prior].map((d) => d.soiId).filter((id): id is string => !!id)),
+  ];
+  const owner = new Map<string, string>();
+  if (soiIds.length > 0) {
+    const rows = await client.$queryRaw<{ soi_id: string; soi_order_id: string }[]>`
+      SELECT soi_id, soi_order_id FROM sales.sale_order_item WHERE soi_id = ANY(${soiIds}::uuid[])`;
+    for (const r of rows) {
+      owner.set(r.soi_id, r.soi_order_id);
+    }
+  }
+  const more = ordersDrawnMore(new Set(held.map((h) => h.soId)), owner, current, prior);
+  return held.filter((h) => more.has(h.soId));
+}
+
+/** The pure half of heldOrdersDrawnMore: which of `orderIds` a line now draws more from. */
+export function ordersDrawnMore(
+  orderIds: ReadonlySet<string>,
+  owner: ReadonlyMap<string, string>,
+  current: readonly OrderDraw[],
+  prior: readonly OrderDraw[],
+): Set<string> {
+  const net = new Map<string, { soId: string; qty: Prisma.Decimal }>();
+  const tally = (draws: readonly OrderDraw[], sign: 1 | -1) => {
+    for (const d of draws) {
+      const soId = (d.soiId ? owner.get(d.soiId) : undefined) ?? d.soId;
+      if (!soId || !orderIds.has(soId)) {
+        continue;
+      }
+      const key = `${soId}|${d.soiId ?? '*'}`;
+      const seen = net.get(key);
+      const qty = d.baseQty.times(sign);
+      net.set(key, { soId, qty: seen ? seen.qty.plus(qty) : qty });
+    }
+  };
+  tally(current, 1);
+  tally(prior, -1);
+  const more = new Set<string>();
+  for (const { soId, qty } of net.values()) {
+    if (qty.toDecimalPlaces(4).greaterThan(0)) {
+      more.add(soId);
+    }
+  }
+  return more;
+}
+
+/**
+ * D18: a held order is neither billed nor delivered, with no override. One
+ * refusal per held order, so `/validate` lists them all.
+ */
+export function refuseHeldOrders(
+  ctx: SalesGuardContext,
+  held: readonly HeldOrder[],
+  field = 'items',
+): void {
+  for (const h of held) {
+    refuse(
+      ctx,
+      SALES_ERROR_CODES.ORDER_DELIVERY_HOLD,
+      `Order ${h.refno} is on delivery hold${h.reason ? `: ${h.reason}` : ''}. Release it on Sales Order Management first.`,
+      { field },
+    );
   }
 }
 

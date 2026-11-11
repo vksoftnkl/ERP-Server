@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (123 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (124 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -50,7 +50,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 37 rows) ============
+    -- ============ &1 Sales (menu 1, 38 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,  10.00, '0', NULL, NULL, true , false)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
@@ -72,6 +72,9 @@ VALUES
     ,( 226,    1, 'Delivery Status'                      , 'true'                , true ,  40.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Schemes'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , true)
+    -- 299 (20261110180000_sale_order_desk): Sales Order Management, the order desk
+    -- (grids 201-203, ui_table 70), right after 11 Sales Order. Verbs below.
+    ,( 299,    1, 'Sales Order Management'               , NULL                  , true ,  31.00, NULL, NULL, NULL, true , false)
     -- Till (271-276, migration 20261008140000 / src/modules/till): hidden until the
     -- client screens ship; rights work on a hidden menu. Verbs are set below.
     -- 275 was "Till Masters" until notes 101 split it into four screens:
@@ -337,6 +340,14 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,EDIT}'
  WHERE menu_id = 298
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 299 Sales Order Management (20261110180000_sale_order_desk): VIEW only puts the
+-- desk on the menu. Every action on it is judged on its own menu's rights (11 Sales
+-- Order, 12 Sales Bill, 99 Receipt, 258, 279), plan D6. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW}'
+ WHERE menu_id = 299
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- 192 Branch Outward (notes 160 B / 20261027110000_transfers_notes_160): CANCEL is
