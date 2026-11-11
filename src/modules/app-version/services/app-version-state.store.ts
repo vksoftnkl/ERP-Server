@@ -3,10 +3,12 @@ import { Prisma } from '@prisma/client';
 import { CLIENT_PLATFORMS, type ClientPlatform } from '../../../common/client-info/client-info';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import type { CompatManifest } from '../compat/compat-manifest';
+import type { ReleaseImport } from '../compat/release-list';
 
 /**
- * Part B Step 2 Rev 2: every SQL statement on public.app_build_policy and
- * public.app_auth_state (migration 20261111103000_app_build_policy).
+ * Part B Step 2 Rev 2 / Step 4: every SQL statement on public.app_build_policy,
+ * public.app_auth_state (migration 20261111103000_app_build_policy) and the
+ * release-list import into public.app_release.
  *
  * Raw SQL rather than the Prisma models on purpose: the startup step needs an
  * advisory lock, a row lock and a conditional upsert (skip 'manual' rows) in
@@ -41,6 +43,8 @@ export interface BackendUpdateInput {
   version: string;
   commit: string | null;
   manifest: CompatManifest;
+  /** Step 4 (E4): releases.json to import into app_release; null = skip the import. */
+  releases: ReleaseImport[] | null;
   actor: string;
 }
 
@@ -52,6 +56,10 @@ export interface BackendUpdateOutcome {
   /** Platforms whose row the manifest wrote; a 'manual' row is skipped. */
   policiesWritten: ClientPlatform[];
   policiesKeptManual: ClientPlatform[];
+  /** Platforms the manifest named no value for (their row is left as it is). */
+  policiesNoValue: ClientPlatform[];
+  /** app_release rows inserted or changed by the import; null = no import. */
+  releasesImported: number | null;
 }
 
 interface PolicyRow {
@@ -141,6 +149,8 @@ export class AppVersionStateStore {
           previousBuild,
           policiesWritten: [],
           policiesKeptManual: [],
+          policiesNoValue: [],
+          releasesImported: null,
         };
       }
       const [raised] = await tx.$queryRaw<{ epoch: number }[]>`
@@ -157,19 +167,26 @@ export class AppVersionStateStore {
      RETURNING aas_token_epoch AS epoch`;
       const policiesWritten: ClientPlatform[] = [];
       const policiesKeptManual: ClientPlatform[] = [];
+      const policiesNoValue: ClientPlatform[] = [];
       for (const platform of CLIENT_PLATFORMS) {
         const entry = input.manifest.clients[platform];
+        if (entry.expectedBuild === null && entry.message === null && entry.downloadUrl === null) {
+          policiesNoValue.push(platform);
+          continue;
+        }
+        // Step 4: never touches abp_enforce (an admin's call). A value the
+        // manifest leaves null keeps what is stored, which also keeps the
+        // expected build of an enforced platform (ck_abp_enforce_build).
         const written = await tx.$executeRaw`
           INSERT INTO public.app_build_policy AS p
-                 (abp_platform, abp_enforce, abp_expected_build, abp_message, abp_download_url,
+                 (abp_platform, abp_expected_build, abp_message, abp_download_url,
                   abp_source, abp_created_by, abp_modified_on, abp_modified_by)
-          VALUES (${platform}, ${entry.enforce}, ${entry.expectedBuild}::int, ${entry.message},
+          VALUES (${platform}, ${entry.expectedBuild}::int, ${entry.message},
                   ${entry.downloadUrl}, 'manifest', ${input.actor}, now(), ${input.actor})
           ON CONFLICT (abp_platform) DO UPDATE
-             SET abp_enforce        = EXCLUDED.abp_enforce,
-                 abp_expected_build = EXCLUDED.abp_expected_build,
-                 abp_message        = EXCLUDED.abp_message,
-                 abp_download_url   = EXCLUDED.abp_download_url,
+             SET abp_expected_build = COALESCE(EXCLUDED.abp_expected_build, p.abp_expected_build),
+                 abp_message        = COALESCE(EXCLUDED.abp_message, p.abp_message),
+                 abp_download_url   = COALESCE(EXCLUDED.abp_download_url, p.abp_download_url),
                  abp_source         = 'manifest',
                  abp_is_active      = true,
                  abp_is_deleted     = false,
@@ -178,12 +195,16 @@ export class AppVersionStateStore {
            WHERE p.abp_source <> 'manual' OR p.abp_is_deleted OR NOT p.abp_is_active`;
         (written > 0 ? policiesWritten : policiesKeptManual).push(platform);
       }
+      const releasesImported =
+        input.releases === null ? null : await importReleases(tx, input.releases, input.actor);
       const outcome: BackendUpdateOutcome = {
         bumped: true,
         epoch: Number(raised.epoch),
         previousBuild,
         policiesWritten,
         policiesKeptManual,
+        policiesNoValue,
+        releasesImported,
       };
       if (whileLocked) {
         try {
@@ -215,13 +236,43 @@ export class AppVersionStateStore {
   }
 
   /**
+   * Step 4 §5 (E3): a client release registered with setExpected makes its build
+   * the platform's expected build, in the caller's transaction. Enforce is not
+   * touched, and a row an admin set by hand ('manual') is left alone.
+   * Returns false when the row was manual and so kept.
+   */
+  async setExpectedBuild(
+    tx: Prisma.TransactionClient,
+    platform: ClientPlatform,
+    build: number,
+    downloadUrl: string | null,
+    actor: string,
+  ): Promise<boolean> {
+    const written = await tx.$executeRaw`
+      INSERT INTO public.app_build_policy AS p
+             (abp_platform, abp_expected_build, abp_download_url, abp_source,
+              abp_created_by, abp_modified_on, abp_modified_by)
+      VALUES (${platform}, ${build}::int, ${downloadUrl}, 'manifest', ${actor}, now(), ${actor})
+      ON CONFLICT (abp_platform) DO UPDATE
+         SET abp_expected_build = EXCLUDED.abp_expected_build,
+             abp_download_url   = COALESCE(EXCLUDED.abp_download_url, p.abp_download_url),
+             abp_is_active      = true,
+             abp_is_deleted     = false,
+             abp_modified_on    = now(),
+             abp_modified_by    = EXCLUDED.abp_modified_by
+       WHERE p.abp_source <> 'manual' OR p.abp_is_deleted OR NOT p.abp_is_active`;
+    return written > 0;
+  }
+
+  /**
    * Writes one platform's policy. `change` gets the live row (or null) under a
    * row lock and returns the values to store; it may throw to refuse, which
-   * rolls everything back.
+   * rolls everything back. `source` null keeps the row's source (Step 4: an
+   * enforce-only change does not take the row away from the manifest).
    */
   async writePolicy(
     platform: ClientPlatform,
-    source: BuildPolicySource,
+    source: BuildPolicySource | null,
     actor: string,
     change: (current: BuildPolicy | null) => BuildPolicyValues,
   ): Promise<BuildPolicy> {
@@ -242,7 +293,7 @@ export class AppVersionStateStore {
                abp_expected_build = ${next.expectedBuild}::int,
                abp_message        = ${next.message},
                abp_download_url   = ${next.downloadUrl},
-               abp_source         = ${source},
+               abp_source         = COALESCE(${source}::varchar, abp_source),
                abp_is_active      = true,
                abp_is_deleted     = false,
                abp_modified_on    = now(),
@@ -272,4 +323,45 @@ function toPolicy(row: PolicyRow): BuildPolicy | null {
     changedOn: row.changedOn,
     changedBy: row.changedBy,
   };
+}
+
+/**
+ * Step 4 §6 (E4): upserts the package's release list into app_release in one
+ * statement. Never deletes, never un-yanks (`is_deleted` only goes false → true,
+ * so an old list cannot bring back a yanked build), and leaves a row that
+ * already matches untouched. Returns the rows inserted or changed.
+ */
+async function importReleases(
+  tx: Prisma.TransactionClient,
+  releases: readonly ReleaseImport[],
+  actor: string,
+): Promise<number> {
+  if (releases.length === 0) {
+    return 0;
+  }
+  return tx.$executeRaw`
+    INSERT INTO public.app_release AS r
+           (arl_platform, arl_build, arl_version, arl_commit, arl_severity, arl_notes,
+            arl_download_url, arl_released_at, arl_is_deleted, arl_created_by)
+    SELECT x.platform, x.build, x.version, x.commit, x.severity, x.notes,
+           x."downloadUrl", x."releasedAt", x."isDeleted", ${actor}
+      FROM jsonb_to_recordset(${JSON.stringify(releases)}::jsonb) AS x(
+           platform text, build int, version text, commit text, severity text, notes text,
+           "downloadUrl" text, "releasedAt" timestamptz, "isDeleted" boolean)
+    ON CONFLICT (arl_platform, arl_build) DO UPDATE
+       SET arl_version      = EXCLUDED.arl_version,
+           arl_commit       = EXCLUDED.arl_commit,
+           arl_severity     = EXCLUDED.arl_severity,
+           arl_notes        = EXCLUDED.arl_notes,
+           arl_download_url = EXCLUDED.arl_download_url,
+           arl_released_at  = EXCLUDED.arl_released_at,
+           arl_is_deleted   = r.arl_is_deleted OR EXCLUDED.arl_is_deleted,
+           arl_modified_on  = now(),
+           arl_modified_by  = ${actor}
+     WHERE (r.arl_version, r.arl_commit, r.arl_severity, r.arl_notes, r.arl_download_url,
+            r.arl_released_at, r.arl_is_deleted)
+           IS DISTINCT FROM
+           (EXCLUDED.arl_version, EXCLUDED.arl_commit, EXCLUDED.arl_severity, EXCLUDED.arl_notes,
+            EXCLUDED.arl_download_url, EXCLUDED.arl_released_at,
+            r.arl_is_deleted OR EXCLUDED.arl_is_deleted)`;
 }

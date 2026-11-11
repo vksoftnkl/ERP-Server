@@ -5,8 +5,21 @@ import { SaveItemQtyPriceDto } from './dto/save-item-qty-price.dto';
 import { ItemQtyPriceDeleteResult, ItemQtyPriceListItem, ItemQtyPriceListMeta, ItemQtyPricePayload } from './types/item-qty-price-api.types';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
+import { type MenuRight, type MenuRights } from '../../../common/posting/rights';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PriceMasterWriter } from '../item-price-log/price-master-writer.service';
+export declare const QTY_PRICE_MENU_ID = 244;
+export declare const QTY_PRICE_RIGHT_PREFIX = "ITEM_QTY_PRICE";
+export interface SlabSaveOptions {
+    fieldPrefix?: string;
+}
+export interface StoredSlabScope {
+    iqpId: string;
+    itemId: string;
+    branchId: string | null;
+    priceLevel: number | null;
+    isDeleted: boolean;
+}
 export declare class ItemsQtyPriceMasterService {
     private readonly prisma;
     private readonly auditLogService;
@@ -14,18 +27,35 @@ export declare class ItemsQtyPriceMasterService {
     private readonly requestContextService;
     private readonly priceWriter;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService, priceWriter: PriceMasterWriter);
-    save(saveItemQtyPriceDto: SaveItemQtyPriceDto, tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload>;
-    save(saveItemQtyPriceDto: SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload[]>;
-    save(saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]>;
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto, tx?: Prisma.TransactionClient, opts?: SlabSaveOptions): Promise<ItemQtyPricePayload>;
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient, opts?: SlabSaveOptions): Promise<ItemQtyPricePayload[]>;
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient, opts?: SlabSaveOptions): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]>;
+    private atRow;
     list(queryDto: GetItemQtyPriceQueryDto): Promise<ConfiguredGridListResult<ItemQtyPriceListItem, ItemQtyPriceListMeta>>;
     getById(iqpId: string): Promise<ItemQtyPricePayload>;
-    softDelete(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
-    softDelete(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
-    softDelete(iqpId: string | string[]): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
-    restore(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
-    restore(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
-    restore(iqpId: string | string[]): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
+    softDelete(iqpId: string, tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult>;
+    softDelete(iqpId: string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult[]>;
+    softDelete(iqpId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
+    restore(iqpId: string, tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult>;
+    restore(iqpId: string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult[]>;
+    restore(iqpId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
     private setDeleted;
+    assertRight(right: MenuRight, action: string): Promise<MenuRights>;
+    assertSaveRights(rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id'>[]): Promise<void>;
+    assertSaveRightsOfBody(body: unknown): Promise<void>;
+    private ownBranchId;
+    private throwOtherBranch;
+    assertOwnBranchSlabs(client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>, rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[], fieldPrefix?: string, stored?: ReadonlyMap<string, StoredSlabScope>): Promise<void>;
+    assertOwnBranchSlabIds(client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>, ids: readonly string[], fieldOf: (index: number) => string, stored?: ReadonlyMap<string, StoredSlabScope>): Promise<void>;
+    assertOwnBranchSlabsOf(rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[]): Promise<void>;
+    assertOwnBranchSlabIdsOf(ids: string | readonly string[]): Promise<void>;
+    readStoredSlabs(client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>, ids: readonly string[]): Promise<Map<string, StoredSlabScope>>;
+    assertSellingLevels(client: Pick<Prisma.TransactionClient, '$queryRaw' | 'itemQtyPrice'>, rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_price_level'>[], fieldPrefix?: string, stored?: ReadonlyMap<string, StoredSlabScope>): Promise<void>;
+    assertChainSlabsAllowed(client: Pick<Prisma.TransactionClient, 'itemQtyPrice'>, rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[], fieldPrefix?: string, stored?: ReadonlyMap<string, StoredSlabScope>): Promise<void>;
+    assertSellingLevelsOf(rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_price_level'>[]): Promise<void>;
+    assertChainSlabsAllowedOf(rows: readonly Pick<SaveItemQtyPriceDto, 'iqp_id' | 'iqp_branch_id'>[]): Promise<void>;
+    activeSellingLevels(client: Pick<Prisma.TransactionClient, '$queryRaw'>): Promise<number[]>;
+    listForItem(itemId: string, client?: Pick<Prisma.TransactionClient, 'itemQtyPrice'>): Promise<ItemQtyPricePayload[]>;
     private saveItemQtyPrice;
     private setDeletedItemQtyPrice;
     private createItemQtyPrice;

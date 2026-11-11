@@ -1,0 +1,12 @@
+{
+  "backendBuild": 1057,
+  "generatedAt": "2026-11-11T10:00:00Z",
+  "clients": {
+    "web": 24,
+    "desktop": {
+      "expectedBuild": 120,
+      "downloadUrl": "https://downloads.example.com/desktop/120/VKNexDesktop-120.exe"
+    },
+    "mobile": 20
+  }
+}

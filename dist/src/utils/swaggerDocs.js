@@ -51,6 +51,7 @@ const txn_hold_module_1 = require("../modules/sales/txn-hold/txn-hold.module");
 const grid_details_module_1 = require("../modules/grid-details/grid-details.module");
 const dropdown_details_module_1 = require("../modules/dropdown-details/dropdown-details.module");
 const health_module_1 = require("../modules/health/health.module");
+const app_version_module_1 = require("../modules/app-version/app-version.module");
 const items_cust_rates_master_module_1 = require("../modules/items-cust-rates-master/items-cust-rates-master.module");
 const item_price_details_module_1 = require("../modules/Inventory/item-price-details/item-price-details.module");
 const users_module_1 = require("../modules/users/users.module");
@@ -121,6 +122,12 @@ exports.swaggerModuleDocuments = [
         title: 'Health API',
         description: 'Health module endpoints',
         include: [health_module_1.HealthModule],
+    },
+    {
+        path: 'app-version',
+        title: 'App Version API',
+        description: 'Client build tracking, update check, release registration (Part B Step 2)',
+        include: [app_version_module_1.AppVersionModule],
     },
     {
         path: 'users',

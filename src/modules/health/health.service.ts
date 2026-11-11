@@ -19,6 +19,8 @@ export interface HealthStatus {
   version: string;
   build: number | null;
   commit: string | null;
+  /** Part B Step 4: when CI built this package (build-info.json), else null. */
+  builtAt: string | null;
   /** Part B Step 2: true when `SELECT 1` answered (= database.status 'up'). */
   dbOk: boolean;
   /** Part B Step 2 Rev 2: tokens minted under a lower epoch are refused. */
@@ -64,6 +66,7 @@ export class HealthService {
       version: build.version,
       build: build.build,
       commit: build.commit,
+      builtAt: build.builtAt,
       dbOk: databaseStatus === 'up',
       tokenEpoch: this.authEpoch.current(),
       expectedClientBuilds: this.expectedClientBuilds(),

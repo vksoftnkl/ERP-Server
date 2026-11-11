@@ -13,6 +13,7 @@ exports.TokenService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const node_crypto_1 = require("node:crypto");
+const client_info_1 = require("../../common/client-info/client-info");
 const auth_error_codes_1 = require("./types/auth-error-codes");
 let TokenService = class TokenService {
     configService;
@@ -124,6 +125,8 @@ let TokenService = class TokenService {
         const companyId = payload.company_id;
         const branchId = payload.branch_id;
         const deviceId = payload.device_id;
+        const epoch = payload.ep;
+        const platform = payload.platform;
         if (typeof sub !== 'string' || sub.length === 0) {
             throw this.invalidToken(expectedType);
         }
@@ -157,6 +160,13 @@ let TokenService = class TokenService {
         if (deviceId !== undefined && deviceId !== null && typeof deviceId !== 'string') {
             throw this.invalidToken(expectedType);
         }
+        if (epoch !== undefined &&
+            (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0)) {
+            throw this.invalidToken(expectedType);
+        }
+        if (platform !== undefined && platform !== null && typeof platform !== 'string') {
+            throw this.invalidToken(expectedType);
+        }
         const normalizedPayload = {
             sub,
             user_name: userName,
@@ -165,6 +175,8 @@ let TokenService = class TokenService {
             company_id: typeof companyId === 'string' && companyId.length > 0 ? companyId : null,
             branch_id: typeof branchId === 'string' && branchId.length > 0 ? branchId : null,
             device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
+            ep: typeof epoch === 'number' ? epoch : 0,
+            platform: typeof platform === 'string' ? (0, client_info_1.parsePlatform)(platform) : null,
             iat: issuedAt,
             exp: expiresAt,
             typ: expectedType,

@@ -1,4 +1,4 @@
-# App version (Part B Step 2, Rev 2)
+# App version (Part B Step 2 Rev 2 + Step 4)
 
 Records which client build each user and device runs, offers an "update
 available" notice, and (Rev 2) does two things that can refuse a client:
@@ -7,12 +7,12 @@ available" notice, and (Rev 2) does two things that can refuse a client:
    refresh from that platform must send exactly the expected `X-App-Build`,
    else **426 `UPDATE_REQUIRED`**.
 2. **Logout after a backend update.** When the backend starts on a new
-   `APP_BUILD`, every access and refresh token minted before it is refused
+   build (`build-info.json`, or `APP_BUILD`), every access and refresh token minted before it is refused
    with **401 `AUTH_BACKEND_UPDATED`**, so every user logs in again (and meets
    the build check).
 
-Both are off until switched on. With no `APP_BUILD` (the dev box), nothing is
-ever logged out. With `abp_enforce = false` on every platform (how a fresh
+Both are off until switched on. With no backend build (no `build-info.json`
+and no `APP_BUILD`, the dev box), nothing is ever logged out. With `abp_enforce = false` on every platform (how a fresh
 database starts), no build is ever refused.
 
 Tables: `public.app_release`, `public.client_installation`,
@@ -96,54 +96,80 @@ Keep local / offline data.
 ## Logout after a backend update (token epoch)
 
 `public.app_auth_state` (one row, `aas_key = 'auth'`) holds the epoch and the
-`APP_BUILD` it was last raised for. At every start, in `onApplicationBootstrap`
+backend build it was last raised for. At every start, in `onApplicationBootstrap`
 (before the port opens), `BackendUpdateService`:
 
-1. reads `APP_BUILD` and the compat manifest. If either is missing or invalid,
-   it changes nothing and logs a warning;
+1. reads this backend's build (`APP_BUILD`, else `build-info.json`) and
+   `compat.json`. If either is missing or invalid, it changes nothing and logs a
+   warning. It also reads `releases.json`; a missing or invalid one only skips
+   the release import;
 2. in one transaction under `pg_advisory_xact_lock(hashtext('app_version'),
-   hashtext('backend_update'))`, if `APP_BUILD` ≠ `aas_last_build`: raises the
-   epoch by one, stores the build, and writes the manifest into
-   `app_build_policy` (rows with `abp_source = 'manual'` are left alone). Two
-   API processes starting together raise it once;
-3. after a raise, best effort: closes the open `audit.user_login_sessions` rows
-   (`uls_logout_type = 'BACKEND_UPDATE'`) and drops the Redis `auth:session:*`
-   keys. The `ep` claim already refuses the old tokens. This only tidies up;
+   hashtext('backend_update'))`, if the build ≠ `aas_last_build`: raises the
+   epoch by one, stores the build, writes the expected builds into
+   `app_build_policy` (rows with `abp_source = 'manual'` are left alone;
+   `abp_enforce` is never touched) and imports `releases.json` into
+   `app_release`. Two API processes starting together do it once;
+3. still under the lock, best effort: closes the open `audit.user_login_sessions`
+   rows (`uls_logout_type = 'BACKEND_UPDATE'`) and drops the Redis
+   `auth:session:*` keys. The `ep` claim already refuses the old tokens;
 4. loads the epoch and the policies into memory and re-reads both every 30 s,
-   so a change made by another process arrives within 30 s.
+   so a change made by another process arrives within 30 s. A step 2 that
+   failed (database busy, migration not run) is retried at each re-read.
 
 A restart, reboot or power cut on the same build changes nothing. A token with
 no `ep` (minted before Rev 2) reads as epoch 0, so the first start of a backend
-that has `APP_BUILD` + a manifest logs everyone out once. That start is a
+that has a build + `compat.json` logs everyone out once. That start is a
 backend update. If the tables cannot be read, the last known state stands
 (epoch 0 and nothing enforced on a fresh process). This never locks anyone out.
+The step is skipped under `NODE_ENV=test` (e2e suites boot the app on the live
+dev database).
 
-## Compat manifest
+## Package files (Step 4)
 
-CI writes `compat-manifest.json` into the backend package. Example:
-`deploy/compat-manifest.example.json`. It is looked for at `APP_COMPAT_MANIFEST`,
-else beside the packed exe (`scripts/build-exe.js` copies it there), else
-beside `package.json`.
+CI (`ci/backend/write-package-files.mjs`) writes three files into the backend
+package. Samples: `deploy/package-files.example/`. They are looked for in
+`APP_PACKAGE_DIR`, else beside the packed exe (`scripts/build-exe.js` copies
+them there), else beside `package.json` (`src/common/package-files`).
+
+**`build-info.json`**: `{ "version", "build", "commit", "builtAt" }`, this
+backend's own build. `APP_VERSION` / `APP_BUILD` / `APP_COMMIT` each override
+their field (the cloud). On-prem needs nothing in `.env` (closes D4).
+
+**`compat.json`**: the client build this package expects per platform. CI
+takes the latest live release of each platform from the registry, or a
+`workflow_dispatch` override.
 
 ```json
 {
-  "backendBuild": 57,
+  "backendBuild": 1057,
   "clients": {
-    "web":     { "expectedBuild": 57,  "enforce": false },
-    "desktop": { "expectedBuild": 120, "enforce": true,
-                 "message": "Please update VK Nex Desktop", "downloadUrl": "https://…" },
-    "mobile":  { "expectedBuild": 20,  "enforce": false }
+    "web": 24,
+    "desktop": { "expectedBuild": 120, "message": "…", "downloadUrl": "https://…" },
+    "mobile": null
   }
 }
 ```
 
-- `backendBuild` is optional. If it is given, it must equal `APP_BUILD`.
-- `enforce` defaults to false, which is the rollout gate: turn a platform on
-  only after its client handles 426 / 401 (Rev 2 §9). Mobile should stay false
-  (decision D6: one Play Store build for every customer).
-- A platform left out expects nothing (enforce false, no build).
-- Anything malformed (unknown key, `enforce` without a build, …) rejects the
-  whole file. The backend then behaves as if it were missing.
+- `backendBuild` is optional. If it is given, it must equal this backend's build.
+- It **never switches enforcement**: `enforce` is an admin's call
+  (`PATCH policy/:platform`), and a file that carries it is refused.
+- A platform that is null or left out keeps its stored values; so does any
+  field the file leaves null.
+- Anything malformed rejects the whole file. The backend then behaves as if it
+  were missing.
+
+⚠ Exact match: with enforce on, a client released after a backend package is
+not expected by that backend until the next backend package. On-prem: release
+the clients first, then the backend package. Cloud: register the client with
+`setExpected: true` (decision E3).
+
+**`releases.json`**: every client release from the registry, yanked ones
+included (`isDeleted: true`). On a new build it is upserted into `app_release`
+(`*_created_by = system-update`), so the on-prem update notice works offline
+(decision E4). It never deletes a row and never restores a yanked one (an older
+list must not bring back a bad build). A row that already matches is left
+untouched. `APP_RELEASES_IMPORT=false` skips it: set that on the cloud backend,
+which IS the registry.
 
 ## Routes (`/api/v1/app-version/…`)
 
@@ -151,20 +177,22 @@ beside `package.json`.
 |---|---|---|
 | `GET check?platform=&build=` | public | update notice; query falls back to the headers; never blocked by the build check |
 | `GET policy` | admin | build policy of web, desktop, mobile |
-| `PATCH policy/:platform` | admin | `{enforce?, expectedBuild?, message?, downloadUrl?}`; only the fields sent change; `null` clears; the row becomes `manual`. `enforce:false` = emergency switch, applies at once |
-| `POST policy/:platform/use-manifest` | admin | hand the row back to the bundled manifest (its values, source `manifest`); 409 `APP_POLICY_NO_MANIFEST` if this server has none |
-| `POST releases` | admin | CI registers a build → 201 |
+| `PATCH policy/:platform` | admin | `{enforce?, expectedBuild?, message?, downloadUrl?}`; only the fields sent change; `null` clears. Setting `expectedBuild` / `message` / `downloadUrl` makes the row `manual` (backend updates leave it alone); switching `enforce` alone does not. `enforce:false` = emergency switch, applies at once |
+| `POST policy/:platform/use-manifest` | admin | hand the row back to the bundled `compat.json` (its values, source `manifest`, enforce kept); 409 `APP_POLICY_NO_MANIFEST` if this server has none |
+| `POST releases` | release | registers a client build → 201. `setExpected: true` also makes it this backend's expected build (same transaction, enforce untouched; a `manual` row is kept and the response says `expectedBuildSet: false`) |
 | `PATCH releases/:platform/:build` | admin | severity / notes / link; `isDeleted: true` yanks, `false` restores |
-| `GET releases?platform=` | admin | live releases, newest first |
+| `GET releases?platform=&includeDeleted=` | release | live releases, newest first; `includeDeleted=true` adds yanked / inactive ones (CI build check, `releases.json`) |
 | `GET installations?…` | admin | who runs what |
 | `GET installations/summary?platform=&activeDays=30` | admin | per platform: builds in use, `oldestActiveBuild`, up to date vs behind |
 | `GET legacy-usage?name=&platform=&build=` | admin | legacy-field counts per build |
 
 **Admin** = a JWT (`Authorization: Bearer …`, else 401) of a user whose
 `usr_type` is `ADMIN` or `SUPER ADMIN`, read from `user_master` on every call
-(else 403 `APP_VERSION_ADMIN_ONLY`). The `X-Ops-Key` / `OPS_API_KEY` of the
-first version is gone. CI logs in as such a user. Writes stamp that user's id
-into `*_created_by` / `*_modified_by`. Startup writes stamp `system-update`.
+(else 403 `APP_VERSION_ADMIN_ONLY`). **Release** = the same, plus
+`RELEASE MANAGER`: the role of the CI user `ci-release` (decision E5; give it no
+menus and one login channel). The `X-Ops-Key` / `OPS_API_KEY` of the first
+version is gone. Writes stamp the user's id into `*_created_by` /
+`*_modified_by`; startup writes stamp `system-update`.
 
 Policy refusals: 400 `APP_POLICY_BUILD_REQUIRED` (the change would leave
 `enforce = true` with no expected build). The DB also refuses it
@@ -194,17 +222,17 @@ except 401 and 404 as one `[HttpError]` line, 426 included:
 
 | Variable | |
 |---|---|
-| `APP_BUILD` | this backend's build. Set = logout-on-update and manifest loading are on |
-| `APP_VERSION` / `APP_COMMIT` | shown on `/health`. `APP_VERSION` falls back to package.json |
-| `APP_COMPAT_MANIFEST` | optional path of the compat manifest |
+| `APP_BUILD` / `APP_VERSION` / `APP_COMMIT` | override `build-info.json` field by field (the cloud). On-prem: leave empty |
+| `APP_PACKAGE_DIR` | read `build-info.json`, `compat.json`, `releases.json` from this folder |
+| `APP_RELEASES_IMPORT` | `false` = never import `releases.json` (the cloud registry backend) |
 
-`/health` (public, never blocked) adds `version`, `build`, `commit`, `dbOk`,
-`tokenEpoch` and `expectedClientBuilds: {web|desktop|mobile: {enforce, expectedBuild}}`.
+`/health` (public, never blocked) adds `version`, `build`, `commit`, `builtAt`,
+`dbOk`, `tokenEpoch` and `expectedClientBuilds: {web|desktop|mobile: {enforce, expectedBuild}}`.
 
 ## Turning enforcement on (Rev 2 §9)
 
-Deploy with `enforce: false` for every platform. Turn a platform on (manifest
-`enforce: true` in the next build, or `PATCH policy/:platform`) only when:
+Deploy with `enforce: false` for every platform. Turn a platform on
+(`PATCH policy/:platform {"enforce": true}`; `compat.json` never does) only when:
 its client build with 426 / 401 handling is installed; `GET installations`
 shows that platform's devices sending headers; the expected build can be
 downloaded. If it goes wrong, `PATCH policy/:platform {"enforce": false}` lets

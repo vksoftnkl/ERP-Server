@@ -1,0 +1,14 @@
+export declare const RELEASE_SEVERITIES: readonly ["normal", "recommended", "critical"];
+export type ReleaseSeverity = (typeof RELEASE_SEVERITIES)[number];
+export declare const SEVERITY_RANK: Readonly<Record<ReleaseSeverity, number>>;
+export declare const LEGACY_USAGE_PLATFORMS: readonly ["web", "desktop", "mobile", "unknown"];
+export type LegacyUsagePlatform = (typeof LEGACY_USAGE_PLATFORMS)[number];
+export declare const LEGACY_UNKNOWN_BUILD = -1;
+export declare const REFRESH_RECORD_INTERVAL_MS: number;
+export declare const LEGACY_FLUSH_INTERVAL_MS: number;
+export declare const LEGACY_MAX_PENDING_KEYS = 5000;
+export declare const SYSTEM_ACTOR = "app-version";
+export declare const SYSTEM_UPDATE_ACTOR = "system-update";
+export declare const APP_VERSION_ADMIN_TYPES: readonly string[];
+export declare const APP_VERSION_RELEASE_TYPES: readonly string[];
+export declare const STATE_REFRESH_INTERVAL_MS: number;

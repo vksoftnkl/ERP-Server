@@ -5,6 +5,7 @@ import { AUTH_SESSION_KEY_PREFIX } from '../../auth/auth-session.service';
 import { backendBuild, type BackendBuild } from '../../health/backend-build';
 import { STATE_REFRESH_INTERVAL_MS, SYSTEM_UPDATE_ACTOR } from '../app-version.constants';
 import { loadCompatManifest, type CompatManifest } from '../compat/compat-manifest';
+import { loadReleaseList, type ReleaseImport } from '../compat/release-list';
 import { AppVersionStateStore, type BackendUpdateOutcome } from './app-version-state.store';
 import { AuthEpochService } from './auth-epoch.service';
 import { BuildPolicyService } from './build-policy.service';
@@ -12,12 +13,15 @@ import { BuildPolicyService } from './build-policy.service';
 /**
  * Part B Step 2 Rev 2 §5.1: what the backend does when it starts.
  *
- *   1. Read APP_BUILD and the bundled compat manifest. Either one missing or
- *      invalid: change nothing, log a warning, go on (no logout, policy as is).
+ *   1. Read this backend's build (APP_BUILD, else build-info.json) and the
+ *      bundled compat.json. Either one missing or invalid: change nothing, log
+ *      a warning, go on (no logout, policy as is). Also read releases.json
+ *      (Step 4, E4); a missing or invalid one only skips the release import.
  *   2. In one transaction under an advisory lock (so of two API processes only
- *      the first does it): if APP_BUILD is not the build stored in
- *      app_auth_state, raise the token epoch by one, store the build, and write
- *      the manifest into app_build_policy (rows set by hand stay as they are).
+ *      the first does it): if the build is not the one stored in
+ *      app_auth_state, raise the token epoch by one, store the build, write the
+ *      expected builds into app_build_policy (rows set by hand stay as they are;
+ *      enforce is never touched), and import releases.json into app_release.
  *   3. After a raise, best effort and still under the lock: close the open
  *      audit.user_login_sessions rows and drop the Redis sessions. The `ep`
  *      claim already refuses the old tokens; this only tidies what is stored
@@ -86,14 +90,15 @@ export class BackendUpdateService implements OnApplicationBootstrap, OnModuleDes
   ): Promise<BackendUpdateOutcome | null> {
     if (build.build === null) {
       this.logger.warn(
-        'APP_BUILD is not set: no logout after an update, and the build policy is left as it is',
+        'No backend build (APP_BUILD or build-info.json): no logout after an update, and the ' +
+          'build policy is left as it is',
       );
       return null;
     }
     if (build.build < 1 || build.build > MAX_CLIENT_BUILD) {
       this.logger.warn(
-        `APP_BUILD ${build.build} is not a build number 1..${MAX_CLIENT_BUILD}: no logout after ` +
-          'an update, and the build policy is left as it is',
+        `Backend build ${build.build} is not a build number 1..${MAX_CLIENT_BUILD}: no logout ` +
+          'after an update, and the build policy is left as it is',
       );
       return null;
     }
@@ -106,6 +111,7 @@ export class BackendUpdateService implements OnApplicationBootstrap, OnModuleDes
       return null;
     }
     this.manifest = loaded.manifest;
+    const releases = this.releasesToImport(env);
     let outcome: BackendUpdateOutcome;
     try {
       outcome = await this.store.applyBackendUpdate(
@@ -114,6 +120,7 @@ export class BackendUpdateService implements OnApplicationBootstrap, OnModuleDes
           version: build.version,
           commit: build.commit,
           manifest: loaded.manifest,
+          releases,
           actor: SYSTEM_UPDATE_ACTOR,
         },
         () => this.tidySessions(),
@@ -143,9 +150,36 @@ export class BackendUpdateService implements OnApplicationBootstrap, OnModuleDes
         `written ${outcome.policiesWritten.join(', ') || 'none'}` +
         (outcome.policiesKeptManual.length
           ? `; kept (manual) ${outcome.policiesKeptManual.join(', ')}`
-          : ''),
+          : '') +
+        (outcome.policiesNoValue.length
+          ? `; no value for ${outcome.policiesNoValue.join(', ')}`
+          : '') +
+        (outcome.releasesImported === null
+          ? '. Release list not imported'
+          : `. Release list: ${outcome.releasesImported} app_release row(s) added or changed`),
     );
     return outcome;
+  }
+
+  /**
+   * releases.json, or null to skip the import: APP_RELEASES_IMPORT=false (the
+   * cloud backend IS the release registry; an older list in its package must
+   * not overwrite it), or a missing / invalid file (logged).
+   */
+  private releasesToImport(env: NodeJS.ProcessEnv): ReleaseImport[] | null {
+    if ((env.APP_RELEASES_IMPORT ?? '').trim().toLowerCase() === 'false') {
+      this.logger.log('APP_RELEASES_IMPORT=false: releases.json is not imported here');
+      return null;
+    }
+    const loaded = loadReleaseList(env);
+    if (!loaded.ok) {
+      this.logger.warn(
+        `Release list${loaded.path ? ` ${loaded.path}` : ''} not imported (${loaded.reason}); ` +
+          'app_release is left as it is',
+      );
+      return null;
+    }
+    return loaded.list.releases;
   }
 
   /** The timer: retry a failed step 2 first, then re-read the caches. */

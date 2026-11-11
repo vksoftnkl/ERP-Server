@@ -10,30 +10,43 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuthService = void 0;
+exports.AuthService = exports.LEGACY_LOGIN_APP_VERSION_FIELD = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const node_util_1 = require("node:util");
 const request_context_service_1 = require("../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
+const auth_epoch_service_1 = require("../app-version/services/auth-epoch.service");
+const build_policy_service_1 = require("../app-version/services/build-policy.service");
+const client_tracking_service_1 = require("../app-version/services/client-tracking.service");
 const auth_session_service_1 = require("./auth-session.service");
 const token_service_1 = require("./token.service");
 const auth_error_codes_1 = require("./types/auth-error-codes");
 const scryptAsync = (0, node_util_1.promisify)(node_crypto_1.scrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
+exports.LEGACY_LOGIN_APP_VERSION_FIELD = 'auth.login.app_version';
 let AuthService = AuthService_1 = class AuthService {
     tokenService;
     authSessionService;
     prisma;
     requestContextService;
+    clientTracking;
+    buildPolicy;
+    authEpoch;
     logger = new common_1.Logger(AuthService_1.name);
-    constructor(tokenService, authSessionService, prisma, requestContextService) {
+    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking, buildPolicy, authEpoch) {
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.prisma = prisma;
         this.requestContextService = requestContextService;
+        this.clientTracking = clientTracking;
+        this.buildPolicy = buildPolicy;
+        this.authEpoch = authEpoch;
     }
     async login(loginAuthDto, requestMetadata = { userAgent: null, appVersion: null }) {
+        const client = requestMetadata.client ?? null;
+        const platform = client?.platform ?? this.resolveLoginChannel(loginAuthDto.device_type);
+        this.buildPolicy.assertClientBuild(platform, client?.build ?? null);
         const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
         if (!user) {
             await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
@@ -65,6 +78,8 @@ let AuthService = AuthService_1 = class AuthService {
         const sessionScope = {
             branch_id: device?.devBranchId ?? null,
             device_id: device?.devId ?? null,
+            ep: this.authEpoch.current(),
+            platform,
         };
         const issuedAccessToken = this.tokenService.signAccessToken({
             sub: user.usrId,
@@ -95,7 +110,7 @@ let AuthService = AuthService_1 = class AuthService {
         catch (error) {
             this.logger.warn(`Skipping user login session persistence for user ${user.usrId}: ${this.describeError(error)}`);
         }
-        return {
+        const response = {
             access_token: issuedAccessToken.token,
             refresh_token: issuedRefreshToken.token,
             token_type: 'Bearer',
@@ -109,9 +124,23 @@ let AuthService = AuthService_1 = class AuthService {
             dev_user_id: device?.devUserId ?? null,
             device_type: device?.devDeviceType ?? null,
         };
+        if (loginAuthDto.app_version !== undefined && loginAuthDto.app_version !== null) {
+            this.clientTracking.legacyField(exports.LEGACY_LOGIN_APP_VERSION_FIELD, requestMetadata.client);
+        }
+        const appUpdate = await this.clientTracking.onLogin({
+            client: requestMetadata.client,
+            userId: user.usrId,
+            userName: user.usrLoginName,
+            companyId: user.usrCompanyId ?? null,
+            branchId: device?.devBranchId ?? user.usrBranchId ?? null,
+            ip: this.requestContextService.getIpAddress(),
+        });
+        return appUpdate ? { ...response, appUpdate } : response;
     }
-    async refresh(refreshToken) {
+    async refresh(refreshToken, client = null) {
         const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
+        this.authEpoch.assertTokenEpoch(refreshPayload.ep, 'refresh');
+        this.buildPolicy.assertClientBuild(client?.platform ?? refreshPayload.platform ?? null, client?.build ?? null);
         await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
         const user = await this.prisma.userMaster.findFirst({
             where: {
@@ -133,8 +162,18 @@ let AuthService = AuthService_1 = class AuthService {
             company_id: user.usrCompanyId ?? null,
             branch_id: refreshPayload.branch_id,
             device_id: refreshPayload.device_id,
+            ep: refreshPayload.ep ?? 0,
+            platform: refreshPayload.platform ?? null,
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, refreshToken);
+        await this.clientTracking.onRefresh({
+            client,
+            userId: refreshPayload.sub,
+            userName: refreshPayload.user_name,
+            companyId: user.usrCompanyId ?? null,
+            branchId: refreshPayload.branch_id ?? null,
+            ip: this.requestContextService.getIpAddress(),
+        });
         return {
             access_token: issuedAccessToken.token,
             refresh_token: refreshToken,
@@ -403,6 +442,9 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
     __metadata("design:paramtypes", [token_service_1.TokenService,
         auth_session_service_1.AuthSessionService,
         prisma_service_1.PrismaService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        client_tracking_service_1.ClientTrackingService,
+        build_policy_service_1.BuildPolicyService,
+        auth_epoch_service_1.AuthEpochService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

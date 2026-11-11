@@ -32,14 +32,16 @@ describe('BuildPolicyService (Part B Step 2 Rev 2)', () => {
       writePolicy: jest.fn(
         async (
           platform: BuildPolicy['platform'],
-          source: BuildPolicy['source'],
+          source: BuildPolicy['source'] | null,
           actor: string,
           change: (current: BuildPolicy | null) => BuildPolicyValues,
         ) => {
+          const current = stored.get(platform) ?? null;
           const saved = policy({
-            ...change(stored.get(platform) ?? null),
+            ...change(current),
             platform,
-            source,
+            // null = keep the row's source (Step 4: an enforce-only change)
+            source: source ?? current?.source ?? 'manifest',
             changedBy: actor,
           });
           stored.set(platform, saved);
@@ -91,20 +93,26 @@ describe('BuildPolicyService (Part B Step 2 Rev 2)', () => {
     ]);
   });
 
-  it('PATCH changes only the fields sent, marks the row manual and applies at once', async () => {
+  it('PATCH changes only the fields sent and applies at once; enforce alone keeps the source (Step 4)', async () => {
     await load(policy({ message: 'keep me' }));
     const saved = await service.update('desktop', { enforce: false }, 'user-1');
     expect(saved).toMatchObject({
       enforce: false,
       expectedBuild: 12,
       message: 'keep me',
-      source: 'manual',
+      // still the manifest's: later backend updates keep refreshing its build
+      source: 'manifest',
       changedBy: 'user-1',
     });
     // the emergency switch works without waiting for a reload
     expect(outcome('desktop', 10)).toBe('ok');
     await service.update('desktop', { message: null, expectedBuild: 15, enforce: true }, 'user-1');
-    expect(service.get('desktop')).toMatchObject({ message: null, expectedBuild: 15 });
+    // a hand-set build / message / link makes the row manual
+    expect(service.get('desktop')).toMatchObject({
+      message: null,
+      expectedBuild: 15,
+      source: 'manual',
+    });
     expect(outcome('desktop', 15)).toBe('ok');
   });
 
@@ -120,22 +128,26 @@ describe('BuildPolicyService (Part B Step 2 Rev 2)', () => {
     });
   });
 
-  it('use-manifest writes the bundled values back as source manifest; no manifest is 409', async () => {
-    await load(policy({ source: 'manual', enforce: false }));
+  it('use-manifest writes the bundled values back as source manifest, keeps enforce; no manifest is 409', async () => {
+    await load(
+      policy({ source: 'manual', enforce: true, expectedBuild: 12, downloadUrl: 'https://old' }),
+    );
+    const none = { expectedBuild: null, message: null, downloadUrl: null };
     const manifest = {
-      path: '/m.json',
+      path: '/c.json',
       backendBuild: 57,
       clients: {
-        web: { expectedBuild: null, enforce: false, message: null, downloadUrl: null },
-        desktop: { expectedBuild: 20, enforce: true, message: 'Update', downloadUrl: null },
-        mobile: { expectedBuild: null, enforce: false, message: null, downloadUrl: null },
+        web: none,
+        desktop: { expectedBuild: 20, message: 'Update', downloadUrl: null },
+        mobile: none,
       },
     } as CompatManifest;
     await expect(service.useManifest('desktop', manifest, 'user-1')).resolves.toMatchObject({
       source: 'manifest',
-      enforce: true,
+      enforce: true, // never touched by the manifest (Step 4)
       expectedBuild: 20,
       message: 'Update',
+      downloadUrl: 'https://old', // the manifest named none: the stored one stays
     });
     await expect(service.useManifest('desktop', null, 'user-1')).rejects.toBeInstanceOf(
       ConflictException,

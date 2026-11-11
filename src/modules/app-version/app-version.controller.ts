@@ -49,7 +49,7 @@ import {
   LegacyUsageQueryDto,
   ListInstallationsQueryDto,
 } from './dto/support-query.dto';
-import { actorOf, AppVersionAdminGuard } from './guards/app-version-admin.guard';
+import { actorOf, AppVersionAdminGuard, ReleaseAccess } from './guards/app-version-admin.guard';
 import { AppUpdateService } from './services/app-update.service';
 import type { BuildPolicy } from './services/app-version-state.store';
 import { BackendUpdateService } from './services/backend-update.service';
@@ -74,13 +74,17 @@ const AdminRoute = (): MethodDecorator =>
     ApiForbiddenResponse({ type: HttpErrorResponseDto, description: 'APP_VERSION_ADMIN_ONLY' }),
   );
 
+/** Step 4 (E5): a route the CI user (RELEASE MANAGER) may call too, besides the admins. */
+const ReleaseRoute = (): MethodDecorator => applyDecorators(AdminRoute(), ReleaseAccess());
+
 /**
  * Part B Step 2: version tracking, the update notice, and (Rev 2) the
  * enforced build policy.
  *
  * Only /check is public: it must answer before login and is never blocked by
  * the build check. Every other route needs a signed-in ADMIN / SUPER ADMIN;
- * the X-Ops-Key of the first version is gone. Writes stamp the user's id into
+ * the release list and release registration also take a RELEASE MANAGER (the
+ * CI user, Step 4 E5). The X-Ops-Key of the first version is gone. Writes stamp the user's id into
  * *_created_by / *_modified_by.
  */
 @ApiTags('App Version')
@@ -132,8 +136,11 @@ export class AppVersionController {
   @Post('releases')
   @Version(API_VERSION)
   @HttpCode(HttpStatus.CREATED)
-  @AdminRoute()
-  @ApiOperation({ summary: 'Register a released build (CI)' })
+  @ReleaseRoute()
+  @ApiOperation({
+    summary:
+      'Register a released build (CI user or admin); setExpected also makes it the expected build',
+  })
   @ApiCreatedResponse({ type: ReleaseResponseDto })
   @ApiConflictResponse({
     type: HttpErrorResponseDto,
@@ -162,11 +169,13 @@ export class AppVersionController {
 
   @Get('releases')
   @Version(API_VERSION)
-  @AdminRoute()
-  @ApiOperation({ summary: 'Live releases, newest build first' })
+  @ReleaseRoute()
+  @ApiOperation({
+    summary: 'Live releases, newest build first; includeDeleted=true adds yanked ones (CI)',
+  })
   @ApiOkResponse({ type: ReleaseResponseDto, isArray: true })
   listReleases(@Query() query: ListReleasesQueryDto): Promise<ReleaseResponseDto[]> {
-    return this.updates.listReleases(query.platform);
+    return this.updates.listReleases(query.platform, query.includeDeleted === true);
   }
 
   @Get('installations')

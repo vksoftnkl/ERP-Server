@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LoginResponseDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const check_update_dto_1 = require("../../app-version/dto/check-update.dto");
 class LoginResponseDto {
     access_token;
     refresh_token;
@@ -24,6 +25,7 @@ class LoginResponseDto {
     dev_branch_id;
     dev_user_id;
     device_type;
+    appUpdate;
 }
 exports.LoginResponseDto = LoginResponseDto;
 __decorate([
@@ -77,4 +79,12 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Device type (e.g. Desktop, Mobile)' }),
     __metadata("design:type", Object)
 ], LoginResponseDto.prototype, "device_type", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: check_update_dto_1.AppUpdateInfoDto,
+        description: 'Login only, and only when the request sent X-App-Platform + X-App-Build: whether a ' +
+            'newer build is available. A notice only; the key is absent for every other client.',
+    }),
+    __metadata("design:type", check_update_dto_1.AppUpdateInfoDto)
+], LoginResponseDto.prototype, "appUpdate", void 0);
 //# sourceMappingURL=login-response.dto.js.map

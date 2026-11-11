@@ -77,38 +77,42 @@ export class BuildPolicyService {
   }
 
   /**
-   * §5.4 PATCH: only the fields sent change; the row becomes 'manual', so a
-   * later backend update leaves it alone (useManifest hands it back).
+   * §5.4 PATCH: only the fields sent change. Step 4: switching `enforce` alone
+   * keeps the row's source, so later backend updates still refresh its expected
+   * build. Setting expectedBuild, message or downloadUrl by hand makes the row
+   * 'manual': later backend updates leave it alone until useManifest.
    */
   async update(
     platform: ClientPlatform,
     dto: UpdateBuildPolicyDto,
     actor: string,
   ): Promise<BuildPolicy> {
-    const saved = await this.store.writePolicy(platform, 'manual', actor, (current) => {
-      const base = current ?? noPolicy(platform);
-      const next: BuildPolicyValues = {
-        enforce: dto.enforce ?? base.enforce,
-        expectedBuild: dto.expectedBuild === undefined ? base.expectedBuild : dto.expectedBuild,
-        message: dto.message === undefined ? base.message : dto.message,
-        downloadUrl: dto.downloadUrl === undefined ? base.downloadUrl : dto.downloadUrl,
-      };
-      if (next.enforce && next.expectedBuild === null) {
-        throw new BadRequestException(
-          appVersionErrorBody(
-            `${platform}: enforce = true needs an expectedBuild`,
-            'expectedBuild',
-            AppVersionErrorCode.POLICY_BUILD_REQUIRED,
-          ),
-        );
-      }
-      return next;
-    });
+    const handSet =
+      dto.expectedBuild !== undefined || dto.message !== undefined || dto.downloadUrl !== undefined;
+    const saved = await this.store.writePolicy(
+      platform,
+      handSet ? 'manual' : null,
+      actor,
+      (current) => {
+        const base = current ?? noPolicy(platform);
+        const next: BuildPolicyValues = {
+          enforce: dto.enforce ?? base.enforce,
+          expectedBuild: dto.expectedBuild === undefined ? base.expectedBuild : dto.expectedBuild,
+          message: dto.message === undefined ? base.message : dto.message,
+          downloadUrl: dto.downloadUrl === undefined ? base.downloadUrl : dto.downloadUrl,
+        };
+        assertBuildForEnforce(platform, next);
+        return next;
+      },
+    );
     this.remember(saved);
     return saved;
   }
 
-  /** Hands a platform back to the bundled compat manifest: its values, source 'manifest'. */
+  /**
+   * Hands a platform back to the bundled compat.json: its values (a value it
+   * leaves null keeps the stored one), source 'manifest'. Enforce is kept.
+   */
   async useManifest(
     platform: ClientPlatform,
     manifest: CompatManifest | null,
@@ -125,12 +129,17 @@ export class BuildPolicyService {
       );
     }
     const entry = manifest.clients[platform];
-    const saved = await this.store.writePolicy(platform, 'manifest', actor, () => ({
-      enforce: entry.enforce,
-      expectedBuild: entry.expectedBuild,
-      message: entry.message,
-      downloadUrl: entry.downloadUrl,
-    }));
+    const saved = await this.store.writePolicy(platform, 'manifest', actor, (current) => {
+      const base = current ?? noPolicy(platform);
+      const next: BuildPolicyValues = {
+        enforce: base.enforce,
+        expectedBuild: entry.expectedBuild ?? base.expectedBuild,
+        message: entry.message ?? base.message,
+        downloadUrl: entry.downloadUrl ?? base.downloadUrl,
+      };
+      assertBuildForEnforce(platform, next);
+      return next;
+    });
     this.remember(saved);
     return saved;
   }
@@ -165,6 +174,18 @@ export class BuildPolicyService {
         );
       }
     }
+  }
+}
+
+function assertBuildForEnforce(platform: ClientPlatform, next: BuildPolicyValues): void {
+  if (next.enforce && next.expectedBuild === null) {
+    throw new BadRequestException(
+      appVersionErrorBody(
+        `${platform}: enforce = true needs an expectedBuild`,
+        'expectedBuild',
+        AppVersionErrorCode.POLICY_BUILD_REQUIRED,
+      ),
+    );
   }
 }
 

@@ -9,7 +9,19 @@ import { AuthEpochService } from './auth-epoch.service';
 import { BackendUpdateService } from './backend-update.service';
 import { BuildPolicyService } from './build-policy.service';
 
-const BUILD_57: BackendBuild = { version: '1.2.0', build: 57, commit: 'aa10be0d' };
+const BUILD_57: BackendBuild = {
+  version: '1.2.0',
+  build: 57,
+  commit: 'aa10be0d',
+  builtAt: null,
+  buildSource: 'build-info',
+};
+const RELEASE = {
+  platform: 'desktop',
+  build: 120,
+  version: '1.2.0',
+  releasedAt: '2026-11-10T09:00:00Z',
+};
 
 describe('BackendUpdateService startup step (Part B Step 2 Rev 2 §5.1)', () => {
   let dir: string;
@@ -33,20 +45,17 @@ describe('BackendUpdateService startup step (Part B Step 2 Rev 2 §5.1)', () => 
     previousBuild: 56,
     policiesWritten: ['web', 'desktop', 'mobile'],
     policiesKeptManual: [],
+    policiesNoValue: [],
+    releasesImported: 1,
     ...overrides,
   });
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'backend-update-'));
-    manifestPath = join(dir, 'compat-manifest.json');
-    writeFileSync(
-      manifestPath,
-      JSON.stringify({
-        backendBuild: 57,
-        clients: { desktop: { expectedBuild: 120, enforce: true } },
-      }),
-    );
-    env = { APP_COMPAT_MANIFEST: manifestPath };
+    manifestPath = join(dir, 'compat.json');
+    writeFileSync(manifestPath, JSON.stringify({ backendBuild: 57, clients: { desktop: 120 } }));
+    writeFileSync(join(dir, 'releases.json'), JSON.stringify({ releases: [RELEASE] }));
+    env = { APP_PACKAGE_DIR: dir };
     store = {
       // Like the real store: after a raise, run the tidy callback under the lock.
       applyBackendUpdate: jest.fn(
@@ -86,7 +95,7 @@ describe('BackendUpdateService startup step (Part B Step 2 Rev 2 §5.1)', () => 
   it('no APP_BUILD: nothing is attempted, a warning is logged (test 15)', async () => {
     await expect(service.runStartupCheck({ ...BUILD_57, build: null }, env)).resolves.toBeNull();
     expect(store.applyBackendUpdate).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('APP_BUILD is not set'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('No backend build'));
   });
 
   it('no manifest, or an invalid one: nothing is attempted, a warning is logged (test 15)', async () => {
@@ -111,9 +120,10 @@ describe('BackendUpdateService startup step (Part B Step 2 Rev 2 §5.1)', () => 
         manifest: expect.objectContaining({
           path: manifestPath,
           clients: expect.objectContaining({
-            desktop: { expectedBuild: 120, enforce: true, message: null, downloadUrl: null },
+            desktop: { expectedBuild: 120, message: null, downloadUrl: null },
           }),
         }),
+        releases: [expect.objectContaining({ platform: 'desktop', build: 120, isDeleted: false })],
       }),
       expect.any(Function),
     );
@@ -121,6 +131,20 @@ describe('BackendUpdateService startup step (Part B Step 2 Rev 2 §5.1)', () => 
     expect(store.closeOpenLoginSessions).toHaveBeenCalledWith('system-update');
     expect(redis.delMany).toHaveBeenCalledWith(['auth:session:a', 'auth:session:b']);
     expect(service.bundledManifest()).not.toBeNull();
+  });
+
+  it('releases.json missing or broken only skips the import; APP_RELEASES_IMPORT=false skips it', async () => {
+    rmSync(join(dir, 'releases.json'));
+    await service.runStartupCheck(BUILD_57, env);
+    writeFileSync(join(dir, 'releases.json'), JSON.stringify({ releases: [RELEASE, RELEASE] }));
+    await service.runStartupCheck(BUILD_57, env);
+    writeFileSync(join(dir, 'releases.json'), JSON.stringify({ releases: [RELEASE] }));
+    await service.runStartupCheck(BUILD_57, { ...env, APP_RELEASES_IMPORT: 'false' });
+    expect(store.applyBackendUpdate).toHaveBeenCalledTimes(3);
+    for (const call of store.applyBackendUpdate.mock.calls) {
+      expect(call[0]).toMatchObject({ releases: null });
+    }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('listed twice'));
   });
 
   it('the same build: no logout, nothing tidied (test 12)', async () => {

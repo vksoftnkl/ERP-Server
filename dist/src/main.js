@@ -12,6 +12,7 @@ const config_1 = require("@nestjs/config");
 const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
+const client_info_middleware_1 = require("./common/client-info/client-info.middleware");
 const file_logger_service_1 = require("./common/logging/file-logger.service");
 const house_validation_1 = require("./common/validation/house-validation");
 const prisma_service_1 = require("./database/prisma/prisma.service");
@@ -116,6 +117,7 @@ async function bootstrap() {
     });
     const swaggerModuleDocs = swaggerDocs_1.swaggerModuleDocuments;
     app.enableShutdownHooks();
+    app.use((0, client_info_middleware_1.createClientInfoMiddleware)());
     app.use((0, express_1.json)({ limit: requestBodyLimit }));
     app.use((0, express_1.urlencoded)({ extended: true, limit: requestBodyLimit }));
     app.use((0, helmet_1.default)({

@@ -26,12 +26,26 @@ export class HealthResponseDto {
   status!: 'ok' | 'degraded';
   @ApiProperty({ example: '2026-02-12T14:32:10.123Z' })
   timestamp!: string;
-  @ApiProperty({ example: '1.2.0', description: 'APP_VERSION, else package.json version' })
+  @ApiProperty({
+    example: '1.2.0',
+    description: 'APP_VERSION, else build-info.json, else package.json',
+  })
   version!: string;
-  @ApiProperty({ example: 57, nullable: true, description: 'APP_BUILD (set by CI)' })
+  @ApiProperty({ example: 57, nullable: true, description: 'APP_BUILD, else build-info.json (CI)' })
   build!: number | null;
-  @ApiProperty({ example: 'aa10be0d', nullable: true, description: 'APP_COMMIT (set by CI)' })
+  @ApiProperty({
+    example: 'aa10be0d',
+    nullable: true,
+    description: 'APP_COMMIT, else build-info.json (CI)',
+  })
   commit!: string | null;
+  @ApiProperty({
+    example: '2026-11-11T10:00:00Z',
+    nullable: true,
+    type: String,
+    description: 'When CI built this package (build-info.json)',
+  })
+  builtAt!: string | null;
   @ApiProperty({ example: true, description: 'The database answered SELECT 1' })
   dbOk!: boolean;
   @ApiProperty({ example: 1, description: 'Tokens minted under a lower epoch are refused' })

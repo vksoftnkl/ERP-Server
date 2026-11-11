@@ -9,7 +9,8 @@ export declare enum UserType {
     USER = "USER",
     CASHIER = "CASHIER",
     VIEWER = "VIEWER",
-    SYSTEM = "SYSTEM"
+    SYSTEM = "SYSTEM",
+    RELEASE_MANAGER = "RELEASE MANAGER"
 }
 export declare enum UserAdminErrorCode {
     ROLE_RESERVED = "USER_ROLE_RESERVED",

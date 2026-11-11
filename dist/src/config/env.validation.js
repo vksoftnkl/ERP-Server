@@ -24,6 +24,11 @@ exports.envValidationSchema = Joi.object({
         otherwise: Joi.string().trim().allow('').default(''),
     }),
     HTTPS_PASSPHRASE: Joi.string().allow('').default(''),
+    APP_VERSION: Joi.string().allow('').optional(),
+    APP_BUILD: Joi.string().allow('').optional(),
+    APP_COMMIT: Joi.string().allow('').optional(),
+    APP_PACKAGE_DIR: Joi.string().allow('').optional(),
+    APP_RELEASES_IMPORT: Joi.string().allow('').optional(),
     DATABASE_URL: Joi.string()
         .uri({
         scheme: ['postgres', 'postgresql'],

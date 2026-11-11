@@ -39,12 +39,19 @@ export const SYSTEM_UPDATE_ACTOR = 'system-update';
 export const APP_VERSION_ADMIN_TYPES: readonly string[] = ['ADMIN', 'SUPER ADMIN'];
 
 /**
+ * Step 4 (decision E5): roles that may register a release (with setExpected)
+ * and read the release list: the admins plus the CI user's own role. The
+ * policy and support routes stay admin-only.
+ */
+export const APP_VERSION_RELEASE_TYPES: readonly string[] = [
+  ...APP_VERSION_ADMIN_TYPES,
+  'RELEASE MANAGER',
+];
+
+/**
  * The token epoch and the build policy are cached in memory. Each API process
  * re-reads them this often, so a change made by another process (a second PM2
  * instance, the dev box's second API) reaches it within this time. A change
  * made through this process's own admin API applies at once.
  */
 export const STATE_REFRESH_INTERVAL_MS = 30 * 1000;
-
-/** The bundled compat manifest's file name (see compat/compat-manifest.ts). */
-export const COMPAT_MANIFEST_FILE = 'compat-manifest.json';

@@ -1,125 +1,90 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadCompatManifest, locateCompatManifest, parseCompatManifest } from './compat-manifest';
+import { loadCompatManifest, parseCompatManifest } from './compat-manifest';
 
-const parse = (value: unknown, appBuild = 57) =>
-  parseCompatManifest(
-    typeof value === 'string' ? value : JSON.stringify(value),
-    appBuild,
-    '/m.json',
-  );
+const parse = (value: unknown, appBuild = 1057) => parseCompatManifest(value, appBuild, '/c.json');
+const NONE = { expectedBuild: null, message: null, downloadUrl: null };
 
-describe('compat manifest (Part B Step 2 Rev 2)', () => {
-  it('reads every platform; a platform left out expects nothing', () => {
-    const result = parse({
-      backendBuild: 57,
-      generatedAt: '2026-11-11T10:00:00Z',
-      clients: {
-        desktop: {
-          expectedBuild: 120,
-          enforce: true,
-          message: ' Please update ',
-          downloadUrl: 'https://x/setup.exe',
+describe('compat.json (Part B Step 4)', () => {
+  it('reads a number, an object or nothing per platform', () => {
+    expect(
+      parse({
+        backendBuild: 1057,
+        generatedAt: '2026-11-11T10:00:00Z',
+        clients: {
+          web: 24,
+          desktop: { expectedBuild: 120, message: ' Update ', downloadUrl: 'https://x/120.exe' },
+          mobile: null,
         },
-        web: { expectedBuild: 57 },
-      },
-    });
-    expect(result).toEqual({
+      }),
+    ).toEqual({
       ok: true,
       manifest: {
-        path: '/m.json',
-        backendBuild: 57,
+        path: '/c.json',
+        backendBuild: 1057,
         clients: {
-          desktop: {
-            expectedBuild: 120,
-            enforce: true,
-            message: 'Please update',
-            downloadUrl: 'https://x/setup.exe',
-          },
-          // enforce defaults to false
-          web: { expectedBuild: 57, enforce: false, message: null, downloadUrl: null },
-          mobile: { expectedBuild: null, enforce: false, message: null, downloadUrl: null },
+          web: { expectedBuild: 24, message: null, downloadUrl: null },
+          desktop: { expectedBuild: 120, message: 'Update', downloadUrl: 'https://x/120.exe' },
+          // null or left out = no new value (the stored one stays)
+          mobile: NONE,
         },
       },
+    });
+    expect(parse({ clients: {} })).toMatchObject({
+      ok: true,
+      manifest: { clients: { web: NONE, desktop: NONE, mobile: NONE } },
     });
   });
 
-  it('backendBuild is optional, but when given it must be this APP_BUILD', () => {
-    expect(parse({ clients: {} }).ok).toBe(true);
-    expect(parse({ backendBuild: 56, clients: {} })).toMatchObject({
+  it('never carries enforce: a manifest that does is refused (enforce is an admin call)', () => {
+    const result = parse({ clients: { desktop: { expectedBuild: 120, enforce: true } } });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.reason).toContain('enforce is not read from compat.json');
+  });
+
+  it('backendBuild is optional, but when given it must be this build', () => {
+    expect(parse({ backendBuild: 1056, clients: {} })).toMatchObject({
       ok: false,
-      reason: "backendBuild 56 is not this backend's APP_BUILD 57",
+      reason: "backendBuild 1056 is not this backend's build 1057",
     });
   });
 
   it.each([
-    ['not JSON', '{oops', 'it is not valid JSON'],
     ['an array', [], 'it is not a JSON object'],
-    ['no clients', { backendBuild: 57 }, 'clients is missing or not an object'],
+    ['no clients', { backendBuild: 1057 }, 'clients is missing or not an object'],
     ['an unknown top key', { clients: {}, extra: 1 }, 'unknown key(s) extra'],
-    ['an unknown platform', { clients: { tv: {} } }, 'unknown platform(s) tv'],
-    [
-      'enforce without a build',
-      { clients: { desktop: { enforce: true } } },
-      'clients.desktop: enforce is true but expectedBuild is missing',
-    ],
-    [
-      'a zero build',
-      { clients: { web: { expectedBuild: 0 } } },
-      'clients.web: expectedBuild must be an integer',
-    ],
-    [
-      'a string enforce',
-      { clients: { web: { expectedBuild: 3, enforce: 'yes' } } },
-      'clients.web: enforce must be true or false',
-    ],
+    ['an unknown platform', { clients: { tv: 3 } }, 'unknown platform(s) tv'],
+    ['a zero build', { clients: { web: 0 } }, 'clients.web: a build must be an integer'],
+    ['a string build', { clients: { web: '24' } }, 'clients.web: not a build number or an object'],
     [
       'an unknown entry key',
       { clients: { web: { build: 3 } } },
       'clients.web: unknown key(s) build',
     ],
-  ])('rejects the whole manifest on %s', (_label, value, reason) => {
+  ])('rejects the whole file on %s', (_label, value, reason) => {
     const result = parse(value);
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.reason).toContain(reason);
   });
 
-  describe('where it is found', () => {
-    let dir: string;
-    beforeEach(() => {
-      dir = mkdtempSync(join(tmpdir(), 'compat-'));
-      writeFileSync(join(dir, 'package.json'), '{}');
-      mkdirSync(join(dir, 'dist', 'src'), { recursive: true });
-    });
-    afterEach(() => rmSync(dir, { recursive: true, force: true }));
-
-    it('beside the package.json above the code, else nowhere', () => {
-      const start = join(dir, 'dist', 'src');
-      expect(locateCompatManifest({}, start, null)).toBeNull();
-      writeFileSync(join(dir, 'compat-manifest.json'), '{"clients":{}}');
-      expect(locateCompatManifest({}, start, null)).toBe(join(dir, 'compat-manifest.json'));
-    });
-
-    it('APP_COMPAT_MANIFEST wins, and a missing file there is reported, not skipped', () => {
-      writeFileSync(join(dir, 'compat-manifest.json'), '{"clients":{}}');
-      const elsewhere = join(dir, 'ci', 'manifest.json');
-      const env = { APP_COMPAT_MANIFEST: elsewhere };
-      expect(locateCompatManifest(env, join(dir, 'dist', 'src'), null)).toBe(elsewhere);
-      expect(loadCompatManifest(57, env, join(dir, 'dist', 'src'))).toMatchObject({
+  it('loads from APP_PACKAGE_DIR, and reports a missing or broken file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'compat-'));
+    try {
+      const env = { APP_PACKAGE_DIR: dir };
+      expect(loadCompatManifest(1057, env)).toMatchObject({ ok: false });
+      writeFileSync(join(dir, 'compat.json'), '{oops');
+      expect(loadCompatManifest(1057, env)).toMatchObject({
         ok: false,
-        path: elsewhere,
+        reason: 'it is not valid JSON',
       });
-    });
-
-    it('beside the packed exe before the package root', () => {
-      const exeDir = join(dir, 'install');
-      mkdirSync(exeDir);
-      writeFileSync(join(exeDir, 'compat-manifest.json'), '{"clients":{}}');
-      writeFileSync(join(dir, 'compat-manifest.json'), '{"clients":{}}');
-      expect(
-        locateCompatManifest({}, join(dir, 'dist', 'src'), join(exeDir, 'erp-server.exe')),
-      ).toBe(join(exeDir, 'compat-manifest.json'));
-    });
+      writeFileSync(join(dir, 'compat.json'), '﻿{"clients":{"desktop":7}}');
+      expect(loadCompatManifest(1057, env)).toMatchObject({
+        ok: true,
+        manifest: { path: join(dir, 'compat.json'), clients: { desktop: { expectedBuild: 7 } } },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
