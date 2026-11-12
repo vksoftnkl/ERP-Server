@@ -1,7 +1,7 @@
--- Seed: accounts.acc_group_master -- the reserved chart of accounts (30 rows).
+-- Seed: accounts.acc_group_master -- the reserved chart of accounts (31 rows).
 --
 -- Only rows flagged acc_group_is_reserved are exported: the Tally-style default tree
--- (Capital Account, Current Assets, Sundry Debtors, ...) plus the two groups the
+-- (Capital Account, Current Assets, Sundry Debtors, ...) plus the three groups the
 -- application addresses BY A HARDCODED ID:
 --
 --   Customers  019f081c-6764-73b0-b397-3f30a6efe73e  STATES_ACCOUNT_GROUP_ID
@@ -12,6 +12,9 @@
 --   Suppliers  019f081c-98cc-757a-9346-4cfba810c47f  SUPPLIER_LINKED_LEDGER_GROUP_ID
 --       (src/modules/purchase/suppliers/suppliers.service.ts) -- every supplier ledger
 --       is created under it.
+--   Transporters  01a1ca91-1010-73d8-a329-f97aa1de5c9c  TRANSPORTER_LEDGER_GROUP_ID
+--       (src/modules/master/transporter/transporter.service.ts) -- every transporter's
+--       own ledger is created under it (20261112120000_vehicle_transporter_masters).
 --
 -- That is why the ids are written out rather than left to uuidv7(): they are compiled
 -- into the server, so the same uuid has to mean the same group in every environment.
@@ -54,6 +57,7 @@ VALUES
     ,('019eee86-f34b-7d82-aaf0-74869f0e7ece', 'Provisions'              , NULL                 , NULL, 'Provisions'              , 'Current Liabilities'   , 'Liabilities', '019eee86-f34b-7d61-a4a0-ad226e30557b', 32 , 'BALANCESHEET' , 'General'      , true , true, false, false, false, false, true, false, 'system', 'system')
     ,('019eee86-f34b-7d73-8a79-f5c6f036439a', 'Sundry Creditors'        , NULL                 , NULL, 'Sundry Creditors'        , 'Current Liabilities'   , 'Liabilities', '019eee86-f34b-7d61-a4a0-ad226e30557b', 33 , 'BALANCESHEET' , 'Party'        , true , true, false, false, false, false, true, false, 'system', 'system')
     ,('019f081c-98cc-757a-9346-4cfba810c47f', 'Suppliers'               , NULL                 , NULL, NULL                      , NULL                    , 'Liabilities', '019eee86-f34b-7d73-8a79-f5c6f036439a', 0  , 'BALANCESHEET' , 'Party'        , false, true, false, false, false, false, true, false, 'system', 'system')
+    ,('01a1ca91-1010-73d8-a329-f97aa1de5c9c', 'Transporters'            , NULL                 , NULL, NULL                      , NULL                    , 'Liabilities', '019eee86-f34b-7d73-8a79-f5c6f036439a', 0  , 'BALANCESHEET' , 'Party'        , false, true, false, false, false, false, true, false, 'system', 'system')
     ,('019eee86-f34b-7da8-b046-6f834dbe8a53', 'Fixed Assets'            , NULL                 , NULL, 'Fixed Assets'            , 'Fixed Assets'          , 'Assets'     , NULL, 40 , 'BALANCESHEET' , 'General'      , true , true, false, false, false, false, true, false, 'system', 'system')
     ,('019eee86-f34b-7dba-8e1e-5437bdcaa251', 'Investments'             , NULL                 , NULL, 'Investments'             , 'Investments'           , 'Assets'     , NULL, 50 , 'BALANCESHEET' , 'General'      , true , true, false, false, false, false, true, false, 'system', 'system')
     ,('019eee86-f34b-7dcc-8789-214f1ffa3929', 'Current Assets'          , NULL                 , NULL, 'Current Assets'          , 'Current Assets'        , 'Assets'     , NULL, 60 , 'BALANCESHEET' , 'General'      , true , true, false, false, false, false, true, false, 'system', 'system')

@@ -22,8 +22,9 @@ model TransporterMaster {
   trnIsEnrolmentId  Boolean   @default(false)                          @map("trn_is_enrolment_id")
   /// ROAD | RAIL | AIR | SHIP
   trnMode           String    @default("ROAD") @db.VarChar(10)         @map("trn_mode")
-  /// Freight payable ledger, optional. No FK: a transporter may be recorded
-  /// long before anybody decides which ledger their freight posts to.
+  /// The transporter's own account ledger (group Transporters, under Sundry
+  /// Creditors), made on its first save — the same id as trnId, as a
+  /// supplier's sup_id is its ledger's id (plan-vehicle-master D28-D31).
   trnLedgerId       String?   @db.Uuid                                 @map("trn_ledger_id")
   trnPhone          String?   @db.VarChar(20)                          @map("trn_phone")
   trnEmail          String?   @db.VarChar(150)                         @map("trn_email")
@@ -50,6 +51,11 @@ model TransporterMaster {
   //       WHERE trn_is_deleted = false;
   //
   // CHECK constraints (DB-only): ck_trn_mode, ck_trn_gstin_len
+  //
+  // FK (DB-only, no Prisma relation, so the accounts fragment is untouched;
+  // 20261112120000_vehicle_transporter_masters):
+  //   fk_trn_ledger (trn_ledger_id) -> accounts.acc_ledger_master (led_id)
+  //       ON UPDATE CASCADE ON DELETE RESTRICT
 
   transportBands    TxnTransportDetail[] @relation("TransportBandTransporter")
 

@@ -1,7 +1,9 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (63 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (64 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
+-- 76 VEHICLE DRIVERS (Vehicle Master's Driver picker) as migration
+-- 20261112120000_vehicle_transporter_masters inserts it.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -502,6 +504,18 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
    AND "price_lvl_isDeleted" = false
    AND price_lvl_id BETWEEN 1 AND 4
  ORDER BY price_lvl_id$seed$, NULL)
+    ,(76, 'VEHICLE DRIVERS', 'Vehicle Master (menu 125) Driver picker: this company''s active employees with designation DRIVER (everyone while nobody holds it), with their mobile. Param idrv_company_id, always sent.', 'emp_name'            , 'asc'      , 10, true , 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT e.emp_id, e.emp_code, e.emp_name, e.emp_mobile1, b.br_name AS emp_branch
+  FROM public.employee_master e
+  LEFT JOIN public.branch_master b ON b.br_id = e.emp_branch_id
+  LEFT JOIN public.employee_designations d ON d.ed_id = e.emp_designation_id AND d.ed_is_deleted = false
+ WHERE e.emp_is_active = true AND e.emp_is_deleted = false
+   AND e.emp_company_id::text = 'idrv_company_id'
+   AND (upper(d.ed_code) = 'DRIVER'
+        OR NOT EXISTS (SELECT 1 FROM public.employee_master e2
+                         JOIN public.employee_designations d2 ON d2.ed_id = e2.emp_designation_id AND d2.ed_is_deleted = false
+                        WHERE e2.emp_is_active = true AND e2.emp_is_deleted = false
+                          AND e2.emp_company_id::text = 'idrv_company_id' AND upper(d2.ed_code) = 'DRIVER'))
+ ORDER BY e.emp_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

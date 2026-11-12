@@ -116,6 +116,8 @@ import { MasterLookupModule } from './modules/master-lookup/master-lookup.module
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
 import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
+import { VehicleModule } from './modules/master/vehicle/vehicle.module';
+import { TransporterModule } from './modules/master/transporter/transporter.module';
 import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { LoyaltyMembersModule } from './modules/sales/loyalty/members/loyalty-members.module';
@@ -299,6 +301,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     BatchPrefixModule,
     WidgetMasterModule,
     ChargeMasterModule,
+    VehicleModule,
+    TransporterModule,
     ChargeDetailModule,
     ItemStockBalanceModule,
     ItemBatchStockModule,

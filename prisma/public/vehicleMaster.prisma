@@ -33,9 +33,11 @@ model VehicleMaster {
   saleDcs           SaleDc[]           @relation("SaleDcVehicle")
   saleDcReturns     SaleDcReturn[]     @relation("SaleDcReturnVehicle")
 
-  // DB-only:
-  //   CREATE UNIQUE INDEX ux_veh_no ON public.vehicle_master
-  //       (veh_company_id, veh_vehicle_no) NULLS NOT DISTINCT
+  // DB-only (partial) — NOT unique since 20261112120000 (offline rule: two
+  // branches may save the same number; the server checks online, VEH_NO_TAKEN).
+  // It replaced UNIQUE ux_veh_no on the same key.
+  //   CREATE INDEX ix_veh_no ON public.vehicle_master
+  //       (veh_company_id, veh_vehicle_no)
   //       WHERE veh_is_deleted = false;
   //   ix_veh_transporter, ix_veh_driver  (FK-covering, partial)
   //

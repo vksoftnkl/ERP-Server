@@ -124,6 +124,8 @@ const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.mo
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
 const charge_master_module_1 = require("./modules/master/charge-master/charge-master.module");
+const vehicle_module_1 = require("./modules/master/vehicle/vehicle.module");
+const transporter_module_1 = require("./modules/master/transporter/transporter.module");
 const charge_detail_module_1 = require("./modules/master/charge-detail/charge-detail.module");
 const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promotion-loyalty-points.module");
 const loyalty_members_module_1 = require("./modules/sales/loyalty/members/loyalty-members.module");
@@ -302,6 +304,8 @@ exports.AppModule = AppModule = __decorate([
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,
             charge_master_module_1.ChargeMasterModule,
+            vehicle_module_1.VehicleModule,
+            transporter_module_1.TransporterModule,
             charge_detail_module_1.ChargeDetailModule,
             itemStockBalanceModule_1.ItemStockBalanceModule,
             itemBatchStockModule_1.ItemBatchStockModule,

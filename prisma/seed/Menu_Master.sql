@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (126 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (127 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -50,7 +50,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 38 rows) ============
+    -- ============ &1 Sales (menu 1, 39 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,  10.00, '0', NULL, NULL, true , false)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
@@ -68,6 +68,8 @@ VALUES
     ,(  95,   17, 'Tender Types'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
     ,( 130,   17, 'Freight Charges'                      , NULL                  , true ,  60.00, NULL, NULL, NULL, true , false)
     ,( 177,   17, 'Loading Charges'                      , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
+    -- 125 Vehicle Master (20261112120000_vehicle_transporter_masters, plan-vehicle-master D1).
+    ,( 125,   17, 'Vehicle Master'                       , NULL                  , true ,  75.00, NULL, NULL, NULL, true , false)
     ,( 182,    1, 'Deliver Note'                         , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 226,    1, 'Delivery Status'                      , 'true'                , true ,  40.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Schemes'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
