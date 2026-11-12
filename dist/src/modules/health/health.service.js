@@ -13,6 +13,7 @@ exports.HealthService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const redis_cache_service_1 = require("../../common/redis/redis-cache.service");
+const backend_build_1 = require("./backend-build");
 let HealthService = class HealthService {
     prisma;
     redisCacheService;
@@ -38,9 +39,14 @@ let HealthService = class HealthService {
                 cacheStatus = 'down';
             }
         }
+        const build = (0, backend_build_1.backendBuild)();
         return {
             status: databaseStatus === 'up' && cacheStatus !== 'down' ? 'ok' : 'degraded',
             timestamp: new Date().toISOString(),
+            version: build.version,
+            build: build.build,
+            commit: build.commit,
+            dbOk: databaseStatus === 'up',
             database: {
                 status: databaseStatus,
             },

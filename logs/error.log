@@ -21133,3 +21133,54 @@ The column `pur_invoice_item.pii_wastage_per_qty` does not exist in the current 
     at async PurchaseInvoiceService.get (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.service.ts:412:48)
     at async PurchaseInvoiceController.get (/home/vk/Dev/erp/ERP server/src/modules/purchase/invoice/purchase-invoice.controller.ts:58:72)
 2026-11-10T05:09:41.278Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-10T13:05:54.606Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-10T13:14:26.430Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-11T04:36:21.748Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/amend
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (srv_acc_year, srv_src_module, srv_src_doc_type, srv_src_doc_id, srv_line_no, srv_lot_id, srv_godown_id, srv_bucket)=(2026-2027, SALES, SALES_ORDER, 01a1c8e4-8375-72e6-89fe-1d003e7a02a8, 1, 7623cb89-0770-5df0-beab-0779d63af0b4, 019daae6-c65c-7eb8-9ba2-7659611b0a01, SALEABLE) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async StockReservationService.reserve (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/stock-reservation.service.ts:130:9)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:423:30)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderController.amendOrder (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:312:18)
+2026-11-11T04:36:21.748Z ERROR [HttpError] 500 POST /api/v1/sale-orders/amend code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-11T04:53:11.454Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/cancel
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Transaction API error: Transaction already closed: A query cannot be executed on an expired transaction. The timeout for this transaction was 5000 ms, however 8576 ms passed since the start of the transaction. Consider increasing the interactive transaction timeout or doing less work in the transaction.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async StockReservationService.release (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/stock-reservation.service.ts:169:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:254:7)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderController.cancelOrder (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:297:18)
+2026-11-11T04:53:11.454Z ERROR [HttpError] 500 POST /api/v1/sale-orders/cancel code=INTERNAL_ERROR platform=- build=- version=- device=01a14a14-a211-7f53-a5f4-668222f3dc44 company=- user=VKPOS
+2026-11-11T06:16:07.339Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-11T06:16:28.494Z ERROR [HttpError] 503 POST /api/v1/gst/company-credentials/verify code=GST_SWITCHED_OFF platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-11T06:17:06.229Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-11T06:18:59.363Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-11T06:19:24.819Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-11T12:33:35.020Z ERROR [AllExceptionsFilter] GET /api/v1/stock/reports/item-ledger?itemId=01a14a0e-84d7-794c-b11c-7b309f4b9f44&from=2026-10-01&to=2026-11-11&bucket=ALL&companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: non-integer constant in ORDER BY`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/stocks/reports/item-ledger/item-ledger.service.ts:462:21)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ItemLedgerController.ledger (/home/vk/Dev/erp/ERP server/src/modules/stocks/reports/item-ledger/item-ledger.controller.ts:96:18)
+2026-11-11T12:33:35.021Z ERROR [HttpError] 500 GET /api/v1/stock/reports/item-ledger code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS

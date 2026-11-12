@@ -66,6 +66,10 @@ var TxnStatusEvent;
     TxnStatusEvent["RELEASED"] = "RELEASED";
     TxnStatusEvent["HOLD_OVERRIDE"] = "HOLD_OVERRIDE";
     TxnStatusEvent["WARN_OVERRIDE"] = "WARN_OVERRIDE";
+    TxnStatusEvent["DELIVERY_HOLD"] = "DELIVERY_HOLD";
+    TxnStatusEvent["DELIVERY_RELEASED"] = "DELIVERY_RELEASED";
+    TxnStatusEvent["PRIORITY_CHANGED"] = "PRIORITY_CHANGED";
+    TxnStatusEvent["MERGED"] = "MERGED";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

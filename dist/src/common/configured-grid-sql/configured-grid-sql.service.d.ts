@@ -42,6 +42,7 @@ export declare class ConfiguredGridSqlService {
     private prepareBaseSql;
     stripSqlComments(sql: string): string;
     extractTopLevelFromTableName(sql: string): string | null;
+    private mainSelectOf;
     private tokenizeSearchColumnName;
     private describeSearchColumnName;
     private getSearchColumnMatchScore;

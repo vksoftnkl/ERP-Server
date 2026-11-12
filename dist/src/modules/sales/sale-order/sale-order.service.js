@@ -9,8 +9,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaleOrderService = exports.SALE_ORDER_TERMINAL_STATUSES = void 0;
+exports.SaleOrderService = exports.SALE_ORDER_TERMINAL_STATUSES = exports.SALE_ORDER_AUDIT_SCREEN_NAME = exports.SALE_ORDER_TABLE_NAME = void 0;
 exports.assertSaleOrderNotTerminal = assertSaleOrderNotTerminal;
+exports.finishedOrderHoldRelease = finishedOrderHoldRelease;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -34,9 +35,9 @@ const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/uti
 const order_advance_posting_helper_1 = require("./order-advance-posting.helper");
 const pdc_register_helper_1 = require("../posting/pdc-register.helper");
 const SALE_ORDER_VCHR_TYPE_ID = 4;
-const SALE_ORDER_TABLE_NAME = 'sale_order';
+exports.SALE_ORDER_TABLE_NAME = 'sale_order';
 const SALE_ORDER_ITEM_TABLE_NAME = 'sale_order_item';
-const SALE_ORDER_AUDIT_SCREEN_NAME = 'Sale Order';
+exports.SALE_ORDER_AUDIT_SCREEN_NAME = 'Sale Order';
 const SALE_ORDER_TYPES = ['CASH', 'CREDIT'];
 const SALE_ORDER_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 const SALE_ORDER_DELIVERY_MODES = [
@@ -70,6 +71,22 @@ function assertSaleOrderNotTerminal(order) {
         ? posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED
         : posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId', { status: order.soStatus });
 }
+const SALE_ORDER_CANCEL_LINES_REFUSED_STATUSES = ['CLOSED', 'EXPIRED'];
+function finishedOrderHoldRelease(order, endStatus, cause, actor, now) {
+    if (!order.soDeliveryHold || !exports.SALE_ORDER_TERMINAL_STATUSES.includes(endStatus)) {
+        return null;
+    }
+    const remarks = `Delivery hold released because the order was ${cause}`;
+    return {
+        data: {
+            soDeliveryHold: false,
+            soDeliveryHoldReason: remarks,
+            soDeliveryHoldBy: actor,
+            soDeliveryHoldOn: now,
+        },
+        remarks,
+    };
+}
 const SALE_ORDER_AMEND_RIGHT_STATUSES = ['CONFIRMED', 'PARTIAL'];
 const SALE_ORDER_FULFIL_STATUSES = ['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
 const SALE_ORDER_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
@@ -94,6 +111,8 @@ const SALE_ORDER_FULFIL_PARTIAL = 'PARTIAL';
 const SALE_ORDER_FULFIL_COMPLETED = 'COMPLETED';
 const SALE_ORDER_FULFIL_CANCELLED = 'CANCELLED';
 const SALE_ORDER_FULFIL_STATUS_REMARK = 'Order fulfilment recomputed from its sale bills';
+const SALE_ORDER_REOPEN_REMARK = 'Reopened: a bill against it no longer delivers all of it';
+const SALE_ORDER_STATUS_CONFIRMED = 'CONFIRMED';
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 const SALE_ORDER_VALUE_GUARDS = [
     { field: 'soDocType', allowed: sale_order_api_types_1.SALE_ORDER_DOC_TYPES, nullable: false },
@@ -455,8 +474,8 @@ let SaleOrderService = class SaleOrderService {
         const duplicate = this.describeDuplicate(error);
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
     }
-    async getById(soId, soCompanyId, soBranchId, soAccYear) {
-        const record = await this.prisma.saleOrder.findFirst({
+    async getById(soId, soCompanyId, soBranchId, soAccYear, client = this.prisma) {
+        const record = await client.saleOrder.findFirst({
             where: {
                 soId,
                 soCompanyId,
@@ -490,11 +509,11 @@ let SaleOrderService = class SaleOrderService {
         if (!record) {
             (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
         }
-        const charges = await this.chargeDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId);
-        const tenders = await this.tenderDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId);
-        const names = await this.resolveDisplayNames(record, charges, tenders);
-        const tendersWithCheques = await this.withChequeDetails(this.prisma, tenders);
-        const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(this.prisma, record);
+        const charges = await this.chargeDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId, undefined, client);
+        const tenders = await this.tenderDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId, client);
+        const names = await this.resolveDisplayNames(record, charges, tenders, client);
+        const tendersWithCheques = await this.withChequeDetails(client, tenders);
+        const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(client, record);
         return this.toPayload({
             ...record,
             ...(live ? this.advanceRollupsFromLive(record, live) : {}),
@@ -562,11 +581,13 @@ let SaleOrderService = class SaleOrderService {
             }
             const modifiedOn = new Date();
             const actor = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+            const holdRelease = finishedOrderHoldRelease(existing, SALE_ORDER_STATUS_CANCELLED, 'deleted', actor, modifiedOn);
             const headerChanges = {
                 soStatus: SALE_ORDER_STATUS_CANCELLED,
                 soIsDeleted: true,
                 soModifiedOn: modifiedOn,
                 soModifiedBy: actor,
+                ...(holdRelease?.data ?? {}),
             };
             const result = await tx.saleOrder.updateMany({
                 where: {
@@ -596,12 +617,20 @@ let SaleOrderService = class SaleOrderService {
             await this.chargeDetailService.softDeleteDocumentCharges(tx, sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId, actor, modifiedOn);
             await this.tenderDetailService.softDeleteDocumentTenders(tx, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId, actor, modifiedOn);
             await (0, order_advance_posting_helper_1.deleteOrderAdvancePosting)(tx, { soId, soCompanyId, soAccYear }, actor, modifiedOn);
+            if (holdRelease) {
+                await this.logStatusStep(tx, existing, {
+                    event: txn_status_log_helper_1.TxnStatusEvent.DELIVERY_RELEASED,
+                    fromStatus: SALE_ORDER_STATUS_CANCELLED,
+                    toStatus: SALE_ORDER_STATUS_CANCELLED,
+                    remarks: holdRelease.remarks,
+                }, actor, modifiedOn);
+            }
             const originalRecord = auditRecordOf(this.toPayload(existing));
             const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
             await this.auditLogService.logEntityChange({
                 action: 'cancel',
-                tableName: SALE_ORDER_TABLE_NAME,
-                screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+                tableName: exports.SALE_ORDER_TABLE_NAME,
+                screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
                 screenType: 'transaction',
                 pk: soId,
                 displayName: existing.soOrderRefno || soId,
@@ -657,6 +686,9 @@ let SaleOrderService = class SaleOrderService {
             }
             if (!existing) {
                 (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'srcDocId', `No active order or order line found with id ${srcDocId} in accounting year ${srcAccYear}`, posting_types_1.SALES_ERROR_CODES.NOT_FOUND);
+            }
+            if (SALE_ORDER_CANCEL_LINES_REFUSED_STATUSES.includes(existing.soStatus)) {
+                (0, sales_errors_1.throwSalesLocked)(`This order is ${existing.soStatus}: nothing is left open on it`, posting_types_1.SALES_ERROR_CODES.ORDER_CLOSED, 'srcDocId', { status: existing.soStatus });
             }
             return this.cancelOrderOpenLines(tx, {
                 order: existing,
@@ -764,7 +796,7 @@ let SaleOrderService = class SaleOrderService {
             await this.auditLogService.logEntityChange({
                 action: 'update',
                 tableName: SALE_ORDER_ITEM_TABLE_NAME,
-                screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+                screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
                 screenType: 'transaction',
                 pk: line.soiId,
                 displayName: `${existing.soOrderRefno || existing.soId} #${line.soiLineNo}`,
@@ -794,6 +826,12 @@ let SaleOrderService = class SaleOrderService {
         if (rollup.headerStatus) {
             headerChanges.soStatus = rollup.headerStatus;
         }
+        const holdRelease = rollup.headerStatus
+            ? finishedOrderHoldRelease(existing, rollup.headerStatus, rollup.headerStatus === SALE_ORDER_STATUS_CANCELLED ? 'cancelled' : 'closed', actor, now)
+            : null;
+        if (holdRelease) {
+            Object.assign(headerChanges, holdRelease.data);
+        }
         if (rollup.fulfilStatus === SALE_ORDER_FULFIL_COMPLETED && !existing.soCompletedOn) {
             headerChanges.soCompletedOn = now;
         }
@@ -816,12 +854,20 @@ let SaleOrderService = class SaleOrderService {
                 remarks: cancelReason,
             }, actor, now);
         }
+        if (holdRelease) {
+            await this.logStatusStep(tx, existing, {
+                event: txn_status_log_helper_1.TxnStatusEvent.DELIVERY_RELEASED,
+                fromStatus: soStatus,
+                toStatus: soStatus,
+                remarks: holdRelease.remarks,
+            }, actor, now);
+        }
         const originalRecord = auditRecordOf(this.toPayload(existing));
         const modifiedRecord = auditRecordOf(this.toPayload({ ...existing, ...headerChanges }));
         await this.auditLogService.logEntityChange({
             action: 'cancel',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+            tableName: exports.SALE_ORDER_TABLE_NAME,
+            screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
             screenType: 'transaction',
             pk: existing.soId,
             displayName: existing.soOrderRefno || existing.soId,
@@ -944,7 +990,7 @@ let SaleOrderService = class SaleOrderService {
         const targets = await this.resolveOrderRefs(tx, request.refs);
         const results = [];
         for (const order of targets) {
-            results.push(await this.syncOneOrderFulfilment(tx, order, actor, now));
+            results.push(await this.syncOneOrderFulfilment(tx, order, actor, now, request.reopenRemark));
         }
         return results;
     }
@@ -1003,7 +1049,7 @@ let SaleOrderService = class SaleOrderService {
         }
         return [...byOrder.values()];
     }
-    async syncOneOrderFulfilment(tx, target, actor, now) {
+    async syncOneOrderFulfilment(tx, target, actor, now, reopenRemark) {
         const { soId, soAccYear, lineNos, fields } = target;
         await tx.$queryRaw `
       SELECT so_id
@@ -1128,7 +1174,7 @@ let SaleOrderService = class SaleOrderService {
             await this.auditLogService.logEntityChange({
                 action: 'update',
                 tableName: SALE_ORDER_ITEM_TABLE_NAME,
-                screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+                screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
                 screenType: 'transaction',
                 pk: line.soiId,
                 displayName: `${order.soOrderRefno || order.soId} #${line.soiLineNo}`,
@@ -1149,7 +1195,10 @@ let SaleOrderService = class SaleOrderService {
             });
         }
         const rollup = this.summariseOrderLines(settledLines);
-        const soStatus = rollup.headerStatus ?? order.soStatus;
+        const reopenStatus = rollup.headerStatus === null && order.soStatus === SALE_ORDER_FULFIL_COMPLETED
+            ? SALE_ORDER_STATUS_CONFIRMED
+            : null;
+        const soStatus = rollup.headerStatus ?? reopenStatus ?? order.soStatus;
         const headerChanged = fulfilledLines.length > 0 ||
             !rollup.billedAmt.equals(roundAmount(order.soBilledAmt)) ||
             !rollup.cancelledAmt.equals(roundAmount(order.soCancelledAmt)) ||
@@ -1180,6 +1229,16 @@ let SaleOrderService = class SaleOrderService {
         if (rollup.headerStatus) {
             headerChanges.soStatus = rollup.headerStatus;
         }
+        else if (reopenStatus) {
+            headerChanges.soStatus = reopenStatus;
+            headerChanges.soCompletedOn = null;
+        }
+        const holdRelease = rollup.headerStatus
+            ? finishedOrderHoldRelease(order, rollup.headerStatus, rollup.headerStatus === SALE_ORDER_STATUS_CANCELLED ? 'cancelled' : 'completed', actor, now)
+            : null;
+        if (holdRelease) {
+            Object.assign(headerChanges, holdRelease.data);
+        }
         if (rollup.fulfilStatus === SALE_ORDER_FULFIL_COMPLETED && !order.soCompletedOn) {
             headerChanges.soCompletedOn = now;
         }
@@ -1196,18 +1255,30 @@ let SaleOrderService = class SaleOrderService {
         }
         if (soStatus !== order.soStatus) {
             await this.logStatusStep(tx, order, {
-                event: soStatus === SALE_ORDER_STATUS_CANCELLED
-                    ? txn_status_log_helper_1.TxnStatusEvent.CANCELLED
-                    : txn_status_log_helper_1.TxnStatusEvent.CONVERTED,
+                event: reopenStatus
+                    ? txn_status_log_helper_1.TxnStatusEvent.REOPENED
+                    : soStatus === SALE_ORDER_STATUS_CANCELLED
+                        ? txn_status_log_helper_1.TxnStatusEvent.CANCELLED
+                        : txn_status_log_helper_1.TxnStatusEvent.CONVERTED,
                 fromStatus: order.soStatus,
                 toStatus: soStatus,
-                remarks: SALE_ORDER_FULFIL_STATUS_REMARK,
+                remarks: reopenStatus
+                    ? (reopenRemark ?? SALE_ORDER_REOPEN_REMARK)
+                    : SALE_ORDER_FULFIL_STATUS_REMARK,
+            }, actor, now);
+        }
+        if (holdRelease) {
+            await this.logStatusStep(tx, order, {
+                event: txn_status_log_helper_1.TxnStatusEvent.DELIVERY_RELEASED,
+                fromStatus: soStatus,
+                toStatus: soStatus,
+                remarks: holdRelease.remarks,
             }, actor, now);
         }
         await this.auditLogService.logEntityChange({
             action: 'update',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+            tableName: exports.SALE_ORDER_TABLE_NAME,
+            screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
             screenType: 'transaction',
             pk: order.soId,
             displayName: order.soOrderRefno || order.soId,
@@ -1321,19 +1392,24 @@ let SaleOrderService = class SaleOrderService {
             ...EMPTY_NAME_MAPS,
             actorNameById: await this.resolveActorNames(tx, [restated.soCreatedBy]),
         });
-        await this.auditLogService.logEntityChange({
-            action: 'New',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: payload.soId,
-            displayName: payload.soOrderRefno || payload.soId,
-            originalRecord: null,
-            modifiedRecord: auditRecordOf(payload),
-            userId: createdBy,
-            notes: 'Order created',
-        }, tx);
+        await this.writeRevision(tx, created, null, createdBy, 'Order created');
         return payload;
+    }
+    async writeRevision(tx, order, before, actor, notes) {
+        const after = await this.getById(order.soId, order.soCompanyId, order.soBranchId, order.soAccYear, tx);
+        const { revNo } = await this.auditLogService.logDocumentRevision({
+            screenName: exports.SALE_ORDER_AUDIT_SCREEN_NAME,
+            tableName: exports.SALE_ORDER_TABLE_NAME,
+            docId: order.soId,
+            displayName: after.soOrderRefno || order.soId,
+            before: before === null ? null : auditRecordOf(before),
+            after: auditRecordOf(after),
+            userId: actor,
+            branchId: order.soBranchId,
+            deviceId: after.soDeviceId ?? null,
+            notes,
+        }, tx);
+        return { revNo, after };
     }
     async updateOrder(saveOrderDto) {
         try {
@@ -1344,7 +1420,7 @@ let SaleOrderService = class SaleOrderService {
             throw error;
         }
     }
-    async updateOrderInTx(tx, saveOrderDto) {
+    async updateOrderInTx(tx, saveOrderDto, options = {}) {
         saveOrderDto.soSessionId = await (0, till_session_id_1.tillSessionIdOrNull)(tx, saveOrderDto.soSessionId);
         const soId = saveOrderDto.soId;
         await tx.$queryRaw `
@@ -1362,6 +1438,10 @@ let SaleOrderService = class SaleOrderService {
         }
         assertSaleOrderNotTerminal(existing);
         await this.assertAmendRightToEdit(tx, existing);
+        const writesRevision = options.revision !== false;
+        const before = writesRevision
+            ? await this.getById(existing.soId, existing.soCompanyId, existing.soBranchId, existing.soAccYear, tx)
+            : null;
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
         const now = new Date();
         const modifiedBy = this.signedInActor();
@@ -1416,18 +1496,9 @@ let SaleOrderService = class SaleOrderService {
                 restated.soModifiedBy,
             ]),
         });
-        await this.auditLogService.logEntityChange({
-            action: 'update',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: soId,
-            displayName: payload.soOrderRefno || payload.soId,
-            originalRecord: auditRecordOf(this.toPayload(existing)),
-            modifiedRecord: auditRecordOf(payload),
-            userId: modifiedBy,
-            notes: 'Order updated',
-        }, tx);
+        if (writesRevision) {
+            await this.writeRevision(tx, restated, before, modifiedBy, 'Order updated');
+        }
         return payload;
     }
     async syncItems(tx, scope, inputItems, actorId) {
@@ -1494,18 +1565,6 @@ let SaleOrderService = class SaleOrderService {
                     },
                     data: updateData,
                 });
-                await this.auditLogService.logEntityChange({
-                    action: 'update',
-                    tableName: SALE_ORDER_ITEM_TABLE_NAME,
-                    screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-                    screenType: 'transaction',
-                    pk: updated.soiId,
-                    displayName: `Line ${updated.soiLineNo}`,
-                    originalRecord: this.toItemPayload(existingItem),
-                    modifiedRecord: this.toItemPayload(updated),
-                    userId: actorId,
-                    notes: 'Order item updated',
-                }, tx);
                 persisted.push(updated);
                 continue;
             }
@@ -1526,25 +1585,13 @@ let SaleOrderService = class SaleOrderService {
             (0, module_service_utils_1.applyPresentFields)(createData, inputItem, SALE_ORDER_ITEM_OPTIONAL_FIELDS, SALE_ORDER_ITEM_DATE_TRANSFORMS);
             this.applyDerivedItemQuantities(createData, inputItem, undefined);
             const created = await tx.saleOrderItem.create({ data: createData });
-            await this.auditLogService.logEntityChange({
-                action: 'New',
-                tableName: SALE_ORDER_ITEM_TABLE_NAME,
-                screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-                screenType: 'transaction',
-                pk: created.soiId,
-                displayName: `Line ${created.soiLineNo}`,
-                originalRecord: null,
-                modifiedRecord: this.toItemPayload(created),
-                userId: created.soiCreatedBy,
-                notes: 'Order item created',
-            }, tx);
             persisted.push(created);
         }
         return persisted.sort((left, right) => left.soiLineNo - right.soiLineNo);
     }
     async softDeleteItems(tx, removed, actorId, now) {
         for (const removedItem of removed) {
-            const deleted = await tx.saleOrderItem.update({
+            await tx.saleOrderItem.update({
                 where: {
                     soiId_soiAccYear: { soiId: removedItem.soiId, soiAccYear: removedItem.soiAccYear },
                 },
@@ -1554,18 +1601,6 @@ let SaleOrderService = class SaleOrderService {
                     soiModifiedBy: actorId,
                 },
             });
-            await this.auditLogService.logEntityChange({
-                action: 'cancel',
-                tableName: SALE_ORDER_ITEM_TABLE_NAME,
-                screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-                screenType: 'transaction',
-                pk: deleted.soiId,
-                displayName: `Line ${removedItem.soiLineNo}`,
-                originalRecord: this.toItemPayload(removedItem),
-                modifiedRecord: this.toItemPayload(deleted),
-                userId: actorId,
-                notes: 'Order item soft deleted',
-            }, tx);
         }
     }
     async syncAdvanceVoucher(tx, order, actor, now, chequeDetails = {}) {
@@ -1936,7 +1971,7 @@ let SaleOrderService = class SaleOrderService {
     applyOptionalFields(data, dto) {
         (0, module_service_utils_1.applyPresentFields)(data, dto, SALE_ORDER_OPTIONAL_FIELDS, SALE_ORDER_DATE_TRANSFORMS);
     }
-    async resolveGodowns(items = []) {
+    async resolveGodowns(items = [], client = this.prisma) {
         const godownIds = [
             ...new Set(items
                 .map((item) => item.soiGodownId)
@@ -1945,7 +1980,7 @@ let SaleOrderService = class SaleOrderService {
         if (godownIds.length === 0) {
             return new Map();
         }
-        const godowns = await this.prisma.godownLocation.findMany({
+        const godowns = await client.godownLocation.findMany({
             where: { gdlId: { in: godownIds } },
             select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
         });
@@ -1967,7 +2002,7 @@ let SaleOrderService = class SaleOrderService {
         });
         return new Map(users.map((user) => [user.usrId.toLowerCase(), user.usrLoginName.trim()]));
     }
-    async resolveDisplayNames(record, charges, tenders) {
+    async resolveDisplayNames(record, charges, tenders, client = this.prisma) {
         const items = record.items ?? [];
         const companyIds = distinctIds([
             record.soCompanyId,
@@ -1988,38 +2023,38 @@ let SaleOrderService = class SaleOrderService {
         const userIds = distinctIds(tenders.map((tender) => tender.tdUserId));
         const [companies, branches, employees, ledgers, users, actorNameById, godownById, defaultGodownByLine,] = await Promise.all([
             companyIds.length
-                ? this.prisma.company.findMany({
+                ? client.company.findMany({
                     where: { compId: { in: companyIds } },
                     select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
                 })
                 : [],
             branchIds.length
-                ? this.prisma.branchMaster.findMany({
+                ? client.branchMaster.findMany({
                     where: { brId: { in: branchIds } },
                     select: { brId: true, brName: true },
                 })
                 : [],
             employeeIds.length
-                ? this.prisma.employeeMaster.findMany({
+                ? client.employeeMaster.findMany({
                     where: { empId: { in: employeeIds } },
                     select: { empId: true, empName: true },
                 })
                 : [],
             ledgerIds.length
-                ? this.prisma.accLedgerMaster.findMany({
+                ? client.accLedgerMaster.findMany({
                     where: { ledId: { in: ledgerIds } },
                     select: { ledId: true, ledName: true },
                 })
                 : [],
             userIds.length
-                ? this.prisma.userMaster.findMany({
+                ? client.userMaster.findMany({
                     where: { usrId: { in: userIds } },
                     select: { usrId: true, usrDisplayName: true },
                 })
                 : [],
-            this.resolveActorNames(this.prisma, [record.soCreatedBy, record.soModifiedBy]),
-            this.resolveGodowns(items),
-            (0, sale_line_godown_utils_1.resolveDefaultSaleGodowns)(this.prisma, record.soBranchId, items
+            this.resolveActorNames(client, [record.soCreatedBy, record.soModifiedBy]),
+            this.resolveGodowns(items, client),
+            (0, sale_line_godown_utils_1.resolveDefaultSaleGodowns)(client, record.soBranchId, items
                 .filter((item) => item.soiGodownId === null)
                 .map((item) => ({ itemId: item.soiItemId, iucId: item.soiItemUnitId }))),
         ]);

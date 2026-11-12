@@ -10,10 +10,26 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockReservationService = void 0;
+exports.netOrderLineMoves = netOrderLineMoves;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const sales_doc_utils_1 = require("./sales-doc.utils");
+function netOrderLineMoves(entries) {
+    const byLine = new Map();
+    for (const e of entries) {
+        const key = `${e.docId}|${e.lineNo}`;
+        const seen = byLine.get(key);
+        if (seen) {
+            seen.baseQty = seen.baseQty.plus(e.baseQty);
+        }
+        else {
+            byLine.set(key, { docId: e.docId, lineNo: e.lineNo, baseQty: e.baseQty });
+        }
+    }
+    return [...byLine.values()].filter((m) => !m.baseQty.toDecimalPlaces(4).isZero());
+}
 let StockReservationService = class StockReservationService {
     prisma;
     constructor(prisma) {
@@ -115,60 +131,105 @@ let StockReservationService = class StockReservationService {
         return released;
     }
     async consume(tx, order, baseQty, actor, now) {
-        let left = (0, sales_doc_utils_1.round4)(baseQty);
-        if (left === 0) {
+        let left = new client_1.Prisma.Decimal(baseQty).toDecimalPlaces(4);
+        if (left.isZero()) {
             return;
         }
-        const rows = await tx.$queryRaw `
-      SELECT r.srv_id, r.srv_acc_year, r.srv_reserved_qty, r.srv_consumed_qty, r.srv_released_qty
+        const giveBack = left.isNegative();
+        const found = await tx.$queryRaw `
+      SELECT r.srv_id, r.srv_acc_year, r.srv_src_module, r.srv_lot_id, r.srv_godown_id, r.srv_bucket,
+             r.srv_status, r.srv_reserved_qty, r.srv_consumed_qty, r.srv_released_qty
         FROM stock.stock_reservation r
         JOIN stock.stock_lot l ON l.slt_id = r.srv_lot_id
        WHERE r.srv_src_doc_type = 'SALES_ORDER' AND r.srv_src_doc_id = ${order.docId}::uuid AND r.srv_line_no = ${order.lineNo}
-         AND r.srv_is_deleted = false AND r.srv_status IN ('OPEN', 'PARTIAL', 'CONSUMED')
-       ORDER BY l.slt_expiry_date NULLS LAST, r.srv_reserved_on
+         AND r.srv_is_deleted = false
+         AND (r.srv_status IN ('OPEN', 'PARTIAL', 'CONSUMED')
+              OR (${giveBack}::boolean AND r.srv_status = 'RELEASED' AND r.srv_consumed_qty > 0))
+       ORDER BY (r.srv_status = 'RELEASED'), l.slt_expiry_date NULLS LAST, r.srv_reserved_on
        FOR UPDATE OF r`;
+        const rows = found.map((r) => ({
+            id: r.srv_id,
+            accYear: r.srv_acc_year,
+            key: [r.srv_acc_year, r.srv_src_module, r.srv_lot_id, r.srv_godown_id, r.srv_bucket].join('|'),
+            status: r.srv_status,
+            reserved: new client_1.Prisma.Decimal(r.srv_reserved_qty),
+            consumed: new client_1.Prisma.Decimal(r.srv_consumed_qty),
+            released: new client_1.Prisma.Decimal(r.srv_released_qty),
+        }));
+        const liveOn = (row) => rows.find((o) => o !== row && o.key === row.key && LIVE.has(o.status));
         for (const r of rows) {
-            if (Math.abs(left) < 0.0005) {
+            if (left.isZero()) {
                 break;
             }
-            const reserved = Number(r.srv_reserved_qty);
-            const consumed = Number(r.srv_consumed_qty);
-            const released = Number(r.srv_released_qty);
-            let next;
-            if (left > 0) {
-                const room = (0, sales_doc_utils_1.round4)(reserved - consumed - released);
-                if (room <= 0) {
+            if (!giveBack) {
+                const room = r.reserved.minus(r.consumed).minus(r.released);
+                if (room.lte(0)) {
                     continue;
                 }
-                const take = Math.min(room, left);
-                next = (0, sales_doc_utils_1.round4)(consumed + take);
-                left = (0, sales_doc_utils_1.round4)(left - take);
+                const take = client_1.Prisma.Decimal.min(room, left);
+                left = left.minus(take);
+                await this.writeConsumed(tx, r, r.consumed.plus(take), actor, now);
+                continue;
             }
-            else {
-                if (consumed <= 0) {
-                    continue;
-                }
-                const give = Math.min(consumed, -left);
-                next = (0, sales_doc_utils_1.round4)(consumed - give);
-                left = (0, sales_doc_utils_1.round4)(left + give);
+            if (r.consumed.lte(0)) {
+                continue;
             }
-            const status = (0, sales_doc_utils_1.round4)(next + released) >= reserved - 0.0005
-                ? released > 0
-                    ? 'RELEASED'
-                    : 'CONSUMED'
-                : next > 0
-                    ? 'PARTIAL'
-                    : 'OPEN';
-            await tx.$executeRaw `
-        UPDATE stock.stock_reservation
-           SET srv_consumed_qty = ${next}::numeric, srv_status = ${status},
-               srv_closed_on = CASE WHEN ${status} IN ('CONSUMED', 'RELEASED') THEN ${now} ELSE NULL END,
-               srv_modified_on = ${now}, srv_modified_by = ${actor}
-         WHERE srv_id = ${r.srv_id}::uuid AND srv_acc_year = ${r.srv_acc_year}::char(9)`;
+            const give = client_1.Prisma.Decimal.min(r.consumed, left.negated());
+            const live = LIVE.has(r.status) ? undefined : liveOn(r);
+            if (live) {
+                left = left.plus(give);
+                await this.releaseGiveBack(tx, r, give, HANDED_OVER_REASON, actor, now);
+                await this.holdMore(tx, live, give, actor, now);
+                continue;
+            }
+            if (r.status === 'RELEASED') {
+                left = left.plus(give);
+                await this.releaseGiveBack(tx, r, give, RELEASED_GIVE_BACK_REASON, actor, now);
+                continue;
+            }
+            left = left.plus(give);
+            await this.writeConsumed(tx, r, r.consumed.minus(give), actor, now);
         }
         if (rows.length > 0) {
             await (0, stock_voucher_posting_helper_1.refreshReserved)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)('SALES_ORDER', order.docId), actor, now);
         }
+    }
+    async writeConsumed(tx, r, next, actor, now) {
+        const status = reservationStatus(r.reserved, next, r.released);
+        await tx.$executeRaw `
+      UPDATE stock.stock_reservation
+         SET srv_consumed_qty = ${next}::numeric, srv_status = ${status},
+             srv_closed_on = CASE WHEN ${status} IN ('CONSUMED', 'RELEASED') THEN ${now} ELSE NULL END,
+             srv_modified_on = ${now}, srv_modified_by = ${actor}
+       WHERE srv_id = ${r.id}::uuid AND srv_acc_year = ${r.accYear}::char(9)`;
+        r.consumed = next;
+        r.status = status;
+    }
+    async releaseGiveBack(tx, from, give, reason, actor, now) {
+        const consumed = from.consumed.minus(give);
+        const released = from.released.plus(give);
+        const status = reservationStatus(from.reserved, consumed, released);
+        await tx.$executeRaw `
+      UPDATE stock.stock_reservation
+         SET srv_consumed_qty = ${consumed}::numeric, srv_released_qty = ${released}::numeric,
+             srv_status = ${status}, srv_closed_on = COALESCE(srv_closed_on, ${now}),
+             srv_close_reason = COALESCE(srv_close_reason, ${reason}),
+             srv_modified_on = ${now}, srv_modified_by = ${actor}
+       WHERE srv_id = ${from.id}::uuid AND srv_acc_year = ${from.accYear}::char(9)`;
+        from.consumed = consumed;
+        from.released = released;
+        from.status = status;
+    }
+    async holdMore(tx, to, give, actor, now) {
+        const reserved = to.reserved.plus(give);
+        const toStatus = reservationStatus(reserved, to.consumed, to.released);
+        await tx.$executeRaw `
+      UPDATE stock.stock_reservation
+         SET srv_reserved_qty = ${reserved}::numeric, srv_status = ${toStatus},
+             srv_modified_on = ${now}, srv_modified_by = ${actor}
+       WHERE srv_id = ${to.id}::uuid AND srv_acc_year = ${to.accYear}::char(9)`;
+        to.reserved = reserved;
+        to.status = toStatus;
     }
 };
 exports.StockReservationService = StockReservationService;
@@ -176,4 +237,13 @@ exports.StockReservationService = StockReservationService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], StockReservationService);
+const LIVE = new Set(['OPEN', 'PARTIAL']);
+const HANDED_OVER_REASON = 'Bill cancelled: quantity returned to the newer hold';
+const RELEASED_GIVE_BACK_REASON = 'Bill quantity given back after the hold was released';
+function reservationStatus(reserved, consumed, released) {
+    if (consumed.plus(released).gte(reserved)) {
+        return released.gt(0) ? 'RELEASED' : 'CONSUMED';
+    }
+    return consumed.gt(0) ? 'PARTIAL' : 'OPEN';
+}
 //# sourceMappingURL=stock-reservation.service.js.map

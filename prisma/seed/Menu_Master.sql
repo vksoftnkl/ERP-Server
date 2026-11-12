@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (124 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (126 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -176,7 +176,7 @@ VALUES
     ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
     ,( 262,    5, 'Voucher Register'                     , NULL                  , true , 160.00, NULL, NULL, NULL, true , true)
     ,( 263,    5, 'Cheque Books'                         , NULL                  , true , 140.00, NULL, NULL, NULL, true , false)
-    -- ============ &6 Reports (menu 6, 9 rows) ============
+    -- ============ &6 Reports (menu 6, 11 rows) ============
     -- 290 Price Change Log (notes 144, 20261023130000_price_change_log_menu_notes_144):
     -- the report over inventory.item_price_change_log, beside Audit Logs.
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,  60.00, '0', NULL, NULL, true , false)
@@ -184,6 +184,11 @@ VALUES
     ,( 290,    6, 'Price Change Log'                     , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,( 137,    6, 'Accounts Reports'                     , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 279,    6, 'Party Outstanding'                    , NULL                  , false,   7.50, NULL, NULL, NULL, true , false)
+    -- 300 Stock Reports / 301 Item Ledger (20261111130000_item_ledger_report, plan
+    -- report/plan-item-ledger-2026-11-11.md): the stock reports folder after Accounts
+    -- Reports (the Stock Summary will take 300 / 10.00) and the Item Ledger report.
+    ,( 300,    6, 'Stock Reports'                        , NULL                  , true ,  15.00, NULL, NULL, NULL, true , false)
+    ,( 301,  300, 'Item Ledger'                          , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , false,   0.50, NULL, NULL, NULL, true , false)
     ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 144,  137, 'Ledger Monthly Summary'               , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
@@ -349,6 +354,17 @@ UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW}'
  WHERE menu_id = 299
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 300 Stock Reports (20261111130000_item_ledger_report) is a folder: VIEW only.
+-- 301 Item Ledger (same migration) is a read-only report like 279: view, print,
+-- export; VIEW also gates the Ctrl+F10 popup. Same guard as above.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (300, '{VIEW}'),
+               (301, '{VIEW,PRINT,EXPORT}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- 192 Branch Outward (notes 160 B / 20261027110000_transfers_notes_160): CANCEL is
 -- the recall of a despatch nobody received (POST /stock/transfer/recall). Its other

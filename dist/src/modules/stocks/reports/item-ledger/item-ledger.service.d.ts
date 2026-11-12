@@ -1,0 +1,194 @@
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../../common/request-context/request-context.service';
+import { type MenuRights } from '../../../../common/posting/rights';
+import { AppSettingValueService } from '../../../settings/appSettings/app-setting-value.service';
+import { type ItemLedgerExportDto, type ItemLedgerMonthsDto, type ItemLedgerOptionsDto, type ItemLedgerQueryDto, type ItemLedgerScopeDto } from './dto/item-ledger-query.dto';
+import { type ValueAt } from './item-ledger.rules';
+import { type LedgerSqlScope } from './item-ledger.sql';
+import { type ByTypeRow, type ClosingBlock, type DaysPayload, type ExportPayload, type LedgerPayload, type LedgerRow, type LedgerTiles, type LedgerTotals, type MonthsPayload, type OpeningBlock, type OptionsPayload, type PeriodTie, type ReportHead, type RowKind, type RowState, type StockNowBlock, type TieCheck } from './types/item-ledger.types';
+export declare const EXPORT_ROW_CAP = 20000;
+type Dec = Prisma.Decimal;
+type Num = Dec | string | number;
+export interface ResolvedScope {
+    sql: LedgerSqlScope;
+    companyName: string | null;
+    branchName: string | null;
+    itemCode: string | null;
+    itemName: string;
+    godownName: string | null;
+    batchNo: string | null;
+    bucket: string;
+    valueAt: ValueAt;
+    unit: {
+        unitId: string | null;
+        name: string;
+        factor: Dec;
+        isBase: boolean;
+    };
+}
+export interface OpeningRow {
+    q: Dec;
+    v: Dec;
+    lots: number;
+    rv: Dec;
+    after_q: Dec;
+}
+export interface AggRow {
+    part: 'S' | 'B' | 'T' | 'C';
+    rtype: string | null;
+    cls: string | null;
+    kind: string | null;
+    ob: string | null;
+    doc_no: string | null;
+    kinds: string[] | null;
+    n_all: number;
+    n_shown: number;
+    docs: number;
+    n_internal: number;
+    n_pairs: number;
+    n_reval: number;
+    q_all: Dec;
+    v_all: Dec;
+    q_in: Dec | null;
+    q_out: Dec | null;
+    v_in: Dec | null;
+    v_out: Dec | null;
+    moved: Dec | null;
+    pair_q: Dec | null;
+}
+export interface PageRow {
+    seq: number;
+    row_id: string;
+    src_kind: 'L' | 'R';
+    src_module: string | null;
+    src_type: string | null;
+    doc_id: string;
+    src_year: string | null;
+    is_rev: boolean;
+    internal: boolean;
+    gtxn: string;
+    rtype: string;
+    kind: RowKind;
+    state: RowState;
+    amended: boolean;
+    nets_zero: boolean;
+    d: string;
+    t_doc: string | null;
+    t_post: string | null;
+    posted_at: string | null;
+    o_posted_at: string | null;
+    r_posted_at: string | null;
+    refno: string | null;
+    o_refno: string | null;
+    sq: Dec;
+    sv: Dec;
+    gq: Dec;
+    gv: Dec;
+    fq: Dec;
+    moved: Dec;
+    doc_amt: Dec | null;
+    bq: Dec;
+    run_q: Dec;
+    run_v: Dec;
+    gdown: string | null;
+    gdown_name: string | null;
+    from_godown: string | null;
+    from_godown_name: string | null;
+    to_godown: string | null;
+    to_godown_name: string | null;
+    other_godown: string | null;
+    other_godown_name: string | null;
+    gbucket: string | null;
+    from_bucket: string | null;
+    to_bucket: string | null;
+    other_bucket: string | null;
+    lot: string | null;
+    batch_no: string | null;
+    expiry: string | null;
+    by_login: string | null;
+    r_by_login: string | null;
+    narration: string | null;
+    r_narr: string | null;
+    voucher_type: string | null;
+    voucher_refno: string | null;
+    link_type: string | null;
+    link_id: string | null;
+    link_year: string | null;
+    voucher_branch: string | null;
+    to_branch: string | null;
+    remarks: string | null;
+    reason_name: string | null;
+    to_branch_name: string | null;
+    from_branch_name: string | null;
+    sb_cust_id: string | null;
+    sb_cust_name: string | null;
+    party_id: string | null;
+    party_name: string | null;
+    pi_supplier_inv_no: string | null;
+    grn_supplier_inv_no: string | null;
+    transit_status: string | null;
+    transit_received_on: string | null;
+}
+export interface StockNowDbRow {
+    godown_id: string;
+    godown_name: string | null;
+    bucket: string;
+    lot_id: string;
+    batch_no: string | null;
+    expiry: string | null;
+    on_hand: Dec;
+    reserved: Dec;
+    transit_in: Dec;
+    cost_rate: Dec;
+    value: Dec;
+    in_scope: boolean;
+}
+export interface WalkIn {
+    id: string | null;
+    name: string | null;
+}
+export declare class ItemLedgerService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly appSettings;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, appSettings: AppSettingValueService);
+    options(q: ItemLedgerOptionsDto): Promise<OptionsPayload>;
+    ledger(q: ItemLedgerQueryDto): Promise<LedgerPayload>;
+    days(q: ItemLedgerScopeDto): Promise<DaysPayload>;
+    months(q: ItemLedgerMonthsDto): Promise<MonthsPayload>;
+    export(q: ItemLedgerExportDto): Promise<ExportPayload>;
+    private assertView;
+    private snapshot;
+    private today;
+    private fiscalYear;
+    private lookupScope;
+    private resolveScope;
+    private revaluationsLeftOut;
+    private walkIn;
+    private walkInName;
+}
+export declare function assertRange(from: string, to: string): void;
+export declare function headOf(scope: ResolvedScope, opts: {
+    order: 'asc' | 'desc';
+    rights: MenuRights;
+    leftOut: number;
+    showReversed: boolean;
+}): ReportHead;
+export declare function openingBlock(scope: ResolvedScope, open: OpeningRow): OpeningBlock;
+export declare function summaryOf(agg: readonly AggRow[]): AggRow;
+export declare function closingBlock(scope: ResolvedScope, open: OpeningRow, s: AggRow): ClosingBlock;
+export declare function totalsOf(s: AggRow, factor: Num): LedgerTotals;
+export declare function tilesOf(agg: readonly AggRow[]): LedgerTiles;
+export declare function byTypeOf(agg: readonly AggRow[], factor: Num): ByTypeRow[];
+export declare function stockNowBlock(today: string, rows: readonly StockNowDbRow[], factor: Num): StockNowBlock;
+export declare function tieOf(checked: boolean, open: OpeningRow, s: AggRow, stock: readonly StockNowDbRow[], factor: Num): TieCheck;
+export declare function periodTieOf(open: OpeningRow, s: AggRow): PeriodTie;
+export declare function toRow(r: PageRow, scope: ResolvedScope, walkIn: WalkIn, base: OpeningBase): LedgerRow;
+export interface OpeningBase {
+    q: Dec;
+    v: Dec;
+}
+export declare function openingBase(open: OpeningRow): OpeningBase;
+export declare function detailOf(r: PageRow): string;
+export {};

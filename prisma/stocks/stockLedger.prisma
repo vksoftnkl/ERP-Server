@@ -85,6 +85,10 @@
 ///                     that is read-then-write and two concurrent cancels
 ///                     could both pass it and reverse the same movement twice.
 ///   ix_sml_item_date  the item ledger screen
+///   ix_sml_item_ledger  the Item Ledger report's opening sum (20261111130000):
+///                     (company, branch, item, doc_date) INCLUDE signed qty,
+///                     direction, both cost values, godown, lot, bucket, so the
+///                     whole history before From is an index-only scan
 ///   ix_sml_balance_scope  fn_sbl_rebuild and every as-on-date recomputation
 ///   ix_sml_lot        lot movement history: the recall trail
 ///   ix_sml_source_doc drilling from a document into what it moved

@@ -7,9 +7,25 @@ import { SalesContextService } from '../posting/sales-context.service';
 import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { SalesWriteClient } from "../../../common/utils/module-service.utils";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare const SALE_ORDER_TABLE_NAME = "sale_order";
+export declare const SALE_ORDER_AUDIT_SCREEN_NAME = "Sale Order";
 export declare const SALE_ORDER_TERMINAL_STATUSES: readonly string[];
 export declare function assertSaleOrderNotTerminal(order: Pick<SaleOrder, 'soStatus'>): void;
+export declare function finishedOrderHoldRelease(order: Pick<SaleOrder, 'soDeliveryHold'>, endStatus: string, cause: 'cancelled' | 'closed' | 'completed' | 'deleted', actor: string, now: Date): {
+    data: {
+        soDeliveryHold: false;
+        soDeliveryHoldReason: string;
+        soDeliveryHoldBy: string;
+        soDeliveryHoldOn: Date;
+    };
+    remarks: string;
+} | null;
+type SaleOrderWriteClient = SalesWriteClient;
+export interface SaleOrderSaveInTxOptions {
+    revision?: boolean;
+}
 export interface SaleOrderAmounts {
     soPendingAmt: Prisma.Decimal;
     soCancelledAmt: Prisma.Decimal;
@@ -28,7 +44,7 @@ export declare class SaleOrderService {
     private signedInActor;
     private assertAmendRightToEdit;
     throwIfDuplicate(error: unknown): void;
-    getById(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<SaleOrderPayload>;
+    getById(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string, client?: SaleOrderWriteClient): Promise<SaleOrderPayload>;
     getSrcDocPendingAmount(ablSrcDocType: string, ablSrcDocId: string, ablSrcAccYear: string): Promise<SaleOrderSrcDocPendingAmount>;
     softDelete(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<{
         soId: string;
@@ -51,14 +67,19 @@ export declare class SaleOrderService {
     private deriveOrderStatus;
     syncOrderFulfilment(tx: Prisma.TransactionClient, request: {
         refs: SaleOrderLineRef[];
+        reopenRemark?: string;
     }, actor: string, now: Date): Promise<SaleOrderFulfilmentResult[]>;
     private resolveOrderRefs;
     private syncOneOrderFulfilment;
     private logStatusStep;
     private createOrder;
     createOrderInTx(tx: Prisma.TransactionClient, saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
+    writeRevision(tx: Prisma.TransactionClient, order: Pick<SaleOrder, 'soId' | 'soCompanyId' | 'soBranchId' | 'soAccYear'>, before: SaleOrderPayload | null, actor: string, notes: string): Promise<{
+        revNo: number;
+        after: SaleOrderPayload;
+    }>;
     private updateOrder;
-    updateOrderInTx(tx: Prisma.TransactionClient, saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
+    updateOrderInTx(tx: Prisma.TransactionClient, saveOrderDto: SaveSaleOrderDto, options?: SaleOrderSaveInTxOptions): Promise<SaleOrderPayload>;
     private syncItems;
     private softDeleteItems;
     private syncAdvanceVoucher;
@@ -85,3 +106,4 @@ export declare class SaleOrderService {
     private withChargeNames;
     private withTenderNames;
 }
+export {};

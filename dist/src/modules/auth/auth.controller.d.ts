@@ -7,6 +7,6 @@ export declare class AuthController {
     private readonly authService;
     constructor(authService: AuthService);
     login(loginAuthDto: LoginAuthDto, request: Request): Promise<LoginResponseDto>;
-    refresh(refreshTokenDto: RefreshTokenDto): Promise<LoginResponseDto>;
+    refresh(refreshTokenDto: RefreshTokenDto, request: Request): Promise<LoginResponseDto>;
     private extractHeader;
 }

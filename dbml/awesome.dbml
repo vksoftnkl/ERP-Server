@@ -793,7 +793,7 @@ query against them is for one form or the other, never both.
 
 ═══════════════════════════════════════════════════════════════════════════
 WRITTEN AT POST, NEVER EDITED, NEVER RE-SUMMED
-═══════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════��═════════════════════════════════
 
 A row is a statement about a moment: at the instant this document posted,
 this much tax was collected at this rate on this base, for this party\'s PAN.
@@ -3892,6 +3892,59 @@ configuration. Same (scope, role, nature) -> ledger shape as the map; the
 map\'s scope is company and branch, this one\'s is the rate.'
 }
 
+Table app_legacy_usage {
+  aluId String [pk]
+  aluName String [not null, note: 'The legacy field, e.g. sale-bill.request.rate']
+  aluPlatform String [not null, default: 'unknown', note: 'web | desktop | mobile | unknown']
+  aluBuild Int [not null, default: -1, note: '-1 = unknown build.']
+  aluCount Int [not null, default: 0, note: 'Usage count.']
+  aluFirstSeen DateTime [default: `now()`, not null]
+  aluLastSeen DateTime [default: `now()`, not null]
+  aluIsActive Boolean [not null, default: true]
+  aluIsDeleted Boolean [not null, default: false]
+  aluSyncDate DateTime
+  aluCreatedOn DateTime [default: `now()`, not null]
+  aluCreatedBy String
+  aluModifiedOn DateTime
+  aluModifiedBy String
+
+  indexes {
+    (aluName, aluPlatform, aluBuild) [unique]
+  }
+
+  Note: 'public.app_legacy_usage — how often old builds still use a legacy field.
+One counter per (field, platform, build); a field can be removed once no
+build still in use counts against it.'
+}
+
+Table app_release {
+  arlId String [pk]
+  arlPlatform String [not null, note: 'web | desktop | mobile']
+  arlBuild Int [not null, note: '> 0. The number clients compare; unique per platform.']
+  arlVersion String [not null, note: 'Display label only, e.g. 1.2.0.']
+  arlCommit String [note: 'Short git hash.']
+  arlSeverity String [not null, default: 'normal', note: 'normal | recommended | critical']
+  arlNotes String [note: 'Release notes.']
+  arlDownloadUrl String [note: 'Installer / store / updater link.']
+  arlReleasedAt DateTime [default: `now()`, not null]
+  arlIsActive Boolean [not null, default: true]
+  arlIsDeleted Boolean [not null, default: false, note: 'true = yanked: never offered as the latest build.']
+  arlSyncDate DateTime
+  arlCreatedOn DateTime [default: `now()`, not null]
+  arlCreatedBy String
+  arlModifiedOn DateTime
+  arlModifiedBy String
+
+  indexes {
+    (arlPlatform, arlBuild) [unique]
+  }
+
+  Note: 'public.app_release — one row per released client build, per platform.
+The latest available build = the highest arlBuild where arlIsDeleted = false.
+arlIsDeleted = true yanks a bad release; its build number stays taken
+(ux_arl_platform_build is not partial).'
+}
+
 Table app_setting_def {
   asdId String [pk]
   asdKey String [unique, not null, note: 'Dotted, lowercase, module-prefixed: \'sales.allow_bill_over_order_qty\'.
@@ -4151,6 +4204,38 @@ Table charge_master {
   chargeDetails txn_charge_detail [not null]
 
   Note: 'Shared "additional charges" master for both Sales and Purchase.'
+}
+
+Table client_installation {
+  cinId String [pk]
+  cinCompanyId String [not null, note: 'Tenant.']
+  cinBranchId String
+  cinUserId String [not null]
+  cinDeviceId String [not null, default: 'unknown', note: 'The client\'s own device id; \'unknown\' when it sends none.']
+  cinPlatform String [not null, note: 'web | desktop | mobile']
+  cinBuild Int [note: 'NULL = the client sent no build.']
+  cinVersion String
+  cinCommit String
+  cinOs String
+  cinIp String
+  cinFirstSeen DateTime [default: `now()`, not null]
+  cinLastSeen DateTime [default: `now()`, not null]
+  cinLastLogin DateTime
+  cinIsActive Boolean [not null, default: true]
+  cinIsDeleted Boolean [not null, default: false]
+  cinSyncDate DateTime
+  cinCreatedOn DateTime [default: `now()`, not null]
+  cinCreatedBy String
+  cinModifiedOn DateTime
+  cinModifiedBy String
+
+  indexes {
+    (cinCompanyId, cinUserId, cinDeviceId, cinPlatform) [unique]
+  }
+
+  Note: 'public.client_installation — which build each user / device is running.
+One row per (company, user, device, platform), upserted at login (Step 2)
+on ux_cin_device.'
 }
 
 Table companys {

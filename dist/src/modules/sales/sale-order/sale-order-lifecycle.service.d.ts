@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SalesContextService } from '../posting/sales-context.service';
@@ -20,12 +21,24 @@ export declare class SaleOrderLifecycleService {
     saveAndPost(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
         warnings: ReservationShort[];
     }>;
-    private postInTx;
+    save(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
+        warnings: ReservationShort[];
+    }>;
+    saveOverInTx(tx: Prisma.TransactionClient, dto: SaveSaleOrderDto, now: Date): Promise<SaleOrderPayload & {
+        warnings: ReservationShort[];
+    }>;
+    private rereserveInTx;
+    postInTx(tx: Prisma.TransactionClient, dto: SaleOrderKeysDto, now: Date): Promise<{
+        soStatus: string;
+        warnings: ReservationShort[];
+    }>;
     cancel(dto: CancelSaleOrderDto): Promise<{
         soStatus: string;
         cancelledLines: number;
     }>;
-    amend(dto: AmendSaleOrderDto): Promise<SaleOrderPayload>;
+    amend(dto: AmendSaleOrderDto): Promise<SaleOrderPayload & {
+        warnings: ReservationShort[];
+    }>;
     deleteDraft(keys: SaleOrderKeysDto): Promise<{
         soId: string;
         deleted: true;

@@ -24,7 +24,7 @@ exports.SaleOrderModule = SaleOrderModule = __decorate([
         imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule],
         controllers: [sale_order_controller_1.SaleOrderController],
         providers: [sale_order_service_1.SaleOrderService, sale_order_lifecycle_service_1.SaleOrderLifecycleService, sale_order_exception_filter_1.SaleOrderExceptionFilter],
-        exports: [sale_order_service_1.SaleOrderService],
+        exports: [sale_order_service_1.SaleOrderService, sale_order_lifecycle_service_1.SaleOrderLifecycleService],
     })
 ], SaleOrderModule);
 //# sourceMappingURL=sale-order.module.js.map

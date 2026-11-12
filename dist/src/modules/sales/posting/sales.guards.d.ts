@@ -26,6 +26,29 @@ export declare function assertCreditLimit(client: SalesWriteClient, ctx: SalesGu
     custId: string;
     partyLedgerId: string;
 }, companyId: string, billAmount: number, settings: SalesSettings, docDate?: string): Promise<void>;
+export interface HeldOrder {
+    soId: string;
+    refno: string;
+    reason: string | null;
+}
+export interface SourceOrder {
+    soId: string;
+    refno: string;
+    status: string;
+    hold: boolean;
+    holdReason: string | null;
+}
+export declare function lockSourceOrders(client: SalesWriteClient, orderIds: readonly string[], orderLineIds: readonly string[]): Promise<SourceOrder[]>;
+export declare function heldAmong(orders: readonly SourceOrder[]): HeldOrder[];
+export declare function loadHeldOrders(client: SalesWriteClient, orderIds: readonly string[], orderLineIds: readonly string[]): Promise<HeldOrder[]>;
+export interface OrderDraw {
+    soId: string | null;
+    soiId: string | null;
+    baseQty: Prisma.Decimal;
+}
+export declare function heldOrdersDrawnMore(client: SalesWriteClient, held: readonly HeldOrder[], current: readonly OrderDraw[], prior: readonly OrderDraw[]): Promise<HeldOrder[]>;
+export declare function ordersDrawnMore(orderIds: ReadonlySet<string>, owner: ReadonlyMap<string, string>, current: readonly OrderDraw[], prior: readonly OrderDraw[]): Set<string>;
+export declare function refuseHeldOrders(ctx: SalesGuardContext, held: readonly HeldOrder[], field?: string): void;
 export declare function assertSalesmen(client: SalesWriteClient, companyId: string, ids: string[] | null | undefined, opts?: {
     field?: string;
     requirePrimary?: boolean;

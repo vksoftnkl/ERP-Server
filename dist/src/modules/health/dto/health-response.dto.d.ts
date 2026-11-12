@@ -7,6 +7,10 @@ export declare class HealthCacheStatusDto {
 export declare class HealthResponseDto {
     status: 'ok' | 'degraded';
     timestamp: string;
+    version: string;
+    build: number | null;
+    commit: string | null;
+    dbOk: boolean;
     database: HealthDatabaseStatusDto;
     cache: HealthCacheStatusDto;
 }

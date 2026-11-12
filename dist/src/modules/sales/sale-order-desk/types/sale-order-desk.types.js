@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SALE_ORDER_DESK_DEFAULT_MERGE_REASON = exports.SALE_ORDER_DESK_FIGURES_MAX = exports.SALE_ORDER_DESK_COVER_MAX = exports.SALE_ORDER_DESK_MERGE_MAX = exports.SALE_ORDER_DESK_PRIORITIES = exports.SALE_ORDER_DESK_OPEN_STATUSES = exports.SALE_ORDER_DESK_AUDIT_SCREEN = exports.SALE_ORDER_DESK_RECEIPT_MENU_ID = void 0;
+exports.SALE_ORDER_DESK_RECEIPT_MENU_ID = 99;
+exports.SALE_ORDER_DESK_AUDIT_SCREEN = 'Sale Order';
+exports.SALE_ORDER_DESK_OPEN_STATUSES = ['CONFIRMED', 'PARTIAL'];
+exports.SALE_ORDER_DESK_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+exports.SALE_ORDER_DESK_MERGE_MAX = 20;
+exports.SALE_ORDER_DESK_COVER_MAX = 500;
+exports.SALE_ORDER_DESK_FIGURES_MAX = 2000;
+exports.SALE_ORDER_DESK_DEFAULT_MERGE_REASON = 'Merged on the order desk';
+//# sourceMappingURL=sale-order-desk.types.js.map

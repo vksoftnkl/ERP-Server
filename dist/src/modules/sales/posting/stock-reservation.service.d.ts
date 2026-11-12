@@ -10,6 +10,12 @@ export interface ReservationLine {
     qty: number;
     expiresOn?: Date | null;
 }
+export interface OrderLineQty {
+    docId: string;
+    lineNo: number;
+    baseQty: Prisma.Decimal;
+}
+export declare function netOrderLineMoves(entries: OrderLineQty[]): OrderLineQty[];
 export interface ReservationShort {
     code: 'SALES_RESERVE_SHORT';
     line: number;
@@ -38,5 +44,8 @@ export declare class StockReservationService {
     consume(tx: Prisma.TransactionClient, order: {
         docId: string;
         lineNo: number;
-    }, baseQty: number, actor: string, now: Date): Promise<void>;
+    }, baseQty: number | Prisma.Decimal, actor: string, now: Date): Promise<void>;
+    private writeConsumed;
+    private releaseGiveBack;
+    private holdMore;
 }

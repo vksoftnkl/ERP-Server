@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-10.1",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05; Qty-wise Prices + Cost + Card Rate, menu 244 (Shared/Prathap/inventory/plan-qty-price-card-rate-one-form.md section 4.5, addendum-1 Q9 = A, migration 20261106140000_qty_price_card_rate_form): the new codes ITEM_QTY_PRICE_NOTHING_TO_SAVE / _ITEM_MISMATCH / _LEVEL_NOT_SELLING / _COST_NOT_PLAIN_STOCK / _MRP_NOT_PLAIN_STOCK / _ABOVE_MRP / _BELOW_MIN / _ZERO_OR_LESS / _BELOW_COST / _BY_USER_PRICES_KEPT / _CHAIN_HQ_ONLY and the right codes assertMenuRight builds from the prefix ITEM_QTY_PRICE (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE), plus wording for the slab codes the server already throws (ITEM_QTY_PRICE_OVERLAP / _QTY_RANGE_INVALID / _VALUE_REQUIRED / _DUPLICATE / _DATE_RANGE_INVALID / _UNIT_NOT_OF_ITEM / _NOT_FOUND / _ALREADY_DELETED / _REFERENCE_NOT_FOUND / _DATE_INVALID / _NOT_DELETED / _ID_REQUIRED / _PAYLOAD_NOT_ARRAY) and the card codes the form and Quick Rate show (STOCK_PRICE_ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _UNIT_NOT_OF_ITEM / _DUPLICATE_BUCKET / _CHAIN_HQ_ONLY), worded 2026-11-05, loaded 2026-11-06; Qty-wise Prices review fixes, menu 244 (code review 2026-11-06, the user: fix all; migration 20261106190000_qty_price_review_fixes): the new code ITEM_QTY_PRICE_OTHER_BRANCH (addendum-1 D16: a slab of another branch, saved, removed or restored by a user who is not head office), plus wording for codes the server already throws: STOCK_PRICE_OVERLAP / _NEGATIVE / _BUCKET_MRP_MISMATCH / _BUCKET_MRP_ZERO / _BUCKET_SP_ZERO (the item_price_master constraints), STOCK_PRICE_FROM_IN_PAST / _FROM_TOO_FAR / _SCHEDULE_NOT_FOUND / _SCHEDULE_STARTED (menu 30's Price from day and Scheduled list) and the house VALUE_TOO_LARGE, worded 2026-11-06; Sales Order Management, menu 299 (plan-sales-order-management-qt-2026-11-10 + addendum-1 §4.5 + addendum-2; migration 20261110180000_sale_order_desk): the new codes SALES_ORDER_DELIVERY_HOLD / _HOLD_UNCHANGED / _PRIORITY_UNCHANGED / _CLOSED / _REASON_REQUIRED / _MERGE_TOO_FEW / _MERGE_ONE_PARTY / _MERGE_TERMS_DIFFER / _MERGE_ADVANCE / _MERGE_CHARGES / _MERGE_SOURCE_CHANGED / _MONEY_RIGHT, plus wording for SALE_ORDER_ADVANCE_HELD, which the server already throws, worded 2026-11-10",
+  "version": "2026-11-11.1",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05; Qty-wise Prices + Cost + Card Rate, menu 244 (Shared/Prathap/inventory/plan-qty-price-card-rate-one-form.md section 4.5, addendum-1 Q9 = A, migration 20261106140000_qty_price_card_rate_form): the new codes ITEM_QTY_PRICE_NOTHING_TO_SAVE / _ITEM_MISMATCH / _LEVEL_NOT_SELLING / _COST_NOT_PLAIN_STOCK / _MRP_NOT_PLAIN_STOCK / _ABOVE_MRP / _BELOW_MIN / _ZERO_OR_LESS / _BELOW_COST / _BY_USER_PRICES_KEPT / _CHAIN_HQ_ONLY and the right codes assertMenuRight builds from the prefix ITEM_QTY_PRICE (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE), plus wording for the slab codes the server already throws (ITEM_QTY_PRICE_OVERLAP / _QTY_RANGE_INVALID / _VALUE_REQUIRED / _DUPLICATE / _DATE_RANGE_INVALID / _UNIT_NOT_OF_ITEM / _NOT_FOUND / _ALREADY_DELETED / _REFERENCE_NOT_FOUND / _DATE_INVALID / _NOT_DELETED / _ID_REQUIRED / _PAYLOAD_NOT_ARRAY) and the card codes the form and Quick Rate show (STOCK_PRICE_ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _UNIT_NOT_OF_ITEM / _DUPLICATE_BUCKET / _CHAIN_HQ_ONLY), worded 2026-11-05, loaded 2026-11-06; Qty-wise Prices review fixes, menu 244 (code review 2026-11-06, the user: fix all; migration 20261106190000_qty_price_review_fixes): the new code ITEM_QTY_PRICE_OTHER_BRANCH (addendum-1 D16: a slab of another branch, saved, removed or restored by a user who is not head office), plus wording for codes the server already throws: STOCK_PRICE_OVERLAP / _NEGATIVE / _BUCKET_MRP_MISMATCH / _BUCKET_MRP_ZERO / _BUCKET_SP_ZERO (the item_price_master constraints), STOCK_PRICE_FROM_IN_PAST / _FROM_TOO_FAR / _SCHEDULE_NOT_FOUND / _SCHEDULE_STARTED (menu 30's Price from day and Scheduled list) and the house VALUE_TOO_LARGE, worded 2026-11-06; Sales Order Management, menu 299 (plan-sales-order-management-qt-2026-11-10 + addendum-1 §4.5 + addendum-2; migration 20261110180000_sale_order_desk): the new codes SALES_ORDER_DELIVERY_HOLD / _HOLD_UNCHANGED / _PRIORITY_UNCHANGED / _CLOSED / _REASON_REQUIRED / _MERGE_TOO_FEW / _MERGE_ONE_PARTY / _MERGE_TERMS_DIFFER / _MERGE_ADVANCE / _MERGE_CHARGES / _MERGE_SOURCE_CHANGED / _MONEY_RIGHT, plus wording for SALE_ORDER_ADVANCE_HELD, which the server already throws, worded 2026-11-10; Item Ledger, menu 301 (Shared/Prathap/report/plan-item-ledger-2026-11-11.md section 4.1(c); migration 20261111130000_item_ledger_report): the new codes ITEM_LEDGER_RIGHT_VIEW (the right code assertMenuRight builds from the prefix ITEM_LEDGER) / _BRANCH_NOT_IN_COMPANY / _ITEM_NOT_FOUND / _RANGE_REVERSED / _GODOWN_NOT_IN_BRANCH / _LOT_NOT_OF_ITEM / _UNIT_NOT_OF_ITEM / _NO_FISCAL_YEAR / _TOO_MANY_ROWS, worded 2026-11-11",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -4777,6 +4777,78 @@
       "title": "Number too big",
       "line": "A figure is too big to save. It is probably mistyped.",
       "todo": "Check the figures you typed."
+    },
+    {
+      "code": "ITEM_LEDGER_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open the Item Ledger.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "ITEM_LEDGER_BRANCH_NOT_IN_COMPANY",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong branch",
+      "line": "That branch is not part of this company.",
+      "todo": "Pick a branch of this company."
+    },
+    {
+      "code": "ITEM_LEDGER_ITEM_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Item not found",
+      "line": "This item is not there now, or it belongs to another company.",
+      "todo": "Pick the item again."
+    },
+    {
+      "code": "ITEM_LEDGER_RANGE_REVERSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Dates the wrong way",
+      "line": "From date is after To date.",
+      "todo": "Change From or To."
+    },
+    {
+      "code": "ITEM_LEDGER_GODOWN_NOT_IN_BRANCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong godown",
+      "line": "That godown is not in this branch.",
+      "todo": "Pick a godown of this branch, or All godowns."
+    },
+    {
+      "code": "ITEM_LEDGER_LOT_NOT_OF_ITEM",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong batch",
+      "line": "That batch is not one of this item's.",
+      "todo": "Pick one of its batches, or All batches."
+    },
+    {
+      "code": "ITEM_LEDGER_UNIT_NOT_OF_ITEM",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong unit",
+      "line": "That unit is not one of this item's units.",
+      "todo": "Pick one of its units, or the base unit."
+    },
+    {
+      "code": "ITEM_LEDGER_NO_FISCAL_YEAR",
+      "variant": "",
+      "lang": "en",
+      "title": "No financial year",
+      "line": "The To date is outside every financial year of this company.",
+      "todo": "Pick a To date inside a financial year."
+    },
+    {
+      "code": "ITEM_LEDGER_TOO_MANY_ROWS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many rows",
+      "line": "Print and Excel take up to 20,000 rows; this period has more.",
+      "todo": "Pick a shorter period, then try again."
     }
   ]
 }

@@ -21,6 +21,8 @@ const till_providers_1 = require("./data/providers/till.providers");
 const till_module_1 = require("../../till/till.module");
 const party_outstanding_providers_1 = require("./data/providers/party-outstanding.providers");
 const party_outstanding_module_1 = require("../../reports/party-outstanding/party-outstanding.module");
+const item_ledger_providers_1 = require("./data/providers/item-ledger.providers");
+const item_ledger_module_1 = require("../../stocks/reports/item-ledger/item-ledger.module");
 const font_registry_1 = require("./engine/fonts/font.registry");
 const layout_engine_1 = require("./engine/layout/layout.engine");
 const text_measure_1 = require("./engine/layout/text-measure");
@@ -40,7 +42,13 @@ let PrintRenderModule = class PrintRenderModule {
 exports.PrintRenderModule = PrintRenderModule;
 exports.PrintRenderModule = PrintRenderModule = __decorate([
     (0, common_1.Module)({
-        imports: [pg_module_1.PgModule, print_template_assignment_module_1.PrintTemplateAssignmentModule, till_module_1.TillModule, party_outstanding_module_1.ReportsPartyOutstandingModule],
+        imports: [
+            pg_module_1.PgModule,
+            print_template_assignment_module_1.PrintTemplateAssignmentModule,
+            till_module_1.TillModule,
+            party_outstanding_module_1.ReportsPartyOutstandingModule,
+            item_ledger_module_1.ItemLedgerModule,
+        ],
         controllers: [print_render_controller_1.PrintRenderController, print_share_controller_1.PrintShareController],
         providers: [
             font_registry_1.FontRegistry,
@@ -59,6 +67,8 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             ...till_providers_1.TILL_PRINT_PROVIDERS,
             party_outstanding_providers_1.PartyOutstandingPrintSource,
             ...party_outstanding_providers_1.PARTY_OUTSTANDING_PRINT_PROVIDERS,
+            item_ledger_providers_1.ItemLedgerPrintSource,
+            ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
             {
                 provide: print_data_provider_registry_1.PRINT_DATA_PROVIDERS,
                 useFactory: (...providers) => providers,
@@ -70,6 +80,7 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
                     sale_bill_tax_summary_provider_1.SaleBillTaxSummaryProvider,
                     ...till_providers_1.TILL_PRINT_PROVIDERS,
                     ...party_outstanding_providers_1.PARTY_OUTSTANDING_PRINT_PROVIDERS,
+                    ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
                 ],
             },
             print_data_provider_registry_1.PrintDataProviderRegistry,

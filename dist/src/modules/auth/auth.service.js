@@ -10,28 +10,32 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuthService = void 0;
+exports.AuthService = exports.LEGACY_LOGIN_APP_VERSION_FIELD = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const node_util_1 = require("node:util");
 const request_context_service_1 = require("../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
+const client_tracking_service_1 = require("../app-version/services/client-tracking.service");
 const auth_session_service_1 = require("./auth-session.service");
 const token_service_1 = require("./token.service");
 const auth_error_codes_1 = require("./types/auth-error-codes");
 const scryptAsync = (0, node_util_1.promisify)(node_crypto_1.scrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
+exports.LEGACY_LOGIN_APP_VERSION_FIELD = 'auth.login.app_version';
 let AuthService = AuthService_1 = class AuthService {
     tokenService;
     authSessionService;
     prisma;
     requestContextService;
+    clientTracking;
     logger = new common_1.Logger(AuthService_1.name);
-    constructor(tokenService, authSessionService, prisma, requestContextService) {
+    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking) {
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.prisma = prisma;
         this.requestContextService = requestContextService;
+        this.clientTracking = clientTracking;
     }
     async login(loginAuthDto, requestMetadata = { userAgent: null, appVersion: null }) {
         const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
@@ -95,7 +99,7 @@ let AuthService = AuthService_1 = class AuthService {
         catch (error) {
             this.logger.warn(`Skipping user login session persistence for user ${user.usrId}: ${this.describeError(error)}`);
         }
-        return {
+        const response = {
             access_token: issuedAccessToken.token,
             refresh_token: issuedRefreshToken.token,
             token_type: 'Bearer',
@@ -109,8 +113,20 @@ let AuthService = AuthService_1 = class AuthService {
             dev_user_id: device?.devUserId ?? null,
             device_type: device?.devDeviceType ?? null,
         };
+        if (loginAuthDto.app_version !== undefined && loginAuthDto.app_version !== null) {
+            this.clientTracking.legacyField(exports.LEGACY_LOGIN_APP_VERSION_FIELD, requestMetadata.client);
+        }
+        const appUpdate = await this.clientTracking.onLogin({
+            client: requestMetadata.client,
+            userId: user.usrId,
+            userName: user.usrLoginName,
+            companyId: user.usrCompanyId ?? null,
+            branchId: device?.devBranchId ?? user.usrBranchId ?? null,
+            ip: this.requestContextService.getIpAddress(),
+        });
+        return appUpdate ? { ...response, appUpdate } : response;
     }
-    async refresh(refreshToken) {
+    async refresh(refreshToken, client = null) {
         const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
         await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
         const user = await this.prisma.userMaster.findFirst({
@@ -135,6 +151,14 @@ let AuthService = AuthService_1 = class AuthService {
             device_id: refreshPayload.device_id,
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, refreshToken);
+        await this.clientTracking.onRefresh({
+            client,
+            userId: refreshPayload.sub,
+            userName: refreshPayload.user_name,
+            companyId: user.usrCompanyId ?? null,
+            branchId: refreshPayload.branch_id ?? null,
+            ip: this.requestContextService.getIpAddress(),
+        });
         return {
             access_token: issuedAccessToken.token,
             refresh_token: refreshToken,
@@ -403,6 +427,7 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
     __metadata("design:paramtypes", [token_service_1.TokenService,
         auth_session_service_1.AuthSessionService,
         prisma_service_1.PrismaService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        client_tracking_service_1.ClientTrackingService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

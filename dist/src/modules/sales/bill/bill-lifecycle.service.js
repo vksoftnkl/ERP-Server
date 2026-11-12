@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var BillLifecycleService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillLifecycleService = void 0;
+exports.orderLineQtys = orderLineQtys;
 const common_1 = require("@nestjs/common");
 const purchase_sister_1 = require("../../purchase/sister/purchase-sister");
 const client_1 = require("@prisma/client");
@@ -257,6 +258,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         const items = await tx.saleBillItem.findMany({
             where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
         });
+        await lockBillOrders(tx, [bill], items);
         const reversal = await this.unwind(tx, bill, items, ctx, reason, now);
         const cancelled = await tx.saleBill.update({
             where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
@@ -356,6 +358,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
             });
             const before = await this.bills.getById(bill.sbId, bill.sbCompanyId, bill.sbBranchId, bill.sbAccYear);
+            await lockBillOrders(tx, [bill, dto], [...priorItems, ...(dto.items ?? [])]);
             const { restateVoucherId } = await this.unwind(tx, bill, priorItems, ctx, `Amended: ${dto.editRemark}`, now, 'amend');
             const draft = await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
@@ -405,7 +408,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 canOverride: ctx.rights.override,
                 throwOnRefusal: false,
             });
-            await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+            await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments, priorItems });
             if (guard.refusals.length > 0) {
                 (0, sales_errors_1.throwSalesRefusals)('Bill cannot be amended', guard.refusals);
             }
@@ -415,6 +418,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 fromStatus: bill_api_types_1.BILL_STATUS_DRAFT,
                 revisionNo: bill.sbRevisionNo + 1,
                 restateVoucherId,
+                priorItems,
             });
             await this.audit.logEntityChange({
                 action: 'update',
@@ -516,7 +520,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 }
             }
         }
-        await this.guardSources(tx, snap, g, s.allowBillOverOrderQty);
+        await this.guardSources(tx, snap, g, s.allowBillOverOrderQty, opts.priorItems);
         const loyaltyTenders = snap.tenders.filter((t) => t.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.LOYALTY);
         if (loyaltyTenders.length > 0) {
             const memberId = snap.loyaltyMemberId;
@@ -588,7 +592,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             }
         }
     }
-    async guardSources(tx, snap, g, allowOverOrder) {
+    async guardSources(tx, snap, g, allowOverOrder, priorItems) {
         const orderLines = snap.items.filter((i) => i.srcDocType === 'SALES_ORDER' && i.srcItemId);
         const dcLines = snap.items.filter((i) => i.srcDocType === 'DELIVERY_CHALLAN' && i.srcItemId);
         const orderIds = [
@@ -597,20 +601,22 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 ...snap.items.map((i) => (i.srcDocType === 'SALES_ORDER' ? i.srcDocId : null)),
             ].filter((id) => !!id)),
         ];
+        const sources = await (0, sales_guards_1.lockSourceOrders)(tx, orderIds, orderLines.map((l) => l.srcItemId));
         if (orderIds.length > 0) {
-            const orders = await tx.$queryRaw `
-        SELECT so_id, so_order_refno, so_status FROM sales.sale_order
-         WHERE so_id = ANY(${orderIds}::uuid[]) AND so_is_deleted = false`;
-            const byId = new Map(orders.map((o) => [o.so_id, o]));
+            const byId = new Map(sources.map((o) => [o.soId, o]));
             for (const id of orderIds) {
                 const o = byId.get(id);
-                if (!o || !['CONFIRMED', 'PARTIAL'].includes(o.so_status)) {
+                if (!o || !['CONFIRMED', 'PARTIAL'].includes(o.status)) {
                     (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.ORDER_NOT_OPEN, o
-                        ? `Order ${o.so_order_refno ?? id} is ${o.so_status} — only a CONFIRMED or PARTIAL order can be billed`
+                        ? `Order ${o.refno} is ${o.status} — only a CONFIRMED or PARTIAL order can be billed`
                         : `Order ${id} does not exist`, { field: 'items' });
                 }
             }
         }
+        const held = (0, sales_guards_1.heldAmong)(sources);
+        (0, sales_guards_1.refuseHeldOrders)(g, priorItems
+            ? await (0, sales_guards_1.heldOrdersDrawnMore)(tx, held, snapshotDraws(snap), billItemDraws(priorItems))
+            : held);
         if (orderLines.length > 0) {
             const rows = await tx.$queryRaw `
         SELECT d.soi_id, d.soi_pending_qty, h.so_status
@@ -1012,7 +1018,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 sbModifiedBy: ctx.actorName,
             },
         });
-        await this.afterStatusChange(tx, posted, items, actor, now);
+        await this.afterStatusChange(tx, posted, items, actor, now, opts.priorItems);
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -1240,16 +1246,22 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         void items;
         return { reversalRefno, reversalVoucherId, restateVoucherId };
     }
-    async afterStatusChange(tx, bill, items, actor, now) {
+    async afterStatusChange(tx, bill, items, actor, now, priorItems = []) {
         const sign = bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED ? 1 : -1;
-        for (const i of items) {
-            if (i.sbiSrcDocType !== 'SALES_ORDER' || !i.sbiSrcDocId || i.sbiSrcDocLineNo === null) {
-                continue;
-            }
-            const factor = (0, sales_doc_utils_1.num)(i.sbiToBaseFactor) || 1;
-            await this.reservations.consume(tx, { docId: i.sbiSrcDocId, lineNo: i.sbiSrcDocLineNo }, sign * (0, sales_doc_utils_1.num)(i.sbiBillQty) * factor, actor, now);
+        const moves = (0, stock_reservation_service_1.netOrderLineMoves)([
+            ...orderLineQtys(items, sign),
+            ...orderLineQtys(priorItems, -1),
+        ]);
+        for (const m of moves) {
+            await this.reservations.consume(tx, { docId: m.docId, lineNo: m.lineNo }, m.baseQty, actor, now);
         }
-        await this.saleOrders.syncOrderFulfilment(tx, { refs: this.bills.orderRefsOf(bill, items) }, actor, now);
+        await this.saleOrders.syncOrderFulfilment(tx, {
+            refs: [
+                ...this.bills.orderRefsOf(bill, items),
+                ...(priorItems.length > 0 ? this.bills.orderRefsOf(bill, priorItems) : []),
+            ],
+            reopenRemark: `Reopened: bill ${bill.sbBillRefno || bill.sbId} ${bill.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED ? 'cancelled' : bill.sbStatus.toLowerCase()}`,
+        }, actor, now);
         const dcs = await this.dcFulfilment.dcRefsOfBill(tx, bill.sbId, bill.sbAccYear);
         await this.dcFulfilment.recompute(tx, dcs, actor, now);
     }
@@ -1675,4 +1687,63 @@ function isUuid(v) {
     return !!v && UUID.test(v);
 }
 void sales_guards_1.assertBandWritable;
+function orderLineQtys(items, sign) {
+    const out = [];
+    for (const i of items) {
+        if (i.sbiSrcDocType !== 'SALES_ORDER' || !i.sbiSrcDocId || i.sbiSrcDocLineNo === null) {
+            continue;
+        }
+        const factor = new client_1.Prisma.Decimal(i.sbiToBaseFactor ?? 0);
+        out.push({
+            docId: i.sbiSrcDocId,
+            lineNo: i.sbiSrcDocLineNo,
+            baseQty: new client_1.Prisma.Decimal(i.sbiBillQty ?? 0)
+                .times(factor.isZero() ? 1 : factor)
+                .times(sign),
+        });
+    }
+    return out;
+}
+function snapshotDraws(snap) {
+    return snap.items
+        .filter((i) => i.srcDocType === 'SALES_ORDER')
+        .map((i) => ({
+        soId: i.srcDocId,
+        soiId: i.srcItemId,
+        baseQty: new client_1.Prisma.Decimal(i.qty).times(new client_1.Prisma.Decimal(i.toBaseFactor || 1)),
+    }));
+}
+function billItemDraws(items) {
+    return items
+        .filter((i) => i.sbiSrcDocType === 'SALES_ORDER')
+        .map((i) => {
+        const factor = new client_1.Prisma.Decimal(i.sbiToBaseFactor ?? 0);
+        return {
+            soId: i.sbiSrcDocId,
+            soiId: i.sbiSrcItemId,
+            baseQty: new client_1.Prisma.Decimal(i.sbiBillQty ?? 0).times(factor.isZero() ? 1 : factor),
+        };
+    });
+}
+async function lockBillOrders(tx, headers, lines) {
+    const ids = new Set();
+    const lineIds = new Set();
+    for (const h of headers) {
+        if (h.sbSrcDocType === 'SALES_ORDER' && h.sbSrcDocId) {
+            ids.add(h.sbSrcDocId);
+        }
+    }
+    for (const l of lines) {
+        if (l.sbiSrcDocType !== 'SALES_ORDER') {
+            continue;
+        }
+        if (l.sbiSrcDocId) {
+            ids.add(l.sbiSrcDocId);
+        }
+        if (l.sbiSrcItemId) {
+            lineIds.add(l.sbiSrcItemId);
+        }
+    }
+    await (0, sales_guards_1.lockSourceOrders)(tx, [...ids], [...lineIds]);
+}
 //# sourceMappingURL=bill-lifecycle.service.js.map

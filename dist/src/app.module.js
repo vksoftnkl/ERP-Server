@@ -28,6 +28,7 @@ const env_validation_1 = require("./config/env.validation");
 const prisma_module_1 = require("./database/prisma/prisma.module");
 const pg_module_1 = require("./database/pg/pg.module");
 const health_module_1 = require("./modules/health/health.module");
+const app_version_module_1 = require("./modules/app-version/app-version.module");
 const users_module_1 = require("./modules/users/users.module");
 const auth_module_1 = require("./modules/auth/auth.module");
 const grid_details_module_1 = require("./modules/grid-details/grid-details.module");
@@ -88,6 +89,7 @@ const quotation_module_1 = require("./modules/sales/quotation/quotation.module")
 const bill_module_1 = require("./modules/sales/bill/bill.module");
 const posting_module_1 = require("./modules/sales/posting/posting.module");
 const sale_order_module_1 = require("./modules/sales/sale-order/sale-order.module");
+const sale_order_desk_module_1 = require("./modules/sales/sale-order-desk/sale-order-desk.module");
 const delivery_challan_module_1 = require("./modules/sales/delivery-challan/delivery-challan.module");
 const dc_return_module_1 = require("./modules/sales/dc-return/dc-return.module");
 const sale_return_module_1 = require("./modules/sales/sale-return/sale-return.module");
@@ -117,6 +119,7 @@ const batch_detail_module_1 = require("./modules/stocks/batch-detail/batch-detai
 const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/stock-adjustment.module");
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const cost_price_bulk_module_1 = require("./modules/stocks/cost-price-bulk/cost-price-bulk.module");
+const item_ledger_module_1 = require("./modules/stocks/reports/item-ledger/item-ledger.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
@@ -192,6 +195,7 @@ exports.AppModule = AppModule = __decorate([
             pg_module_1.PgModule,
             audit_log_module_1.AuditLogModule,
             health_module_1.HealthModule,
+            app_version_module_1.AppVersionModule,
             users_module_1.UsersModule,
             items_group_master_module_1.ItemsGroupMasterModule,
             items_brand_master_module_1.ItemsBrandMasterModule,
@@ -263,6 +267,7 @@ exports.AppModule = AppModule = __decorate([
             posting_module_1.SalesPostingModule,
             bill_module_1.BillModule,
             sale_order_module_1.SaleOrderModule,
+            sale_order_desk_module_1.SaleOrderDeskModule,
             delivery_challan_module_1.DeliveryChallanModule,
             dc_return_module_1.DcReturnModule,
             sale_return_module_1.SaleReturnModule,
@@ -292,6 +297,7 @@ exports.AppModule = AppModule = __decorate([
             stock_adjustment_module_1.StockAdjustmentModule,
             selling_price_bulk_module_1.SellingPriceBulkModule,
             cost_price_bulk_module_1.CostPriceBulkModule,
+            item_ledger_module_1.ItemLedgerModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,

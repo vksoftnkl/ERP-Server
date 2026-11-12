@@ -19,6 +19,11 @@ import {
   PartyOutstandingPrintSource,
 } from './data/providers/party-outstanding.providers';
 import { ReportsPartyOutstandingModule } from '../../reports/party-outstanding/party-outstanding.module';
+import {
+  ITEM_LEDGER_PRINT_PROVIDERS,
+  ItemLedgerPrintSource,
+} from './data/providers/item-ledger.providers';
+import { ItemLedgerModule } from '../../stocks/reports/item-ledger/item-ledger.module';
 import { FontRegistry } from './engine/fonts/font.registry';
 import { LayoutEngine } from './engine/layout/layout.engine';
 import { TextMeasurer } from './engine/layout/text-measure';
@@ -53,8 +58,15 @@ import { PrintShareService } from './print-share.service';
 @Module({
   // TillModule: the till.* providers read its payloads (notes 117 §7).
   // ReportsPartyOutstandingModule: the reports.party_outstanding.* providers
-  // print the report's own /export rows.
-  imports: [PgModule, PrintTemplateAssignmentModule, TillModule, ReportsPartyOutstandingModule],
+  // print the report's own /export rows. ItemLedgerModule: the same for the
+  // reports.item_ledger.* providers (purpose ITEM_LEDGER, menu 301).
+  imports: [
+    PgModule,
+    PrintTemplateAssignmentModule,
+    TillModule,
+    ReportsPartyOutstandingModule,
+    ItemLedgerModule,
+  ],
   // PrintShareController: documents handed out as a link (the sale bill's
   // WhatsApp send) — the module's one public route.
   controllers: [PrintRenderController, PrintShareController],
@@ -83,6 +95,8 @@ import { PrintShareService } from './print-share.service';
     ...TILL_PRINT_PROVIDERS,
     PartyOutstandingPrintSource,
     ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
+    ItemLedgerPrintSource,
+    ...ITEM_LEDGER_PRINT_PROVIDERS,
     {
       provide: PRINT_DATA_PROVIDERS,
       useFactory: (...providers: PrintDataProvider[]): PrintDataProvider[] => providers,
@@ -94,6 +108,7 @@ import { PrintShareService } from './print-share.service';
         SaleBillTaxSummaryProvider,
         ...TILL_PRINT_PROVIDERS,
         ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
+        ...ITEM_LEDGER_PRINT_PROVIDERS,
       ],
     },
     PrintDataProviderRegistry,

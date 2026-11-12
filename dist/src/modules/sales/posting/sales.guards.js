@@ -8,6 +8,12 @@ exports.assertBackdate = assertBackdate;
 exports.loadDayClosed = loadDayClosed;
 exports.assertDayOpen = assertDayOpen;
 exports.assertCreditLimit = assertCreditLimit;
+exports.lockSourceOrders = lockSourceOrders;
+exports.heldAmong = heldAmong;
+exports.loadHeldOrders = loadHeldOrders;
+exports.heldOrdersDrawnMore = heldOrdersDrawnMore;
+exports.ordersDrawnMore = ordersDrawnMore;
+exports.refuseHeldOrders = refuseHeldOrders;
 exports.assertSalesmen = assertSalesmen;
 exports.assertBillAdds = assertBillAdds;
 exports.assertTenderTotal = assertTenderTotal;
@@ -140,8 +146,9 @@ async function assertCreditLimit(client, ctx, party, companyId, billAmount, sett
      WHERE abl_company_id = ${companyId}::uuid
        AND abl_party_id   = ${party.partyLedgerId}::uuid
        AND abl_dr_cr      = 'DR'
-       AND abl_status     = 'OPEN'
-       AND abl_is_deleted = false`;
+       AND abl_pending_amount > 0
+       AND abl_is_deleted = false
+       AND abl_is_active  = true`;
     const pending = Number(open?.pending ?? 0);
     const bills = Number(open?.bills ?? 0);
     const refuseIt = settings.creditLimitMode === 'REFUSE';
@@ -160,6 +167,85 @@ async function assertCreditLimit(client, ctx, party, companyId, billAmount, sett
         if (age > days) {
             raise(ctx, posting_types_1.SALES_ERROR_CODES.CREDIT_LIMIT, `This customer's oldest open bill is ${age} days old; the limit is ${days}`, { field: 'custId' });
         }
+    }
+}
+async function lockSourceOrders(client, orderIds, orderLineIds) {
+    if (orderIds.length === 0 && orderLineIds.length === 0) {
+        return [];
+    }
+    const rows = await client.$queryRaw `
+    SELECT h.so_id, h.so_order_refno, h.so_status, h.so_delivery_hold, h.so_delivery_hold_reason
+      FROM sales.sale_order h
+     WHERE h.so_is_deleted = false
+       AND h.so_id IN (SELECT unnest(${[...orderIds]}::uuid[])
+                       UNION
+                       SELECT d.soi_order_id FROM sales.sale_order_item d
+                        WHERE d.soi_id = ANY(${[...orderLineIds]}::uuid[]))
+     ORDER BY h.so_id
+       FOR UPDATE OF h`;
+    return rows.map((r) => ({
+        soId: r.so_id,
+        refno: r.so_order_refno ?? r.so_id,
+        status: r.so_status,
+        hold: r.so_delivery_hold === true,
+        holdReason: r.so_delivery_hold_reason,
+    }));
+}
+function heldAmong(orders) {
+    const unnumbered = (o) => (o.refno === o.soId ? 1 : 0);
+    return orders
+        .filter((o) => o.hold)
+        .sort((a, b) => unnumbered(a) - unnumbered(b) || (a.refno < b.refno ? -1 : a.refno > b.refno ? 1 : 0))
+        .map((o) => ({ soId: o.soId, refno: o.refno, reason: o.holdReason }));
+}
+async function loadHeldOrders(client, orderIds, orderLineIds) {
+    return heldAmong(await lockSourceOrders(client, orderIds, orderLineIds));
+}
+async function heldOrdersDrawnMore(client, held, current, prior) {
+    if (held.length === 0) {
+        return [];
+    }
+    const soiIds = [
+        ...new Set([...current, ...prior].map((d) => d.soiId).filter((id) => !!id)),
+    ];
+    const owner = new Map();
+    if (soiIds.length > 0) {
+        const rows = await client.$queryRaw `
+      SELECT soi_id, soi_order_id FROM sales.sale_order_item WHERE soi_id = ANY(${soiIds}::uuid[])`;
+        for (const r of rows) {
+            owner.set(r.soi_id, r.soi_order_id);
+        }
+    }
+    const more = ordersDrawnMore(new Set(held.map((h) => h.soId)), owner, current, prior);
+    return held.filter((h) => more.has(h.soId));
+}
+function ordersDrawnMore(orderIds, owner, current, prior) {
+    const net = new Map();
+    const tally = (draws, sign) => {
+        for (const d of draws) {
+            const soId = (d.soiId ? owner.get(d.soiId) : undefined) ?? d.soId;
+            if (!soId || !orderIds.has(soId)) {
+                continue;
+            }
+            const key = `${soId}|${d.soiId ?? '*'}`;
+            const seen = net.get(key);
+            const qty = d.baseQty.times(sign);
+            net.set(key, { soId, qty: seen ? seen.qty.plus(qty) : qty });
+        }
+    };
+    tally(current, 1);
+    tally(prior, -1);
+    const more = new Set();
+    for (const { soId, qty } of net.values()) {
+        if (qty.toDecimalPlaces(4).greaterThan(0)) {
+            more.add(soId);
+        }
+    }
+    return more;
+}
+function refuseHeldOrders(ctx, held, field = 'items') {
+    for (const h of held) {
+        refuse(ctx, posting_types_1.SALES_ERROR_CODES.ORDER_DELIVERY_HOLD, `Order ${h.refno} is on delivery hold${h.reason ? `: ${h.reason}` : ''}. Release it on Sales Order Management first.`, { field });
     }
 }
 async function assertSalesmen(client, companyId, ids, opts = {}) {

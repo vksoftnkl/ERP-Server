@@ -30,6 +30,10 @@ __decorate([
 class HealthResponseDto {
     status;
     timestamp;
+    version;
+    build;
+    commit;
+    dbOk;
     database;
     cache;
 }
@@ -42,6 +46,22 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: '2026-02-12T14:32:10.123Z' }),
     __metadata("design:type", String)
 ], HealthResponseDto.prototype, "timestamp", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '1.2.0', description: 'APP_VERSION, else package.json version' }),
+    __metadata("design:type", String)
+], HealthResponseDto.prototype, "version", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 57, nullable: true, description: 'APP_BUILD (set by CI)' }),
+    __metadata("design:type", Object)
+], HealthResponseDto.prototype, "build", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'aa10be0d', nullable: true, description: 'APP_COMMIT (set by CI)' }),
+    __metadata("design:type", Object)
+], HealthResponseDto.prototype, "commit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true, description: 'The database answered SELECT 1' }),
+    __metadata("design:type", Boolean)
+], HealthResponseDto.prototype, "dbOk", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: HealthDatabaseStatusDto }),
     __metadata("design:type", HealthDatabaseStatusDto)

@@ -23,8 +23,10 @@ const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const sale_order_service_1 = require("./sale-order.service");
+const sale_order_tx_options_1 = require("./sale-order-tx.options");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' };
+const RESERVING_STATUSES = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
 let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     prisma;
     orders;
@@ -40,7 +42,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     }
     async post(dto) {
         const now = new Date();
-        return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now));
+        return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now), sale_order_tx_options_1.ORDER_TX_OPTIONS);
     }
     async saveAndPost(dto) {
         const { post: _post, ...rest } = dto;
@@ -53,17 +55,24 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         let warnings = [];
         try {
             await this.prisma.$transaction(async (tx) => {
-                const saved = saveDto.soId
-                    ? await this.orders.updateOrderInTx(tx, saveDto)
-                    : await this.orders.createOrderInTx(tx, saveDto);
+                let saved;
+                let reserveWarnings = [];
+                if (saveDto.soId) {
+                    const over = await this.saveOverInTx(tx, saveDto, now);
+                    saved = over;
+                    reserveWarnings = over.warnings;
+                }
+                else {
+                    saved = await this.orders.createOrderInTx(tx, saveDto);
+                }
                 keys = {
                     soId: saved.soId,
                     soCompanyId: saved.soCompanyId,
                     soBranchId: saved.soBranchId,
                     soAccYear: saved.soAccYear,
                 };
-                warnings = (await this.postInTx(tx, keys, now)).warnings;
-            });
+                warnings = [...reserveWarnings, ...(await this.postInTx(tx, keys, now)).warnings];
+            }, sale_order_tx_options_1.ORDER_TX_OPTIONS);
         }
         catch (error) {
             this.orders.throwIfDuplicate(error);
@@ -73,9 +82,75 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         const payload = await this.orders.getById(k.soId, k.soCompanyId, k.soBranchId, k.soAccYear);
         return { ...payload, warnings };
     }
+    async save(dto) {
+        if (!dto.soId) {
+            return { ...(await this.orders.save(dto)), warnings: [] };
+        }
+        this.orders.prepareSave(dto);
+        try {
+            return await this.prisma.$transaction((tx) => this.saveOverInTx(tx, dto, new Date()), sale_order_tx_options_1.ORDER_TX_OPTIONS);
+        }
+        catch (error) {
+            this.orders.throwIfDuplicate(error);
+            throw error;
+        }
+    }
+    async saveOverInTx(tx, dto, now) {
+        await tx.$queryRaw `
+      SELECT so_id FROM sales.sale_order
+       WHERE so_id = ${dto.soId}::uuid AND so_is_deleted = false
+       FOR UPDATE`;
+        const stored = await tx.saleOrder.findFirst({ where: { soId: dto.soId, soIsDeleted: false } });
+        if (!stored || !RESERVING_STATUSES.includes(stored.soStatus)) {
+            return { ...(await this.orders.updateOrderInTx(tx, dto)), warnings: [] };
+        }
+        const lines = await tx.saleOrderItem.findMany({
+            where: { soiOrderId: stored.soId, soiAccYear: stored.soAccYear, soiIsDeleted: false },
+        });
+        capReservedQty(dto, lines);
+        const before = await this.orders.getById(stored.soId, stored.soCompanyId, stored.soBranchId, stored.soAccYear, tx);
+        const payload = await this.orders.updateOrderInTx(tx, dto, { revision: false });
+        const keys = {
+            soId: stored.soId,
+            soCompanyId: stored.soCompanyId,
+            soBranchId: stored.soBranchId,
+            soAccYear: stored.soAccYear,
+        };
+        const fresh = await this.lock(tx, keys);
+        const ctx = await this.salesContext.resolve({ companyId: fresh.soCompanyId, branchId: fresh.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
+        const { held, warnings } = await this.rereserveInTx(tx, fresh, ctx.actor, now);
+        await this.orders.writeRevision(tx, fresh, before, ctx.actor, 'Order updated');
+        return { ...withHeld(payload, held), warnings };
+    }
+    async rereserveInTx(tx, order, actor, now) {
+        const held = new Map();
+        if (!RESERVING_STATUSES.includes(order.soStatus)) {
+            return { held, warnings: [] };
+        }
+        const current = await tx.saleOrderItem.findMany({
+            where: { soiOrderId: order.soId, soiAccYear: order.soAccYear, soiIsDeleted: false },
+            orderBy: { soiLineNo: 'asc' },
+        });
+        await this.reservations.release(tx, { docType: 'SALES_ORDER', docId: order.soId }, 'Re-reserved', actor, now);
+        const pendingOf = (l) => new client_1.Prisma.Decimal(l.soiPendingQty ?? 0);
+        const { reserved, warnings } = await this.reserve(tx, order, current.filter((l) => pendingOf(l).greaterThan(0)), actor, now);
+        for (const l of current) {
+            const got = new client_1.Prisma.Decimal(reserved.get(l.soiId) ?? 0);
+            const figures = {
+                soiIsReserved: got.greaterThan(0),
+                soiReservedQty: client_1.Prisma.Decimal.min(got, pendingOf(l)).toDecimalPlaces(3),
+            };
+            await tx.saleOrderItem.update({
+                where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
+                data: figures,
+            });
+            held.set(l.soiId, figures);
+        }
+        return { held, warnings };
+    }
     async postInTx(tx, dto, now) {
         const order = await this.lock(tx, dto);
-        if (order.soStatus === ORDER_STATUS.CONFIRMED) {
+        if (RESERVING_STATUSES.includes(order.soStatus)) {
             return { soStatus: order.soStatus, warnings: [] };
         }
         (0, sale_order_service_1.assertSaleOrderNotTerminal)(order);
@@ -98,12 +173,12 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         });
         const { reserved, warnings } = await this.reserve(tx, order, lines, ctx.actor, now);
         for (const l of lines) {
-            const got = reserved.get(l.soiId) ?? 0;
+            const got = new client_1.Prisma.Decimal(reserved.get(l.soiId) ?? 0);
             await tx.saleOrderItem.update({
                 where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
                 data: {
-                    soiIsReserved: got > 0,
-                    soiReservedQty: new client_1.Prisma.Decimal(Math.min(got, (0, sales_doc_utils_1.num)(l.soiOrderQty)).toFixed(3)),
+                    soiIsReserved: got.greaterThan(0),
+                    soiReservedQty: client_1.Prisma.Decimal.min(got, l.soiOrderQty).toDecimalPlaces(3),
                     soiModifiedOn: now,
                     soiModifiedBy: ctx.actor,
                 },
@@ -122,7 +197,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         await this.audit.logEntityChange({
             action: 'approve',
             tableName: 'sale_order',
-            screenName: 'Sales Order',
+            screenName: sale_order_service_1.SALE_ORDER_AUDIT_SCREEN_NAME,
             screenType: 'transaction',
             pk: order.soId,
             displayName: order.soOrderRefno,
@@ -170,25 +245,35 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
             });
             const after = await tx.saleOrder.findFirst({
                 where: { soId: order.soId, soAccYear: order.soAccYear },
-                select: { soStatus: true },
+                select: { soStatus: true, soDeliveryHold: true },
             });
             if (after?.soStatus !== ORDER_STATUS.CANCELLED) {
+                const holdRelease = (0, sale_order_service_1.finishedOrderHoldRelease)({ soDeliveryHold: after?.soDeliveryHold ?? order.soDeliveryHold }, ORDER_STATUS.CANCELLED, 'cancelled', ctx.actor, now);
                 await tx.saleOrder.update({
                     where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
                     data: {
                         soStatus: ORDER_STATUS.CANCELLED,
                         soModifiedOn: now,
                         soModifiedBy: ctx.actor,
+                        ...(holdRelease?.data ?? {}),
                     },
                 });
                 await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.CANCELLED, order.soStatus, ORDER_STATUS.CANCELLED, ctx.actor, now, dto.reason);
+                if (holdRelease) {
+                    await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.DELIVERY_RELEASED, ORDER_STATUS.CANCELLED, ORDER_STATUS.CANCELLED, ctx.actor, now, holdRelease.remarks);
+                }
             }
             return { soStatus: ORDER_STATUS.CANCELLED, cancelledLines: result.cancelledLines };
-        });
+        }, sale_order_tx_options_1.ORDER_TX_OPTIONS);
     }
     async amend(dto) {
         const now = new Date();
-        const { order, ctx } = await this.prisma.$transaction(async (tx) => {
+        const { baseRevision: _b, editRemark: _e, ...saveDto } = dto;
+        void _b;
+        void _e;
+        const s = saveDto;
+        delete s.soStatus;
+        return this.prisma.$transaction(async (tx) => {
             const order = await this.lock(tx, {
                 soId: dto.soId,
                 soCompanyId: dto.soCompanyId,
@@ -223,38 +308,24 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                     }
                 }
             }
-            return { order, ctx };
-        });
-        const { baseRevision: _b, editRemark: _e, ...saveDto } = dto;
-        void _b;
-        void _e;
-        const s = saveDto;
-        delete s.soStatus;
-        const payload = await this.orders.save({ ...s, soId: order.soId });
-        await this.prisma.$transaction(async (tx) => {
+            capReservedQty(s, lines);
+            const before = await this.orders.getById(order.soId, order.soCompanyId, order.soBranchId, order.soAccYear, tx);
+            this.orders.prepareSave(s);
+            let payload;
+            try {
+                payload = await this.orders.updateOrderInTx(tx, { ...s, soId: order.soId }, { revision: false });
+            }
+            catch (error) {
+                this.orders.throwIfDuplicate(error);
+                throw error;
+            }
             const fresh = await this.lock(tx, {
                 soId: order.soId,
                 soCompanyId: order.soCompanyId,
                 soBranchId: order.soBranchId,
                 soAccYear: order.soAccYear,
             });
-            if (fresh.soStatus === ORDER_STATUS.CONFIRMED || fresh.soStatus === 'PARTIAL') {
-                const lines = await tx.saleOrderItem.findMany({
-                    where: { soiOrderId: fresh.soId, soiAccYear: fresh.soAccYear, soiIsDeleted: false },
-                    orderBy: { soiLineNo: 'asc' },
-                });
-                const { reserved } = await this.reserve(tx, fresh, lines.filter((l) => (0, sales_doc_utils_1.num)(l.soiPendingQty) > 0), ctx.actor, now);
-                for (const l of lines) {
-                    const got = reserved.get(l.soiId) ?? 0;
-                    await tx.saleOrderItem.update({
-                        where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
-                        data: {
-                            soiIsReserved: got > 0,
-                            soiReservedQty: new client_1.Prisma.Decimal(Math.min(got, (0, sales_doc_utils_1.num)(l.soiPendingQty)).toFixed(3)),
-                        },
-                    });
-                }
-            }
+            const { held, warnings } = await this.rereserveInTx(tx, fresh, ctx.actor, now);
             await tx.saleOrder.update({
                 where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
                 data: {
@@ -263,9 +334,10 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                     soModifiedBy: ctx.actor,
                 },
             });
-            await this.trail(tx, fresh, txn_status_log_helper_1.TxnStatusEvent.AMENDED, fresh.soStatus, fresh.soStatus, ctx.actor, now, dto.editRemark);
-        });
-        return { ...payload, soRevisionNo: order.soRevisionNo + 1 };
+            const { revNo } = await this.orders.writeRevision(tx, order, before, ctx.actor, `Order amended: ${dto.editRemark}`);
+            await this.trail(tx, fresh, txn_status_log_helper_1.TxnStatusEvent.AMENDED, fresh.soStatus, fresh.soStatus, ctx.actor, now, `Rev ${revNo}: ${dto.editRemark}`);
+            return { ...withHeld(payload, held), soRevisionNo: order.soRevisionNo + 1, warnings };
+        }, sale_order_tx_options_1.ORDER_TX_OPTIONS);
     }
     async deleteDraft(keys) {
         const order = await this.prisma.saleOrder.findFirst({
@@ -349,4 +421,28 @@ exports.SaleOrderLifecycleService = SaleOrderLifecycleService = __decorate([
         stock_reservation_service_1.StockReservationService,
         audit_log_service_1.AuditLogService])
 ], SaleOrderLifecycleService);
+function capReservedQty(dto, lines) {
+    if (!dto.items) {
+        return;
+    }
+    const stored = new Map(lines.map((l) => [l.soiId, l]));
+    for (const it of dto.items) {
+        const prev = it.soiId ? stored.get(it.soiId) : undefined;
+        const qty = new client_1.Prisma.Decimal(it.soiOrderQty ?? prev?.soiOrderQty ?? 0);
+        const heldQty = new client_1.Prisma.Decimal(prev?.soiReservedQty ?? 0);
+        it.soiReservedQty = client_1.Prisma.Decimal.max(0, client_1.Prisma.Decimal.min(heldQty, qty)).toFixed(3);
+    }
+}
+function withHeld(payload, held) {
+    if (held.size === 0 || !payload.items) {
+        return payload;
+    }
+    return {
+        ...payload,
+        items: payload.items.map((i) => {
+            const h = held.get(i.soiId);
+            return h ? { ...i, ...h } : i;
+        }),
+    };
+}
 //# sourceMappingURL=sale-order-lifecycle.service.js.map

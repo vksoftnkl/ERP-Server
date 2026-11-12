@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const client_info_1 = require("../../common/client-info/client-info");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
 const http_error_response_dto_1 = require("../../common/dto/http-error-response.dto");
 const auth_service_1 = require("./auth.service");
@@ -31,10 +32,11 @@ let AuthController = class AuthController {
         return this.authService.login(loginAuthDto, {
             userAgent: this.extractHeader(request.headers['user-agent']),
             appVersion: this.extractHeader(request.headers['x-app-version']),
+            client: (0, client_info_1.clientInfoOf)(request),
         });
     }
-    async refresh(refreshTokenDto) {
-        return this.authService.refresh(refreshTokenDto.refresh_token);
+    async refresh(refreshTokenDto, request) {
+        return this.authService.refresh(refreshTokenDto.refresh_token, (0, client_info_1.clientInfoOf)(request));
     }
     extractHeader(headerValue) {
         if (typeof headerValue === 'string') {
@@ -74,8 +76,9 @@ __decorate([
     (0, swagger_1.ApiBadRequestResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto]),
+    __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "refresh", null);
 exports.AuthController = AuthController = __decorate([

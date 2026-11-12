@@ -1,3 +1,4 @@
+import { AppUpdateInfoDto } from '../../app-version/dto/check-update.dto';
 export declare class LoginResponseDto {
     access_token: string;
     refresh_token: string;
@@ -11,4 +12,5 @@ export declare class LoginResponseDto {
     dev_branch_id: string | null;
     dev_user_id: string | null;
     device_type: string | null;
+    appUpdate?: AppUpdateInfoDto;
 }

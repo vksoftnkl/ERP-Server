@@ -12,7 +12,7 @@ import { SalesContextService, type SalesCallContext } from '../posting/sales-con
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
-import { StockReservationService } from '../posting/stock-reservation.service';
+import { StockReservationService, type OrderLineQty } from '../posting/stock-reservation.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import { type SalesGuardContext } from '../posting/types/posting.types';
@@ -71,6 +71,7 @@ export declare class BillLifecycleService {
     amend(dto: AmendBillDto): Promise<BillPayload>;
     runGuards(tx: Prisma.TransactionClient, snap: BillSnapshot, ctx: SalesCallContext, g: SalesGuardContext, opts: {
         adjustments?: SaveBillAdjustmentDto[];
+        priorItems?: SaleBillItem[];
     }): Promise<void>;
     private guardSources;
     private stampTillSession;
@@ -80,6 +81,7 @@ export declare class BillLifecycleService {
         fromStatus: string;
         revisionNo?: number;
         restateVoucherId?: string | null;
+        priorItems?: SaleBillItem[];
     }): Promise<PostResult>;
     private assertUnwindable;
     private unwind;
@@ -96,4 +98,5 @@ export declare class BillLifecycleService {
     private company;
     private proposals;
 }
+export declare function orderLineQtys(items: SaleBillItem[], sign: 1 | -1): OrderLineQty[];
 export {};

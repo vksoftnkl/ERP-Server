@@ -251,7 +251,7 @@ let DeliveryChallanService = class DeliveryChallanService {
             deviceId: row.sdcDeviceId,
         }, exports.DC_SPEC.menuId, tx);
     }
-    async guards(tx, row, items, ctx, g) {
+    async guards(tx, row, items, ctx, g, priorItems) {
         const companyId = row.sdcCompanyId;
         const accYear = row.sdcAccYear;
         const docDate = (0, sales_doc_utils_1.isoDate)(row.sdcDcDate) ?? (0, sales_doc_utils_1.isoToday)();
@@ -297,6 +297,18 @@ let DeliveryChallanService = class DeliveryChallanService {
             row.sdcSrcDocType !== 'SALES_ORDER') {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_REQUIRES_ORDER, 'This company issues challans only against a sales order (sales.dc_requires_order)', { field: 'sdcSrcDocId' });
         }
+        const heldOrderIds = [
+            ...new Set([
+                row.sdcSrcDocType === 'SALES_ORDER' ? row.sdcSrcDocId : null,
+                ...items.map((i) => i.sdiSrcDocType === 'SALES_ORDER' ? i.sdiSrcDocId : null),
+            ].filter((id) => !!id)),
+        ];
+        const held = (0, sales_guards_1.heldAmong)(await (0, sales_guards_1.lockSourceOrders)(tx, heldOrderIds, items
+            .filter((i) => i.sdiSrcDocType === 'SALES_ORDER' && i.sdiSrcItemId)
+            .map((i) => i.sdiSrcItemId)));
+        (0, sales_guards_1.refuseHeldOrders)(g, priorItems
+            ? await (0, sales_guards_1.heldOrdersDrawnMore)(tx, held, dcItemDraws(items), dcItemDraws(priorItems))
+            : held);
         const orderLines = items.filter((i) => i.sdiSrcDocType === 'SALES_ORDER' && i.sdiSrcItemId);
         if (orderLines.length > 0) {
             const rows = await tx.$queryRaw `
@@ -580,6 +592,7 @@ let DeliveryChallanService = class DeliveryChallanService {
             const items = await this.store.loadItems(tx, row);
             await this.assertUnwindable(tx, row, items, dto.editRemark);
             const before = this.store.plain(row);
+            await lockDcOrders(tx, [row, dto], [...items, ...(dto.items ?? [])]);
             await this.unwind(tx, row, ctx.actor, `Amended: ${dto.editRemark}`, now);
             const draft = await this.store.setStatus(tx, row, 'DRAFT', { sdcPostedVoucherId: null }, ctx.actor, now);
             await this.store.trail(tx, draft, txn_status_log_helper_1.TxnStatusEvent.AMENDED, 'POSTED', 'DRAFT', ctx.actor, now, dto.editRemark);
@@ -594,7 +607,7 @@ let DeliveryChallanService = class DeliveryChallanService {
                 canOverride: ctx.rights.override,
                 throwOnRefusal: false,
             });
-            await this.guards(tx, saved, newItems, ctx, g);
+            await this.guards(tx, saved, newItems, ctx, g, items);
             if (g.refusals.length > 0) {
                 (0, sales_errors_1.throwSalesRefusals)('Challan cannot be amended', g.refusals);
             }
@@ -738,5 +751,38 @@ exports.DeliveryChallanService = DeliveryChallanService = __decorate([
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {
     return !!v && UUID.test(v);
+}
+function dcItemDraws(items) {
+    return items
+        .filter((i) => i.sdiSrcDocType === 'SALES_ORDER')
+        .map((i) => {
+        const factor = new client_1.Prisma.Decimal(i.sdiToBaseFactor ?? 0);
+        return {
+            soId: i.sdiSrcDocId ?? null,
+            soiId: i.sdiSrcItemId ?? null,
+            baseQty: new client_1.Prisma.Decimal(i.sdiDcQty ?? 0).times(factor.isZero() ? 1 : factor),
+        };
+    });
+}
+async function lockDcOrders(tx, headers, lines) {
+    const ids = new Set();
+    const lineIds = new Set();
+    for (const h of headers) {
+        if (h.sdcSrcDocType === 'SALES_ORDER' && h.sdcSrcDocId) {
+            ids.add(h.sdcSrcDocId);
+        }
+    }
+    for (const l of lines) {
+        if (l.sdiSrcDocType !== 'SALES_ORDER') {
+            continue;
+        }
+        if (l.sdiSrcDocId) {
+            ids.add(l.sdiSrcDocId);
+        }
+        if (l.sdiSrcItemId) {
+            lineIds.add(l.sdiSrcItemId);
+        }
+    }
+    await (0, sales_guards_1.lockSourceOrders)(tx, [...ids], [...lineIds]);
 }
 //# sourceMappingURL=delivery-challan.service.js.map

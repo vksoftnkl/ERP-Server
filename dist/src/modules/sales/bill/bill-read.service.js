@@ -273,6 +273,8 @@ let BillReadService = class BillReadService {
                ON g.gdl_id = COALESCE(d.soi_godown_id, pr.ipm_godown_id, bg.gdl_id)
        WHERE h.so_company_id = ${q.companyId}::uuid AND h.so_branch_id = ${q.branchId}::uuid
          AND h.so_cust_id = ${q.partyId}::uuid AND h.so_status IN ('CONFIRMED', 'PARTIAL') AND h.so_is_deleted = false
+         -- an order on delivery hold is not offered to a bill (Sales Order Management, D18)
+         AND h.so_delivery_hold = false
          AND (${q.accYear ?? null}::text IS NULL OR h.so_acc_year = ${q.accYear ?? null}::char(9))
          AND d.soi_pending_qty > 0
        ORDER BY h.so_order_date, h.so_order_refno, d.soi_line_no`;
@@ -305,7 +307,7 @@ let BillReadService = class BillReadService {
       SELECT SUM(abl_pending_amount) AS pending, COUNT(*) AS bills, MIN(abl_doc_date) AS oldest
         FROM accounts.acc_bill_balance
        WHERE abl_company_id = ${q.companyId}::uuid AND abl_party_id = ${q.partyId}::uuid
-         AND abl_dr_cr = 'DR' AND abl_status = 'OPEN' AND abl_is_deleted = false AND abl_is_active = true`;
+         AND abl_dr_cr = 'DR' AND abl_pending_amount > 0 AND abl_is_deleted = false AND abl_is_active = true`;
         const used = (0, sales_doc_utils_1.num)(open?.pending);
         const openBills = Number(open?.bills ?? 0);
         const oldestOpenDays = open?.oldest ? (0, sales_doc_utils_1.daysBetween)((0, sales_doc_utils_1.isoDate)(open.oldest), billDate) : 0;
@@ -395,6 +397,7 @@ let BillReadService = class BillReadService {
                 JOIN sales.sale_order_item d ON d.soi_order_id = h.so_id AND d.soi_acc_year = h.so_acc_year AND d.soi_is_deleted = false
                WHERE h.so_company_id = ${q.companyId}::uuid AND h.so_branch_id = ${q.branchId}::uuid
                  AND h.so_cust_id = ${q.partyId}::uuid AND h.so_status IN ('CONFIRMED', 'PARTIAL') AND h.so_is_deleted = false
+                 AND h.so_delivery_hold = false
                  AND d.soi_pending_qty > 0) AS orders`;
         return {
             party: {

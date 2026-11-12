@@ -25,6 +25,9 @@ const save_sale_order_dto_1 = require("./dto/save-sale-order.dto");
 const cancel_sale_order_lines_dto_1 = require("./dto/cancel-sale-order-lines.dto");
 const sale_order_response_dto_1 = require("./dto/sale-order-response.dto");
 const api_version_1 = require("../../../common/constants/api-version");
+function shortNote(warnings) {
+    return warnings?.length ? ` — ${warnings.length} line(s) short on reservation` : '';
+}
 function wantsPost(dto) {
     return dto.post === true || (dto.soStatus ?? '').toUpperCase() === 'CONFIRMED';
 }
@@ -41,14 +44,15 @@ let SaleOrderController = class SaleOrderController {
             return {
                 success: true,
                 message: (saveOrderDto.soId ? 'Order updated and confirmed' : 'Order created and confirmed') +
-                    (data.warnings.length ? ` — ${data.warnings.length} line(s) short on reservation` : ''),
+                    shortNote(data.warnings),
                 data,
             };
         }
-        const data = await this.orderService.save(saveOrderDto);
+        const data = await this.lifecycle.save(saveOrderDto);
         return {
             success: true,
-            message: saveOrderDto.soId ? 'Order updated successfully' : 'Order created successfully',
+            message: (saveOrderDto.soId ? 'Order updated successfully' : 'Order created successfully') +
+                shortNote(data.warnings),
             data,
         };
     }
@@ -94,7 +98,11 @@ let SaleOrderController = class SaleOrderController {
     }
     async amendOrder(dto) {
         const data = await this.lifecycle.amend(dto);
-        return { success: true, message: 'Order amended successfully', data };
+        return {
+            success: true,
+            message: 'Order amended successfully' + shortNote(data.warnings),
+            data,
+        };
     }
 };
 exports.SaleOrderController = SaleOrderController;
@@ -114,7 +122,9 @@ __decorate([
             '/sale-orders/cancel. Nor the fulfilment caches (soFulfilStatus, soDeliveredItems, ' +
             'soCompletedOn, soLastBilledOn): validated, never written; deliveries and bills move them. ' +
             'With a soId, a stored CONFIRMED / PARTIAL order needs the Amend right, as /amend does ' +
-            '(403 SALES_RIGHT_AMEND, field userId); no revision is written here.',
+            '(403 SALES_RIGHT_AMEND, field userId), and its stock reservations follow the edit as on ' +
+            '/amend (every hold released, the pending lines re-reserved, soiReservedQty rewritten); ' +
+            'no revision NUMBER moves and no AMENDED step is written here.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: sale_order_response_dto_1.SaleOrderSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: sale_order_response_dto_1.SaleOrderErrorResponseDto }),

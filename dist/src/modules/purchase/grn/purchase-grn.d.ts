@@ -9,6 +9,12 @@ import { type PurIssue } from '../invoice/purchase-invoice-checks';
 import { TransportBandService, type TransportBandInput } from "../../sales/posting/transport-band.service";
 import { type GrnLineCheck } from './purchase-grn-checks';
 export declare const GRN_MENU_ID = 196;
+export declare const GRN_AMEND_BILLED = "PUR_GRN_AMEND_BILLED";
+export declare const GRN_AMEND_STOCK_MOVED = "PUR_GRN_AMEND_STOCK_MOVED";
+export interface GrnAmendBlock {
+    code: string;
+    message: string;
+}
 export declare class GrnLineDto {
     lineNo: number;
     itemId: string;
@@ -38,7 +44,7 @@ export declare class GrnHeaderDto {
     branchId: string;
     accYear: string;
     deviceId: string;
-    supplierId: string;
+    supplierId?: string;
     godownId: string;
     docDate: string;
     receivedAt?: string;
@@ -59,6 +65,7 @@ export declare class GrnHeaderDto {
     packagesReceived?: number;
     remarks?: string;
     post?: boolean;
+    amendReason?: string;
 }
 export declare class SaveGrnDto {
     header: GrnHeaderDto;
@@ -95,7 +102,7 @@ export declare class PurchaseGrnService {
     private judge;
     validate(dto: SaveGrnDto): Promise<{
         header: {
-            supplierName: string;
+            supplierName: string | null;
             godownName: string;
             poRefs: {
                 poId: string;
@@ -159,6 +166,7 @@ export declare class PurchaseGrnService {
                 accYear: string;
                 refno: string;
             }[];
+            amendBlock: GrnAmendBlock | null;
             transport: {
                 mode: string | null;
                 transporterId: string | null;
@@ -319,6 +327,9 @@ export declare class PurchaseGrnService {
             total: string;
         };
     }>;
+    private unwindForAmend;
+    private amendBlockOf;
+    private stockMovedOf;
     private poPendingBase;
     private coolieFor;
     private poIdOf;
@@ -345,6 +356,7 @@ export declare class PurchaseGrnService {
                 accYear: string;
                 refno: string;
             }[];
+            amendBlock: GrnAmendBlock | null;
             transport: {
                 mode: string | null;
                 transporterId: string | null;
@@ -528,6 +540,7 @@ export declare class PurchaseGrnService {
                 accYear: string;
                 refno: string;
             }[];
+            amendBlock: GrnAmendBlock | null;
             transport: {
                 mode: string | null;
                 transporterId: string | null;
@@ -705,6 +718,7 @@ export declare class PurchaseGrnService {
                 accYear: string;
                 refno: string;
             }[];
+            amendBlock: GrnAmendBlock | null;
             transport: {
                 mode: string | null;
                 transporterId: string | null;
@@ -894,6 +908,7 @@ export declare class PurchaseGrnController {
                     accYear: string;
                     refno: string;
                 }[];
+                amendBlock: GrnAmendBlock | null;
                 transport: {
                     mode: string | null;
                     transporterId: string | null;
@@ -1060,7 +1075,7 @@ export declare class PurchaseGrnController {
         message: string;
         data: {
             header: {
-                supplierName: string;
+                supplierName: string | null;
                 godownName: string;
                 poRefs: {
                     poId: string;
@@ -1123,6 +1138,7 @@ export declare class PurchaseGrnController {
                     accYear: string;
                     refno: string;
                 }[];
+                amendBlock: GrnAmendBlock | null;
                 transport: {
                     mode: string | null;
                     transporterId: string | null;
@@ -1304,6 +1320,7 @@ export declare class PurchaseGrnController {
                     accYear: string;
                     refno: string;
                 }[];
+                amendBlock: GrnAmendBlock | null;
                 transport: {
                     mode: string | null;
                     transporterId: string | null;
@@ -1485,6 +1502,7 @@ export declare class PurchaseGrnController {
                     accYear: string;
                     refno: string;
                 }[];
+                amendBlock: GrnAmendBlock | null;
                 transport: {
                     mode: string | null;
                     transporterId: string | null;
