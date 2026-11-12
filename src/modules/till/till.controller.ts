@@ -98,6 +98,7 @@ import type {
  *   Cash Office (286)    retired by notes 114: its two routes are judged on 273
  *   Cash Office (287)    notes 118, the safe — TillSafeController; here it judges a REMIT's void / get
  */
+/**test*/
 @ApiTags('Till')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
