@@ -67,6 +67,8 @@ const rateRow = (overrides: Partial<TaxRateMaster> = {}): TaxRateMaster => ({
   taxAcessPerc: new Prisma.Decimal(0),
   taxAcessPerUnit: new Prisma.Decimal(0),
   taxSupersedesId: null,
+  taxValueThreshold: null,
+  taxAboveTaxId: null,
   taxIsActive: true,
   taxIsDeleted: false,
   taxSyncDate: null,

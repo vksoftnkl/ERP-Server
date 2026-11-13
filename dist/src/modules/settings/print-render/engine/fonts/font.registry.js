@@ -12,6 +12,7 @@ const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const common_1 = require("@nestjs/common");
 const fontkit = require("fontkit");
+const package_files_1 = require("../../../../../common/package-files/package-files");
 const FACES = [
     { family: 'NotoSans', bold: false, italic: false, fileName: 'NotoSans-Regular.ttf' },
     { family: 'NotoSans', bold: true, italic: false, fileName: 'NotoSans-Bold.ttf' },
@@ -130,8 +131,10 @@ const resolveFontDirectory = () => {
     if (configured) {
         return (0, node_path_1.isAbsolute)(configured) ? configured : (0, node_path_1.resolve)(process.cwd(), configured);
     }
+    const root = (0, package_files_1.packageRoot)(__dirname);
     const candidates = [
         (0, node_path_1.resolve)(process.cwd(), 'assets/fonts'),
+        ...(root ? [(0, node_path_1.join)(root, 'assets/fonts')] : []),
         (0, node_path_1.resolve)(__dirname, '../../../../../../assets/fonts'),
         (0, node_path_1.resolve)(__dirname, '../../../../../assets/fonts'),
     ];

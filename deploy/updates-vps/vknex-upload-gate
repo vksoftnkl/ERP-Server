@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# vknex-upload-gate: the ONLY thing the CI deploy key can run on the update server.
+#
+# Installed root-owned as /usr/local/bin/vknex-upload-gate and pinned in the deploy
+# user's authorized_keys (see setup-update-uploads.sh):
+#
+#   restrict,command="/usr/local/bin/vknex-upload-gate /var/www/updates/test/backend" ssh-ed25519 AAAA... ci
+#
+# sshd runs this script for EVERY connection with that key and puts what the client
+# asked for in $SSH_ORIGINAL_COMMAND. The upload folder comes from authorized_keys, never
+# from the client, so a key for the test folder cannot write anywhere else (and the
+# deploy user has no write permission outside its folder either). No shell, no scp,
+# no sftp, no port forwarding (restrict).
+#
+# Verbs (one per connection):
+#   hello <dir>              OK when <dir> is this key's folder (catches a mixed-up secret)
+#   latest                   print latest.json (or {} when there is none yet)
+#   clean                    delete leftover *.part / *.tmp of an interrupted run
+#   put-part <zip>           stdin -> builds/<zip>.part           (zip = vknex-backend-…-b<n>-….zip)
+#   commit <zip> <sha256>    sha256 of builds/<zip>.part must equal <sha256>, else the
+#                            .part is deleted and the call fails; then .part -> <zip>
+#                            and builds/<zip>.sha256 is written. A released zip is never
+#                            replaced: same name + same sha256 = already there (OK),
+#                            same name + other sha256 = refused.
+#   put-release <build>      stdin -> releases/b<build>.json  (tmp + rename)
+#   put-latest               stdin -> latest.json             (tmp + rename; ALWAYS last)
+#
+# Exit: 0 OK, 2 refused (bad verb/argument), 3 checksum mismatch, 4 already released
+# with other content, 5 too large, 1 anything else. Every call goes to syslog
+# (tag vknex-upload-gate).
+set -euo pipefail
+umask 022
+
+readonly MAX_ZIP_BYTES=$((600 * 1024 * 1024))
+readonly MAX_JSON_BYTES=$((64 * 1024))
+
+root="${1:-}"
+log() { local client="${SSH_CLIENT:-local}"; logger -t vknex-upload-gate -- "${client%% *} ${root}: $*" 2>/dev/null || true; }
+refuse() { log "refused: $*"; echo "vknex-upload-gate: refused: $*" >&2; exit "${2:-2}"; }
+die() { log "failed: $1"; echo "vknex-upload-gate: $1" >&2; exit "${2:-1}"; }
+
+[[ "$root" == /* && -d "$root" ]] || die "upload folder '$root' does not exist (check authorized_keys)"
+cd "$root"
+mkdir -p builds releases
+
+# shellcheck disable=SC2206 # word splitting is the point; no globbing below
+set -f
+words=(${SSH_ORIGINAL_COMMAND:-})
+set +f
+verb="${words[0]:-}"
+arg1="${words[1]:-}"
+arg2="${words[2]:-}"
+(( ${#words[@]} <= 3 )) || refuse "too many words"
+
+readonly ZIP_RE='^vknex-backend-[0-9A-Za-z.+-]{1,32}-b[0-9]{1,10}-[a-z0-9-]{1,20}\.zip$'
+readonly SHA_RE='^[0-9a-f]{64}$'
+readonly BUILD_RE='^[0-9]{1,10}$'
+
+# One upload at a time (GitHub's concurrency group already serialises the runs).
+exec 9>"$root/.gate.lock"
+flock -w 1800 9 || die "another upload holds the lock"
+
+# stdin -> <file>.tmp (size-capped) -> rename to <file>
+write_capped() { # <final path> <max bytes>
+  local final="$1" max="$2" tmp="$1.tmp" size
+  head -c "$((max + 1))" >"$tmp"
+  size="$(stat -c %s "$tmp")"
+  if (( size > max )); then rm -f "$tmp"; refuse "$final: over $max bytes" 5; fi
+  if (( size == 0 )); then rm -f "$tmp"; refuse "$final: empty"; fi
+  if command -v python3 >/dev/null 2>&1 &&
+    ! python3 -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    refuse "$final: not valid JSON"
+  fi
+  mv -f "$tmp" "$final"
+  echo "$size"
+}
+
+case "$verb" in
+  hello)
+    [[ "$arg1" == "$root" || "$arg1" == "$root/" ]] || refuse "this key writes to $root, not '$arg1'"
+    log "hello"
+    echo "ok $root"
+    ;;
+
+  latest)
+    if [[ -f latest.json ]]; then cat latest.json; else echo '{}'; fi
+    ;;
+
+  clean)
+    removed="$(find "$root" -maxdepth 2 -type f \( -name '*.part' -o -name '*.tmp' \) -print -delete | wc -l)"
+    log "clean: $removed leftover file(s)"
+    echo "removed $removed leftover file(s)"
+    ;;
+
+  put-part)
+    [[ "$arg1" =~ $ZIP_RE ]] || refuse "bad zip name '$arg1'"
+    part="builds/$arg1.part"
+    head -c "$((MAX_ZIP_BYTES + 1))" >"$part"
+    size="$(stat -c %s "$part")"
+    if (( size > MAX_ZIP_BYTES )); then rm -f "$part"; refuse "$arg1: over $MAX_ZIP_BYTES bytes" 5; fi
+    log "put-part $arg1 ($size bytes)"
+    echo "$size"
+    ;;
+
+  commit)
+    [[ "$arg1" =~ $ZIP_RE ]] || refuse "bad zip name '$arg1'"
+    [[ "$arg2" =~ $SHA_RE ]] || refuse "bad sha256 '$arg2'"
+    part="builds/$arg1.part"
+    final="builds/$arg1"
+    [[ -f "$part" ]] || refuse "no upload for $arg1"
+    actual="$(sha256sum "$part" | cut -d' ' -f1)"
+    if [[ "$actual" != "$arg2" ]]; then
+      rm -f "$part"
+      die "checksum mismatch for $arg1: server $actual, CI $arg2 (upload deleted)" 3
+    fi
+    if [[ -f "$final" ]]; then
+      rm -f "$part"
+      existing="$(sha256sum "$final" | cut -d' ' -f1)"
+      [[ "$existing" == "$arg2" ]] || die "$arg1 is already released with other content ($existing); a released zip is never replaced" 4
+      log "commit $arg1: already there (same sha256)"
+      echo "already there $arg2"
+      exit 0
+    fi
+    mv "$part" "$final"
+    printf '%s  %s\n' "$arg2" "$arg1" >"$final.sha256.tmp"
+    mv -f "$final.sha256.tmp" "$final.sha256"
+    log "commit $arg1 sha256 $arg2"
+    echo "committed $arg2 $(stat -c %s "$final")"
+    ;;
+
+  put-release)
+    [[ "$arg1" =~ $BUILD_RE ]] || refuse "bad build '$arg1'"
+    size="$(write_capped "releases/b$arg1.json" "$MAX_JSON_BYTES")"
+    log "put-release b$arg1 ($size bytes)"
+    echo "ok releases/b$arg1.json"
+    ;;
+
+  put-latest)
+    [[ -z "$arg1" ]] || refuse "put-latest takes no argument"
+    size="$(write_capped latest.json "$MAX_JSON_BYTES")"
+    log "put-latest ($size bytes)"
+    echo "ok latest.json"
+    ;;
+
+  *)
+    refuse "unknown command '${SSH_ORIGINAL_COMMAND:-<interactive>}'"
+    ;;
+esac

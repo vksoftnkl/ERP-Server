@@ -1,0 +1,246 @@
+# Release pipeline §2.2, ERP-Server: push to DEV-v1 -> checks -> Windows build + zip ->
+# upload to the update server (the folder in vars.UPLOAD_DIR, a NON-production channel such
+# as /var/www/updates/dev/backend). Nothing reaches the server unless every earlier job
+# passed, and latest.json is always written last. Proven first in the test repo
+# vksoftnkl/erp-part-b-step2 (ci/RELEASE-PIPELINE-RESULTS.md there).
+#
+# NEVER RENAME this workflow (file or name): the build number is
+# github.run_number + vars.BUILD_OFFSET, and a renamed workflow restarts run_number at 1.
+# Both the checks job (backend-build-* tags) and publish.sh (the server's latest.json)
+# refuse a build number that is not above the last release.
+#
+# Setup: see ci/RELEASE-PIPELINE.md. In short:
+#   Secrets      VPS_SSH_KEY, VPS_HOST, VPS_USER, VPS_KNOWN_HOSTS
+#   Variables    VPS_PORT, UPLOAD_DIR, PUBLIC_BASE_URL (or secrets), BUILD_OFFSET (default 2000:
+#                above every test-repo build, 1003-1012, so the two can share a folder)
+name: release
+
+on:
+  push:
+    branches: [DEV-v1]
+  workflow_dispatch: # the "Run workflow" button; uploads only when run on DEV-v1
+
+concurrency:
+  group: release-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # A fresh tsc over this tree (the Prisma client types alone are 41 MB) peaks at ~3.8 GB;
+  # Node's default heap (~2 GB) aborts with "JavaScript heap out of memory".
+  NODE_OPTIONS: --max-old-space-size=6144
+
+jobs:
+  checks:
+    name: Build number, migration guard, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      build: ${{ steps.number.outputs.build }}
+      has_migrations: ${{ steps.previous.outputs.has_migrations }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags + history: build number, migration guard, hasMigrations
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc # the same Node is copied into the zip as node.exe
+          cache: npm
+
+      - name: Build number (run_number + offset)
+        id: number
+        env:
+          OFFSET: ${{ vars.BUILD_OFFSET || '2000' }}
+        run: |
+          build=$(( GITHUB_RUN_NUMBER + OFFSET ))
+          last="$(git tag --list 'backend-build-*' | sed 's/^backend-build-//' | sort -n | tail -n 1)"
+          echo "build $build = run $GITHUB_RUN_NUMBER + offset $OFFSET (last released: ${last:-none})"
+          if [[ -n "$last" ]] && (( build <= last )); then
+            echo "::error::Build $build is not above the last released build $last. Was the workflow renamed? Raise vars.BUILD_OFFSET."
+            exit 1
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - name: Previous release and hasMigrations
+        id: previous
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          tag="$(git tag --list 'backend-build-*' --sort=-v:refname | head -n 1)"
+          base="$tag"
+          if [[ -z "$base" && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          fi
+          if [[ -n "$tag" ]] && git diff --quiet "$tag" HEAD -- prisma/migrations; then
+            has=false
+          else
+            has=true # first release, or prisma/migrations changed since the last one
+          fi
+          echo "previous release: ${tag:-none}; guard base: ${base:-default}; hasMigrations: $has"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "has_migrations=$has" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        run: npm ci --no-audit --no-fund # postinstall builds prisma/schema.prisma + the client
+
+      - name: Migration guard (schema change without a migration fails)
+        env:
+          BASE: ${{ steps.previous.outputs.base }}
+        run: bash ci/backend/migration-guard.sh ${BASE:+"$BASE"}
+
+      - name: Prisma schema + client
+        run: |
+          npm run prisma:schema:build
+          npx prisma generate --schema prisma/schema.prisma --generator client
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        run: npm test -- --ci
+
+  build:
+    name: Windows build, zip, content check, sha256
+    needs: checks
+    runs-on: windows-latest # client PCs are Windows: the Prisma engines must be the Windows build
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      name: ${{ steps.pack.outputs.name }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      size: ${{ steps.pack.outputs.size }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: No CRLF conversion (bash scripts, migration.sql checksums)
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Install (full, for the build)
+        run: npm ci --no-audit --no-fund
+
+      - name: Build (source maps off)
+        # tsconfig.release.json = tsconfig.build.json with sourceMap false. The dev box keeps
+        # maps (tsconfig.build.json; the watcher runs with --enable-source-maps).
+        run: npx nest build --path tsconfig.release.json
+
+      - name: No source maps in dist/
+        run: |
+          maps="$(find dist -name '*.map' -type f)"
+          if [[ -n "$maps" ]]; then
+            echo "$maps" | head -n 20
+            echo "::error::$(echo "$maps" | wc -l) source map(s) in dist/. Set \"sourceMap\": false in tsconfig.release.json."
+            exit 1
+          fi
+          echo "no *.map in dist/"
+
+      - name: Write build-info.json, compat.json, releases.json
+        env:
+          BUILD: ${{ needs.checks.outputs.build }}
+          COMMIT: ${{ github.sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+          # No release registry in the test repo: releases.json is empty. In production,
+          # CI_API_URL / CI_USER / CI_PASSWORD fill it (ci/backend/write-package-files.mjs).
+        run: node ci/backend/write-package-files.mjs
+
+      - name: Production dependencies only (Prisma CLI kept)
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Package, content check, sha256
+        id: pack
+        env:
+          BUILD: ${{ needs.checks.outputs.build }}
+          COMMIT: ${{ github.sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+          OUT_DIR: release
+          PACKAGE_MOVE: '1'
+        run: bash ci/backend/package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-release
+          path: |
+            release/*.zip
+            release/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0 # already a zip
+
+      - name: Summary
+        env:
+          NAME: ${{ steps.pack.outputs.name }}
+          SHA: ${{ steps.pack.outputs.sha256 }}
+          SIZE: ${{ steps.pack.outputs.size }}
+          BUILD: ${{ needs.checks.outputs.build }}
+        run: |
+          {
+            echo "## Backend build b$BUILD packaged"
+            echo
+            echo "- Zip: \`$NAME.zip\` ($(( SIZE / 1048576 )) MB, $SIZE bytes)"
+            echo "- sha256: \`$SHA\`"
+            echo "- Node: $(node -v) (copied as node.exe)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Upload to the update server
+    needs: [checks, build]
+    if: github.ref == 'refs/heads/DEV-v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No `environment:` here: vksoftnkl is on GitHub Free, where a private repo has no
+    # Environments, so the secrets below are REPOSITORY secrets and the `if:` above keeps
+    # uploads to DEV-v1. On Pro/Team (or a public repo) add `environment: test-release`
+    # (production: `environment: production`) and move the secrets into it.
+    permissions:
+      contents: write # the backend-build-<n> tag
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-release
+          path: release
+
+      - name: Upload (.part -> verify -> rename -> releases/b<n>.json -> latest.json)
+        id: publish
+        env:
+          ZIP: release/${{ needs.build.outputs.name }}.zip
+          BUILD: ${{ needs.checks.outputs.build }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          HAS_MIGRATIONS: ${{ needs.checks.outputs.has_migrations }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ vars.VPS_PORT || secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          # Not secret: may be Environment VARIABLES instead, so the job summary shows the
+          # download URL unmasked (a secret value is printed as ***).
+          UPLOAD_DIR: ${{ vars.UPLOAD_DIR || secrets.UPLOAD_DIR }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || secrets.PUBLIC_BASE_URL }}
+        run: bash ci/backend/publish.sh
+
+      - name: Tag backend-build-${{ needs.checks.outputs.build }}
+        env:
+          BUILD: ${{ needs.checks.outputs.build }}
+        run: |
+          git tag "backend-build-$BUILD" "$GITHUB_SHA"
+          git push origin "backend-build-$BUILD"

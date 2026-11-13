@@ -17,8 +17,10 @@ there is no ops key).
 | `check-build.sh` | client release workflows, **before** building | `app-build.json` must be a whole number > 0 and higher than the last registered build of the platform (yanked ones included), else the job fails: "Raise the build number in app-build.json (last released: N)" |
 | `register-release.sh` | client release workflows, **after** a successful upload | `POST /app-version/releases`. 409 / 401 / 403 / any non-2xx fail the job. `SET_EXPECTED=true` for the cloud (decision E3). Default notes = commit subjects since the last release |
 | `backend/migration-guard.sh` | backend workflow | fails when the Prisma datamodel changed since the last `backend-build-*` tag but no migration was added |
-| `backend/write-package-files.mjs` | backend workflow | writes `build-info.json`, `compat.json`, `releases.json` from the registry |
-| `backend/package.sh` | backend workflow (Windows) | packs node.exe + dist + prod node_modules + prisma + assets + the three files into `erp-server-backend-<build>.zip`, with a `.sha256` |
+| `backend/write-package-files.mjs` | backend workflow | writes `build-info.json`, `compat.json`, `releases.json` (from the registry when `CI_API_URL` is set, else an empty release list) |
+| `backend/package.sh` | backend workflow (Windows) | packs node.exe + dist + prod node_modules + prisma + assets + the three files into `vknex-backend-<version>-b<build>-win-x64.zip`, runs the content check, writes the `.sha256` |
+| `backend/check-package.mjs` | `package.sh` | lists the zip and fails on a missing required or a present forbidden path |
+| `backend/publish.sh` | backend workflow (publish job) | uploads through the gate: `.part` → server sha256 → rename → `releases/b<n>.json` → `latest.json` |
 
 `check-build.sh` and `register-release.sh` are the canonical copies. Copy them
 into the web, desktop and mobile repos unchanged. They need `curl`, `jq` and
@@ -37,42 +39,12 @@ database), and fails if they differ and no new `prisma/migrations/*/migration.sq
 was added in between. It checks that a migration exists. It cannot check that
 the migration matches the schema.
 
-## Backend workflow: `.github/workflows/backend-release.yml`
+## Backend workflows
 
-Triggers: the **Run workflow** button (`workflow_dispatch`, with optional
-expected-build overrides for `compat.json` and an "upload" switch) or a push to
-`release/**`. Steps: build number → `npm ci` → migration guard → `npm run build`
-→ unit tests → the three package files → Windows packaging → upload to the
-release storage → tag `backend-build-<n>`. Cloud deploy stays manual (E7).
-
-**Never rename the workflow.** That resets `run_number`. If it happens, raise
-`BACKEND_BUILD_OFFSET` above the last `backend-build-*` tag. The build-number
-step refuses anything lower.
-
-### One-time setup
-
-1. On the cloud backend, create the user **`ci-release`** in User
-   Administration: role **RELEASE MANAGER**, **no menus**, one login channel
-   (e.g. web) switched on, a long random password. This role may only list and
-   register releases. The RELEASE MANAGER role exists from this branch on.
-2. GitHub, ERP-Server repo → Settings → Secrets and variables → Actions:
-
-   | Kind | Name | Value |
-   |---|---|---|
-   | secret | `CI_API_URL` | `https://<cloud host>/api/v1` |
-   | secret | `CI_USER` / `CI_PASSWORD` | the ci-release user |
-   | secret | `RELEASE_SSH_HOST` / `RELEASE_SSH_USER` | the release storage host (E6: VPS static folder) |
-   | secret | `RELEASE_SSH_KEY` | private key of a deploy key allowed only to write the release folder |
-   | secret | `RELEASE_SSH_KNOWN_HOSTS` | `ssh-keyscan <host>` output |
-   | variable | `RELEASE_DIR` | e.g. `/var/www/releases` (packages land in `<dir>/backend/<build>/`) |
-   | variable | `BACKEND_BUILD_OFFSET` | `1000` (above every number used in testing) |
-
-3. On the cloud backend set `APP_RELEASES_IMPORT=false`, because it is the
-   registry. Keep `APP_BUILD` / `APP_COMMIT` there as an override if you deploy
-   the cloud by hand from a checkout.
-
-Nothing secret goes into a package: the scripts write no credentials and no
-registry URL, and `package.sh` copies named files only (never `.env`).
+See [RELEASE-PIPELINE.md](RELEASE-PIPELINE.md). `release.yml` covers `DEV-v1`: a Windows zip,
+uploaded to the update server through `deploy/updates-vps/vknex-upload-gate`. It replaces the
+earlier `backend-release.yml` (registry login + scp). There is no `ci.yml` here (the test repo
+has one for dev pushes and PRs).
 
 ## Client workflows (next round)
 

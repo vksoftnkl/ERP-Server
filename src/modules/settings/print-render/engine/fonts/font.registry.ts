@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as fontkit from 'fontkit';
+import { packageRoot } from '../../../../../common/package-files/package-files';
 import { ScriptTag } from './script-runs';
 
 /**
@@ -232,8 +233,12 @@ export class FontRegistry implements OnModuleInit {
  * Search order matters for the three ways this app runs:
  *   1. PRINT_FONT_DIR — an operator override, and how a customer adds a face
  *   2. cwd/assets/fonts — `npm start`, `pm2` with cwd set
- *   3. dist-relative — a built server whose cwd is elsewhere
- *   4. next to the executable — a `pkg` binary
+ *   3. beside the nearest package.json — a built server whose cwd is elsewhere
+ *      (a release folder started from the folder that holds .env). The build
+ *      emits dist/src/**, one level deeper than src/**, so a fixed number of
+ *      `..` cannot serve both.
+ *   4. src-relative — ts-node / jest
+ *   5. next to the executable — a `pkg` binary
  */
 const resolveFontDirectory = (): string => {
   const configured = process.env.PRINT_FONT_DIR?.trim();
@@ -241,8 +246,10 @@ const resolveFontDirectory = (): string => {
     return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
   }
 
+  const root = packageRoot(__dirname);
   const candidates = [
     resolve(process.cwd(), 'assets/fonts'),
+    ...(root ? [join(root, 'assets/fonts')] : []),
     resolve(__dirname, '../../../../../../assets/fonts'),
     resolve(__dirname, '../../../../../assets/fonts'),
   ];

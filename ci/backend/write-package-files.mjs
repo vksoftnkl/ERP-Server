@@ -10,6 +10,9 @@
 // (workflow_dispatch inputs). A platform with neither is left out (the backend
 // then keeps what it has). Nothing secret is written (not even the registry URL).
 //
+// No registry (CI_API_URL unset, as in the release pipeline test repo): the
+// release list is empty and compat.json carries only the overrides, if any.
+//
 // Env:
 //   BUILD          required, this backend's build (run_number + offset)
 //   COMMIT         default: git rev-parse HEAD
@@ -82,19 +85,24 @@ async function main() {
   const base = (process.env.CI_API_URL ?? '').trim().replace(/\/+$/, '');
   const user = process.env.CI_USER ?? '';
   const password = process.env.CI_PASSWORD ?? '';
-  if (!base || !user || !password) {
-    fail('CI_API_URL, CI_USER and CI_PASSWORD are required (the release registry)');
-  }
-  // No X-App-* headers and no device_type: the build check never applies to CI.
-  const login = await api(base, '/auth/login', {
-    method: 'POST',
-    body: { usrLoginName: user, usrPassword: password },
-  });
-  const token = login?.access_token;
-  if (!token) fail('login answered without an access_token');
+  let all = [];
+  if (!base) {
+    console.log('no release registry configured (CI_API_URL unset): releases.json is empty');
+  } else {
+    if (!user || !password) {
+      fail('CI_API_URL is set, so CI_USER and CI_PASSWORD are required (the release registry)');
+    }
+    // No X-App-* headers and no device_type: the build check never applies to CI.
+    const login = await api(base, '/auth/login', {
+      method: 'POST',
+      body: { usrLoginName: user, usrPassword: password },
+    });
+    const token = login?.access_token;
+    if (!token) fail('login answered without an access_token');
 
-  const all = await api(base, '/app-version/releases?includeDeleted=true', { token });
-  if (!Array.isArray(all)) fail('the release list is not an array');
+    all = await api(base, '/app-version/releases?includeDeleted=true', { token });
+    if (!Array.isArray(all)) fail('the release list is not an array');
+  }
 
   const releases = all
     .map((r) => ({
@@ -133,7 +141,7 @@ async function main() {
   };
   write('build-info.json', { version, build, commit, builtAt: now });
   write('compat.json', { backendBuild: build, generatedAt: now, commit, version, clients });
-  write('releases.json', { generatedAt: now, releases });
+  write('releases.json', { generatedAt: now, source: base ? 'registry' : 'none', releases });
   console.log(`releases.json: ${releases.length} release(s), ${releases.filter((r) => r.isDeleted).length} yanked`);
 }
 
