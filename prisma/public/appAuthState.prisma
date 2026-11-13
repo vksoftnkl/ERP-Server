@@ -1,0 +1,38 @@
+// Part B Step 2 Rev 2 — migration 20261111103000_app_build_policy (decision D2).
+// The token epoch: raised by one when the backend starts on a new APP_BUILD,
+// which logs every user out. Read and written with raw SQL by
+// src/modules/app-version (app-version-state.store.ts), cached in memory.
+//
+// DB-only, invisible to Prisma, hand-authored in the migration:
+//   ck_aas_key          aas_key IN (auth)
+//   ck_aas_token_epoch  aas_token_epoch >= 0
+//   ck_aas_last_build   aas_last_build IS NULL OR > 0
+//   seed row            aas_key = 'auth', epoch 0
+
+/// public.app_auth_state — one row (aasKey = 'auth'). A token whose `ep` claim
+/// is below aasTokenEpoch is refused with 401 AUTH_BACKEND_UPDATED.
+model AppAuthState {
+  aasId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("aas_id")
+  /// 'auth', the only row (ux_aas_key).
+  aasKey             String    @db.VarChar(32)                     @map("aas_key")
+  /// Tokens minted under a lower epoch are dead. A token with no `ep` reads as 0.
+  aasTokenEpoch      Int       @default(0)                         @map("aas_token_epoch")
+  /// The APP_BUILD the epoch was last raised for; NULL = never.
+  aasLastBuild       Int?                                          @map("aas_last_build")
+  /// APP_VERSION / APP_COMMIT at that start (support info).
+  aasLastVersion     String?   @db.VarChar(32)                     @map("aas_last_version")
+  aasLastCommit      String?   @db.VarChar(40)                     @map("aas_last_commit")
+  aasEpochChangedOn  DateTime? @db.Timestamptz(6)                  @map("aas_epoch_changed_on")
+
+  aasIsActive        Boolean   @default(true)                      @map("aas_is_active")
+  aasIsDeleted       Boolean   @default(false)                     @map("aas_is_deleted")
+  aasSyncDate        DateTime? @db.Timestamptz(6)                  @map("aas_sync_date")
+  aasCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)  @map("aas_created_on")
+  aasCreatedBy       String?   @db.Text                            @map("aas_created_by")
+  aasModifiedOn      DateTime? @db.Timestamptz(6)                  @map("aas_modified_on")
+  aasModifiedBy      String?   @db.Text                            @map("aas_modified_by")
+
+  @@unique([aasKey], map: "ux_aas_key")
+  @@map("app_auth_state")
+  @@schema("public")
+}

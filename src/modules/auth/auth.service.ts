@@ -2,9 +2,11 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { DeviceMaster, Prisma, UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import type { ClientInfo } from '../../common/client-info/client-info';
+import type { ClientInfo, ClientPlatform } from '../../common/client-info/client-info';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuthEpochService } from '../app-version/services/auth-epoch.service';
+import { BuildPolicyService } from '../app-version/services/build-policy.service';
 import { ClientTrackingService } from '../app-version/services/client-tracking.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -34,11 +36,25 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
     private readonly clientTracking: ClientTrackingService,
+    private readonly buildPolicy: BuildPolicyService,
+    private readonly authEpoch: AuthEpochService,
   ) {}
   async login(
     loginAuthDto: LoginAuthDto,
     requestMetadata: LoginRequestMetadata = { userAgent: null, appVersion: null },
   ): Promise<LoginResponseDto> {
+    /*
+     * Part B Step 2 Rev 2 §5.2: the build check runs FIRST, before the user
+     * lookup and the password, so a client on the wrong build never gets a
+     * token and a wrong build + wrong password answers 426, not 401. The
+     * platform is X-App-Platform, else the body's device_type (today's Qt app
+     * sends no X-App-* header but does send device_type). No platform at all =
+     * no policy applies. A missing build while enforced is a mismatch.
+     */
+    const client = requestMetadata.client ?? null;
+    const platform: ClientPlatform | null =
+      client?.platform ?? this.resolveLoginChannel(loginAuthDto.device_type);
+    this.buildPolicy.assertClientBuild(platform, client?.build ?? null);
     const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
     if (!user) {
       await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
@@ -98,6 +114,10 @@ export class AuthService {
     const sessionScope = {
       branch_id: device?.devBranchId ?? null,
       device_id: device?.devId ?? null,
+      // Part B Step 2 Rev 2: the epoch the token lives under, and the platform
+      // a header-less refresh is checked against.
+      ep: this.authEpoch.current(),
+      platform,
     };
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.usrId,
@@ -175,6 +195,14 @@ export class AuthService {
   }
   async refresh(refreshToken: string, client: ClientInfo | null = null): Promise<LoginResponseDto> {
     const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
+    // Part B Step 2 Rev 2: a refresh token from before the last backend update
+    // is dead (401 AUTH_BACKEND_UPDATED). Then the build check (§5.2): the
+    // platform is X-App-Platform, else the one the session logged in on.
+    this.authEpoch.assertTokenEpoch(refreshPayload.ep, 'refresh');
+    this.buildPolicy.assertClientBuild(
+      client?.platform ?? refreshPayload.platform ?? null,
+      client?.build ?? null,
+    );
     await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
     // Re-read the user so role/company changes and lockouts take effect on the
     // next refresh instead of persisting for the refresh token's whole lifetime.
@@ -204,6 +232,8 @@ export class AuthService {
       // fifteen minutes after login, and printing would change design.
       branch_id: refreshPayload.branch_id,
       device_id: refreshPayload.device_id,
+      ep: refreshPayload.ep ?? 0,
+      platform: refreshPayload.platform ?? null,
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,

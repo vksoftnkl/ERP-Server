@@ -19,7 +19,7 @@ export interface InstallationSighting {
   companyId: string | null;
   branchId: string | null;
   userId: string;
-  /** The login name, for cin_created_by / cin_modified_by. */
+  /** The user id, for cin_created_by / cin_modified_by (Rev 2). */
   actor: string;
   ip: string | null;
 }

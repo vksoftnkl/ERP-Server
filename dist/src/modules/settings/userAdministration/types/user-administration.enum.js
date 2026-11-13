@@ -14,6 +14,7 @@ var UserType;
     UserType["CASHIER"] = "CASHIER";
     UserType["VIEWER"] = "VIEWER";
     UserType["SYSTEM"] = "SYSTEM";
+    UserType["RELEASE_MANAGER"] = "RELEASE MANAGER";
 })(UserType || (exports.UserType = UserType = {}));
 var UserAdminErrorCode;
 (function (UserAdminErrorCode) {

@@ -2,6 +2,8 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma, type AppRelease } from '@prisma/client';
 import type { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppUpdateService, mostUrgent } from './app-update.service';
+import type { AppVersionStateStore } from './app-version-state.store';
+import type { BuildPolicyService } from './build-policy.service';
 
 const release = (build: number, overrides: Partial<AppRelease> = {}): AppRelease => ({
   arlId: `id-${build}`,
@@ -43,7 +45,10 @@ describe('AppUpdateService (Part B Step 2)', () => {
       update: jest.Mock;
     };
     clientInstallation: { aggregate: jest.Mock };
+    $transaction: jest.Mock;
   };
+  let state: { setExpectedBuild: jest.Mock };
+  let policies: { reload: jest.Mock };
   let service: AppUpdateService;
 
   beforeEach(() => {
@@ -56,8 +61,16 @@ describe('AppUpdateService (Part B Step 2)', () => {
         update: jest.fn(({ data }) => Promise.resolve(release(12, data))),
       },
       clientInstallation: { aggregate: jest.fn().mockResolvedValue({ _max: { cinBuild: null } }) },
+      // The interactive transaction runs its callback on the same mock client.
+      $transaction: jest.fn((work: (tx: unknown) => unknown) => work(prisma)),
     };
-    service = new AppUpdateService(prisma as unknown as PrismaService);
+    state = { setExpectedBuild: jest.fn().mockResolvedValue(true) };
+    policies = { reload: jest.fn().mockResolvedValue(undefined) };
+    service = new AppUpdateService(
+      prisma as unknown as PrismaService,
+      state as unknown as AppVersionStateStore,
+      policies as unknown as BuildPolicyService,
+    );
   });
 
   describe('check', () => {
@@ -224,6 +237,63 @@ describe('AppUpdateService (Part B Step 2)', () => {
         modifiedOn: null,
       });
       expect(prisma.appRelease.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Step 4', () => {
+    it('setExpected makes the build the expected one in the same transaction, then reloads', async () => {
+      const created = await service.createRelease(
+        {
+          platform: 'web',
+          build: 24,
+          version: '1.2.0',
+          downloadUrl: 'https://x/24',
+          setExpected: true,
+        },
+        'ci-user-id',
+      );
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(state.setExpectedBuild).toHaveBeenCalledWith(
+        prisma,
+        'web',
+        24,
+        'https://x/24',
+        'ci-user-id',
+      );
+      expect(policies.reload).toHaveBeenCalledTimes(1);
+      expect(created).toMatchObject({ build: 24, createdBy: 'ci-user-id', expectedBuildSet: true });
+    });
+
+    it('a policy row set by hand is kept and reported as expectedBuildSet false', async () => {
+      state.setExpectedBuild.mockResolvedValue(false);
+      await expect(
+        service.createRelease(
+          { platform: 'web', build: 25, version: '1.2.0', setExpected: true },
+          'ci-user-id',
+        ),
+      ).resolves.toMatchObject({ expectedBuildSet: false });
+    });
+
+    it('without setExpected the response is the plain release (no expectedBuildSet key)', async () => {
+      const created = await service.createRelease(
+        { platform: 'web', build: 26, version: '1.2.0' },
+        'ci-user-id',
+      );
+      expect(state.setExpectedBuild).not.toHaveBeenCalled();
+      expect(Object.keys(created)).not.toContain('expectedBuildSet');
+    });
+
+    it('includeDeleted lists yanked and inactive releases too', async () => {
+      await service.listReleases('desktop', true);
+      expect(prisma.appRelease.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ where: { arlPlatform: 'desktop' } }),
+      );
+      await service.listReleases('desktop');
+      expect(prisma.appRelease.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { arlPlatform: 'desktop', arlIsDeleted: false, arlIsActive: true },
+        }),
+      );
     });
   });
 });

@@ -292,6 +292,23 @@ function main() {
   fs.rmSync(fontsOut, { recursive: true, force: true });
   fs.cpSync(path.join(ROOT, 'assets', 'fonts'), fontsOut, { recursive: true });
 
+  // Part B Step 4: the package files CI wrote into the repo root (this
+  // backend's build-info.json, the client builds it expects in compat.json, the
+  // client release list in releases.json) go beside the exe, where the backend
+  // looks for them (src/common/package-files). A file that is missing is not
+  // shipped; the backend then skips what it would have done with it.
+  for (const name of ['build-info.json', 'compat.json', 'releases.json']) {
+    const out = path.join(outDir, name);
+    fs.rmSync(out, { force: true });
+    const source = path.join(ROOT, name);
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, out);
+      console.log(`[build-exe] ${name} copied beside the exe`);
+    } else {
+      console.log(`[build-exe] no ${name} in the repo root: none shipped`);
+    }
+  }
+
   copyTemplate('.env.example', outDir, target.eol);
   for (const script of [target.launcher, ...target.extras]) {
     copyTemplate(script, outDir, target.eol);

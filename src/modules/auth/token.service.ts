@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { parsePlatform, type ClientPlatform } from '../../common/client-info/client-info';
 import { AuthErrorCode, authErrorBody } from './types/auth-error-codes';
 export type AccessTokenClaims = {
   sub: string;
@@ -16,6 +17,16 @@ export type AccessTokenClaims = {
   // and the printing ladder resolves by exactly those two rungs.
   branch_id: string | null;
   device_id: string | null;
+  // Part B Step 2 Rev 2. `ep`: the token epoch this token was minted under; a
+  // token below the current epoch is dead (AuthEpochService). A token minted
+  // before Rev 2 has no `ep` and reads as 0. `platform`: web | desktop | mobile
+  // as resolved at login (X-App-Platform, else the login body's device_type),
+  // so a refresh with no X-App-Platform header still meets its platform's
+  // build policy. Absent or unknown reads as null. Optional in the type only so
+  // hand-built payloads (test doubles) stay valid: verifyAccessToken /
+  // verifyRefreshToken always fill both.
+  ep?: number;
+  platform?: ClientPlatform | null;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
@@ -174,6 +185,8 @@ export class TokenService {
     const companyId = payload.company_id;
     const branchId = payload.branch_id;
     const deviceId = payload.device_id;
+    const epoch = payload.ep;
+    const platform = payload.platform;
     if (typeof sub !== 'string' || sub.length === 0) {
       throw this.invalidToken(expectedType);
     }
@@ -211,6 +224,16 @@ export class TokenService {
     if (deviceId !== undefined && deviceId !== null && typeof deviceId !== 'string') {
       throw this.invalidToken(expectedType);
     }
+    // Part B Step 2 Rev 2: absent on tokens minted before it (epoch 0, no platform).
+    if (
+      epoch !== undefined &&
+      (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0)
+    ) {
+      throw this.invalidToken(expectedType);
+    }
+    if (platform !== undefined && platform !== null && typeof platform !== 'string') {
+      throw this.invalidToken(expectedType);
+    }
     const normalizedPayload = {
       sub,
       user_name: userName,
@@ -219,6 +242,8 @@ export class TokenService {
       company_id: typeof companyId === 'string' && companyId.length > 0 ? companyId : null,
       branch_id: typeof branchId === 'string' && branchId.length > 0 ? branchId : null,
       device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
+      ep: typeof epoch === 'number' ? epoch : 0,
+      platform: typeof platform === 'string' ? parsePlatform(platform) : null,
       iat: issuedAt,
       exp: expiresAt,
       typ: expectedType,

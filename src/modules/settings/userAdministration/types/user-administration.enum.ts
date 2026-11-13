@@ -16,6 +16,12 @@ export enum UserType {
   CASHIER = 'CASHIER',
   VIEWER = 'VIEWER',
   SYSTEM = 'SYSTEM',
+  /**
+   * Part B Step 4 (decision E5): the CI user (`ci-release`). It may register
+   * client releases and read the release list (/app-version/releases), nothing
+   * else: give it no menus, so it has no billing or master access.
+   */
+  RELEASE_MANAGER = 'RELEASE MANAGER',
 }
 
 /**

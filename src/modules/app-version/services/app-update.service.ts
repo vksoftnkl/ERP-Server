@@ -7,6 +7,8 @@ import { RELEASE_SEVERITIES, SEVERITY_RANK, type ReleaseSeverity } from '../app-
 import type { AppUpdateInfoDto } from '../dto/check-update.dto';
 import type { CreateReleaseDto, ReleaseResponseDto, UpdateReleaseDto } from '../dto/release.dto';
 import { AppVersionErrorCode, appVersionErrorBody } from '../types/app-version-error-codes';
+import { AppVersionStateStore } from './app-version-state.store';
+import { BuildPolicyService } from './build-policy.service';
 
 /**
  * public.app_release: "is a newer build available?", plus release
@@ -19,7 +21,11 @@ import { AppVersionErrorCode, appVersionErrorBody } from '../types/app-version-e
  */
 @Injectable()
 export class AppUpdateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly state: AppVersionStateStore,
+    private readonly policies: BuildPolicyService,
+  ) {}
 
   /**
    * The update notice for a client on `currentBuild`. severity = the most urgent
@@ -50,9 +56,20 @@ export class AppUpdateService {
     };
   }
 
-  async listReleases(platform?: ClientPlatform): Promise<ReleaseResponseDto[]> {
+  /** Live releases; `includeDeleted` (Step 4) adds yanked and inactive ones. */
+  async listReleases(
+    platform?: ClientPlatform,
+    includeDeleted = false,
+  ): Promise<ReleaseResponseDto[]> {
+    const where: Prisma.AppReleaseWhereInput = includeDeleted
+      ? platform
+        ? { arlPlatform: platform }
+        : {}
+      : platform
+        ? liveReleasesOf(platform)
+        : { arlIsDeleted: false, arlIsActive: true };
     const rows = await this.prisma.appRelease.findMany({
-      where: platform ? liveReleasesOf(platform) : { arlIsDeleted: false, arlIsActive: true },
+      where,
       orderBy: [{ arlPlatform: 'asc' }, { arlBuild: 'desc' }],
     });
     return rows.map(toReleaseResponse);
@@ -67,6 +84,10 @@ export class AppUpdateService {
    *     so it means a wrong number, e.g. a CI counter that was reset.
    * A build between existing releases is accepted, because CI jobs can finish
    * out of order.
+   *
+   * Step 4 (E3) `setExpected`: in the same transaction, the build becomes the
+   * platform's expected build here (enforce untouched; a policy row set by
+   * hand is kept, reported as expectedBuildSet: false).
    */
   async createRelease(dto: CreateReleaseDto, actor: string): Promise<ReleaseResponseDto> {
     const existing = await this.prisma.appRelease.findUnique({
@@ -91,21 +112,38 @@ export class AppUpdateService {
       );
     }
     const now = new Date();
+    const setExpected = dto.setExpected === true;
     try {
-      const row = await this.prisma.appRelease.create({
-        data: {
-          arlPlatform: dto.platform,
-          arlBuild: dto.build,
-          arlVersion: dto.version,
-          arlCommit: blankToNull(dto.commit),
-          arlSeverity: dto.severity ?? 'normal',
-          arlNotes: blankToNull(dto.notes),
-          arlDownloadUrl: blankToNull(dto.downloadUrl),
-          arlReleasedAt: dto.releasedAt ? new Date(dto.releasedAt) : now,
-          arlCreatedOn: now,
-          arlCreatedBy: actor,
-        },
+      const { row, expectedBuildSet } = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.appRelease.create({
+          data: {
+            arlPlatform: dto.platform,
+            arlBuild: dto.build,
+            arlVersion: dto.version,
+            arlCommit: blankToNull(dto.commit),
+            arlSeverity: dto.severity ?? 'normal',
+            arlNotes: blankToNull(dto.notes),
+            arlDownloadUrl: blankToNull(dto.downloadUrl),
+            arlReleasedAt: dto.releasedAt ? new Date(dto.releasedAt) : now,
+            arlCreatedOn: now,
+            arlCreatedBy: actor,
+          },
+        });
+        const expected = setExpected
+          ? await this.state.setExpectedBuild(
+              tx,
+              dto.platform,
+              dto.build,
+              blankToNull(dto.downloadUrl),
+              actor,
+            )
+          : null;
+        return { row: created, expectedBuildSet: expected };
       });
+      if (expectedBuildSet !== null) {
+        await this.policies.reload();
+        return { ...toReleaseResponse(row), expectedBuildSet };
+      }
       return toReleaseResponse(row);
     } catch (error: unknown) {
       if (isUniqueConstraintError(error)) {

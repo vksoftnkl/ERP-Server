@@ -14,6 +14,7 @@ const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const client_info_1 = require("../../../common/client-info/client-info");
+const dto_transforms_1 = require("../../../common/dto/dto-transforms");
 const app_version_constants_1 = require("../app-version.constants");
 const check_update_dto_1 = require("./check-update.dto");
 const trim = ({ value }) => typeof value === 'string' ? value.trim() : value;
@@ -27,6 +28,7 @@ class CreateReleaseDto {
     notes;
     downloadUrl;
     releasedAt;
+    setExpected;
 }
 exports.CreateReleaseDto = CreateReleaseDto;
 __decorate([
@@ -87,6 +89,16 @@ __decorate([
     (0, class_validator_1.IsISO8601)({ strict: true }),
     __metadata("design:type", String)
 ], CreateReleaseDto.prototype, "releasedAt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Step 4 (E3): also make this build the platform's expected build on this backend " +
+            '(enforce is not touched; a policy row an admin set by hand is left alone)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateReleaseDto.prototype, "setExpected", void 0);
 class UpdateReleaseDto {
     version;
     commit;
@@ -176,6 +188,7 @@ __decorate([
 ], ReleaseKeyParamsDto.prototype, "build", void 0);
 class ListReleasesQueryDto {
     platform;
+    includeDeleted;
 }
 exports.ListReleasesQueryDto = ListReleasesQueryDto;
 __decorate([
@@ -185,6 +198,18 @@ __decorate([
     (0, class_validator_1.IsIn)(client_info_1.CLIENT_PLATFORMS),
     __metadata("design:type", String)
 ], ListReleasesQueryDto.prototype, "platform", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Boolean,
+        default: false,
+        description: 'Step 4: true = also list yanked (and inactive) releases, for the CI build-number check ' +
+            'and releases.json',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ obj, key }) => (0, dto_transforms_1.toOptionalBoolean)(obj[key])),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], ListReleasesQueryDto.prototype, "includeDeleted", void 0);
 class ReleaseResponseDto {
     id;
     platform;
@@ -201,6 +226,7 @@ class ReleaseResponseDto {
     createdBy;
     modifiedOn;
     modifiedBy;
+    expectedBuildSet;
 }
 exports.ReleaseResponseDto = ReleaseResponseDto;
 __decorate([
@@ -263,4 +289,12 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true }),
     __metadata("design:type", Object)
 ], ReleaseResponseDto.prototype, "modifiedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Only on a create with setExpected: true = now the expected build, false = the policy ' +
+            'row was set by hand and kept',
+    }),
+    __metadata("design:type", Boolean)
+], ReleaseResponseDto.prototype, "expectedBuildSet", void 0);
 //# sourceMappingURL=release.dto.js.map

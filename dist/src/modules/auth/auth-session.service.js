@@ -9,12 +9,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuthSessionService = void 0;
+exports.AuthSessionService = exports.AUTH_SESSION_KEY_PREFIX = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const redis_cache_service_1 = require("../../common/redis/redis-cache.service");
 const auth_error_codes_1 = require("./types/auth-error-codes");
-const AUTH_SESSION_KEY_PREFIX = 'auth:session';
+exports.AUTH_SESSION_KEY_PREFIX = 'auth:session';
 let AuthSessionService = class AuthSessionService {
     redisCacheService;
     constructor(redisCacheService) {
@@ -120,7 +120,7 @@ let AuthSessionService = class AuthSessionService {
         }
     }
     buildSessionKey(sessionId) {
-        return `${AUTH_SESSION_KEY_PREFIX}:${sessionId}`;
+        return `${exports.AUTH_SESSION_KEY_PREFIX}:${sessionId}`;
     }
     hashToken(token) {
         return (0, node_crypto_1.createHash)('sha256').update(token).digest('hex');

@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const public_decorator_1 = require("../../../common/decorators/public.decorator");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const auth_epoch_service_1 = require("../../app-version/services/auth-epoch.service");
 const auth_session_service_1 = require("../auth-session.service");
 const token_service_1 = require("../token.service");
 const auth_error_codes_1 = require("../types/auth-error-codes");
@@ -22,11 +23,13 @@ let AccessTokenGuard = class AccessTokenGuard {
     tokenService;
     authSessionService;
     requestContextService;
-    constructor(reflector, tokenService, authSessionService, requestContextService) {
+    authEpoch;
+    constructor(reflector, tokenService, authSessionService, requestContextService, authEpoch) {
         this.reflector = reflector;
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.requestContextService = requestContextService;
+        this.authEpoch = authEpoch;
     }
     async canActivate(context) {
         const isPublic = this.reflector.getAllAndOverride(public_decorator_1.IS_PUBLIC_KEY, [
@@ -45,6 +48,7 @@ let AccessTokenGuard = class AccessTokenGuard {
             throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Missing or invalid Authorization header', 'authorization', auth_error_codes_1.AuthErrorCode.AUTHORIZATION_MISSING));
         }
         request.user = this.tokenService.verifyAccessToken(accessToken);
+        this.authEpoch.assertTokenEpoch(request.user.ep, 'access');
         await this.authSessionService.assertAccessTokenIsActive(accessToken, request.user);
         this.requestContextService.setUserId(request.user.sub);
         this.requestContextService.setUserType(request.user.user_type);
@@ -71,6 +75,7 @@ exports.AccessTokenGuard = AccessTokenGuard = __decorate([
     __metadata("design:paramtypes", [core_1.Reflector,
         token_service_1.TokenService,
         auth_session_service_1.AuthSessionService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        auth_epoch_service_1.AuthEpochService])
 ], AccessTokenGuard);
 //# sourceMappingURL=access-token.guard.js.map

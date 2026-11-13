@@ -19,6 +19,7 @@ import {
   MAX_CLIENT_BUILD,
   type ClientPlatform,
 } from '../../../common/client-info/client-info';
+import { toOptionalBoolean } from '../../../common/dto/dto-transforms';
 import { RELEASE_SEVERITIES, type ReleaseSeverity } from '../app-version.constants';
 import { lowerTrim } from './check-update.dto';
 
@@ -78,6 +79,16 @@ export class CreateReleaseDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   releasedAt?: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Step 4 (E3): also make this build the platform's expected build on this backend " +
+      '(enforce is not touched; a policy row an admin set by hand is left alone)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  setExpected?: boolean;
 }
 
 /**
@@ -156,6 +167,21 @@ export class ListReleasesQueryDto {
   @Transform(lowerTrim)
   @IsIn(CLIENT_PLATFORMS)
   platform?: ClientPlatform;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    default: false,
+    description:
+      'Step 4: true = also list yanked (and inactive) releases, for the CI build-number check ' +
+      'and releases.json',
+  })
+  @IsOptional()
+  // The raw query text, not the implicitly converted value: Boolean('false') is true.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) =>
+    toOptionalBoolean(obj[key]),
+  )
+  @IsBoolean()
+  includeDeleted?: boolean;
 }
 
 export class ReleaseResponseDto {
@@ -189,4 +215,11 @@ export class ReleaseResponseDto {
   modifiedOn!: string | null;
   @ApiProperty({ nullable: true })
   modifiedBy!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Only on a create with setExpected: true = now the expected build, false = the policy ' +
+      'row was set by hand and kept',
+  })
+  expectedBuildSet?: boolean;
 }

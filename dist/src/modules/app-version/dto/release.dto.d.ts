@@ -9,6 +9,7 @@ export declare class CreateReleaseDto {
     notes?: string | null;
     downloadUrl?: string | null;
     releasedAt?: string;
+    setExpected?: boolean;
 }
 export declare class UpdateReleaseDto {
     version?: string;
@@ -26,6 +27,7 @@ export declare class ReleaseKeyParamsDto {
 }
 export declare class ListReleasesQueryDto {
     platform?: ClientPlatform;
+    includeDeleted?: boolean;
 }
 export declare class ReleaseResponseDto {
     id: string;
@@ -43,4 +45,5 @@ export declare class ReleaseResponseDto {
     createdBy: string | null;
     modifiedOn: string | null;
     modifiedBy: string | null;
+    expectedBuildSet?: boolean;
 }

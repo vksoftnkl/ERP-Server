@@ -21,13 +21,19 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.string().trim().allow('').default(''),
   }),
   HTTPS_PASSPHRASE: Joi.string().allow('').default(''),
-  // Part B Step 2. OPS_API_KEY unset = the release / support APIs answer 403.
-  // APP_VERSION / APP_BUILD / APP_COMMIT describe this backend build (/health);
-  // CI sets them. Plain strings on purpose: a bad value must not stop the boot.
-  OPS_API_KEY: Joi.string().allow('').optional(),
+  // Part B. This backend's build comes from build-info.json in the package
+  // (Step 4, written by CI); APP_VERSION / APP_BUILD / APP_COMMIT override it
+  // (the cloud). A start on a new build logs every user out, loads compat.json
+  // into the build policy and imports releases.json into app_release (skip that
+  // with APP_RELEASES_IMPORT=false on the release-registry backend). The three
+  // files sit beside package.json / the exe, or in APP_PACKAGE_DIR. Plain
+  // strings on purpose: a bad value must not stop the boot. (OPS_API_KEY is
+  // gone: the release routes take a JWT. A leftover value is ignored.)
   APP_VERSION: Joi.string().allow('').optional(),
   APP_BUILD: Joi.string().allow('').optional(),
   APP_COMMIT: Joi.string().allow('').optional(),
+  APP_PACKAGE_DIR: Joi.string().allow('').optional(),
+  APP_RELEASES_IMPORT: Joi.string().allow('').optional(),
   DATABASE_URL: Joi.string()
     .uri({
       scheme: ['postgres', 'postgresql'],

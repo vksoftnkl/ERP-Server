@@ -1,6 +1,8 @@
 import type { ClientInfo } from '../../common/client-info/client-info';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuthEpochService } from '../app-version/services/auth-epoch.service';
+import { BuildPolicyService } from '../app-version/services/build-policy.service';
 import { ClientTrackingService } from '../app-version/services/client-tracking.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -18,8 +20,10 @@ export declare class AuthService {
     private readonly prisma;
     private readonly requestContextService;
     private readonly clientTracking;
+    private readonly buildPolicy;
+    private readonly authEpoch;
     private readonly logger;
-    constructor(tokenService: TokenService, authSessionService: AuthSessionService, prisma: PrismaService, requestContextService: RequestContextService, clientTracking: ClientTrackingService);
+    constructor(tokenService: TokenService, authSessionService: AuthSessionService, prisma: PrismaService, requestContextService: RequestContextService, clientTracking: ClientTrackingService, buildPolicy: BuildPolicyService, authEpoch: AuthEpochService);
     login(loginAuthDto: LoginAuthDto, requestMetadata?: LoginRequestMetadata): Promise<LoginResponseDto>;
     refresh(refreshToken: string, client?: ClientInfo | null): Promise<LoginResponseDto>;
     private findLoginUser;

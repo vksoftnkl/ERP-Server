@@ -1,5 +1,6 @@
 import { RedisCacheService } from '../../common/redis/redis-cache.service';
 import { AccessTokenPayload, RefreshTokenPayload } from './token.service';
+export declare const AUTH_SESSION_KEY_PREFIX = "auth:session";
 export declare class AuthSessionService {
     private readonly redisCacheService;
     constructor(redisCacheService: RedisCacheService);

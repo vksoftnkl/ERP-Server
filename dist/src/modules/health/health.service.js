@@ -13,13 +13,19 @@ exports.HealthService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const redis_cache_service_1 = require("../../common/redis/redis-cache.service");
+const auth_epoch_service_1 = require("../app-version/services/auth-epoch.service");
+const build_policy_service_1 = require("../app-version/services/build-policy.service");
 const backend_build_1 = require("./backend-build");
 let HealthService = class HealthService {
     prisma;
     redisCacheService;
-    constructor(prisma, redisCacheService) {
+    authEpoch;
+    buildPolicy;
+    constructor(prisma, redisCacheService, authEpoch, buildPolicy) {
         this.prisma = prisma;
         this.redisCacheService = redisCacheService;
+        this.authEpoch = authEpoch;
+        this.buildPolicy = buildPolicy;
     }
     async check() {
         let databaseStatus = 'up';
@@ -46,7 +52,10 @@ let HealthService = class HealthService {
             version: build.version,
             build: build.build,
             commit: build.commit,
+            builtAt: build.builtAt,
             dbOk: databaseStatus === 'up',
+            tokenEpoch: this.authEpoch.current(),
+            expectedClientBuilds: this.expectedClientBuilds(),
             database: {
                 status: databaseStatus,
             },
@@ -55,11 +64,20 @@ let HealthService = class HealthService {
             },
         };
     }
+    expectedClientBuilds() {
+        const result = {};
+        for (const policy of this.buildPolicy.list()) {
+            result[policy.platform] = { enforce: policy.enforce, expectedBuild: policy.expectedBuild };
+        }
+        return result;
+    }
 };
 exports.HealthService = HealthService;
 exports.HealthService = HealthService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        redis_cache_service_1.RedisCacheService])
+        redis_cache_service_1.RedisCacheService,
+        auth_epoch_service_1.AuthEpochService,
+        build_policy_service_1.BuildPolicyService])
 ], HealthService);
 //# sourceMappingURL=health.service.js.map

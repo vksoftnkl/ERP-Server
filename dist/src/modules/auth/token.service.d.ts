@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { type ClientPlatform } from '../../common/client-info/client-info';
 export type AccessTokenClaims = {
     sub: string;
     user_name: string;
@@ -7,6 +8,8 @@ export type AccessTokenClaims = {
     company_id: string | null;
     branch_id: string | null;
     device_id: string | null;
+    ep?: number;
+    platform?: ClientPlatform | null;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
     iat: number;

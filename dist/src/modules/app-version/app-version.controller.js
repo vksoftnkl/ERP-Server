@@ -19,30 +19,31 @@ const client_info_1 = require("../../common/client-info/client-info");
 const api_version_1 = require("../../common/constants/api-version");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
 const http_error_response_dto_1 = require("../../common/dto/http-error-response.dto");
+const build_policy_dto_1 = require("./dto/build-policy.dto");
 const check_update_dto_1 = require("./dto/check-update.dto");
 const release_dto_1 = require("./dto/release.dto");
 const support_query_dto_1 = require("./dto/support-query.dto");
-const ops_key_guard_1 = require("./guards/ops-key.guard");
+const app_version_admin_guard_1 = require("./guards/app-version-admin.guard");
 const app_update_service_1 = require("./services/app-update.service");
+const backend_update_service_1 = require("./services/backend-update.service");
+const build_policy_service_1 = require("./services/build-policy.service");
 const client_installation_service_1 = require("./services/client-installation.service");
 const legacy_usage_service_1 = require("./services/legacy-usage.service");
 const app_version_error_codes_1 = require("./types/app-version-error-codes");
-const OpsRoute = () => (0, common_1.applyDecorators)((0, common_1.UseGuards)(ops_key_guard_1.OpsKeyGuard), (0, swagger_1.ApiHeader)({ name: 'X-Ops-Key', required: true, description: 'Must equal env OPS_API_KEY' }), (0, swagger_1.ApiHeader)({
-    name: 'X-Ops-Actor',
-    required: false,
-    description: 'Who is calling, e.g. ci:run-123; stamped into created_by / modified_by',
-}), (0, swagger_1.ApiUnauthorizedResponse)({
-    type: http_error_response_dto_1.HttpErrorResponseDto,
-    description: 'APP_VERSION_OPS_KEY_INVALID',
-}), (0, swagger_1.ApiForbiddenResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'APP_VERSION_OPS_DISABLED' }));
+const AdminRoute = () => (0, common_1.applyDecorators)((0, common_1.UseGuards)(app_version_admin_guard_1.AppVersionAdminGuard), (0, swagger_1.ApiBearerAuth)('access-token'), (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'No or a dead token' }), (0, swagger_1.ApiForbiddenResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'APP_VERSION_ADMIN_ONLY' }));
+const ReleaseRoute = () => (0, common_1.applyDecorators)(AdminRoute(), (0, app_version_admin_guard_1.ReleaseAccess)());
 let AppVersionController = class AppVersionController {
     updates;
     installations;
     legacyUsage;
-    constructor(updates, installations, legacyUsage) {
+    policies;
+    backendUpdate;
+    constructor(updates, installations, legacyUsage, policies, backendUpdate) {
         this.updates = updates;
         this.installations = installations;
         this.legacyUsage = legacyUsage;
+        this.policies = policies;
+        this.backendUpdate = backendUpdate;
     }
     check(query, request) {
         const client = (0, client_info_1.clientInfoOf)(request);
@@ -57,13 +58,13 @@ let AppVersionController = class AppVersionController {
         return this.updates.check(platform, build);
     }
     createRelease(dto, request) {
-        return this.updates.createRelease(dto, (0, ops_key_guard_1.opsActorOf)(request));
+        return this.updates.createRelease(dto, (0, app_version_admin_guard_1.actorOf)(request));
     }
     updateRelease(params, dto, request) {
-        return this.updates.updateRelease(params.platform, params.build, dto, (0, ops_key_guard_1.opsActorOf)(request));
+        return this.updates.updateRelease(params.platform, params.build, dto, (0, app_version_admin_guard_1.actorOf)(request));
     }
     listReleases(query) {
-        return this.updates.listReleases(query.platform);
+        return this.updates.listReleases(query.platform, query.includeDeleted === true);
     }
     listInstallations(query) {
         return this.installations.list(query);
@@ -74,9 +75,19 @@ let AppVersionController = class AppVersionController {
     legacyUsageList(query) {
         return this.legacyUsage.list(query);
     }
+    listPolicies() {
+        return this.policies.list().map(toPolicyResponse);
+    }
+    async updatePolicy(params, dto, request) {
+        return toPolicyResponse(await this.policies.update(params.platform, dto, (0, app_version_admin_guard_1.actorOf)(request)));
+    }
+    async usePolicyManifest(params, request) {
+        return toPolicyResponse(await this.policies.useManifest(params.platform, this.backendUpdate.bundledManifest(), (0, app_version_admin_guard_1.actorOf)(request)));
+    }
 };
 exports.AppVersionController = AppVersionController;
 __decorate([
+    (0, public_decorator_1.Public)(),
     (0, common_1.Get)('check'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
@@ -95,8 +106,10 @@ __decorate([
     (0, common_1.Post)('releases'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
-    OpsRoute(),
-    (0, swagger_1.ApiOperation)({ summary: 'Register a released build (CI)' }),
+    ReleaseRoute(),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Register a released build (CI user or admin); setExpected also makes it the expected build',
+    }),
     (0, swagger_1.ApiCreatedResponse)({ type: release_dto_1.ReleaseResponseDto }),
     (0, swagger_1.ApiConflictResponse)({
         type: http_error_response_dto_1.HttpErrorResponseDto,
@@ -111,7 +124,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('releases/:platform/:build'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    OpsRoute(),
+    AdminRoute(),
     (0, swagger_1.ApiOperation)({ summary: 'Change a release: severity, notes, link; isDeleted:true yanks it' }),
     (0, swagger_1.ApiOkResponse)({ type: release_dto_1.ReleaseResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'APP_RELEASE_NOT_FOUND' }),
@@ -126,8 +139,10 @@ __decorate([
 __decorate([
     (0, common_1.Get)('releases'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    OpsRoute(),
-    (0, swagger_1.ApiOperation)({ summary: 'Live releases, newest build first' }),
+    ReleaseRoute(),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Live releases, newest build first; includeDeleted=true adds yanked ones (CI)',
+    }),
     (0, swagger_1.ApiOkResponse)({ type: release_dto_1.ReleaseResponseDto, isArray: true }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -137,7 +152,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)('installations'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    OpsRoute(),
+    AdminRoute(),
     (0, swagger_1.ApiOperation)({ summary: 'Which user / device runs which build, last seen first (support)' }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -147,7 +162,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)('installations/summary'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    OpsRoute(),
+    AdminRoute(),
     (0, swagger_1.ApiOperation)({
         summary: 'Per platform: builds in use, the oldest active build, how many are behind (support)',
     }),
@@ -159,19 +174,75 @@ __decorate([
 __decorate([
     (0, common_1.Get)('legacy-usage'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    OpsRoute(),
+    AdminRoute(),
     (0, swagger_1.ApiOperation)({ summary: 'How often each legacy field is still used, per build (support)' }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [support_query_dto_1.LegacyUsageQueryDto]),
     __metadata("design:returntype", Promise)
 ], AppVersionController.prototype, "legacyUsageList", null);
+__decorate([
+    (0, common_1.Get)('policy'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    AdminRoute(),
+    (0, swagger_1.ApiOperation)({ summary: 'The build policy of every platform (Rev 2 §5.4)' }),
+    (0, swagger_1.ApiOkResponse)({ type: build_policy_dto_1.BuildPolicyResponseDto, isArray: true }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Array)
+], AppVersionController.prototype, "listPolicies", null);
+__decorate([
+    (0, common_1.Patch)('policy/:platform'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    AdminRoute(),
+    (0, swagger_1.ApiOperation)({
+        summary: "Change a platform's build policy; the row becomes manual (enforce:false = emergency switch)",
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: build_policy_dto_1.BuildPolicyResponseDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'APP_POLICY_BUILD_REQUIRED' }),
+    __param(0, (0, common_1.Param)()),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [build_policy_dto_1.PolicyPlatformParamsDto,
+        build_policy_dto_1.UpdateBuildPolicyDto, Object]),
+    __metadata("design:returntype", Promise)
+], AppVersionController.prototype, "updatePolicy", null);
+__decorate([
+    (0, common_1.Post)('policy/:platform/use-manifest'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    AdminRoute(),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Hand a platform back to the bundled compat manifest (its values, source manifest)',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: build_policy_dto_1.BuildPolicyResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto, description: 'APP_POLICY_NO_MANIFEST' }),
+    __param(0, (0, common_1.Param)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [build_policy_dto_1.PolicyPlatformParamsDto, Object]),
+    __metadata("design:returntype", Promise)
+], AppVersionController.prototype, "usePolicyManifest", null);
 exports.AppVersionController = AppVersionController = __decorate([
     (0, swagger_1.ApiTags)('App Version'),
-    (0, public_decorator_1.Public)(),
     (0, common_1.Controller)('app-version'),
     __metadata("design:paramtypes", [app_update_service_1.AppUpdateService,
         client_installation_service_1.ClientInstallationService,
-        legacy_usage_service_1.LegacyUsageService])
+        legacy_usage_service_1.LegacyUsageService,
+        build_policy_service_1.BuildPolicyService,
+        backend_update_service_1.BackendUpdateService])
 ], AppVersionController);
+function toPolicyResponse(policy) {
+    return {
+        platform: policy.platform,
+        enforce: policy.enforce,
+        expectedBuild: policy.expectedBuild,
+        message: policy.message,
+        downloadUrl: policy.downloadUrl,
+        source: policy.source,
+        changedOn: policy.changedOn ? policy.changedOn.toISOString() : null,
+        changedBy: policy.changedBy,
+    };
+}
 //# sourceMappingURL=app-version.controller.js.map

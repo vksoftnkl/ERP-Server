@@ -32,7 +32,7 @@ let ClientTrackingService = ClientTrackingService_1 = class ClientTrackingServic
             if (!(0, client_info_1.hasClientBuild)(client)) {
                 return null;
             }
-            const sighting = { ...context, client, actor: context.userName };
+            const sighting = { ...context, client, actor: context.userId };
             const [, update] = await Promise.all([
                 this.guard('record the login installation', () => this.installations.recordLogin(sighting)),
                 this.guard('check for an update', () => this.updates.check(client.platform, client.build)),
@@ -50,7 +50,7 @@ let ClientTrackingService = ClientTrackingService_1 = class ClientTrackingServic
             if (!(0, client_info_1.hasClientBuild)(client)) {
                 return;
             }
-            await this.guard('record the refresh installation', () => this.installations.recordRefresh({ ...context, client, actor: context.userName }));
+            await this.guard('record the refresh installation', () => this.installations.recordRefresh({ ...context, client, actor: context.userId }));
         }
         catch (error) {
             this.warn('track the refresh', error);

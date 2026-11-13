@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-11-11T10:00:00Z",
+  "releases": [
+    {
+      "platform": "desktop",
+      "build": 120,
+      "version": "1.2.0",
+      "commit": "a1b2c3d4",
+      "severity": "normal",
+      "notes": "Faster bill save",
+      "downloadUrl": "https://downloads.example.com/desktop/120/VKNexDesktop-120.exe",
+      "releasedAt": "2026-11-10T09:00:00Z",
+      "isDeleted": false
+    },
+    {
+      "platform": "desktop",
+      "build": 119,
+      "version": "1.2.0",
+      "commit": "99aa88bb",
+      "severity": "normal",
+      "notes": null,
+      "downloadUrl": null,
+      "releasedAt": "2026-11-08T09:00:00Z",
+      "isDeleted": true
+    }
+  ]
+}

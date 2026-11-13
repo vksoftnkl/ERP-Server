@@ -12,7 +12,8 @@ type CachedAccessTokenSession = {
   iat: number;
   exp: number;
 };
-const AUTH_SESSION_KEY_PREFIX = 'auth:session';
+/** Redis key prefix of a session: <prefix>:<sid>. Part B Step 2 Rev 2 drops them all after a backend update. */
+export const AUTH_SESSION_KEY_PREFIX = 'auth:session';
 @Injectable()
 export class AuthSessionService {
   constructor(private readonly redisCacheService: RedisCacheService) {}

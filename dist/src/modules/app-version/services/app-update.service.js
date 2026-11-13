@@ -17,10 +17,16 @@ const module_shared_utils_1 = require("../../../common/utils/module-shared.utils
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const app_version_constants_1 = require("../app-version.constants");
 const app_version_error_codes_1 = require("../types/app-version-error-codes");
+const app_version_state_store_1 = require("./app-version-state.store");
+const build_policy_service_1 = require("./build-policy.service");
 let AppUpdateService = class AppUpdateService {
     prisma;
-    constructor(prisma) {
+    state;
+    policies;
+    constructor(prisma, state, policies) {
         this.prisma = prisma;
+        this.state = state;
+        this.policies = policies;
     }
     async check(platform, currentBuild) {
         const live = liveReleasesOf(platform);
@@ -45,9 +51,16 @@ let AppUpdateService = class AppUpdateService {
             missedBuilds: missed.length,
         };
     }
-    async listReleases(platform) {
+    async listReleases(platform, includeDeleted = false) {
+        const where = includeDeleted
+            ? platform
+                ? { arlPlatform: platform }
+                : {}
+            : platform
+                ? liveReleasesOf(platform)
+                : { arlIsDeleted: false, arlIsActive: true };
         const rows = await this.prisma.appRelease.findMany({
-            where: platform ? liveReleasesOf(platform) : { arlIsDeleted: false, arlIsActive: true },
+            where,
             orderBy: [{ arlPlatform: 'asc' }, { arlBuild: 'desc' }],
         });
         return rows.map(toReleaseResponse);
@@ -69,21 +82,32 @@ let AppUpdateService = class AppUpdateService {
             throw new common_1.ConflictException((0, app_version_error_codes_1.appVersionErrorBody)(`Build ${dto.build} is lower than build ${highestInUse}, which ${dto.platform} clients already run`, 'build', app_version_error_codes_1.AppVersionErrorCode.RELEASE_BUILD_TOO_LOW));
         }
         const now = new Date();
+        const setExpected = dto.setExpected === true;
         try {
-            const row = await this.prisma.appRelease.create({
-                data: {
-                    arlPlatform: dto.platform,
-                    arlBuild: dto.build,
-                    arlVersion: dto.version,
-                    arlCommit: blankToNull(dto.commit),
-                    arlSeverity: dto.severity ?? 'normal',
-                    arlNotes: blankToNull(dto.notes),
-                    arlDownloadUrl: blankToNull(dto.downloadUrl),
-                    arlReleasedAt: dto.releasedAt ? new Date(dto.releasedAt) : now,
-                    arlCreatedOn: now,
-                    arlCreatedBy: actor,
-                },
+            const { row, expectedBuildSet } = await this.prisma.$transaction(async (tx) => {
+                const created = await tx.appRelease.create({
+                    data: {
+                        arlPlatform: dto.platform,
+                        arlBuild: dto.build,
+                        arlVersion: dto.version,
+                        arlCommit: blankToNull(dto.commit),
+                        arlSeverity: dto.severity ?? 'normal',
+                        arlNotes: blankToNull(dto.notes),
+                        arlDownloadUrl: blankToNull(dto.downloadUrl),
+                        arlReleasedAt: dto.releasedAt ? new Date(dto.releasedAt) : now,
+                        arlCreatedOn: now,
+                        arlCreatedBy: actor,
+                    },
+                });
+                const expected = setExpected
+                    ? await this.state.setExpectedBuild(tx, dto.platform, dto.build, blankToNull(dto.downloadUrl), actor)
+                    : null;
+                return { row: created, expectedBuildSet: expected };
             });
+            if (expectedBuildSet !== null) {
+                await this.policies.reload();
+                return { ...toReleaseResponse(row), expectedBuildSet };
+            }
             return toReleaseResponse(row);
         }
         catch (error) {
@@ -130,7 +154,9 @@ let AppUpdateService = class AppUpdateService {
 exports.AppUpdateService = AppUpdateService;
 exports.AppUpdateService = AppUpdateService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        app_version_state_store_1.AppVersionStateStore,
+        build_policy_service_1.BuildPolicyService])
 ], AppUpdateService);
 function liveReleasesOf(platform) {
     return { arlPlatform: platform, arlIsDeleted: false, arlIsActive: true };

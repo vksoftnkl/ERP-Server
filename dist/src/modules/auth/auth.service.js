@@ -16,6 +16,8 @@ const node_crypto_1 = require("node:crypto");
 const node_util_1 = require("node:util");
 const request_context_service_1 = require("../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
+const auth_epoch_service_1 = require("../app-version/services/auth-epoch.service");
+const build_policy_service_1 = require("../app-version/services/build-policy.service");
 const client_tracking_service_1 = require("../app-version/services/client-tracking.service");
 const auth_session_service_1 = require("./auth-session.service");
 const token_service_1 = require("./token.service");
@@ -29,15 +31,22 @@ let AuthService = AuthService_1 = class AuthService {
     prisma;
     requestContextService;
     clientTracking;
+    buildPolicy;
+    authEpoch;
     logger = new common_1.Logger(AuthService_1.name);
-    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking) {
+    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking, buildPolicy, authEpoch) {
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.prisma = prisma;
         this.requestContextService = requestContextService;
         this.clientTracking = clientTracking;
+        this.buildPolicy = buildPolicy;
+        this.authEpoch = authEpoch;
     }
     async login(loginAuthDto, requestMetadata = { userAgent: null, appVersion: null }) {
+        const client = requestMetadata.client ?? null;
+        const platform = client?.platform ?? this.resolveLoginChannel(loginAuthDto.device_type);
+        this.buildPolicy.assertClientBuild(platform, client?.build ?? null);
         const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
         if (!user) {
             await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
@@ -69,6 +78,8 @@ let AuthService = AuthService_1 = class AuthService {
         const sessionScope = {
             branch_id: device?.devBranchId ?? null,
             device_id: device?.devId ?? null,
+            ep: this.authEpoch.current(),
+            platform,
         };
         const issuedAccessToken = this.tokenService.signAccessToken({
             sub: user.usrId,
@@ -128,6 +139,8 @@ let AuthService = AuthService_1 = class AuthService {
     }
     async refresh(refreshToken, client = null) {
         const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
+        this.authEpoch.assertTokenEpoch(refreshPayload.ep, 'refresh');
+        this.buildPolicy.assertClientBuild(client?.platform ?? refreshPayload.platform ?? null, client?.build ?? null);
         await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
         const user = await this.prisma.userMaster.findFirst({
             where: {
@@ -149,6 +162,8 @@ let AuthService = AuthService_1 = class AuthService {
             company_id: user.usrCompanyId ?? null,
             branch_id: refreshPayload.branch_id,
             device_id: refreshPayload.device_id,
+            ep: refreshPayload.ep ?? 0,
+            platform: refreshPayload.platform ?? null,
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, refreshToken);
         await this.clientTracking.onRefresh({
@@ -428,6 +443,8 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
         auth_session_service_1.AuthSessionService,
         prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
-        client_tracking_service_1.ClientTrackingService])
+        client_tracking_service_1.ClientTrackingService,
+        build_policy_service_1.BuildPolicyService,
+        auth_epoch_service_1.AuthEpochService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

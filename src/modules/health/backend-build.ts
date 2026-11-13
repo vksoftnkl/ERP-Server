@@ -1,20 +1,35 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import {
+  PACKAGE_FILES,
+  isPlainObject,
+  packageRoot,
+  readPackageFile,
+} from '../../common/package-files/package-files';
 
 /**
- * Part B Step 2: which backend build is running, for /health.
+ * Part B: which backend build is running (/health, and the logout-after-update
+ * check in app-version/services/backend-update.service.ts).
  *
- *   version  APP_VERSION, else package.json's version, else 'unknown'
- *   build    APP_BUILD (digits only), else null
- *   commit   APP_COMMIT, else null
+ * Step 4: CI writes build-info.json into the backend package
+ * ({ version, build, commit, builtAt }), so an on-prem install needs nothing in
+ * .env. Each env var still wins over its field (the cloud sets them):
  *
- * CI sets the three APP_* variables in production (Step 4). Locally they are
- * optional. Read once and kept: they cannot change while the process runs.
+ *   version  APP_VERSION, else build-info.json, else package.json, else 'unknown'
+ *   build    APP_BUILD (digits), else build-info.json, else null
+ *   commit   APP_COMMIT, else build-info.json, else null
+ *   builtAt  build-info.json, else null
+ *
+ * Read once and kept: none of it can change while the process runs. A missing
+ * or malformed build-info.json is the same as no file (fields fall through).
  */
 export interface BackendBuild {
   version: string;
   build: number | null;
   commit: string | null;
+  builtAt: string | null;
+  /** Where `build` came from. */
+  buildSource: 'env' | 'build-info' | 'none';
 }
 
 let cached: BackendBuild | null = null;
@@ -28,47 +43,52 @@ export function resolveBackendBuild(
   env: NodeJS.ProcessEnv,
   startDir: string = __dirname,
 ): BackendBuild {
+  const info = buildInfo(env, startDir);
+  const envBuild = buildNumber(env.APP_BUILD);
+  const fileBuild = buildNumber(info.build);
   return {
-    version: text(env.APP_VERSION, 32) ?? packageVersion(startDir) ?? 'unknown',
-    build: buildNumber(env.APP_BUILD),
-    commit: text(env.APP_COMMIT, 40),
+    version:
+      text(env.APP_VERSION, 32) ?? text(info.version, 32) ?? packageVersion(startDir) ?? 'unknown',
+    build: envBuild ?? fileBuild,
+    commit: text(env.APP_COMMIT, 40) ?? text(info.commit, 40),
+    builtAt: text(info.builtAt, 40),
+    buildSource: envBuild !== null ? 'env' : fileBuild !== null ? 'build-info' : 'none',
   };
 }
 
-function text(value: string | undefined, maxLength: number): string | null {
-  const trimmed = value?.trim();
+function buildInfo(env: NodeJS.ProcessEnv, startDir: string): Record<string, unknown> {
+  const read = readPackageFile(PACKAGE_FILES.buildInfo, env, startDir);
+  return read.found && isPlainObject(read.json) ? read.json : {};
+}
+
+function text(value: unknown, maxLength: number): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
   return trimmed ? trimmed.slice(0, maxLength) : null;
 }
 
-function buildNumber(value: string | undefined): number | null {
-  const trimmed = value?.trim();
-  if (!trimmed || !/^\d{1,15}$/.test(trimmed)) {
+function buildNumber(value: unknown): number | null {
+  const raw =
+    typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  if (!raw || !/^\d{1,15}$/.test(raw)) {
     return null;
   }
-  const build = Number(trimmed);
+  const build = Number(raw);
   return Number.isSafeInteger(build) ? build : null;
 }
 
 /** The version of the nearest package.json above `startDir` (src/… under ts, dist/src/… built). */
 function packageVersion(startDir: string): string | null {
-  let dir = startDir;
-  for (let depth = 0; depth < 8; depth += 1) {
-    const candidate = join(dir, 'package.json');
-    if (existsSync(candidate)) {
-      try {
-        const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown };
-        return typeof parsed.version === 'string' && parsed.version.trim()
-          ? parsed.version.trim()
-          : null;
-      } catch {
-        return null;
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      break;
-    }
-    dir = parent;
+  const root = packageRoot(startDir);
+  const candidate = root ? join(root, 'package.json') : null;
+  if (!candidate || !existsSync(candidate)) {
+    return null;
   }
-  return null;
+  try {
+    const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown };
+    return typeof parsed.version === 'string' && parsed.version.trim()
+      ? parsed.version.trim()
+      : null;
+  } catch {
+    return null;
+  }
 }
