@@ -8,7 +8,7 @@
 #       node_modules/            PRODUCTION dependencies only, with the Prisma engine
 #                                for this OS and the Prisma CLI (migrate deploy)
 #       prisma/schema.prisma     the generated schema
-#       prisma/migrations/       every migration, cloud-sync included
+#       prisma/migrations/       every committed migration (cloud-sync is gitignored here)
 #       prisma/seed/             boot seed SQL (read at startup)
 #       assets/                  print fonts (read at startup)
 #       package.json, package-lock.json

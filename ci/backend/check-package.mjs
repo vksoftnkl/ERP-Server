@@ -127,7 +127,9 @@ const REQUIRED = [
   win ? 'node.exe' : 'node',
   'dist/src/main.js',
   'dist/src/app.module.js',
-  'dist/src/modules/cloud-sync/cloud-sync.module.js',
+  // No cloud-sync entries: ERP-Server keeps the cloud-sync module and its migration
+  // out of git (.gitignore) and CloudSyncModule is commented out in app.module.ts.
+  // The test repo committed both and required them here.
   'node_modules/@prisma/client/package.json',
   'node_modules/.prisma/client/index.js',
   'node_modules/.prisma/client/schema.prisma',
@@ -138,7 +140,6 @@ const REQUIRED = [
   'node_modules/@nestjs/core/package.json',
   'prisma/schema.prisma',
   'prisma/migrations/migration_lock.toml',
-  'prisma/migrations/20260923120000_offline_cloud_sync/migration.sql',
   /^prisma\/migrations\/[^/]+\/migration\.sql$/,
   /^prisma\/seed\/[^/]+\.sql$/,
   /^assets\/fonts\/[^/]+\.ttf$/,
