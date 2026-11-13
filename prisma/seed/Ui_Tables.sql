@@ -1,10 +1,12 @@
--- Seed: fixed.ui_tables -- the registry of entry-screen item grids (61 rows).
+-- Seed: fixed.ui_tables -- the registry of entry-screen item grids (64 rows).
 --
 -- 56-59 / 62 / 65 / 66: the purchase screens and Supplier Dues (migration 20261029140000).
 -- 67: Cost Price – Bulk Change, menu 298 (migration 20261105120000_cost_price_bulk_change).
 -- 68: Qty-wise Prices card rate band, menu 244 (migration 20261106140000_qty_price_card_rate_form).
 -- 69: Sales Order charges grid, tblCharges (migration 20261110100000_sales_order_charges_layout).
 -- 70: Sales Order Management list, menu 299 (migration 20261110180000_sale_order_desk).
+-- 71-73: Item Ledger (menu 301) Vouchers / Day-wise / Month-wise grids (migration
+--        20261113100000_item_ledger_layouts).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
@@ -85,6 +87,9 @@ VALUES
     ,(68, 'QTY-WISE PRICES - CARD RATE'  , true , 'Desktop', true , false, 'system')
     ,(69, 'SALES ORDER - CHARGES'        , true , 'Desktop', true , false, 'system')
     ,(70, 'SALE ORDER DESK - LIST'       , false, 'Desktop', true , false, 'system')
+    ,(71, 'ITEM LEDGER - VOUCHERS'       , false, 'Desktop', true , false, 'system')
+    ,(72, 'ITEM LEDGER - DAY-WISE'       , false, 'Desktop', true , false, 'system')
+    ,(73, 'ITEM LEDGER - MONTH-WISE'     , false, 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

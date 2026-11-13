@@ -793,7 +793,7 @@ query against them is for one form or the other, never both.
 
 ═══════════════════════════════════════════════════════════════════════════
 WRITTEN AT POST, NEVER EDITED, NEVER RE-SUMMED
-═════════════════════════════════════════��═════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════
 
 A row is a statement about a moment: at the instant this document posted,
 this much tax was collected at this rate on this base, for this party\'s PAN.
@@ -3892,6 +3892,48 @@ configuration. Same (scope, role, nature) -> ledger shape as the map; the
 map\'s scope is company and branch, this one\'s is the rate.'
 }
 
+Table app_auth_state {
+  aasId String [pk]
+  aasKey String [unique, not null, note: '\'auth\', the only row (ux_aas_key).']
+  aasTokenEpoch Int [not null, default: 0, note: 'Tokens minted under a lower epoch are dead. A token with no `ep` reads as 0.']
+  aasLastBuild Int [note: 'The APP_BUILD the epoch was last raised for; NULL = never.']
+  aasLastVersion String [note: 'APP_VERSION / APP_COMMIT at that start (support info).']
+  aasLastCommit String
+  aasEpochChangedOn DateTime
+  aasIsActive Boolean [not null, default: true]
+  aasIsDeleted Boolean [not null, default: false]
+  aasSyncDate DateTime
+  aasCreatedOn DateTime [default: `now()`, not null]
+  aasCreatedBy String
+  aasModifiedOn DateTime
+  aasModifiedBy String
+
+  Note: 'public.app_auth_state — one row (aasKey = \'auth\'). A token whose `ep` claim
+is below aasTokenEpoch is refused with 401 AUTH_BACKEND_UPDATED.'
+}
+
+Table app_build_policy {
+  abpId String [pk]
+  abpPlatform String [unique, not null, note: 'web | desktop | mobile; one row each (ux_abp_platform, not partial).']
+  abpEnforce Boolean [not null, default: false, note: 'false = no build check for this platform.']
+  abpExpectedBuild Int [note: '> 0. The one build a client must run while abpEnforce is true.']
+  abpMessage String [note: 'Shown to the user on 426, e.g. "Please update VK Nex Desktop".']
+  abpDownloadUrl String [note: 'Installer / Play Store / reload URL.']
+  abpSource String [not null, default: 'manifest', note: 'manifest (written at startup) | manual (admin API).']
+  abpIsActive Boolean [not null, default: true]
+  abpIsDeleted Boolean [not null, default: false]
+  abpSyncDate DateTime
+  abpCreatedOn DateTime [default: `now()`, not null]
+  abpCreatedBy String
+  abpModifiedOn DateTime
+  abpModifiedBy String
+
+  Note: 'public.app_build_policy — one row per platform. abpEnforce = true: a login or
+refresh whose X-App-Build is not exactly abpExpectedBuild gets 426
+UPDATE_REQUIRED. \'manifest\' rows are rewritten at startup when the backend
+build changes; \'manual\' rows (admin API) are left alone.'
+}
+
 Table app_legacy_usage {
   aluId String [pk]
   aluName String [not null, note: 'The legacy field, e.g. sale-bill.request.rate']
@@ -6027,8 +6069,9 @@ Table transporter_master {
 length either way.']
   trnIsEnrolmentId Boolean [not null, default: false]
   trnMode String [not null, default: 'ROAD', note: 'ROAD | RAIL | AIR | SHIP']
-  trnLedgerId String [note: 'Freight payable ledger, optional. No FK: a transporter may be recorded
-long before anybody decides which ledger their freight posts to.']
+  trnLedgerId String [note: 'The transporter\'s own account ledger (group Transporters, under Sundry
+Creditors), made on its first save — the same id as trnId, as a
+supplier\'s sup_id is its ledger\'s id (plan-vehicle-master D28-D31).']
   trnPhone String
   trnEmail String
   trnAddr String
@@ -8704,7 +8747,7 @@ CUSTOMER_GROUP 1 — narrowest first. EXCLUDE beats INCLUDE at equal priority.
 
 Read only when prm_cust_scope = \'LIST\'.
 
-── WRITING THIS MODEL ──────────────────────────────────────────────────
+── WRITING THIS MODEL ─────────────────────────────────────────────────���
 NEVER set custId / custGroupId / areaId / cityId, and never use the four
 nested `connect`s. Postgres computes those columns and rejects any write.
 Set prpKind + prpScopeId; read the relations back.
@@ -11263,6 +11306,10 @@ at all; fn_svh_cancel guards with a NOT EXISTS, but
 that is read-then-write and two concurrent cancels
 could both pass it and reverse the same movement twice.
 ix_sml_item_date  the item ledger screen
+ix_sml_item_ledger  the Item Ledger report\'s opening sum (20261111130000):
+(company, branch, item, doc_date) INCLUDE signed qty,
+direction, both cost values, godown, lot, bucket, so the
+whole history before From is an index-only scan
 ix_sml_balance_scope  fn_sbl_rebuild and every as-on-date recomputation
 ix_sml_lot        lot movement history: the recall trail
 ix_sml_source_doc drilling from a document into what it moved
@@ -11775,9 +11822,13 @@ WRITE RULES:
 * NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
 * NEVER write StockBalance.sblReservedQty; write here and let the trigger
 aggregate.
-* One reservation per source line per lot — ux_srv_source — so a re-post
-UPDATES rather than stacking a second hold on the same stock. Getting
-this wrong double-reserves and makes stock vanish from the sale screen.
+* One LIVE reservation (OPEN or PARTIAL) per source line per lot —
+ux_srv_source — so a line never stacks a second hold on the same
+stock. Getting this wrong double-reserves and makes stock vanish from
+the sale screen. RELEASED, CONSUMED and EXPIRED rows are history and
+are NOT covered (20261111100000): an amend releases the line\'s open
+row and inserts a fresh one with the same key, and the old index,
+which ignored status, refused that insert with 23505.
 
 Vocabularies, enforced by CHECK constraints in the migration:
 srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
@@ -11789,7 +11840,7 @@ PARTITIONED BY LIST (srv_acc_year), hence the composite primary key.
 
 DB-only objects Prisma cannot express — hand-authored in the migration and
 deliberately NOT declared here (every one carries a WHERE):
-ux_srv_source   one hold per source line per lot
+ux_srv_source   one live (OPEN/PARTIAL) hold per source line per lot
 ix_srv_balance  the trigger\'s aggregate: open holds against one balance
 ix_srv_expiring the expiry sweep'
 }

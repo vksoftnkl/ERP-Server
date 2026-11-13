@@ -1,4 +1,4 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2155 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2187 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
@@ -30,6 +30,11 @@
 -- Place 7.11, adding up to 95.00 so the row gutter fits, as table 69),
 -- 14..47 hidden; no column takes focus. Value and the six money columns are filled from
 -- POST /sale-order-desk/figures, never from grid 201.
+-- 71 / 72 / 73 Item Ledger (menu 301) Vouchers / Day-wise / Month-wise as
+-- 20261113100000_item_ledger_layouts created them (ids 2477-2492 / 2493-2501 / 2502-2508):
+-- numbers are the Qt VCol / DCol / MCol enums of item_ledger_entry.cpp, every column shown
+-- (71's Bucket too: the screen hides it unless the bucket filter is All buckets), titles as on
+-- screen (71's caret column blank), the shown widths add up to 97.00; read-only, no focus.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -1919,6 +1924,41 @@ SELECT v.* FROM (VALUES
     ,(2474, 70  , 45 , 'IsBillLimit'           , 0                , false, false, 45 , false, NULL, NULL, true , false, 'system')
     ,(2475, 70  , 46 , 'IsDaysOver'            , 0                , false, false, 46 , false, NULL, NULL, true , false, 'system')
     ,(2476, 70  , 47 , 'HasCreditLimit'        , 0                , false, false, 47 , false, NULL, NULL, true , false, 'system')
+    -- ============ ITEM LEDGER - VOUCHERS (id 71) ============
+    ,(2477, 71  , 0  , ''                      , 1.4              , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2478, 71  , 1  , 'Date'                  , 5.4              , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2479, 71  , 2  , 'Time'                  , 4.6              , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2480, 71  , 3  , 'Type'                  , 6.6              , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2481, 71  , 4  , 'Doc no'                , 7.8              , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2482, 71  , 5  , 'Party / detail'        , 19.4             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2483, 71  , 6  , 'Godown'                , 7.4              , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2484, 71  , 7  , 'Batch'                 , 6.2              , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2485, 71  , 8  , 'Received'              , 4.8              , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2486, 71  , 9  , 'Issued'                , 4.8              , true , false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2487, 71  , 10 , 'Balance'               , 4.8              , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2488, 71  , 11 , 'Cost rate'             , 4.4              , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2489, 71  , 12 , 'Cost value'            , 5.6              , true , false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2490, 71  , 13 , 'Doc rate'              , 4.4              , true , false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2491, 71  , 14 , 'User'                  , 5                , true , false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2492, 71  , 15 , 'Bucket'                , 4.4              , true , false, 15 , false, NULL, NULL, true , false, 'system')
+    -- ============ ITEM LEDGER - DAY-WISE (id 72) ============
+    ,(2493, 72  , 0  , 'Date'                  , 16               , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2494, 72  , 1  , 'Docs'                  , 3.6              , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2495, 72  , 2  , 'Opening'               , 10               , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2496, 72  , 3  , 'Received'              , 10               , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2497, 72  , 4  , 'Issued'                , 10               , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2498, 72  , 5  , 'Closing'               , 10               , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2499, 72  , 6  , 'Value in'              , 12.4             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2500, 72  , 7  , 'Value out'             , 12.4             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2501, 72  , 8  , 'Closing value'         , 12.6             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    -- ============ ITEM LEDGER - MONTH-WISE (id 73) ============
+    ,(2502, 73  , 0  , 'Month'                 , 21.2             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2503, 73  , 1  , 'Docs'                  , 3.6              , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2504, 73  , 2  , 'Opening'               , 13.5             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2505, 73  , 3  , 'Inward'                , 13.5             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2506, 73  , 4  , 'Outward'               , 13.5             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2507, 73  , 5  , 'Closing'               , 13.5             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2508, 73  , 6  , 'Closing value'         , 18.2             , true , false, 6  , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

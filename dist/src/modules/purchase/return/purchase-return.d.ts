@@ -381,10 +381,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -435,6 +433,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
         totals: {
             rows: number;
@@ -550,10 +550,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -604,6 +602,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
         totals: {
             rows: number;
@@ -720,10 +720,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -774,6 +772,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
         totals: {
             rows: number;
@@ -889,10 +889,8 @@ export declare class PurchaseReturnService {
             itemName?: string | undefined;
             unitName?: string | undefined;
             priId: string;
-            priPrId: string;
             priCompanyId: string;
             priBranchId: string;
-            priAccYear: string;
             priLineNo: number;
             priItemId: string;
             priUomId: string;
@@ -943,6 +941,8 @@ export declare class PurchaseReturnService {
             priCreatedBy: string;
             priModifiedOn: Date | null;
             priModifiedBy: string | null;
+            priPrId: string;
+            priAccYear: string;
         }[];
         totals: {
             rows: number;
@@ -1122,10 +1122,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -1176,6 +1174,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
             totals: {
                 rows: number;
@@ -1369,10 +1369,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -1423,6 +1421,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
             totals: {
                 rows: number;
@@ -1542,10 +1542,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -1596,6 +1594,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
             totals: {
                 rows: number;
@@ -1715,10 +1715,8 @@ export declare class PurchaseReturnController {
                 itemName?: string | undefined;
                 unitName?: string | undefined;
                 priId: string;
-                priPrId: string;
                 priCompanyId: string;
                 priBranchId: string;
-                priAccYear: string;
                 priLineNo: number;
                 priItemId: string;
                 priUomId: string;
@@ -1769,6 +1767,8 @@ export declare class PurchaseReturnController {
                 priCreatedBy: string;
                 priModifiedOn: Date | null;
                 priModifiedBy: string | null;
+                priPrId: string;
+                priAccYear: string;
             }[];
             totals: {
                 rows: number;

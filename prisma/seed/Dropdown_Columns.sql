@@ -1,9 +1,11 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (195 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (200 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS: its two columns (pinned uuids ...0750 / ...0751) as migration
 -- 20261106160000_qty_price_layout_fixes inserts them.
 -- 76 VEHICLE DRIVERS: its five columns (pinned uuids ...0760 - ...0764) as migration
 -- 20261112120000_vehicle_transporter_masters inserts them.
+-- 77 ITEMS BY COMPANY: its five columns (pinned uuids ...0770 - ...0774) as migration
+-- 20261113100000_item_ledger_layouts inserts them.
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -281,6 +283,12 @@ SELECT v.* FROM (VALUES
     ,('01a1b2c0-7600-7000-8000-000000000762', 76, 2, 'Driver'              , 'emp_name'          , NULL                  , 'Text'   , 40.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7600-7000-8000-000000000763', 76, 3, 'Mobile'              , 'emp_mobile1'       , NULL                  , 'Text'   , 20.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7600-7000-8000-000000000764', 76, 4, 'Branch'              , 'emp_branch'        , NULL                  , 'Text'   , 20.00 , 'Left'  , true , false, 'system')
+    -- ============ ITEMS BY COMPANY (id 77) ============
+    ,('01a1b2c0-7700-7000-8000-000000000770', 77, 0, '#'                   , 'item_id'           , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a1b2c0-7700-7000-8000-000000000771', 77, 1, 'Code'                , 'item_code'         , NULL                  , 'Text'   , 20.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7700-7000-8000-000000000772', 77, 2, 'Item'                , 'item_name_en'      , NULL                  , 'Text'   , 55.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7700-7000-8000-000000000773', 77, 3, 'Barcode'             , 'item_default_barcode', NULL                , 'Text'   , 25.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7700-7000-8000-000000000774', 77, 4, 'SKU'                 , 'item_sku'          , NULL                  , 'Text'   , 10.00 , 'Left'  , false, true , 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing

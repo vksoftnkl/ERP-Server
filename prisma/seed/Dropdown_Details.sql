@@ -1,9 +1,11 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (64 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (65 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
 -- 76 VEHICLE DRIVERS (Vehicle Master's Driver picker) as migration
 -- 20261112120000_vehicle_transporter_masters inserts it.
+-- 77 ITEMS BY COMPANY (Item Ledger's Item picker) as migration
+-- 20261113100000_item_ledger_layouts inserts it.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -516,6 +518,15 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
                         WHERE e2.emp_is_active = true AND e2.emp_is_deleted = false
                           AND e2.emp_company_id::text = 'idrv_company_id' AND upper(d2.ed_code) = 'DRIVER'))
  ORDER BY e.emp_name$seed$, NULL)
+    ,(77, 'ITEMS BY COMPANY', 'Item Ledger (menu 301) Item picker: one row per item, not deleted (inactive ones included), this company''s or shared (item_company_id NULL), as the item-ledger routes accept them; by name. Searches code, name, barcode and SKU. Param icompany_id, always sent; compared as text, never cast.', 'item_name_en'        , 'asc'      , 12, true , 0   , 'Desktop', 'item_name_en'      , 'system', $seed$SELECT item_id,
+       COALESCE(item_code, '') AS item_code,
+       item_name_en,
+       COALESCE(item_default_barcode, '') AS item_default_barcode,
+       COALESCE(item_sku, '') AS item_sku
+  FROM inventory.item_master
+ WHERE item_is_deleted = false
+   AND (item_company_id IS NULL OR item_company_id::text = 'icompany_id')
+ ORDER BY item_name_en$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from
