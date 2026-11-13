@@ -17,7 +17,7 @@ import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
-import { buildBillLegs, splitRegisterCharges } from '../posting/sales-leg.sources';
+import { buildBillLegs } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import {
@@ -86,9 +86,13 @@ import {
 } from '../../../common/posting/bill-adjustment.helper';
 import {
   cashTendered,
+  chargeLegsOf,
   decimal,
+  docTaxOf,
   isCreditTender,
   partyDebitOf,
+  registerChargesOf,
+  salesAmountOf,
   setOffAmtOf,
   settledByTenders,
   snapshotFromDto,
@@ -174,7 +178,10 @@ export class BillLifecycleService {
       this.prisma,
       (dto.tenders ?? []).map((t) => t.tdTenderId),
     );
-    const snap = snapshotFromDto(dto, masters);
+    // A charge row that does not say its cdType takes its master's, as the
+    // save gives it — so this dry run and the post read the same sign.
+    const chargeTypes = await this.bills.chargeTypesOf(this.prisma, dto.charges);
+    const snap = snapshotFromDto(dto, masters, chargeTypes);
     const guard = createGuardContext({
       overrides: dto.overrides ?? [],
       canOverride: ctx.rights.override,
@@ -864,17 +871,14 @@ export class BillLifecycleService {
         { field: 'sbBillAmt' },
       );
     }
-    const lineTax = round2(
-      snap.items.reduce(
-        (t, i) => t + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt,
-        0,
-      ),
-    );
-    if (Math.abs(lineTax - snap.taxAmt) > 0.01) {
+    // sbTaxAmt is the lines' GST plus each separately posted charge's own GST,
+    // signed: a freight charge's GST adds, a deducting charge's comes off.
+    const docTax = docTaxOf(snap);
+    if (Math.abs(docTax - snap.taxAmt) > 0.01) {
       refuse(
         g,
         SALES_ERROR_CODES.AMOUNT_MISMATCH,
-        `Line taxes total ${lineTax.toFixed(2)} but sbTaxAmt says ${snap.taxAmt.toFixed(2)}`,
+        `Line and charge taxes total ${docTax.toFixed(2)} but sbTaxAmt says ${snap.taxAmt.toFixed(2)}`,
         { field: 'sbTaxAmt' },
       );
     }
@@ -1478,7 +1482,9 @@ export class BillLifecycleService {
     const legs = buildBillLegs({
       partyLedgerId: partyId,
       supplyNature,
-      salesAmount: snap.taxableAmt,
+      // Less every separately posted charge already inside the taxable value
+      // (P0.2 / P0.3), which posts on its own ledger below.
+      salesAmount: salesAmountOf(snap),
       taxes: bucketTaxes(
         snap.items.map((i) => ({
           taxId: i.taxId,
@@ -1489,16 +1495,7 @@ export class BillLifecycleService {
           acess: i.acessAmt,
         })),
       ),
-      charges: snap.charges.map((c) => ({
-        ledgerId: c.ledgerId,
-        amount: c.amount,
-        separatelyPosted: c.separatelyPosted,
-        cgst: c.cgst,
-        sgst: c.sgst,
-        igst: c.igst,
-        cess: c.cess,
-        name: c.name,
-      })),
+      charges: chargeLegsOf(snap),
       cashDiscount: snap.cashDisc,
       schemeDiscount: ctx.settings.postSchemeDiscSeparately ? snap.schDisc + snap.billSchDisc : 0,
       roundOff: snap.roundOff,
@@ -1785,7 +1782,9 @@ export class BillLifecycleService {
       snap.charges.map((c) => ({
         srcChargeId: c.srcChargeId,
         srcAccYear: c.srcAccYear,
-        amount: c.amount,
+        // The carry compares against the order row's stored cd_amount, which
+        // is a magnitude whatever its cd_type — so the magnitude, not the sign.
+        amount: Math.abs(c.amount),
         basis: (c.carryBasis ?? undefined) as never,
       })),
       { canOverride: ctx.rights.override },
@@ -2323,11 +2322,7 @@ export class BillLifecycleService {
     });
     const taxed = lines.filter((l) => l.taxability === 'TAXABLE').length;
     const services = snap.items.filter((i) => i.isService).length;
-    const charges = splitRegisterCharges(
-      snap.charges
-        .filter((c) => c.separatelyPosted)
-        .map((c) => c.amount + c.cgst + c.sgst + c.igst + c.cess),
-    );
+    const charges = registerChargesOf(snap);
     return {
       companyId: bill.sbCompanyId,
       branchId: bill.sbBranchId,

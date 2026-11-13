@@ -1,9 +1,12 @@
+import { Prisma } from '@prisma/client';
 import {
   buildBillLegs,
   buildCogsLegs,
   buildReturnLegs,
   buildTenderLegs,
+  chargeInsideTaxable,
   chargePostsSeparately,
+  signedCharge,
   splitRegisterCharges,
 } from './sales-leg.sources';
 import type { BillLegInput, SalesLeg, TenderLegInput } from './types/sales-leg.types';
@@ -54,6 +57,65 @@ describe('sales-leg.sources', () => {
     it('always posts an after-tax charge on its own ledger', () => {
       expect(chargePostsSeparately({ cdBeforeTax: false, cdSepPost: false })).toBe(true);
       expect(chargePostsSeparately({})).toBe(true);
+    });
+  });
+
+  // P0.1 (plan-sale-return v5 §4.3): the client stores a DEDUCT row positive.
+  describe('signedCharge', () => {
+    const row = {
+      cdAmount: 25,
+      cdCgstAmt: 2.25,
+      cdSgstAmt: 2.25,
+      cdIgstAmt: 0,
+      cdCessAmt: 0.5,
+    };
+
+    it('negates a DEDUCT row and its own GST', () => {
+      expect(signedCharge({ ...row, cdType: 'DEDUCT' })).toEqual({
+        amount: -25,
+        cgst: -2.25,
+        sgst: -2.25,
+        igst: 0,
+        cess: -0.5,
+      });
+    });
+
+    it('works from the magnitude, so a DEDUCT row sent negative stays a deduction', () => {
+      expect(signedCharge({ cdType: 'DEDUCT', cdAmount: -25 }).amount).toBe(-25);
+    });
+
+    it('takes an ADD row as it stands, and a row without cdType as ADD (the column default)', () => {
+      expect(signedCharge({ ...row, cdType: 'ADD' })).toEqual({
+        amount: 25,
+        cgst: 2.25,
+        sgst: 2.25,
+        igst: 0,
+        cess: 0.5,
+      });
+      expect(signedCharge({ cdAmount: -100.12 }).amount).toBe(-100.12);
+    });
+
+    it('reads stored Decimals, strings and nulls', () => {
+      expect(
+        signedCharge({
+          cdType: 'DEDUCT',
+          cdAmount: new Prisma.Decimal('23.6000'),
+          cdCgstAmt: '1.18',
+          cdSgstAmt: null,
+        }),
+      ).toEqual({ amount: -23.6, cgst: -1.18, sgst: 0, igst: 0, cess: 0 });
+    });
+  });
+
+  describe('chargeInsideTaxable', () => {
+    it('is true for a before-tax charge and for an after-tax charge with its own GST', () => {
+      expect(chargeInsideTaxable({ cdBeforeTax: true })).toBe(true);
+      expect(chargeInsideTaxable({ cdBeforeTax: false, cdTaxApl: true })).toBe(true);
+    });
+
+    it('is false for an after-tax charge with no GST of its own', () => {
+      expect(chargeInsideTaxable({ cdBeforeTax: false, cdTaxApl: false })).toBe(false);
+      expect(chargeInsideTaxable({})).toBe(false);
     });
   });
 
@@ -155,6 +217,39 @@ describe('sales-leg.sources', () => {
       // A charge inside SALES writes no leg of its own.
       expect(legs.find((l) => l.ledgerId === 'ledger-packing')).toBeUndefined();
       expect(legs[0].amount).toBe(1180 + 118 - 50);
+      expect(total(legs, 'DR')).toBe(total(legs, 'CR'));
+    });
+
+    it('posts a deduction with its own GST on the debit side, every leg amount positive', () => {
+      const legs = buildBillLegs(
+        bill({
+          salesAmount: 1000,
+          charges: [
+            {
+              ledgerId: 'ledger-cd',
+              amount: -25,
+              separatelyPosted: true,
+              taxId: 'gst18',
+              cgst: -2.25,
+              sgst: -2.25,
+              name: 'CD - AFTER TAX',
+            },
+          ],
+        }),
+      );
+
+      expect(legs.find((l) => l.ledgerId === 'ledger-cd')).toMatchObject({
+        drCr: 'DR',
+        amount: 25,
+      });
+      expect(
+        legs.filter((l) => l.roleTag === 'OUTPUT_CGST').map((l) => [l.drCr, l.amount]),
+      ).toEqual([
+        ['CR', 90],
+        ['DR', 2.25],
+      ]);
+      expect(legs.every((l) => l.amount > 0)).toBe(true);
+      expect(legs[0].amount).toBe(1180 - 25 - 4.5);
       expect(total(legs, 'DR')).toBe(total(legs, 'CR'));
     });
 

@@ -41,7 +41,10 @@ import {
   QuotationConversionRef,
 } from '../quotation/types/quotation-api.types';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
-import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
+import {
+  ChargeDocumentScope,
+  ChargeType,
+} from '../../master/charge-detail/types/charge-detail-api.types';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { TenderDocumentScope } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { SaveTenderDetailDto } from '../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
@@ -855,6 +858,7 @@ export class BillService {
     const created = await tx.saleBill.create({ data });
     const scope = this.toScope(created);
     const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
+    await this.fillChargeTypes(tx, saveBillDto.charges);
     const charges = await this.chargeDetailService.syncDocumentCharges(
       tx,
       this.toChargeScope(scope),
@@ -998,6 +1002,7 @@ export class BillService {
       where: { sbiBillId: existing.sbId, sbiIsDeleted: false },
     });
     const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
+    await this.fillChargeTypes(tx, saveBillDto.charges);
     const charges = await this.chargeDetailService.syncDocumentCharges(
       tx,
       this.toChargeScope(scope),
@@ -1697,6 +1702,46 @@ export class BillService {
     }
     return value;
   }
+  /**
+   * charge_master.chg_type by chg_id, for the request charge rows that do not
+   * say their cdType. cd_type is the SIGN of a charge (signedCharge), and its
+   * column default is ADD — so a DEDUCT charge sent without cdType would be
+   * stored as an addition. `/bills/validate` reads the same map, so the dry
+   * run and the post read one sign. Empty (no query) when every row says it.
+   */
+  async chargeTypesOf(
+    db: Pick<Prisma.TransactionClient, 'chargeMaster'>,
+    charges: { cdType?: string | null; cdChgId?: string | null }[] | undefined,
+  ): Promise<Map<string, string>> {
+    const ids = [
+      ...new Set(
+        (charges ?? []).filter((c) => !c.cdType && c.cdChgId).map((c) => c.cdChgId as string),
+      ),
+    ];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await db.chargeMaster.findMany({
+      where: { chgId: { in: ids } },
+      select: { chgId: true, chgType: true },
+    });
+    return new Map(rows.map((r) => [r.chgId, r.chgType]));
+  }
+
+  /** Gives every request charge row without a cdType its master's chg_type, before the save stores it. */
+  private async fillChargeTypes(
+    tx: Prisma.TransactionClient,
+    charges: SaveBillDto['charges'],
+  ): Promise<void> {
+    const types = await this.chargeTypesOf(tx, charges);
+    for (const c of charges ?? []) {
+      const type = !c.cdType && c.cdChgId ? types.get(c.cdChgId) : undefined;
+      if (type === ChargeType.ADD || type === ChargeType.DEDUCT) {
+        c.cdType = type;
+      }
+    }
+  }
+
   // The bill's applied charges as the charge-detail module wants them: a bill
   // IS the tax invoice, so its lines carry the INVOICE discriminator, and every
   // charge inherits the header's company / branch / accounting year and

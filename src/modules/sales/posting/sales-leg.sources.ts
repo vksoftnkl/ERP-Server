@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+import { num } from './sales-doc.utils';
 import type {
   BillLegInput,
   ReturnLegInput,
@@ -33,10 +35,74 @@ export function chargePostsSeparately(c: {
 }
 
 /**
+ * Whether a charge's own amount already sits inside the document's taxable
+ * value (sb_taxable_amt), the way the client totals it
+ * (sale_bill_entry.cpp recalcDocumentTotals):
+ *  - a before-tax charge moved each line's taxable value;
+ *  - an after-tax charge that carries its OWN GST (cd_tax_apl) is added to the
+ *    document's taxable value beside the lines, and its GST to sb_tax_amt.
+ * An after-tax charge with no GST of its own stays outside it.
+ *
+ * A charge that is inside the taxable value AND posts separately must come out
+ * of SALES, or SALES and its own ledger both carry it (P0.2 / P0.3).
+ */
+export function chargeInsideTaxable(c: {
+  cdBeforeTax?: boolean | null;
+  cdTaxApl?: boolean | null;
+}): boolean {
+  return c.cdBeforeTax === true || c.cdTaxApl === true;
+}
+
+type ChargeFigure = Prisma.Decimal | number | string | bigint | null | undefined;
+
+/** A charge row's amount and own GST, signed: negative for a deduction. */
+export interface SignedChargeFigures {
+  amount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  cess: number;
+}
+
+/**
+ * A charge row's figures with the sign of its cd_type (P0.1, plan Q56).
+ *
+ * The client saves a DEDUCT row with a POSITIVE cd_amount and positive GST and
+ * applies the sign in its own totals (charge_grid_controller.cpp priceRow);
+ * nothing negative is stored. So a DEDUCT row is negated here — from the
+ * magnitude, so a row that was already sent negative is not flipped back — and
+ * an ADD row is taken as it stands, the way purchase reads cd_type
+ * (purchase-invoice.service.ts: `sign * cd_amount`).
+ *
+ * `cdType` absent counts as ADD, the column default; a request row that omits
+ * it is given its charge master's chg_type before it gets here.
+ */
+export function signedCharge(c: {
+  cdType?: string | null;
+  cdAmount?: ChargeFigure;
+  cdCgstAmt?: ChargeFigure;
+  cdSgstAmt?: ChargeFigure;
+  cdIgstAmt?: ChargeFigure;
+  cdCessAmt?: ChargeFigure;
+}): SignedChargeFigures {
+  const deduct = c.cdType === 'DEDUCT';
+  // `0 -` rather than unary minus, so a zero figure stays 0 and not -0.
+  const signed = (v: ChargeFigure) => (deduct ? 0 - Math.abs(num(v)) : num(v));
+  return {
+    amount: signed(c.cdAmount),
+    cgst: signed(c.cdCgstAmt),
+    sgst: signed(c.cdSgstAmt),
+    igst: signed(c.cdIgstAmt),
+    cess: signed(c.cdCessAmt),
+  };
+}
+
+/**
  * Separately posted charges as the GST register carries them. Every register
- * amount is >= 0 (chk_gdr_amounts), so a charge that adds (amount + its GST) is
- * an other charge and one that deducts joins the discount, beside the cash
- * discount it sits with after tax. Pass each charge's net amount.
+ * amount is >= 0 (chk_gdr_amounts), so a charge that adds is an other charge
+ * and one that deducts joins the discount, beside the cash discount it sits
+ * with after tax. Pass each charge's signed amount NET of its own GST: that GST
+ * is in the register's tax columns already (P0 R1).
  */
 export function splitRegisterCharges(nets: number[]): { other: number; deduction: number } {
   let other = 0;
@@ -81,15 +147,17 @@ export function buildBillLegs(input: BillLegInput): SalesLeg[] {
 
   // 4 — charges that post separately. A charge "before tax" is already part of
   //     the taxable value and posts inside SALES unless cd_sep_post; an
-  //     after-tax charge always posts here (see chargePostsSeparately).
+  //     after-tax charge always posts here (see chargePostsSeparately). The
+  //     amounts are SIGNED (signedCharge): a deduction is negative, and it and
+  //     its own GST post on the debit side, every leg amount still positive.
   for (const charge of input.charges) {
     if (!charge.separatelyPosted || round2(charge.amount) === 0) {
       continue;
     }
+    const side = charge.amount >= 0 ? 'CR' : 'DR';
     push(legs, {
       ledgerId: charge.ledgerId,
-      // A negative charge is a deduction and posts on the other side.
-      drCr: charge.amount >= 0 ? 'CR' : 'DR',
+      drCr: side,
       amount: Math.abs(charge.amount),
       remarks: charge.name ?? null,
       field: 'charges',
@@ -99,15 +167,15 @@ export function buildBillLegs(input: BillLegInput): SalesLeg[] {
       [
         {
           taxId: charge.taxId ?? null,
-          cgst: charge.cgst ?? 0,
-          sgst: charge.sgst ?? 0,
-          igst: charge.igst ?? 0,
-          cess: charge.cess ?? 0,
+          cgst: Math.abs(charge.cgst ?? 0),
+          sgst: Math.abs(charge.sgst ?? 0),
+          igst: Math.abs(charge.igst ?? 0),
+          cess: Math.abs(charge.cess ?? 0),
           acess: 0,
         },
       ],
       input.supplyNature,
-      charge.amount >= 0 ? 'CR' : 'DR',
+      side,
     );
   }
 

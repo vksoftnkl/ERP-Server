@@ -24,6 +24,7 @@ import { TillSessionService, type LiveSessionRef } from '../../till/services/til
 import {
   buildReturnLegs,
   chargePostsSeparately,
+  signedCharge,
   splitRegisterCharges,
 } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
@@ -743,14 +744,12 @@ export class SaleReturnService {
           cess: num(i.sriCessAmt as Prisma.Decimal),
         })),
       ),
+      // Signed by cd_type: a deduction the bill gave comes back as a minus
+      // row, CR its ledger, and the party is credited that much less.
       charges: charges.map((c) => ({
         ledgerId: c.cdLedgerCode,
-        amount: num(c.cdAmount),
+        ...signedCharge(c),
         separatelyPosted: chargePostsSeparately(c),
-        cgst: num(c.cdCgstAmt),
-        sgst: num(c.cdSgstAmt),
-        igst: num(c.cdIgstAmt),
-        cess: num(c.cdCessAmt),
         name: c.cdChgName,
       })),
       cashDiscount: n('srCashDisc'),
@@ -1061,6 +1060,7 @@ export class SaleReturnService {
     row: DocRow,
     items: DocRow[],
     charges: {
+      cdType: string;
       cdSepPost: boolean;
       cdBeforeTax: boolean;
       cdAmount: number | null;
@@ -1075,17 +1075,10 @@ export class SaleReturnService {
     actor: string,
   ): RegisterDoc {
     const d = (k: string) => num(row[k] as Prisma.Decimal);
+    // Signed, and net of the charge's own GST, which the return's tax columns
+    // already carry — the bill's register does the same (registerChargesOf).
     const split = splitRegisterCharges(
-      charges
-        .filter((c) => chargePostsSeparately(c))
-        .map(
-          (c) =>
-            num(c.cdAmount) +
-            num(c.cdCgstAmt) +
-            num(c.cdSgstAmt) +
-            num(c.cdIgstAmt) +
-            num(c.cdCessAmt),
-        ),
+      charges.filter((c) => chargePostsSeparately(c)).map((c) => signedCharge(c).amount),
     );
     const lines: RegisterDetailLine[] = items.map((i): RegisterDetailLine => {
       const n = (k: string) => num(i[k] as Prisma.Decimal);

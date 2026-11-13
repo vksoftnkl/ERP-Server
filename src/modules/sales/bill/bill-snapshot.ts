@@ -9,7 +9,13 @@ import {
   num,
   round2,
 } from '../posting/sales-doc.utils';
-import { chargePostsSeparately } from '../posting/sales-leg.sources';
+import {
+  chargeInsideTaxable,
+  chargePostsSeparately,
+  signedCharge,
+  splitRegisterCharges,
+} from '../posting/sales-leg.sources';
+import type { ChargeLegInput } from '../posting/types/sales-leg.types';
 import { decodeTempCredit, type TempCreditDetails } from './bill-temp-credit';
 
 /**
@@ -71,13 +77,24 @@ export interface BillSnapshotItem {
   weightQty: number | null;
 }
 
+/**
+ * A charge row. `amount` and its own GST are SIGNED by cd_type (signedCharge):
+ * the client stores a DEDUCT row positive, and this is where it turns negative.
+ */
 export interface BillSnapshotCharge {
   cdId: string | null;
   ledgerId: string | null;
   name: string | null;
+  type: 'ADD' | 'DEDUCT';
   amount: number;
   separatelyPosted: boolean;
   beforeTax: boolean;
+  /** cd_tax_apl — an after-tax charge carrying its own GST. */
+  taxApl: boolean;
+  /** Its amount already sits inside sb_taxable_amt (chargeInsideTaxable). */
+  insideTaxable: boolean;
+  /** cd_tax_code — the rate its own GST legs are tagged with. */
+  taxId: string | null;
   cgst: number;
   sgst: number;
   igst: number;
@@ -286,13 +303,13 @@ export function snapshotFromRows(
       cdId: c.cdId,
       ledgerId: c.cdLedgerCode,
       name: c.cdChgName,
-      amount: num(c.cdAmount),
+      type: chargeTypeOf(c.cdType),
+      ...signedCharge(c),
       separatelyPosted: chargePostsSeparately(c),
       beforeTax: c.cdBeforeTax,
-      cgst: num(c.cdCgstAmt),
-      sgst: num(c.cdSgstAmt),
-      igst: num(c.cdIgstAmt),
-      cess: num(c.cdCessAmt),
+      taxApl: c.cdTaxApl,
+      insideTaxable: chargeInsideTaxable(c),
+      taxId: c.cdTaxCode ?? null,
       srcChargeId: (c as unknown as { cdSrcCdId?: string | null }).cdSrcCdId ?? null,
       srcAccYear: (c as unknown as { cdSrcAccYear?: string | null }).cdSrcAccYear?.trim() ?? null,
       carryBasis: (c as unknown as { cdCarryBasis?: string | null }).cdCarryBasis ?? null,
@@ -341,9 +358,21 @@ function transportFromDto(dto: SaveBillDto): BillSnapshot['transport'] {
   };
 }
 
+/**
+ * charge_master.chg_type by chg_id, for a request charge row that does not say
+ * its cdType (BillService.chargeTypesOf). The save gives such a row the same
+ * type, so `/validate` and `/post` read one sign.
+ */
+export type ChargeTypeMap = Map<string, string>;
+
+function chargeTypeOf(v: string | null | undefined): 'ADD' | 'DEDUCT' {
+  return v === 'DEDUCT' ? 'DEDUCT' : 'ADD';
+}
+
 export function snapshotFromDto(
   dto: SaveBillDto,
   tenderMasters: Map<string, TenderMasterRow>,
+  chargeTypes: ChargeTypeMap = new Map(),
 ): BillSnapshot {
   const billDate = dto.sbBillDate ?? isoToday();
   return {
@@ -455,21 +484,24 @@ export function snapshotFromDto(
       weightQty:
         i.sbiWeightQty === null || i.sbiWeightQty === undefined ? null : num(i.sbiWeightQty),
     })),
-    charges: (dto.charges ?? []).map((c) => ({
-      cdId: c.cdId ?? null,
-      ledgerId: c.cdLedgerCode ?? null,
-      name: c.cdChgName ?? null,
-      amount: num(c.cdAmount),
-      separatelyPosted: chargePostsSeparately(c),
-      beforeTax: c.cdBeforeTax ?? false,
-      cgst: num(c.cdCgstAmt),
-      sgst: num(c.cdSgstAmt),
-      igst: num(c.cdIgstAmt),
-      cess: num(c.cdCessAmt),
-      srcChargeId: c.cdSrcCdId ?? null,
-      srcAccYear: c.cdSrcAccYear ?? null,
-      carryBasis: c.cdCarryBasis ?? null,
-    })),
+    charges: (dto.charges ?? []).map((c) => {
+      const type = chargeTypeOf(c.cdType ?? (c.cdChgId ? chargeTypes.get(c.cdChgId) : undefined));
+      return {
+        cdId: c.cdId ?? null,
+        ledgerId: c.cdLedgerCode ?? null,
+        name: c.cdChgName ?? null,
+        type,
+        ...signedCharge({ ...c, cdType: type }),
+        separatelyPosted: chargePostsSeparately(c),
+        beforeTax: c.cdBeforeTax ?? false,
+        taxApl: c.cdTaxApl ?? false,
+        insideTaxable: chargeInsideTaxable(c),
+        taxId: c.cdTaxCode ?? null,
+        srcChargeId: c.cdSrcCdId ?? null,
+        srcAccYear: c.cdSrcAccYear ?? null,
+        carryBasis: c.cdCarryBasis ?? null,
+      };
+    }),
     tenders: (dto.tenders ?? []).map((t) => {
       const master = t.tdTenderId ? tenderMasters.get(t.tdTenderId) : undefined;
       const typeId =
@@ -524,24 +556,94 @@ export function setOffAmtOf(snap: BillSnapshot): number {
   return round2(snap.advanceAmt + snap.noteAdjAmt);
 }
 
-/** What the party is debited for — the same arithmetic as `buildBillLegs`. */
-export function partyDebitOf(snap: BillSnapshot, schemeSeparately: boolean): number {
-  const tax = snap.items.reduce(
+/** Σ the lines' own GST and cess — what the SALES tax legs carry. */
+function lineTaxOf(snap: BillSnapshot): number {
+  return snap.items.reduce(
     (s, i) => s + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt,
     0,
   );
+}
+
+/** Σ the signed own GST of the charges that post separately (P0.3). */
+export function chargeTaxOf(snap: BillSnapshot): number {
+  return round2(
+    snap.charges
+      .filter((c) => c.separatelyPosted)
+      .reduce((s, c) => s + c.cgst + c.sgst + c.igst + c.cess, 0),
+  );
+}
+
+/**
+ * The whole tax of the bill as sb_tax_amt states it: the lines' GST plus each
+ * separately posted charge's own GST, signed — the client nets a deducting
+ * charge's GST out of sb_tax_amt and adds a freight charge's in (P0.3).
+ */
+export function docTaxOf(snap: BillSnapshot): number {
+  return round2(lineTaxOf(snap) + chargeTaxOf(snap));
+}
+
+/**
+ * The SALES leg: the bill's taxable value less every separately posted charge
+ * that already sits inside it, signed (P0.2 / P0.3). Such a charge posts on its
+ * own ledger, so SALES must not carry it too:
+ *  - a before-tax cd_sep_post deduction ("New Reg") comes back out, so SALES
+ *    shows the gross and the deduction is DR its own ledger;
+ *  - an after-tax charge with its own GST (freight) comes out, so it is CR on
+ *    its ledger once, not in SALES as well.
+ */
+export function salesAmountOf(snap: BillSnapshot): number {
+  return round2(
+    snap.taxableAmt -
+      snap.charges
+        .filter((c) => c.separatelyPosted && c.insideTaxable)
+        .reduce((s, c) => s + c.amount, 0),
+  );
+}
+
+/**
+ * What the party is debited for — the same arithmetic as `buildBillLegs` run
+ * on `salesAmountOf` and `chargeLegsOf`: so a charge inside the taxable value is
+ * counted once, and only an after-tax charge without GST adds to it.
+ */
+export function partyDebitOf(snap: BillSnapshot, schemeSeparately: boolean): number {
   const charges = snap.charges
     .filter((c) => c.separatelyPosted)
     .reduce((s, c) => s + c.amount + c.cgst + c.sgst + c.igst + c.cess, 0);
   return round2(
-    snap.taxableAmt +
-      tax +
+    salesAmountOf(snap) +
+      lineTaxOf(snap) +
       charges +
       snap.roundOff +
       snap.tcsAmt -
       snap.cashDisc -
       (schemeSeparately ? snap.schDisc + snap.billSchDisc : 0),
   );
+}
+
+/** The charge rows as `buildBillLegs` reads them: signed, with their own tax rate. */
+export function chargeLegsOf(snap: BillSnapshot): ChargeLegInput[] {
+  return snap.charges.map((c) => ({
+    ledgerId: c.ledgerId,
+    amount: c.amount,
+    separatelyPosted: c.separatelyPosted,
+    taxId: c.taxId,
+    cgst: c.cgst,
+    sgst: c.sgst,
+    igst: c.igst,
+    cess: c.cess,
+    name: c.name,
+  }));
+}
+
+/**
+ * The register's other charge / deduction: each separately posted charge's
+ * signed AMOUNT, net of its own GST. That GST is already in the register's
+ * CGST / SGST / IGST / cess columns (they come from the bill header, which
+ * carries it), so adding it here too would show it twice (P0 R1). Net, gross −
+ * discount + other charge = taxable holds for a charge inside the taxable value.
+ */
+export function registerChargesOf(snap: BillSnapshot): { other: number; deduction: number } {
+  return splitRegisterCharges(snap.charges.filter((c) => c.separatelyPosted).map((c) => c.amount));
 }
 
 export function decimal(v: number): Prisma.Decimal {

@@ -28,7 +28,11 @@ export interface TaxBucket {
   acess: number;
 }
 
-/** A `txn_charge_detail` row, as the leg builder reads it. */
+/**
+ * A `txn_charge_detail` row, as the leg builder reads it. The amount and its
+ * own GST are SIGNED by cd_type (`signedCharge`): a deduction is negative and
+ * posts, with its GST, on the other side.
+ */
 export interface ChargeLegInput {
   ledgerId: string | null;
   /** Signed: a negative charge posts on the other side. */

@@ -1287,6 +1287,95 @@ describe('SaleReturnService', () => {
     });
   });
 
+  // P0 matrix M8 (plan-sale-return-qt-2026-11-13-v5 §4.4): a return of a bill
+  // that carried an after-tax deduction (M1). The charge row comes back the
+  // way Qt saved it on the bill — a POSITIVE cdAmount, cdType DEDUCT.
+  describe("post — P0 M8: a return carrying the bill's after-tax deduction", () => {
+    const CD_LEDGER = 'led-cash-disc';
+    const actual = jest.requireActual<typeof import('../posting/sales-leg.sources')>(
+      '../posting/sales-leg.sources',
+    );
+
+    it('posts the carried deduction CR on its ledger, and the party credit is lower by it', async () => {
+      // 500.00 + 45.00 + 45.00 back, less 2 % of it (11.80) the customer was given off.
+      row = srRow({ srReturnAmt: D('578.20') });
+      store.loadCharges.mockResolvedValue([
+        {
+          cdChgName: 'CD - AFTER TAX',
+          cdType: 'DEDUCT',
+          cdLedgerCode: CD_LEDGER,
+          cdBeforeTax: false,
+          cdTaxApl: false,
+          cdSepPost: false,
+          cdAmount: 11.8,
+          cdCgstAmt: 0,
+          cdSgstAmt: 0,
+          cdIgstAmt: 0,
+          cdCessAmt: 0,
+        },
+      ]);
+
+      await service.post(KEYS);
+
+      const input = jest.mocked(buildReturnLegs).mock.calls[0][0];
+      const built = actual.buildReturnLegs(input);
+      const side = (s: 'DR' | 'CR') =>
+        Math.round(built.filter((l) => l.drCr === s).reduce((t, l) => t + l.amount, 0) * 100) / 100;
+      expect(built[0]).toMatchObject({ ledgerId: CUST_ID, drCr: 'CR', amount: 578.2 });
+      expect(built.filter((l) => l.ledgerId === CD_LEDGER)).toEqual([
+        expect.objectContaining({ drCr: 'CR', amount: 11.8 }),
+      ]);
+      expect(side('DR')).toBe(side('CR'));
+      expect(register.write).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ discountValue: 11.8, otherCharge: 0, billValue: 578.2 }),
+        expect.anything(),
+      );
+    });
+
+    it('files a carried charge with its own GST in the register net of that GST (P0 R1)', async () => {
+      // FREIGHT CHARGE 100.00 + 6.00 + 6.00 back: the 12.00 is in the tax
+      // columns, so the other charge is the 100.00 alone.
+      row = srRow({ srReturnAmt: D('702.00') });
+      store.loadCharges.mockResolvedValue([
+        {
+          cdChgName: 'FREIGHT CHARGE',
+          cdType: 'ADD',
+          cdLedgerCode: 'led-freight',
+          cdBeforeTax: false,
+          cdTaxApl: true,
+          cdSepPost: true,
+          cdAmount: 100,
+          cdCgstAmt: 6,
+          cdSgstAmt: 6,
+          cdIgstAmt: 0,
+          cdCessAmt: 0,
+        },
+        {
+          cdChgName: 'CD - AFTER TAX',
+          cdType: 'DEDUCT',
+          cdLedgerCode: CD_LEDGER,
+          cdBeforeTax: false,
+          cdTaxApl: true,
+          cdSepPost: false,
+          cdAmount: 29.5,
+          cdCgstAmt: 1.77,
+          cdSgstAmt: 1.77,
+          cdIgstAmt: 0,
+          cdCessAmt: 0,
+        },
+      ]);
+
+      await service.post(KEYS);
+
+      expect(register.write).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ otherCharge: 100, discountValue: 29.5 }),
+        expect.anything(),
+      );
+    });
+  });
+
   describe('cancel', () => {
     const cancelDto = { ...KEYS, reason: 'Posted twice' };
 

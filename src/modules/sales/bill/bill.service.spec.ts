@@ -455,7 +455,11 @@ type PrismaMock = {
   };
   // Read by ChargeDetailService, which owns the bill's charge lines: a charge
   // may only point at an active charge master / ledger.
-  chargeMaster: { findFirst: jest.Mock<Promise<{ chgId: string } | null>, unknown[]> };
+  // findMany: BillService.chargeTypesOf, the chg_type of a row sent without cdType.
+  chargeMaster: {
+    findFirst: jest.Mock<Promise<{ chgId: string } | null>, unknown[]>;
+    findMany: jest.Mock<Promise<{ chgId: string; chgType: string }[]>, unknown[]>;
+  };
   accLedgerMaster: { findFirst: jest.Mock<Promise<{ ledName: string } | null>, unknown[]> };
   // The sale order a converted bill draws down, reached through the real
   // SaleOrderService: findFirst locates the header, updateMany writes its
@@ -676,7 +680,10 @@ const makePrismaMock = (): PrismaMock => {
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
-    chargeMaster: { findFirst: jest.fn(() => Promise.resolve({ chgId: CHARGE_ID })) },
+    chargeMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ chgId: CHARGE_ID })),
+      findMany: jest.fn(() => Promise.resolve([{ chgId: CHARGE_ID, chgType: 'ADD' }])),
+    },
     accLedgerMaster: { findFirst: jest.fn(() => Promise.resolve({ ledName: 'Freight Inward' })) },
     accTenderMaster: {
       findFirst: jest.fn(() =>
@@ -1246,6 +1253,41 @@ describe('BillService', () => {
         cdChgId: CHARGE_ID,
         cdLedgerCode: LEDGER_ID,
         cdChgName: 'Freight',
+      });
+    });
+
+    // P0.1: cd_type is the charge's sign and its column default is ADD, so a
+    // DEDUCT charge sent without cdType must take its master's chg_type.
+    it("stores a row sent without cdType under its charge master's chg_type", async () => {
+      prisma.chargeMaster.findMany.mockResolvedValueOnce([{ chgId: CHARGE_ID, chgType: 'DEDUCT' }]);
+
+      await service.save(
+        baseDto({
+          charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdAmount: 23.6 }],
+        }),
+      );
+
+      expect(prisma.chargeMaster.findMany).toHaveBeenCalledWith({
+        where: { chgId: { in: [CHARGE_ID] } },
+        select: { chgId: true, chgType: true },
+      });
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+        cdType: 'DEDUCT',
+      });
+    });
+
+    it('keeps the cdType a row sends, and reads no master when every row sends one', async () => {
+      await service.save(
+        baseDto({
+          charges: [
+            { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdType: 'ADD', cdAmount: 80 },
+          ] as never,
+        }),
+      );
+
+      expect(prisma.chargeMaster.findMany).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+        cdType: 'ADD',
       });
     });
 
