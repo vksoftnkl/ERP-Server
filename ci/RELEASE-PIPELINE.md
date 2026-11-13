@@ -46,11 +46,16 @@ builds.
      `PUBLIC_BASE_URL` = `https://<vps>/updates/dev/backend`.
 
    Then delete `vknex-ci-dev` (the private key) from your PC.
-4. **Downloads (optional; the upload works without it):** copy
-   `deploy/updates-vps/nginx-updates-dev.conf` to `/etc/nginx/snippets/vknex-updates-dev.conf`.
-   Add `include /etc/nginx/snippets/vknex-updates-dev.conf;` beside the test include in the 443
-   server block, then run `sudo nginx -t && sudo systemctl reload nginx`. It reuses the test
-   channel's login.
+4. **Downloads** (the upload works without this, but `/updates/dev/` answers 404 until it is
+   done). On the VPS, from the same folder:
+   ```bash
+   sudo bash install-nginx-updates-test.sh --channel dev --site /etc/nginx/sites-available/erp \
+     --server-name <vps name>
+   ```
+   It installs `nginx-updates-dev.conf` as `/etc/nginx/snippets/vknex-updates-dev.conf`, adds the
+   include to the 443 server block (backed up first), and reloads only if `nginx -t` passes. It
+   reuses the test channel's login. From this PC, `release-test/vps-setup-dev.sh` runs steps 2
+   and 4 together.
 5. **Push** `DEV-v1`. If steps 1-3 aren't done, `publish` fails with "secret … is not
    configured". That is harmless: checks and the zip still run, and nothing is uploaded.
 

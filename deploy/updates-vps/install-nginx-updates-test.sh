@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Release pipeline §3.4: serve /var/www/updates/test/ through nginx, behind basic auth.
+# Release pipeline §3.4: serve /var/www/updates/<channel>/ through nginx, behind basic auth.
 # Run as root ON THE VPS, from this folder:
 #
 #   sudo bash install-nginx-updates-test.sh --site /etc/nginx/sites-available/erp \
-#     --server-name 169-58-213-171.sslip.io
+#     --server-name 169-58-213-171.sslip.io [--channel test|dev]
 #
-#   1. nginx-updates-test.conf -> /etc/nginx/snippets/vknex-updates-test.conf
+# --channel (default test) picks nginx-updates-<channel>.conf beside this script:
+#   test  /updates/test/  (the test repo erp-part-b-step2)
+#   dev   /updates/dev/   (ERP-Server DEV-v1)
+#
+#   1. nginx-updates-<channel>.conf -> /etc/nginx/snippets/vknex-updates-<channel>.conf
 #   2. /etc/nginx/vknex-updates-test.htpasswd (user vknex-test, random password), only if
-#      missing. The password is kept in /root/.vknex-updates-test.credentials (mode 600).
-#   3. adds `include /etc/nginx/snippets/vknex-updates-test.conf;` to the server block with
-#      that server_name, just above its first other `include`/`location`. The site file is
-#      backed up first.
+#      missing. Every channel shares this one login. The password is kept in
+#      /root/.vknex-updates-test.credentials (mode 600).
+#   3. adds `include /etc/nginx/snippets/vknex-updates-<channel>.conf;` to the server block
+#      with that server_name, just above its first other `include`/`location`. The site file
+#      is backed up first.
 #   4. nginx -t. On failure, the backup is restored and nothing is reloaded. Else
 #      `systemctl reload nginx` (graceful: open connections are not dropped).
 # Idempotent: a second run changes nothing.
 set -euo pipefail
 
-site="" name=""
+site="" name="" channel=test
 while (( $# )); do
   case "$1" in
     --site) site="$2"; shift 2 ;;
     --server-name) name="$2"; shift 2 ;;
+    --channel) channel="$2"; shift 2 ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -28,16 +34,18 @@ die() { echo "nginx-setup: $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run as root"
 [[ -f "$site" ]] || die "--site $site does not exist"
 [[ -n "$name" ]] || die "--server-name is required"
+[[ "$channel" =~ ^[a-z][a-z0-9-]{0,30}$ ]] || die "bad --channel $channel"
 here="$(cd "$(dirname "$0")" && pwd)"
-[[ -f "$here/nginx-updates-test.conf" ]] || die "nginx-updates-test.conf is not beside this script"
-snippet=/etc/nginx/snippets/vknex-updates-test.conf
+conf="nginx-updates-$channel.conf"
+[[ -f "$here/$conf" ]] || die "$conf is not beside this script"
+snippet=/etc/nginx/snippets/vknex-updates-$channel.conf
 htpasswd=/etc/nginx/vknex-updates-test.htpasswd
 creds=/root/.vknex-updates-test.credentials
 include_line="include $snippet;"
 
 # 1. snippet
 install -d -m 755 /etc/nginx/snippets
-install -o root -g root -m 644 "$here/nginx-updates-test.conf" "$snippet"
+install -o root -g root -m 644 "$here/$conf" "$snippet"
 
 # 2. basic auth
 if [[ ! -f "$htpasswd" ]]; then
@@ -83,4 +91,4 @@ if ! nginx -t 2>&1; then
   die "nginx -t failed; nothing reloaded"
 fi
 systemctl reload nginx
-echo "nginx-setup: reloaded. https://$name/updates/test/backend/latest.json now needs the basic-auth login."
+echo "nginx-setup: reloaded. https://$name/updates/$channel/backend/latest.json now needs the basic-auth login."
