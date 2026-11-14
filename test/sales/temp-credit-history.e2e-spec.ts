@@ -299,6 +299,16 @@ describe('Temporary credit — its own status trail (http, notes 90)', () => {
   });
 
   it('cancelling the first receipt moves PARTIAL → OPEN as REOPENED', async () => {
+    // While that receipt still stands, the bill cannot be cancelled.
+    const refused = await post('bills/cancel', {
+      ...billKeys(bill.sbId),
+      reason: `E2E-TCH-${tag} too early`,
+    });
+    expect(refused.status).toBe(409);
+    expect((refused.body.errors as { code: string }[]).map((e) => e.code)).toContain(
+      'SALES_ALLOCATION_LOCKS_BILL',
+    );
+
     await cancelReceipt(receipts[0], 'first');
     const tc = await credit();
     expect(tc.atc_status).toBe('OPEN');
@@ -312,8 +322,24 @@ describe('Temporary credit — its own status trail (http, notes 90)', () => {
     });
     expect(steps[6].tsl_remarks).toContain('reversed 200.00');
     expect(steps[6].tsl_remarks).toContain('balance 500.00');
-    // The bill itself stays: /bills/cancel refuses a bill that ever had an
-    // allocation (SALES_ALLOCATION_LOCKS_BILL), reversed or not. The CANCELLED
-    // step is covered by bill-tender-http.e2e-spec.ts, whose bill has none.
+  });
+
+  it('with every receipt cancelled, /bills/cancel goes through and retires the credit (user 11-13)', async () => {
+    // A reversed receipt row and its reversal are no allocation any more, so
+    // SALES_ALLOCATION_LOCKS_BILL no longer holds the bill once they are gone.
+    const res = explain(
+      'bill cancel',
+      await post('bills/cancel', { ...billKeys(bill.sbId), reason: `E2E-TCH-${tag} cancelled` }),
+      201,
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.data.sbStatus).toBe('CANCELLED');
+    expect((await credit()).atc_status).toBe('CANCELLED');
+    const steps = await trail();
+    expect(steps[steps.length - 1]).toMatchObject({
+      tsl_event: 'CANCELLED',
+      tsl_from_status: 'OPEN',
+      tsl_to_status: 'CANCELLED',
+    });
   });
 });

@@ -599,6 +599,21 @@ describe('BillReadService', () => {
         service.lockCounts(client as never, { sbId: BILL_ID, sbAccYear: ACC_YEAR } as SaleBill),
       ).resolves.toEqual({ returns: 0, allocations: 0 });
     });
+
+    it('counts, as assertCancellable does, only live receipt rows: not a reversed row nor its reversal', async () => {
+      const query = routedRaw([['AS allocations', [{ returns: 0n, allocations: 0n }]]]);
+
+      await service.lockCounts({ $queryRaw: query } as never, {
+        sbId: BILL_ID,
+        sbAccYear: ACC_YEAR,
+      } as SaleBill);
+
+      const sql = (query.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toContain('j.abj_reversal_of_id IS NULL');
+      expect(sql).toMatch(
+        /NOT EXISTS \(SELECT 1 FROM accounts\.acc_bill_adjustment x\s+WHERE x\.abj_reversal_of_id = j\.abj_id AND x\.abj_is_deleted = false\)/,
+      );
+    });
   });
 
   describe('decorate', () => {

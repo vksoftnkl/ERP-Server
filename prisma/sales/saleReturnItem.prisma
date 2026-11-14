@@ -109,6 +109,44 @@ model SaleReturnItem {
   sriModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sri_modified_on")
   sriModifiedBy         String?   @db.VarChar(50)                      @map("sri_modified_by")
 
+  // ── Sale Return screen (20261113160000, plan-sale-return v5 §5.2) ─────
+  // Added at the end of the table, so they sit here to keep this file in the
+  // DB's column order. The money parts mirror SaleBillItem's own types: the
+  // SERVER works each one out from the bill line, pro rata by base qty (D45).
+  /// BACK | DESTROYED on a claim line (ck_sri_claim_goods). "A CLAIM line must
+  /// say one" is a server check: it crosses to the header (D23).
+  sriClaimGoods         String?   @db.VarChar(10)                      @map("sri_claim_goods")
+  /// A claim line that came BACK, for the later Purchase Return link (SR-25).
+  sriSupplierClaim      Boolean   @default(false)                      @map("sri_supplier_claim")
+  sriItemDiscQty        Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_item_disc_qty")
+  sriSplDiscQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_spl_disc_qty")
+  sriSchDiscQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_sch_disc_qty")
+  sriBillSchPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_bill_sch_perc")
+  sriBillSchQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_bill_sch_qty")
+  sriAddlDisc1Perc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_addl_disc1_perc")
+  sriAddlDisc1Amt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_addl_disc1_amt")
+  sriAddlDisc2Perc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_addl_disc2_perc")
+  sriAddlDisc2Amt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_addl_disc2_amt")
+  sriCashDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cash_disc_perc")
+  sriCashDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cash_disc_amt")
+  sriNetGross           Decimal?  @db.Decimal(17, 4)                   @map("sri_net_gross")
+  sriAcessPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_acess_perc")
+  sriAcessPerUnit       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_acess_per_unit")
+  sriAcessAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_acess_amt")
+  sriLoyaltyPv          Decimal   @default(0) @db.Decimal(18, 4)       @map("sri_loyalty_pv")
+  sriPromoUsageId       String?   @db.Uuid                             @map("sri_promo_usage_id")
+  sriQtyPriceId         String?   @db.Uuid                             @map("sri_qty_price_id")
+  /// The COGS taken back: the bill line's own cost per base unit, or today's
+  /// average (no bill, or the bill line had no cost) (D54, D69).
+  sriCogsAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cogs_amt")
+  /// BILL | LAST_SALE | TODAY_PRICE (ck_sri_rate_source), D56. "A LAST_SALE
+  /// line names its source" is a server check.
+  sriRateSource         String?   @db.VarChar(12)                      @map("sri_rate_source")
+  /// The SaleBillItem whose rate a no-bill line used (grid 211). No FK: the
+  /// bill may be another branch's (D78).
+  sriRateSrcItemId      String?   @db.Uuid                             @map("sri_rate_src_item_id")
+  sriRateSrcAccYear     String?   @db.Char(9)                          @map("sri_rate_src_acc_year")
+
   // Relations
   saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")
   billItem              SaleBillItem?      @relation("SaleReturnItemBill",  fields: [sriBillItemId, sriBillAccYear], references: [sbiId, sbiAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_bill_item")
@@ -123,7 +161,7 @@ model SaleReturnItem {
   // FK-covering ix_sri_item / ix_sri_item_unit / ix_sri_godown / ix_sri_lot.
   //
   // CHECK constraints (DB-only): ck_sri_split_no, ck_sri_condition,
-  //   ck_sri_bucket, ck_sri_return_qty
+  //   ck_sri_bucket, ck_sri_return_qty, ck_sri_claim_goods, ck_sri_rate_source
 
   @@map("sale_return_item")
   @@schema("sales")

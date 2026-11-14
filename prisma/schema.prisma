@@ -3083,6 +3083,7 @@ model TillApproval {
   tapTenantId         String?   @db.Uuid                             @map("tap_tenant_id")
   tapAccYear          String    @db.Char(9)                          @map("tap_acc_year")
   /// ck_tar_event's list.
+  /// ck_tap_event = the same list, SALE_RETURN / SALE_CLAIM included (20261113160000).
   tapEventCode        String    @db.VarChar(30)                      @map("tap_event_code")
   tapSessionId        String?   @db.Uuid                             @map("tap_session_id")
   tapCounterId        String?   @db.Uuid                             @map("tap_counter_id")
@@ -3187,6 +3188,7 @@ model TillApprovalRule {
   tarCompanyId        String?   @db.Uuid                             @map("tar_company_id")
   tarBranchId         String?   @db.Uuid                             @map("tar_branch_id")
   /// ck_tar_event's list (till events + the reserved counter-control gates).
+  /// SALE_RETURN and SALE_CLAIM added by 20261113160000 (Sale Return gate, D26).
   tarEventCode        String    @db.VarChar(30)                      @map("tar_event_code")
   /// NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT
   tarMode             String    @db.VarChar(12)                      @map("tar_mode")
@@ -15673,6 +15675,27 @@ model SaleReturn {
   srModifiedOn          DateTime? @db.Timestamptz(6)                   @map("sr_modified_on")
   srModifiedBy          String?   @db.VarChar(50)                      @map("sr_modified_by")
 
+  // ── Sale Return screen (20261113160000, plan-sale-return v5 §5.1) ─────
+  // Added at the end of the table, so they sit here to keep this file in the
+  // DB's column order.
+  /// RETURN | CLAIM (ck_sr_return_kind). A CLAIM's lines each say BACK or
+  /// DESTROYED (SaleReturnItem.sriClaimGoods), D23.
+  srReturnKind          String    @default("RETURN") @db.VarChar(10)   @map("sr_return_kind")
+  /// GST | FINANCIAL (ck_sr_gst_mode). FINANCIAL = past the credit-note
+  /// cut-off: no GST cut, no IRN (D8). Set by the server only.
+  srGstMode             String    @default("GST") @db.VarChar(10)      @map("sr_gst_mode")
+  /// As SaleBill.sbFreightCalcType / sbLoadingCalcType, saved at the return (D20).
+  srFreightCalcType     String?   @db.VarChar(12)                      @map("sr_freight_calc_type")
+  srLoadingCalcType     String?   @db.VarChar(12)                      @map("sr_loading_calc_type")
+  /// Points given back for the share of the note the bill paid by points
+  /// (D48). numeric(18,4), like every points column.
+  srPointsBack          Decimal   @default(0) @db.Decimal(18, 4)       @map("sr_points_back")
+  /// Their money value: part of the note, never refunded in money.
+  srPointsBackAmt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_points_back_amt")
+  /// The gift-voucher share: stays inside srCreditAmt / srAdjustedAmt, out of
+  /// the refund cap (D48).
+  srVoucherShareAmt     Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_voucher_share_amt")
+
   // Relations
   bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
   customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
@@ -15690,15 +15713,21 @@ model SaleReturn {
   @@id([srId, srAccYear], map: "pk_sale_return")
 
   @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
-  @@unique([srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno], map: "ux_sr_counter_slno")
+  /// Numbers are per DEVICE (D16; 20261113160000 replaced ux_sr_counter_slno).
+  @@unique([srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno], map: "ux_sr_device_slno")
 
   // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
   // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver
-  // / ix_sr_supervisor / ix_sr_vehicle.
+  // / ix_sr_supervisor / ix_sr_vehicle; ix_sr_salesman_gin (GIN on
+  // sr_salesman_id WHERE sr_is_deleted = false, as ix_sb_salesman_gin;
+  // query shape `sr_salesman_id @> ARRAY[:id]::uuid[]`).
   //
   // CHECK constraints (DB-only): ck_sr_doc_type, ck_sr_bill_mode,
   //   ck_sr_status, ck_sr_settle_mode, ck_sr_settle_status,
-  //   ck_sr_against_bill, ck_sr_settle_sum
+  //   ck_sr_against_bill, ck_sr_return_kind, ck_sr_gst_mode,
+  //   ck_sr_points_share (the three D48 figures >= 0), and ck_sr_settle_sum:
+  //   a non-DRAFT row has srRefundAmt + srAdjustedAmt + srCreditAmt +
+  //   srPointsBackAmt = srReturnAmt exactly (no epsilon, since 20261113160000).
 
   @@map("sale_return")
   @@schema("sales")
@@ -15816,6 +15845,44 @@ model SaleReturnItem {
   sriModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sri_modified_on")
   sriModifiedBy         String?   @db.VarChar(50)                      @map("sri_modified_by")
 
+  // ── Sale Return screen (20261113160000, plan-sale-return v5 §5.2) ─────
+  // Added at the end of the table, so they sit here to keep this file in the
+  // DB's column order. The money parts mirror SaleBillItem's own types: the
+  // SERVER works each one out from the bill line, pro rata by base qty (D45).
+  /// BACK | DESTROYED on a claim line (ck_sri_claim_goods). "A CLAIM line must
+  /// say one" is a server check: it crosses to the header (D23).
+  sriClaimGoods         String?   @db.VarChar(10)                      @map("sri_claim_goods")
+  /// A claim line that came BACK, for the later Purchase Return link (SR-25).
+  sriSupplierClaim      Boolean   @default(false)                      @map("sri_supplier_claim")
+  sriItemDiscQty        Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_item_disc_qty")
+  sriSplDiscQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_spl_disc_qty")
+  sriSchDiscQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_sch_disc_qty")
+  sriBillSchPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_bill_sch_perc")
+  sriBillSchQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_bill_sch_qty")
+  sriAddlDisc1Perc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_addl_disc1_perc")
+  sriAddlDisc1Amt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_addl_disc1_amt")
+  sriAddlDisc2Perc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_addl_disc2_perc")
+  sriAddlDisc2Amt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_addl_disc2_amt")
+  sriCashDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cash_disc_perc")
+  sriCashDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cash_disc_amt")
+  sriNetGross           Decimal?  @db.Decimal(17, 4)                   @map("sri_net_gross")
+  sriAcessPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_acess_perc")
+  sriAcessPerUnit       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_acess_per_unit")
+  sriAcessAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_acess_amt")
+  sriLoyaltyPv          Decimal   @default(0) @db.Decimal(18, 4)       @map("sri_loyalty_pv")
+  sriPromoUsageId       String?   @db.Uuid                             @map("sri_promo_usage_id")
+  sriQtyPriceId         String?   @db.Uuid                             @map("sri_qty_price_id")
+  /// The COGS taken back: the bill line's own cost per base unit, or today's
+  /// average (no bill, or the bill line had no cost) (D54, D69).
+  sriCogsAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cogs_amt")
+  /// BILL | LAST_SALE | TODAY_PRICE (ck_sri_rate_source), D56. "A LAST_SALE
+  /// line names its source" is a server check.
+  sriRateSource         String?   @db.VarChar(12)                      @map("sri_rate_source")
+  /// The SaleBillItem whose rate a no-bill line used (grid 211). No FK: the
+  /// bill may be another branch's (D78).
+  sriRateSrcItemId      String?   @db.Uuid                             @map("sri_rate_src_item_id")
+  sriRateSrcAccYear     String?   @db.Char(9)                          @map("sri_rate_src_acc_year")
+
   // Relations
   saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")
   billItem              SaleBillItem?      @relation("SaleReturnItemBill",  fields: [sriBillItemId, sriBillAccYear], references: [sbiId, sbiAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_bill_item")
@@ -15830,7 +15897,7 @@ model SaleReturnItem {
   // FK-covering ix_sri_item / ix_sri_item_unit / ix_sri_godown / ix_sri_lot.
   //
   // CHECK constraints (DB-only): ck_sri_split_no, ck_sri_condition,
-  //   ck_sri_bucket, ck_sri_return_qty
+  //   ck_sri_bucket, ck_sri_return_qty, ck_sri_claim_goods, ck_sri_rate_source
 
   @@map("sale_return_item")
   @@schema("sales")
@@ -17159,6 +17226,8 @@ model StockMovementClass {
 ///
 /// Vocabulary, enforced by a CHECK constraint in the migration:
 ///   srmDirection  IN | OUT | BOTH
+///   srmDefaultCondition  RESTOCK | DAMAGED | EXPIRED | SCRAP (ck_srm_default_condition,
+///                        20261113160000)
 ///
 /// DB-only objects Prisma cannot express — hand-authored in the migration and
 /// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
@@ -17197,6 +17266,14 @@ model StockReasonMaster {
   srmCreatedBy         String?   @db.Text                                     @map("srm_created_by")
   srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
   srmModifiedBy        String?   @db.Text                                     @map("srm_modified_by")
+
+  // ── Sale Return reasons (20261113160000, plan-sale-return v5 §5.3) ────
+  // Read only for SALE_RETURN reasons (dropdown 78); NULL on every other row.
+  /// Give the bill's after-tax additions back by default (D12).
+  srmRefundCharges     Boolean?                                               @map("srm_refund_charges")
+  /// The Condition a new return line takes: RESTOCK | DAMAGED | EXPIRED |
+  /// SCRAP (ck_srm_default_condition, the ck_sri_condition list).
+  srmDefaultCondition  String?   @db.VarChar(10)                              @map("srm_default_condition")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // Only srm_company_id and srm_gl_ledger_id carry a real FK in the

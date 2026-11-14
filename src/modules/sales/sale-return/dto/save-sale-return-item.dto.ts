@@ -9,6 +9,7 @@ import {
   OptionalUuid,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
+import { IsIn, IsOptional } from 'class-validator';
 import { OptionalStockBucket } from '../../posting/sales-dto.decorators';
 
 // GENERATED from information_schema for sales.sale_return_item (2026-09-22), hand-tuned.
@@ -79,6 +80,12 @@ export class SaveSaleReturnItemDto {
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableStringStrict(20)
   sriCondition?: string | null;
+  // Applied after OptionalStockBucket's own, so this description wins in Swagger.
+  @ApiPropertyOptional({
+    description:
+      'Accepted and IGNORED: the server takes the bucket from sriCondition (D12; user 2026-11-14) — ' +
+      'a CLAIM line EXPIRED for an expired condition, else DAMAGED.',
+  })
   @OptionalStockBucket()
   sriBucket?: string;
   @ApiPropertyOptional({ nullable: true })
@@ -231,6 +238,118 @@ export class SaveSaleReturnItemDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   sriRemarks?: string | null;
+  // ── Sale Return screen (plan v5 §5.2, migration 20261113160000) ────────
+  // The money / rate / cost columns below are worked out by the server from
+  // the bill line (D45): accepted so a /get echoed back passes the
+  // whitelist, and overwritten on every save.
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    enum: ['BACK', 'DESTROYED'],
+    description: 'A CLAIM line: the goods come Back, or were Destroyed at the shop (D23)',
+  })
+  @IsOptional()
+  @IsIn(['BACK', 'DESTROYED'])
+  sriClaimGoods?: string | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned' })
+  @OptionalBoolean()
+  sriSupplierClaim?: boolean;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriItemDiscQty?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriSplDiscQty?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriSchDiscQty?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriBillSchPerc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriBillSchQty?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAddlDisc1Perc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAddlDisc1Amt?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAddlDisc2Perc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAddlDisc2Amt?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriCashDiscPerc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriCashDiscAmt?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriNetGross?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAcessPerc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAcessPerUnit?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriAcessAmt?: string | number | null;
+  @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Server-owned (D45)' })
+  @NullableNumber()
+  sriLoyaltyPv?: string | number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    readOnly: true,
+    description: 'Server-owned',
+  })
+  @NullableUuid()
+  sriPromoUsageId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    readOnly: true,
+    description: 'Server-owned',
+  })
+  @NullableUuid()
+  sriQtyPriceId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    readOnly: true,
+    description: 'Server-owned: the COGS taken back (D54)',
+  })
+  @NullableNumber()
+  sriCogsAmt?: string | number | null;
+  @ApiPropertyOptional({
+    maxLength: 12,
+    nullable: true,
+    readOnly: true,
+    enum: ['BILL', 'LAST_SALE', 'TODAY_PRICE'],
+    description: 'Server-owned: where the rate came from (D56)',
+  })
+  @NullableStringStrict(12)
+  sriRateSource?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "A no-bill line: the customer's bill line (grid 211) whose rate it uses (D56 step 2). Omit to let the server take the last sale in the window.",
+  })
+  @NullableUuid()
+  sriRateSrcItemId?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 9,
+    nullable: true,
+    description: 'The year of sriRateSrcItemId',
+  })
+  @NullableStringStrict(9)
+  sriRateSrcAccYear?: string | null;
+
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @NullableStringStrict(50)
   sriCreatedBy?: string | null;
@@ -311,5 +430,29 @@ export const SRI_OPTIONAL_FIELDS = [
   'sriRemarks',
   'sriCreatedBy',
   'sriModifiedBy',
+  'sriClaimGoods',
+  'sriSupplierClaim',
+  'sriItemDiscQty',
+  'sriSplDiscQty',
+  'sriSchDiscQty',
+  'sriBillSchPerc',
+  'sriBillSchQty',
+  'sriAddlDisc1Perc',
+  'sriAddlDisc1Amt',
+  'sriAddlDisc2Perc',
+  'sriAddlDisc2Amt',
+  'sriCashDiscPerc',
+  'sriCashDiscAmt',
+  'sriNetGross',
+  'sriAcessPerc',
+  'sriAcessPerUnit',
+  'sriAcessAmt',
+  'sriLoyaltyPv',
+  'sriPromoUsageId',
+  'sriQtyPriceId',
+  'sriCogsAmt',
+  'sriRateSource',
+  'sriRateSrcItemId',
+  'sriRateSrcAccYear',
 ] as const;
 export const SRI_DATE_FIELDS = ['sriBatchDate', 'sriExpiryDate'] as const;

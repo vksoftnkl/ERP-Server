@@ -636,14 +636,21 @@ export function chargeLegsOf(snap: BillSnapshot): ChargeLegInput[] {
 }
 
 /**
- * The register's other charge / deduction: each separately posted charge's
- * signed AMOUNT, net of its own GST. That GST is already in the register's
- * CGST / SGST / IGST / cess columns (they come from the bill header, which
- * carries it), so adding it here too would show it twice (P0 R1). Net, gross −
- * discount + other charge = taxable holds for a charge inside the taxable value.
+ * The register's other charge / deduction: EVERY charge row's signed AMOUNT,
+ * net of its own GST. That GST is already in the register's CGST / SGST /
+ * IGST / cess columns (they come from the bill header, which carries it), so
+ * adding it here too would show it twice (P0 R1). Net, gross − discount +
+ * other charge = taxable holds for a charge inside the taxable value.
+ *
+ * A before-tax row that is NOT posted separately ("CD - BEFORE TAX") counts
+ * too (gap 50, P0 case M3): it posts no leg of its own — SALES absorbs it —
+ * but it moved the lines' taxable value, so the register must show it or
+ * gross − discount + other charge ≠ taxable.
  */
 export function registerChargesOf(snap: BillSnapshot): { other: number; deduction: number } {
-  return splitRegisterCharges(snap.charges.filter((c) => c.separatelyPosted).map((c) => c.amount));
+  return splitRegisterCharges(
+    snap.charges.filter((c) => c.separatelyPosted || c.beforeTax).map((c) => c.amount),
+  );
 }
 
 export function decimal(v: number): Prisma.Decimal {

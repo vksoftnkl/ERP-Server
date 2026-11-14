@@ -348,5 +348,45 @@ describe('sales-leg.sources', () => {
       expect(legs.map(tagOf)).not.toContain('SALES');
       expect(total(legs, 'DR')).toBe(total(legs, 'CR'));
     });
+
+    it("gives a charge's own GST back with it, on its side, and credits the party with it (gap 36)", () => {
+      // Freight 30.00 + 1.80 + 1.80 back DR; a CD after tax with GST 11.80 + 0.71 + 0.71 taken back CR.
+      const legs = buildReturnLegs({
+        ...bill({ salesAmount: 1000 }),
+        charges: [
+          {
+            ledgerId: 'led-freight',
+            amount: 30,
+            cgst: 1.8,
+            sgst: 1.8,
+            separatelyPosted: true,
+            taxId: 'gst12',
+          },
+          {
+            ledgerId: 'led-cd',
+            amount: -11.8,
+            cgst: -0.71,
+            sgst: -0.71,
+            separatelyPosted: true,
+            taxId: 'gst12',
+          },
+        ],
+      });
+
+      const charged = (dc: 'DR' | 'CR') =>
+        legs
+          .filter((l) => l.taxId === 'gst12' && l.roleTag === 'OUTPUT_CGST' && l.drCr === dc)
+          .map((l) => l.amount);
+      expect(legs.find((l) => l.ledgerId === 'led-freight')).toMatchObject({
+        drCr: 'DR',
+        amount: 30,
+      });
+      expect(legs.find((l) => l.ledgerId === 'led-cd')).toMatchObject({ drCr: 'CR', amount: 11.8 });
+      expect(charged('DR')).toEqual([1.8]);
+      expect(charged('CR')).toEqual([0.71]);
+      // 1000 + 180 line GST + (30 + 3.60) − (11.80 + 1.42) = 1200.38
+      expect(legs[0]).toMatchObject({ ledgerId: PARTY, drCr: 'CR', amount: 1200.38 });
+      expect(total(legs, 'DR')).toBe(total(legs, 'CR'));
+    });
   });
 });

@@ -141,6 +141,8 @@ describe('SaveSaleReturnDto', () => {
           'srSettleStatus',
           'srLoyaltyReversePoints',
           'srPromoClawbackAmt',
+          // S: bug 6 — the till session is stamped at /post, never taken from a client
+          'srSessionId',
         ]),
       );
     });

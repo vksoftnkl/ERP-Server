@@ -212,6 +212,11 @@ export interface RightsMemo {
 }
 
 const RIGHT_FLAGS = [
+  // The sale return checks menu 13's View / Create / Edit / Delete too (plan v5 §6.1).
+  'um_can_view',
+  'um_can_create',
+  'um_can_edit',
+  'um_can_delete',
   'um_can_post',
   'um_can_cancel',
   'um_can_amend',
@@ -223,7 +228,8 @@ export async function grantSalesRights(prisma: PrismaClient): Promise<RightsMemo
   const memo: RightsMemo = { inserted: [], restored: [] };
   for (const menuId of Object.values(MENU)) {
     const rows = await prisma.$queryRaw<({ um_id: string } & Record<string, boolean>)[]>`
-      SELECT um_id, um_can_post, um_can_cancel, um_can_amend, um_can_override, um_can_retender
+      SELECT um_id, um_can_view, um_can_create, um_can_edit, um_can_delete,
+             um_can_post, um_can_cancel, um_can_amend, um_can_override, um_can_retender
         FROM public.user_menus
        WHERE um_user_id = ${ACTOR}::uuid AND um_menu_id = ${menuId}::int AND um_is_deleted = false
        LIMIT 1`;
@@ -233,17 +239,18 @@ export async function grantSalesRights(prisma: PrismaClient): Promise<RightsMemo
       memo.restored.push({ umId: rows[0].um_id, flags });
       await prisma.$executeRaw`
         UPDATE public.user_menus
-           SET um_can_post = true, um_can_cancel = true, um_can_amend = true,
+           SET um_can_view = true, um_can_create = true, um_can_edit = true, um_can_delete = true,
+               um_can_post = true, um_can_cancel = true, um_can_amend = true,
                um_can_override = true, um_can_retender = true
          WHERE um_id = ${rows[0].um_id}::uuid`;
       continue;
     }
     const [created] = await prisma.$queryRaw<{ um_id: string }[]>`
       INSERT INTO public.user_menus (
-        um_user_id, um_menu_id, um_can_view, um_can_create, um_can_edit,
+        um_user_id, um_menu_id, um_can_view, um_can_create, um_can_edit, um_can_delete,
         um_can_post, um_can_cancel, um_can_amend, um_can_override, um_can_retender, um_created_by
       ) VALUES (
-        ${ACTOR}::uuid, ${menuId}::int, true, true, true, true, true, true, true, true, ${ACTOR}::uuid
+        ${ACTOR}::uuid, ${menuId}::int, true, true, true, true, true, true, true, true, true, ${ACTOR}::uuid
       )
       RETURNING um_id`;
     memo.inserted.push(created.um_id);
@@ -258,7 +265,9 @@ export async function revokeSalesRights(prisma: PrismaClient, memo: RightsMemo):
   for (const r of memo.restored) {
     await prisma.$executeRaw`
       UPDATE public.user_menus
-         SET um_can_post = ${r.flags.um_can_post}, um_can_cancel = ${r.flags.um_can_cancel},
+         SET um_can_view = ${r.flags.um_can_view}, um_can_create = ${r.flags.um_can_create},
+             um_can_edit = ${r.flags.um_can_edit}, um_can_delete = ${r.flags.um_can_delete},
+             um_can_post = ${r.flags.um_can_post}, um_can_cancel = ${r.flags.um_can_cancel},
              um_can_amend = ${r.flags.um_can_amend}, um_can_override = ${r.flags.um_can_override},
              um_can_retender = ${r.flags.um_can_retender}
        WHERE um_id = ${r.umId}::uuid`;

@@ -537,6 +537,9 @@ export const TILL_APPROVAL_EVENTS = [
   'DISCOUNT_OVER',
   'RETURN_NO_RECEIPT',
   'REFUND_CASH',
+  // Plan-sale-return v5 D26 (20261113160000 widened ck_tar_event / ck_tap_event).
+  'SALE_RETURN',
+  'SALE_CLAIM',
   'REPRINT',
   'RETENDER',
   'COUNTER_RELINK',

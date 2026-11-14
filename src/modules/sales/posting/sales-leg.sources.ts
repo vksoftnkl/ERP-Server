@@ -279,17 +279,37 @@ export function buildReturnLegs(input: ReturnLegInput): SalesLeg[] {
   // The output tax comes back the other way.
   pushTaxLegs(legs, input.taxes, input.supplyNature, 'DR');
 
+  // The bill's charge loop run backwards: an addition given back is DR its
+  // ledger, a deduction taken back CR, and a charge's OWN GST comes back on the
+  // same side as its amount (gap 36 — the return used to drop it, so the party
+  // credit and the tax legs both missed it).
   for (const charge of input.charges) {
     if (!charge.separatelyPosted || round2(charge.amount) === 0) {
       continue;
     }
+    const side = charge.amount >= 0 ? 'DR' : 'CR';
     push(legs, {
       ledgerId: charge.ledgerId,
-      drCr: charge.amount >= 0 ? 'DR' : 'CR',
+      drCr: side,
       amount: Math.abs(charge.amount),
       remarks: charge.name ?? null,
       field: 'charges',
     });
+    pushTaxLegs(
+      legs,
+      [
+        {
+          taxId: charge.taxId ?? null,
+          cgst: Math.abs(charge.cgst ?? 0),
+          sgst: Math.abs(charge.sgst ?? 0),
+          igst: Math.abs(charge.igst ?? 0),
+          cess: Math.abs(charge.cess ?? 0),
+          acess: 0,
+        },
+      ],
+      input.supplyNature,
+      side,
+    );
   }
 
   push(legs, {
@@ -439,7 +459,12 @@ function billPartyDebit(input: BillLegInput): number {
 
 function returnPartyCredit(input: ReturnLegInput): number {
   const tax = input.taxes.reduce((s, t) => s + t.cgst + t.sgst + t.igst + t.cess + t.acess, 0);
-  const charges = input.charges.filter((c) => c.separatelyPosted).reduce((s, c) => s + c.amount, 0);
+  const charges = input.charges
+    .filter((c) => c.separatelyPosted)
+    .reduce(
+      (s, c) => s + c.amount + (c.cgst ?? 0) + (c.sgst ?? 0) + (c.igst ?? 0) + (c.cess ?? 0),
+      0,
+    );
   return round2(
     input.salesAmount + tax + charges + input.roundOff - input.cashDiscount - input.schemeDiscount,
   );

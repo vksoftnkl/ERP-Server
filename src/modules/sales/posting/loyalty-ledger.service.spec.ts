@@ -3,11 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LoyaltyLedgerService } from './loyalty-ledger.service';
 import { SALES_ERROR_CODES } from './types/posting.types';
-import type {
-  LoyaltyBillLine,
-  LoyaltyBillSource,
-  LoyaltyScheme,
-} from './types/loyalty.types';
+import type { LoyaltyBillLine, LoyaltyBillSource, LoyaltyScheme } from './types/loyalty.types';
 
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46c002';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46c003';
@@ -109,6 +105,7 @@ type Db = {
   reversed: string[];
   lapsed: unknown[];
   lapsedCoupons: unknown[];
+  redeemedLots: unknown[];
 };
 
 const lotRow = (id: string, balance: number, overrides: Record<string, unknown> = {}) => ({
@@ -152,6 +149,7 @@ function fakeDb(overrides: Partial<Db> = {}) {
     reversed: [],
     lapsed: [],
     lapsedCoupons: [],
+    redeemedLots: [{ lld_lsc_id: SCHEME_ID, expires_on: null, never: false }],
     ...overrides,
   };
   let lld = 0;
@@ -169,7 +167,8 @@ function fakeDb(overrides: Partial<Db> = {}) {
     if (sql.includes('lld_active_from, lld_txn_date, lld_lsc_id, lld_branch_id')) return db.lots;
     if (sql.includes('MAX(lld_row_no)')) return db.maxRowNos;
     if (sql.includes('lld_id DESC')) return db.latestScheme;
-    if (sql.includes('SELECT lld_id, lld_acc_year, lld_lot_balance, lld_lsc_id')) return db.drainLots;
+    if (sql.includes('SELECT lld_id, lld_acc_year, lld_lot_balance, lld_lsc_id'))
+      return db.drainLots;
     if (sql.includes('FROM sales.loyalty_scheme s')) return db.schemes;
     if (sql.includes('FROM sales.loyalty_scheme_item')) return db.items;
     if (sql.includes('FROM sales.loyalty_scheme_slab')) return db.slabs;
@@ -177,6 +176,7 @@ function fakeDb(overrides: Partial<Db> = {}) {
     if (sql.includes('SELECT DISTINCT lld_reversal_of_id')) {
       return db.reversed.map((id) => ({ lld_reversal_of_id: id }));
     }
+    if (sql.includes('MAX(r.lld_lsc_id::text)')) return db.redeemedLots;
     if (sql.includes('lld_tender_id      =')) return db.tenderOriginals;
     if (sql.includes('lld_reversal_of_id IS NULL')) return db.originals;
     if (sql.includes('lld_expires_on < ')) return db.lapsed;
@@ -374,7 +374,9 @@ describe('LoyaltyLedgerService', () => {
       const { client } = fakeDb();
 
       expect(
-        await refusalOf(service.consume(client, MEMBER_ID, 10, 'REDEEM', { ...opts, tenderId: null })),
+        await refusalOf(
+          service.consume(client, MEMBER_ID, 10, 'REDEEM', { ...opts, tenderId: null }),
+        ),
       ).toMatchObject(refused(400, 'tenderId'));
     });
 
@@ -390,9 +392,9 @@ describe('LoyaltyLedgerService', () => {
       const { client } = fakeDb();
       const base = { ...opts, tenderId: null };
 
-      expect(
-        await refusalOf(service.consume(client, MEMBER_ID, 10, 'ADJUST', base)),
-      ).toMatchObject(refused(400, 'approvedBy'));
+      expect(await refusalOf(service.consume(client, MEMBER_ID, 10, 'ADJUST', base))).toMatchObject(
+        refused(400, 'approvedBy'),
+      );
       expect(
         await refusalOf(
           service.consume(client, MEMBER_ID, 10, 'ADJUST', {
@@ -550,7 +552,10 @@ describe('LoyaltyLedgerService', () => {
     it.each([
       ['missing', []],
       ['deleted', [{ lmb_comp_id: COMPANY_ID, lmb_status: 'ACTIVE', lmb_is_deleted: true }]],
-      ['of another company', [{ lmb_comp_id: 'other', lmb_status: 'ACTIVE', lmb_is_deleted: false }]],
+      [
+        'of another company',
+        [{ lmb_comp_id: 'other', lmb_status: 'ACTIVE', lmb_is_deleted: false }],
+      ],
     ])('refuses a member that is %s with a 400', async (_label, lockMember) => {
       const { client } = fakeDb({ lockMember });
 
@@ -638,9 +643,9 @@ describe('LoyaltyLedgerService', () => {
       ]);
 
       const short = fakeDb({ redeemable: 10 });
-      expect(await refusalOf(service.adjust(short.client, { ...input, points: -30 }))).toMatchObject(
-        refused(422, 'loyaltyPoints'),
-      );
+      expect(
+        await refusalOf(service.adjust(short.client, { ...input, points: -30 })),
+      ).toMatchObject(refused(422, 'loyaltyPoints'));
     });
   });
 
@@ -730,7 +735,10 @@ describe('LoyaltyLedgerService', () => {
       const { client, queryRaw } = fakeDb();
 
       await expect(
-        service.resolveMember(client, bill({ memberId: null }), { autoEnrol: true, isWalkIn: true }),
+        service.resolveMember(client, bill({ memberId: null }), {
+          autoEnrol: true,
+          isWalkIn: true,
+        }),
       ).resolves.toBeNull();
       expect(queryRaw).not.toHaveBeenCalled();
     });
@@ -748,7 +756,10 @@ describe('LoyaltyLedgerService', () => {
       const { client, queryRaw } = fakeDb();
 
       await expect(
-        service.resolveMember(client, bill({ memberId: null }), { autoEnrol: false, isWalkIn: false }),
+        service.resolveMember(client, bill({ memberId: null }), {
+          autoEnrol: false,
+          isWalkIn: false,
+        }),
       ).resolves.toBeNull();
       expect(statements(queryRaw, 'INSERT INTO sales.loyalty_member')).toEqual([]);
     });
@@ -914,7 +925,9 @@ describe('LoyaltyLedgerService', () => {
 
       const result = await service.earn(
         client,
-        bill({ lines: [billLine(1, { netAmt: 260, qty: 2 }), billLine(2, { netAmt: 199, qty: 1 })] }),
+        bill({
+          lines: [billLine(1, { netAmt: 260, qty: 2 }), billLine(2, { netAmt: 199, qty: 1 })],
+        }),
         {
           scheme: scheme({ expiryBasis: 'EARN_DATE', pointsValidDays: 30, activationDays: 2 }),
           createdBy: 'cashier1',
@@ -1018,7 +1031,10 @@ describe('LoyaltyLedgerService', () => {
 
       const result = await service.earn(client, bill(), { scheme: scheme({ minBillAmount: 500 }) });
 
-      expect(result).toMatchObject({ points: 0, reason: expect.stringContaining('below the scheme minimum') });
+      expect(result).toMatchObject({
+        points: 0,
+        reason: expect.stringContaining('below the scheme minimum'),
+      });
     });
 
     it('earns nothing when no slab covers a bill-level base', async () => {
@@ -1137,7 +1153,9 @@ describe('LoyaltyLedgerService', () => {
 
     it('caps an award at the rule’s maximum and the scheme’s, scaling the line snapshots to match', async () => {
       const { client } = fakeDb({
-        slabs: [slab({ lss_factor: new Prisma.Decimal(1), lss_max_points: new Prisma.Decimal(80) })],
+        slabs: [
+          slab({ lss_factor: new Prisma.Decimal(1), lss_max_points: new Prisma.Decimal(80) }),
+        ],
       });
 
       const capped = await service.earn(
@@ -1238,7 +1256,9 @@ describe('LoyaltyLedgerService', () => {
       const { client } = fakeDb();
 
       expect(
-        await refusalOf(service.redeem(client, bill({ memberId: null }), tender, { scheme: scheme() })),
+        await refusalOf(
+          service.redeem(client, bill({ memberId: null }), tender, { scheme: scheme() }),
+        ),
       ).toMatchObject(refused(422, 'loyaltyMemberId'));
     });
 
@@ -1278,7 +1298,10 @@ describe('LoyaltyLedgerService', () => {
     });
 
     it('does not look at other branches when the scheme allows cross-branch redemption', async () => {
-      const { client, queryRaw } = fakeDb({ redeemable: 100, lots: [lotRow(LOT_A, 100, { lld_branch_id: OTHER_BRANCH })] });
+      const { client, queryRaw } = fakeDb({
+        redeemable: 100,
+        lots: [lotRow(LOT_A, 100, { lld_branch_id: OTHER_BRANCH })],
+      });
 
       await service.redeem(client, big, tender, {
         scheme: scheme({ poolMode: 'BRANCH', allowCrossBranchRedeem: true }),
@@ -1315,7 +1338,9 @@ describe('LoyaltyLedgerService', () => {
       const { client } = fakeDb();
 
       expect(
-        await refusalOf(service.redeem(client, big, { ...tender, amount: 21 }, { scheme: scheme() })),
+        await refusalOf(
+          service.redeem(client, big, { ...tender, amount: 21 }, { scheme: scheme() }),
+        ),
       ).toMatchObject(refused(422, 'tenderAmount'));
     });
 
@@ -1402,7 +1427,12 @@ describe('LoyaltyLedgerService', () => {
   }); // prettier-ignore
 
   describe('reverseForCancel', () => {
-    const doc = { docId: BILL_ID, accYear: YEAR, docType: 'SALE_BILL' as const, docRefno: 'bil00042' };
+    const doc = {
+      docId: BILL_ID,
+      accYear: YEAR,
+      docType: 'SALE_BILL' as const,
+      docRefno: 'bil00042',
+    };
 
     it('does nothing for a document that moved no points', async () => {
       const { client, executeRaw } = fakeDb();
@@ -1549,6 +1579,195 @@ describe('LoyaltyLedgerService', () => {
         pointsRestored: 0,
       });
       expect(executeRaw).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreRedeemForReturn (sale return D48)', () => {
+    const ret = {
+      docId: RETURN_ID,
+      accYear: YEAR,
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      docDate: '2026-10-20',
+      docRefno: 'SRT/2026-2027/D8/00001',
+      memberId: MEMBER_ID,
+    };
+    const bill = { billId: BILL_ID, billAccYear: YEAR, refno: 'bil00042' };
+
+    it('gives the points share back as one ADJUST lot keyed by the return, approved by who posts it', async () => {
+      const { client, queryRaw } = fakeDb({
+        redeemedLots: [
+          { lld_lsc_id: SCHEME_ID, expires_on: new Date('2026-12-31T00:00:00.000Z'), never: false },
+        ],
+        maxRowNos: [{ lld_txn_type: 'ADJUST', max_row_no: 1 }],
+      });
+
+      await expect(
+        service.restoreRedeemForReturn(client, ret, bill, 236, {
+          approvedBy: APPROVER,
+          createdBy: 'boss',
+        }),
+      ).resolves.toEqual({ rowsWritten: 1, pointsRestored: 236 });
+      expect(ledgerRows(queryRaw)).toEqual([
+        expect.objectContaining({
+          txnType: 'ADJUST',
+          rowNo: 2,
+          points: '236.0000',
+          srcDocType: 'SALE_RETURN',
+          srcDocId: RETURN_ID,
+          approvedBy: APPROVER,
+          expiresOn: '2026-12-31',
+          reversalOfId: null,
+          remarks: 'Points back on return SRT/2026-2027/D8/00001 of bill bil00042',
+        }),
+      ]);
+    });
+
+    describe('N4 (review 11-14): the lot the points were redeemed from has lapsed', () => {
+      const lapsedScheme = (over: Record<string, unknown> = {}) => ({
+        lsc_id: SCHEME_ID,
+        lsc_code: 'ZT',
+        lsc_name: 'ZT scheme',
+        lsc_type: 'BOTH',
+        lsc_priority: 1,
+        lsc_apply_on: 'BILL_AMOUNT',
+        lsc_calc_on_amount_type: 'NET_AMOUNT',
+        lsc_include_tax: true,
+        lsc_bill_type: 'ALL',
+        lsc_item_scope: 'ALL',
+        lsc_branch_scope: 'ALL',
+        lsc_cust_scope: 'ALL',
+        lsc_min_bill_amount: null,
+        lsc_max_earn_points: null,
+        lsc_earn_on_discounted: true,
+        lsc_earn_on_charges: false,
+        lsc_earn_with_redeem: false,
+        lsc_rounding_method: 'ROUND',
+        lsc_points_decimals: 0,
+        lsc_allow_point_redeem: true,
+        lsc_redeem_value_per_point: new Prisma.Decimal('1'),
+        lsc_min_redeem_points: null,
+        lsc_max_redeem_points: null,
+        lsc_max_redeem_perc: null,
+        lsc_redeem_min_bill_amount: null,
+        lsc_redeem_multiple: null,
+        lsc_redeem_tender_id: null,
+        lsc_expiry_basis: 'EARN_DATE',
+        lsc_points_valid_days: 365,
+        lsc_activation_days: null,
+        lsc_return_mode: 'REVERSE',
+        lsc_start_date: null,
+        lsc_end_date: null,
+        lsc_pool_mode: null,
+        lsc_allow_cross_branch_redeem: false,
+        ...over,
+      });
+      // The lot lapsed on 2026-09-30, before the return of 2026-10-20.
+      const lapsed = [
+        {
+          lld_lsc_id: SCHEME_ID,
+          lot_lsc_id: SCHEME_ID,
+          expires_on: new Date('2026-09-30T00:00:00.000Z'),
+          never: false,
+          span_days: 90,
+        },
+      ];
+
+      it("gives them back with the scheme's validity counted from the return date, never with no expiry", async () => {
+        const { client, queryRaw } = fakeDb({ redeemedLots: lapsed, schemes: [lapsedScheme()] });
+
+        await service.restoreRedeemForReturn(client, ret, bill, 10, { approvedBy: APPROVER });
+
+        // EARN_DATE + 365 days from 2026-10-20.
+        expect(ledgerRows(queryRaw)[0]).toMatchObject({ expiresOn: '2027-10-20' });
+      });
+
+      it('follows the scheme basis (MONTH_END from the return date)', async () => {
+        const { client, queryRaw } = fakeDb({
+          redeemedLots: lapsed,
+          schemes: [lapsedScheme({ lsc_expiry_basis: 'MONTH_END' })],
+        });
+
+        await service.restoreRedeemForReturn(client, ret, bill, 10, { approvedBy: APPROVER });
+
+        expect(ledgerRows(queryRaw)[0]).toMatchObject({ expiresOn: '2026-10-31' });
+      });
+
+      it("falls back to the lapsed lot's own span when the scheme names no date (basis NONE, no days)", async () => {
+        const { client, queryRaw } = fakeDb({
+          redeemedLots: lapsed,
+          schemes: [lapsedScheme({ lsc_expiry_basis: 'NONE', lsc_points_valid_days: null })],
+        });
+
+        await service.restoreRedeemForReturn(client, ret, bill, 10, { approvedBy: APPROVER });
+
+        // 90 days from 2026-10-20.
+        expect(ledgerRows(queryRaw)[0]).toMatchObject({ expiresOn: '2027-01-18' });
+      });
+
+      it('keeps today’s rule for a lot that has not lapsed: its own expiry', async () => {
+        const { client, queryRaw } = fakeDb({
+          redeemedLots: [{ ...lapsed[0], expires_on: new Date('2026-12-31T00:00:00.000Z') }],
+          schemes: [lapsedScheme()],
+        });
+
+        await service.restoreRedeemForReturn(client, ret, bill, 10, { approvedBy: APPROVER });
+
+        expect(ledgerRows(queryRaw)[0]).toMatchObject({ expiresOn: '2026-12-31' });
+      });
+    });
+
+    it('never lapses when a lot the bill redeemed never does; writes nothing for no points', async () => {
+      const { client, queryRaw } = fakeDb({
+        redeemedLots: [
+          { lld_lsc_id: SCHEME_ID, expires_on: new Date('2026-12-31T00:00:00.000Z'), never: true },
+        ],
+      });
+
+      await service.restoreRedeemForReturn(client, ret, bill, 10, { approvedBy: APPROVER });
+      expect(ledgerRows(queryRaw)[0]).toMatchObject({ expiresOn: null });
+      await expect(
+        service.restoreRedeemForReturn(client, ret, bill, 0, { approvedBy: APPROVER }),
+      ).resolves.toEqual({
+        rowsWritten: 0,
+        pointsRestored: 0,
+      });
+    });
+
+    it("cancelling the return takes back what is left of that lot and gives the claw-back's points back", async () => {
+      const { client, queryRaw } = fakeDb({
+        originals: [
+          original('adj-1', 'ADJUST', 236, {
+            lld_lot_balance: new Prisma.Decimal(200),
+            lld_approved_by: APPROVER,
+          }),
+          original('exp-1', 'EXPIRE', -12, { lld_lot_id: LOT_A, lld_lot_acc_year: YEAR }),
+        ],
+      });
+
+      const result = await service.reverseForCancel(client, {
+        docId: RETURN_ID,
+        accYear: YEAR,
+        docType: 'SALE_RETURN',
+        docRefno: 'SRT/2026-2027/D8/00001',
+      });
+
+      expect(result.rowsWritten).toBe(2);
+      expect(ledgerRows(queryRaw)).toEqual([
+        expect.objectContaining({
+          txnType: 'ADJUST',
+          points: '-200.0000',
+          reversalOfId: 'adj-1',
+          approvedBy: APPROVER,
+          remarks: 'Cancelled; 36 of 236 points had already been spent and could not be taken back',
+        }),
+        expect.objectContaining({
+          txnType: 'EXPIRE',
+          points: '12.0000',
+          lotId: LOT_A,
+          reversalOfId: 'exp-1',
+        }),
+      ]);
     });
   });
 

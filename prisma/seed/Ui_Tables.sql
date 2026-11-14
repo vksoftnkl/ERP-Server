@@ -7,6 +7,8 @@
 -- 70: Sales Order Management list, menu 299 (migration 20261110180000_sale_order_desk).
 -- 71-73: Item Ledger (menu 301) Vouchers / Day-wise / Month-wise grids (migration
 --        20261113100000_item_ledger_layouts).
+-- 74-77: Sale Return (menu 13) lines / charges / adjust bills (popup 25) / refund tenders
+--        (popup B) (migration 20261113160000_sale_return_screen).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
@@ -90,6 +92,10 @@ VALUES
     ,(71, 'ITEM LEDGER - VOUCHERS'       , false, 'Desktop', true , false, 'system')
     ,(72, 'ITEM LEDGER - DAY-WISE'       , false, 'Desktop', true , false, 'system')
     ,(73, 'ITEM LEDGER - MONTH-WISE'     , false, 'Desktop', true , false, 'system')
+    ,(74, 'SALE RETURN - LINES'          , true , 'Desktop', true , false, 'system')
+    ,(75, 'SALE RETURN - CHARGES'        , true , 'Desktop', true , false, 'system')
+    ,(76, 'SALE RETURN - ADJUST BILLS'   , true , 'Desktop', true , false, 'system')
+    ,(77, 'SALE RETURN - REFUND TENDERS' , true , 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

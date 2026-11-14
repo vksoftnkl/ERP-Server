@@ -173,6 +173,172 @@ export async function syncBillAdjustments(
   const action = live.length === 0 ? 'posted' : posted.length === 0 ? 'reversed' : 'replaced';
   return { action, adjustments: posted };
 }
+/// The per-pair writers, for a caller that adds or takes back ONE credit's
+/// set-off on an invoice that may already carry other documents' set-offs.
+///
+/// `syncBillAdjustments` brings an invoice's whole list in line: a change
+/// reverses every live pair and re-posts the survivors, so each survivor comes
+/// back with a new moment, the caller's date, user and session, and no remark.
+/// That is right for a bill re-saving its OWN set-offs, and wrong for a sale
+/// return setting its credit note off against somebody else's bill: another
+/// note's pair on the same bill was re-stamped as if new (Sale Return S2), so
+/// that note's own Adjust at Post read as "used by someone else" and its
+/// cancel was refused. These two touch only the pair they are asked about.
+
+/// Posts one pair (invoice ← credit) and moves both balances by the amount.
+/// The caller has read the invoice under its lock and capped the amount at
+/// what it still owes; the credit is re-read under its own lock here.
+export async function addBillAdjustment(
+  tx: Prisma.TransactionClient,
+  ctx: BillAdjustmentContext,
+  // The amount stays a Decimal from the caller to the row (house money rule).
+  adjustment: Omit<BillAdjustmentInput, 'amount'> & { amount: Prisma.Decimal | number },
+  actor: string,
+  now: Date,
+): Promise<PostedAdjustment> {
+  const request = adjustment;
+  const amount = new Prisma.Decimal(adjustment.amount);
+  if (amount.lessThanOrEqualTo(0)) {
+    // As normalizeRequest refuses it: ck_abj_amount refuses zero, and a
+    // negative is only ever a reversal.
+    throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
+      {
+        field: 'adjustments[0].amount',
+        code: SaleBillErrorCode.ADJUSTMENT_AMOUNT_NOT_POSITIVE,
+        message: `An adjustment must be for a positive amount; got ${amount.toString()}.`,
+      },
+    ]);
+  }
+  const credit = await lockCredit(tx, ctx, request, 0);
+  const routing = deriveRouting(credit, 0);
+  ensureCreditCovers(credit, amount, 0);
+  let rowNo = await nextRowNo(tx, ctx.billId);
+  await tx.accBillAdjustment.create({
+    data: {
+      ...commonColumns(ctx, routing, actor, now),
+      abjBillId: ctx.billId,
+      abjBillAccYear: ctx.billAccYear,
+      abjAgainstBillId: credit.ablId,
+      abjAgainstBillAccYear: credit.ablAccYear,
+      abjRowNo: rowNo++,
+      abjDrCr: INVOICE_MOVEMENT,
+      abjAmount: amount,
+      abjRemarks: request.remarks ?? null,
+    },
+  });
+  await tx.accBillAdjustment.create({
+    data: {
+      ...commonColumns(ctx, routing, actor, now),
+      abjBillId: credit.ablId,
+      abjBillAccYear: credit.ablAccYear,
+      abjAgainstBillId: ctx.billId,
+      abjAgainstBillAccYear: ctx.billAccYear,
+      abjRowNo: rowNo++,
+      abjDrCr: CREDIT_MOVEMENT,
+      abjAmount: amount,
+      abjRemarks: request.remarks ?? null,
+    },
+  });
+  await addToAllocation(tx, credit, amount, actor, now);
+  await addToAllocation(tx, { ablId: ctx.billId, ablAccYear: ctx.billAccYear }, amount, actor, now);
+  return {
+    againstBillId: credit.ablId,
+    againstBillAccYear: credit.ablAccYear,
+    amount,
+    adjType: routing.adjType,
+    settlementMode: routing.settlementMode,
+  };
+}
+
+/// Reverses every live, voucher-less pair between this invoice and ONE credit
+/// (both rows of each), gives the credit its amount back and takes it off the
+/// invoice. Every other pair on the invoice stays as it is. Answers what came
+/// off the invoice (0 when nothing was live).
+export async function reverseBillAdjustmentsWith(
+  tx: Prisma.TransactionClient,
+  ctx: BillAdjustmentContext,
+  credit: { ablId: string; ablAccYear: string },
+  reason: string,
+  actor: string,
+  now: Date,
+): Promise<Prisma.Decimal> {
+  const rows = await tx.accBillAdjustment.findMany({
+    where: {
+      abjIsDeleted: false,
+      abjReversalOfId: null,
+      abjVoucherId: null,
+      abjAdjType: { in: ['NOTE_ADJUST', 'ADVANCE_ADJUST'] },
+      OR: [
+        { abjBillId: ctx.billId, abjAgainstBillId: credit.ablId },
+        { abjBillId: credit.ablId, abjAgainstBillId: ctx.billId },
+      ],
+    },
+    orderBy: { abjRowNo: 'asc' },
+  });
+  if (rows.length === 0) {
+    return new Prisma.Decimal(0);
+  }
+  const alreadyReversed = new Set(
+    (
+      await tx.accBillAdjustment.findMany({
+        where: { abjReversalOfId: { in: rows.map((row) => row.abjId) }, abjIsDeleted: false },
+        select: { abjReversalOfId: true },
+      })
+    ).map((row) => row.abjReversalOfId as string),
+  );
+  let rowNo = await nextRowNo(tx, ctx.billId);
+  let offInvoice = new Prisma.Decimal(0);
+  let offCredit = new Prisma.Decimal(0);
+  for (const row of rows) {
+    if (alreadyReversed.has(row.abjId)) {
+      continue;
+    }
+    await tx.accBillAdjustment.create({
+      data: {
+        abjCompanyId: ctx.companyId,
+        abjBranchId: ctx.branchId,
+        abjTenantId: ctx.tenantId,
+        abjAccYear: ctx.accYear,
+        abjBillId: row.abjBillId,
+        abjBillAccYear: row.abjBillAccYear,
+        abjAgainstBillId: row.abjAgainstBillId,
+        abjAgainstBillAccYear: row.abjAgainstBillAccYear,
+        abjPartyId: ctx.partyId,
+        abjRowNo: rowNo++,
+        abjAdjType: row.abjAdjType,
+        abjAdjDate: ctx.adjDate,
+        abjDrCr: row.abjDrCr,
+        abjAmount: row.abjAmount.negated(),
+        abjSettlementMode: row.abjSettlementMode,
+        abjSettlementLedgerId: row.abjSettlementLedgerId,
+        abjReversalOfId: row.abjId,
+        abjReversalReason: reason.slice(0, 250),
+        abjUserId: ctx.userId,
+        abjSessionId: ctx.sessionId,
+        abjCreatedOn: now,
+        abjCreatedBy: actor,
+      },
+    });
+    if (row.abjBillId === ctx.billId) {
+      offInvoice = offInvoice.plus(row.abjAmount);
+    } else {
+      offCredit = offCredit.plus(row.abjAmount);
+    }
+  }
+  if (offCredit.gt(0)) {
+    await addToAllocation(tx, credit, offCredit.negated(), actor, now);
+  }
+  if (offInvoice.gt(0)) {
+    await addToAllocation(
+      tx,
+      { ablId: ctx.billId, ablAccYear: ctx.billAccYear },
+      offInvoice.negated(),
+      actor,
+      now,
+    );
+  }
+  return offInvoice;
+}
 // Collapses repeats and rejects the payload-level nonsense the DTO cannot see.
 // Two lines naming the same credit are merged rather than refused: the panel can
 // legitimately produce them, and one row per credit is what the balance
@@ -475,7 +641,7 @@ function commonColumns(
 async function lockCredit(
   tx: Prisma.TransactionClient,
   ctx: BillAdjustmentContext,
-  adjustment: BillAdjustmentInput,
+  adjustment: Pick<BillAdjustmentInput, 'againstBillId' | 'againstBillAccYear'>,
   index: number,
 ): Promise<LockedCredit> {
   const rows = await tx.$queryRaw<

@@ -1,7 +1,7 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsUUID, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsNotEmpty, IsOptional, IsUUID, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -41,6 +41,21 @@ const NullableUuidArray = () =>
     IsUUID('all', { each: true }),
   );
 
+/**
+ * A charge row of a sale return as the client sends it. Every key of a stored
+ * charge row is accepted (a /get echoed back passes the whitelist); the server
+ * reads only cdSrcCdId, cdSrcAccYear, giveBack and — under a manual calc type —
+ * cdAmount.
+ */
+export class SaleReturnChargeDto extends SaveChargeDetailDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'An after-tax addition: false = it stays with us (default true)',
+  })
+  @OptionalBoolean()
+  giveBack?: boolean;
+}
+
 export class SaveSaleReturnDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -62,7 +77,12 @@ export class SaveSaleReturnDto {
   @TrimmedString(9)
   @IsNotEmpty()
   srAccYear!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Ignored: the till session is stamped by the server at /post (the posting device’s live session).',
+  })
   @NullableUuid()
   srSessionId?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
@@ -331,6 +351,63 @@ export class SaveSaleReturnDto {
   @ApiPropertyOptional({ nullable: true, readOnly: true, description: 'Ignored — server-owned' })
   @NullableInteger()
   srPrintCount?: number | null;
+  // ── Sale Return screen (plan v5 §5.1, migration 20261113160000) ────────
+  @ApiPropertyOptional({
+    enum: ['RETURN', 'CLAIM'],
+    default: 'RETURN',
+    description: 'RETURN = goods come back; CLAIM = damaged / expired at the shop (D23)',
+  })
+  @IsOptional()
+  @IsIn(['RETURN', 'CLAIM'])
+  srReturnKind?: string;
+  @ApiPropertyOptional({
+    maxLength: 12,
+    nullable: true,
+    readOnly: true,
+    description:
+      "Server-owned: the bill's sb_freight_calc_type, else sales.freight_calc_type (D20)",
+  })
+  @NullableStringStrict(12)
+  srFreightCalcType?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 12,
+    nullable: true,
+    readOnly: true,
+    description:
+      "Server-owned: the bill's sb_loading_calc_type, else sales.loading_calc_type (D20)",
+  })
+  @NullableStringStrict(12)
+  srLoadingCalcType?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    readOnly: true,
+    description: 'Ignored — server-owned (D8)',
+  })
+  @NullableStringStrict(10)
+  srGstMode?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    readOnly: true,
+    description: 'Ignored — server-owned (D48)',
+  })
+  @NullableNumber()
+  srPointsBack?: string | number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    readOnly: true,
+    description: 'Ignored — server-owned (D48)',
+  })
+  @NullableNumber()
+  srPointsBackAmt?: string | number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    readOnly: true,
+    description: 'Ignored — server-owned (D48)',
+  })
+  @NullableNumber()
+  srVoucherShareAmt?: string | number | null;
+
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @NullableStringStrict(50)
   srCreatedBy?: string | null;
@@ -345,12 +422,20 @@ export class SaveSaleReturnDto {
   @Type(() => SaveSaleReturnItemDto)
   items?: SaveSaleReturnItemDto[];
 
-  @ApiPropertyOptional({ type: SaveChargeDetailDto, isArray: true })
+  @ApiPropertyOptional({
+    type: () => SaleReturnChargeDto,
+    isArray: true,
+    description:
+      "One row per bill charge the client has a say on, keyed by cdSrcCdId (the bill's cd_id): " +
+      'giveBack (an after-tax ADDITION only — deductions always come back, before-tax rows are inside the ' +
+      'lines, D46 / D70) and cdAmount (read only when the charge is manual, D20). The server writes the ' +
+      "return's charge rows itself; every other key is ignored. Omitted = every addition given back.",
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => SaveChargeDetailDto)
-  charges?: SaveChargeDetailDto[];
+  @Type(() => SaleReturnChargeDto)
+  charges?: SaleReturnChargeDto[];
 
   @ApiPropertyOptional({ type: SaveTenderDetailDto, isArray: true })
   @IsOptional()
@@ -373,7 +458,7 @@ export class SaveSaleReturnDto {
 /** The columns a save copies when present (server-owned ones excluded). */
 export const SR_OPTIONAL_FIELDS = [
   'srTenantId',
-  'srSessionId',
+  // srSessionId is server-owned (SR_SERVER_OWNED): stamped at /post only.
   'srCounterId',
   'srDocType',
   'srBillMode',
@@ -440,6 +525,9 @@ export const SR_OPTIONAL_FIELDS = [
   'srRemarks',
   'srCreatedBy',
   'srModifiedBy',
+  'srReturnKind',
+  'srFreightCalcType',
+  'srLoadingCalcType',
 ] as const;
 export const SR_DATE_FIELDS = [
   'srUsrRefdate',
@@ -460,4 +548,12 @@ export const SR_SERVER_OWNED = [
   'srPostedVoucherId',
   'srRevisionNo',
   'srPrintCount',
+  'srGstMode',
+  'srPointsBack',
+  'srPointsBackAmt',
+  'srVoucherShareAmt',
+  // The till session is the server's alone: /post stamps the posting device's
+  // live session from TillSessionService.resolveForMoney (D7). A client-sent
+  // id is dropped here, so it can never name another drawer's session.
+  'srSessionId',
 ] as const;

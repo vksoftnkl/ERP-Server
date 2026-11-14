@@ -12,6 +12,7 @@ import { CompanyProfileProvider } from './data/providers/company-profile.provide
 import { SaleBillHeaderProvider } from './data/providers/sale-bill-header.provider';
 import { SaleBillItemsProvider } from './data/providers/sale-bill-items.provider';
 import { SaleBillTaxSummaryProvider } from './data/providers/sale-bill-tax-summary.provider';
+import { SALE_RETURN_PRINT_PROVIDERS } from './data/providers/sale-return.providers';
 import { TILL_PRINT_PROVIDERS } from './data/providers/till.providers';
 import { TillModule } from '../../till/till.module';
 import {
@@ -92,6 +93,7 @@ import { PrintShareService } from './print-share.service';
     SaleBillHeaderProvider,
     SaleBillItemsProvider,
     SaleBillTaxSummaryProvider,
+    ...SALE_RETURN_PRINT_PROVIDERS,
     ...TILL_PRINT_PROVIDERS,
     PartyOutstandingPrintSource,
     ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
@@ -106,6 +108,7 @@ import { PrintShareService } from './print-share.service';
         SaleBillHeaderProvider,
         SaleBillItemsProvider,
         SaleBillTaxSummaryProvider,
+        ...SALE_RETURN_PRINT_PROVIDERS,
         ...TILL_PRINT_PROVIDERS,
         ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
         ...ITEM_LEDGER_PRINT_PROVIDERS,

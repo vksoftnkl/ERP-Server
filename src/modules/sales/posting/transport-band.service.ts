@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { assertBandWritable } from './sales.guards';
+import { throwSalesRefused } from './sales.errors';
+import { SALES_ERROR_CODES } from './types/posting.types';
 
 /**
  * §2.12 — the transport band, `public.txn_transport_detail`, one row per
@@ -111,6 +113,17 @@ export class TransportBandService {
     });
     const from = input.from ?? {};
     const to = input.to ?? {};
+    // ck_ttd_has_an_end: a band names at least one end — a godown or a name,
+    // from or to. Refused here with a code rather than letting the CHECK end
+    // the transaction as a bare 500 (Sale Return /transport with only a
+    // vehicle or LR no, S: bug 3).
+    if (!hasAnEnd(from, to)) {
+      throwSalesRefused(
+        'The transport details name neither end: give the from / to godown, or a from / to name',
+        SALES_ERROR_CODES.TRANSPORT_NO_END,
+        'transport',
+      );
+    }
     const data = {
       ttdDirection: input.direction,
       ttdDocRefno: ref.docRefno ?? null,
@@ -201,6 +214,13 @@ export class TransportBandService {
       (input.distanceKm ?? null) !== null
     );
   }
+}
+
+/** What ck_ttd_has_an_end holds: either end's godown or name is set (a blank string counts, as in the CHECK). */
+function hasAnEnd(from: TransportEnd, to: TransportEnd): boolean {
+  return [from.godownId, to.godownId, from.name, to.name].some(
+    (v) => v !== null && v !== undefined,
+  );
 }
 
 function toRow(r: {

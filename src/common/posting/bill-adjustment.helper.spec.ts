@@ -1,6 +1,11 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { BillAdjustmentContext, syncBillAdjustments } from './bill-adjustment.helper';
+import {
+  addBillAdjustment,
+  BillAdjustmentContext,
+  reverseBillAdjustmentsWith,
+  syncBillAdjustments,
+} from './bill-adjustment.helper';
 import { SaveBillAdjustmentDto } from '../../modules/sales/bill/dto/save-bill-adjustment.dto';
 
 const BILL_ID = '019f0000-0000-7000-8000-0000000000b1';
@@ -389,5 +394,400 @@ describe('syncBillAdjustments', () => {
       expect(result.action).toBe('posted');
       expect(created.every((row) => row.abjReversalOfId === undefined)).toBe(true);
     });
+  });
+});
+
+// ─── the per-pair writers (Sale Return S2) ──────────────────────────────────
+//
+// A bill already carrying set-offs from other documents: an order advance and
+// ANOTHER sale-return note. A return's post / cancel must add or take back
+// only its own pair; re-syncing the whole list (syncBillAdjustments) reversed
+// and re-posted the others, re-stamping another note's Adjust at Post as new.
+//
+// These run against an in-memory book: findMany really filters on the where
+// the helper sends, so a query that selected too much would reverse too much.
+
+const OTHER_NOTE_ID = '019f0000-0000-7000-8000-0000000000a3';
+const RECEIPT_VOUCHER_ID = '019f0000-0000-7000-8000-0000000000a4';
+const EARLIER = new Date('2026-08-01T09:00:00.000Z');
+
+type BookRow = Record<string, unknown> & { abjId: string };
+
+// Prisma's where, for the operators the helper uses: equality, null, { in },
+// { not }, and OR.
+function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, cond]) => {
+    if (key === 'OR') {
+      return (cond as Record<string, unknown>[]).some((w) => matchesWhere(row, w));
+    }
+    const value = row[key] ?? null;
+    if (cond === null) {
+      return value === null;
+    }
+    if (typeof cond === 'object' && cond !== null && 'in' in cond) {
+      return (cond as { in: unknown[] }).in.includes(value);
+    }
+    if (typeof cond === 'object' && cond !== null && 'not' in cond) {
+      return value !== cond.not;
+    }
+    return value === cond;
+  });
+}
+
+// Both rows of one pair, as posted: the invoice row (CR) and the credit row (DR).
+const pairRows = (
+  firstNo: number,
+  creditId: string,
+  amount: number,
+  overrides: Record<string, unknown> = {},
+): BookRow[] => {
+  const common = {
+    abjAccYear: ACC_YEAR,
+    abjIsDeleted: false,
+    abjReversalOfId: null,
+    abjVoucherId: null,
+    abjAmount: new Prisma.Decimal(amount),
+    abjAdjType: creditId === ADVANCE_ID ? 'ADVANCE_ADJUST' : 'NOTE_ADJUST',
+    abjSettlementMode: creditId === ADVANCE_ID ? 'ADVANCE' : 'CREDIT_NOTE',
+    abjSettlementLedgerId: null,
+    abjCreatedOn: EARLIER,
+    abjCreatedBy: 'someone-else',
+    ...overrides,
+  };
+  return [
+    {
+      ...common,
+      abjId: `row-${firstNo}`,
+      abjRowNo: firstNo,
+      abjBillId: BILL_ID,
+      abjBillAccYear: ACC_YEAR,
+      abjAgainstBillId: creditId,
+      abjAgainstBillAccYear: ACC_YEAR,
+      abjDrCr: 'CR',
+    },
+    {
+      ...common,
+      abjId: `row-${firstNo + 1}`,
+      abjRowNo: firstNo + 1,
+      abjBillId: creditId,
+      abjBillAccYear: ACC_YEAR,
+      abjAgainstBillId: BILL_ID,
+      abjAgainstBillAccYear: ACC_YEAR,
+      abjDrCr: 'DR',
+    },
+  ];
+};
+
+const makeBook = (rows: BookRow[], credits: CreditRow[] = []) => {
+  const book: BookRow[] = rows.map((row) => ({ ...row }));
+  const before = book.map((row) => ({ ...row }));
+  const created: Record<string, unknown>[] = [];
+  const balanceUpdates: { where: Record<string, unknown>; data: Record<string, unknown> }[] = [];
+  let next = 0;
+  const tx = {
+    $queryRaw: jest.fn((_strings: TemplateStringsArray, ...values: unknown[]) =>
+      Promise.resolve(credits.filter((credit) => credit.abl_id === values[0])),
+    ),
+    accBillAdjustment: {
+      findMany: jest.fn((args: { where: Record<string, unknown> }) =>
+        Promise.resolve(
+          book
+            .filter((row) => matchesWhere(row, args.where))
+            .sort((a, b) => (a.abjRowNo as number) - (b.abjRowNo as number)),
+        ),
+      ),
+      create: jest.fn((args: { data: Record<string, unknown> }) => {
+        created.push(args.data);
+        book.push({
+          abjIsDeleted: false,
+          abjReversalOfId: null,
+          abjVoucherId: null,
+          ...args.data,
+          abjId: `new-${++next}`,
+        });
+        return Promise.resolve(args.data);
+      }),
+      aggregate: jest.fn((args: { where: { abjBillId: string } }) =>
+        Promise.resolve({
+          _max: {
+            abjRowNo: book
+              .filter((row) => row.abjBillId === args.where.abjBillId)
+              .reduce<
+                number | null
+              >((max, row) => Math.max(max ?? 0, row.abjRowNo as number), null),
+          },
+        }),
+      ),
+    },
+    accBillBalance: {
+      update: jest.fn((args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        balanceUpdates.push(args);
+        return Promise.resolve({});
+      }),
+    },
+  } as unknown as Prisma.TransactionClient;
+  return { tx, book, before, created, balanceUpdates };
+};
+
+const noteCredit = (overrides: Partial<CreditRow> = {}): CreditRow =>
+  makeCredit({
+    abl_id: NOTE_ID,
+    abl_acc_year: ACC_YEAR,
+    abl_bill_type: 'SALES_RETURN',
+    abl_doc_refno: 'SRT/2026-2027/D7/00058',
+    abl_pending_amount: new Prisma.Decimal(590),
+    ...overrides,
+  });
+
+const updateOf = (
+  updates: { where: Record<string, unknown>; data: Record<string, unknown> }[],
+  ablId: string,
+) =>
+  updates.filter((update) => (update.where.ablId_ablAccYear as { ablId: string }).ablId === ablId);
+
+// The bill as Sale Return S2 left it: an advance, then another note set off.
+const carriedSetOffs = (): BookRow[] => [
+  ...pairRows(1, ADVANCE_ID, 1000),
+  ...pairRows(3, OTHER_NOTE_ID, 360),
+];
+
+describe('addBillAdjustment', () => {
+  it('adds one pair for the credit and leaves every set-off the bill already carries', async () => {
+    const { tx, book, before, created, balanceUpdates } = makeBook(carriedSetOffs(), [
+      noteCredit(),
+    ]);
+
+    const posted = await addBillAdjustment(
+      tx,
+      makeContext(),
+      {
+        againstBillId: NOTE_ID,
+        againstBillAccYear: ACC_YEAR,
+        amount: 590,
+        remarks: 'Adjusted at post of return SRT/2026-2027/D7/00058',
+      },
+      ACTOR,
+      NOW,
+    );
+
+    expect(posted).toEqual({
+      againstBillId: NOTE_ID,
+      againstBillAccYear: ACC_YEAR,
+      amount: new Prisma.Decimal(590),
+      adjType: 'NOTE_ADJUST',
+      settlementMode: 'CREDIT_NOTE',
+    });
+    // Exactly the two rows of the new pair, numbered after the invoice's, and
+    // no reversal of anything.
+    expect(created).toHaveLength(2);
+    expect(created[0]).toMatchObject({
+      abjBillId: BILL_ID,
+      abjAgainstBillId: NOTE_ID,
+      abjDrCr: 'CR',
+      // abj_row_no runs per abj_bill_id: the invoice's own rows are 1 and 3.
+      abjRowNo: 4,
+      abjAdjType: 'NOTE_ADJUST',
+      abjSettlementMode: 'CREDIT_NOTE',
+      abjAccYear: ACC_YEAR,
+      abjPartyId: PARTY_ID,
+      abjSessionId: SESSION_ID,
+      abjCreatedOn: NOW,
+      abjRemarks: 'Adjusted at post of return SRT/2026-2027/D7/00058',
+    });
+    expect(created[1]).toMatchObject({
+      abjBillId: NOTE_ID,
+      abjAgainstBillId: BILL_ID,
+      abjDrCr: 'DR',
+      abjRowNo: 5,
+    });
+    expect(created.every((row) => row.abjReversalOfId === undefined)).toBe(true);
+    expect((created[0].abjAmount as Prisma.Decimal).toString()).toBe('590');
+    // The advance's and the other note's rows are exactly as they were: same
+    // moment, same author — nothing re-stamped.
+    expect(book.slice(0, before.length)).toEqual(before);
+    // Both balances MOVE by the pair (incremented): the invoice's allocation,
+    // which already holds the earlier set-offs, is never rewritten wholesale.
+    expect(balanceUpdates).toHaveLength(2);
+    expect(updateOf(balanceUpdates, NOTE_ID)[0].data.ablAllocAmount).toEqual({
+      increment: new Prisma.Decimal(590),
+    });
+    expect(updateOf(balanceUpdates, BILL_ID)[0].data.ablAllocAmount).toEqual({
+      increment: new Prisma.Decimal(590),
+    });
+    expect(updateOf(balanceUpdates, OTHER_NOTE_ID)).toHaveLength(0);
+    expect(updateOf(balanceUpdates, ADVANCE_ID)).toHaveLength(0);
+  });
+
+  it('writes a Decimal amount as given, to the paisa (no float on the way)', async () => {
+    const { tx, created, balanceUpdates } = makeBook([], [noteCredit()]);
+    const amount = new Prisma.Decimal('147.35');
+
+    const posted = await addBillAdjustment(
+      tx,
+      makeContext(),
+      { againstBillId: NOTE_ID, againstBillAccYear: ACC_YEAR, amount },
+      ACTOR,
+      NOW,
+    );
+
+    expect(created.map((row) => (row.abjAmount as Prisma.Decimal).toString())).toEqual([
+      '147.35',
+      '147.35',
+    ]);
+    expect(posted.amount.toString()).toBe('147.35');
+    expect(
+      balanceUpdates.map((u) =>
+        (u.data.ablAllocAmount as { increment: Prisma.Decimal }).increment.toString(),
+      ),
+    ).toEqual(['147.35', '147.35']);
+  });
+
+  it('starts the row numbers at 1 on a bill with no set-offs yet', async () => {
+    const { tx, created } = makeBook([], [noteCredit()]);
+    await addBillAdjustment(
+      tx,
+      makeContext(),
+      { againstBillId: NOTE_ID, againstBillAccYear: ACC_YEAR, amount: 100 },
+      ACTOR,
+      NOW,
+    );
+    expect(created.map((row) => row.abjRowNo)).toEqual([1, 2]);
+    expect(created[0].abjRemarks).toBeNull();
+  });
+
+  it('refuses what a set-off may never be, before writing anything', async () => {
+    const cases: [CreditRow[], number, unknown][] = [
+      // the note was spent since the plan was drawn
+      [[noteCredit({ abl_pending_amount: new Prisma.Decimal(100) })], 590, ConflictException],
+      // somebody else's note
+      [[noteCredit({ abl_party_id: OTHER_PARTY_ID })], 590, BadRequestException],
+      // a DR balance is owed, not held
+      [[noteCredit({ abl_dr_cr: 'DR' })], 590, BadRequestException],
+      // gone
+      [[], 590, BadRequestException],
+      // nothing to set off
+      [[noteCredit()], 0, BadRequestException],
+    ];
+    for (const [credits, amount, refusal] of cases) {
+      const { tx, created, balanceUpdates } = makeBook(carriedSetOffs(), credits);
+      await expect(
+        addBillAdjustment(
+          tx,
+          makeContext(),
+          { againstBillId: NOTE_ID, againstBillAccYear: ACC_YEAR, amount },
+          ACTOR,
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(refusal);
+      expect(created).toHaveLength(0);
+      expect(balanceUpdates).toHaveLength(0);
+    }
+  });
+});
+
+describe('reverseBillAdjustmentsWith', () => {
+  const NOTE = { ablId: NOTE_ID, ablAccYear: ACC_YEAR };
+  const REASON = 'Sale return SRT/2026-2027/D7/00058 cancelled';
+
+  it("takes back only this credit's pair; the advance and the other note keep theirs", async () => {
+    const { tx, book, before, created, balanceUpdates } = makeBook([
+      ...carriedSetOffs(),
+      ...pairRows(5, NOTE_ID, 590),
+      // the other note set off AFTER this one: must survive too
+      ...pairRows(7, OTHER_NOTE_ID, 40),
+    ]);
+
+    const off = await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, REASON, ACTOR, NOW);
+
+    expect(off.toString()).toBe('590');
+    // Two reversal rows, one per row of the pair: same type and side, the
+    // amount negated, pointing at the row they undo (ck_abj_reversal_sign).
+    expect(created).toHaveLength(2);
+    expect(created.map((row) => row.abjReversalOfId)).toEqual(['row-5', 'row-6']);
+    expect(created[0]).toMatchObject({
+      abjBillId: BILL_ID,
+      abjAgainstBillId: NOTE_ID,
+      abjDrCr: 'CR',
+      abjAdjType: 'NOTE_ADJUST',
+      abjSettlementMode: 'CREDIT_NOTE',
+      abjReversalReason: REASON,
+      abjAccYear: ACC_YEAR,
+      // after the invoice's own rows 1, 3, 5 and 7
+      abjRowNo: 8,
+      abjCreatedOn: NOW,
+      abjCreatedBy: ACTOR,
+    });
+    expect(created[1]).toMatchObject({ abjBillId: NOTE_ID, abjDrCr: 'DR', abjRowNo: 9 });
+    expect(created.map((row) => (row.abjAmount as Prisma.Decimal).toString())).toEqual([
+      '-590',
+      '-590',
+    ]);
+    // Nothing else was reversed or touched.
+    expect(book.slice(0, before.length)).toEqual(before);
+    // The note gets its 590 back and the invoice gives it up; nobody else moves.
+    expect(balanceUpdates).toHaveLength(2);
+    expect(updateOf(balanceUpdates, NOTE_ID)[0].data.ablAllocAmount).toEqual({
+      increment: new Prisma.Decimal(-590),
+    });
+    expect(updateOf(balanceUpdates, BILL_ID)[0].data.ablAllocAmount).toEqual({
+      increment: new Prisma.Decimal(-590),
+    });
+  });
+
+  it('is a no-op the second time (a re-cancel reverses nothing again)', async () => {
+    const { tx, created, balanceUpdates } = makeBook([
+      ...carriedSetOffs(),
+      ...pairRows(5, NOTE_ID, 590),
+    ]);
+    await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, REASON, ACTOR, NOW);
+    created.length = 0;
+    balanceUpdates.length = 0;
+
+    const again = await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, REASON, ACTOR, NOW);
+
+    expect(again.toString()).toBe('0');
+    expect(created).toHaveLength(0);
+    expect(balanceUpdates).toHaveLength(0);
+  });
+
+  it("leaves a receipt's set-off of the note (it carries the receipt's voucher) alone", async () => {
+    const { tx, created, balanceUpdates } = makeBook([
+      ...carriedSetOffs(),
+      ...pairRows(5, NOTE_ID, 200, { abjVoucherId: RECEIPT_VOUCHER_ID }),
+    ]);
+
+    const off = await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, REASON, ACTOR, NOW);
+
+    expect(off.toString()).toBe('0');
+    expect(created).toHaveLength(0);
+    expect(balanceUpdates).toHaveLength(0);
+  });
+
+  it('skips a row reversed already in another year (ux_abj_reversal is per partition)', async () => {
+    const pair = pairRows(5, NOTE_ID, 590);
+    const { tx, created, balanceUpdates } = makeBook([
+      ...pair,
+      // only the credit-side row was reversed by an earlier run
+      {
+        ...pair[1],
+        abjId: 'rev-6',
+        abjRowNo: 7,
+        abjAmount: new Prisma.Decimal(-590),
+        abjReversalOfId: 'row-6',
+      },
+    ]);
+
+    const off = await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, REASON, ACTOR, NOW);
+
+    expect(off.toString()).toBe('590');
+    expect(created.map((row) => row.abjReversalOfId)).toEqual(['row-5']);
+    expect(updateOf(balanceUpdates, BILL_ID)).toHaveLength(1);
+    expect(updateOf(balanceUpdates, NOTE_ID)).toHaveLength(0);
+  });
+
+  it('clips the reason to the column (250)', async () => {
+    const { tx, created } = makeBook(pairRows(1, NOTE_ID, 10));
+    await reverseBillAdjustmentsWith(tx, makeContext(), NOTE, 'x'.repeat(300), ACTOR, NOW);
+    expect((created[0].abjReversalReason as string).length).toBe(250);
   });
 });

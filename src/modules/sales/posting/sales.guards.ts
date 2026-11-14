@@ -9,7 +9,11 @@ import {
   assertAccYearWritable,
   assertVoucherPartitionExists,
 } from '../../accountsModule/receipt/receipt.guards';
-import { SALES_ERROR_CODES, type SalesGuardContext } from './types/posting.types';
+import {
+  SALES_ERROR_CODES,
+  type SalesGuardContext,
+  type SalesMessageParams,
+} from './types/posting.types';
 import { throwSalesLocked, throwSalesRefused, throwSalesRight } from './sales.errors';
 import type { SalesSettings } from './sales.settings';
 
@@ -59,6 +63,7 @@ export function warn(
     line?: number;
     overridable?: boolean;
     statutory?: SalesGuardContext['warnings'][number]['statutory'];
+    params?: SalesMessageParams;
   } = {},
 ): void {
   const overridable = opts.overridable ?? true;
@@ -72,6 +77,7 @@ export function warn(
     line: opts.line,
     overridable,
     statutory: opts.statutory,
+    ...(opts.params === undefined ? {} : { params: opts.params }),
   });
 
   // On /validate an overridable WARN stays a WARN: /post decides the override.
@@ -90,6 +96,7 @@ export function refuse(
     field?: string;
     line?: number;
     statutory?: SalesGuardContext['refusals'][number]['statutory'];
+    params?: SalesMessageParams;
   } = {},
 ): void {
   ctx.refusals.push({
@@ -98,13 +105,36 @@ export function refuse(
     field: opts.field,
     line: opts.line,
     statutory: opts.statutory,
+    ...(opts.params === undefined ? {} : { params: opts.params }),
   });
   if (ctx.throwOnRefusal) {
     throwSalesRefused(message, code, opts.field ?? 'document', {
       ...(opts.line === undefined ? {} : { line: opts.line }),
       ...(opts.statutory === undefined ? {} : { statutory: opts.statutory }),
+      ...(opts.params === undefined ? {} : { params: opts.params }),
     });
   }
+}
+
+/**
+ * An INFO note: shown beside the warnings, never overridden and never a
+ * refusal (SALES_RETURN_ON_DRAFTS, SALES_RETURN_NEVER_SOLD).
+ */
+export function info(
+  ctx: SalesGuardContext,
+  code: string,
+  message: string,
+  opts: { field?: string; line?: number; params?: SalesMessageParams } = {},
+): void {
+  ctx.warnings.push({
+    code,
+    level: 'INFO',
+    message,
+    field: opts.field,
+    line: opts.line,
+    overridable: false,
+    ...(opts.params === undefined ? {} : { params: opts.params }),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -783,6 +813,14 @@ export async function assertCancellable(
         WHERE b.abl_src_doc_id = ${bill.billId}::uuid
           AND b.abl_acc_year   = ${bill.accYear}::char(9)
           AND j.abj_is_deleted = false
+          -- A cancelled, amended or bounced receipt leaves its row AND a
+          -- negative reversal of it (abj_reversal_of_id): that pair is no
+          -- money on the bill, and counting it locked the bill for good after
+          -- the receipt was cancelled — which is what the refusal tells the
+          -- user to do (user 11-13). Only live originals count.
+          AND j.abj_reversal_of_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM accounts.acc_bill_adjustment x
+                           WHERE x.abj_reversal_of_id = j.abj_id AND x.abj_is_deleted = false)
           -- The bill's OWN set-offs are not somebody else's allocation. /post
           -- writes them (bill-adjustment.helper) as ADVANCE_ADJUST /
           -- NOTE_ADJUST with no voucher: the invoice-side row names the ADVANCE

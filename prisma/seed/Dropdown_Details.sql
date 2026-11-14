@@ -6,6 +6,8 @@
 -- 20261112120000_vehicle_transporter_masters inserts it.
 -- 77 ITEMS BY COMPANY (Item Ledger's Item picker) as migration
 -- 20261113100000_item_ledger_layouts inserts it.
+-- 78 SALE RETURN REASONS (Sale Return's Reason picker) as migration
+-- 20261113160000_sale_return_screen inserts it.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -527,6 +529,20 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
  WHERE item_is_deleted = false
    AND (item_company_id IS NULL OR item_company_id::text = 'icompany_id')
  ORDER BY item_name_en$seed$, NULL)
+    ,(78, 'SALE RETURN REASONS', 'Sale Return (menu 13) Reason picker: active SALE_RETURN reasons, shared (company NULL) and this company''s; a company row with a shared row''s code hides the shared one. Gives the default line Condition and whether after-tax charges go back (D12). Param icompany_id, always sent; compared as text, never cast.', 'srm_name'            , 'asc'      , 10, true , 0   , 'Desktop', 'srm_name'          , 'system', $seed$SELECT r.srm_id, r.srm_name, r.srm_code,
+       COALESCE(r.srm_default_condition, '') AS srm_default_condition,
+       COALESCE(r.srm_refund_charges, false) AS srm_refund_charges
+  FROM stock.stock_reason_master r
+ WHERE r.srm_is_active = true
+   AND r.srm_is_deleted = false
+   AND r.srm_allowed_txn_types && ARRAY['SALE_RETURN']
+   AND (r.srm_company_id IS NULL OR r.srm_company_id::text = 'icompany_id')
+   AND NOT (r.srm_company_id IS NULL
+            AND EXISTS (SELECT 1 FROM stock.stock_reason_master c
+                         WHERE c.srm_company_id::text = 'icompany_id'
+                           AND c.srm_code = r.srm_code
+                           AND c.srm_is_deleted = false))
+ ORDER BY r.srm_sort_order, r.srm_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

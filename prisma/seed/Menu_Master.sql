@@ -55,6 +55,9 @@ VALUES
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
     ,(  12,    1, 'Sales Bill'                           , 'CTRL+S'              , true ,  10.00, '0', NULL, NULL, true , false)
+    -- 13 Sales Return, re-added by 20261113160000_sale_return_screen (plan-sale-return v5 §5.4)
+    -- after 20261030200000 removed it: visible, right after 12 Sales Bill. Verbs below.
+    ,(  13,    1, 'Sales Return'                         , 'CTRL+R'              , true ,  15.00, '0', NULL, NULL, true , false)
     ,(  14,    1, 'Quotation'                            , 'CTRL+Q'              , true ,  20.00, '0', NULL, NULL, true , false)
     ,(  17,    1, 'Sales Masters'                        , NULL                  , true , 100.00, '0', NULL, NULL, true , false)
     ,(  18,   17, 'States'                               , NULL                  , true ,  10.00, '1', NULL, NULL, true , false)
@@ -388,6 +391,13 @@ UPDATE fixed.menu_master m
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 13 Sales Return (20261113160000_sale_return_screen): a posting document like 12 Sales Bill --
+-- POST, CANCEL, AMEND, OVERRIDE (a ticked WARN) -- without RETENDER. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,AMEND,OVERRIDE}'
+ WHERE menu_id = 13
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu
 -- created from the UI reuses id 1 and fails on the primary key.

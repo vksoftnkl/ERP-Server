@@ -199,6 +199,61 @@ SELECT v.company, v.code, v.name, v.direction,
 END
 $do$;
 
+-- ── sale returns: why goods came back from the customer ─────────────────
+-- The header Reason on a Sale Return (menu 13, dropdown 78). IN, and named only
+-- for SALE_RETURN, so no adjustment, count or purchase-return picker offers
+-- them. SR_ prefix: DAMAGE, EXPIRY and PRET_* are already shared codes. They
+-- carry the two columns 20261113160000_sale_return_screen added
+-- (srm_default_condition = the Condition a new line takes, srm_refund_charges =
+-- give the after-tax additions back by default), so this block waits for that
+-- migration; the migration inserts the same eight on a database that already
+-- has the table (plan-sale-return v5 §5.3, D12, D40).
+DO $do$
+BEGIN
+    IF to_regclass('stock.stock_reason_master') IS NULL
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = 'stock' AND table_name = 'stock_reason_master'
+                         AND column_name = 'srm_default_condition') THEN
+        RAISE NOTICE 'stock.stock_reason_master has no srm_default_condition yet -- skipping the sale-return reasons.';
+        RETURN;
+    END IF;
+
+    EXECUTE $sql$
+INSERT INTO stock.stock_reason_master
+    (srm_company_id, srm_code, srm_name, srm_direction,
+     srm_allowed_txn_types, srm_require_remarks, srm_sort_order, srm_remarks,
+     srm_default_condition, srm_refund_charges)
+SELECT v.company, v.code, v.name, 'IN',
+       ARRAY['SALE_RETURN']::text[], false, v.sort_order, v.note,
+       v.cond, v.charges
+  FROM (VALUES
+    (NULL::uuid, 'SR_DAMAGED'::varchar,      'Damaged / leaking'::varchar,           410, 'DAMAGED'::varchar, true,
+     'Sale return: came back damaged or leaking.'::varchar),
+    (NULL, 'SR_EXPIRED',      'Expired / near expiry',        420, 'EXPIRED', true,
+     'Sale return: past or near its expiry date.'),
+    (NULL, 'SR_WRONG_ITEM',   'Wrong item sent',              430, 'RESTOCK', true,
+     'Sale return: we sent the wrong item.'),
+    (NULL, 'SR_QUALITY',      'Quality complaint',            440, 'DAMAGED', true,
+     'Sale return: the customer complained about the quality.'),
+    (NULL, 'SR_EXCESS',       'Excess / not ordered',         450, 'RESTOCK', false,
+     'Sale return: more than the customer ordered, or not ordered.'),
+    (NULL, 'SR_CHANGED_MIND', 'Customer changed mind',        460, 'RESTOCK', false,
+     'Sale return: good stock the customer no longer wants.'),
+    (NULL, 'SR_EXPIRED_SHOP', 'Expired at the shop (claim)',  470, 'EXPIRED', true,
+     'Claim: expired on the customer''s shelf.'),
+    (NULL, 'SR_DAMAGED_SHOP', 'Damaged at the shop (claim)',  480, 'DAMAGED', true,
+     'Claim: damaged at the customer''s shop.')
+  ) AS v(company, code, name, sort_order, cond, charges, note)
+ WHERE NOT EXISTS (
+        SELECT 1
+          FROM stock.stock_reason_master e
+         WHERE e.srm_company_id IS NULL
+           AND e.srm_code       = v.code
+           AND e.srm_is_deleted = false)
+    $sql$;
+END
+$do$;
+
 COMMIT;
 
 -- Verification, safe to run any time:

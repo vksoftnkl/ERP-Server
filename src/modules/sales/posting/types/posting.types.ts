@@ -96,6 +96,42 @@ export const SALES_ERROR_CODES = {
   RETURN_ITEM_NOT_ALLOWED: 'SALES_RETURN_ITEM_NOT_ALLOWED',
   FREE_RETURN_OFF: 'SALES_FREE_RETURN_OFF',
   RETURN_WINDOW: 'SALES_RETURN_WINDOW',
+  // Sale Return screen (plan v5 §5.10; worded in fixed.error_message 2026-11-13.1).
+  RETURN_NO_LINES: 'SALES_RETURN_NO_LINES',
+  RETURN_NO_BILL_OFF: 'SALES_RETURN_NO_BILL_OFF',
+  RETURN_SETTLE_MODE: 'SALES_RETURN_SETTLE_MODE',
+  RETURN_NOT_ON_BILL: 'SALES_RETURN_NOT_ON_BILL',
+  RETURN_UNIT: 'SALES_RETURN_UNIT',
+  RETURN_LOT_EXPIRED: 'SALES_RETURN_LOT_EXPIRED',
+  RETURN_ON_DRAFTS: 'SALES_RETURN_ON_DRAFTS',
+  RETURN_NEVER_SOLD: 'SALES_RETURN_NEVER_SOLD',
+  // P2b — settlement, claims, approvals (plan v5 §5.10).
+  RETURN_REFUND_TENDER: 'SALES_RETURN_REFUND_TENDER',
+  RETURN_REFUND_REF: 'SALES_RETURN_REFUND_REF',
+  RETURN_REFUND_OVER_PAID: 'SALES_RETURN_REFUND_OVER_PAID',
+  RETURN_ADJUST_OVER: 'SALES_RETURN_ADJUST_OVER',
+  RETURN_ADJUST_STALE: 'SALES_RETURN_ADJUST_STALE',
+  RETURN_REFUND_SESSION_CLOSED: 'SALES_RETURN_REFUND_SESSION_CLOSED',
+  RETURN_SCHEME_SHORT: 'SALES_RETURN_SCHEME_SHORT',
+  RETURN_CLAIM_GOODS: 'SALES_RETURN_CLAIM_GOODS',
+  /** A no-bill item with no price today: it comes back at 0.00 (user 2026-11-13: WARN, overridable). */
+  RETURN_NO_PRICE: 'SALES_RETURN_NO_PRICE',
+  /** D77 — an approval request of the return is PENDING: withdraw it to change the return. */
+  RETURN_APPROVAL_PENDING: 'SALES_RETURN_APPROVAL_PENDING',
+  /**
+   * Review 11-14 B1 — the return comes to less than nothing (a deduction it
+   * gives back outweighs the goods, e.g. an after-tax DEDUCT on a free line).
+   * A 0.00 note posts (stock + COGS only); a negative one never does.
+   */
+  RETURN_NEGATIVE: 'SALES_RETURN_NEGATIVE',
+  /** Review 11-14 N8 — a saved return keeps its customer: a re-save may not name another's bill. */
+  RETURN_CUSTOMER_LOCKED: 'SALES_RETURN_CUSTOMER_LOCKED',
+  /**
+   * D8 — not a refusal: the override a user ticks to post a return past the GST
+   * credit-note cut-off as a FINANCIAL credit note (no GST cut, no IRN). CA to
+   * confirm (plan O1); unused unless sent.
+   */
+  RETURN_FINANCIAL: 'SALES_RETURN_FINANCIAL',
   CN_APPLIED: 'SALES_CN_APPLIED',
 
   // Documents in general
@@ -134,6 +170,8 @@ export const SALES_ERROR_CODES = {
   ORDER_LINE_OVER: 'SALES_ORDER_LINE_OVER',
   STOCK_NEGATIVE: 'SALES_STOCK_NEGATIVE',
   EWAY_TRANSPORT_MISSING: 'SALES_EWAY_TRANSPORT_MISSING',
+  /** A transport band with neither end (no from / to godown, no from / to name): ck_ttd_has_an_end. */
+  TRANSPORT_NO_END: 'SALES_TRANSPORT_NO_END',
   DELIVERY_ORDER: 'SALES_DELIVERY_ORDER',
 
   // Temp credit (31)
@@ -237,7 +275,12 @@ export interface SalesWarning {
    */
   overridable: boolean;
   statutory?: SalesStatutoryRef;
+  /** The figures the catalogue wording names ({value}, {bill}, {lot} …), substituted into `user`. */
+  params?: SalesMessageParams;
 }
+
+/** Values for the `{name}` placeholders of a code's wording (error-wording.ts). */
+export type SalesMessageParams = Record<string, string | number>;
 
 export interface SalesRefusal {
   code: SalesErrorCodeLike;
@@ -245,6 +288,7 @@ export interface SalesRefusal {
   field?: string;
   line?: number;
   statutory?: SalesStatutoryRef;
+  params?: SalesMessageParams;
 }
 
 /**

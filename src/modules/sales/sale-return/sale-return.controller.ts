@@ -19,6 +19,7 @@ import {
   AmendSaleReturnDto,
   CancelSaleReturnDto,
   PostSaleReturnDto,
+  SaleReturnBillLinesQueryDto,
   SaleReturnKeysDto,
   SaleReturnTransportDto,
   ValidateSaleReturnDto,
@@ -37,7 +38,11 @@ export class SaleReturnController {
 
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update a DRAFT sale return (by srId presence)' })
+  @ApiOperation({
+    summary:
+      'Create (menu 13 CREATE) or update (EDIT) a DRAFT sale return. Money keys are ignored: the server works ' +
+      'every figure out from the bill line (D45). Numbered per device at the first save (SRT/<year>/<device>/00001).',
+  })
   async save(@Body() dto: SaveSaleReturnDto) {
     return ok(
       dto.srId ? 'Sale return updated successfully' : 'Sale return created successfully',
@@ -47,7 +52,12 @@ export class SaleReturnController {
 
   @Post('validate')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Dry-run the post. Writes nothing.' })
+  @ApiOperation({
+    summary:
+      'Dry-run the post (menu 13 CREATE). Writes nothing. Answers ok, refusals[], warnings[] (WARN + INFO), ' +
+      'rights and preview { lines[], totals, charges[], emptiesBill, onOtherDrafts[], stockByBucket[], … } — ' +
+      'the money the server works out from the bill (D45). A srReturnAmt that no longer matches → SALES_AMOUNT_MISMATCH.',
+  })
   async validate(@Body() dto: ValidateSaleReturnDto) {
     return ok('Sale return validated', await this.service.validate(dto));
   }
@@ -114,14 +124,15 @@ export class SaleReturnController {
 
   @Get('bill-lines')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'The bill lines still returnable' })
-  @ApiQuery({ name: 'sbId' })
-  @ApiQuery({ name: 'sbAccYear' })
-  async billLines(
-    @Query('sbId', new ParseUUIDPipe({ version: '7' })) sbId: string,
-    @Query('sbAccYear') sbAccYear: string,
-  ) {
-    return ok('Bill lines fetched', await this.service.billLines(sbId, sbAccYear));
+  @ApiOperation({
+    summary:
+      'A posted bill for a return (plan v5 §6.2): { bill, lines[], charges[] } — every line with its full money set, ' +
+      'what earlier posted returns took and what is left in base units, what other drafts hold; every charge row. ' +
+      'Menu 13 VIEW. 404 SALES_NOT_FOUND (not in this company / branch without allBranches); ' +
+      '422 SALES_RETURN_BILL_NOT_POSTED; 403 SALES_RIGHT_VIEW.',
+  })
+  async billLines(@Query() q: SaleReturnBillLinesQueryDto) {
+    return ok('Bill lines fetched', await this.service.billLines(q));
   }
 
   @Put('transport')

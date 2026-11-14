@@ -171,10 +171,13 @@ describe('TransportBandService', () => {
     it('updates the existing band in place, stamping who changed it', async () => {
       const { tx, delegate } = writeTx({ ttdId: 'ttd-9' });
 
-      await service.write(tx, REF, { direction: 'OUTWARD', mode: 'ROAD' }, 'actor-1', {
-        gdrId: null,
-        now: NOW,
-      });
+      await service.write(
+        tx,
+        REF,
+        { direction: 'OUTWARD', from: { godownId: 'gd-1' }, mode: 'ROAD' },
+        'actor-1',
+        { gdrId: null, now: NOW },
+      );
 
       expect(delegate.create).not.toHaveBeenCalled();
       expect(delegate.update).toHaveBeenCalledWith({
@@ -185,6 +188,52 @@ describe('TransportBandService', () => {
           ttdModifiedBy: 'actor-1',
         }) as object,
       });
+    });
+
+    it('refuses a band that names neither end with a coded 422, before it writes (ck_ttd_has_an_end)', async () => {
+      for (const existing of [null, { ttdId: 'ttd-9' }]) {
+        const { tx, delegate } = writeTx(existing);
+
+        const refusal = await refusalOf(
+          service.write(
+            tx,
+            REF,
+            // A vehicle, an LR and the addresses — but no godown and no name at either end.
+            {
+              direction: 'INWARD',
+              from: { place: 'Salem', pin: '636001' },
+              to: { addr: '12 Main Rd' },
+              mode: 'ROAD',
+              lrNo: 'LR-9',
+            },
+            'actor-1',
+            { gdrId: null, now: NOW },
+          ),
+        );
+
+        expect(refusal).toMatchObject({
+          status: 422,
+          body: { errors: [{ field: 'transport', code: SALES_ERROR_CODES.TRANSPORT_NO_END }] },
+        });
+        expect(delegate.create).not.toHaveBeenCalled();
+        expect(delegate.update).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each([
+      ['a from godown', { from: { godownId: 'gd-1' } }],
+      ['a to godown', { to: { godownId: 'gd-2' } }],
+      ['a from name', { from: { name: 'Main godown' } }],
+      ['a to name', { to: { name: 'Ravi Stores' } }],
+    ])('writes a band with only %s for an end', async (_what, ends) => {
+      const { tx, delegate } = writeTx(null);
+
+      await service.write(tx, REF, { direction: 'OUTWARD', ...ends }, 'actor-1', {
+        gdrId: null,
+        now: NOW,
+      });
+
+      expect(delegate.create).toHaveBeenCalledTimes(1);
     });
 
     it('refuses once the document has been declared to the portal', async () => {

@@ -46,6 +46,10 @@ import {
  * bill's legs on an SRt voucher (SALES_RETURN, not a negative SALES), files a
  * CREDIT_NOTE register row with sign −1, and stamps the bill's returned
  * figures. Cancelling B's return gives the bill its outstanding back.
+ *
+ * Teardown (user 11-13): every return and bill the suite posted is cancelled
+ * again — returns first, then their bills — so a run leaves no posted return,
+ * no open credit note on the walk-in and no open bill on the listed customer.
  */
 
 const tag = runTag();
@@ -123,12 +127,55 @@ describe('Sale return — CASH, ADJUST and ADVANCE settlements (e2e, live DB)', 
     );
   }, 240_000);
 
-  afterAll(async () => {
-    if (h?.prisma && rights) {
-      await revokeSalesRights(h.prisma, rights);
+  /**
+   * Cancels what this run posted and is still live, returns before bills (a
+   * live return locks its bill). Reads the status from the database so a run
+   * that stopped half-way still cleans up; throws if anything stays live.
+   */
+  async function cleanUp(): Promise<void> {
+    const left: string[] = [];
+    const returns = [returnA, returnB, returnC].filter(Boolean).map((r) => r.srId as string);
+    for (const srId of returns) {
+      if (String((await p.saleReturnHeader(srId))?.sr_status ?? '').trim() !== 'POSTED') {
+        continue;
+      }
+      const res = await post('sale-returns/cancel', {
+        ...saleReturnKeys(srId),
+        reason: `E2E-SR-${tag} teardown`,
+      });
+      if (res.status !== 201) {
+        left.push(`return ${srId}: ${res.status} ${codesOf(res).join(',')}`);
+      }
     }
-    await shutdown(h);
-  }, 60_000);
+    for (const bill of [billA, billB, billC].filter(Boolean)) {
+      if (String((await p.saleBill(bill.sbId))?.sb_status ?? '').trim() !== 'POSTED') {
+        continue;
+      }
+      const res = await post('bills/cancel', {
+        ...billKeys(bill.sbId),
+        reason: `E2E-SR-${tag} teardown`,
+      });
+      if (res.status !== 201) {
+        left.push(`bill ${bill.sbBillRefno}: ${res.status} ${codesOf(res).join(',')}`);
+      }
+    }
+    if (left.length > 0) {
+      throw new Error(`sale-return e2e teardown left live documents: ${left.join('; ')}`);
+    }
+  }
+
+  afterAll(async () => {
+    try {
+      if (h?.http && p) {
+        await cleanUp();
+      }
+    } finally {
+      if (h?.prisma && rights) {
+        await revokeSalesRights(h.prisma, rights);
+      }
+      await shutdown(h);
+    }
+  }, 120_000);
 
   it('the three bills stand: 30 sold, bill B owes 680', async () => {
     expect(num((await p.balance(item.itemId))!.sbl_on_hand_qty)).toBe(70);
@@ -139,18 +186,28 @@ describe('Sale return — CASH, ADJUST and ADVANCE settlements (e2e, live DB)', 
     expect(billB.sbPayStatus).toBe('PARTIAL');
   });
 
-  it('GET /sale-returns/bill-lines lists the bill lines with nothing returned yet', async () => {
-    const res = await get('sale-returns/bill-lines', {
-      sbId: billA.sbId,
-      sbAccYear: billA.sbAccYear,
+  // Plan v5 §6.2: { bill, lines[], charges[] }, scoped to the return's company / branch.
+  const billLinesOf = (bill: Record<string, any>) =>
+    get('sale-returns/bill-lines', {
+      sbId: bill.sbId,
+      sbAccYear: bill.sbAccYear,
+      companyId: bill.sbCompanyId,
+      branchId: bill.sbBranchId,
     });
+
+  it('GET /sale-returns/bill-lines lists the bill lines with nothing returned yet', async () => {
+    const res = await billLinesOf(billA);
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(1);
-    expect(res.body.data[0].billItemId).toBe(billA.items[0].sbiId);
-    expect(num(res.body.data[0].billQty)).toBe(10);
-    expect(num(res.body.data[0].returnedQty)).toBe(0);
-    expect(res.body.data[0].returnable).toBe(true);
-    expect(num(res.body.data[0].cost)).toBe(200);
+    expect(res.body.data.bill.sbId).toBe(billA.sbId);
+    expect(res.body.data.lines).toHaveLength(1);
+    const [line] = res.body.data.lines;
+    expect(line.billItemId).toBe(billA.items[0].sbiId);
+    expect(num(line.billQty)).toBe(10);
+    expect(num(line.returnedQtyBase)).toBe(0);
+    expect(num(line.qtyLeft)).toBe(10);
+    expect(line.allowReturn).toBe(true);
+    // 200.00 of COGS over 10 base units.
+    expect(num(line.costPerBase)).toBe(20);
   });
 
   it('a return of more than the bill sold is refused: 422 SALES_RETURN_OVER_QTY', async () => {
@@ -298,12 +355,10 @@ describe('Sale return — CASH, ADJUST and ADVANCE settlements (e2e, live DB)', 
   });
 
   it('GET /sale-returns/bill-lines now shows 4 returned on bill A', async () => {
-    const res = await get('sale-returns/bill-lines', {
-      sbId: billA.sbId,
-      sbAccYear: billA.sbAccYear,
-    });
+    const res = await billLinesOf(billA);
     expect(res.status).toBe(200);
-    expect(num(res.body.data[0].returnedQty)).toBe(4);
+    expect(num(res.body.data.lines[0].returnedQtyBase)).toBe(4);
+    expect(num(res.body.data.lines[0].qtyLeft)).toBe(6);
   });
 
   // ───────────────────────────────────────────────────────────── B · ADJUST
@@ -326,9 +381,42 @@ describe('Sale return — CASH, ADJUST and ADVANCE settlements (e2e, live DB)', 
       201,
     );
     expect(created.status).toBe(201);
+    // D1 / D2 — /validate proposes the split, this bill first then the
+    // customer's other open bills; popup 25 sends what the operator keeps.
+    // This test keeps the ORIGINAL bill only, so other open bills of the
+    // listed customer (earlier runs leave some) do not change the figures.
+    const proposed = await post('sale-returns/validate', {
+      ...saleReturnBody({
+        custId: LISTED_CUSTOMER,
+        custName: LISTED_CUSTOMER_NAME,
+        bill: { sbId: billB.sbId, refno: billB.sbBillRefno },
+        lines: [{ item, qty: 10, rate: 100, sbiId: billB.items[0].sbiId, costRate: 20 }],
+        settleMode: 'ADJUST',
+        usrRefno: `E2E-SR-${tag}-B`,
+        reason: 'dry run',
+      }),
+      srId: created.body.data.srId,
+    });
+    const thisBill = proposed.body.data.preview.settlement.adjust.bills[0];
+    expect(thisBill).toMatchObject({
+      srcDocId: billB.sbId,
+      isThisBill: true,
+      dueNow: 680,
+      adjustNow: 680,
+    });
     const posted = explain(
       'return B post',
-      await post('sale-returns/post', saleReturnKeys(created.body.data.srId)),
+      await post('sale-returns/post', {
+        ...saleReturnKeys(created.body.data.srId),
+        adjustments: [
+          {
+            ablId: thisBill.ablId,
+            ablAccYear: thisBill.ablAccYear,
+            amount: 680,
+            dueNow: thisBill.dueNow,
+          },
+        ],
+      }),
       201,
     );
     expect(posted.status).toBe(201);

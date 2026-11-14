@@ -447,6 +447,66 @@ export class TillApprovalService {
     });
   }
 
+  /**
+   * Withdraws, inside the document's own transaction, every PENDING request a
+   * document has filed — for a document that is being replaced, so the review
+   * no longer describes it (a Sale Return amended while its post-hoc review
+   * waits: review 11-14 S4). Each row goes CANCELLED with `note`, and
+   * APPROVAL_DECIDED is journalled with `status: CANCELLED`, as approvals/cancel
+   * does. The document's own gate files a fresh request afterwards if the
+   * rule still asks. Returns the withdrawn ids.
+   */
+  async withdrawForDocument(
+    tx: Prisma.TransactionClient,
+    doc: {
+      companyId: string;
+      srcDocType: string;
+      srcDocId: string;
+      userId: string;
+      deviceId: string | null;
+      note: string;
+    },
+  ): Promise<string[]> {
+    const rows = await tx.tillApproval.findMany({
+      where: {
+        tapCompanyId: doc.companyId,
+        tapSrcDocType: doc.srcDocType,
+        tapSrcDocId: doc.srcDocId,
+        tapStatus: 'PENDING',
+        tapIsDeleted: false,
+      },
+    });
+    const now = new Date();
+    for (const row of rows) {
+      await tx.tillApproval.update({
+        where: { tapId_tapAccYear: { tapId: row.tapId, tapAccYear: row.tapAccYear } },
+        data: {
+          tapStatus: 'CANCELLED',
+          tapDecisionNote: doc.note.slice(0, 500),
+          tapModifiedOn: now,
+        },
+      });
+      await this.events.log(tx, {
+        companyId: row.tapCompanyId,
+        branchId: row.tapBranchId,
+        accYear: row.tapAccYear,
+        code: TillEventCode.APPROVAL_DECIDED,
+        sessionId: row.tapSessionId,
+        counterId: row.tapCounterId,
+        deviceId: doc.deviceId,
+        userId: doc.userId,
+        srcDocType: row.tapSrcDocType,
+        srcDocId: row.tapSrcDocId,
+        srcRefno: row.tapSrcRefno,
+        amount: row.tapAmount,
+        reasonId: row.tapReasonId,
+        approvalId: row.tapId,
+        payload: { event: row.tapEventCode, status: 'CANCELLED', note: doc.note },
+      });
+    }
+    return rows.map((r) => r.tapId);
+  }
+
   /** 428 TILL_APPROVAL_REQUIRED: what to ask approvals/request for, and of whom. */
   throwApprovalRequired(need: TillApprovalNeed, ask: GateAsk): never {
     throwTill(

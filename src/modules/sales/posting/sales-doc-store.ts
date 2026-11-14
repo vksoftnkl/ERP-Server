@@ -262,6 +262,17 @@ export class SalesDocStore {
     hooks: {
       beforeWrite?: (data: DocRow, existing: DocRow | null) => Promise<void> | void;
       afterWrite?: (row: DocRow, items: DocRow[]) => Promise<void> | void;
+      /**
+       * The document's own number for a NEW row, instead of the voucher type's
+       * branch series — a sale return numbers per device (plan v5 D16).
+       */
+      numberFor?: (docDate: Date) => Promise<{ lastNo: bigint; refno: string }>;
+      /**
+       * The caller files this save's audit row itself, as ONE document
+       * revision (notes 89 `logDocumentRevision`, log_rev_no) — as the Sales
+       * Order does — so the store writes none of its own.
+       */
+      revision?: boolean;
     } = {},
   ): Promise<DocRow> {
     for (const k of this.spec.serverOwned) {
@@ -315,13 +326,15 @@ export class SalesDocStore {
       const docDate = (dto[this.spec.dateField] as string | undefined)
         ? new Date(dto[this.spec.dateField] as string)
         : now;
-      const number = await allocateVoucherNumber(tx, {
-        vchrTypeId: this.spec.voucherTypeId,
-        companyId: dto[this.f('CompanyId')] as string,
-        branchId: dto[this.f('BranchId')] as string,
-        accYear,
-        documentDate: docDate,
-      });
+      const number = hooks.numberFor
+        ? await hooks.numberFor(docDate)
+        : await allocateVoucherNumber(tx, {
+            vchrTypeId: this.spec.voucherTypeId,
+            companyId: dto[this.f('CompanyId')] as string,
+            branchId: dto[this.f('BranchId')] as string,
+            accYear,
+            documentDate: docDate,
+          });
       Object.assign(data, {
         ...(id ? { [this.f('Id')]: id } : {}),
         [this.f('CompanyId')]: dto[this.f('CompanyId')],
@@ -450,6 +463,9 @@ export class SalesDocStore {
       null,
       !existing,
     );
+    if (hooks.revision) {
+      return row;
+    }
     await this.audit.logEntityChange(
       {
         action: existing ? 'update' : 'New',

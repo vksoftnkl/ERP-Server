@@ -110,13 +110,13 @@ export function wordingFor(
     const entry = exact.get(l)?.get(code);
     const row = entry ? pick(entry, detail) : null;
     if (row) {
-      return toUser(row);
+      return toUser(row, detail);
     }
     for (const p of prefixes.get(l) ?? []) {
       if (code.startsWith(p.prefix)) {
         const prefixed = pick(p.entry, detail);
         if (prefixed) {
-          return toUser(prefixed);
+          return toUser(prefixed, detail);
         }
       }
     }
@@ -237,8 +237,79 @@ function parseVariant(variant: string): { key: string; value: string | null } | 
   return { key: variant.slice(0, at), value: value === '*' ? null : value };
 }
 
-function toUser(row: ErrorWordingRow): UserWording {
-  return { title: row.title, line: row.line, todo: row.todo };
+/**
+ * The row's words with its `{name}` placeholders filled from the error:
+ * `detail.params[name]` first, then a plain value on the detail itself
+ * (`field`, `status`, `line` …). The user never sees a brace: a placeholder
+ * with no value is dropped with the brackets / space it sat in (see
+ * fillPlaceholders). Rows without placeholders come back unchanged.
+ */
+function toUser(row: ErrorWordingRow, detail: Record<string, unknown> = {}): UserWording {
+  const values = placeholderValues(detail);
+  return {
+    title: fillPlaceholders(row.title, values),
+    line: fillPlaceholders(row.line, values),
+    todo: fillPlaceholders(row.todo, values),
+  };
+}
+
+const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9_]*)\}/g;
+
+function placeholderValues(detail: Record<string, unknown>): Map<string, string> {
+  const out = new Map<string, string>();
+  const put = (k: string, v: unknown) => {
+    if (out.has(k)) {
+      return;
+    }
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'bigint') {
+      const text = String(v).trim();
+      if (text) {
+        out.set(k, text);
+      }
+    } else if (Array.isArray(v)) {
+      const text = v
+        .filter((x) => typeof x === 'string' || typeof x === 'number')
+        .map(String)
+        .join(', ');
+      if (text) {
+        out.set(k, text);
+      }
+    }
+  };
+  if (isRecord(detail.params)) {
+    for (const [k, v] of Object.entries(detail.params)) {
+      put(k, v);
+    }
+  }
+  for (const [k, v] of Object.entries(detail)) {
+    if (k !== 'params' && k !== 'user' && k !== 'message') {
+      put(k, v);
+    }
+  }
+  return out;
+}
+
+/**
+ * `{name}` → its value. One with no value is removed together with what only
+ * framed it: ` ({name})` / `({name})` whole, else the token and one space
+ * beside it — so "keeps a benefit they no longer earn ({value})." reads
+ * "… no longer earn." and "not on bill {bill}." reads "not on bill.".
+ */
+export function fillPlaceholders(text: string, values: ReadonlyMap<string, string>): string {
+  if (!text || !text.includes('{')) {
+    return text;
+  }
+  let out = text.replace(PLACEHOLDER, (whole, name: string) => values.get(name) ?? whole);
+  if (!/\{[A-Za-z][A-Za-z0-9_]*\}/.test(out)) {
+    return out;
+  }
+  out = out
+    .replace(/\s*\(\s*\{[A-Za-z][A-Za-z0-9_]*\}\s*\)/g, '')
+    .replace(/ ?\{[A-Za-z][A-Za-z0-9_]*\}/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .trim();
+  return out;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

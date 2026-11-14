@@ -39,6 +39,8 @@
 ///
 /// Vocabulary, enforced by a CHECK constraint in the migration:
 ///   srmDirection  IN | OUT | BOTH
+///   srmDefaultCondition  RESTOCK | DAMAGED | EXPIRED | SCRAP (ck_srm_default_condition,
+///                        20261113160000)
 ///
 /// DB-only objects Prisma cannot express — hand-authored in the migration and
 /// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
@@ -77,6 +79,14 @@ model StockReasonMaster {
   srmCreatedBy         String?   @db.Text                                     @map("srm_created_by")
   srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
   srmModifiedBy        String?   @db.Text                                     @map("srm_modified_by")
+
+  // ── Sale Return reasons (20261113160000, plan-sale-return v5 §5.3) ────
+  // Read only for SALE_RETURN reasons (dropdown 78); NULL on every other row.
+  /// Give the bill's after-tax additions back by default (D12).
+  srmRefundCharges     Boolean?                                               @map("srm_refund_charges")
+  /// The Condition a new return line takes: RESTOCK | DAMAGED | EXPIRED |
+  /// SCRAP (ck_srm_default_condition, the ck_sri_condition list).
+  srmDefaultCondition  String?   @db.VarChar(10)                              @map("srm_default_condition")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // Only srm_company_id and srm_gl_ledger_id carry a real FK in the

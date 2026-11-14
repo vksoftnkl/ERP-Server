@@ -5,7 +5,12 @@ import {
   throwUnprocessable,
   type SalesErrorDetail,
 } from 'src/common/utils/module-service.utils';
-import type { SalesErrorCodeLike, SalesRefusal, SalesStatutoryRef } from './types/posting.types';
+import type {
+  SalesErrorCodeLike,
+  SalesMessageParams,
+  SalesRefusal,
+  SalesStatutoryRef,
+} from './types/posting.types';
 
 /**
  * One throw site per HTTP status, so every sales refusal reaches the client in
@@ -23,6 +28,8 @@ export interface SalesCodedErrorDetail extends SalesErrorDetail {
   statutory?: SalesStatutoryRef;
   /** The state the refusal is about (a cheque's register status …), for the client's wording. */
   status?: string;
+  /** The figures the catalogue wording names ({value}, {bill} …), filled into `user`. */
+  params?: SalesMessageParams;
 }
 
 /** 409 — the row exists and the request is well formed; its STATE refuses. */
@@ -59,6 +66,7 @@ export function throwSalesRefusals(message: string, refusals: SalesRefusal[]): n
       code: r.code,
       ...(r.line === undefined ? {} : { line: r.line }),
       ...(r.statutory === undefined ? {} : { statutory: r.statutory }),
+      ...(r.params === undefined ? {} : { params: r.params }),
     })),
   );
 }

@@ -1434,7 +1434,7 @@ export class LoyaltyLedgerService {
       SELECT lld_id, lld_acc_year, lld_comp_id, lld_branch_id, lld_member_id, lld_cust_id,
              lld_txn_type, lld_points, lld_lot_balance, lld_lot_id, lld_lot_acc_year,
              lld_lsc_id, lld_rate, lld_money_value, lld_tender_id, lld_tender_acc_year,
-             lld_txn_date
+             lld_txn_date, lld_approved_by
         FROM sales.loyalty_ledger
        WHERE lld_src_doc_type   = ${doc.docType}
          AND lld_src_doc_id     = ${doc.docId}::uuid
@@ -1505,7 +1505,34 @@ export class LoyaltyLedgerService {
               : null,
         });
         earnReversed += take;
-      } else if (o.lld_txn_type === 'REDEEM' || o.lld_txn_type === 'GIFT') {
+      } else if (o.lld_txn_type === 'ADJUST' && Number(o.lld_points) > 0) {
+        // A positive ADJUST keyed by the document is a lot it GAVE (a sale
+        // return's points back, D48): take back what is left of it, as an
+        // EARN reversal does. ck_lld_adjust_approval: the same approver.
+        const given = Number(o.lld_points);
+        const take = Math.min(given, Math.max(0, Number(o.lld_lot_balance ?? 0)));
+        if (take <= 0) {
+          continue;
+        }
+        rows.push({
+          ...base,
+          txnType: 'ADJUST',
+          rowNo: nextRowNo('ADJUST'),
+          points: -take,
+          approvedBy: o.lld_approved_by ?? null,
+          remarks:
+            take < given
+              ? `Cancelled; ${round(given - take, 4)} of ${given} points had already been spent and could not be taken back`
+              : null,
+        });
+        redeemReversed -= take;
+      } else if (
+        o.lld_txn_type === 'REDEEM' ||
+        o.lld_txn_type === 'GIFT' ||
+        // A sale return's claw-back is an EXPIRE draw keyed by the return
+        // (clawbackForReturn): cancelling the return gives those points back.
+        (o.lld_txn_type === 'EXPIRE' && doc.docType === 'SALE_RETURN')
+      ) {
         const spent = -Number(o.lld_points); // stored negative
         rows.push({
           ...base,
@@ -1681,6 +1708,135 @@ export class LoyaltyLedgerService {
     });
 
     return { rowsWritten, clawedBack: take, shortfall };
+  }
+
+  /**
+   * Plan v5 D48 / D74 — a sale return gives back, AS POINTS, the share of its
+   * credit note the bill was paid for in points.
+   *
+   * Not REDEEM reversal rows, which is what the plan first drew:
+   * `ux_lld_reversal` allows ONE reversal per original row per year, so a
+   * second part return of the same bill could never restore its share
+   * against the same REDEEM rows. The points come back instead as a positive
+   * ADJUST row keyed by the RETURN (a lot since D2: spendable, sweepable, on
+   * the member card), approved by whoever posts the return, lapsing when the
+   * latest lot the bill redeemed from lapses (never, if one of them never
+   * does) — or, when that lot has already lapsed, with the scheme's normal
+   * validity counted from the return date (validityFrom, review 11-14 N4).
+   * `reverseForCancel` on the return takes back what is left of it.
+   *
+   * Returns 0 rows when the bill redeemed nothing for this member.
+   */
+  async restoreRedeemForReturn(
+    tx: Prisma.TransactionClient,
+    ret: {
+      docId: string;
+      accYear: string;
+      companyId: string;
+      branchId: string;
+      docDate: string;
+      docRefno?: string | null;
+      memberId: string;
+    },
+    bill: { billId: string; billAccYear: string; refno?: string | null },
+    points: number,
+    opts: { approvedBy: string; createdBy?: string },
+  ): Promise<{ rowsWritten: number; pointsRestored: number }> {
+    const want = round(points, 4);
+    if (!(want > 0)) {
+      return { rowsWritten: 0, pointsRestored: 0 };
+    }
+    const redeemed = await tx.$queryRaw<
+      {
+        lld_lsc_id: string | null;
+        lot_lsc_id: string | null;
+        expires_on: Date | null;
+        never: boolean;
+        span_days: number | null;
+      }[]
+    >`
+      SELECT MAX(r.lld_lsc_id::text)::uuid AS lld_lsc_id,
+             MAX(lot.lld_lsc_id::text)::uuid AS lot_lsc_id,
+             MAX(lot.lld_expires_on) AS expires_on,
+             bool_or(lot.lld_id IS NOT NULL AND lot.lld_expires_on IS NULL) AS never,
+             MAX(lot.lld_expires_on - lot.lld_txn_date) AS span_days
+        FROM sales.loyalty_ledger r
+        LEFT JOIN sales.loyalty_ledger lot
+               ON lot.lld_id = r.lld_lot_id AND lot.lld_acc_year = r.lld_lot_acc_year
+       WHERE r.lld_src_doc_type = 'SALE_BILL' AND r.lld_src_doc_id = ${bill.billId}::uuid
+         AND r.lld_txn_type = 'REDEEM' AND r.lld_member_id = ${ret.memberId}::uuid
+         AND r.lld_reversal_of_id IS NULL AND r.lld_is_deleted = false`;
+    const member = await this.lockMember(tx, ret.memberId, ret.companyId, ['CLOSED', 'MERGED']);
+    const lastRow = (
+      await this.maxRowNos(tx, { docId: ret.docId, accYear: ret.accYear, docType: 'SALE_RETURN' })
+    ).get('ADJUST');
+    const lotExpires = redeemed[0]?.never ? null : dateStr(redeemed[0]?.expires_on ?? null);
+    // Review 11-14 N4 — a lot that has not lapsed lends the points its own
+    // expiry (as before). One that HAS lapsed would hand them back expired,
+    // or (as this used to) never expiring: they come back with the scheme's
+    // normal validity counted from the return date instead.
+    const expiry =
+      lotExpires && lotExpires < ret.docDate
+        ? await this.validityFrom(
+            tx,
+            redeemed[0]?.lot_lsc_id ?? redeemed[0]?.lld_lsc_id ?? member.lscId,
+            ret.docDate,
+            redeemed[0]?.span_days ?? null,
+          )
+        : lotExpires;
+    await this.writeLedgerRows(tx, [
+      {
+        compId: ret.companyId,
+        branchId: ret.branchId,
+        accYear: ret.accYear,
+        memberId: ret.memberId,
+        custId: member.custId,
+        lscId: redeemed[0]?.lld_lsc_id ?? member.lscId,
+        txnType: 'ADJUST',
+        rowNo: (lastRow ?? 0) + 1,
+        points: want,
+        txnDate: ret.docDate,
+        expiresOn: expiry && expiry >= ret.docDate ? expiry : null,
+        srcModule: 'SALES',
+        srcDocType: 'SALE_RETURN',
+        srcDocId: ret.docId,
+        srcAccYear: ret.accYear,
+        srcDocRefno: ret.docRefno ?? null,
+        approvedBy: opts.approvedBy,
+        remarks: `Points back on return ${ret.docRefno ?? ret.docId} of bill ${bill.refno ?? bill.billId}`,
+        createdBy: opts.createdBy ?? 'SYSTEM',
+      },
+    ]);
+    return { rowsWritten: 1, pointsRestored: want };
+  }
+
+  /**
+   * Review 11-14 N4 — when points given back on `fromDate` lapse: as the
+   * scheme dates a lot earned that day (its `lsc_expiry_basis`, lotExpiry),
+   * never before that day and never "no expiry". A basis that names no date
+   * on or after it (NONE, a scheme already ended) falls back to the scheme's
+   * valid days, then to the lapsed lot's own span, then to the day itself.
+   */
+  private async validityFrom(
+    tx: Prisma.TransactionClient,
+    lscId: string | null,
+    fromDate: string,
+    lotSpanDays: number | null,
+  ): Promise<string> {
+    const rows = lscId
+      ? await tx.$queryRaw<SchemeRow[]>`
+          SELECT s.* FROM sales.loyalty_scheme s WHERE s.lsc_id = ${lscId}::uuid`
+      : [];
+    const scheme = rows[0] ? toScheme(rows[0]) : null;
+    const byBasis = scheme ? lotExpiry(scheme, fromDate) : null;
+    if (byBasis && byBasis >= fromDate) {
+      return byBasis;
+    }
+    if (scheme?.pointsValidDays && scheme.pointsValidDays > 0) {
+      return addDays(fromDate, scheme.pointsValidDays);
+    }
+    const span = Number(lotSpanDays ?? 0);
+    return span > 0 ? addDays(fromDate, span) : fromDate;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -2160,6 +2316,7 @@ interface LedgerRowOut {
   lld_tender_id: string | null;
   lld_tender_acc_year: string | null;
   lld_txn_date: Date;
+  lld_approved_by?: string | null;
 }
 
 interface SchemeRow {

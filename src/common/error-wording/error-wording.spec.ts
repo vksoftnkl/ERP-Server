@@ -107,3 +107,91 @@ describe('error wording (notes 120)', () => {
     });
   });
 });
+
+describe('error wording — {name} placeholders (Sale Return P2a)', () => {
+  beforeEach(() =>
+    setErrorWording(
+      [
+        {
+          code: 'SALES_RETURN_SCHEME_SHORT',
+          variant: '',
+          lang: 'en',
+          title: 'Scheme broken',
+          line: 'After this return the customer keeps a scheme benefit they no longer earn ({value}).',
+          todo: 'Ask for it back, or carry on.',
+        },
+        {
+          code: 'SALES_RETURN_LOT_EXPIRED',
+          variant: '',
+          lang: 'en',
+          title: 'Lot past expiry',
+          line: 'Lot {lot} expired {n} days ago.',
+          todo: 'Make it a Claim, or tick to carry on.',
+        },
+        {
+          code: 'SALES_RETURN_ON_DRAFTS',
+          variant: '',
+          lang: 'en',
+          title: 'On other drafts',
+          line: '{qty} of this line are on other draft returns ({refnos}).',
+          todo: 'Only the first return to post gets them.',
+        },
+        {
+          code: 'SALES_RETURN_NOT_ON_BILL',
+          variant: '',
+          lang: 'en',
+          title: 'Not on this bill',
+          line: 'This item is not on bill {bill}.',
+          todo: 'Return it on a separate return with no bill.',
+        },
+        row('TILL_SESSION_NOT_OPEN', '', 'plain'),
+      ],
+      '2026-11-13.1',
+    ),
+  );
+
+  it("fills each {name} from the error's params", () => {
+    expect(
+      wordingFor({ code: 'SALES_RETURN_LOT_EXPIRED', params: { lot: 'SX1026', n: 13 } })?.line,
+    ).toBe('Lot SX1026 expired 13 days ago.');
+    expect(
+      wordingFor({
+        code: 'SALES_RETURN_ON_DRAFTS',
+        params: { qty: '3', refnos: 'SRT/2026-2027/D8/00001, SRT/2026-2027/D8/00002' },
+      })?.line,
+    ).toBe(
+      '3 of this line are on other draft returns (SRT/2026-2027/D8/00001, SRT/2026-2027/D8/00002).',
+    );
+  });
+
+  it('falls back to a plain value on the error itself', () => {
+    expect(wordingFor({ code: 'SALES_RETURN_NOT_ON_BILL', bill: 'bil00142' })?.line).toBe(
+      'This item is not on bill bil00142.',
+    );
+  });
+
+  it('never shows a brace: a placeholder with no value goes, with the brackets it sat in', () => {
+    expect(wordingFor({ code: 'SALES_RETURN_SCHEME_SHORT' })?.line).toBe(
+      'After this return the customer keeps a scheme benefit they no longer earn.',
+    );
+    expect(wordingFor({ code: 'SALES_RETURN_NOT_ON_BILL' })?.line).toBe(
+      'This item is not on bill.',
+    );
+    expect(JSON.stringify(wordingFor({ code: 'SALES_RETURN_LOT_EXPIRED' }))).not.toMatch(
+      /[{}]\w|\w[{}]/,
+    );
+  });
+
+  it('words the refusals of a /validate answer with their params, and leaves plain rows as they were', () => {
+    const body = withUserWordingOnNotes({
+      success: true,
+      data: {
+        warnings: [{ code: 'SALES_RETURN_LOT_EXPIRED', params: { lot: 'B-7', n: 2 } }],
+        refusals: [{ code: 'TILL_SESSION_NOT_OPEN' }],
+      },
+    });
+
+    expect(body.data.warnings[0]).toMatchObject({ user: { line: 'Lot B-7 expired 2 days ago.' } });
+    expect(body.data.refusals[0]).toMatchObject({ user: { title: 'plain', line: 'plain line' } });
+  });
+});

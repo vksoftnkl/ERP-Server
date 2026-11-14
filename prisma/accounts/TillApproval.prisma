@@ -18,6 +18,7 @@ model TillApproval {
   tapTenantId         String?   @db.Uuid                             @map("tap_tenant_id")
   tapAccYear          String    @db.Char(9)                          @map("tap_acc_year")
   /// ck_tar_event's list.
+  /// ck_tap_event = the same list, SALE_RETURN / SALE_CLAIM included (20261113160000).
   tapEventCode        String    @db.VarChar(30)                      @map("tap_event_code")
   tapSessionId        String?   @db.Uuid                             @map("tap_session_id")
   tapCounterId        String?   @db.Uuid                             @map("tap_counter_id")

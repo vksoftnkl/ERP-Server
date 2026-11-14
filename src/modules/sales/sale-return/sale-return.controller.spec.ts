@@ -111,13 +111,14 @@ describe('SaleReturnController', () => {
     });
   });
 
-  it('wraps the returnable bill lines', async () => {
-    await expect(controller.billLines(BILL_ID, ACC_YEAR)).resolves.toEqual({
+  it('wraps the returnable bill lines, handing the service the whole query', async () => {
+    const q = { sbId: BILL_ID, sbAccYear: ACC_YEAR, companyId: COMPANY_ID, branchId: BRANCH_ID };
+    await expect(controller.billLines(q as never)).resolves.toEqual({
       success: true,
       message: 'Bill lines fetched',
       data: [{ billItemId: 'line-1', returnedQty: 0 }],
     });
-    expect(service.billLines).toHaveBeenCalledWith(BILL_ID, ACC_YEAR);
+    expect(service.billLines).toHaveBeenCalledWith(q);
   });
 
   it('wraps the transport band', async () => {

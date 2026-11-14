@@ -804,5 +804,17 @@ describe('sales.guards', () => {
     it('passes a bill with neither', async () => {
       await expect(assertCancellable(clientWith(0n, 0n), bill)).resolves.toBeUndefined();
     });
+
+    it('counts only live receipt rows: a reversed row and its reversal are no allocation', async () => {
+      const query = routedQuery([['sales.sale_return', [{ returns: 0n, allocations: 0n }]]]);
+
+      await assertCancellable(clientOf(query), bill);
+
+      const sql = (query.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toContain('j.abj_reversal_of_id IS NULL');
+      expect(sql).toMatch(
+        /NOT EXISTS \(SELECT 1 FROM accounts\.acc_bill_adjustment x\s+WHERE x\.abj_reversal_of_id = j\.abj_id AND x\.abj_is_deleted = false\)/,
+      );
+    });
   });
 });

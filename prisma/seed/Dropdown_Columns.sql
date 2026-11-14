@@ -6,6 +6,8 @@
 -- 20261112120000_vehicle_transporter_masters inserts them.
 -- 77 ITEMS BY COMPANY: its five columns (pinned uuids ...0770 - ...0774) as migration
 -- 20261113100000_item_ledger_layouts inserts them.
+-- 78 SALE RETURN REASONS: its five columns (pinned uuids ...0780 - ...0784) as migration
+-- 20261113160000_sale_return_screen inserts them.
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -289,6 +291,12 @@ SELECT v.* FROM (VALUES
     ,('01a1b2c0-7700-7000-8000-000000000772', 77, 2, 'Item'                , 'item_name_en'      , NULL                  , 'Text'   , 55.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7700-7000-8000-000000000773', 77, 3, 'Barcode'             , 'item_default_barcode', NULL                , 'Text'   , 25.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7700-7000-8000-000000000774', 77, 4, 'SKU'                 , 'item_sku'          , NULL                  , 'Text'   , 10.00 , 'Left'  , false, true , 'system')
+    -- ============ SALE RETURN REASONS (id 78) ============
+    ,('01a1b2c0-7800-7000-8000-000000000780', 78, 0, '#'                   , 'srm_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a1b2c0-7800-7000-8000-000000000781', 78, 1, 'Reason'              , 'srm_name'          , NULL                  , 'Text'   , 60.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7800-7000-8000-000000000782', 78, 2, 'Code'                , 'srm_code'          , NULL                  , 'Text'   , 20.00 , 'Left'  , true , true , 'system')
+    ,('01a1b2c0-7800-7000-8000-000000000783', 78, 3, 'Condition'           , 'srm_default_condition', NULL               , 'Text'   , 20.00 , 'Left'  , true , false, 'system')
+    ,('01a1b2c0-7800-7000-8000-000000000784', 78, 4, 'Charges back'        , 'srm_refund_charges', NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing

@@ -280,7 +280,9 @@ describe('P0 charge matrix — a bill Qt built validates, posts balanced and fil
     const legs = expectPosts(snap);
     expect(legs[1]).toMatchObject({ roleTag: 'SALES', drCr: 'CR', amount: 980 });
     expect(legOf(legs, LED.cd)).toEqual([]);
-    expect(registerOf(snap)).toEqual({ other: 0, deduction: 0 });
+    // Gap 50: no leg, but the register shows the deduction the lines took,
+    // so gross 1000 − discount 20 + other 0 = taxable 980.
+    expect(registerOf(snap)).toEqual({ other: 0, deduction: 20 });
   });
 
   it('M4 — before-tax DEDUCT, sep_post ("New Reg"): SALES grossed up, DR its own ledger', () => {

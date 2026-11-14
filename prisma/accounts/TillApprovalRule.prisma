@@ -10,6 +10,7 @@ model TillApprovalRule {
   tarCompanyId        String?   @db.Uuid                             @map("tar_company_id")
   tarBranchId         String?   @db.Uuid                             @map("tar_branch_id")
   /// ck_tar_event's list (till events + the reserved counter-control gates).
+  /// SALE_RETURN and SALE_CLAIM added by 20261113160000 (Sale Return gate, D26).
   tarEventCode        String    @db.VarChar(30)                      @map("tar_event_code")
   /// NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT
   tarMode             String    @db.VarChar(12)                      @map("tar_mode")

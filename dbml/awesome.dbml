@@ -1756,7 +1756,8 @@ Table till_approval {
   tapBranchId String [not null]
   tapTenantId String
   tapAccYear String [not null]
-  tapEventCode String [not null, note: 'ck_tar_event\'s list.']
+  tapEventCode String [not null, note: 'ck_tar_event\'s list.
+ck_tap_event = the same list, SALE_RETURN / SALE_CLAIM included (20261113160000).']
   tapSessionId String
   tapCounterId String
   tapSrcDocType String [note: 'TILL_SESSION | TILL_MOVEMENT | SALE_BILL …']
@@ -1840,7 +1841,8 @@ Table till_approval_rule {
   tarId String [pk]
   tarCompanyId String
   tarBranchId String
-  tarEventCode String [not null, note: 'ck_tar_event\'s list (till events + the reserved counter-control gates).']
+  tarEventCode String [not null, note: 'ck_tar_event\'s list (till events + the reserved counter-control gates).
+SALE_RETURN and SALE_CLAIM added by 20261113160000 (Sale Return gate, D26).']
   tarMode String [not null, note: 'NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT']
   tarThresholdAmount Decimal [not null, default: 0]
   tarThresholdCount Int [not null, default: 0, note: 'Per session.']
@@ -5133,7 +5135,7 @@ Table printer_profile {
 
   Note: 'public.printer_profile — §6, the physical device.
 
-┌─────────────────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────���─────────────────────┐
 │ RECONSTRUCTED, NOT TRANSCRIBED. §6 of 17_printing.sql has not reached   │
 │ me — both pastes of the file hit the 50,000-character message limit     │
 │ before it. This model is derived from what the rest of the file states  │
@@ -8747,7 +8749,7 @@ CUSTOMER_GROUP 1 — narrowest first. EXCLUDE beats INCLUDE at equal priority.
 
 Read only when prm_cust_scope = \'LIST\'.
 
-── WRITING THIS MODEL ─────────────────────────────────────────────────���
+── WRITING THIS MODEL ──────────────────────────────────────────────────
 NEVER set custId / custGroupId / areaId / cityId, and never use the four
 nested `connect`s. Postgres computes those columns and rejects any write.
 Set prpKind + prpScopeId; read the relations back.
@@ -10367,6 +10369,17 @@ an offline counter created this row.']
   srCreatedBy String [not null]
   srModifiedOn DateTime
   srModifiedBy String
+  srReturnKind String [not null, default: 'RETURN', note: 'RETURN | CLAIM (ck_sr_return_kind). A CLAIM\'s lines each say BACK or
+DESTROYED (SaleReturnItem.sriClaimGoods), D23.']
+  srGstMode String [not null, default: 'GST', note: 'GST | FINANCIAL (ck_sr_gst_mode). FINANCIAL = past the credit-note
+cut-off: no GST cut, no IRN (D8). Set by the server only.']
+  srFreightCalcType String [note: 'As SaleBill.sbFreightCalcType / sbLoadingCalcType, saved at the return (D20).']
+  srLoadingCalcType String
+  srPointsBack Decimal [not null, default: 0, note: 'Points given back for the share of the note the bill paid by points
+(D48). numeric(18,4), like every points column.']
+  srPointsBackAmt Decimal [not null, default: 0, note: 'Their money value: part of the note, never refunded in money.']
+  srVoucherShareAmt Decimal [not null, default: 0, note: 'The gift-voucher share: stays inside srCreditAmt / srAdjustedAmt, out of
+the refund cap (D48).']
   bill sale_bill
   customer customers [not null]
   posState state_codes
@@ -10379,7 +10392,7 @@ an offline counter created this row.']
   indexes {
     (srId, srAccYear) [pk]
     (srCompanyId, srBranchId, srAccYear, srReturnRefno) [unique]
-    (srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno) [unique]
+    (srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno) [unique]
   }
 
   Note: 'The credit note.
@@ -10482,6 +10495,34 @@ worked out line by line. numeric(18,4), like every points column.']
   sriCreatedBy String [not null]
   sriModifiedOn DateTime
   sriModifiedBy String
+  sriClaimGoods String [note: 'BACK | DESTROYED on a claim line (ck_sri_claim_goods). "A CLAIM line must
+say one" is a server check: it crosses to the header (D23).']
+  sriSupplierClaim Boolean [not null, default: false, note: 'A claim line that came BACK, for the later Purchase Return link (SR-25).']
+  sriItemDiscQty Decimal [not null, default: 0]
+  sriSplDiscQty Decimal [not null, default: 0]
+  sriSchDiscQty Decimal [not null, default: 0]
+  sriBillSchPerc Decimal [not null, default: 0]
+  sriBillSchQty Decimal [not null, default: 0]
+  sriAddlDisc1Perc Decimal [not null, default: 0]
+  sriAddlDisc1Amt Decimal [not null, default: 0]
+  sriAddlDisc2Perc Decimal [not null, default: 0]
+  sriAddlDisc2Amt Decimal [not null, default: 0]
+  sriCashDiscPerc Decimal [not null, default: 0]
+  sriCashDiscAmt Decimal [not null, default: 0]
+  sriNetGross Decimal
+  sriAcessPerc Decimal [not null, default: 0]
+  sriAcessPerUnit Decimal [not null, default: 0]
+  sriAcessAmt Decimal [not null, default: 0]
+  sriLoyaltyPv Decimal [not null, default: 0]
+  sriPromoUsageId String
+  sriQtyPriceId String
+  sriCogsAmt Decimal [not null, default: 0, note: 'The COGS taken back: the bill line\'s own cost per base unit, or today\'s
+average (no bill, or the bill line had no cost) (D54, D69).']
+  sriRateSource String [note: 'BILL | LAST_SALE | TODAY_PRICE (ck_sri_rate_source), D56. "A LAST_SALE
+line names its source" is a server check.']
+  sriRateSrcItemId String [note: 'The SaleBillItem whose rate a no-bill line used (grid 211). No FK: the
+bill may be another branch\'s (D78).']
+  sriRateSrcAccYear String
   saleReturn sale_return [not null]
   billItem sale_bill_item
   item item_master [not null]
@@ -11578,6 +11619,9 @@ anybody reports on. NEVER null — see WRITE RULES above.']
   srmCreatedBy String
   srmModifiedOn DateTime
   srmModifiedBy String
+  srmRefundCharges Boolean [note: 'Give the bill\'s after-tax additions back by default (D12).']
+  srmDefaultCondition String [note: 'The Condition a new return line takes: RESTOCK | DAMAGED | EXPIRED |
+SCRAP (ck_srm_default_condition, the ck_sri_condition list).']
   company companys
   glLedger acc_ledger_master
   ledgerEntries stock_ledger [not null]
@@ -11627,6 +11671,8 @@ normalise an absent value to [] in the DTO — never pass null.
 
 Vocabulary, enforced by a CHECK constraint in the migration:
 srmDirection  IN | OUT | BOTH
+srmDefaultCondition  RESTOCK | DAMAGED | EXPIRED | SCRAP (ck_srm_default_condition,
+20261113160000)
 
 DB-only objects Prisma cannot express — hand-authored in the migration and
 deliberately NOT declared here (both carry a WHERE, and Prisma ignores

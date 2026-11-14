@@ -35,6 +35,18 @@
 -- numbers are the Qt VCol / DCol / MCol enums of item_ledger_entry.cpp, every column shown
 -- (71's Bucket too: the screen hides it unless the bucket filter is All buckets), titles as on
 -- screen (71's caret column blank), the shown widths add up to 97.00; read-only, no focus.
+-- 74 / 75 / 76 / 77 Sale Return (menu 13) lines / charges / adjust bills / refund tenders as
+-- 20261113160000_sale_return_screen created them (ids 2509-2546 / 2547-2581 / 2582-2605 /
+-- 2606-2623): 74 is the screen's own enum (0..18 shown in mockup v5 order, 19..37 hidden); 75 is
+-- ChargeCols 0..32 + 33 On the bill / 34 Back before; 76 is ReceiptBillCols 0..23; 77 is
+-- ReceiptTenderCols 0..17. And 22's column 100 "Returned" (id 2624, read only) by the same
+-- migration, placed right after Bill Qty: the fix-up after the INSERT below moves the columns
+-- behind it up one rank when a fresh database gets it on the same position as Length Qty.
+-- 75 as 20261114100000_sale_return_grid_fixes left it: Kind 19.00 (was 15.00), Charge 15.00
+-- (was 18.00), On the bill 9.00 (was 10.00); the shown widths still add up to 95.00. The same
+-- migration narrows 22's Description 17.08 -> 15.55 only on the layout it was measured on (the
+-- dev database, shown widths 101.53 with Returned); 22 here is an older layout (Description
+-- 17.12, shown widths 99.68 with Returned), so it is not changed.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -441,6 +453,7 @@ SELECT v.* FROM (VALUES
     ,(1289, 22  , 96 , 'Src Year'              , 1                , false, false, 96 , false, NULL, NULL, true , false, 'system')
     ,(1290, 22  , 97 , 'Lot Id'                , 1                , false, false, 97 , false, NULL, NULL, true , false, 'system')
     ,(1291, 22  , 98 , 'Bucket'                , 1                , false, false, 98 , false, NULL, NULL, true , false, 'system')
+    ,(2624, 22  , 100, 'Returned'              , 3.80             , true , false, 15 , false, NULL, NULL, true , false, 'system')
     -- ============ SO - ITEM (id 24) ============
     ,(762 , 24  , 0  , 'Id'                    , 2.13             , true , false, 0  , false, NULL, NULL, true , false, 'system')
     ,(763 , 24  , 1  , 'Barcode'               , 4.2              , true , false, 1  , false, NULL, NULL, true , false, 'system')
@@ -1959,6 +1972,125 @@ SELECT v.* FROM (VALUES
     ,(2506, 73  , 4  , 'Outward'               , 13.5             , true , false, 4  , false, NULL, NULL, true , false, 'system')
     ,(2507, 73  , 5  , 'Closing'               , 13.5             , true , false, 5  , false, NULL, NULL, true , false, 'system')
     ,(2508, 73  , 6  , 'Closing value'         , 18.2             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    -- ============ SALE RETURN - LINES (id 74) ============
+    ,(2509, 74  , 0  , '#'                    , 1.50             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2510, 74  , 1  , 'Barcode'              , 8.00             , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2511, 74  , 2  , 'Item'                 , 13.70            , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2512, 74  , 3  , 'Batch · Exp'          , 6.00             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2513, 74  , 4  , 'Unit'                 , 2.80             , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(2514, 74  , 5  , 'Billed'               , 3.50             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2515, 74  , 6  , 'Returned'             , 4.60             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2516, 74  , 7  , 'Can return'           , 4.60             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2517, 74  , 8  , 'Qty'                  , 3.40             , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(2518, 74  , 9  , 'Weight'               , 4.10             , true , false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2519, 74  , 10 , 'Rate'                 , 4.40             , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2520, 74  , 11 , 'Disc'                 , 3.20             , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2521, 74  , 12 , 'Taxable'              , 4.60             , true , false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2522, 74  , 13 , 'GST %'                , 2.80             , true , false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2523, 74  , 14 , 'GST'                  , 4.10             , true , false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2524, 74  , 15 , 'Amount'               , 5.00             , true , false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2525, 74  , 16 , 'Condition'            , 5.80             , true , true , 16 , false, NULL, NULL, true , false, 'system')
+    ,(2526, 74  , 17 , 'Godown'               , 5.80             , true , true , 17 , false, NULL, NULL, true , false, 'system')
+    ,(2527, 74  , 18 , 'Notes'                , 9.10             , true , true , 18 , false, NULL, NULL, true , false, 'system')
+    ,(2528, 74  , 19 , 'LineId'               , 0.00             , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2529, 74  , 20 , 'ItemId'               , 0.00             , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2530, 74  , 21 , 'ItemUnitId'           , 0.00             , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2531, 74  , 22 , 'GodownId'             , 0.00             , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2532, 74  , 23 , 'LotId'                , 0.00             , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2533, 74  , 24 , 'BillItemId'           , 0.00             , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2534, 74  , 25 , 'BillAccYear'          , 0.00             , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2535, 74  , 26 , 'BaseFactor'           , 0.00             , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(2536, 74  , 27 , 'QtyLeftBase'          , 0.00             , false, false, 27 , false, NULL, NULL, true , false, 'system')
+    ,(2537, 74  , 28 , 'OnDraftsBase'         , 0.00             , false, false, 28 , false, NULL, NULL, true , false, 'system')
+    ,(2538, 74  , 29 , 'CostPerBase'          , 0.00             , false, false, 29 , false, NULL, NULL, true , false, 'system')
+    ,(2539, 74  , 30 , 'RateSource'           , 0.00             , false, false, 30 , false, NULL, NULL, true , false, 'system')
+    ,(2540, 74  , 31 , 'Goods'                , 8.00             , false, true , 31 , false, NULL, NULL, true , false, 'system')
+    ,(2541, 74  , 32 , 'Evidence'             , 0.00             , false, false, 32 , false, NULL, NULL, true , false, 'system')
+    ,(2542, 74  , 33 , 'FullyReturned'        , 0.00             , false, false, 33 , false, NULL, NULL, true , false, 'system')
+    ,(2543, 74  , 34 , 'SplitNo'              , 0.00             , false, false, 34 , false, NULL, NULL, true , false, 'system')
+    ,(2544, 74  , 35 , 'RateSrcItemId'        , 0.00             , false, false, 35 , false, NULL, NULL, true , false, 'system')
+    ,(2545, 74  , 36 , 'ExpiryDate'           , 0.00             , false, false, 36 , false, NULL, NULL, true , false, 'system')
+    ,(2546, 74  , 37 , 'IsFree'               , 0.00             , false, false, 37 , false, NULL, NULL, true , false, 'system')
+    -- ============ SALE RETURN - CHARGES (id 75) ============
+    ,(2547, 75  , 0  , '#'                    , 0.00             , false, false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2548, 75  , 1  , 'Charge'               , 15.00            , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2549, 75  , 2  , 'Posts to'             , 15.00            , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2550, 75  , 3  , 'Basis'                , 0.00             , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2551, 75  , 4  , 'Type'                 , 0.00             , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2552, 75  , 5  , 'Apply On'             , 0.00             , false, false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2553, 75  , 6  , 'Unit'                 , 0.00             , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2554, 75  , 7  , 'QtyVal'               , 0.00             , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2555, 75  , 8  , 'Weight'               , 0.00             , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2556, 75  , 9  , 'Rate'                 , 0.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2557, 75  , 10 , 'Back now'             , 10.00            , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(2558, 75  , 11 , 'Hsn'                  , 0.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2559, 75  , 12 , 'TaxPerc'              , 0.00             , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2560, 75  , 13 , 'GST'                  , 7.00             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2561, 75  , 14 , 'SgstPerc'             , 0.00             , false, false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2562, 75  , 15 , 'SgstAmt'              , 0.00             , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2563, 75  , 16 , 'CgstPerc'             , 0.00             , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2564, 75  , 17 , 'CgstAmt'              , 0.00             , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2565, 75  , 18 , 'IgstPerc'             , 0.00             , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2566, 75  , 19 , 'IgstAmt'              , 0.00             , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2567, 75  , 20 , 'CessPerc'             , 0.00             , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2568, 75  , 21 , 'CessAmt'              , 0.00             , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2569, 75  , 22 , 'Net'                  , 10.00            , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2570, 75  , 23 , 'Remarks'              , 0.00             , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    ,(2571, 75  , 24 , 'Role'                 , 0.00             , false, false, 27 , false, NULL, NULL, true , false, 'system')
+    ,(2572, 75  , 25 , 'LandingCost'          , 0.00             , false, false, 28 , false, NULL, NULL, true , false, 'system')
+    ,(2573, 75  , 26 , 'CostAlloc'            , 0.00             , false, false, 29 , false, NULL, NULL, true , false, 'system')
+    ,(2574, 75  , 27 , 'Kind'                 , 19.00            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2575, 75  , 28 , 'SepPost'              , 0.00             , false, false, 30 , false, NULL, NULL, true , false, 'system')
+    ,(2576, 75  , 29 , 'ChargeId'             , 0.00             , false, false, 31 , false, NULL, NULL, true , false, 'system')
+    ,(2577, 75  , 30 , 'LedgerCode'           , 0.00             , false, false, 32 , false, NULL, NULL, true , false, 'system')
+    ,(2578, 75  , 31 , 'TaxCode'              , 0.00             , false, false, 33 , false, NULL, NULL, true , false, 'system')
+    ,(2579, 75  , 32 , 'TaxApl'               , 0.00             , false, false, 34 , false, NULL, NULL, true , false, 'system')
+    ,(2580, 75  , 33 , 'On the bill'          , 9.00             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2581, 75  , 34 , 'Back before'          , 10.00            , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    -- ============ SALE RETURN - ADJUST BILLS (id 76) ============
+    ,(2582, 76  , 0  , 'Date'                 , 8.50             , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2583, 76  , 1  , 'Bill'                 , 11.30            , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2584, 76  , 2  , 'Their ref'            , 0.00             , false, false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2585, 76  , 3  , 'Type'                 , 0.00             , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2586, 76  , 4  , 'Due'                  , 0.00             , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2587, 76  , 5  , 'Age'                  , 4.50             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2588, 76  , 6  , 'Bill value'           , 9.60             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2589, 76  , 7  , 'Paid'                 , 0.00             , false, false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2590, 76  , 8  , 'Due now'              , 9.60             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2591, 76  , 9  , 'PDC held'             , 0.00             , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2592, 76  , 10 , 'TCS due'              , 0.00             , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2593, 76  , 11 , 'Adjust now'           , 10.20            , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(2594, 76  , 12 , 'Disc'                 , 0.00             , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2595, 76  , 13 , 'W/off'                , 0.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2596, 76  , 14 , 'R/off'                , 0.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2597, 76  , 15 , 'Due after'            , 9.60             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2598, 76  , 16 , 'Profit'               , 0.00             , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2599, 76  , 17 , 'Net profit'           , 0.00             , false, false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2600, 76  , 18 , 'Note'                 , 33.70            , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2601, 76  , 19 , 'BillId'               , 0.00             , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2602, 76  , 20 , 'BillAccYear'          , 0.00             , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2603, 76  , 21 , 'PpdSuggested'         , 0.00             , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2604, 76  , 22 , 'DrCr'                 , 0.00             , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2605, 76  , 23 , 'TcsAmount'            , 0.00             , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    -- ============ SALE RETURN - REFUND TENDERS (id 77) ============
+    ,(2606, 77  , 0  , '#'                    , 0.00             , false, false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2607, 77  , 1  , 'Tender'               , 13.70            , true , true , 0  , false, NULL, NULL, true , false, 'system')
+    ,(2608, 77  , 2  , 'Amount'               , 32.70            , true , true , 3  , false, NULL, NULL, true , false, 'system')
+    ,(2609, 77  , 3  , 'Ref no (UTR)'         , 22.30            , true , true , 2  , false, NULL, NULL, true , false, 'system')
+    ,(2610, 77  , 4  , 'Instr. date'          , 0.00             , false, false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2611, 77  , 5  , 'Ledger it posts to'   , 28.30            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2612, 77  , 6  , 'Charge'               , 0.00             , false, false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2613, 77  , 7  , 'Dr/Cr'                , 0.00             , false, false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2614, 77  , 8  , 'Settles bill'         , 0.00             , false, false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2615, 77  , 9  , 'Against'              , 0.00             , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2616, 77  , 10 , 'PDC / voucher'        , 0.00             , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2617, 77  , 11 , 'Kind'                 , 0.00             , false, false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2618, 77  , 12 , 'TenderId'             , 0.00             , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2619, 77  , 13 , 'TenderTypeId'         , 0.00             , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2620, 77  , 14 , 'TenderLedger'         , 0.00             , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2621, 77  , 15 , 'ChequeJson'           , 0.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2622, 77  , 16 , 'LedgerId'             , 0.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2623, 77  , 17 , 'IsSeeded'             , 0.00             , false, false, 17 , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')
@@ -2313,6 +2445,24 @@ WHERE NOT EXISTS (
    WHERE existing.ui_tbl_clm_table_id = v.ui_tbl_clm_table_id
 )
 ON CONFLICT (ui_tbl_clm_id) DO NOTHING;
+
+-- Sale Bill lines (22), column 100 "Returned" (20261113160000_sale_return_screen, plan D62):
+-- positions are a rank and the first row of a position wins it, so a Returned that shares its
+-- position with another live column (a fresh database: Length Qty, 15) would drop to the end of
+-- the header. Move every other live column at or after it up one; relative order is kept. A
+-- no-op once the position is its own, so a site's saved layout is never touched.
+UPDATE fixed.ui_table_columns c
+   SET ui_tbl_clm_column_position = c.ui_tbl_clm_column_position + 1
+  FROM (SELECT r.ui_tbl_clm_column_position AS pos
+          FROM fixed.ui_table_columns r
+         WHERE r.ui_tbl_clm_table_id = 22 AND r.ui_tbl_clm_no = 100 AND r.ui_tbl_clm_is_deleted = false
+           AND EXISTS (SELECT 1 FROM fixed.ui_table_columns o
+                        WHERE o.ui_tbl_clm_table_id = 22 AND o.ui_tbl_clm_no <> 100
+                          AND o.ui_tbl_clm_is_deleted = false
+                          AND o.ui_tbl_clm_column_position = r.ui_tbl_clm_column_position)
+         LIMIT 1) ret
+ WHERE c.ui_tbl_clm_table_id = 22 AND c.ui_tbl_clm_no <> 100 AND c.ui_tbl_clm_is_deleted = false
+   AND c.ui_tbl_clm_column_position >= ret.pos;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from
 -- the UI does not collide with one of them.

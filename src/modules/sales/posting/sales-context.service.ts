@@ -111,6 +111,24 @@ export class SalesContextService {
     return effective.find((i) => i.asdKey === key)?.value ?? null;
   }
 
+  /** Several raw setting values (any key, any module) through one resolve. */
+  async values(
+    companyId: string,
+    branchId: string,
+    deviceId: string | null | undefined,
+    keys: readonly string[],
+  ): Promise<Record<string, string | null>> {
+    const effective = await this.appSettings.resolveEffective({
+      companyId,
+      branchId,
+      deviceId: isUuid(deviceId) ? deviceId : null,
+      userId: null,
+    });
+    return Object.fromEntries(
+      keys.map((k) => [k, effective.find((i) => i.asdKey === k)?.value ?? null]),
+    );
+  }
+
   /** Every flag, for a `/get` that resolves no settings. */
   async rights(menuId: number, client?: Prisma.TransactionClient): Promise<RightsBlock> {
     const userId = this.requestContext.getUserId();

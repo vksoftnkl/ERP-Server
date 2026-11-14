@@ -355,11 +355,13 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     POSTING_STATUSES,
     SALES_MENU_ID.DC_RETURN,
   ),
+  // Numbered per DEVICE since plan v5 D16 (SRT/2026-2027/D8/00003), so like a
+  // POS bill its serial cannot order a date's returns: entry order instead.
   SALE_RETURN: salesDoc(
     'sales return',
     'sales.sale_return',
     'sr',
-    { date: 'sr_return_date', slno: 'sr_return_slno', refno: 'sr_return_refno' },
+    { date: 'sr_return_date', slno: null, refno: 'sr_return_refno' },
     POSTING_STATUSES,
     SALES_MENU_ID.SALE_RETURN,
   ),

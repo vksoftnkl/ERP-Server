@@ -147,6 +147,10 @@ export class BillReadService {
              ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
           WHERE b.abl_src_doc_id = ${bill.sbId}::uuid AND b.abl_acc_year = ${bill.sbAccYear}::char(9)
             AND j.abj_is_deleted = false
+            -- As assertCancellable: a reversed row and its reversal are no allocation.
+            AND j.abj_reversal_of_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM accounts.acc_bill_adjustment x
+                             WHERE x.abj_reversal_of_id = j.abj_id AND x.abj_is_deleted = false)
             -- Same exclusion as assertCancellable: only the set-offs the bill's
             -- own /post wrote, which carry no voucher.
             AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')

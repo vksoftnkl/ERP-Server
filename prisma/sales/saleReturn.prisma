@@ -157,6 +157,27 @@ model SaleReturn {
   srModifiedOn          DateTime? @db.Timestamptz(6)                   @map("sr_modified_on")
   srModifiedBy          String?   @db.VarChar(50)                      @map("sr_modified_by")
 
+  // ── Sale Return screen (20261113160000, plan-sale-return v5 §5.1) ─────
+  // Added at the end of the table, so they sit here to keep this file in the
+  // DB's column order.
+  /// RETURN | CLAIM (ck_sr_return_kind). A CLAIM's lines each say BACK or
+  /// DESTROYED (SaleReturnItem.sriClaimGoods), D23.
+  srReturnKind          String    @default("RETURN") @db.VarChar(10)   @map("sr_return_kind")
+  /// GST | FINANCIAL (ck_sr_gst_mode). FINANCIAL = past the credit-note
+  /// cut-off: no GST cut, no IRN (D8). Set by the server only.
+  srGstMode             String    @default("GST") @db.VarChar(10)      @map("sr_gst_mode")
+  /// As SaleBill.sbFreightCalcType / sbLoadingCalcType, saved at the return (D20).
+  srFreightCalcType     String?   @db.VarChar(12)                      @map("sr_freight_calc_type")
+  srLoadingCalcType     String?   @db.VarChar(12)                      @map("sr_loading_calc_type")
+  /// Points given back for the share of the note the bill paid by points
+  /// (D48). numeric(18,4), like every points column.
+  srPointsBack          Decimal   @default(0) @db.Decimal(18, 4)       @map("sr_points_back")
+  /// Their money value: part of the note, never refunded in money.
+  srPointsBackAmt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_points_back_amt")
+  /// The gift-voucher share: stays inside srCreditAmt / srAdjustedAmt, out of
+  /// the refund cap (D48).
+  srVoucherShareAmt     Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_voucher_share_amt")
+
   // Relations
   bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
   customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
@@ -174,15 +195,21 @@ model SaleReturn {
   @@id([srId, srAccYear], map: "pk_sale_return")
 
   @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
-  @@unique([srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno], map: "ux_sr_counter_slno")
+  /// Numbers are per DEVICE (D16; 20261113160000 replaced ux_sr_counter_slno).
+  @@unique([srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno], map: "ux_sr_device_slno")
 
   // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
   // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver
-  // / ix_sr_supervisor / ix_sr_vehicle.
+  // / ix_sr_supervisor / ix_sr_vehicle; ix_sr_salesman_gin (GIN on
+  // sr_salesman_id WHERE sr_is_deleted = false, as ix_sb_salesman_gin;
+  // query shape `sr_salesman_id @> ARRAY[:id]::uuid[]`).
   //
   // CHECK constraints (DB-only): ck_sr_doc_type, ck_sr_bill_mode,
   //   ck_sr_status, ck_sr_settle_mode, ck_sr_settle_status,
-  //   ck_sr_against_bill, ck_sr_settle_sum
+  //   ck_sr_against_bill, ck_sr_return_kind, ck_sr_gst_mode,
+  //   ck_sr_points_share (the three D48 figures >= 0), and ck_sr_settle_sum:
+  //   a non-DRAFT row has srRefundAmt + srAdjustedAmt + srCreditAmt +
+  //   srPointsBackAmt = srReturnAmt exactly (no epsilon, since 20261113160000).
 
   @@map("sale_return")
   @@schema("sales")
