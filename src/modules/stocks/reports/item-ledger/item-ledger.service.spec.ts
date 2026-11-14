@@ -52,6 +52,9 @@ const ROUTES: [string, string][] = [
   ['WITH ll AS (', 'lots'],
   ['WITH t AS (', 'types'],
   ["v.svh_voucher_type = 'PHYSICAL'", 'lastCount'],
+  // P2-IL: the engine's valuation of the item's holdings at `to`, and the in-scope rows after it.
+  ['WITH ih AS (', 'valuation'],
+  ['SELECT COUNT(*)::int AS n FROM stock.stock_ledger a', 'after'],
 ];
 
 function makeDb() {
@@ -64,9 +67,24 @@ function makeDb() {
     const route = ROUTES.find(([marker]) => text.includes(marker));
     if (!route) throw new Error(`unrouted SQL: ${text.slice(0, 160)}`);
     calls.push({ key: route[1], text, values: sql.values });
-    const answer = answers.get(route[1]) ?? [];
+    const answer = answers.get(route[1]) ?? (route[1] === 'valuation' ? ledgerSumHolding : []);
     return typeof answer === 'function' ? answer(sql) : answer;
   });
+  // P2-IL default: one Saleable holding worth exactly the ledger's sum (opening + period), so a
+  // test that does not care about the engine's re-valuing sees costAdj 0.
+  const ledgerSumHolding = (): unknown[] => {
+    const pick = (key: string): Record<string, unknown> | undefined => {
+      const a = answers.get(key);
+      const rows = (typeof a === 'function' ? [] : (a ?? [])) as Record<string, unknown>[];
+      return key === 'summary' ? rows.find((r) => r.part === 'S') : rows[0];
+    };
+    const o = pick('opening');
+    const sm = pick('summary');
+    const n = (v: unknown) => new Prisma.Decimal((v as Prisma.Decimal | number | undefined) ?? 0);
+    const q = n(o?.q).plus(n(sm?.q_all));
+    const value = n(o?.v).plus(n(o?.rv)).plus(n(sm?.v_all));
+    return [{ lot: LOT, godown: GODOWN, bucket: 'SALEABLE', q, vm: 'WAVG', rate: dec(0), value }];
+  };
   const $executeRaw = jest.fn(async (..._args: unknown[]) => 0);
   const tx = {
     $queryRaw,
@@ -474,6 +492,8 @@ describe('ItemLedgerService', () => {
         qty: '288.000',
         value: '8035.20',
         rate: '27.90',
+        ledgerValue: '8035.20',
+        costAdj: '0.00',
       });
       expect(data.totals).toMatchObject({
         receivedQty: '0.000',
@@ -711,6 +731,8 @@ describe('ItemLedgerService', () => {
         stockNowQty: '280.000',
         equal: false,
         difference: '6.000',
+        stockNowValue: '8035.20',
+        valueEqual: true,
       });
       expect(late.stockNow.totalInScope).toEqual({
         onHand: '280.000',
@@ -726,7 +748,126 @@ describe('ItemLedgerService', () => {
         stockNowQty: null,
         equal: null,
         difference: null,
+        stockNowValue: null,
+        valueEqual: null,
       });
+      expect(primed().of('after')).toHaveLength(0);
+    });
+
+    it('P2-IL: the closing value is the engine’s valuation in scope; the row sum stays as ledgerValue', async () => {
+      const db = primed();
+      // Samsung H1 (2026-11-14): 3,320 saleable + 100 damaged share one branch average.
+      db.answer('opening', [openingRow({ q: dec(0), v: dec(0), rv: dec(0) })]);
+      db.answer('summary', [
+        agg({
+          q_all: dec(3320),
+          v_all: dec(78844.47),
+          q_in: dec(3320),
+          q_out: dec(0),
+          v_in: dec(78844.47),
+          v_out: dec(0),
+        }),
+      ]);
+      db.answer('valuation', [
+        {
+          lot: LOT,
+          godown: GODOWN,
+          bucket: 'SALEABLE',
+          q: dec(3320),
+          vm: 'WAVG',
+          rate: dec(23.834568),
+          value: dec(79130.77),
+        },
+        {
+          lot: LOT,
+          godown: GODOWN,
+          bucket: 'DAMAGED',
+          q: dec(100),
+          vm: 'WAVG',
+          rate: dec(23.834568),
+          value: dec(2383.46),
+        },
+        {
+          lot: LOT,
+          godown: GODOWN_2,
+          bucket: 'SALEABLE',
+          q: dec(0),
+          vm: 'WAVG',
+          rate: dec(23.834568),
+          value: dec(0),
+        },
+      ]);
+      db.answer('stockNow', [
+        stockRow({ on_hand: dec(3320), value: dec(79130.77), cost_rate: dec(23.834568) }),
+      ]);
+      db.answer('after', [{ n: 0 }]);
+      const data = await build(db).ledger({ ...Q, to: '2026-11-11' });
+      expect(data.closing).toEqual({
+        date: '2026-11-11',
+        qty: '3320.000',
+        value: '79130.77',
+        rate: '23.83',
+        ledgerValue: '78844.47',
+        costAdj: '286.30',
+      });
+      expect(data.tie).toMatchObject({ equal: true, stockNowValue: '79130.77', valueEqual: true });
+      // The opening and the running balance stay the ledger's; the identity holds with costAdj.
+      expect(data.periodTie).toEqual({ qtyEqual: true, valueEqual: true });
+      const v = db.of('valuation')[0];
+      expect(v.values).toEqual(expect.arrayContaining([COMPANY, BRANCH, ITEM, '2026-11-11']));
+      // Bucket = All takes the damaged holding too.
+      const all = primed();
+      all.answer('valuation', [
+        {
+          lot: LOT,
+          godown: GODOWN,
+          bucket: 'SALEABLE',
+          q: dec(3320),
+          vm: 'WAVG',
+          rate: dec(1),
+          value: dec(79130.77),
+        },
+        {
+          lot: LOT,
+          godown: GODOWN,
+          bucket: 'DAMAGED',
+          q: dec(100),
+          vm: 'WAVG',
+          rate: dec(1),
+          value: dec(2383.46),
+        },
+      ]);
+      expect((await build(all).ledger({ ...Q, bucket: 'ALL' })).closing.value).toBe('81514.23');
+    });
+
+    it('P2-IL: a negative lot is valued at its last cost rate; rows after `to` leave the value tie unchecked', async () => {
+      const db = primed();
+      db.answer('opening', [openingRow({ q: dec(-224), v: dec(-11200), rv: dec(0) })]);
+      db.answer('summary', [agg({ q_all: dec(-8), v_all: dec(-400) })]);
+      db.answer('valuation', [
+        {
+          lot: LOT,
+          godown: GODOWN,
+          bucket: 'SALEABLE',
+          q: dec(-232),
+          vm: 'LOT_ACTUAL',
+          rate: dec(60),
+          value: dec(-13920),
+        },
+      ]);
+      db.answer('stockNow', [stockRow({ on_hand: dec(-240), value: dec(-14400) })]);
+      db.answer('opening', [
+        openingRow({ q: dec(-224), v: dec(-11200), rv: dec(0), after_q: dec(-8) }),
+      ]);
+      db.answer('after', [{ n: 1 }]);
+      const data = await build(db).ledger({ ...Q, to: '2026-11-11' });
+      expect(data.closing).toMatchObject({
+        value: '-13920.00',
+        ledgerValue: '-11600.00',
+        costAdj: '-2320.00',
+        rate: '60.00',
+      });
+      expect(data.tie).toMatchObject({ equal: true, stockNowValue: null, valueEqual: null });
     });
 
     it('periodTie: decided on the exact base numbers, not the rounded strings (unit of 12)', async () => {

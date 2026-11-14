@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-14.2",
-  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05; Qty-wise Prices + Cost + Card Rate, menu 244 (Shared/Prathap/inventory/plan-qty-price-card-rate-one-form.md section 4.5, addendum-1 Q9 = A, migration 20261106140000_qty_price_card_rate_form): the new codes ITEM_QTY_PRICE_NOTHING_TO_SAVE / _ITEM_MISMATCH / _LEVEL_NOT_SELLING / _COST_NOT_PLAIN_STOCK / _MRP_NOT_PLAIN_STOCK / _ABOVE_MRP / _BELOW_MIN / _ZERO_OR_LESS / _BELOW_COST / _BY_USER_PRICES_KEPT / _CHAIN_HQ_ONLY and the right codes assertMenuRight builds from the prefix ITEM_QTY_PRICE (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE), plus wording for the slab codes the server already throws (ITEM_QTY_PRICE_OVERLAP / _QTY_RANGE_INVALID / _VALUE_REQUIRED / _DUPLICATE / _DATE_RANGE_INVALID / _UNIT_NOT_OF_ITEM / _NOT_FOUND / _ALREADY_DELETED / _REFERENCE_NOT_FOUND / _DATE_INVALID / _NOT_DELETED / _ID_REQUIRED / _PAYLOAD_NOT_ARRAY) and the card codes the form and Quick Rate show (STOCK_PRICE_ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _UNIT_NOT_OF_ITEM / _DUPLICATE_BUCKET / _CHAIN_HQ_ONLY), worded 2026-11-05, loaded 2026-11-06; Qty-wise Prices review fixes, menu 244 (code review 2026-11-06, the user: fix all; migration 20261106190000_qty_price_review_fixes): the new code ITEM_QTY_PRICE_OTHER_BRANCH (addendum-1 D16: a slab of another branch, saved, removed or restored by a user who is not head office), plus wording for codes the server already throws: STOCK_PRICE_OVERLAP / _NEGATIVE / _BUCKET_MRP_MISMATCH / _BUCKET_MRP_ZERO / _BUCKET_SP_ZERO (the item_price_master constraints), STOCK_PRICE_FROM_IN_PAST / _FROM_TOO_FAR / _SCHEDULE_NOT_FOUND / _SCHEDULE_STARTED (menu 30's Price from day and Scheduled list) and the house VALUE_TOO_LARGE, worded 2026-11-06; Sales Order Management, menu 299 (plan-sales-order-management-qt-2026-11-10 + addendum-1 §4.5 + addendum-2; migration 20261110180000_sale_order_desk): the new codes SALES_ORDER_DELIVERY_HOLD / _HOLD_UNCHANGED / _PRIORITY_UNCHANGED / _CLOSED / _REASON_REQUIRED / _MERGE_TOO_FEW / _MERGE_ONE_PARTY / _MERGE_TERMS_DIFFER / _MERGE_ADVANCE / _MERGE_CHARGES / _MERGE_SOURCE_CHANGED / _MONEY_RIGHT, plus wording for SALE_ORDER_ADVANCE_HELD, which the server already throws, worded 2026-11-10; Item Ledger, menu 301 (Shared/Prathap/report/plan-item-ledger-2026-11-11.md section 4.1(c); migration 20261111130000_item_ledger_report): the new codes ITEM_LEDGER_RIGHT_VIEW (the right code assertMenuRight builds from the prefix ITEM_LEDGER) / _BRANCH_NOT_IN_COMPANY / _ITEM_NOT_FOUND / _RANGE_REVERSED / _GODOWN_NOT_IN_BRANCH / _LOT_NOT_OF_ITEM / _UNIT_NOT_OF_ITEM / _NO_FISCAL_YEAR / _TOO_MANY_ROWS, worded 2026-11-11; Vehicle Master (menu 125) + Transporters (menu 149) (Shared/Prathap/sales/plan-vehicle-master-2026-11-11.md rev 3 section 4.9; migration 20261112120000_vehicle_transporter_masters): the new codes VEH_NO_REQUIRED / _NO_INVALID / _NO_TAKEN / _NOT_FOUND / _TRANSPORTER_INVALID / _DRIVER_INVALID / _BRANCH_INVALID / _COMPANY_MISMATCH, the right codes assertMenuRight builds from the prefix VEH (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE, the approved TRN_RIGHT_* wording), and TRN_NOT_FOUND / _STATE_INVALID / _COMPANY_MISMATCH / _LEDGER_NAME_TAKEN / _HAS_BALANCE / _HAS_CHEQUE_IN_HAND, worded 2026-11-12; Sale Return, menu 13 (Shared/Prathap/sales/plan-sale-return-qt-2026-11-13-v5.md section 5.10; migration 20261113160000_sale_return_screen): the new codes SALES_RETURN_NO_LINES / _NO_BILL_OFF / _SETTLE_MODE / _REFUND_TENDER / _REFUND_REF / _REFUND_OVER_PAID / _ADJUST_OVER / _ADJUST_STALE / _REFUND_SESSION_CLOSED / _SCHEME_SHORT / _CLAIM_GOODS / _NOT_ON_BILL / _UNIT / _LOT_EXPIRED / _ON_DRAFTS / _NEVER_SOLD (braces such as {value} are filled by the server), worded 2026-11-13; Sale Return bug round 2026-11-14: SALES_RETURN_FINANCIAL (the override a holder ticks to post past the GST credit-note cut-off as a financial credit note, D8) and SALES_TRANSPORT_NO_END (a transport band with neither end, ck_ttd_has_an_end), worded 2026-11-14; Sale Return review round 2026-11-14 (fresh-eyes findings B1 / N8 / N9): SALES_RETURN_NEGATIVE (a return whose deductions outweigh the goods comes to less than nothing; a 0.00 note still posts), SALES_RETURN_CUSTOMER_LOCKED (a saved return keeps its customer) and the SALES_YEAR_LOCKED variant field=adjustments (Adjust at Post never sets off a bill of a closed financial year) and the SALES_YEAR_LOCKED variant field=adjustedBills (a cancel or amend never takes back a set-off on a bill of a closed financial year), worded 2026-11-14",
+  "version": "2026-11-14.3",
+  "source": "Qt src/core/api/api_error_text.cpp (Shared/Prathap/messages/till-error-wording.md REV 2, counter-error-wording.md REV 1), as pasted 2026-10-15; sales codes from Shared/Prathap/messages/sales-error-wording.md REV 1 (notes 123 §5), as pasted 2026-10-15; receipt / payment / cheque codes (VCH_, ACC_, CHQ_) from the receipt-payment-cheque wording REV 1 (notes 124), as pasted 2026-10-15; void bill codes (SALES_USE_VOID, TILL_VOID_*) from the void bill design REV 2 §3.2 / §3.4, worded here 2026-10-17; /txn/adjacent codes (TXN_*, notes 142) reuse the approved SALES_RIGHT_VIEW / SALES_NOT_FOUND / VCH_TYPE_NOT_REGISTER wording, 2026-10-23; /item-price-log codes (IPCL_*, notes 144) reuse the same approved rows, 2026-10-23; STOCK_PRICE_RIGHT_EDIT (price save without Edit on menu 30, quick rate popup plan) reuses SALES_RIGHT_EDIT, 2026-10-23; party master rules P1 (Shared/Prathap/party/plan-party-master-rules.md section 4.2) plus wording for the existing CUSTOMER_ / CUSTOMER_GROUP_ / LOOKUP_ / PURCHASE_SUPPLIER_ codes and the customer bug batch (VALIDATION_IS_GSTIN / _IS_PAN / _IS_EMAIL, discount field rows), worded 2026-10-29; purchase PO / GRN / return / supplier dues / shortage server gaps (audit 2026-10-29): PUR_SHORT_VS_CHALLAN, PUR_GRN_DAMAGE_NO_REASON, PUR_REASON_NOT_FOUND, PUR_RETURN_LOT_NOT_IN_GODOWN, PUR_RETURN_EWB_NEEDED, PUR_CLAIM_PARTY_REQUIRED / _NOT_FOUND, PUR_SUPERVISOR_NOT_FOUND, worded 2026-10-29; supplier dues menu 297 rights (SDU_RIGHT_VIEW / _POST / _CANCEL reuse the approved SALES_RIGHT_* rows) and PO terms master (PUR_TERMS_CODE_EXISTS / _NOT_FOUND / _NAME_REQUIRED / _TEXT_REQUIRED, PUR_COMPANY_NOT_FOUND), worded 2026-10-29; customer / supplier delete right (CUSTOMER_RIGHT_DELETE, PURCHASE_SUPPLIER_RIGHT_DELETE, party rules D1-6) reuse the approved SALES_RIGHT_DELETE row, 2026-10-29; purchase review 2026-10-29: the purchase rights families (PUR_ / GRN_ / PO_ / PRN_ / SHR_ / AGT_ / PSI_ / LBL_RIGHT_*, the SALES_RIGHT_* wording; PUR_RIGHT_OVERRIDE, PO_RIGHT_POST / _OVERRIDE and LBL_RIGHT_VIEW worded for what they guard) and every PUR_ code thrown or noted in src/modules/purchase without a row, plus PUR_TERMS_INACTIVE, worded 2026-10-29; purchase entry P9 (sell below the line MSP): PUR_PRICE_BELOW_MSP, worded like PUR_PRICE_BELOW_COST, 2026-11-02; branch serial numbering (Shared/Prathap/purchase/plan-branch-serial-numbering.md section 9.3, the user's answers Q1-Q9 = the recommendation, 2026-11-04): SEQUENCE_BRANCH_CODE_MISSING / _INVALID, SEQUENCE_NUMBER_TAKEN, SEQUENCE_SERIES_EXHAUSTED, BRANCH_BILL_PREFIX_INVALID / _DUPLICATE, worded 2026-11-03; PO amend refused once a GRN or purchase bill names the PO (Shared/Prathap/purchase/plan-po-return-mainwindow-2026-11-04.md section 5.5, Q1 = a, 2026-11-04): PUR_PO_CONVERTED, worded 2026-11-04; purchase entry v2 (Shared/Prathap/purchase/plan-purchase-entry-list-2026-11-04.md sections 4.3 / 4.4, decisions D24-D27 = the recommendation, 2026-11-04): PUR_AMEND_OFF, PUR_REVISION_STALE, PUR_HAS_RETURN, PUR_SHORTAGE_TOUCHED, PUR_AMEND_STOCK_MOVED, PUR_AMEND_SUPPLIER, PUR_WASTAGE_INVALID, PUR_QTY_DECIMALS, TRN_NAME_REQUIRED / _GSTIN_INVALID / _NAME_TAKEN, worded 2026-11-04; the amend right (PUR_RIGHT_AMEND) and the Transporters master rights, menu 149 (TRN_RIGHT_VIEW / _CREATE / _EDIT / _DELETE) reuse the approved SALES_RIGHT_* rows, 2026-11-04; GRN rework phase 6 (Shared/Prathap/purchase/plan-grn-rework-2026-11-04.md #13 / #15 / #16, decisions D2-D4, user 2026-11-04): PUR_SUPPLIER_REQUIRED variant field=header.supplierId (a GRN posted with no supplier; the plain row stays the reorder screen's), PUR_GRN_AMEND_BILLED, PUR_GRN_AMEND_STOCK_MOVED, worded 2026-11-05; Cost Price – Bulk Change, menu 298 (Shared/Prathap/schema/stock/plan-cost-price-bulk-change-2026-11-05.md §3, migration 20261105120000_cost_price_bulk_change): COST_BULK_NOT_PLAIN_STOCK / _INACTIVE / _NO_PRICE_ROW / _ROW_NOT_CURRENT / _ROW_CHANGED / _ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _BY_USER_PRICES_KEPT / _TOO_MANY_ROWS / _CHAIN_NEEDS_HQ, and the right codes assertMenuRight builds from the prefix COST_BULK (_RIGHT_VIEW / _RIGHT_EDIT, the approved TRN_RIGHT_* wording), worded 2026-11-05; COST_BULK_COST_TOO_LOW (a New Cost so low the profit % overflows; migration 20261105130000_cost_price_bulk_change_fixes), worded 2026-11-05; Qty-wise Prices + Cost + Card Rate, menu 244 (Shared/Prathap/inventory/plan-qty-price-card-rate-one-form.md section 4.5, addendum-1 Q9 = A, migration 20261106140000_qty_price_card_rate_form): the new codes ITEM_QTY_PRICE_NOTHING_TO_SAVE / _ITEM_MISMATCH / _LEVEL_NOT_SELLING / _COST_NOT_PLAIN_STOCK / _MRP_NOT_PLAIN_STOCK / _ABOVE_MRP / _BELOW_MIN / _ZERO_OR_LESS / _BELOW_COST / _BY_USER_PRICES_KEPT / _CHAIN_HQ_ONLY and the right codes assertMenuRight builds from the prefix ITEM_QTY_PRICE (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE), plus wording for the slab codes the server already throws (ITEM_QTY_PRICE_OVERLAP / _QTY_RANGE_INVALID / _VALUE_REQUIRED / _DUPLICATE / _DATE_RANGE_INVALID / _UNIT_NOT_OF_ITEM / _NOT_FOUND / _ALREADY_DELETED / _REFERENCE_NOT_FOUND / _DATE_INVALID / _NOT_DELETED / _ID_REQUIRED / _PAYLOAD_NOT_ARRAY) and the card codes the form and Quick Rate show (STOCK_PRICE_ABOVE_MRP / _BELOW_MIN / _BELOW_COST / _UNIT_NOT_OF_ITEM / _DUPLICATE_BUCKET / _CHAIN_HQ_ONLY), worded 2026-11-05, loaded 2026-11-06; Qty-wise Prices review fixes, menu 244 (code review 2026-11-06, the user: fix all; migration 20261106190000_qty_price_review_fixes): the new code ITEM_QTY_PRICE_OTHER_BRANCH (addendum-1 D16: a slab of another branch, saved, removed or restored by a user who is not head office), plus wording for codes the server already throws: STOCK_PRICE_OVERLAP / _NEGATIVE / _BUCKET_MRP_MISMATCH / _BUCKET_MRP_ZERO / _BUCKET_SP_ZERO (the item_price_master constraints), STOCK_PRICE_FROM_IN_PAST / _FROM_TOO_FAR / _SCHEDULE_NOT_FOUND / _SCHEDULE_STARTED (menu 30's Price from day and Scheduled list) and the house VALUE_TOO_LARGE, worded 2026-11-06; Sales Order Management, menu 299 (plan-sales-order-management-qt-2026-11-10 + addendum-1 §4.5 + addendum-2; migration 20261110180000_sale_order_desk): the new codes SALES_ORDER_DELIVERY_HOLD / _HOLD_UNCHANGED / _PRIORITY_UNCHANGED / _CLOSED / _REASON_REQUIRED / _MERGE_TOO_FEW / _MERGE_ONE_PARTY / _MERGE_TERMS_DIFFER / _MERGE_ADVANCE / _MERGE_CHARGES / _MERGE_SOURCE_CHANGED / _MONEY_RIGHT, plus wording for SALE_ORDER_ADVANCE_HELD, which the server already throws, worded 2026-11-10; Item Ledger, menu 301 (Shared/Prathap/report/plan-item-ledger-2026-11-11.md section 4.1(c); migration 20261111130000_item_ledger_report): the new codes ITEM_LEDGER_RIGHT_VIEW (the right code assertMenuRight builds from the prefix ITEM_LEDGER) / _BRANCH_NOT_IN_COMPANY / _ITEM_NOT_FOUND / _RANGE_REVERSED / _GODOWN_NOT_IN_BRANCH / _LOT_NOT_OF_ITEM / _UNIT_NOT_OF_ITEM / _NO_FISCAL_YEAR / _TOO_MANY_ROWS, worded 2026-11-11; Vehicle Master (menu 125) + Transporters (menu 149) (Shared/Prathap/sales/plan-vehicle-master-2026-11-11.md rev 3 section 4.9; migration 20261112120000_vehicle_transporter_masters): the new codes VEH_NO_REQUIRED / _NO_INVALID / _NO_TAKEN / _NOT_FOUND / _TRANSPORTER_INVALID / _DRIVER_INVALID / _BRANCH_INVALID / _COMPANY_MISMATCH, the right codes assertMenuRight builds from the prefix VEH (_RIGHT_VIEW / _CREATE / _EDIT / _DELETE, the approved TRN_RIGHT_* wording), and TRN_NOT_FOUND / _STATE_INVALID / _COMPANY_MISMATCH / _LEDGER_NAME_TAKEN / _HAS_BALANCE / _HAS_CHEQUE_IN_HAND, worded 2026-11-12; Sale Return, menu 13 (Shared/Prathap/sales/plan-sale-return-qt-2026-11-13-v5.md section 5.10; migration 20261113160000_sale_return_screen): the new codes SALES_RETURN_NO_LINES / _NO_BILL_OFF / _SETTLE_MODE / _REFUND_TENDER / _REFUND_REF / _REFUND_OVER_PAID / _ADJUST_OVER / _ADJUST_STALE / _REFUND_SESSION_CLOSED / _SCHEME_SHORT / _CLAIM_GOODS / _NOT_ON_BILL / _UNIT / _LOT_EXPIRED / _ON_DRAFTS / _NEVER_SOLD (braces such as {value} are filled by the server), worded 2026-11-13; Sale Return bug round 2026-11-14: SALES_RETURN_FINANCIAL (the override a holder ticks to post past the GST credit-note cut-off as a financial credit note, D8) and SALES_TRANSPORT_NO_END (a transport band with neither end, ck_ttd_has_an_end), worded 2026-11-14; Sale Return review round 2026-11-14 (fresh-eyes findings B1 / N8 / N9): SALES_RETURN_NEGATIVE (a return whose deductions outweigh the goods comes to less than nothing; a 0.00 note still posts), SALES_RETURN_CUSTOMER_LOCKED (a saved return keeps its customer) and the SALES_YEAR_LOCKED variant field=adjustments (Adjust at Post never sets off a bill of a closed financial year) and the SALES_YEAR_LOCKED variant field=adjustedBills (a cancel or amend never takes back a set-off on a bill of a closed financial year), worded 2026-11-14; Stock Summary, menu 302 (Shared/Prathap/report/plan-stock-summary-2026-11-13.md section 4.1(c); migration 20261115100000_stock_summary_report): the new codes STOCK_SUMMARY_RIGHT_VIEW / _RIGHT_EXPORT / _RIGHT_PRINT (the menu-right codes) / _RANGE_REVERSED / _BRANCH_NOT_IN_COMPANY / _GODOWN_NOT_IN_BRANCH / _GROUP_NOT_FOUND / _BRAND_NOT_FOUND / _ITEM_NOT_FOUND / _RUN_EXPIRED / _TOO_MANY_ROWS / _TOO_MANY_ITEMS, worded 2026-11-13",
   "rows": [
     {
       "code": "TILL_SESSION_REQUIRED",
@@ -5233,6 +5233,102 @@
       "title": "Bill in a closed year",
       "line": "This return set off bill {bill}, which is in {year}, a financial year that is closed.",
       "todo": "It cannot be cancelled or amended now. Call manager."
+    },
+    {
+      "code": "STOCK_SUMMARY_RIGHT_VIEW",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to open the Stock Summary.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "STOCK_SUMMARY_RIGHT_EXPORT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to export the Stock Summary.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "STOCK_SUMMARY_RIGHT_PRINT",
+      "variant": "",
+      "lang": "en",
+      "title": "Not allowed",
+      "line": "You have no right to print the Stock Summary.",
+      "todo": "Call manager."
+    },
+    {
+      "code": "STOCK_SUMMARY_RANGE_REVERSED",
+      "variant": "",
+      "lang": "en",
+      "title": "Dates the wrong way",
+      "line": "From date is after To date.",
+      "todo": "Change From or To."
+    },
+    {
+      "code": "STOCK_SUMMARY_BRANCH_NOT_IN_COMPANY",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong branch",
+      "line": "That branch is not part of this company.",
+      "todo": "Pick a branch of this company."
+    },
+    {
+      "code": "STOCK_SUMMARY_GODOWN_NOT_IN_BRANCH",
+      "variant": "",
+      "lang": "en",
+      "title": "Wrong godown",
+      "line": "That godown is not in this branch.",
+      "todo": "Pick a godown of this branch, or All godowns."
+    },
+    {
+      "code": "STOCK_SUMMARY_GROUP_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Group not found",
+      "line": "That item group is not there now.",
+      "todo": "Pick the group again, or All groups."
+    },
+    {
+      "code": "STOCK_SUMMARY_BRAND_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Brand not found",
+      "line": "That brand is not there now.",
+      "todo": "Pick the brand again, or All brands."
+    },
+    {
+      "code": "STOCK_SUMMARY_ITEM_NOT_FOUND",
+      "variant": "",
+      "lang": "en",
+      "title": "Item not found",
+      "line": "This item is not there now, or it belongs to another company.",
+      "todo": "Pick the row again."
+    },
+    {
+      "code": "STOCK_SUMMARY_RUN_EXPIRED",
+      "variant": "",
+      "lang": "en",
+      "title": "Report expired",
+      "line": "This report was shown too long ago to page through.",
+      "todo": "Press Show again."
+    },
+    {
+      "code": "STOCK_SUMMARY_TOO_MANY_ROWS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many rows",
+      "line": "Print and Excel take up to 20,000 rows; this report has more.",
+      "todo": "Pick a group or a brand, then try again."
+    },
+    {
+      "code": "STOCK_SUMMARY_TOO_MANY_ITEMS",
+      "variant": "",
+      "lang": "en",
+      "title": "Too many items",
+      "line": "This report would list more than 50,000 items.",
+      "todo": "Pick a group or a brand, then press Show."
     }
   ]
 }

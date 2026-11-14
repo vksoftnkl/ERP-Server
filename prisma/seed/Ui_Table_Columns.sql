@@ -47,6 +47,13 @@
 -- migration narrows 22's Description 17.08 -> 15.55 only on the layout it was measured on (the
 -- dev database, shown widths 101.53 with Returned); 22 here is an older layout (Description
 -- 17.12, shown widths 99.68 with Returned), so it is not changed.
+-- 78 / 79 Stock Summary (menu 302) Item-wise / Group summary as
+-- 20261115100000_stock_summary_report created them (ids 2625-2641 / 2642-2651): numbers are the
+-- screen's column enums; 78 shows 0..14 (caret, Code, Item, Group, Unit, Opening, Inward, Outward,
+-- Closing, Reserved, Available, In transit, Rate, Value, Last sale) and hides 15 Brand, 16 ItemId;
+-- 79 shows 0..8 (caret, Group, Items, Opening / Inward / Outward value, Cost adj., Closing value,
+-- Share %) and hides 9 Key; titles as on screen (caret columns blank), the shown widths add up to
+-- 97.00; read-only, no focus.
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -2091,6 +2098,35 @@ SELECT v.* FROM (VALUES
     ,(2621, 77  , 15 , 'ChequeJson'           , 0.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
     ,(2622, 77  , 16 , 'LedgerId'             , 0.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
     ,(2623, 77  , 17 , 'IsSeeded'             , 0.00             , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    -- ============ STOCK SUMMARY - ITEMS (id 78) ============
+    ,(2625, 78  , 0  , ''                      , 1.40             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2626, 78  , 1  , 'Code'                  , 7.40             , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2627, 78  , 2  , 'Item'                  , 21.00            , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2628, 78  , 3  , 'Group'                 , 9.60             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2629, 78  , 4  , 'Unit'                  , 3.20             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2630, 78  , 5  , 'Opening'               , 5.20             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2631, 78  , 6  , 'Inward'                , 5.20             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2632, 78  , 7  , 'Outward'               , 5.20             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2633, 78  , 8  , 'Closing'               , 5.60             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2634, 78  , 9  , 'Reserved'              , 5.00             , true , false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2635, 78  , 10 , 'Available'             , 5.40             , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2636, 78  , 11 , 'In transit'            , 5.00             , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2637, 78  , 12 , 'Rate'                  , 4.60             , true , false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2638, 78  , 13 , 'Value'                 , 7.20             , true , false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2639, 78  , 14 , 'Last sale'             , 6.00             , true , false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2640, 78  , 15 , 'Brand'                 , 6.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2641, 78  , 16 , 'ItemId'                , 4.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    -- ============ STOCK SUMMARY - GROUPS (id 79) ============
+    ,(2642, 79  , 0  , ''                      , 1.40             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2643, 79  , 1  , 'Group'                 , 30.00            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2644, 79  , 2  , 'Items'                 , 5.00             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2645, 79  , 3  , 'Opening value'         , 11.00            , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2646, 79  , 4  , 'Inward value'          , 11.00            , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2647, 79  , 5  , 'Outward value'         , 11.00            , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2648, 79  , 6  , 'Cost adj.'             , 8.60             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2649, 79  , 7  , 'Closing value'         , 12.00            , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2650, 79  , 8  , 'Share %'               , 7.00             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2651, 79  , 9  , 'Key'                   , 4.00             , false, false, 9  , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

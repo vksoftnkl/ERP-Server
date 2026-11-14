@@ -194,6 +194,10 @@ VALUES
     -- Reports (the Stock Summary will take 300 / 10.00) and the Item Ledger report.
     ,( 300,    6, 'Stock Reports'                        , NULL                  , true ,  15.00, NULL, NULL, NULL, true , false)
     ,( 301,  300, 'Item Ledger'                          , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    -- 302 Stock Summary (20261115100000_stock_summary_report, plan
+    -- report/plan-stock-summary-2026-11-13.md §4.1(a)): item-wise opening, inward,
+    -- outward and closing with value, in the folder before the Item Ledger.
+    ,( 302,  300, 'Stock Summary'                        , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , false,   0.50, NULL, NULL, NULL, true , false)
     ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 144,  137, 'Ledger Monthly Summary'               , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
@@ -370,6 +374,13 @@ UPDATE fixed.menu_master m
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 302 Stock Summary (20261115100000_stock_summary_report) is a read-only report
+-- like 301: view, print, export. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,PRINT,EXPORT}'
+ WHERE menu_id = 302
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- 192 Branch Outward (notes 160 B / 20261027110000_transfers_notes_160): CANCEL is
 -- the recall of a despatch nobody received (POST /stock/transfer/recall). Its other

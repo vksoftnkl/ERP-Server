@@ -9,6 +9,8 @@
 --        20261113100000_item_ledger_layouts).
 -- 74-77: Sale Return (menu 13) lines / charges / adjust bills (popup 25) / refund tenders
 --        (popup B) (migration 20261113160000_sale_return_screen).
+-- 78-79: Stock Summary (menu 302) Item-wise / Group summary grids (migration
+--        20261115100000_stock_summary_report).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
@@ -96,6 +98,8 @@ VALUES
     ,(75, 'SALE RETURN - CHARGES'        , true , 'Desktop', true , false, 'system')
     ,(76, 'SALE RETURN - ADJUST BILLS'   , true , 'Desktop', true , false, 'system')
     ,(77, 'SALE RETURN - REFUND TENDERS' , true , 'Desktop', true , false, 'system')
+    ,(78, 'STOCK SUMMARY - ITEMS'        , false, 'Desktop', true , false, 'system')
+    ,(79, 'STOCK SUMMARY - GROUPS'       , false, 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

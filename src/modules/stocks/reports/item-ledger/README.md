@@ -62,7 +62,19 @@ lower-cased by the DTOs, so an upper-case uuid is the same id. No HTTP cache.
   `svh_id`; the bill is `svh_link_src_*` (the page enrichment joins through
   it). `sml_src_refno` already carries the bill no.
 - **Tie** (D25): only when `to` ≥ today (IST) — closing + in-scope rows dated
-  after `to` against Σ `stock_balance.sbl_on_hand_qty` in scope.
+  after `to` against Σ `stock_balance.sbl_on_hand_qty` in scope. Since P2-IL
+  also the value: `tie.stockNowValue` / `tie.valueEqual` (null when an in-scope
+  row is dated after `to`); `tie.equal` stays the quantity.
+- **Closing value = the stock engine's rule** (P2-IL, Stock Summary Q3,
+  2026-11-14): `closing.value` / `closing.rate` = the holding in scope valued
+  at the branch pool's rate (`reports/common/stock-valuation.sql.ts`, the
+  Stock Summary's own helper), as `stock_balance` stores it. New keys:
+  `closing.ledgerValue` (the rows' own sum — the running balance's last
+  figure, the old `closing.value`) and `closing.costAdj` (= value −
+  ledgerValue: re-averaging across buckets, a negative lot at its last cost
+  rate, revaluations outside the scope). The opening, the running balance, the
+  Day-wise / Month-wise chains and `yearToDate` stay the ledger's sums. Print
+  head: + `closing_ledger_value`, `cost_adj`.
 - **periodTie**: opening + received − issued = closing (`qtyEqual`) and the
   same for value (`valueEqual`), decided on the exact base numbers before the
   Qty-in unit and the 3 / 2 dp rounding, so a unit of 12 cannot show a false
@@ -94,7 +106,9 @@ Assignments, menu 248).
   `opening_value`, `opening_rate`, `opening_lots`, `received_qty`,
   `issued_qty`, `value_in`, `value_out`, `rows`, `rows_shown`, `docs`,
   `reversed_pairs`, `rows_note`, `closing_text`, `closing_qty`,
-  `closing_value`, `closing_rate`, `printed_at`, `printed_by`.
+  `closing_value`, `closing_rate`, `closing_ledger_value`, `cost_adj`,
+  `printed_at`, `printed_by`. The A4 design prints `cost_adj` as its own
+  summary line (opening + in − out + cost adj. = closing value).
 - `reports.item_ledger.rows` (many): `sl_no`, `seq`, `date_text`, `time`,
   `type_label`, `state`, `state_chip`, `greyed`, `doc_no`, `party_detail`,
   `godown`, `batch_no`, `received_qty`, `issued_qty`, `moved_text`,

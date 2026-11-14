@@ -146,8 +146,23 @@ export interface OpeningBlock {
 export interface ClosingBlock {
   date: string;
   qty: string;
+  /**
+   * P2-IL (Stock Summary Q3, 2026-11-14): the stock engine's valuation of the
+   * holding in scope at `date` — qty × the branch pool's rate (the item
+   * average for a plain item, the lot's own cost for a tracked one), as
+   * `stock_balance` stores it (reports/common/stock-valuation.sql.ts).
+   */
   value: string;
   rate: string | null;
+  /** P2-IL, new: Σ of the ledger rows in scope (opening + every period row) — the running balance's last figure. */
+  ledgerValue: string;
+  /**
+   * P2-IL, new: value − ledgerValue — re-averaging across buckets / godowns,
+   * a negative pool at its last cost rate, revaluations outside the scope.
+   * opening.value + totals.valueIn − totals.valueOut + costAdj = value when no
+   * row filter hides a row.
+   */
+  costAdj: string;
 }
 
 export interface LedgerTotals {
@@ -268,8 +283,16 @@ export interface TieCheck {
   checked: boolean;
   ledgerQty: string | null;
   stockNowQty: string | null;
+  /** Quantity only (as before P2-IL). */
   equal: boolean | null;
   difference: string | null;
+  /**
+   * P2-IL, new: Σ stock_balance value in scope, and whether the closing value
+   * equals it. null when the tie is not checked, or when an in-scope row is
+   * dated after `to` (the stored value then includes it).
+   */
+  stockNowValue: string | null;
+  valueEqual: boolean | null;
 }
 
 /**
@@ -282,6 +305,7 @@ export interface TieCheck {
  */
 export interface PeriodTie {
   qtyEqual: boolean | null;
+  /** opening + in − out (+ closing.costAdj) = closing value, on the exact numbers. */
   valueEqual: boolean | null;
 }
 

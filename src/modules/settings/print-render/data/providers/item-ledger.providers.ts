@@ -202,6 +202,9 @@ export function headRow(data: ExportPayload, printedBy: string | null, at: Date)
     closing_qty: num(data.closing.qty),
     closing_value: num(data.closing.value),
     closing_rate: num(data.closing.rate),
+    // P2-IL: the ledger rows' own sum, and the engine's revaluing of it.
+    closing_ledger_value: num(data.closing.ledgerValue),
+    cost_adj: num(data.closing.costAdj),
     printed_at: `${dmy(now.slice(0, 10))} ${time}`,
     printed_by: printedBy,
   };

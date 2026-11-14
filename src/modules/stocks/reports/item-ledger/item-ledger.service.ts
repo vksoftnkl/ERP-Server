@@ -9,6 +9,11 @@ import { readSalesSettings } from '../../../sales/posting/sales.settings';
 import { resolveItemTaxRates } from '../../../Inventory/utils/item-tax-rate.helper';
 import { trackedAsOf } from '../../cost-price-bulk/cost-price-bulk.rules';
 import {
+  itemValuationSql,
+  valueInScope,
+  type ValuedHoldingRow,
+} from '../common/stock-valuation.sql';
+import {
   ITEM_LEDGER_DEFAULT_LIMIT,
   type ItemLedgerExportDto,
   type ItemLedgerMonthsDto,
@@ -275,6 +280,12 @@ interface PeriodDbRow {
   v_out: Dec;
 }
 
+/** P2-IL — the closing value by the engine's rule, and the in-scope rows dated after `to`. */
+export interface EngineClosing {
+  value: Dec;
+  rowsAfter: number;
+}
+
 /** The walk-in customer (sales.default_customer_id) and its ledger name. */
 export interface WalkIn {
   id: string | null;
@@ -471,10 +482,11 @@ export class ItemLedgerService {
       const stock = await db.$queryRaw<StockNowDbRow[]>(stockNowSql(scope.sql));
       const leftOut = await this.revaluationsLeftOut(db, scope);
       const walk = await this.walkInName(db, walkIn);
+      const engine = await this.engineClosing(db, scope, tieChecked);
       const s = summaryOf(agg);
       const f = scope.unit.factor;
       const opening = openingBlock(scope, open);
-      const closing = closingBlock(scope, open, s);
+      const closing = closingBlock(scope, open, s, engine.value);
       const stockNow = stockNowBlock(today, stock, f);
       return {
         head: headOf(scope, { order, rights, leftOut, showReversed: scope.sql.showReversed }),
@@ -482,7 +494,7 @@ export class ItemLedgerService {
         closing,
         totals: totalsOf(s, f),
         tiles: tilesOf(agg),
-        tie: tieOf(tieChecked, open, s, stock, f),
+        tie: tieOf(tieChecked, open, s, stock, f, engine),
         periodTie: periodTieOf(open, s),
         rows: rows.map((r) => toRow(r, scope, walk, openingBase(open))),
         page: {
@@ -510,6 +522,7 @@ export class ItemLedgerService {
       const agg = await db.$queryRaw<AggRow[]>(summarySql(scope.sql));
       const rows = await db.$queryRaw<PeriodDbRow[]>(periodSql(scope.sql, 'day'));
       const leftOut = await this.revaluationsLeftOut(db, scope);
+      const engine = await this.engineClosing(db, scope, false);
       const s = summaryOf(agg);
       const f = scope.unit.factor;
       let runQ = dec(open.q);
@@ -522,7 +535,7 @@ export class ItemLedgerService {
           showReversed: scope.sql.showReversed,
         }),
         opening: openingBlock(scope, open),
-        closing: closingBlock(scope, open, s),
+        closing: closingBlock(scope, open, s, engine.value),
         days: rows.map((r) => {
           const openingQty = runQ;
           runQ = runQ.plus(r.q_all);
@@ -646,6 +659,7 @@ export class ItemLedgerService {
       );
       const leftOut = await this.revaluationsLeftOut(db, scope);
       const walk = await this.walkInName(db, walkIn);
+      const engine = await this.engineClosing(db, scope, false);
       const head = headOf(scope, { order, rights, leftOut, showReversed: scope.sql.showReversed });
       return {
         head,
@@ -663,7 +677,7 @@ export class ItemLedgerService {
           showReversed: scope.sql.showReversed,
         }),
         opening: openingBlock(scope, open),
-        closing: closingBlock(scope, open, s),
+        closing: closingBlock(scope, open, s, engine.value),
         totals: totalsOf(s, scope.unit.factor),
         rows: rows.map((r) => toRow(r, scope, walk, openingBase(open))),
         totalRows: rows.length,
@@ -791,6 +805,47 @@ export class ItemLedgerService {
     q: ItemLedgerMonthsDto & { from: string },
   ): Promise<ResolvedScope> {
     return scopeOf(await this.lookupScope(db, q), q);
+  }
+
+  /**
+   * P2-IL (Stock Summary Q3) — the closing value by the stock engine's rule:
+   * every holding of the item at the branch up to `to` (all godowns, buckets,
+   * lots: the pool needs them), valued at its pool rate, summed over the
+   * scope (godown, bucket, lot). `rowsAfter` (only for the tie) counts the
+   * in-scope rows dated after `to`: with any, stock_balance's value includes
+   * them and the value tie is not checked.
+   */
+  private async engineClosing(
+    db: Db,
+    scope: ResolvedScope,
+    withAfter: boolean,
+  ): Promise<EngineClosing> {
+    const s = scope.sql;
+    const rows = await db.$queryRaw<ValuedHoldingRow[]>(
+      itemValuationSql({
+        companyId: s.companyId,
+        branchId: s.branchId,
+        itemId: s.itemId,
+        asOf: s.to,
+        wot: s.wot,
+      }),
+    );
+    const { value } = valueInScope(rows, {
+      godownId: s.godownId,
+      bucket: s.bucket,
+      lotId: s.lotId,
+    });
+    if (!withAfter) return { value, rowsAfter: 0 };
+    const [after] = await db.$queryRaw<{ n: number }[]>`
+      SELECT COUNT(*)::int AS n
+        FROM stock.stock_ledger a
+       WHERE a.sml_company_id = ${s.companyId}::uuid AND a.sml_branch_id = ${s.branchId}::uuid
+         AND a.sml_item_id = ${s.itemId}::uuid AND a.sml_is_deleted = false
+         AND a.sml_doc_date > ${s.to}::date
+         ${s.godownId ? Prisma.sql`AND a.sml_godown_id = ${s.godownId}::uuid` : Prisma.empty}
+         ${s.bucket ? Prisma.sql`AND a.sml_bucket = ${s.bucket}` : Prisma.empty}
+         ${s.lotId ? Prisma.sql`AND a.sml_lot_id = ${s.lotId}::uuid` : Prisma.empty}`;
+    return { value, rowsAfter: after?.n ?? 0 };
   }
 
   private async revaluationsLeftOut(db: Db, scope: ResolvedScope): Promise<number> {
@@ -941,14 +996,28 @@ export function summaryOf(agg: readonly AggRow[]): AggRow {
   return s;
 }
 
-export function closingBlock(scope: ResolvedScope, open: OpeningRow, s: AggRow): ClosingBlock {
+/**
+ * The closing at `to`. P2-IL: `value` is the stock engine's valuation of the
+ * holding (`engineValue`, reports/common/stock-valuation.sql.ts); the ledger
+ * rows' own sum stays as `ledgerValue` and the difference is `costAdj`.
+ * Without `engineValue` (a caller that has none) the value is the row sum.
+ */
+export function closingBlock(
+  scope: ResolvedScope,
+  open: OpeningRow,
+  s: AggRow,
+  engineValue?: Num | null,
+): ClosingBlock {
   const q = dec(open.q).plus(s.q_all);
-  const v = dec(open.v).plus(open.rv).plus(s.v_all);
+  const ledgerValue = dec(open.v).plus(open.rv).plus(s.v_all);
+  const v = engineValue === undefined || engineValue === null ? ledgerValue : dec(engineValue);
   return {
     date: scope.sql.to,
     qty: qtyIn(q, scope.unit.factor),
     value: money(v),
     rate: rateOf(v, q, scope.unit.factor),
+    ledgerValue: money(ledgerValue),
+    costAdj: money(v.minus(ledgerValue)),
   };
 }
 
@@ -1075,21 +1144,34 @@ export function tieOf(
   s: AggRow,
   stock: readonly StockNowDbRow[],
   factor: Num,
+  engine?: EngineClosing | null,
 ): TieCheck {
   if (!checked) {
-    return { checked: false, ledgerQty: null, stockNowQty: null, equal: null, difference: null };
+    return {
+      checked: false,
+      ledgerQty: null,
+      stockNowQty: null,
+      equal: null,
+      difference: null,
+      stockNowValue: null,
+      valueEqual: null,
+    };
   }
   const ledgerQty = dec(open.q).plus(s.q_all).plus(open.after_q);
-  const stockNowQty = stock
-    .filter((r) => r.in_scope)
-    .reduce((sum, r) => sum.plus(r.on_hand), dec(0));
+  const inScope = stock.filter((r) => r.in_scope);
+  const stockNowQty = inScope.reduce((sum, r) => sum.plus(r.on_hand), dec(0));
   const diff = ledgerQty.minus(stockNowQty);
+  // P2-IL: the value tie, only when nothing in scope is dated after `to`.
+  const valueChecked = !!engine && engine.rowsAfter === 0;
+  const stockNowValue = inScope.reduce((sum, r) => sum.plus(r.value), dec(0));
   return {
     checked: true,
     ledgerQty: qtyIn(ledgerQty, factor),
     stockNowQty: qtyIn(stockNowQty, factor),
     equal: diff.isZero(),
     difference: qtyIn(diff, factor),
+    stockNowValue: valueChecked ? money(stockNowValue) : null,
+    valueEqual: valueChecked ? dec(engine.value).equals(stockNowValue) : null,
   };
 }
 

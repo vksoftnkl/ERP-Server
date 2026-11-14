@@ -112,6 +112,7 @@ import { StockAdjustmentModule } from './modules/stocks/stock-adjustment/stock-a
 import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { CostPriceBulkModule } from './modules/stocks/cost-price-bulk/cost-price-bulk.module';
 import { ItemLedgerModule } from './modules/stocks/reports/item-ledger/item-ledger.module';
+import { StockSummaryModule } from './modules/stocks/reports/stock-summary/stock-summary.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -297,6 +298,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     CostPriceBulkModule,
     // Item Ledger (menu 301), /stock/reports/item-ledger/*.
     ItemLedgerModule,
+    // Stock Summary (menu 302), /stock/reports/summary/*.
+    StockSummaryModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,

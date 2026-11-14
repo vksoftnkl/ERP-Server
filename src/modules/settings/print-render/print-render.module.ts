@@ -25,6 +25,11 @@ import {
   ItemLedgerPrintSource,
 } from './data/providers/item-ledger.providers';
 import { ItemLedgerModule } from '../../stocks/reports/item-ledger/item-ledger.module';
+import {
+  STOCK_SUMMARY_PRINT_PROVIDERS,
+  StockSummaryPrintSource,
+} from './data/providers/stock-summary.providers';
+import { StockSummaryModule } from '../../stocks/reports/stock-summary/stock-summary.module';
 import { FontRegistry } from './engine/fonts/font.registry';
 import { LayoutEngine } from './engine/layout/layout.engine';
 import { TextMeasurer } from './engine/layout/text-measure';
@@ -61,12 +66,14 @@ import { PrintShareService } from './print-share.service';
   // ReportsPartyOutstandingModule: the reports.party_outstanding.* providers
   // print the report's own /export rows. ItemLedgerModule: the same for the
   // reports.item_ledger.* providers (purpose ITEM_LEDGER, menu 301).
+  // StockSummaryModule: reports.stock_summary.* read its runs (purpose STOCK_SUMMARY, menu 302).
   imports: [
     PgModule,
     PrintTemplateAssignmentModule,
     TillModule,
     ReportsPartyOutstandingModule,
     ItemLedgerModule,
+    StockSummaryModule,
   ],
   // PrintShareController: documents handed out as a link (the sale bill's
   // WhatsApp send) — the module's one public route.
@@ -99,6 +106,8 @@ import { PrintShareService } from './print-share.service';
     ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
     ItemLedgerPrintSource,
     ...ITEM_LEDGER_PRINT_PROVIDERS,
+    StockSummaryPrintSource,
+    ...STOCK_SUMMARY_PRINT_PROVIDERS,
     {
       provide: PRINT_DATA_PROVIDERS,
       useFactory: (...providers: PrintDataProvider[]): PrintDataProvider[] => providers,
@@ -112,6 +121,7 @@ import { PrintShareService } from './print-share.service';
         ...TILL_PRINT_PROVIDERS,
         ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
         ...ITEM_LEDGER_PRINT_PROVIDERS,
+        ...STOCK_SUMMARY_PRINT_PROVIDERS,
       ],
     },
     PrintDataProviderRegistry,
