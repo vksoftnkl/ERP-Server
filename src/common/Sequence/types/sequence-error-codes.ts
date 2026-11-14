@@ -20,8 +20,25 @@ export enum SequenceErrorCode {
   SCOPE_DUPLICATE = 'SEQUENCE_SCOPE_DUPLICATE',
   /** A document's number comes from a sequence an administrator deactivated (or deleted) for that year. */
   INACTIVE = 'SEQUENCE_INACTIVE',
-  /** The number built from the prefix, counter and suffix is longer than the ref no column (100). */
+  /**
+   * The number built from the prefix, counter and suffix is longer than the ref no column (100).
+   * Also (400) when a `{FY}` / `{BR}` format, expanded as its counter opens, would build a number
+   * over 50 (avh_voucher_refno / abl_voucher_refno) or overflow the counter's prefix (60) or
+   * suffix (20) column.
+   */
   REFNO_TOO_LONG = 'SEQUENCE_REFNO_TOO_LONG',
+  /**
+   * 422 — the format holds `{BR}` and the branch has neither a Bill Prefix nor a code
+   * (branch serial plan §9.3).
+   */
+  BRANCH_CODE_MISSING = 'SEQUENCE_BRANCH_CODE_MISSING',
+  /** 422 — the format holds `{BR}` and the branch's code is not `^[A-Z0-9-]{1,10}$` (§5.5). */
+  BRANCH_CODE_INVALID = 'SEQUENCE_BRANCH_CODE_INVALID',
+  /**
+   * 422 — the voucher type's prefix or suffix holds a `{…}` other than `{FY}` / `{BR}`, or a
+   * stray brace. Refused rather than printed raw. `params.token` names it (no braces).
+   */
+  FORMAT_TOKEN_UNKNOWN = 'SEQUENCE_FORMAT_TOKEN_UNKNOWN',
   /** A field that must be a UUID is not one. */
   FIELD_NOT_UUID = 'VALIDATION_IS_UUID',
   /** A text field came as something other than a string. */

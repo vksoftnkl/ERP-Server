@@ -45,12 +45,17 @@ export class CreateSequenceDto {
   @IsNotEmpty()
   @MaxLength(20)
   periodKey!: string;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  /** seq_voucher_prefix is VarChar(60). {FY} / {BR} are expanded as the row is written. */
+  @ApiPropertyOptional({
+    maxLength: 60,
+    nullable: true,
+    description: '{FY} and {BR} are expanded as the row is written (the expanded text must fit 60).',
+  })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
-  @MaxLength(20)
+  @MaxLength(60)
   voucherPrefix?: string | null;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()
@@ -66,7 +71,11 @@ export class CreateSequenceDto {
   @IsString()
   @MaxLength(20)
   branchCode?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: '{FY} and {BR} are expanded as the row is written (the expanded text must fit 20).',
+  })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)

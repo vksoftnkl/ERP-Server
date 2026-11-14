@@ -1,4 +1,5 @@
-import { throwBadRequest, throwNotFound } from '../utils/module-shared.utils';
+import { throwBadRequest, throwNotFound, throwUnprocessable } from '../utils/module-shared.utils';
+import { BRANCH_NUMBER_CODE_PATTERN, branchNumberCode } from './branch-number-code.helper';
 import type { SequenceErrorDetail } from './types/sequence-api.types';
 import { SequenceErrorCode } from './types/sequence-error-codes';
 import { AccVoucherSeq, AccVoucherType, Prisma, VoucherResetFreq } from '@prisma/client';
@@ -16,6 +17,18 @@ const DEFAULT_DEVICE_CODE = 'MAIN';
 const NO_RESET_PERIOD_KEY = 'ALL';
 // acc_voucher_seq.seq_last_refno / most document refno columns are VarChar(100).
 const REFNO_MAX_LENGTH = 100;
+// avh_voucher_refno / abl_voucher_refno are VarChar(50): a {FY} / {BR} format must
+// build a number that fits them (branch serial plan §5.2).
+const POSTED_REFNO_MAX_LENGTH = 50;
+// The counter row's format snapshot columns: seq_voucher_prefix VarChar(60)
+// (migration 20261104100000), seq_voucher_suffix VarChar(20).
+export const SEQ_VOUCHER_PREFIX_MAX_LENGTH = 60;
+export const SEQ_VOUCHER_SUFFIX_MAX_LENGTH = 20;
+// The tokens a voucher-type prefix / suffix may hold (plan §5.2). Nothing else is
+// expanded: an unknown `{…}` is refused, never printed raw.
+const FORMAT_TOKEN = /\{([^{}]*)\}/g;
+const KNOWN_FORMAT_TOKENS = ['FY', 'BR'] as const;
+type FormatToken = (typeof KNOWN_FORMAT_TOKENS)[number];
 const INITIAL_LAST_NO = BigInt(0);
 type VoucherTypeFormat = Pick<
   AccVoucherType,
@@ -175,6 +188,130 @@ export function buildRefno(sequence: AccVoucherSeq): string {
   }
   return refno;
 }
+export interface VoucherFormat {
+  prefix: string | null;
+  suffix: string | null;
+  noWidth: number;
+}
+export interface VoucherFormatScope {
+  vchrTypeId: number;
+  branchId: string;
+  accYear: string;
+}
+// Branch serial plan §5.2 / §5.5 (approved 2026-11-04): the tokens a voucher
+// type's prefix / suffix may hold, expanded only when a counter row is CREATED.
+// The row's seq_voucher_prefix / _suffix is the year's frozen format snapshot;
+// buildRefno just prints it.
+//   {FY} = the accounting year as stored ('2026-2027').
+//   {BR} = the branch's number code (branch-number-code.helper.ts), which must
+//          match ^[A-Z0-9-]{1,10}$.
+// A format with no '{' comes back as it is, without a query: every counter in
+// use today keeps its exact behaviour. Refuses (nothing is written) an unknown
+// token or stray brace, a branch with no usable code, and a format whose first
+// number would be over 50 characters or whose expansion overflows its column.
+export async function expandVoucherFormat(
+  tx: Prisma.TransactionClient,
+  scope: VoucherFormatScope,
+  format: VoucherFormat,
+): Promise<VoucherFormat> {
+  if (!format.prefix?.includes('{') && !format.suffix?.includes('{')) {
+    return format;
+  }
+  const tokens = [
+    ...formatTokens(format.prefix, 'prefix', scope.vchrTypeId),
+    ...formatTokens(format.suffix, 'suffix', scope.vchrTypeId),
+  ];
+  const values: Record<FormatToken, string> = {
+    FY: scope.accYear,
+    BR: tokens.includes('BR') ? await requireBranchNumberCode(tx, scope.branchId) : '',
+  };
+  const expanded: VoucherFormat = {
+    prefix: fillFormatTokens(format.prefix, values),
+    suffix: fillFormatTokens(format.suffix, values),
+    noWidth: format.noWidth,
+  };
+  assertFormatFits(expanded, scope.vchrTypeId);
+  return expanded;
+}
+// The tokens `text` holds, refusing any it does not know — including a brace
+// left over once every {…} is taken out ("PO{FY", "PO}{FY}").
+function formatTokens(text: string | null, part: string, vchrTypeId: number): FormatToken[] {
+  if (!text?.includes('{')) {
+    return [];
+  }
+  const names: string[] = [];
+  const rest = text.replace(FORMAT_TOKEN, (_whole, name: string) => {
+    names.push(name);
+    return '';
+  });
+  const unknown =
+    names.find((name) => !(KNOWN_FORMAT_TOKENS as readonly string[]).includes(name)) ??
+    (/[{}]/.test(rest) ? text : undefined);
+  if (unknown !== undefined) {
+    const message = `The number ${part} "${text}" of voucher type ${vchrTypeId} holds an unknown token "${unknown}". Only {FY} and {BR} are expanded.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+        message,
+        // No braces: the wording filler would read "{YY}" as a placeholder and drop it.
+        params: { token: unknown.replace(/[{}]/g, ' ').trim() },
+      },
+    ]);
+  }
+  return names as FormatToken[];
+}
+async function requireBranchNumberCode(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+): Promise<string> {
+  const code = await branchNumberCode(tx, branchId);
+  if (!code) {
+    const message = `Branch ${branchId} has neither a bill prefix nor a code to print in its document numbers.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      { field: 'branchId', code: SequenceErrorCode.BRANCH_CODE_MISSING, message },
+    ]);
+  }
+  if (!BRANCH_NUMBER_CODE_PATTERN.test(code)) {
+    const message = `Branch ${branchId} prints "${code}" in its document numbers; it may have only letters, digits and "-", up to 10.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'branchId',
+        code: SequenceErrorCode.BRANCH_CODE_INVALID,
+        message,
+        params: { branchCode: code },
+      },
+    ]);
+  }
+  return code;
+}
+function fillFormatTokens(text: string | null, values: Record<FormatToken, string>): string | null {
+  if (!text?.includes('{')) {
+    return text;
+  }
+  return text.replace(FORMAT_TOKEN, (_whole, name: FormatToken) => values[name]);
+}
+// The expanded snapshot must fit its columns, and the first number it builds
+// (prefix + the counter at its width + suffix, as buildRefno prints it) must
+// fit avh_voucher_refno / abl_voucher_refno.
+function assertFormatFits(format: VoucherFormat, vchrTypeId: number): void {
+  const prefix = format.prefix ?? '';
+  const suffix = format.suffix ?? '';
+  const first = `${prefix.trim()}${'1'.padStart(Math.max(format.noWidth, 1), '0')}${suffix.trim()}`;
+  let message: string | null = null;
+  if (prefix.length > SEQ_VOUCHER_PREFIX_MAX_LENGTH) {
+    message = `The number prefix of voucher type ${vchrTypeId} expands to "${prefix}", over ${SEQ_VOUCHER_PREFIX_MAX_LENGTH} characters.`;
+  } else if (suffix.length > SEQ_VOUCHER_SUFFIX_MAX_LENGTH) {
+    message = `The number suffix of voucher type ${vchrTypeId} expands to "${suffix}", over ${SEQ_VOUCHER_SUFFIX_MAX_LENGTH} characters.`;
+  } else if (first.length > POSTED_REFNO_MAX_LENGTH) {
+    message = `Voucher type ${vchrTypeId} would number documents like "${first}" (${first.length} characters); a document number may have at most ${POSTED_REFNO_MAX_LENGTH}.`;
+  }
+  if (message) {
+    throwBadRequest<SequenceErrorDetail>(message, [
+      { field: 'vchrTypeId', code: SequenceErrorCode.REFNO_TOO_LONG, message },
+    ]);
+  }
+}
 async function findOrCreateSequence(
   tx: Prisma.TransactionClient,
   scope: Required<Pick<VoucherNumberScope, 'vchrTypeId' | 'companyId' | 'branchId' | 'accYear'>> & {
@@ -237,14 +374,20 @@ async function findOrCreateSequence(
       { field: 'branchId', code: SequenceErrorCode.BRANCH_NOT_FOUND, message },
     ]);
   }
+  // {FY} / {BR} are expanded here, once, as the year's counter opens — never per draw.
+  const format = await expandVoucherFormat(tx, scope, {
+    prefix: voucherType.vchrNoPrefix,
+    suffix: voucherType.vchrNoSuffix,
+    noWidth: voucherType.vchrNoWidth,
+  });
   return tx.accVoucherSeq.create({
     data: {
       ...scope,
       lastNo: INITIAL_LAST_NO,
-      // Format snapshot: editing the voucher type later never rewrites numbers
-      // already issued from this row.
-      voucherPrefix: voucherType.vchrNoPrefix,
-      voucherSuffix: voucherType.vchrNoSuffix,
+      // Format snapshot: editing the voucher type (or the branch's Bill Prefix)
+      // later never rewrites numbers already issued from this row.
+      voucherPrefix: format.prefix,
+      voucherSuffix: format.suffix,
       noWidth: voucherType.vchrNoWidth,
       companyCode: company.compCode,
       branchCode: branch.brCode,

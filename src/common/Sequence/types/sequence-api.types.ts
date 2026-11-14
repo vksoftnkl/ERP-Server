@@ -4,6 +4,8 @@ export interface SequenceErrorDetail {
   field: string;
   message: string;
   code: SequenceErrorCode;
+  /** Fills the `{name}` placeholders of the code's wording row (notes 120). */
+  params?: Record<string, string>;
 }
 
 export interface SequenceErrorResponse {

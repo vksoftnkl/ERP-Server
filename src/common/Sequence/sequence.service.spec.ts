@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { AccVoucherSeq } from '@prisma/client';
 import type { PrismaService } from '../../database/prisma/prisma.service';
 import type { CreateSequenceDto } from './dto/create-sequence.dto';
@@ -70,6 +75,8 @@ const makePrisma = (
     voucherType?: boolean;
     company?: boolean;
     branch?: boolean;
+    /** What the shared branch-code query ({BR}) answers. */
+    branchCode?: string | null;
   } = {},
 ) => {
   const findFirst = jest.fn(async (args: FindFirstArgs) => {
@@ -107,7 +114,11 @@ const makePrisma = (
     branchMaster: {
       findFirst: jest.fn(async () => (options.branch === false ? null : { brId: BRANCH_ID })),
     },
-    $queryRaw: jest.fn(async (..._args: unknown[]) => [{ locked: 1 }]),
+    $queryRaw: jest.fn(async (strings: unknown, ..._values: unknown[]) =>
+      Array.isArray(strings) && strings.join('?').includes('branch_master')
+        ? [{ code: options.branchCode ?? null }]
+        : [{ locked: 1 }],
+    ),
   };
   const prisma = {
     ...tx,
@@ -338,6 +349,77 @@ describe('SequenceService', () => {
       tx.accVoucherSeq.create.mockRejectedValue(boom);
 
       await expect(service.create(createDto())).rejects.toBe(boom);
+    });
+  });
+
+  // Branch serial plan §5.2: the admin path writes a counter row too, so a
+  // typed {FY} / {BR} is expanded as it is written, like the allocator does.
+  describe('typed {FY} / {BR} formats', () => {
+    it('takes a prefix of up to 60 characters (seq_voucher_prefix is VarChar(60))', async () => {
+      const { service, tx } = serviceWith();
+
+      await service.create(createDto({ voucherPrefix: 'P'.repeat(45) }));
+      expect(tx.accVoucherSeq.create.mock.calls[0][0].data.voucherPrefix).toBe('P'.repeat(45));
+
+      expect(
+        await codeOf(serviceWith().service.create(createDto({ voucherPrefix: 'P'.repeat(61) }))),
+      ).toEqual(expect.objectContaining({ field: 'voucherPrefix', code: 'VALIDATION_MAX_LENGTH' }));
+    });
+
+    it('expands {FY} and {BR} in a created row', async () => {
+      const { service, tx } = serviceWith({ branchCode: 'CBE' });
+
+      await service.create(createDto({ voucherPrefix: 'PO/{FY}/{BR}/', voucherSuffix: '-{BR}' }));
+
+      expect(tx.accVoucherSeq.create.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({ voucherPrefix: 'PO/2026-2027/CBE/', voucherSuffix: '-CBE' }),
+      );
+    });
+
+    it('expands a typed suffix on update and leaves the untyped prefix alone', async () => {
+      const { service, tx } = serviceWith({ existing: makeSeq(), branchCode: 'COUNTER2' });
+
+      await service.update(SEQ_ID, { voucherSuffix: '/{BR}' } as UpdateSequenceDto);
+
+      const { data } = tx.accVoucherSeq.update.mock.calls[0][0];
+      expect(data.voucherSuffix).toBe('/COUNTER2');
+      expect(data).not.toHaveProperty('voucherPrefix');
+    });
+
+    it('expands the prefix of a revived scope row', async () => {
+      const { service, tx } = serviceWith({ scopeRow: makeSeq({ isDeleted: true }), branchCode: 'CBE' });
+
+      await service.create(createDto({ voucherPrefix: 'GRN/{FY}/{BR}/' }));
+
+      expect(tx.accVoucherSeq.update.mock.calls[0][0].data.voucherPrefix).toBe('GRN/2026-2027/CBE/');
+    });
+
+    it.each([
+      ['an unknown token', { voucherPrefix: 'PO/{YY}/' }, 'CBE', 'SEQUENCE_FORMAT_TOKEN_UNKNOWN', 'vchrTypeId'],
+      ['a branch with no code', { voucherPrefix: 'PO/{BR}/' }, null, 'SEQUENCE_BRANCH_CODE_MISSING', 'branchId'],
+      ['a branch code with a slash', { voucherPrefix: 'PO/{BR}/' }, 'C/B', 'SEQUENCE_BRANCH_CODE_INVALID', 'branchId'],
+    ])('refuses %s with 422 and writes nothing', async (_label, dto, branchCode, code, field) => {
+      const { service, tx } = serviceWith({ branchCode });
+
+      const error = await refusal(service.create(createDto(dto)));
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect(await codeOf(Promise.reject(error))).toEqual(expect.objectContaining({ field, code }));
+      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses 400 SEQUENCE_REFNO_TOO_LONG when the expanded format builds a number over 50', async () => {
+      const { service, tx } = serviceWith({ branchCode: 'ABCDEFGHIJ' });
+
+      const error = await refusal(
+        service.create(createDto({ voucherPrefix: '{FY}/{FY}/{BR}/{BR}/', noWidth: 10 })),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(await codeOf(Promise.reject(error))).toEqual(
+        expect.objectContaining({ code: 'SEQUENCE_REFNO_TOO_LONG' }),
+      );
+      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
     });
   });
 

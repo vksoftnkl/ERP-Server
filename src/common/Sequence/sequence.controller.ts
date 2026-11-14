@@ -11,6 +11,7 @@ import {
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../dto/http-error-response.dto';
 import { ListSequenceQueryDto } from './dto/list-sequence-query.dto';
@@ -43,6 +44,11 @@ export class SequenceController {
   @ApiBadRequestResponse({ type: SequenceErrorResponseDto })
   @ApiConflictResponse({ type: SequenceErrorResponseDto })
   @ApiNotFoundResponse({ type: SequenceErrorResponseDto })
+  @ApiUnprocessableEntityResponse({
+    type: SequenceErrorResponseDto,
+    description:
+      'A typed {FY} / {BR} prefix or suffix that cannot be expanded: SEQUENCE_FORMAT_TOKEN_UNKNOWN, SEQUENCE_BRANCH_CODE_MISSING, SEQUENCE_BRANCH_CODE_INVALID.',
+  })
   async save(
     @Body() saveSequenceDto: SaveSequenceDto,
   ): Promise<SequenceSuccessResponse<SequencePayload>> {

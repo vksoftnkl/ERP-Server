@@ -1,10 +1,11 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { AccVoucherSeq, Prisma, VoucherResetFreq } from '@prisma/client';
 import {
   VoucherNumberScope,
   allocateVoucherNumber,
   allocateVoucherSlno,
   buildRefno,
+  expandVoucherFormat,
 } from './voucher-sequence.helper';
 
 const SEQ_ID = '019f0000-0000-7000-8000-0000000000a1';
@@ -31,6 +32,10 @@ const makeTx = (
     existing?: AccVoucherSeq | null;
     company?: boolean;
     branch?: boolean;
+    /** The voucher type's prefix / suffix / width; default 'SB/', '/26', 4. */
+    format?: { prefix: string | null; suffix: string | null; width?: number };
+    /** What the shared branch-code query (branch-number-code.helper) answers. */
+    branchCode?: string | null;
   } = {},
 ) => {
   let lastNo = options.existing?.lastNo ?? BigInt(0);
@@ -42,9 +47,9 @@ const makeTx = (
           ? null
           : {
               vchrTypeId: 3,
-              vchrNoPrefix: 'SB/',
-              vchrNoSuffix: '/26',
-              vchrNoWidth: 4,
+              vchrNoPrefix: options.format ? options.format.prefix : 'SB/',
+              vchrNoSuffix: options.format ? options.format.suffix : '/26',
+              vchrNoWidth: options.format?.width ?? 4,
               vchrResetFreq: options.resetFreq ?? VoucherResetFreq.YEARLY,
             },
       ),
@@ -68,10 +73,18 @@ const makeTx = (
     branchMaster: {
       findFirst: jest.fn(async () => (options.branch === false ? null : { brCode: 'BR1' })),
     },
-    $queryRaw: jest.fn(async (..._args: unknown[]) => [{ locked: 1 }]),
+    $queryRaw: jest.fn(async (strings: unknown, ..._values: unknown[]) =>
+      isBranchCodeQuery(strings) ? [{ code: options.branchCode ?? null }] : [{ locked: 1 }],
+    ),
   };
   return { tx, client: tx as unknown as Prisma.TransactionClient };
 };
+
+const isBranchCodeQuery = (strings: unknown): boolean =>
+  Array.isArray(strings) && strings.join('?').includes('branch_master');
+
+const branchCodeCalls = (queryRaw: jest.Mock) =>
+  queryRaw.mock.calls.filter(([strings]) => isBranchCodeQuery(strings));
 
 const scope = (overrides: Partial<VoucherNumberScope> = {}): VoucherNumberScope => ({
   vchrTypeId: 3,
@@ -284,5 +297,175 @@ describe('allocateVoucherSlno', () => {
     await expect(
       allocateVoucherSlno({ $queryRaw } as unknown as Prisma.TransactionClient, COMPANY_ID, '2026-2027'),
     ).resolves.toBe(BigInt(1));
+  });
+});
+
+// Branch serial plan §5.2 / §5.5 (approved 2026-11-04): {FY} / {BR} expand once,
+// as the year's counter row is created; the row is the frozen format.
+describe('allocateVoucherNumber — {FY} / {BR} formats', () => {
+  const open = (options: Parameters<typeof makeTx>[0]) => {
+    const harness = makeTx({ existing: null, ...options });
+    return { ...harness, result: allocateVoucherNumber(harness.client, scope()) };
+  };
+  const createdData = (tx: ReturnType<typeof makeTx>['tx']) =>
+    (tx.accVoucherSeq.create.mock.calls[0][0] as { data: Partial<AccVoucherSeq> }).data;
+
+  it('expands {FY} and {BR} in the prefix and the suffix into the new counter row', async () => {
+    const { tx, result } = open({
+      format: { prefix: 'PO/{FY}/{BR}/', suffix: '-{BR}{FY}', width: 5 },
+      branchCode: 'CBE',
+    });
+
+    await expect(result).resolves.toMatchObject({
+      lastNo: BigInt(1),
+      refno: 'PO/2026-2027/CBE/00001-CBE2026-2027',
+    });
+    expect(createdData(tx)).toMatchObject({
+      voucherPrefix: 'PO/2026-2027/CBE/',
+      voucherSuffix: '-CBE2026-2027',
+      noWidth: 5,
+    });
+    // The printed number is written back as it is drawn.
+    expect(tx.accVoucherSeq.update).toHaveBeenNthCalledWith(2, {
+      where: { id: SEQ_ID },
+      data: { lastRefno: 'PO/2026-2027/CBE/00001-CBE2026-2027', modifiedOn: expect.any(Date) },
+    });
+  });
+
+  it.each([
+    ['the Bill Prefix', 'CBE'],
+    ['the branch code when the Bill Prefix is blank', 'COUNTER2'],
+  ])('prints {BR} as %s, through the shared SQL fold', async (_label, code) => {
+    const { tx, result } = open({ format: { prefix: 'GRN/{FY}/{BR}/', suffix: null }, branchCode: code });
+
+    await expect(result).resolves.toMatchObject({ refno: `GRN/2026-2027/${code}/0001` });
+    const [[strings, ...values]] = branchCodeCalls(tx.$queryRaw);
+    expect(Prisma.sql(strings as string[], ...values).text.replace(/\s+/g, ' ')).toContain(
+      "upper(COALESCE(NULLIF(btrim(br_bill_prefix), ''), NULLIF(btrim(br_code), '')))",
+    );
+    expect(values).toEqual([BRANCH_ID]);
+  });
+
+  it('expands {FY} alone without reading the branch', async () => {
+    const { tx, result } = open({ format: { prefix: 'ADJ/{FY}/', suffix: null }, branchCode: null });
+
+    await expect(result).resolves.toMatchObject({ refno: 'ADJ/2026-2027/0001' });
+    expect(branchCodeCalls(tx.$queryRaw)).toHaveLength(0);
+  });
+
+  it.each([
+    ['bil', null, 'bil0001'],
+    ['srt', '/X', 'srt0001/X'],
+    // Only a '{' marks a format: a lone '}' is text, as today.
+    ['A}B', null, 'A}B0001'],
+    [null, null, '0001'],
+  ])('keeps a prefix %p with no "{" exactly as before, with no branch read', async (prefix, suffix, refno) => {
+    const { tx, result } = open({ format: { prefix, suffix }, branchCode: 'CBE' });
+
+    await expect(result).resolves.toMatchObject({ refno });
+    expect(createdData(tx)).toMatchObject({ voucherPrefix: prefix, voucherSuffix: suffix });
+    expect(branchCodeCalls(tx.$queryRaw)).toHaveLength(0);
+  });
+
+  it('never re-expands an open counter: its row is the year’s frozen format', async () => {
+    const { tx, result } = open({
+      existing: seq({ voucherPrefix: 'PO/2026-2027/CBE/', lastNo: BigInt(7) }),
+      format: { prefix: 'PO/{FY}/{BR}/', suffix: null },
+      branchCode: 'NEWCODE',
+    });
+
+    await expect(result).resolves.toMatchObject({ refno: 'PO/2026-2027/CBE/00008' });
+    expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+    expect(branchCodeCalls(tx.$queryRaw)).toHaveLength(0);
+  });
+
+  it('refuses 422 SEQUENCE_BRANCH_CODE_MISSING when the branch has neither a Bill Prefix nor a code', async () => {
+    const { tx, result } = open({ format: { prefix: 'PUR/{FY}/{BR}/', suffix: null }, branchCode: null });
+
+    await expect(result).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(result).rejects.toMatchObject({
+      response: { errors: [{ field: 'branchId', code: 'SEQUENCE_BRANCH_CODE_MISSING' }] },
+    });
+    expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['CB/E', 'ABCDEFGHIJK', 'HAP CHENNAI', 'CB_E', 'CBÉ'])(
+    'refuses 422 SEQUENCE_BRANCH_CODE_INVALID for the code %p',
+    async (code) => {
+      const { tx, result } = open({ format: { prefix: 'PUR/{FY}/{BR}/', suffix: null }, branchCode: code });
+
+      await expect(result).rejects.toBeInstanceOf(UnprocessableEntityException);
+      await expect(result).rejects.toMatchObject({
+        response: {
+          errors: [{ field: 'branchId', code: 'SEQUENCE_BRANCH_CODE_INVALID', params: { branchCode: code } }],
+        },
+      });
+      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['PO/{YY}/', null, 'YY'],
+    ['PO/{fy}/{BR}/', null, 'fy'],
+    ['PO/{FY}/', '/{DEVICE}', 'DEVICE'],
+    ['PO/{}/', null, ''],
+    ['PO/{FY', null, 'PO/ FY'],
+    ['PO}/{FY}/', null, 'PO / FY /'],
+  ])('refuses 422 SEQUENCE_FORMAT_TOKEN_UNKNOWN for %p / %p before reading the branch', async (prefix, suffix, token) => {
+    const { tx, result } = open({ format: { prefix, suffix }, branchCode: 'CBE' });
+
+    await expect(result).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(result).rejects.toMatchObject({
+      response: {
+        errors: [{ field: 'vchrTypeId', code: 'SEQUENCE_FORMAT_TOKEN_UNKNOWN', params: { token } }],
+      },
+    });
+    expect(branchCodeCalls(tx.$queryRaw)).toHaveLength(0);
+    expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+  });
+
+  it('opens a counter whose first number is exactly 50 characters', async () => {
+    // 31 + 9 + 10 = 50.
+    const { result } = open({
+      format: { prefix: '{FY}/{FY}/{BR}/', suffix: '-{FY}', width: 9 },
+      branchCode: 'ABCDEFGHIJ',
+    });
+
+    const { refno } = await result;
+    expect(refno).toHaveLength(50);
+  });
+
+  it.each([
+    ['a first number over 50 characters', { prefix: '{FY}/{FY}/{BR}/', suffix: '-{FY}', width: 10 }],
+    ['a suffix that expands past its 20-character column', { prefix: 'X/', suffix: '/{FY}/{BR}', width: 5 }],
+    ['a prefix that expands past its 60-character column', { prefix: '{BR}'.repeat(7), suffix: null, width: 1 }],
+  ])('refuses 400 SEQUENCE_REFNO_TOO_LONG for %s', async (_label, format) => {
+    const { tx, result } = open({ format, branchCode: 'ABCDEFGHIJ' });
+
+    await expect(result).rejects.toBeInstanceOf(BadRequestException);
+    await expect(result).rejects.toMatchObject({
+      response: { errors: [{ field: 'vchrTypeId', code: 'SEQUENCE_REFNO_TOO_LONG' }] },
+    });
+    expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('expandVoucherFormat', () => {
+  const formatScope = { vchrTypeId: 61, branchId: BRANCH_ID, accYear: '2026-2027' };
+
+  it('hands a format with no "{" back untouched, without a query', async () => {
+    const { tx, client } = makeTx();
+    const format = { prefix: 'rct', suffix: null, noWidth: 5 };
+
+    await expect(expandVoucherFormat(client, formatScope, format)).resolves.toBe(format);
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('expands every occurrence of each token', async () => {
+    const { client } = makeTx({ branchCode: 'COUNTER2' });
+
+    await expect(
+      expandVoucherFormat(client, formatScope, { prefix: '{BR}/{FY}/{BR}/', suffix: null, noWidth: 5 }),
+    ).resolves.toEqual({ prefix: 'COUNTER2/2026-2027/COUNTER2/', suffix: null, noWidth: 5 });
   });
 });

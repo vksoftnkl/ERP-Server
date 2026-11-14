@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { branchNumberCode } from 'src/common/Sequence/branch-number-code.helper';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import { throwStockUnprocessable } from 'src/common/utils/module-service.utils';
 import { StockErrorCode } from '../types/stock-error-codes';
@@ -158,13 +159,13 @@ async function storedBatchNumbers(
   return new Map(rows.map((row) => [row.svi_id, row.svi_batch_no]));
 }
 
-/** D1 — the bill prefix, else the code, upper-cased as the lot key folds it. */
+/**
+ * D1 — the bill prefix, else the code, upper-cased as the lot key folds it.
+ * The shared rule `{BR}` also uses; batch numbers take it without the shape check.
+ */
 async function branchBatchCode(tx: Prisma.TransactionClient, branchId: string): Promise<string> {
-  const [row] = await tx.$queryRaw<{ code: string | null }[]>`
-    SELECT upper(COALESCE(NULLIF(btrim(br_bill_prefix), ''), NULLIF(btrim(br_code), ''))) AS code
-      FROM public.branch_master
-     WHERE br_id = ${branchId}::uuid`;
-  if (!row?.code) {
+  const code = await branchNumberCode(tx, branchId);
+  if (!code) {
     throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(BATCH_PREFIX_MISSING_MESSAGE, [
       {
         field: 'branchId',
@@ -173,7 +174,7 @@ async function branchBatchCode(tx: Prisma.TransactionClient, branchId: string): 
       },
     ]);
   }
-  return row.code;
+  return code;
 }
 
 /** accounts.acc_voucher_types by code — the id is a sequence value and differs between databases. */

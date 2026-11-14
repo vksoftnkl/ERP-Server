@@ -11,6 +11,7 @@ import {
   SequencePayload,
 } from './types/sequence-api.types';
 import { SequenceErrorCode } from './types/sequence-error-codes';
+import { SEQ_VOUCHER_PREFIX_MAX_LENGTH, expandVoucherFormat } from './voucher-sequence.helper';
 import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
@@ -56,11 +57,13 @@ export class SequenceService {
         const nextLastNo = await this.getNextLastNo(tx, lastNoScope);
         const existingSequence = await this.findSequenceByScope(tx, scope);
         if (existingSequence) {
+          const duplicateData = this.buildDuplicateScopeUpdateData(createSequenceDto, nextLastNo);
+          await this.expandTypedFormat(tx, scope, duplicateData, existingSequence);
           const updated = await tx.accVoucherSeq.update({
             where: {
               id: existingSequence.id,
             },
-            data: this.buildDuplicateScopeUpdateData(createSequenceDto, nextLastNo),
+            data: duplicateData,
           });
           return this.toPayload(updated);
         }
@@ -79,6 +82,7 @@ export class SequenceService {
           data.noWidth = DEFAULT_NO_WIDTH;
         }
         this.assignOptionalCreateFields(data, createSequenceDto);
+        await this.expandTypedFormat(tx, scope, data, null);
         const created = await tx.accVoucherSeq.create({ data });
         return this.toPayload(created);
       });
@@ -166,6 +170,7 @@ export class SequenceService {
         await this.ensureReferencesExist(tx, scope);
         await this.ensureScopeIsUnique(tx, scope, sequenceId);
         const data = this.buildUpdateData(updateSequenceDto);
+        await this.expandTypedFormat(tx, scope, data, existing);
         const lastNoScope = this.resolveLastNoScope(existing, updateSequenceDto, scope);
         if (this.hasLastNoScopeChanged(existing, lastNoScope)) {
           await this.acquireLastNoScopeLock(tx, lastNoScope);
@@ -419,7 +424,11 @@ export class SequenceService {
     dto: CreateSequenceDto | UpdateSequenceDto,
   ): void {
     if (dto.voucherPrefix !== undefined) {
-      data.voucherPrefix = this.normalizeNullableString(dto.voucherPrefix, 'voucherPrefix', 20);
+      data.voucherPrefix = this.normalizeNullableString(
+        dto.voucherPrefix,
+        'voucherPrefix',
+        SEQ_VOUCHER_PREFIX_MAX_LENGTH,
+      );
     }
     if (dto.companyCode !== undefined) {
       data.companyCode = this.normalizeNullableString(dto.companyCode, 'companyCode', 20);
@@ -432,6 +441,36 @@ export class SequenceService {
     }
     if (dto.lastRefno !== undefined) {
       data.lastRefno = this.normalizeNullableString(dto.lastRefno, 'lastRefno', 100);
+    }
+  }
+  // Branch serial plan §5.2: a prefix / suffix typed here with {FY} / {BR} is
+  // expanded as the row is written, as the allocator does when it opens a
+  // counter, so no counter row ever holds a raw token. Text without '{' is
+  // stored as typed. The untyped half and the width come from the row being
+  // changed, for the length check.
+  private async expandTypedFormat(
+    tx: Prisma.TransactionClient,
+    scope: SequenceScope,
+    data: Prisma.AccVoucherSeqUncheckedCreateInput | Prisma.AccVoucherSeqUncheckedUpdateInput,
+    current: Pick<AccVoucherSeq, 'voucherPrefix' | 'voucherSuffix' | 'noWidth'> | null,
+  ): Promise<void> {
+    const typedPrefix = typeof data.voucherPrefix === 'string' ? data.voucherPrefix : undefined;
+    const typedSuffix = typeof data.voucherSuffix === 'string' ? data.voucherSuffix : undefined;
+    if (!typedPrefix?.includes('{') && !typedSuffix?.includes('{')) {
+      return;
+    }
+    const expanded = await expandVoucherFormat(tx, scope, {
+      prefix:
+        data.voucherPrefix !== undefined ? (typedPrefix ?? null) : (current?.voucherPrefix ?? null),
+      suffix:
+        data.voucherSuffix !== undefined ? (typedSuffix ?? null) : (current?.voucherSuffix ?? null),
+      noWidth: typeof data.noWidth === 'number' ? data.noWidth : (current?.noWidth ?? DEFAULT_NO_WIDTH),
+    });
+    if (typedPrefix !== undefined) {
+      data.voucherPrefix = expanded.prefix;
+    }
+    if (typedSuffix !== undefined) {
+      data.voucherSuffix = expanded.suffix;
     }
   }
   private async ensureReferencesExist(
