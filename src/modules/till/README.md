@@ -536,7 +536,10 @@ a rule warns first and refuses only where a company turns that on. `TillApproval
 (read-only) / `settleGate` (in the document's transaction):
 
 - **WARN:** the document goes through; one PENDING request per event and document is filed for the
-  inbox, after the fact (`tap_rule_snapshot.after`).
+  inbox, after the fact (`tap_rule_snapshot.after`). Under `till.single_operator` it snapshots
+  `tap_self_allowed` true, as `approvals/request` does (REV 2 §2.12), so the owner-cashier decides
+  their own review. A Sale Return's PENDING requests are withdrawn (`withdrawForDocument`) when it
+  is amended or cancelled.
 - **REFUSE** on a rule with `tar_blocks_till`: **428 `TILL_APPROVAL_REQUIRED`** `{ event, amount,
   requiredRole, channel, twoPerson, srcDocType, srcDocId }` until the call brings `approvalId` — an
   APPROVED request of this branch for this event and document, for at least this amount, not used
@@ -568,8 +571,8 @@ TILL_APPROVER_SELF and the error carries `event`, so the wording catalogue keys 
   the right one).
 - **REV 2 items on modules not built yet:** §2.1–§2.3 and §2.5 (the settlement import / match /
   TSet of 49) are built in `accountsModule/tenderSettlement`, except the closed-session pairing
-  (`asl_tvr_*`), which waits for the phase-3 variance decision; §2.10–§2.11 (day reopen, day close's suspense row), §2.12 (snapshotting
-  `tap_self_allowed` under `till.single_operator` — the approval gate), §2.17's 269ST sum on
+  (`asl_tvr_*`), which waits for the phase-3 variance decision; §2.10–§2.11 (day reopen, day close's suspense row), §2.12's set-up proposal (`till.blind_close`
+  false, `till.float_mode` CARRIED; the snapshot of `tap_self_allowed` is built), §2.17's 269ST sum on
   receipts (ExpV and 40A(3) are built — above). §2.18's law facts are data: the TCS 206C(1H) rows still active in
   `statutory_limits` need raising with Prathap.
 - The slip print templates (§9) are print-engine data, not built (the expense voucher's

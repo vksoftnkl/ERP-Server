@@ -3345,6 +3345,86 @@ describe('SaleReturnService', () => {
         'Sale return cancelled: Posted twice',
       );
     });
+
+    describe('11-14 G R — a PENDING request / review of the return is withdrawn', () => {
+      const review = {
+        tapId: 'tap-review',
+        accYear: ACC_YEAR,
+        event: 'SALE_CLAIM',
+        status: 'PENDING',
+        amount: D(590),
+        requestedOn: new Date(),
+        usedOn: null,
+      };
+
+      it('withdraws it inside the cancel, after the return is CANCELLED, as /amend does', async () => {
+        db.approvals = [
+          review,
+          { ...review, tapId: 'tap-approved', event: 'RETURN_NO_RECEIPT', status: 'APPROVED' },
+        ];
+
+        await expect(service.cancel(cancelDto)).resolves.toMatchObject({ srStatus: 'CANCELLED' });
+
+        expect(approvals.withdrawForDocument).toHaveBeenCalledTimes(1);
+        expect(approvals.withdrawForDocument).toHaveBeenCalledWith(tx, {
+          companyId: COMPANY_ID,
+          srcDocType: 'SALE_RETURN',
+          srcDocId: SR_ID,
+          userId: USER_ID,
+          deviceId: null,
+          note: 'Withdrawn by cashier1: the return was cancelled',
+        });
+        // In the cancel's own transaction, once the status has gone CANCELLED.
+        expect(store.setStatus.mock.invocationCallOrder.at(-1)).toBeLessThan(
+          approvals.withdrawForDocument.mock.invocationCallOrder[0],
+        );
+        expect(store.auditChange.mock.invocationCallOrder[0]).toBeGreaterThan(
+          approvals.withdrawForDocument.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('withdraws nothing when nothing of the return is PENDING (the cancel is unchanged)', async () => {
+        db.approvals = [
+          { ...review, status: 'APPROVED' },
+          { ...review, status: 'CANCELLED' },
+        ];
+
+        const result = await service.cancel(cancelDto);
+
+        expect(approvals.withdrawForDocument).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          id: SR_ID,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          accYear: ACC_YEAR,
+          srStatus: 'CANCELLED',
+          reversalVoucherRefno: expect.anything(),
+          cancelledOn: expect.any(String),
+        });
+        expect(lastSetStatus()[2]).toBe('CANCELLED');
+      });
+
+      it('withdraws nothing when the cancel is refused (the review stays with the return)', async () => {
+        db.approvals = [review];
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID, srRefundAmt: D(100) });
+        db.session = { status: 'CLOSED', sessionNo: 'S-12' };
+
+        expect(await refusalOf(service.cancel(cancelDto))).toMatchObject({
+          status: 409,
+          body: { errors: [{ code: SALES_ERROR_CODES.RETURN_REFUND_SESSION_CLOSED }] },
+        });
+        expect(approvals.withdrawForDocument).not.toHaveBeenCalled();
+      });
+
+      it('touches nothing on a return already CANCELLED', async () => {
+        db.approvals = [review];
+        row = srRow({ srStatus: 'CANCELLED' });
+
+        await service.cancel(cancelDto);
+
+        expect(approvals.withdrawForDocument).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('amend', () => {

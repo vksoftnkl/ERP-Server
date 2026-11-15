@@ -27,7 +27,9 @@
  *    by approvedFor; then NONE · APPROVED · REFUSE · WARN by till.approval_gate and
  *    tar_blocks_till) → the caller throws throwApprovalRequired (428) on REFUSE → settleGate in
  *    the document's transaction marks an APPROVED request used, or under WARN files one PENDING
- *    request per event and document (fileRequest, APPROVAL_REQUESTED).
+ *    request per event and document (fileRequest, APPROVAL_REQUESTED; tap_self_allowed under
+ *    till.single_operator, as approvals/request); withdrawForDocument cancels a document's
+ *    PENDING requests when it is amended or cancelled.
  *  - record: the `till_approval` row of a decision taken in one call (A3), the rule snapshotted
  *    (snapshotOf); ruleOfRequest reads a request's rule back from that snapshot.
  */
@@ -198,13 +200,15 @@ export interface GateAsk {
  * NONE: the rule asks nothing. APPROVED: an approved request was brought and
  * fits. REFUSE: `till.approval_gate` REFUSE on a rule that blocks the till, and
  * none was brought — the caller throws (throwApprovalRequired). WARN: it goes
- * through, and settleGate files a PENDING request for the inbox.
+ * through, and settleGate files a PENDING request for the inbox; `selfAllowed`
+ * is what that request snapshots as tap_self_allowed (the rule's no-self flag,
+ * or till.single_operator — REV 2 §2.12, as approvals/request does).
  */
 export type GateVerdict =
   | { state: 'NONE' }
   | { state: 'APPROVED'; need: TillApprovalNeed; rule: TillApprovalRuleRow; tapId: string }
   | { state: 'REFUSE'; need: TillApprovalNeed; rule: TillApprovalRuleRow }
-  | { state: 'WARN'; need: TillApprovalNeed; rule: TillApprovalRuleRow };
+  | { state: 'WARN'; need: TillApprovalNeed; rule: TillApprovalRuleRow; selfAllowed: boolean };
 
 /** A PENDING request to file (the gate under WARN, approvals/request). */
 export interface NewApprovalRequest {
@@ -383,7 +387,14 @@ export class TillApprovalService {
     }
     return refuse
       ? { state: 'REFUSE', need: { ...need, enforced: true }, rule }
-      : { state: 'WARN', need, rule };
+      : {
+          state: 'WARN',
+          need,
+          rule,
+          // REV 2 §2.12: a single-operator branch's review is decided by its
+          // own cashier, as an explicit approvals/request there is.
+          selfAllowed: rule.tar_allow_self || settings.singleOperator,
+        };
   }
 
   /**
@@ -443,15 +454,17 @@ export class TillApprovalService {
       rule: verdict.rule,
       reasonId: null,
       note: null,
+      selfAllowed: verdict.selfAllowed,
       payload: { ...(ask.payload ?? {}), filedBy: 'gate', after: true },
     });
   }
 
   /**
    * Withdraws, inside the document's own transaction, every PENDING request a
-   * document has filed — for a document that is being replaced, so the review
-   * no longer describes it (a Sale Return amended while its post-hoc review
-   * waits: review 11-14 S4). Each row goes CANCELLED with `note`, and
+   * document has filed — for a document that is being replaced or cancelled,
+   * so the review no longer describes anything live (a Sale Return amended
+   * while its post-hoc review waits: review 11-14 S4; cancelled: 11-14 G R).
+   * Each row goes CANCELLED with `note`, and
    * APPROVAL_DECIDED is journalled with `status: CANCELLED`, as approvals/cancel
    * does. The document's own gate files a fresh request afterwards if the
    * rule still asks. Returns the withdrawn ids.

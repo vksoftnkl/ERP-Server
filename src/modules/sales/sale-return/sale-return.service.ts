@@ -2374,6 +2374,20 @@ export class SaleReturnService {
         now,
         dto.reason,
       );
+      // 11-14 G R — a review (or request) still PENDING describes a return
+      // that no longer stands: withdrawn here, as /amend withdraws it (S4).
+      if (
+        (await this.reader.approvalsOf(tx, row.srId as string)).some((a) => a.status === 'PENDING')
+      ) {
+        await this.approvals.withdrawForDocument(tx, {
+          companyId: row.srCompanyId as string,
+          srcDocType: 'SALE_RETURN',
+          srcDocId: row.srId as string,
+          userId: ctx.actor,
+          deviceId: isUuid(row.srDeviceId as string | null) ? (row.srDeviceId as string) : null,
+          note: `Withdrawn by ${ctx.actorName}: the return was cancelled`,
+        });
+      }
       await this.store.auditChange(
         tx,
         row,
