@@ -22,11 +22,24 @@ export enum SequenceErrorCode {
   INACTIVE = 'SEQUENCE_INACTIVE',
   /**
    * The number built from the prefix, counter and suffix is longer than the ref no column (100).
-   * Also (400) when a `{FY}` / `{BR}` format, expanded as its counter opens, would build a number
-   * over 50 (avh_voucher_refno / abl_voucher_refno) or overflow the counter's prefix (60) or
-   * suffix (20) column.
+   * Also (400) when a `{FY}` / `{YY}` / `{BR}` format, expanded as its counter opens, would build a
+   * number over 50 (avh_voucher_refno / abl_voucher_refno) or overflow the counter's prefix (60) or
+   * suffix (20) column, or a typed number is over 50.
+   * And (422, the detail carries `rule: 'GST16'`, wording variant rule=GST16) when a GST outward
+   * type's first number at a new counter is over 16 characters (Voucher Types plan decision 35).
    */
   REFNO_TOO_LONG = 'SEQUENCE_REFNO_TOO_LONG',
+  /**
+   * 422 — the voucher type is numbered MANUAL and the document sent no typed number
+   * (Voucher Types plan §7.3). No document sends one yet (decision 42).
+   */
+  NUMBER_REQUIRED = 'SEQUENCE_NUMBER_REQUIRED',
+  /**
+   * 422 — a CHILD GST outward voucher type with no `{BR}` in its number opens its first counter at
+   * a branch whose GSTIN another active branch of the company shares (Voucher Types plan decision
+   * 40). The Voucher Types master's own code, raised here because the counter is where it bites.
+   */
+  BR_REQUIRED = 'VT_BR_REQUIRED',
   /**
    * 422 — the format holds `{BR}` and the branch has neither a Bill Prefix nor a code
    * (branch serial plan §9.3).
@@ -35,8 +48,9 @@ export enum SequenceErrorCode {
   /** 422 — the format holds `{BR}` and the branch's code is not `^[A-Z0-9-]{1,10}$` (§5.5). */
   BRANCH_CODE_INVALID = 'SEQUENCE_BRANCH_CODE_INVALID',
   /**
-   * 422 — the voucher type's prefix or suffix holds a `{…}` other than `{FY}` / `{BR}`, or a
-   * stray brace. Refused rather than printed raw. `params.token` names it (no braces).
+   * 422 — the voucher type's prefix or suffix holds a `{…}` other than `{FY}` / `{YY}` / `{BR}`, or
+   * a stray brace. Refused rather than printed raw. `params.token` names it (no braces). Also when
+   * the format holds `{YY}` and the accounting year is not shaped NNNN-NNNN (`params.token` 'YY').
    */
   FORMAT_TOKEN_UNKNOWN = 'SEQUENCE_FORMAT_TOKEN_UNKNOWN',
   /** A field that must be a UUID is not one. */

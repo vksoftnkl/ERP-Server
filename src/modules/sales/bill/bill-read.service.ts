@@ -10,6 +10,7 @@ import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import { batchDetailKey, batchDetailsFor } from '../../stocks/batch-detail/batch-detail.helper';
 import { STATUTORY_CODES } from '../../../common/posting/statutory.types';
+import { billVoucherTypeBlock } from './bill-voucher-type.helper';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { SaleBillErrorCode } from './types/sale-bill-error-codes';
 import {
@@ -58,7 +59,7 @@ export class BillReadService {
     client?: Prisma.TransactionClient,
   ): Promise<BillPayload> {
     const c = client ?? this.prisma;
-    const [counts, rights, sources, tempCredits, adjustments, transport, batches] =
+    const [counts, rights, sources, tempCredits, adjustments, transport, batches, voucherType] =
       await Promise.all([
         this.lockCounts(c, bill),
         this.salesContext.rights(SALES_MENU_ID.SALE_BILL, c),
@@ -75,6 +76,8 @@ export class BillReadService {
           bill.sbCompanyId,
           (payload.items ?? []).map((i) => ({ itemId: i.sbiItemId, batchNo: i.sbiBatchNo })),
         ),
+        // Voucher Types plan §7.4 / §5.4.
+        billVoucherTypeBlock(c, bill),
       ]);
     const { posting, locks } = await this.docBlocks.build(
       {
@@ -112,6 +115,7 @@ export class BillReadService {
       tempCredits,
       adjustments,
       transport,
+      voucherType,
       sbShipAddrId: transport?.to.addrId ?? null,
       sbShipName: transport?.to.name ?? null,
       sbShipAddr: transport?.to.addr ?? null,

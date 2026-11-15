@@ -1020,6 +1020,33 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['trn_modified_by', 'Modified By'],
     ]),
   ],
+  [
+    // Voucher Types master, menu 303 (plan-voucher-types-2026-11-14 VT-29).
+    'Voucher Types',
+    buildAuditSql('accounts.acc_voucher_types', [
+      ['vchr_type_code', 'Code'],
+      ['vchr_type_name', 'Name'],
+      ['vchr_type_short', 'Abbreviation'],
+      ['vchr_parent_id', 'Base Type ID'],
+      ['vchr_company_id', 'Company ID'],
+      ['vchr_numbering_mode', 'Method'],
+      ['vchr_no_prefix', 'Prefix'],
+      ['vchr_no_suffix', 'Suffix'],
+      ['vchr_no_width', 'Width'],
+      ['vchr_reset_freq', 'Restart'],
+      ['vchr_start_no', 'Starting No'],
+      ['vchr_print_title', 'Print Title'],
+      ['vchr_print_purpose_id', 'Print Design ID'],
+      ['vchr_print_after_post', 'Print After Posting'],
+      ['vchr_sort_order', 'Sort Order'],
+      ['vchr_is_active', 'Is Active'],
+      ['vchr_tally_voucher_type_name', 'Tally Voucher Type'],
+      ['vchr_created_on', 'Created On'],
+      ['vchr_created_by', 'Created By'],
+      ['vchr_updated_on', 'Modified On'],
+      ['vchr_updated_by', 'Modified By'],
+    ]),
+  ],
 ]);
 
 export const getAuditScreenSql = (screenName: string): string | undefined =>

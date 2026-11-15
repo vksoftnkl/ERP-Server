@@ -13,6 +13,11 @@ model SaleBill {
   // Document identity
   sbDocType          String    @default("TAX_INVOICE") @db.VarChar(30) @map("sb_doc_type")
   sbBillType         String    @default("CASH") @db.VarChar(20) @map("sb_bill_type") // CASH | CREDIT
+  /// The voucher type the bill is numbered and posted under: 3 Sales Bill or
+  /// one of the company's child types (Retail, Wholesale ...). Given at the
+  /// first save and never changed (Q5). The DB default is the id of code 'Bil'
+  /// (3), resolved by 20261116100000_voucher_types_master.
+  sbVchrTypeId       Int       @default(3) @map("sb_vchr_type_id")
   sbCategoryId       String?   @db.Uuid @map("sb_category_id")
   sbPriceLevel       Int       @map("sb_price_level")
   sbBillSlno         BigInt?    @map("sb_bill_slno") // per company/branch/year/COUNTER
@@ -203,6 +208,7 @@ model SaleBill {
   customer   Customer?      @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
   posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
   priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
+  voucherType AccVoucherType @relation("SaleBillVoucherType", fields: [sbVchrTypeId], references: [vchrTypeId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_vchr_type")
   // ck_sb_doc_type, ck_sb_bill_type, ck_sb_status, ck_sb_pay_status and
   // ck_sb_return_status were dropped before the migration was ever applied
   // and are enforced in the application layer instead
@@ -213,6 +219,8 @@ model SaleBill {
   // quotation. Without it that is a sequential scan of every sale_bill
   // partition. The mirror of sale_bill_item's ix_sbi_src_doc.
   @@index([sbSrcDocId, sbSrcDocYear], map: "ix_sb_src_doc")
+  // the type's bill count, its "in use" check and the FK's RESTRICT check
+  @@index([sbVchrTypeId], map: "ix_sb_vchr_type")
   // ── Sales documents (20260921200000) ────────────────────────────────────
   returns               SaleReturn[]              @relation("SaleReturnBill")
 

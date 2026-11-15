@@ -34,6 +34,8 @@ import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
 import { BillVoidService } from './bill-void.service';
+import { BillVoucherTypeService } from './bill-voucher-type.service';
+import { BillVoucherTypeChoicesQueryDto } from './dto/bill-voucher-type-choices.dto';
 import { SaveBillDto } from './dto/save-bill.dto';
 import {
   AmendBillDto,
@@ -81,6 +83,7 @@ export class BillController {
     private readonly read: BillReadService,
     private readonly band: BillBandService,
     private readonly retenderService: BillRetenderService,
+    private readonly voucherTypes: BillVoucherTypeService,
   ) {}
 
   private ok<T>(message: string, data: T): BillSuccessResponse<T> {
@@ -260,6 +263,24 @@ export class BillController {
       'Bill fetched successfully',
       await this.billService.getById(sbId, sbCompanyId, sbBranchId, sbAccYear),
     );
+  }
+
+  // ── Voucher Types plan §7.1 ───────────────────────────────────────────────
+  @Get('voucher-type-choices')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'The bill header’s Voucher Type pick: offered types, next numbers, the counter default',
+    description:
+      'Offered: the company’s active child types of Sales Bill (3), plus 3 itself when it has none or ' +
+      'sales.offer_base_bill_type is on. defaultVchrTypeId = the device’s sales.bill_voucher_type when offered, ' +
+      'else null (the screen takes the user’s last pick, else choices[0]). nextRefno is not drawn. ' +
+      'Menu 12 View (SALES_RIGHT_VIEW).',
+  })
+  async voucherTypeChoices(
+    @Query() q: BillVoucherTypeChoicesQueryDto,
+  ): Promise<BillSuccessResponse<unknown>> {
+    return this.ok('Voucher type choices fetched', await this.voucherTypes.choices(q));
   }
 
   // ── §2.8 ──────────────────────────────────────────────────────────────────

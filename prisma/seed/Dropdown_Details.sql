@@ -8,6 +8,8 @@
 -- 20261113100000_item_ledger_layouts inserts it.
 -- 78 SALE RETURN REASONS (Sale Return's Reason picker) as migration
 -- 20261113160000_sale_return_screen inserts it.
+-- 48 PRINT PURPOSES - DESKTOP returns ppo_company_id (Voucher Types decision 61) as migration
+-- 20261116130000_print_purpose_dropdown_company sets it.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -333,7 +335,8 @@ WHERE ppo_is_deleted = false
 ORDER BY ppo_sort_order$seed$, NULL)
     ,(48, 'PRINT PURPOSES - DESKTOP' , 'What a design prints. print_purpose is a TABLE, not a client constant — a shop may add its own (a kitchen order ticket, a loading sheet). Used by the Print Designer, menu 62.', 'ppo_code'            , 'asc'      , 12, false, 0   , 'Desktop', 'ppo_code'          , 'system', $seed$SELECT
 	ppo_id,
-	ppo_code
+	ppo_code,
+	ppo_company_id
 FROM public.print_purpose
 WHERE ppo_is_active = true AND ppo_is_deleted = false
 ORDER BY ppo_code;$seed$, NULL)

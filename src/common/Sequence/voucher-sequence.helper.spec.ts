@@ -405,7 +405,8 @@ describe('allocateVoucherNumber — {FY} / {BR} formats', () => {
   );
 
   it.each([
-    ['PO/{YY}/', null, 'YY'],
+    // {YY} is a known token since the Voucher Types master (plan §7.3, 2026-11-15).
+    ['PO/{QQ}/', null, 'QQ'],
     ['PO/{fy}/{BR}/', null, 'fy'],
     ['PO/{FY}/', '/{DEVICE}', 'DEVICE'],
     ['PO/{}/', null, ''],

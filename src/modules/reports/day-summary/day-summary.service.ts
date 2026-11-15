@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { resolveVoucherTypeCompany } from '../../settings/voucher-types/voucher-types-company';
 import {
   throwAccountsBadRequest,
   throwAccountsForbidden,
@@ -24,7 +25,14 @@ import {
   type GroupNode,
   type GroupTree,
 } from './day-summary.groups';
-import { coreCtes, draftsSql, leglessSql, numberGapsSql, type DsSqlScope } from './day-summary.sql';
+import {
+  coreCtes,
+  draftsSql,
+  leglessSql,
+  numberGapsSql,
+  typeFilterSql,
+  type DsSqlScope,
+} from './day-summary.sql';
 import type {
   DaySummaryCheckDetailDto,
   DaySummaryExportDto,
@@ -118,6 +126,10 @@ interface TypeInfo {
   sortOrder: number;
   isActive: boolean;
   affectsAccounts: boolean;
+  /** Voucher Types plan: the base a child type sits under; null = a base. */
+  parentId: number | null;
+  /** A child's company; null = a base (every company). */
+  companyId: string | null;
 }
 
 interface MoneyLedger {
@@ -224,16 +236,25 @@ export class DaySummaryService {
   //  §5.1 — the Type combo
   // ═════════════════════════════════════════════════════════════════════════
 
-  async voucherTypes(): Promise<VoucherTypesPayload> {
+  async voucherTypes(companyId?: string | null): Promise<VoucherTypesPayload> {
     return this.snapshot(async (db) => {
       await this.assertMenuRight(db);
+      // Review N8: naming a company lists its child type names, so the company
+      // is checked as /voucher-types/* checks it (decision 66): a user bound to
+      // a company may name only that one, a user bound to none (VKPOS) any live
+      // company; else 403 VT_COMPANY_MISMATCH.
+      const company = companyId
+        ? await resolveVoucherTypeCompany(db, this.requestContext.getCompanyId(), companyId)
+        : null;
       const types = await this.loadTypes(db);
       // D4 — types that can never post a leg (Quo, SOr: vchr_affects_accounts
       // = false) are left out; the INVENTORY types that do post (OPENING, Phy,
-      // StkAdj) stay.
+      // StkAdj) stay. Voucher Types: a child type is offered only to its own
+      // company (companyId given); a base filter takes its children anyway.
       return {
         items: [...types.values()]
           .filter((t) => t.isActive && t.affectsAccounts)
+          .filter((t) => t.companyId === null || (company !== null && t.companyId === company))
           .map((t) => ({
             voucherTypeId: t.id,
             code: t.code,
@@ -561,12 +582,15 @@ export class DaySummaryService {
         sort_order: number;
         is_active: boolean;
         affects_accounts: boolean;
+        parent_id: number | null;
+        company_id: string | null;
       }[]
     >`
       SELECT vchr_type_id AS id, vchr_type_code AS code, vchr_type_short AS short,
              vchr_type_name AS name, vchr_nature::text AS nature, vchr_category::text AS category,
              vchr_sort_order AS sort_order, vchr_is_active AS is_active,
-             vchr_affects_accounts AS affects_accounts
+             vchr_affects_accounts AS affects_accounts,
+             vchr_parent_id AS parent_id, vchr_company_id AS company_id
         FROM accounts.acc_voucher_types
        ORDER BY vchr_sort_order, vchr_type_id`;
     return new Map(
@@ -582,6 +606,8 @@ export class DaySummaryService {
           sortOrder: r.sort_order,
           isActive: r.is_active,
           affectsAccounts: r.affects_accounts,
+          parentId: r.parent_id ?? null,
+          companyId: r.company_id ?? null,
         },
       ]),
     );
@@ -689,7 +715,10 @@ export class DaySummaryService {
         if (
           t.isActive &&
           t.affectsAccounts &&
-          (s.voucherTypeId === null || t.id === s.voucherTypeId)
+          // Voucher Types: never another company's child type; a base filter
+          // takes its children (VT-37).
+          (t.companyId === null || t.companyId === s.companyId) &&
+          (s.voucherTypeId === null || t.id === s.voucherTypeId || t.parentId === s.voucherTypeId)
         ) {
           typeIds.add(t.id);
         }
@@ -1008,7 +1037,7 @@ export class DaySummaryService {
       WITH ${coreCtes(s, 'RANGE')}
       SELECT vt, COUNT(*) AS n FROM k
        WHERE st = 'CANCELLED' AND pair_in
-         AND (${s.voucherTypeId}::int IS NULL OR vt = ${s.voucherTypeId}::int)
+         AND ${typeFilterSql(s, Prisma.raw('vt'))}
        GROUP BY vt`;
     return new Map(rows.map((r) => [r.vt, Number(r.n)]));
   }
@@ -1281,7 +1310,7 @@ export class DaySummaryService {
         WITH ${coreCtes(s, 'DAY')}
         SELECT vdate AS d, COUNT(*) AS n FROM k
          WHERE st = 'CANCELLED' AND pair_day
-           AND (${s.voucherTypeId}::int IS NULL OR vt = ${s.voucherTypeId}::int)
+           AND ${typeFilterSql(s, Prisma.raw('vt'))}
          GROUP BY vdate`,
       () => db.$queryRaw<{ d: Date; n: bigint }[]>`
         SELECT x.vdate AS d, COUNT(*) AS n FROM (${draftsSql(s)}) x GROUP BY x.vdate`,
@@ -1394,7 +1423,7 @@ export class DaySummaryService {
           FROM k
           JOIN pv ON pv.vid = k.vid AND pv.vyr = k.vyr
           LEFT JOIN accounts.acc_voucher_types t ON t.vchr_type_id = k.vt
-         WHERE (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int)
+         WHERE ${typeFilterSql(s, Prisma.raw('k.vt'))}
            AND (${filter.nature}::text IS NULL OR t.vchr_nature::text = ${filter.nature}::text)
            AND (${filter.moneyKind}::text IS NULL OR pv.touches)
            AND (${filter.includeCancelledPairs}::boolean OR NOT k.pair_in))`;
@@ -1658,7 +1687,7 @@ export class DaySummaryService {
             JOIN pv ON pv.vid = k.vid AND pv.vyr = k.vyr
             JOIN accounts.acc_voucher_header h ON h.avh_voucher_id = k.vid AND h.avh_acc_year = k.vyr
            WHERE k.kind <> 'NORMAL'
-             AND (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int)
+             AND ${typeFilterSql(s, Prisma.raw('k.vt'))}
            ORDER BY k.vdate, h.avh_voucher_slno NULLS LAST, k.vid LIMIT ${cap}`;
         return rows.map((r) => ({
           voucherId: r.vid,
@@ -1844,6 +1873,8 @@ function unknownType(id: number): TypeInfo {
     sortOrder: Number.MAX_SAFE_INTEGER,
     isActive: false,
     affectsAccounts: true,
+    parentId: null,
+    companyId: null,
   };
 }
 

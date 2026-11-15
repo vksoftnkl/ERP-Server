@@ -119,6 +119,7 @@ import { WidgetMasterModule } from './modules/master/widget-master/widget-master
 import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
 import { VehicleModule } from './modules/master/vehicle/vehicle.module';
 import { TransporterModule } from './modules/master/transporter/transporter.module';
+import { VoucherTypesModule } from './modules/settings/voucher-types/voucher-types.module';
 import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { LoyaltyMembersModule } from './modules/sales/loyalty/members/loyalty-members.module';
@@ -306,6 +307,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ChargeMasterModule,
     VehicleModule,
     TransporterModule,
+    // Voucher Types master (menu 303), /voucher-types/*.
+    VoucherTypesModule,
     ChargeDetailModule,
     ItemStockBalanceModule,
     ItemBatchStockModule,

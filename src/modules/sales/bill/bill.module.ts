@@ -10,6 +10,7 @@ import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
 import { BillVoidService } from './bill-void.service';
+import { BillVoucherTypeService } from './bill-voucher-type.service';
 import { SaleOrderModule } from '../sale-order/sale-order.module';
 import { QuotationModule } from '../quotation/quotation.module';
 import { SalesPostingModule } from '../posting/posting.module';
@@ -53,6 +54,8 @@ import { TillModule } from '../../till/till.module';
     // Void bill (REV 2): /bills/void and /bills/void-check — cancel's unwind
     // plus the till_void evidence row and the BILL_VOID event.
     BillVoidService,
+    // Voucher Types plan §7.1: /bills/voucher-type-choices.
+    BillVoucherTypeService,
     BillExceptionFilter,
   ],
   exports: [BillService, BillReadService],

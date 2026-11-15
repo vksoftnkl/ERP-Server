@@ -202,7 +202,7 @@ VALUES
     ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 144,  137, 'Ledger Monthly Summary'               , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 181,  137, 'Day Book Detail'                      , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    -- ============ &7 Settings (menu 7, 23 rows) ============
+    -- ============ &7 Settings (menu 7, 24 rows) ============
     ,(   7, NULL, '&7 Settings'                          , NULL                  , true ,  70.00, '0', NULL, NULL, true , false)
     ,(  56,    7, 'Company'                              , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  57,    7, 'Employees'                            , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
@@ -226,6 +226,11 @@ VALUES
     ,( 245,   60, 'Charges'                              , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
     ,( 246,   60, 'App Settings'                         , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 248,   60, 'Print Assignments'                    , NULL                  , true ,  80.00, NULL, NULL, NULL, true , false)
+    -- 303 Voucher Types (20261116100000_voucher_types_master, plan
+    -- accounts/plan-voucher-types-2026-11-14.md §6.4): the base types and their
+    -- child series (Retail / Wholesale ...), between 62 Print Templates and 248
+    -- Print Assignments. Verbs: the column default.
+    ,( 303,   60, 'Voucher Types'                        , NULL                  , true ,  75.00, NULL, NULL, NULL, true , false)
 ON CONFLICT (menu_id) DO NOTHING;
 
 -- ── menu_verbs for the rows this file adds after 20260922170000 ─────────────

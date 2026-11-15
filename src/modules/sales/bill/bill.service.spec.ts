@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import {
   AccTenderDetail,
   AccVoucherSeq,
@@ -782,10 +788,13 @@ describe('BillService', () => {
   let service: BillService;
   let prisma: PrismaMock;
   let auditLogService: { logEntityChange: jest.Mock };
+  // CLOUD_SYNC_ENABLED off (the main server) unless a test says otherwise.
+  let config: { get: jest.Mock };
 
   beforeEach(() => {
     prisma = makePrismaMock();
     auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+    config = { get: jest.fn(() => undefined) };
     const requestContextService = {
       getUserId: () => USER_ID,
     } as unknown as RequestContextService;
@@ -853,7 +862,105 @@ describe('BillService', () => {
       {
         decorate: jest.fn((_bill: unknown, payload: unknown) => Promise.resolve(payload)),
       } as unknown as BillReadService,
+      config as unknown as ConfigService,
     );
+  });
+
+  // Voucher Types decision 64 / re-review R2: an offline site (cloudSync.enabled,
+  // CLOUD_SYNC_ENABLED) bills plain Sales Bill (3) only.
+  describe('offline site (decision 64)', () => {
+    const offline = () =>
+      config.get.mockImplementation((key: string) =>
+        key === 'cloudSync.enabled' ? true : undefined,
+      );
+    const childCount = (n: number) =>
+      prisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+        const sql = (args[0] as readonly string[]).join('');
+        if (sql.includes('count(*)::int AS n')) return Promise.resolve([{ n }]);
+        return Promise.resolve(
+          sql.includes('next_slno') ? [{ next_slno: VOUCHER_SLNO }] : [{ locked: 1 }],
+        );
+      });
+    const refusalOf = async (p: Promise<unknown>) => {
+      try {
+        await p;
+      } catch (error) {
+        return {
+          error,
+          errors: (error as ForbiddenException).getResponse() as { errors: unknown[] },
+        };
+      }
+      throw new Error('expected a refusal');
+    };
+
+    it('refuses a first save naming a child type, 403 VT_OFFLINE, before a number is drawn', async () => {
+      offline();
+      childCount(2);
+
+      const r = await refusalOf(service.save(baseDto({ sbVchrTypeId: 68 })));
+
+      expect(r.error).toBeInstanceOf(ForbiddenException);
+      expect(r.errors).toMatchObject({
+        errors: [{ field: 'sbVchrTypeId', code: 'VT_OFFLINE' }],
+      });
+      expect(prisma.accVoucherSeq.findFirst).not.toHaveBeenCalled();
+      expect(prisma.saleBill.create).not.toHaveBeenCalled();
+    });
+
+    it('bills type 3 when no type is sent, even though the company has child types', async () => {
+      offline();
+      childCount(2);
+
+      await service.save(baseDto());
+
+      expect(prisma.saleBill.create.mock.calls[0][0].data).toMatchObject({ sbVchrTypeId: 3 });
+      // The site does not read the company's children or its settings at all.
+      const asked = prisma.$queryRaw.mock.calls.map((c) => (c[0] as readonly string[]).join(''));
+      expect(asked.some((sql) => sql.includes('count(*)::int AS n'))).toBe(false);
+    });
+
+    it('online, the same body with children and no type is refused VT_BILL_TYPE_REQUIRED (control)', async () => {
+      prisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+        const sql = (args[0] as readonly string[]).join('');
+        if (sql.includes('count(*)::int AS n')) return Promise.resolve([{ n: 2 }]);
+        if (sql.includes('vchr_no_prefix, vchr_sort_order')) {
+          return Promise.resolve([
+            { vchr_type_id: 68, vchr_parent_id: 3, vchr_sort_order: 301 },
+            { vchr_type_id: 69, vchr_parent_id: 3, vchr_sort_order: 302 },
+          ]);
+        }
+        return Promise.resolve([{ locked: 1 }]);
+      });
+      (service as unknown as { salesContext: { values: jest.Mock } }).salesContext.values = jest.fn(
+        () => Promise.resolve({}),
+      );
+
+      const r = await refusalOf(service.save(baseDto()));
+
+      expect(r.errors).toMatchObject({ errors: [{ code: 'VT_BILL_TYPE_REQUIRED' }] });
+    });
+
+    it('refuses to save again a bill numbered under a child type, 403 VT_OFFLINE', async () => {
+      offline();
+      prisma.saleBill.findFirst.mockResolvedValue(
+        makeBill({ sbVchrTypeId: 68, sbBillRefno: 'RTCBE0001' }),
+      );
+
+      const r = await refusalOf(service.save(baseDto({ sbId: BILL_ID })));
+
+      expect(r.error).toBeInstanceOf(ForbiddenException);
+      expect(r.errors).toMatchObject({
+        errors: [{ field: 'sbVchrTypeId', code: 'VT_OFFLINE' }],
+      });
+      expect(prisma.saleBill.update).not.toHaveBeenCalled();
+    });
+
+    it('saves again a Sales Bill (3) bill as before', async () => {
+      offline();
+      prisma.saleBill.findFirst.mockResolvedValue(makeBill({ sbVchrTypeId: 3 }));
+
+      await expect(service.save(baseDto({ sbId: BILL_ID }))).resolves.toBeDefined();
+    });
   });
 
   describe('create', () => {

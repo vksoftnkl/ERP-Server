@@ -110,6 +110,7 @@ model Company {
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
+  voucherTypes          AccVoucherType[]          @relation("VoucherTypeCompany")
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]

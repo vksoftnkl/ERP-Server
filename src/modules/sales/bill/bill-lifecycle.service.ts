@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { assertSaleBillNotPulled } from 'src/modules/purchase/sister/purchase-sister';
+import { isOfflineSite } from '../../../config/offline-site';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -58,7 +60,6 @@ import type { LoyaltyBillSource } from '../posting/types/loyalty.types';
 import type { PromotionApplied } from '../posting/types/promotion.types';
 import {
   SALES_MENU_ID,
-  SALES_VOUCHER_TYPE,
   TENDER_TYPE,
   addDays,
   bucketTaxes,
@@ -108,6 +109,11 @@ import type {
 } from './dto/bill-lifecycle.dto';
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
 import type { SaveBillDto } from './dto/save-bill.dto';
+import {
+  assertBillTypeAtSite,
+  billTypeRefusals,
+  billVoucherTypeOf,
+} from './bill-voucher-type.helper';
 import { TillSessionService, type LiveSessionRef } from '../../till/services/till-session.service';
 import { TillSessionStatus } from '../../till/types/till-enum';
 import {
@@ -163,6 +169,9 @@ export class BillLifecycleService {
     private readonly gst: GstGatewayService,
     private readonly audit: AuditLogService,
     private readonly till: TillSessionService,
+    // CLOUD_SYNC_ENABLED: an offline site bills Sales Bill (3) only (Voucher
+    // Types decision 64, isOfflineSite).
+    private readonly config: ConfigService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -189,6 +198,19 @@ export class BillLifecycleService {
       dryRun: true,
     });
     await this.prisma.$transaction(async (tx) => {
+      // Voucher Types plan §7.4: what the save would refuse on the bill's type
+      // (VT_BILL_TYPE_REQUIRED / _INVALID on a first save, VT_BILL_TYPE_LOCKED on
+      // a saved bill), from the same helper the save throws from. First, as the
+      // save meets it first.
+      guard.refusals.push(
+        ...(await billTypeRefusals(
+          tx,
+          (companyId, branchId, deviceId, keys) =>
+            this.salesContext.values(companyId, branchId, deviceId, keys),
+          dto,
+          { offlineSite: isOfflineSite(this.config) },
+        )),
+      );
       await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
       // Nothing is written: the transaction exists only so every read sees
       // one snapshot.
@@ -302,6 +324,8 @@ export class BillLifecycleService {
     if (!ctx.rights.post) {
       throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
     }
+    // Voucher Types decision 64: an offline site posts Sales Bill (3) bills only.
+    assertBillTypeAtSite(bill, { offlineSite: isOfflineSite(this.config) });
     // The till (TILL_DESIGN.md §7.4): on a counter's device the bill posts
     // in the live session, stamped on the bill and its tender rows BEFORE
     // the snapshot and the voucher read them. Any other device posts as
@@ -1517,7 +1541,9 @@ export class BillLifecycleService {
         branchId: bill.sbBranchId,
         tenantId: bill.sbTenantId,
         accYear: bill.sbAccYear,
-        voucherTypeId: SALES_VOUCHER_TYPE.BILL,
+        // Voucher Types plan §7.4: the bill's own type (3, or a child of 3), so
+        // two children's bill no. 1 are two keys of ux_avh_voucher_no.
+        voucherTypeId: billVoucherTypeOf(bill),
         voucherDate: snap.billDate,
         srcModule: 'SALES',
         srcDocType: 'SALE_BILL',
@@ -2328,7 +2354,7 @@ export class BillLifecycleService {
       branchId: bill.sbBranchId,
       accYear: bill.sbAccYear,
       voucherId,
-      voucherTypeId: SALES_VOUCHER_TYPE.BILL,
+      voucherTypeId: billVoucherTypeOf(bill),
       voucherNo: bill.sbBillSlno ?? numericTail(bill.sbBillRefno, voucherNo),
       voucherDate: snap.billDate,
       voucherRefno: bill.sbBillRefno,
@@ -2406,7 +2432,7 @@ export class BillLifecycleService {
         ablSrcDocId: bill.sbId,
         ablSrcAccYear: bill.sbAccYear,
         ablVoucherId: voucherId,
-        ablVoucherTypeId: SALES_VOUCHER_TYPE.BILL,
+        ablVoucherTypeId: billVoucherTypeOf(bill),
         ablVoucherNo: bill.sbBillSlno ?? voucherNo,
         ablVoucherDate: bill.sbBillDate,
         ablVoucherRefno: bill.sbBillRefno,

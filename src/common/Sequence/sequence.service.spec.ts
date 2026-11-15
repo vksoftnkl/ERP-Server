@@ -45,15 +45,14 @@ const makeSeq = (overrides: Partial<AccVoucherSeq> = {}): AccVoucherSeq =>
     ...overrides,
   }) as AccVoucherSeq;
 
-const createDto = (overrides: Partial<CreateSequenceDto> = {}): CreateSequenceDto =>
-  ({
-    vchrTypeId: 3,
-    companyId: COMPANY_ID,
-    branchId: BRANCH_ID,
-    accYear: '2026-2027',
-    periodKey: 'YEAR',
-    ...overrides,
-  }) as CreateSequenceDto;
+const createDto = (overrides: Partial<CreateSequenceDto> = {}): CreateSequenceDto => ({
+  vchrTypeId: 3,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  accYear: '2026-2027',
+  periodKey: 'YEAR',
+  ...overrides,
+});
 
 type FindFirstArgs = {
   where: Record<string, unknown>;
@@ -77,6 +76,10 @@ const makePrisma = (
     branch?: boolean;
     /** What the shared branch-code query ({BR}) answers. */
     branchCode?: string | null;
+    /** The voucher type's counter facts (start no, GST side, parent). */
+    typeRow?: Record<string, unknown>;
+    /** Active branches of the company sharing the branch's GSTIN (the child {BR} rule). */
+    sharing?: number;
   } = {},
 ) => {
   const findFirst = jest.fn(async (args: FindFirstArgs) => {
@@ -106,7 +109,9 @@ const makePrisma = (
   const tx = {
     accVoucherSeq,
     accVoucherType: {
-      findFirst: jest.fn(async () => (options.voucherType === false ? null : { vchrTypeId: 3 })),
+      findFirst: jest.fn(async () =>
+        options.voucherType === false ? null : { vchrTypeId: 3, ...(options.typeRow ?? {}) },
+      ),
     },
     company: {
       findFirst: jest.fn(async () => (options.company === false ? null : { compId: COMPANY_ID })),
@@ -114,11 +119,13 @@ const makePrisma = (
     branchMaster: {
       findFirst: jest.fn(async () => (options.branch === false ? null : { brId: BRANCH_ID })),
     },
-    $queryRaw: jest.fn(async (strings: unknown, ..._values: unknown[]) =>
-      Array.isArray(strings) && strings.join('?').includes('branch_master')
+    $queryRaw: jest.fn(async (strings: unknown, ..._values: unknown[]) => {
+      const sql = Array.isArray(strings) ? strings.join('?') : '';
+      if (sql.includes('AS sharing')) return [{ sharing: options.sharing ?? 1 }];
+      return sql.includes('branch_master')
         ? [{ code: options.branchCode ?? null }]
-        : [{ locked: 1 }],
-    ),
+        : [{ locked: 1 }];
+    }),
   };
   const prisma = {
     ...tx,
@@ -164,8 +171,10 @@ describe('SequenceService', () => {
   });
 
   describe('create', () => {
-    it('opens a new sequence one past the last number in its company/branch/year/device', async () => {
-      const { service, tx } = serviceWith({ latestLastNo: BigInt(41) });
+    // Round 2 (2026-11-15, user "all recommended"): a new row starts at its OWN
+    // type's starting number, never one past the max over every type of the branch.
+    it('opens a new row at its type’s starting number - 1 (lastNo 0 for a type starting at 1)', async () => {
+      const { service, tx } = serviceWith({ latestLastNo: BigInt(4218) });
 
       const payload = await service.create(createDto());
 
@@ -178,50 +187,48 @@ describe('SequenceService', () => {
           deviceCode: 'MAIN',
           periodKey: 'YEAR',
           deviceId: null,
-          lastNo: BigInt(42),
+          lastNo: BigInt(0),
           noWidth: 5,
         },
       });
-      expect(payload.lastNo).toBe('42');
-      // The running number spans every voucher type of the scope.
-      expect(tx.accVoucherSeq.findFirst).toHaveBeenCalledWith({
-        where: { companyId: COMPANY_ID, branchId: BRANCH_ID, accYear: '2026-2027', deviceId: null },
-        orderBy: { lastNo: 'desc' },
-        select: { lastNo: true },
-      });
+      expect(payload.lastNo).toBe('0');
+      // No read of the max over every type of the branch any more.
+      expect(tx.accVoucherSeq.findFirst.mock.calls.some(([a]) => a.orderBy)).toBe(false);
     });
 
-    it('starts at 1 when the scope has no sequence yet', async () => {
-      const { service, tx } = serviceWith({ latestLastNo: null });
+    it('starts at the type’s vchr_start_no', async () => {
+      const { service, tx } = serviceWith({ typeRow: { vchrStartNo: 501 } });
 
       await service.create(createDto());
 
-      expect(tx.accVoucherSeq.create.mock.calls[0][0].data.lastNo).toBe(BigInt(1));
+      expect(tx.accVoucherSeq.create.mock.calls[0][0].data.lastNo).toBe(BigInt(500));
     });
 
-    it('locks the running number of its scope before reading it', async () => {
+    it('takes the allocator’s scope lock before looking the scope up', async () => {
       const { service, tx } = serviceWith();
 
-      await service.create(createDto({ deviceId: DEVICE_ID }));
+      await service.create(createDto({ deviceId: DEVICE_ID, deviceCode: 'POS1' }));
 
       const [, namespace, key] = tx.$queryRaw.mock.calls[0] as unknown as [
         TemplateStringsArray,
         string,
         string,
       ];
-      expect(namespace).toBe('accounts.acc_voucher_seq.last_no');
-      expect(key).toBe(`${COMPANY_ID}|${BRANCH_ID}|2026-2027|${DEVICE_ID}`);
+      expect(namespace).toBe('accounts.acc_voucher_seq.allocate');
+      expect(key).toBe(`3|${COMPANY_ID}|${BRANCH_ID}|2026-2027|POS1|YEAR`);
       expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
         tx.accVoucherSeq.findFirst.mock.invocationCallOrder[0],
       );
     });
 
-    it('keys a scope without a device as NO_DEVICE', async () => {
+    it('keys the lock on the MAIN counter when no device code is given', async () => {
       const { service, tx } = serviceWith();
 
       await service.create(createDto());
 
-      expect(tx.$queryRaw.mock.calls[0][2]).toBe(`${COMPANY_ID}|${BRANCH_ID}|2026-2027|NO_DEVICE`);
+      expect(tx.$queryRaw.mock.calls[0][2]).toBe(
+        `3|${COMPANY_ID}|${BRANCH_ID}|2026-2027|MAIN|YEAR`,
+      );
     });
 
     it('takes the optional fields, trimmed, with blank text stored as null', async () => {
@@ -256,32 +263,78 @@ describe('SequenceService', () => {
       );
     });
 
-    it('reuses the row already holding the scope — reviving a deleted one', async () => {
-      const deleted = makeSeq({ id: OTHER_SEQ_ID, isDeleted: true, isActive: false });
-      const { service, tx } = serviceWith({ scopeRow: deleted, latestLastNo: BigInt(9) });
+    it.each([
+      ['a live row', makeSeq({ id: OTHER_SEQ_ID, lastNo: BigInt(2) })],
+      ['a deleted row', makeSeq({ id: OTHER_SEQ_ID, isDeleted: true, isActive: false })],
+    ])(
+      'refuses 409 SEQUENCE_SCOPE_DUPLICATE when %s holds the scope, and changes nothing',
+      async (_l, row) => {
+        const { service, tx } = serviceWith({ scopeRow: row, latestLastNo: BigInt(4218) });
 
-      const payload = await service.create(createDto({ noWidth: 4 }));
+        const error = await refusal(
+          service.create(createDto({ noWidth: 4, voucherPrefix: 'X/', isActive: false })),
+        );
 
-      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
-      expect(tx.accVoucherSeq.update).toHaveBeenCalledWith({
-        where: { id: OTHER_SEQ_ID },
-        data: expect.objectContaining({
-          lastNo: BigInt(10),
-          isDeleted: false,
-          isActive: true,
-          noWidth: 4,
-          modifiedOn: expect.any(Date),
-        }),
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(await codeOf(Promise.reject(error))).toEqual(
+          expect.objectContaining({ field: 'scope', code: 'SEQUENCE_SCOPE_DUPLICATE' }),
+        );
+        expect(
+          (error.getResponse() as { errors: Array<{ params?: unknown }> }).errors[0].params,
+        ).toEqual({
+          seqId: OTHER_SEQ_ID,
+        });
+        expect(tx.accVoucherSeq.update).not.toHaveBeenCalled();
+        expect(tx.accVoucherSeq.updateMany).not.toHaveBeenCalled();
+        expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses 422 SEQUENCE_REFNO_TOO_LONG (rule GST16) for a GST outward type, the allocator’s rule', async () => {
+      const { service, tx } = serviceWith({
+        typeRow: { vchrGstSide: 'OUTPUT', vchrParentId: null },
       });
-      expect(payload).toMatchObject({ id: OTHER_SEQ_ID, isDeleted: false, lastNo: '10' });
+
+      const error = await refusal(
+        service.create(createDto({ voucherPrefix: 'ZT/{FY}/', noWidth: 5 })),
+      );
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error.getResponse() as { errors: unknown[] }).errors[0]).toMatchObject({
+        code: 'SEQUENCE_REFNO_TOO_LONG',
+        rule: 'GST16',
+        params: { sample: 'ZT/2026-2027/00001', len: '18' },
+      });
+      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
     });
 
-    it('keeps an explicit isActive:false when reusing the row', async () => {
-      const { service, tx } = serviceWith({ scopeRow: makeSeq() });
+    it('refuses 422 VT_BR_REQUIRED for a CHILD GST type typed without {BR} where branches share a GSTIN', async () => {
+      const { service, tx } = serviceWith({
+        typeRow: { vchrGstSide: 'OUTPUT', vchrParentId: 3 },
+        sharing: 4,
+      });
 
-      await service.create(createDto({ isActive: false }));
+      expect(await codeOf(service.create(createDto({ voucherPrefix: 'RT/' })))).toEqual(
+        expect.objectContaining({ code: 'VT_BR_REQUIRED' }),
+      );
+      expect(tx.accVoucherSeq.create).not.toHaveBeenCalled();
+    });
 
-      expect(tx.accVoucherSeq.update.mock.calls[0][0].data.isActive).toBe(false);
+    it('opens the child counter when the typed prefix prints {BR}, and never asks a base for {BR}', async () => {
+      const child = serviceWith({
+        typeRow: { vchrGstSide: 'OUTPUT', vchrParentId: 3 },
+        sharing: 4,
+        branchCode: 'CBE',
+      });
+      await child.service.create(createDto({ voucherPrefix: 'RT{BR}' }));
+      expect(child.tx.accVoucherSeq.create.mock.calls[0][0].data.voucherPrefix).toBe('RTCBE');
+
+      const base = serviceWith({
+        typeRow: { vchrGstSide: 'OUTPUT', vchrParentId: null },
+        sharing: 4,
+      });
+      await base.service.create(createDto({ voucherPrefix: 'bil' }));
+      expect(base.tx.accVoucherSeq.create).toHaveBeenCalled();
     });
 
     it.each([
@@ -298,7 +351,9 @@ describe('SequenceService', () => {
     ])('refuses a bad %s with 400 %s', async (field, overrides, code) => {
       const { service, tx } = serviceWith();
 
-      const error = await refusal(service.create(createDto(overrides as Partial<CreateSequenceDto>)));
+      const error = await refusal(
+        service.create(createDto(overrides as Partial<CreateSequenceDto>)),
+      );
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect(await codeOf(Promise.reject(error))).toEqual(expect.objectContaining({ field, code }));
@@ -379,25 +434,36 @@ describe('SequenceService', () => {
     it('expands a typed suffix on update and leaves the untyped prefix alone', async () => {
       const { service, tx } = serviceWith({ existing: makeSeq(), branchCode: 'COUNTER2' });
 
-      await service.update(SEQ_ID, { voucherSuffix: '/{BR}' } as UpdateSequenceDto);
+      await service.update(SEQ_ID, { voucherSuffix: '/{BR}' });
 
       const { data } = tx.accVoucherSeq.update.mock.calls[0][0];
       expect(data.voucherSuffix).toBe('/COUNTER2');
       expect(data).not.toHaveProperty('voucherPrefix');
     });
 
-    it('expands the prefix of a revived scope row', async () => {
-      const { service, tx } = serviceWith({ scopeRow: makeSeq({ isDeleted: true }), branchCode: 'CBE' });
-
-      await service.create(createDto({ voucherPrefix: 'GRN/{FY}/{BR}/' }));
-
-      expect(tx.accVoucherSeq.update.mock.calls[0][0].data.voucherPrefix).toBe('GRN/2026-2027/CBE/');
-    });
-
     it.each([
-      ['an unknown token', { voucherPrefix: 'PO/{YY}/' }, 'CBE', 'SEQUENCE_FORMAT_TOKEN_UNKNOWN', 'vchrTypeId'],
-      ['a branch with no code', { voucherPrefix: 'PO/{BR}/' }, null, 'SEQUENCE_BRANCH_CODE_MISSING', 'branchId'],
-      ['a branch code with a slash', { voucherPrefix: 'PO/{BR}/' }, 'C/B', 'SEQUENCE_BRANCH_CODE_INVALID', 'branchId'],
+      // {YY} is known since the Voucher Types master (plan §7.3); {QQ} is not.
+      [
+        'an unknown token',
+        { voucherPrefix: 'PO/{QQ}/' },
+        'CBE',
+        'SEQUENCE_FORMAT_TOKEN_UNKNOWN',
+        'vchrTypeId',
+      ],
+      [
+        'a branch with no code',
+        { voucherPrefix: 'PO/{BR}/' },
+        null,
+        'SEQUENCE_BRANCH_CODE_MISSING',
+        'branchId',
+      ],
+      [
+        'a branch code with a slash',
+        { voucherPrefix: 'PO/{BR}/' },
+        'C/B',
+        'SEQUENCE_BRANCH_CODE_INVALID',
+        'branchId',
+      ],
     ])('refuses %s with 422 and writes nothing', async (_label, dto, branchCode, code, field) => {
       const { service, tx } = serviceWith({ branchCode });
 
@@ -458,7 +524,7 @@ describe('SequenceService', () => {
     });
 
     it('caps the page size at 100', async () => {
-      expect(await codeOf(serviceWith().service.findAll({ limit: 101 } as never))).toEqual(
+      expect(await codeOf(serviceWith().service.findAll({ limit: 101 }))).toEqual(
         expect.objectContaining({ field: 'limit', code: 'VALIDATION_MAX' }),
       );
     });
@@ -503,7 +569,7 @@ describe('SequenceService', () => {
     it('searches the text columns, case-insensitively', async () => {
       const { service, prisma } = serviceWith();
 
-      await service.findAll({ search: '  SB/ ' } as never);
+      await service.findAll({ search: '  SB/ ' });
 
       const where = prisma.accVoucherSeq.count.mock.calls[0][0].where;
       expect(where.OR).toHaveLength(8);
@@ -514,7 +580,7 @@ describe('SequenceService', () => {
     it('also matches the id when the search is a uuid', async () => {
       const { service, prisma } = serviceWith();
 
-      await service.findAll({ search: SEQ_ID } as never);
+      await service.findAll({ search: SEQ_ID });
 
       expect(prisma.accVoucherSeq.count.mock.calls[0][0].where.OR).toContainEqual({ id: SEQ_ID });
     });
@@ -522,7 +588,7 @@ describe('SequenceService', () => {
     it('ignores a blank search', async () => {
       const { service, prisma } = serviceWith();
 
-      await service.list({ search: '   ' } as never);
+      await service.list({ search: '   ' });
 
       expect(prisma.accVoucherSeq.count.mock.calls[0][0].where).not.toHaveProperty('OR');
     });
@@ -553,9 +619,12 @@ describe('SequenceService', () => {
   });
 
   describe('update', () => {
-    const update = (dto: Partial<UpdateSequenceDto>, options: Parameters<typeof makePrisma>[0] = {}) => {
+    const update = (
+      dto: Partial<UpdateSequenceDto>,
+      options: Parameters<typeof makePrisma>[0] = {},
+    ) => {
       const harness = serviceWith({ existing: makeSeq(), ...options });
-      return { ...harness, result: harness.service.update(SEQ_ID, dto as UpdateSequenceDto) };
+      return { ...harness, result: harness.service.update(SEQ_ID, dto) };
     };
 
     it('answers 404 when no live row has the id', async () => {
@@ -608,7 +677,7 @@ describe('SequenceService', () => {
 
     it('treats a blank deviceId as no device — a scope change when one was set', async () => {
       const { result, tx } = update(
-        { deviceId: '' as unknown as string },
+        { deviceId: '' },
         { existing: makeSeq({ deviceId: DEVICE_ID }) },
       );
       await result;
@@ -648,7 +717,7 @@ describe('SequenceService', () => {
       ['modifiedBy', { modifiedBy: 'x' }, 'VALIDATION_IS_UUID'],
       ['lastRefno', { lastRefno: 'x'.repeat(101) }, 'VALIDATION_MAX_LENGTH'],
     ])('refuses a bad %s', async (field, dto, code) => {
-      const { result } = update(dto as Partial<UpdateSequenceDto>);
+      const { result } = update(dto);
 
       expect(await codeOf(result)).toEqual(expect.objectContaining({ field, code }));
     });
@@ -657,9 +726,7 @@ describe('SequenceService', () => {
       const { service, tx } = serviceWith({ existing: makeSeq() });
       tx.accVoucherSeq.update.mockRejectedValue({ code: 'P2002' });
 
-      await expect(service.update(SEQ_ID, {} as UpdateSequenceDto)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(service.update(SEQ_ID, {})).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

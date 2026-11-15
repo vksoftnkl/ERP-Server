@@ -1,4 +1,5 @@
 import { BillController } from './bill.controller';
+import type { BillVoucherTypeService } from './bill-voucher-type.service';
 import type { BillService } from './bill.service';
 import type { BillLifecycleService } from './bill-lifecycle.service';
 import type { BillReadService } from './bill-read.service';
@@ -66,6 +67,7 @@ describe('BillController', () => {
       read as unknown as BillReadService,
       band as unknown as BillBandService,
       retender as unknown as BillRetenderService,
+      {} as unknown as BillVoucherTypeService,
     );
   });
 

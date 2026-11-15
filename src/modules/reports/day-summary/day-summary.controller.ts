@@ -1,10 +1,11 @@
-import { Controller, Get, Query, Version } from '@nestjs/common';
+import { Controller, Get, ParseUUIDPipe, Query, Version } from '@nestjs/common';
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
   ApiOperation,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -68,8 +69,19 @@ export class DaySummaryController {
       'Active voucher types that post legs, in vchr_sort_order. The INVENTORY types that post ' +
       '(OPENING, Phy, StkAdj) are in; Quo and SOr (vchr_affects_accounts = false) are not.',
   })
-  async voucherTypes(): Promise<Ok<VoucherTypesPayload>> {
-    const data = await this.service.voucherTypes();
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    schema: { type: 'string', format: 'uuid' },
+    description:
+      'Voucher Types: also offer this company’s child types (Retail, Wholesale …). Checked as ' +
+      '/voucher-types/* check it: a user bound to a company may name only that one, a user bound ' +
+      'to none any live company; else 403 VT_COMPANY_MISMATCH.',
+  })
+  async voucherTypes(
+    @Query('companyId', new ParseUUIDPipe({ optional: true })) companyId?: string,
+  ): Promise<Ok<VoucherTypesPayload>> {
+    const data = await this.service.voucherTypes(companyId ?? null);
     return { success: true, message: `${data.items.length} voucher type(s)`, data };
   }
 

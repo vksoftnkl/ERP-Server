@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AccVoucherSeq, Prisma } from '@prisma/client';
+import { AccVoucherSeq, AccVoucherType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateSequenceDto } from './dto/create-sequence.dto';
 import { ListSequenceQueryDto } from './dto/list-sequence-query.dto';
@@ -11,7 +11,13 @@ import {
   SequencePayload,
 } from './types/sequence-api.types';
 import { SequenceErrorCode } from './types/sequence-error-codes';
-import { SEQ_VOUCHER_PREFIX_MAX_LENGTH, expandVoucherFormat } from './voucher-sequence.helper';
+import {
+  SEQ_VOUCHER_PREFIX_MAX_LENGTH,
+  acquireVoucherScopeLock,
+  assertCounterRules,
+  expandVoucherFormat,
+  voucherStartNo,
+} from './voucher-sequence.helper';
 import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
@@ -40,38 +46,48 @@ export class SequenceService {
     }
     return this.create(saveSequenceDto);
   }
+  /**
+   * POST /sequences/create with no id — open ONE new counter row (round 2 of the
+   * Voucher Types build, 2026-11-15, user: "all recommended"):
+   *  - a scope that already has a row (live or deleted) is refused 409
+   *    SEQUENCE_SCOPE_DUPLICATE and nothing is written: re-creating used to
+   *    revive the row and move seq_last_no to the max over EVERY voucher type of
+   *    the branch (that is how a probe pushed CBE type 3 from 879 to 4219);
+   *  - the new row starts at its OWN type's starting number (lastNo =
+   *    vchr_start_no - 1), as the allocator opens a counter;
+   *  - it runs the allocator's counter rules (GST16, the child-only {BR}) through
+   *    the same function, on the prefix / suffix typed here;
+   *  - it takes the allocator's scope lock, so the two never open one scope at once.
+   * Changing a row stays the update path (`id` given).
+   */
   async create(createSequenceDto: CreateSequenceDto): Promise<SequencePayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const scope = this.buildCreateScope(createSequenceDto);
         const deviceId =
           this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId') ?? null;
-        const lastNoScope: SequenceLastNoScope = {
-          companyId: scope.companyId,
-          branchId: scope.branchId,
-          accYear: scope.accYear,
-          deviceId,
-        };
-        await this.ensureReferencesExist(tx, scope);
-        await this.acquireLastNoScopeLock(tx, lastNoScope);
-        const nextLastNo = await this.getNextLastNo(tx, lastNoScope);
+        const voucherType = await this.ensureReferencesExist(tx, scope);
+        await acquireVoucherScopeLock(tx, scope);
         const existingSequence = await this.findSequenceByScope(tx, scope);
         if (existingSequence) {
-          const duplicateData = this.buildDuplicateScopeUpdateData(createSequenceDto, nextLastNo);
-          await this.expandTypedFormat(tx, scope, duplicateData, existingSequence);
-          const updated = await tx.accVoucherSeq.update({
-            where: {
-              id: existingSequence.id,
+          const message =
+            `Counter ${existingSequence.id}${existingSequence.isDeleted ? ' (deleted)' : ''} already holds ` +
+            `voucher type ${scope.vchrTypeId} / ${scope.accYear} / ${scope.deviceCode} / ${scope.periodKey} ` +
+            `at this branch; nothing was changed. Edit that row by its id instead.`;
+          throwConflict<SequenceErrorDetail>('Sequence scope already exists', [
+            {
+              field: 'scope',
+              code: SequenceErrorCode.SCOPE_DUPLICATE,
+              message,
+              params: { seqId: existingSequence.id },
             },
-            data: duplicateData,
-          });
-          return this.toPayload(updated);
+          ]);
         }
-
+        const startNo = voucherStartNo(voucherType);
         const data: Prisma.AccVoucherSeqUncheckedCreateInput = {
           ...scope,
           deviceId,
-          lastNo: nextLastNo,
+          lastNo: BigInt(startNo - 1),
         };
         const noWidth = this.normalizeOptionalInteger(createSequenceDto.noWidth, 'noWidth', {
           min: 1,
@@ -82,7 +98,26 @@ export class SequenceService {
           data.noWidth = DEFAULT_NO_WIDTH;
         }
         this.assignOptionalCreateFields(data, createSequenceDto);
+        // The prefix / suffix as typed: the {BR} rule reads the raw text.
+        const typedPrefix = typeof data.voucherPrefix === 'string' ? data.voucherPrefix : null;
+        const typedSuffix = typeof data.voucherSuffix === 'string' ? data.voucherSuffix : null;
         await this.expandTypedFormat(tx, scope, data, null);
+        await assertCounterRules(
+          tx,
+          scope,
+          {
+            vchrGstSide: voucherType.vchrGstSide,
+            vchrParentId: voucherType.vchrParentId,
+            vchrNoPrefix: typedPrefix,
+            vchrNoSuffix: typedSuffix,
+          },
+          {
+            prefix: typeof data.voucherPrefix === 'string' ? data.voucherPrefix : null,
+            suffix: typeof data.voucherSuffix === 'string' ? data.voucherSuffix : null,
+            noWidth: data.noWidth,
+          },
+          startNo,
+        );
         const created = await tx.accVoucherSeq.create({ data });
         return this.toPayload(created);
       });
@@ -302,40 +337,6 @@ export class SequenceService {
     return data;
   }
 
-  private buildDuplicateScopeUpdateData(
-    createSequenceDto: CreateSequenceDto,
-    lastNo: bigint,
-  ): Prisma.AccVoucherSeqUncheckedUpdateInput {
-    const data: Prisma.AccVoucherSeqUncheckedUpdateInput = {
-      lastNo,
-      isDeleted: false,
-      modifiedOn: new Date(),
-    };
-
-    const deviceId = this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId');
-    if (deviceId !== undefined) {
-      data.deviceId = deviceId;
-    }
-
-    const noWidth = this.normalizeOptionalInteger(createSequenceDto.noWidth, 'noWidth', {
-      min: 1,
-    });
-    if (noWidth !== undefined) {
-      data.noWidth = noWidth;
-    }
-
-    const isActive = this.normalizeOptionalBoolean(createSequenceDto.isActive, 'isActive');
-    if (isActive !== undefined) {
-      data.isActive = isActive;
-    } else {
-      data.isActive = true;
-    }
-
-    this.assignOptionalTextFields(data, createSequenceDto);
-
-    return data;
-  }
-
   private buildListWhere(queryDto: ListSequenceQueryDto): Prisma.AccVoucherSeqWhereInput {
     const includeDeleted =
       this.normalizeOptionalBoolean(queryDto.includeDeleted, 'includeDeleted') ?? false;
@@ -473,10 +474,13 @@ export class SequenceService {
       data.voucherSuffix = expanded.suffix;
     }
   }
+  /** The scope's type, company and branch must exist; answers the type's counter facts. */
   private async ensureReferencesExist(
     client: SequenceWriteClient,
     scope: Pick<SequenceScope, 'vchrTypeId' | 'companyId' | 'branchId'>,
-  ): Promise<void> {
+  ): Promise<
+    Partial<Pick<AccVoucherType, 'vchrTypeId' | 'vchrStartNo' | 'vchrGstSide' | 'vchrParentId'>>
+  > {
     const [voucherType, company, branch] = await Promise.all([
       client.accVoucherType.findFirst({
         where: {
@@ -484,6 +488,9 @@ export class SequenceService {
         },
         select: {
           vchrTypeId: true,
+          vchrStartNo: true,
+          vchrGstSide: true,
+          vchrParentId: true,
         },
       }),
       client.company.findFirst({
@@ -536,6 +543,7 @@ export class SequenceService {
         },
       ]);
     }
+    return voucherType;
   }
 
   private async ensureScopeIsUnique(

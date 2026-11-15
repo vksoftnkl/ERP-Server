@@ -1,3 +1,4 @@
+import type { BillVoucherTypeBlock } from '../bill-voucher-type.helper';
 import { SaleBill, SaleBillItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
 import type {
@@ -96,6 +97,8 @@ export type BillPayload = Omit<
   tempCredits?: BillTempCreditSummary[];
   adjustments?: BillAdjustmentSummary[];
   transport?: TransportBandRow | null;
+  /** Voucher Types plan §7.4: the bill's type, print design, title and print-after-posting. */
+  voucherType?: BillVoucherTypeBlock;
   // The band, echoed flat as §2.1 sends it.
   sbShipAddrId?: string | null;
   sbShipName?: string | null;

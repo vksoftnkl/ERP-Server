@@ -6,6 +6,11 @@ export interface SequenceErrorDetail {
   code: SequenceErrorCode;
   /** Fills the `{name}` placeholders of the code's wording row (notes 120). */
   params?: Record<string, string>;
+  /**
+   * Picks a wording variant `rule=<value>` of the code's row (notes 120): 'GST16' on
+   * SEQUENCE_REFNO_TOO_LONG when a GST outward number passes 16 characters.
+   */
+  rule?: string;
 }
 
 export interface SequenceErrorResponse {

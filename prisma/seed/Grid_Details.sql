@@ -798,16 +798,66 @@ ORDER BY tm.tnd_display_position, tm.tnd_name$seed$)
        b.sb_acc_year,
        b.sb_bill_date,
        b.sb_bill_refno,
+       vt.vchr_type_short AS sb_vchr_type,
        b.sb_bill_type,
        c.cus_name,
        b.sb_tot_items,
        b.sb_bill_amt,
        b.sb_status,
        b.sb_print_count,
-       b.sb_created_by
+       b.sb_created_by,
+       CASE
+           WHEN (cpp.ppo_id IS NOT NULL AND cpp.ppo_is_deleted = false AND cpp.ppo_is_active = true
+ AND EXISTS (SELECT 1 FROM public.print_template dl
+              WHERE dl.ptl_purpose_id = cpp.ppo_id
+                AND dl.ptl_is_active = true AND dl.ptl_is_deleted = false
+                AND dl.ptl_published_rev_id IS NOT NULL
+                AND (dl.ptl_company_id IS NULL OR dl.ptl_company_id = b.sb_company_id))
+ AND EXISTS (SELECT 1
+               FROM (SELECT da.pta_template_id
+                       FROM public.print_template_assignment da
+                      WHERE da.pta_purpose_id = cpp.ppo_id
+                        AND da.pta_output_mode = 'PRINT'
+                        AND da.pta_is_active = true AND da.pta_is_deleted = false
+                        AND (da.pta_company_id IS NULL OR da.pta_company_id = b.sb_company_id)
+                        AND da.pta_branch_id IS NULL AND da.pta_device_id IS NULL
+                      ORDER BY da.pta_specificity DESC, da.pta_created_on DESC
+                      LIMIT 1) dw
+               JOIN public.print_template dwt ON dwt.ptl_id = dw.pta_template_id
+              WHERE dwt.ptl_is_active = true AND dwt.ptl_is_deleted = false
+                AND dwt.ptl_published_rev_id IS NOT NULL
+                AND (dwt.ptl_company_id IS NULL OR dwt.ptl_company_id = b.sb_company_id)))
+               THEN cpp.ppo_code
+           WHEN (bpp.ppo_id IS NOT NULL AND bpp.ppo_is_deleted = false AND bpp.ppo_is_active = true
+ AND EXISTS (SELECT 1 FROM public.print_template dl
+              WHERE dl.ptl_purpose_id = bpp.ppo_id
+                AND dl.ptl_is_active = true AND dl.ptl_is_deleted = false
+                AND dl.ptl_published_rev_id IS NOT NULL
+                AND (dl.ptl_company_id IS NULL OR dl.ptl_company_id = b.sb_company_id))
+ AND EXISTS (SELECT 1
+               FROM (SELECT da.pta_template_id
+                       FROM public.print_template_assignment da
+                      WHERE da.pta_purpose_id = bpp.ppo_id
+                        AND da.pta_output_mode = 'PRINT'
+                        AND da.pta_is_active = true AND da.pta_is_deleted = false
+                        AND (da.pta_company_id IS NULL OR da.pta_company_id = b.sb_company_id)
+                        AND da.pta_branch_id IS NULL AND da.pta_device_id IS NULL
+                      ORDER BY da.pta_specificity DESC, da.pta_created_on DESC
+                      LIMIT 1) dw
+               JOIN public.print_template dwt ON dwt.ptl_id = dw.pta_template_id
+              WHERE dwt.ptl_is_active = true AND dwt.ptl_is_deleted = false
+                AND dwt.ptl_published_rev_id IS NOT NULL
+                AND (dwt.ptl_company_id IS NULL OR dwt.ptl_company_id = b.sb_company_id)))
+               THEN bpp.ppo_code
+           ELSE 'SALE_INVOICE'
+       END AS print_purpose_code
   FROM
 	sales.sale_bill b
 	INNER JOIN sales.customers c on c.cus_id = b.sb_cust_id
+	INNER JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = b.sb_vchr_type_id
+	LEFT JOIN accounts.acc_voucher_types bt ON bt.vchr_type_id = vt.vchr_parent_id
+	LEFT JOIN public.print_purpose cpp ON cpp.ppo_id = vt.vchr_print_purpose_id AND cpp.ppo_is_deleted = false AND cpp.ppo_is_active = true
+	LEFT JOIN public.print_purpose bpp ON bpp.ppo_id = bt.vchr_print_purpose_id AND bpp.ppo_is_deleted = false AND bpp.ppo_is_active = true
  WHERE
  	b.sb_company_id = 'icompany_id'::uuid
   	AND b.sb_branch_id  = 'ibranch_id'::uuid

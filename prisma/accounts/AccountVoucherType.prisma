@@ -43,7 +43,8 @@ model AccVoucherType {
   vchrNoSuffix               String?              @db.VarChar(20) @map("vchr_no_suffix")
   vchrNoWidth                Int                  @default(5) @map("vchr_no_width")
   vchrResetFreq              VoucherResetFreq     @default(YEARLY) @map("vchr_reset_freq")
-  vchrAllowManualNo          Boolean              @default(false) @map("vchr_allow_manual_no")
+  // vchr_allow_manual_no was dropped (20261116100000_voucher_types_master, VT-11):
+  // vchrNumberingMode AUTO_MANUAL is "automatic, may be typed over".
   // Functional behavior
   vchrAffectsAccounts        Boolean              @default(true) @map("vchr_affects_accounts")
   vchrAffectsInventory       Boolean              @default(false) @map("vchr_affects_inventory")
@@ -85,6 +86,24 @@ model AccVoucherType {
   /// notes (54): the typed lines carry INSTRUMENTS (tenders); the money legs are generated
   /// from the tenders' ledgers and a cheque becomes a HELD register row (menu 51)
   vchrInstruments            Boolean              @default(false) @map("vchr_instruments")
+  // ── Voucher Types master (20261116100000_voucher_types_master, plan
+  // share/accounts/plan-voucher-types-2026-11-14.md §6.1) ─────────────────────
+  // A BASE type has no parent and no company and is shared by every company.
+  // A CHILD type (one level, under Sales Bill only, Q1) names its base and
+  // belongs to one company (ck_vchr_child_company). It carries only name,
+  // abbreviation, numbering, print, Tally name and active; its accounting
+  // columns are a server-written mirror of the base's (decision 31), and a
+  // migration that changes a base's accounting changes its children too.
+  /// The base this child type sits under; NULL = a base type
+  vchrParentId               Int?                 @map("vchr_parent_id")
+  /// The company a child type belongs to; NULL = a base type ("All companies")
+  vchrCompanyId              String?              @db.Uuid @map("vchr_company_id")
+  /// First number of every NEW counter (lastNo = start - 1 at creation); >= 1
+  vchrStartNo                Int                  @default(1) @map("vchr_start_no")
+  /// The print design (public.print_purpose) this type prints with; NULL = the base's, else SALE_INVOICE
+  vchrPrintPurposeId         String?              @db.Uuid @map("vchr_print_purpose_id")
+  /// Print right after posting (Ctrl+Enter), never after a draft save
+  vchrPrintAfterPost         Boolean              @default(false) @map("vchr_print_after_post")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -97,8 +116,19 @@ model AccVoucherType {
   vouchers                   AccVoucher[]
   bills                      AccBillBalance[]
   menu                       Menu?                @relation(fields: [vchrMenuId], references: [menuId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_menu")
+  parent                     AccVoucherType?      @relation("VoucherTypeChildren", fields: [vchrParentId], references: [vchrTypeId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_parent")
+  children                   AccVoucherType[]     @relation("VoucherTypeChildren")
+  company                    Company?             @relation("VoucherTypeCompany", fields: [vchrCompanyId], references: [compId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_company")
+  printPurpose               PrintPurpose?        @relation("VoucherTypePrintPurpose", fields: [vchrPrintPurposeId], references: [ppoId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_print_purpose")
+  saleBills                  SaleBill[]           @relation("SaleBillVoucherType")
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
-  @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
+  // Names are unique per company for children and among the bases. DB-only
+  // (partial, so never declared here; Prisma ignores them):
+  //   CREATE UNIQUE INDEX ux_vchr_base_name    ON (vchr_type_name)                  WHERE vchr_company_id IS NULL;
+  //   CREATE UNIQUE INDEX ux_vchr_company_name ON (vchr_company_id, vchr_type_name)  WHERE vchr_company_id IS NOT NULL;
+  //   CREATE UNIQUE INDEX ux_vchr_company_short ON (vchr_company_id, upper(vchr_type_short)) WHERE vchr_company_id IS NOT NULL;
+  // CHECKs (DB-only): ck_vchr_child_company, ck_vchr_parent_not_self, ck_vchr_start_no.
+  @@index([vchrParentId], map: "ix_vchr_parent")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
   @@index([vchrNature], map: "idx_acc_voucher_types_nature")
   @@index([vchrCategory], map: "idx_acc_voucher_types_category")

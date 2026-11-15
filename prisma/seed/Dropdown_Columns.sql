@@ -8,6 +8,8 @@
 -- 20261113100000_item_ledger_layouts inserts them.
 -- 78 SALE RETURN REASONS: its five columns (pinned uuids ...0780 - ...0784) as migration
 -- 20261113160000_sale_return_screen inserts them.
+-- 48 PRINT PURPOSES - DESKTOP: column 2 Company (ppo_company_id, hidden; pinned uuid ...0482) as
+-- migration 20261116130000_print_purpose_dropdown_company inserts it.
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -207,6 +209,7 @@ SELECT v.* FROM (VALUES
     -- ============ PRINT PURPOSES - DESKTOP (id 48) ============
     ,('01a04345-4501-720d-be0d-5e9ac70cf4e4', 48, 0, '#'                   , 'ppo_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     ,('01a04345-4501-7cc4-b8f3-a0b893685c36', 48, 1, 'Code'                , 'ppo_code'          , NULL                  , 'Text'   , 100.00, 'Left'  , true , true , 'system')
+    ,('01a1b2c0-4800-7000-8000-000000000482', 48, 2, 'Company'             , 'ppo_company_id'    , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     -- ============ STOCK TRACK PRESETS (id 49) ============
     ,('01a07a56-fd16-79b3-aae0-5517d5571592', 49, 0, '#'                   , 'spt_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     ,('01a07a56-fd1b-7151-8561-18ee2e4a384d', 49, 1, 'Policy'              , 'spt_code'          , NULL                  , 'Text'   , 0.00  , 'Left'  , false, true , 'system')

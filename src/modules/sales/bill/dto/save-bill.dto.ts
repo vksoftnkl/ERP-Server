@@ -129,6 +129,18 @@ export class SaveBillDto {
   @ApiProperty()
   @RequiredInteger()
   sbPriceLevel!: number;
+  // Voucher Types plan §7.4: the voucher type the bill is numbered and posted
+  // under — 3 Sales Bill, or one of the company's child types (/bills/
+  // voucher-type-choices). Read at the first save only; a later save that names
+  // another type is refused 409 VT_BILL_TYPE_LOCKED (Q5).
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Voucher type from /bills/voucher-type-choices. Omitted on a company with no child types = 3. ' +
+      'Fixed after the first save (VT_BILL_TYPE_LOCKED).',
+  })
+  @NullableInteger()
+  sbVchrTypeId?: number | null;
   // Both are assigned on create from the bill voucher sequence
   // (accounts.acc_voucher_seq, vchr_type_id 22) and are immutable afterwards.
   // They stay on the DTO so clients that still send them are not rejected by

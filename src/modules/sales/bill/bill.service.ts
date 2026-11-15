@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
+import { isOfflineSite } from '../../../config/offline-site';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { tillSessionIdOrNull } from '../../till/till-session-id';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -62,6 +64,12 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import {
+  assertBillTypeAtSite,
+  assertBillTypeUnchanged,
+  billSeriesDeviceCode,
+  resolveBillVoucherType,
+} from './bill-voucher-type.helper';
 // deleteBillPosting is deliberately NOT imported any more: POST /bills/delete
 // stopped deleting the bill, so nothing in this module takes a bill back out of
 // the books. The helper is left in place — it is the only implementation of
@@ -89,10 +97,10 @@ import {
   appendTxnStatusLog,
   statusActorOf,
 } from 'src/common/txn-status-log/txn-status-log.helper';
-// accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
-// (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
-// bill numbers are drawn from.
-const BILL_VCHR_TYPE_ID = 3;
+// accounts.acc_voucher_types row "Bil" / Sales Bill (BILL_BASE_VCHR_TYPE_ID, 3)
+// or one of the company's child types of it (Voucher Types plan §7.4): the
+// bill's sb_vchr_type_id. Its numbering format (prefix / suffix / width / reset
+// frequency / starting no) seeds the acc_voucher_seq row the numbers come from.
 const BILL_TABLE_NAME = 'sale_bill';
 const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
@@ -477,6 +485,9 @@ export class BillService {
     private readonly salesContext: SalesContextService,
     private readonly docBlocks: SalesDocBlocksService,
     private readonly billRead: BillReadService,
+    // CLOUD_SYNC_ENABLED: an offline site bills Sales Bill (3) only (Voucher
+    // Types decision 64, isOfflineSite).
+    private readonly config: ConfigService,
   ) {}
   /**
    * `POST /bills/create` — the DRAFT (HANDOVER §2.1).
@@ -812,22 +823,34 @@ export class BillService {
     const createdBy = resolveActor(saveBillDto.sbCreatedBy, this.requestContextService.getUserId());
     const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
     await this.ensurePosStateExists(tx, saveBillDto);
-    // Voucher type 3 numbers the document: the running number consumed from
-    // accounts.acc_voucher_seq becomes sbBillSlno and its printable form
-    // sbBillRefno. Both are server-assigned. POS bills draw on the device's
-    // own series; WHOLESALE shares the branch 'MAIN' counter.
+    // The bill's voucher type numbers the document: the running number consumed
+    // from accounts.acc_voucher_seq becomes sbBillSlno and its printable form
+    // sbBillRefno. Both are server-assigned. Sales Bill (3) itself: POS bills
+    // draw on the device's own series, WHOLESALE shares the branch 'MAIN'
+    // counter. A child type always draws the branch counter (decision 34).
     const settings = await this.salesContext.settings(
       saveBillDto.sbCompanyId,
       saveBillDto.sbBranchId,
     );
-    const posSeries =
-      (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
+    const vchrTypeId = await resolveBillVoucherType(
+      tx,
+      (companyId, branchId, deviceId, keys) =>
+        this.salesContext.values(companyId, branchId, deviceId, keys),
+      saveBillDto,
+      { offlineSite: isOfflineSite(this.config) },
+    );
+    // N11: the one rule /bills/voucher-type-choices previews with.
     const billNumber = await allocateVoucherNumber(tx, {
-      vchrTypeId: BILL_VCHR_TYPE_ID,
+      vchrTypeId,
       companyId: saveBillDto.sbCompanyId,
       branchId: saveBillDto.sbBranchId,
       accYear: saveBillDto.sbAccYear,
-      deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
+      deviceCode: billSeriesDeviceCode({
+        vchrTypeId,
+        billMode: saveBillDto.sbBillMode,
+        posSeriesPerDevice: settings.posSeriesPerDevice,
+        deviceId: saveBillDto.sbDeviceId,
+      }),
       documentDate: billDate,
     });
     const data: Prisma.SaleBillUncheckedCreateInput = {
@@ -839,6 +862,7 @@ export class BillService {
       sbDeviceType: saveBillDto.sbDeviceType,
       sbDeviceId: saveBillDto.sbDeviceId,
       sbPriceLevel: saveBillDto.sbPriceLevel,
+      sbVchrTypeId: vchrTypeId,
       sbBillSlno: billNumber.lastNo,
       sbBillRefno: billNumber.refno,
       sbBillDate: billDate,
@@ -983,6 +1007,10 @@ export class BillService {
     now: Date,
     opts: { notes?: string } = {},
   ): Promise<{ updated: SaleBill; items: SaleBillItem[] }> {
+    // Decision 64: an offline site saves Sales Bill (3) bills only; then Q5,
+    // the type was fixed at the first save, with the number.
+    assertBillTypeAtSite(existing, { offlineSite: isOfflineSite(this.config) });
+    assertBillTypeUnchanged(existing, saveBillDto.sbVchrTypeId);
     const settings = await this.salesContext.settings(existing.sbCompanyId, existing.sbBranchId);
     const data: Prisma.SaleBillUncheckedUpdateInput = {
       sbModifiedOn: now,

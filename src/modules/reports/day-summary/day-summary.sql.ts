@@ -34,6 +34,20 @@ export interface DsSqlScope extends BooksScope {
 
 export type PairRule = 'RANGE' | 'DAY';
 
+/**
+ * The voucher-type filter. Voucher Types plan §7.5 (VT-37): a filter on a BASE
+ * type takes its child types too (Sales Bill → Retail, Wholesale …): their
+ * vouchers carry the child's id. Each child still shows as its own row and
+ * series. `col` is the type column of the row filtered (k.vt, vt,
+ * h.avh_voucher_type_id); vouchers are company-scoped already, so another
+ * company's children never meet the filter.
+ */
+export function typeFilterSql(s: { voucherTypeId: number | null }, col: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(${s.voucherTypeId}::int IS NULL OR ${col} = ${s.voucherTypeId}::int
+         OR ${col} IN (SELECT vt_c.vchr_type_id FROM accounts.acc_voucher_types vt_c
+                        WHERE vt_c.vchr_parent_id = ${s.voucherTypeId}::int))`;
+}
+
 export function coreCtes(s: DsSqlScope, rule: PairRule): Prisma.Sql {
   const pairCol = rule === 'DAY' ? Prisma.raw('k.pair_day') : Prisma.raw('k.pair_in');
   return Prisma.sql`
@@ -76,7 +90,7 @@ export function coreCtes(s: DsSqlScope, rule: PairRule): Prisma.Sql {
         FROM lg
         JOIN k ON k.vid = lg.vid AND k.vyr = lg.vyr
        WHERE NOT ${pairCol}
-         AND (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int))`;
+         AND ${typeFilterSql(s, Prisma.raw('k.vt'))})`;
 }
 
 /** The DRAFT headers of the scope dated in range (§6.3; ix_avh_pending). */
@@ -93,7 +107,7 @@ export function draftsSql(s: DsSqlScope): Prisma.Sql {
          AND h.avh_voucher_status = 'DRAFT'
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)`;
+         AND ${typeFilterSql(s, Prisma.raw('h.avh_voucher_type_id'))}`;
 }
 
 /** POSTED / CANCELLED headers of the scope dated in range with no live leg (§3.7). */
@@ -109,7 +123,7 @@ export function leglessSql(s: DsSqlScope): Prisma.Sql {
          AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)
+         AND ${typeFilterSql(s, Prisma.raw('h.avh_voucher_type_id'))}
          AND NOT EXISTS (
                SELECT 1 FROM accounts.acc_vouchers v
                 WHERE v.av_voucher_id = h.avh_voucher_id AND v.av_acc_year = h.avh_acc_year
@@ -137,7 +151,7 @@ export function numberGapsSql(s: DsSqlScope): Prisma.Sql {
          AND h.avh_voucher_status <> 'DRAFT'
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)
+         AND ${typeFilterSql(s, Prisma.raw('h.avh_voucher_type_id'))}
        GROUP BY 1, 2
       HAVING MAX(h.avh_voucher_no) - MIN(h.avh_voucher_no) <= ${GAP_SPAN_CAP}),
     held AS (

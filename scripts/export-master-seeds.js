@@ -294,7 +294,6 @@ const TABLES = [
       column('vchr_no_suffix', 'literal', 'varchar'),
       column('vchr_no_width', 'plain', 'integer'),
       column('vchr_reset_freq', 'literal', 'accounts."VoucherResetFreq"'),
-      column('vchr_allow_manual_no', 'bool', 'boolean'),
       column('vchr_affects_accounts', 'bool', 'boolean'),
       column('vchr_affects_inventory', 'bool', 'boolean'),
       column('vchr_is_cash_voucher', 'bool', 'boolean'),
@@ -305,6 +304,14 @@ const TABLES = [
       column('vchr_tally_export_enabled', 'bool', 'boolean'),
       column('vchr_tally_voucher_type_name', 'literal', 'varchar'),
       column('vchr_tally_base_voucher_type', 'literal', 'varchar'),
+      // 20261116100000_voucher_types_master: vchr_allow_manual_no dropped; the
+      // accounting flags written out (Sales Bill carries ONE / RAISE / SALES / GSTR1 / OUTPUT).
+      column('vchr_party_mode', 'literal', 'varchar'),
+      column('vchr_party_side', 'literal', 'varchar'),
+      column('vchr_billwise_mode', 'literal', 'varchar'),
+      column('vchr_raise_bill_type', 'literal', 'varchar'),
+      column('vchr_gst_register', 'literal', 'varchar'),
+      column('vchr_gst_side', 'literal', 'varchar'),
       column('vchr_created_by', 'const', 'varchar', { value: "'system'" }),
     ],
   },

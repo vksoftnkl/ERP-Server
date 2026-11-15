@@ -65,6 +65,7 @@ model PrintPurpose {
   assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPurpose")
 
   printLogs           PrintLog[]                @relation("PrintLogPurpose")
+  voucherTypes        AccVoucherType[]          @relation("VoucherTypePrintPurpose")
 
   @@map("print_purpose")
   @@schema("public")
