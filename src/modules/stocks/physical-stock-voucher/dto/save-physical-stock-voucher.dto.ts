@@ -135,6 +135,18 @@ export class SavePhysicalStockVoucherItemDto {
   countedQty?: string | number | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Delivery tracking (addendum §5.3) — WHAT IS ON THE SHELF, the customers\' billed-not-delivered goods too. ' +
+      'Send this INSTEAD of countedQty (both → 422 PHY_SHELF_AND_COUNTED). The server re-reads the holding\'s ' +
+      'Billed not delivered at this save and stores svi_counted_qty = shelfQty − it (which may be negative), so the ' +
+      'posted variance is shelf − Physical. A count, so not below 0 (422 STOCK_COUNT_QTY_NEGATIVE); a line with ' +
+      'shelfQty is counted.',
+  })
+  @NullableNumber()
+  shelfQty?: string | number | null;
+
+  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description:

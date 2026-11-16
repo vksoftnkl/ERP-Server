@@ -4,6 +4,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -141,6 +142,29 @@ export class SaveBillDto {
   })
   @NullableInteger()
   sbVchrTypeId?: number | null;
+  // Delivery tracking plan §8.4 item 1 (Q3, decisions 42 / 43). INSTANT: given
+  // at the counter (no delivery tracking); PICKUP / DISPATCH: the goods wait in
+  // the godown for a Delivery Note. Absent on the first save = POS → INSTANT,
+  // else the voucher type's vchr_delivery_mode (child → Sales Bill), else
+  // INSTANT; a bill made from an order whose type is not Instant follows the
+  // order (Store pickup → PICKUP, else DISPATCH, N5). A POS bill is always
+  // INSTANT (422 BILL_DELIVERY_MODE_POS). Fixed once posted: amend may not
+  // change it (409 BILL_DELIVERY_MODE_LOCKED) — POST /deliveries/mode switches
+  // Pickup ↔ Dispatch.
+  @ApiPropertyOptional({
+    enum: ['INSTANT', 'PICKUP', 'DISPATCH'],
+    nullable: true,
+    description:
+      'INSTANT | PICKUP | DISPATCH. Omit for the default (POS → INSTANT; else the voucher type\'s mode; ' +
+      'a bill from a Sales Order follows the order unless the type is Instant). Kept on later draft saves when omitted. ' +
+      '422 BILL_DELIVERY_MODE_POS (POS bill not INSTANT); 409 BILL_DELIVERY_MODE_LOCKED (amend changing it).',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || null : value,
+  )
+  @IsIn(['INSTANT', 'PICKUP', 'DISPATCH', null])
+  sbDeliveryMode?: string | null;
   // Both are assigned on create from the bill voucher sequence
   // (accounts.acc_voucher_seq, vchr_type_id 22) and are immutable afterwards.
   // They stay on the DTO so clients that still send them are not rejected by

@@ -16,6 +16,7 @@ import { QuotationModule } from '../quotation/quotation.module';
 import { SalesPostingModule } from '../posting/posting.module';
 import { BillBalanceModule } from '../../accountsModule/billBalance/bill-balance.module';
 import { TillModule } from '../../till/till.module';
+import { DeliveryCoreModule } from '../delivery/core/delivery-core.module';
 
 /**
  * ChargeDetailModule / TenderDetailModule export the services that own the
@@ -43,6 +44,8 @@ import { TillModule } from '../../till/till.module';
     // session; a cash bill of a counted session is not cancelled (D7); a bill
     // of a live session is voided, not cancelled (void bill REV 2).
     TillModule,
+    // Delivery tracking: the bill's computed delivery status and the D6 guards.
+    DeliveryCoreModule,
   ],
   controllers: [BillController],
   providers: [

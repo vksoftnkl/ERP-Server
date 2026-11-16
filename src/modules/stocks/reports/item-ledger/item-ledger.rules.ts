@@ -197,7 +197,19 @@ export const SHADOW_DOC_TYPES = [
   'PURCHASE_BILL',
   'SHORTAGE_RECEIPT',
   'PURCHASE_RETURN',
+  // Delivery tracking (plan §8.4 item 13): a Delivery Note's book corrections
+  // (the re-lot pair, the godown transfer) are shadows linked to the note, so
+  // Enter opens menu 305 on the note; the row keeps its ADJUST / GODOWN_TRANSFER type.
+  'DELIVERY_NOTE',
 ] as const;
+
+/**
+ * The shadow documents an AMEND re-posts (D14: a reversed shadow is AMENDED
+ * when a later shadow of the same document exists). A Delivery Note is never
+ * amended — it posts several correction shadows (and goods-back undos), so a
+ * later one is no sign of an amend; its reversals stay CANCELLED.
+ */
+export const AMENDABLE_SHADOW_DOC_TYPES = SHADOW_DOC_TYPES.filter((t) => t !== 'DELIVERY_NOTE');
 
 export const SALES_DOC_TYPES = ['SALE_BILL', 'DELIVERY_CHALLAN', 'SALE_RETURN', 'DC_RETURN'];
 export const PURCHASE_DOC_TYPES = ['GRN', 'PURCHASE_BILL', 'SHORTAGE_RECEIPT', 'PURCHASE_RETURN'];
@@ -261,6 +273,11 @@ export function partyOf(input: {
 }): PartyRef | null {
   const kind = input.docKind ?? '';
   const name = clean(input.ledgerName);
+  // A Delivery Note's correction moves the company's own goods between lots /
+  // godowns: no party (not "Counter (cash)", which SALES rows default to).
+  if (kind === 'DELIVERY_NOTE') {
+    return null;
+  }
   if (kind === 'SALE_BILL') {
     const customerId = input.billCustomerId ?? input.partyId;
     const isWalkInLedger = sameId(customerId, input.walkInId);

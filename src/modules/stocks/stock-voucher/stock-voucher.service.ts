@@ -41,6 +41,12 @@ import {
 import { StockPostingService } from '../posting/stock-posting.service';
 import { StockVoucherSource } from '../posting/stock-voucher.source';
 import { StockErrorCode } from '../types/stock-error-codes';
+import { DELIVERY_ERROR_CODES } from '../../sales/delivery/core/delivery.constants';
+import {
+  countedFromShelf,
+  readHoldingUndelivered,
+  undeliveredKey,
+} from './count-undelivered.helper';
 import {
   appendTxnStatusLog,
   TxnStatusEvent,
@@ -52,6 +58,8 @@ import {
   type PagedResult,
   type PendingOpeningItem,
   type StockBookChange,
+  type StockUndeliveredChange,
+  type StockUndeliveredWarning,
   type StockBucket,
   type StockCountSheetRow,
   type StockErrorDetail,
@@ -186,10 +194,26 @@ export interface CountSheetQuery {
 const DOC_DATETIME_ONLINE_SKEW_MS = 15 * 60_000;
 const DOC_DATETIME_OFFLINE_MAX_MS = 7 * 24 * 3_600_000;
 /** The lines a save wrote, as writeHeaderTotals sums them and save() reports them. */
+/** Delivery tracking wording codes (fixed.error_message), addendum §4.3. */
+const PHY_SHELF_AND_COUNTED = DELIVERY_ERROR_CODES.PHY_SHELF_AND_COUNTED;
+const PHY_UNDELIVERED_CHANGED = DELIVERY_ERROR_CODES.PHY_UNDELIVERED_CHANGED;
+
 interface WrittenLines {
   rows: TotalsLine[];
   holdings: Map<string, CountHolding> | null;
   bookChanges: StockBookChange[];
+  /** Delivery tracking (addendum §5.3): count lines whose Billed-not-delivered snapshot moved. */
+  undeliveredChanges: StockUndeliveredChange[];
+}
+
+/** A count line as the shared DTO carries it, plus the delivery-tracking shelf count (PHYSICAL only). */
+type CountLineExtras = { shelfQty?: string | number | null };
+function shelfOf(line: SaveStockVoucherItemDto): string | number | null | undefined {
+  return (line as SaveStockVoucherItemDto & CountLineExtras).shelfQty;
+}
+function hasShelf(line: SaveStockVoucherItemDto): boolean {
+  const v = shelfOf(line);
+  return v !== undefined && v !== null && v !== '';
 }
 /** The columns of a written line that the header totals are summed from. */
 interface TotalsLine {
@@ -346,6 +370,8 @@ interface LineRow {
   svi_book_qty: Prisma.Decimal | null;
   svi_counted_qty: Prisma.Decimal | null;
   svi_diff_qty: Prisma.Decimal | null;
+  svi_shelf_qty: Prisma.Decimal | null;
+  svi_undelivered_qty: Prisma.Decimal | null;
   svi_cost_rate: Prisma.Decimal;
   svi_cost_rate_wot: Prisma.Decimal;
   svi_landed_rate: Prisma.Decimal;
@@ -451,7 +477,7 @@ export class StockVoucherService {
     // CREATED row stamped LATER — and a day-end query ordering by time then
     // called every posted opening a draft. Both rows take this one.
     const postedOn = new Date();
-    const { svhId, rowsPosted, bookChanges } = await this.prisma.$transaction(async (tx) => {
+    const { svhId, rowsPosted, bookChanges, undeliveredChanges } = await this.prisma.$transaction(async (tx) => {
       // Notes 143 #1 — THE ROW LOCK FIRST, and the DRAFT check under it. Read
       // without a lock, a save could pass its check, wait on a /post that held
       // the row, and then rewrite the lines and totals of a document that had
@@ -504,7 +530,7 @@ export class StockVoucherService {
           )
         : null;
       const saved: SaveStockVoucherDto = batches ? { ...dto, lines: batches.lines } : dto;
-      const { svhId: id, bookChanges } = header.svhId
+      const { svhId: id, bookChanges, undeliveredChanges } = header.svhId
         ? await this.updateDraft(tx, rules, saved, actor, postedOn)
         : await this.createDraft(tx, rules, saved, actor, postedOn);
       // Addendum 2 E2 — each auto-numbered line's size / colour / model, once
@@ -525,7 +551,7 @@ export class StockVoucherService {
       }
       if (!postAfterSave) {
         await this.logRevision(tx, rules, id, header, before, actor, false);
-        return { svhId: id, rowsPosted: null as number | null, bookChanges };
+        return { svhId: id, rowsPosted: null as number | null, bookChanges, undeliveredChanges };
       }
       // IN THE SAME TRANSACTION AS THE SAVE, and that is the whole point of
       // doing it here rather than calling post() afterwards: a document that
@@ -577,7 +603,7 @@ export class StockVoucherService {
       // After the post, so the revision records the document this request left
       // behind — posted, with the engine's totals.
       await this.logRevision(tx, rules, id, header, before, actor, true);
-      return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges };
+      return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges, undeliveredChanges };
     });
     const document = await this.getById(
       rules,
@@ -590,15 +616,31 @@ export class StockVoucherService {
     // so the screen's "stock moved since these lines were drawn" warning rests
     // on what the server did, not on what the client remembers.
     const rebased = new Map(bookChanges.map((change) => [change.sviId, change]));
+    // Delivery tracking (addendum §5.3) — and whether its Billed-not-delivered
+    // snapshot moved (a COUNT only; absent on every other type).
+    const isCount = rules.quantityMode === 'COUNT';
+    const moved = new Map(undeliveredChanges.map((change) => [change.sviId, change]));
     return {
       ...document,
       lines: document.lines.map((line) => ({
         ...line,
         bookChanged: rebased.has(line.sviId),
         previousBookQty: rebased.get(line.sviId)?.previousBookQty ?? null,
+        ...(isCount
+          ? {
+              undeliveredChanged: moved.has(line.sviId),
+              previousUndeliveredQty: moved.get(line.sviId)?.previousUndeliveredQty ?? null,
+            }
+          : {}),
       })),
       rowsPosted,
       bookChanges,
+      ...(isCount
+        ? {
+            undeliveredChanges,
+            warnings: undeliveredWarnings(undeliveredChanges, document.lines),
+          }
+        : {}),
     };
   }
   /**
@@ -1040,7 +1082,27 @@ export class StockVoucherService {
             message: `Line ${line.lineNo}: bookQty is read from stock_balance at save time and is never taken from the payload.`,
           });
         }
-        if (line.countedQty === undefined || line.countedQty === null || line.countedQty === '') {
+        const shelf = shelfOf(line);
+        if (hasShelf(line)) {
+          // Delivery tracking (addendum §5.3, decision 68): the SHELF count —
+          // the customers' billed goods too. The server stores counted = shelf
+          // − Billed not delivered, which may be negative; only the typed shelf
+          // is a magnitude. One count per line.
+          if (line.countedQty !== undefined && line.countedQty !== null && line.countedQty !== '') {
+            errors.push({
+              field: `${field}.shelfQty`,
+              code: PHY_SHELF_AND_COUNTED,
+              message: `Line ${line.lineNo}: both a shelf count and a counted qty were sent. Send the shelf count only.`,
+              params: { n: line.lineNo },
+            } as (typeof errors)[number]);
+          } else if (this.toDecimalNumber(shelf) < 0) {
+            errors.push({
+              field: `${field}.shelfQty`,
+              code: StockErrorCode.COUNT_QTY_NEGATIVE,
+              message: `Line ${line.lineNo}: shelfQty is a count and cannot be negative. Only the derived difference is signed.`,
+            });
+          }
+        } else if (line.countedQty === undefined || line.countedQty === null || line.countedQty === '') {
           // ABSENT IS NOT "0 FOUND", it is NOT COUNTED YET — and posting an
           // uncounted line as a total shortage is the single most expensive
           // mistake this screen can make.
@@ -1427,7 +1489,11 @@ export class StockVoucherService {
     actor: string,
     /** The request's one instant — see save(). */
     now: Date,
-  ): Promise<{ svhId: string; bookChanges: StockBookChange[] }> {
+  ): Promise<{
+    svhId: string;
+    bookChanges: StockBookChange[];
+    undeliveredChanges: StockUndeliveredChange[];
+  }> {
     const { header } = dto;
     const scope: StockVoucherNumberScope = {
       companyId: header.companyId,
@@ -1512,7 +1578,11 @@ export class StockVoucherService {
       deviceId: header.deviceId,
       sessionId: header.sessionId ?? null,
     });
-    return { svhId: created.svhId, bookChanges: written.bookChanges };
+    return {
+      svhId: created.svhId,
+      bookChanges: written.bookChanges,
+      undeliveredChanges: written.undeliveredChanges,
+    };
   }
   /**
    * THE TOTALS ARE THE SERVER'S (notes 150 #5; notes 143 asked first). Until
@@ -1754,7 +1824,11 @@ export class StockVoucherService {
     actor: string,
     /** The request's one instant — see save(). */
     now: Date,
-  ): Promise<{ svhId: string; bookChanges: StockBookChange[] }> {
+  ): Promise<{
+    svhId: string;
+    bookChanges: StockBookChange[];
+    undeliveredChanges: StockUndeliveredChange[];
+  }> {
     const { header } = dto;
     const svhId = header.svhId as string;
     // Lines are written only while the header is DRAFT (the service discipline
@@ -1793,7 +1867,11 @@ export class StockVoucherService {
     const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
     await this.writeHeaderTotals(tx, rules, svhId, header, written);
     // The audit row is save()'s: one revision holding the whole document.
-    return { svhId, bookChanges: written.bookChanges };
+    return {
+      svhId,
+      bookChanges: written.bookChanges,
+      undeliveredChanges: written.undeliveredChanges,
+    };
   }
   /**
    * Writes the lines BY ID (notes 89; see save()): a line with `sviId` updates
@@ -1845,13 +1923,30 @@ export class StockVoucherService {
       });
     }
     if (!lines.length) {
-      return { rows: [], holdings: null, bookChanges: [] };
+      return { rows: [], holdings: null, bookChanges: [], undeliveredChanges: [] };
     }
     const isCount = rules.quantityMode === 'COUNT';
     const zeroCost = isCount || rules.zeroesLineCost === true;
     const holdings = isCount ? await this.loadCountHoldings(tx, header, lines) : null;
+    // Delivery tracking (addendum §5.3): Billed not delivered of every counted
+    // holding, RE-READ at every save in this transaction (svi_undelivered_qty
+    // is its snapshot, as svi_book_qty is the book's).
+    const undelivered = isCount
+      ? await readHoldingUndelivered(tx, {
+          companyId: header.companyId,
+          branchId: header.branchId,
+          godownIds: lines.map((line) => line.godownId),
+          itemIds: lines.map((line) => line.itemId),
+        })
+      : null;
     const data = lines.map((line) => {
       const holding = holdings?.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
+      const bnd = isCount
+        ? (undelivered?.get(undeliveredKey(line.godownId, line.itemId, line.lotId, line.bucket))
+            ?.bndBase ?? new Prisma.Decimal(0)
+          ).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP)
+        : null;
+      const shelf = isCount && hasShelf(line) ? this.toDecimalColumn(shelfOf(line)) : null;
       return {
         sviVoucherId: svhId,
         // Scope is copied from the HEADER, never read off the line: a line
@@ -1945,7 +2040,17 @@ export class StockVoucherService {
         sviBookQty: isCount
           ? (holding as CountHolding).bookQty
           : this.toNullableDecimal(line.bookQty),
-        sviCountedQty: this.toNullableDecimal(line.countedQty),
+        // Delivery tracking (decision 68): with a shelf count the books are set
+        // to shelf − Billed not delivered, so the variance is shelf − Physical;
+        // it may be negative (billed before the stock came). Without one,
+        // countedQty keeps today's meaning.
+        sviCountedQty:
+          shelf !== null && bnd !== null
+            ? countedFromShelf(shelf, bnd)
+            : this.toNullableDecimal(line.countedQty),
+        // COUNT only (the columns' defaults elsewhere): the typed shelf and the
+        // BND snapshot it was reduced by.
+        ...(isCount ? { sviShelfQty: shelf, sviUndeliveredQty: bnd as Prisma.Decimal } : {}),
         // §3.3 — 0 on a count, in both directions and on purpose. The overage
         // is valued from svh_rate_source inside fn_svh_post; the shortage is
         // left at 0 so the BEFORE trigger fn_sml_cost_default can stamp it from
@@ -1996,6 +2101,27 @@ export class StockVoucherService {
     // Notes 150 #4 — a re-saved count line re-reads its book figure; when the
     // figure moved, say which line and from what, so the screen can warn.
     const bookChanges: StockBookChange[] = [];
+    // Delivery tracking (addendum §5.3) — the same for Billed not delivered: a
+    // note posted (or a bill billed) between two saves moves the holding's BND.
+    const undeliveredChanges: StockUndeliveredChange[] = [];
+    if (isCount) {
+      lines.forEach((line, index) => {
+        const row = line.sviId ? storedById.get(line.sviId) : undefined;
+        const next = (data[index] as { sviUndeliveredQty?: Prisma.Decimal }).sviUndeliveredQty;
+        if (!row || next === undefined) {
+          return;
+        }
+        if (!new Prisma.Decimal(row.sviUndeliveredQty ?? 0).equals(next)) {
+          undeliveredChanges.push({
+            sviId: row.sviId,
+            lineNo: line.lineNo,
+            itemId: line.itemId,
+            previousUndeliveredQty: toNumber(new Prisma.Decimal(row.sviUndeliveredQty ?? 0)),
+            undeliveredQty: toNumber(next),
+          });
+        }
+      });
+    }
     if (isCount) {
       lines.forEach((line, index) => {
         const row = line.sviId ? storedById.get(line.sviId) : undefined;
@@ -2053,7 +2179,7 @@ export class StockVoucherService {
     if (inserted.length) {
       await tx.stockVoucherItem.createMany({ data: inserted });
     }
-    return { rows: data, holdings, bookChanges };
+    return { rows: data, holdings, bookChanges, undeliveredChanges };
   }
   /**
    * Notes 89 — a line id must name a live line of THIS document, once. A create
@@ -2519,6 +2645,8 @@ export class StockVoucherService {
              svi.svi_book_qty,
              svi.svi_counted_qty,
              svi.svi_diff_qty,
+             svi.svi_shelf_qty,
+             svi.svi_undelivered_qty,
              svi.svi_cost_rate,
              svi.svi_cost_rate_wot,
              svi.svi_landed_rate,
@@ -4408,6 +4536,24 @@ export class StockVoucherService {
       countedQty: toNullableNumber(row.svi_counted_qty),
       // GENERATED as counted − book. Read-only, and null on anything but a count.
       diffQty: toNullableNumber(row.svi_diff_qty),
+      // Delivery tracking (addendum §5.3) — a count line only: the shelf the
+      // counter typed (null on a line counted the old way), the Billed-not-
+      // delivered snapshot of the holding at the last save, and Physical =
+      // book + it (what the shelf is compared with).
+      ...(rules.quantityMode === 'COUNT'
+        ? {
+            shelfQty: toNullableNumber(row.svi_shelf_qty),
+            undeliveredQty: toNumber(row.svi_undelivered_qty ?? new Prisma.Decimal(0)),
+            physicalQty:
+              row.svi_book_qty === null
+                ? null
+                : toNumber(
+                    new Prisma.Decimal(row.svi_book_qty).plus(
+                      row.svi_undelivered_qty ?? new Prisma.Decimal(0),
+                    ),
+                  ),
+          }
+        : {}),
       costRate: toNumber(row.svi_cost_rate),
       costRateWot: toNumber(row.svi_cost_rate_wot),
       landedRate: toNumber(row.svi_landed_rate),
@@ -4676,4 +4822,31 @@ function loadingFieldSent(header: SaveStockVoucherDto['header']): string | null 
     ['unloadSupervisorId', !!header.unloadSupervisorId],
   ];
   return filled.find(([, given]) => given)?.[0] ?? null;
+}
+
+/**
+ * Delivery tracking (addendum §5.3, plan §7.10) — the WARN a count save
+ * carries when a line's Billed-not-delivered snapshot moved since its last
+ * save: "Line {n}: {item} had {old} billed not delivered when the sheet was
+ * drawn; now {new}." Worded by the house interceptor (data.warnings).
+ */
+export function undeliveredWarnings(
+  changes: readonly StockUndeliveredChange[],
+  lines: readonly { sviId: string; itemName: string }[],
+): StockUndeliveredWarning[] {
+  const names = new Map(lines.map((l) => [l.sviId, l.itemName]));
+  const index = new Map(lines.map((l, i) => [l.sviId, i]));
+  return changes.map((c) => {
+    const item = names.get(c.sviId) ?? c.itemId;
+    return {
+      code: PHY_UNDELIVERED_CHANGED,
+      level: 'WARN' as const,
+      field: `lines.${index.get(c.sviId) ?? c.lineNo - 1}.shelfQty`,
+      line: c.lineNo,
+      message:
+        `Line ${c.lineNo}: ${item} had ${c.previousUndeliveredQty} billed not delivered when the ` +
+        `sheet was drawn; now ${c.undeliveredQty}. Check the count before posting.`,
+      params: { n: c.lineNo, item, old: c.previousUndeliveredQty, new: c.undeliveredQty },
+    };
+  });
 }

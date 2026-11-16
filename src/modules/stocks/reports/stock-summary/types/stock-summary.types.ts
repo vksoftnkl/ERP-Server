@@ -152,6 +152,13 @@ export interface SummaryRow {
   reserved: string | null;
   available: string | null;
   inTransit: string | null;
+  /**
+   * Delivery tracking (plan §8.4 item 12), today only (null otherwise):
+   * Billed not delivered — the customers' goods still on the scope's shelves —
+   * and Physical = closing + notDelivered, in the row's Qty-in unit.
+   */
+  notDelivered: string | null;
+  physical: string | null;
   /** value ÷ closing in the Qty-in unit; "0.00" at closing 0. */
   rate: string;
   /** The engine's valuation at `to` (D18); negative for a negative closing (D1). */
@@ -287,6 +294,8 @@ export interface GodownCell {
   godownId: string;
   qty: string;
   value: string;
+  /** Delivery tracking: qty + Billed not delivered in that godown; today only, null otherwise. */
+  physical: string | null;
 }
 
 export interface GodownRow {
@@ -301,6 +310,8 @@ export interface GodownRow {
   cells: GodownCell[];
   qty: string;
   value: string;
+  /** Delivery tracking: Σ the cells' physical; today only, null otherwise. */
+  physical: string | null;
 }
 
 export interface GodownsPayload {

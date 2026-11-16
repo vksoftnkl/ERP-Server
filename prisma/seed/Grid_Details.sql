@@ -806,6 +806,8 @@ ORDER BY tm.tnd_display_position, tm.tnd_name$seed$)
        b.sb_status,
        b.sb_print_count,
        b.sb_created_by,
+       b.sb_delivery_status,
+       b.sb_delivery_mode,
        CASE
            WHEN (cpp.ppo_id IS NOT NULL AND cpp.ppo_is_deleted = false AND cpp.ppo_is_active = true
  AND EXISTS (SELECT 1 FROM public.print_template dl
@@ -864,6 +866,7 @@ ORDER BY tm.tnd_display_position, tm.tnd_name$seed$)
   	AND b.sb_acc_year   = 'iacc_year'
   	AND (NULLIF('ifrom_date', '') IS NULL OR b.sb_bill_date >= 'ifrom_date'::date)
   	AND (NULLIF('ito_date',   '') IS NULL OR b.sb_bill_date <= 'ito_date'::date)
+  	AND ('idelivery' NOT IN ('NA', 'PENDING', 'PART', 'OUT', 'DELIVERED', 'RETURNED') OR b.sb_delivery_status = 'idelivery')
 ORDER BY
 	b.sb_bill_date DESC, b.sb_bill_slno DESC$seed$)
     ,(87 , 'TXN MAIN LIST - SALES ORDER', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT

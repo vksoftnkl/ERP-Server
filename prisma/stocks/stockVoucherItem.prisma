@@ -121,6 +121,13 @@ model StockVoucherItem {
   /// GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
   /// never sent — the variance must not be editable.
   sviDiffQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("svi_diff_qty")
+  /// Delivery tracking (20261117100000, Q17 / addendum decision 68): the shelf
+  /// as counted, billed goods included, when the count compares with Physical.
+  /// The server then stores sviCountedQty = sviShelfQty - sviUndeliveredQty,
+  /// which may be negative (no CHECK on sviCountedQty).
+  sviShelfQty          Decimal?  @db.Decimal(18, 6)                  @map("svi_shelf_qty")
+  /// The billed-not-delivered of the holding, re-read at every save.
+  sviUndeliveredQty    Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_undelivered_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
   sviCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate")

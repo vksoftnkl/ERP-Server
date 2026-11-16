@@ -67,6 +67,13 @@ interface RawReason {
 }
 
 /**
+ * Reasons only the server posts under (delivery tracking plan §7.6): left out
+ * of the picker (GET /stock/reasons). DELIVERY_GODOWN = a Delivery Note's
+ * other-godown correction (a same-branch TRANSFER_OUT).
+ */
+export const SYSTEM_ONLY_REASON_CODES = ['DELIVERY_GODOWN'] as const;
+
+/**
  * `stock.stock_reason_master` — the picker (16q Q17) and the maintenance
  * screen that was missing (Q18–Q20, plan §6).
  *
@@ -112,6 +119,10 @@ export class StockReasonsService {
          AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
               OR r.srm_allowed_txn_types && ${kindTypes}::text[])
          AND (NOT ${transfer}::boolean OR r.srm_direction = 'BOTH')
+         -- Delivery tracking (plan §7.6): DELIVERY_GODOWN is a SYSTEM reason a
+         -- Delivery Note's godown correction posts under; nobody picks it
+         -- (SYSTEM_ONLY_REASON_CODES — fixed text, not a bound value).
+         AND r.srm_code <> 'DELIVERY_GODOWN'
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

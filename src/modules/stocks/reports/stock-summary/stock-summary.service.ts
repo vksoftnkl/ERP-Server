@@ -48,6 +48,7 @@ import {
 } from './stock-summary-run.store';
 import {
   balanceNowSql,
+  bndNowSql,
   branchesNowSql,
   branchesReplaySql,
   companyBranchesSql,
@@ -97,6 +98,7 @@ import {
   viewOf,
   type AfterRow,
   type BalanceRow,
+  type BndRow,
   type BranchCellDb,
   type FactRow,
   type ItemRunRow,
@@ -882,14 +884,23 @@ export class StockSummaryService {
       let balance: BalanceRow[] = [];
       let after: AfterRow[] = [];
       let transitIn: TransitDbRow[] = [];
+      let bnd: BndRow[] = [];
       if (todayOnly) {
         balance = await db.$queryRaw<BalanceRow[]>(balanceNowSql(s));
         after = await db.$queryRaw<AfterRow[]>(rowsAfterSql(s));
         transitIn = await db.$queryRaw<TransitDbRow[]>(transitNowSql(s, 'in'));
+        // Delivery tracking (plan §8.4 item 12): Billed not delivered now.
+        bnd = await db.$queryRaw<BndRow[]>(bndNowSql(s));
       }
       // An item on the road to this branch is a row even with no ledger row here
       // ("List the item", 2026-11-14): its facts and last sale are read too.
-      const items = [...new Set([...pass.map((p) => p.item), ...transitIn.map((t) => t.item)])];
+      const items = [
+        ...new Set([
+          ...pass.map((p) => p.item),
+          ...transitIn.map((t) => t.item),
+          ...bnd.map((b) => b.item),
+        ]),
+      ];
       assertItemCap(items.length);
       const facts = items.length ? await db.$queryRaw<FactRow[]>(factsSql(items)) : [];
       const sales = items.length
@@ -919,6 +930,7 @@ export class StockSummaryService {
         transitIn,
         transitOut,
         godowns,
+        bnd,
       };
     });
     const { r, m, todayOnly } = built;
@@ -939,6 +951,7 @@ export class StockSummaryService {
       balance: built.balance,
       after: built.after,
       transitIn: built.transitIn,
+      bnd: built.bnd,
     });
     const head = this.headOf(r, m, todayOnly, rights, 'ITEMS');
     const run = this.runs.put(userId, r.sql.companyId, {
@@ -1254,7 +1267,11 @@ export function godownTab(
 ): { columns: { godownId: string; name: string }[]; rows: ItemRunRow[] } {
   const columns = godownColumns(run.rows, run.branchGodowns);
   const shown = itemView(run.rows, { ...view, hideZero: false }).filter(
-    (r) => !view.hideZero || r.godowns.some((g) => !g.qty.isZero() || !g.value.isZero()),
+    (r) =>
+      !view.hideZero ||
+      r.godowns.some(
+        (g) => !g.qty.isZero() || !g.value.isZero() || (g.bnd !== null && !g.bnd.isZero()),
+      ),
   );
   return { columns, rows: shown };
 }

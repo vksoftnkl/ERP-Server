@@ -574,6 +574,15 @@ export interface StockVoucherLinePayload {
    * and it cannot be edited to zero to make a variance disappear.
    */
   diffQty: number | null;
+  /**
+   * Delivery tracking (addendum §5.3) — COUNT lines only, absent elsewhere:
+   * the shelf the counter typed (null on a line counted the old way), the
+   * holding's Billed-not-delivered snapshot at the last save (base unit) and
+   * Physical = bookQty + undeliveredQty, what the shelf is compared with.
+   */
+  shelfQty?: number | null;
+  undeliveredQty?: number;
+  physicalQty?: number | null;
   /** Per-line override of the header reason — the one pallet that was damaged. */
   reasonId: string | null;
   reasonName: string | null;
@@ -653,6 +662,13 @@ export interface StockVoucherSaveResult extends StockVoucherPayload {
    * Empty on every other document type and on a create.
    */
   bookChanges: StockBookChange[];
+  /**
+   * Delivery tracking (addendum §5.3) — a COUNT only: the lines whose
+   * Billed-not-delivered snapshot this save re-based, and one WARN
+   * PHY_UNDELIVERED_CHANGED per such line. Absent on every other type.
+   */
+  undeliveredChanges?: StockUndeliveredChange[];
+  warnings?: StockUndeliveredWarning[];
 }
 
 /** A save-response line: the /get line plus what this save did to its book figure. */
@@ -661,6 +677,28 @@ export interface StockVoucherSavedLine extends StockVoucherLinePayload {
   bookChanged: boolean;
   /** The book figure the line held before this save, when it changed; null otherwise. */
   previousBookQty: number | null;
+  /** COUNT only: this save re-based the line's Billed-not-delivered snapshot. */
+  undeliveredChanged?: boolean;
+  previousUndeliveredQty?: number | null;
+}
+
+/** Delivery tracking — a count line whose Billed-not-delivered snapshot moved between saves. */
+export interface StockUndeliveredChange {
+  sviId: string;
+  lineNo: number;
+  itemId: string;
+  previousUndeliveredQty: number;
+  undeliveredQty: number;
+}
+
+/** WARN PHY_UNDELIVERED_CHANGED on a count save (worded server-side by code). */
+export interface StockUndeliveredWarning {
+  code: string;
+  level: 'WARN';
+  field: string;
+  line: number;
+  message: string;
+  params: Record<string, string | number>;
 }
 
 export interface StockBookChange {
@@ -773,6 +811,24 @@ export interface StockCountSheetRow {
   stockValue: number;
   /** Always null — this is the column the screen fills. */
   countedQty: null;
+  // ── Delivery tracking (addendum §5.3) — filled by the physical route ──────
+  /** Billed not delivered of the holding (base unit): the customers' goods still on the shelf. */
+  undeliveredQty?: number;
+  /** bookQty + undeliveredQty — what the shelf is compared with. */
+  physicalQty?: number;
+  /** The bills behind undeliveredQty, oldest first. */
+  undeliveredBills?: {
+    billId: string;
+    billAccYear: string;
+    billRefno: string | null;
+    custName: string | null;
+    qty: number;
+    unitName: string | null;
+    baseQty: number;
+  }[];
+  /** The item's selling unit (iuc_is_default_unit), else the base unit, and its factor. */
+  sellUnitName?: string | null;
+  sellUnitFactor?: number;
   // ── Notes 150 #9 — the batch's size / colour / model (stock_batch_detail), ──
   // ── null when the batch has none. Shown after the item name on the sheet. ──
   sizeId: string | null;

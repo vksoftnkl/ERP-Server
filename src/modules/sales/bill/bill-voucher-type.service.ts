@@ -12,6 +12,7 @@ import {
   BILL_BASE_VCHR_TYPE_ID,
   billSeriesDeviceCode,
   billTypeChoices,
+  billTypeDeliveryMode,
 } from './bill-voucher-type.helper';
 
 export interface BillVoucherTypeChoice {
@@ -27,6 +28,12 @@ export interface BillVoucherTypeChoice {
   nextRefno: string | null;
   /** Why nextRefno is null (the refusal the save would answer), else null. */
   nextRefnoCode: string | null;
+  /**
+   * Delivery tracking (Q3): the Delivery mode a new bill of this type starts
+   * with — the type's own, else Sales Bill's, else INSTANT; INSTANT for a POS
+   * bill (decision 42, billMode=POS).
+   */
+  deliveryMode: 'INSTANT' | 'PICKUP' | 'DISPATCH';
 }
 
 export interface BillVoucherTypeChoices {
@@ -81,6 +88,9 @@ export class BillVoucherTypeService {
     // previewed number is the one the save draws.
     const settings = await this.salesContext.settings(q.companyId, q.branchId);
     const today = new Date();
+    // Sales Bill (3) is always among the rows offeredBillTypes reads, but only
+    // offered when its rule says so: read its mode apart for the children.
+    const baseMode = await this.baseDeliveryMode(offered);
     const choices = await Promise.all(
       offered.map(async (t) => {
         const isBase = t.vchrTypeId === BILL_BASE_VCHR_TYPE_ID;
@@ -108,6 +118,11 @@ export class BillVoucherTypeService {
           isBase,
           nextRefno: next.refno,
           nextRefnoCode: next.code,
+          deliveryMode: billTypeDeliveryMode(
+            t.vchrDeliveryMode,
+            baseMode,
+            q.billMode,
+          ),
         };
       }),
     );
@@ -117,5 +132,19 @@ export class BillVoucherTypeService {
       offerBase,
       hasChildTypes: offered.some((t) => t.vchrParentId === BILL_BASE_VCHR_TYPE_ID),
     };
+  }
+
+  /** Sales Bill (3)'s own delivery mode — from the offered rows when 3 is among them. */
+  private async baseDeliveryMode(
+    offered: readonly { vchrTypeId: number; vchrDeliveryMode: string | null }[],
+  ): Promise<string | null> {
+    const base = offered.find((t) => t.vchrTypeId === BILL_BASE_VCHR_TYPE_ID);
+    if (base) {
+      return base.vchrDeliveryMode;
+    }
+    const [row] = await this.prisma.$queryRaw<{ vchr_delivery_mode: string | null }[]>`
+      SELECT vchr_delivery_mode FROM accounts.acc_voucher_types
+       WHERE vchr_type_id = ${BILL_BASE_VCHR_TYPE_ID}::int`;
+    return row?.vchr_delivery_mode ?? null;
   }
 }

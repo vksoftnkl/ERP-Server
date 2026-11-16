@@ -44,6 +44,7 @@ model GodownLocation {
 
   // ── Sales documents (20260921200000) ────────────────────────────────────
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemGodown")
+  deliveryNotes         SaleDeliveryNote[]        @relation("SaleDeliveryNoteGodown")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemGodown")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemGodown")
 

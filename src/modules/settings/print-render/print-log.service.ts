@@ -22,7 +22,8 @@ import { ACC_YEAR_PATTERN, PlgOutputMode, PlgStatus } from './print-render.const
  * PRINT_COUNTERS below): a PRINT of a TILL_SESSION_Z / TILL_DAY_Z bumps
  * `tss_print_count` / `tbd_print_count` once per render, so the Z itself can
  * say "REPRINT n" — and since notes 135 a TILL_MOVEMENT / TILL_REMIT bumps
- * `tcm_print_count`. Swallowed like the log: a counter never fails a print.
+ * `tcm_print_count` (and since delivery tracking P5 a GATE_PASS bumps
+ * `sdn_print_count`). Swallowed like the log: a counter never fails a print.
  *
  * ── IMMUTABLE MEANS IMMUTABLE ──────────────────────────────────────────────
  *
@@ -89,6 +90,12 @@ const PRINT_COUNTERS: Readonly<Record<string, (docId: string, accYear: string) =
   TILL_REMIT: (docId, accYear) => Prisma.sql`
     UPDATE accounts.till_cash_movement SET tcm_print_count = tcm_print_count + 1
      WHERE tcm_id = ${docId}::uuid AND tcm_acc_year = ${accYear}::char(9)`,
+  // Delivery tracking P5: the gate pass (purpose GATE_PASS, doc type
+  // DELIVERY_NOTE), so a second print says DUPLICATE (head.copy_mark) and the
+  // note's get answers sdnPrintCount > 0.
+  DELIVERY_NOTE: (docId, accYear) => Prisma.sql`
+    UPDATE sales.sale_delivery_note SET sdn_print_count = sdn_print_count + 1
+     WHERE sdn_id = ${docId}::uuid AND sdn_acc_year = ${accYear}::char(9)`,
 };
 
 @Injectable()

@@ -280,6 +280,9 @@ export function summaryPrintRow(row: SummaryRow, index: number, todayOnly: boole
     reserved: todayOnly ? num(row.reserved) : null,
     available: todayOnly ? num(row.available) : null,
     in_transit: todayOnly ? num(row.inTransit) : null,
+    // Delivery tracking (plan §8.4 item 12): today only, "—" otherwise.
+    not_delivered: todayOnly ? num(row.notDelivered) : null,
+    physical: todayOnly ? num(row.physical) : null,
     rate: num(row.rate),
     value: num(row.value),
     last_sale: dmy(row.lastSale),

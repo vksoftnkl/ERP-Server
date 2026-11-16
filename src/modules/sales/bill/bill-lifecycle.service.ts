@@ -1,3 +1,14 @@
+import { billGodownSlips, oldPendingDeliveries } from './bill-delivery-read';
+import { DEFAULT_OLD_DAYS, DELIVERY_ERROR_CODES, DELIVERY_SETTING_KEYS } from '../delivery/core/delivery.constants';
+import {
+  assertAmendKeepsDelivery,
+  assertNothingGiven,
+  deliveryLineNames,
+  istDateText,
+  posDeliveryModeRefusal,
+} from './bill-delivery.helper';
+import { DeliveryStatusService } from '../delivery/core/delivery-status.service';
+import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { assertSaleBillNotPulled } from 'src/modules/purchase/sister/purchase-sister';
@@ -172,6 +183,10 @@ export class BillLifecycleService {
     // CLOUD_SYNC_ENABLED: an offline site bills Sales Bill (3) only (Voucher
     // Types decision 64, isOfflineSite).
     private readonly config: ConfigService,
+    // Delivery tracking (plan §5.2 / §8.4): the computed delivery status and
+    // the billed-not-delivered readers behind the D6 guards.
+    private readonly deliveryStatus: DeliveryStatusService,
+    private readonly deliveryPending: DeliveryPendingService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -197,6 +212,12 @@ export class BillLifecycleService {
       throwOnRefusal: false,
       dryRun: true,
     });
+    // Delivery tracking decision 42 (round 2): the save refuses a POS bill with
+    // Pickup / Dispatch first of all (BILL_DELIVERY_MODE_POS); validate agrees.
+    const posMode = posDeliveryModeRefusal(dto.sbBillMode, dto.sbDeliveryMode);
+    if (posMode) {
+      guard.refusals.push(posMode);
+    }
     await this.prisma.$transaction(async (tx) => {
       // Voucher Types plan §7.4: what the save would refuse on the bill's type
       // (VT_BILL_TYPE_REQUIRED / _INVALID on a first save, VT_BILL_TYPE_LOCKED on
@@ -212,6 +233,11 @@ export class BillLifecycleService {
         )),
       );
       await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+      // Delivery tracking Q8 (§8.4 item 1): the customer's oldest bill with
+      // goods still in the godown past sales.delivery_old_days. A warning
+      // only, never a block — so it is never routed through warn(), which
+      // would refuse it at /post.
+      await this.oldPendingDeliveryWarning(tx, dto, guard);
       // Nothing is written: the transaction exists only so every read sees
       // one snapshot.
     });
@@ -236,7 +262,72 @@ export class BillLifecycleService {
       posted = await this.postDraftInTx(tx, bill, dto, new Date());
     }, POST_TX_OPTIONS);
     this.afterPost(posted);
-    return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
+    return this.withGodownSlips(
+      await this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear),
+    );
+  }
+
+  /**
+   * Delivery tracking Q11 (§8.4 item 2): a posted Pickup / Dispatch bill tells
+   * the client which godown slips to print — one per godown with the
+   * Delivery Sheet tick (gdl_del_sheet) and pending lines. [] otherwise.
+   */
+  private async withGodownSlips(payload: BillPayload): Promise<BillPayload> {
+    const godownSlips =
+      payload.sbStatus === BILL_STATUS_POSTED
+        ? await billGodownSlips(
+            this.prisma as unknown as Prisma.TransactionClient,
+            this.deliveryPending,
+            {
+              sbId: payload.sbId,
+              sbAccYear: payload.sbAccYear,
+              sbDeliveryMode: payload.sbDeliveryMode,
+            },
+          )
+        : [];
+    return { ...payload, godownSlips };
+  }
+
+  /** Q8 — BILL_OLD_PENDING_DELIVERY on /bills/validate (WARN, not overridable, never refused). */
+  private async oldPendingDeliveryWarning(
+    tx: Prisma.TransactionClient,
+    dto: ValidateBillDto,
+    guard: SalesGuardContext,
+  ): Promise<void> {
+    if (!dto.sbCustId || (dto.sbBillMode ?? '').toUpperCase() === 'POS') {
+      return;
+    }
+    const raw = await this.salesContext.setting(
+      dto.sbCompanyId,
+      dto.sbBranchId,
+      DELIVERY_SETTING_KEYS.OLD_DAYS,
+    );
+    const n = Number(raw);
+    const oldDays = Number.isInteger(n) && n > 0 ? n : DEFAULT_OLD_DAYS;
+    const [oldest] = await oldPendingDeliveries(tx, {
+      companyId: dto.sbCompanyId,
+      branchId: dto.sbBranchId,
+      custId: dto.sbCustId,
+      oldDays,
+      limit: 1,
+    });
+    if (!oldest) {
+      return;
+    }
+    const customer = dto.sbCustName ?? '';
+    guard.warnings.push({
+      code: DELIVERY_ERROR_CODES.BILL_OLD_PENDING_DELIVERY,
+      level: 'WARN',
+      message: `${customer || 'This customer'} still has ${oldest.billRefno ?? ''} with ${oldest.leftText} not collected after ${oldest.days} days`,
+      field: 'sbCustId',
+      overridable: false,
+      params: {
+        customer,
+        bill: oldest.billRefno ?? '',
+        qty: oldest.leftText,
+        days: oldest.days,
+      },
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -294,7 +385,9 @@ export class BillLifecycleService {
     }
     this.afterPost(posted);
     const k = keys as unknown as BillKeys;
-    return this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear);
+    return this.withGodownSlips(
+      await this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear),
+    );
   }
 
   /**
@@ -494,6 +587,8 @@ export class BillLifecycleService {
       data: { sbStatus: BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
     });
     await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
+    // Delivery tracking §5.2: a cancelled (or voided) bill drops out of BND → NA.
+    await this.deliveryStatus.recompute(tx, [{ billId: bill.sbId, billAccYear: bill.sbAccYear }]);
     await appendTxnStatusLog(tx, {
       companyId: bill.sbCompanyId,
       branchId: bill.sbBranchId,
@@ -614,7 +709,7 @@ export class BillLifecycleService {
       }
       // Lock 2: a declared document is not ours to edit.
       await assertAmendable(tx, bill.sbDocRegisterId);
-      await this.assertUnwindable(tx, bill, ctx, dto.editRemark, 'amend');
+      await this.assertUnwindable(tx, bill, ctx, dto.editRemark, 'amend', dto);
 
       const priorItems = await tx.saleBillItem.findMany({
         where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
@@ -1839,7 +1934,6 @@ export class BillLifecycleService {
         sbPaidAmt: decimal(paid),
         sbBalanceAmt: decimal(balance),
         sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
-        sbDeliveryStatus: snap.billMode === 'POS' ? 'NA' : 'PENDING',
         sbRevisionNo: revisionNo,
         // The draft's cheque details are in the register now (step 3b).
         sbDraftCheques: Prisma.DbNull,
@@ -1851,6 +1945,11 @@ export class BillLifecycleService {
 
     // 11 · the sources — only a POSTED bill draws down an order or a challan.
     await this.afterStatusChange(tx, posted, items, actor, now, opts.priorItems);
+
+    // 11b · delivery tracking (§5.2, decision 36): the ONE writer of
+    //       sb_delivery_status — Instant → NA, Pickup / Dispatch → PENDING, or
+    //       PART on an amend that keeps given lines.
+    await this.deliveryStatus.recompute(tx, [{ billId: bill.sbId, billAccYear: bill.sbAccYear }]);
 
     // 12 · the trail.
     await appendTxnStatusLog(tx, {
@@ -1919,6 +2018,7 @@ export class BillLifecycleService {
     ctx: SalesCallContext,
     reason: string,
     verb: 'cancel' | 'amend',
+    amend?: Pick<AmendBillDto, 'sbDeliveryMode' | 'items'>,
   ): Promise<void> {
     const docDate = isoDate(bill.sbBillDate) ?? isoToday();
     await assertAccYearWritable(tx, bill.sbCompanyId, bill.sbAccYear, 'sbAccYear');
@@ -1937,6 +2037,10 @@ export class BillLifecycleService {
     // A cheque the bank has already seen is the Cheques screen's story now —
     // refused here, BEFORE the IRN below is cancelled at the portal.
     await assertBillPdcHeld(tx, bill);
+    // Delivery tracking D6 (§8.4 items 3 / 4, C7): goods that left the godown
+    // refuse a cancel / void, and an amend may not take a line below what is
+    // given or returned — refused here, BEFORE the IRN below is cancelled.
+    await this.assertDeliveryUnwindable(tx, bill, verb, amend);
 
     // Lock 2 on a cancel: inside the window the IRN is cancelled FIRST,
     // synchronously, and the cancel proceeds only on success.
@@ -1995,6 +2099,62 @@ export class BillLifecycleService {
       }
     }
     void ctx;
+  }
+
+  /**
+   * D6 (§8.4 items 3 / 4). Cancel / void: any line with given ≠ 0 →
+   * BILL_DELIVERED_CANCEL. Amend: a changed mode → BILL_DELIVERY_MODE_LOCKED;
+   * a line with any event dropped, re-keyed or taken below its settled qty →
+   * BILL_DELIVERED_AMEND. A bill with no event at all passes untouched.
+   */
+  private async assertDeliveryUnwindable(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    verb: 'cancel' | 'amend',
+    amend?: Pick<AmendBillDto, 'sbDeliveryMode' | 'items'>,
+  ): Promise<void> {
+    if (verb === 'amend') {
+      const requested = amend?.sbDeliveryMode;
+      const lines = await this.deliveryPending.linesOfBills(tx, [
+        { billId: bill.sbId, billAccYear: bill.sbAccYear },
+      ]);
+      const evented = lines.filter((l) => !l.settledQty.isZero() || !l.givenQty.isZero());
+      const names = await deliveryLineNames(tx, evented.map((l) => l.billItemId));
+      assertAmendKeepsDelivery(
+        { sbDeliveryMode: bill.sbDeliveryMode, sbBillRefno: bill.sbBillRefno },
+        requested,
+        evented,
+        (amend?.items ?? []) as never,
+        names,
+      );
+      return;
+    }
+    if (bill.sbDeliveryMode === 'INSTANT' && bill.sbDeliveryStatus === 'NA') {
+      // An Instant bill has no events unless it was a Pickup / Dispatch bill once.
+      const [any] = await tx.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM sales.sale_delivery_event
+         WHERE sde_bill_id = ${bill.sbId}::uuid AND sde_bill_acc_year = ${bill.sbAccYear}::bpchar`;
+      if (!any || any.n === 0) {
+        return;
+      }
+    }
+    const lines = await this.deliveryPending.linesOfBills(tx, [
+      { billId: bill.sbId, billAccYear: bill.sbAccYear },
+    ]);
+    if (lines.every((l) => l.givenQty.isZero())) {
+      return;
+    }
+    const [last] = await tx.$queryRaw<{ refno: string | null; at: Date | null }[]>`
+      SELECT e.sde_src_refno AS refno, e.sde_event_datetime AS at
+        FROM sales.sale_delivery_event e
+       WHERE e.sde_bill_id = ${bill.sbId}::uuid AND e.sde_bill_acc_year = ${bill.sbAccYear}::bpchar
+         AND e.sde_kind IN ('GIVEN', 'CLEANUP')
+       ORDER BY e.sde_event_datetime DESC LIMIT 1`;
+    assertNothingGiven(
+      { sbBillRefno: bill.sbBillRefno },
+      lines,
+      last ? { refno: last.refno ?? 'go-live cleanup', date: istDateText(last.at) } : null,
+    );
   }
 
   private async unwind(

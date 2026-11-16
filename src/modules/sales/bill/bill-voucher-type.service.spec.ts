@@ -37,6 +37,7 @@ const offered = [
     vchrParentId: null,
     vchrNoPrefix: 'bil',
     vchrSortOrder: 300,
+    vchrDeliveryMode: 'INSTANT',
   },
   {
     vchrTypeId: 68,
@@ -46,6 +47,17 @@ const offered = [
     vchrParentId: 3,
     vchrNoPrefix: 'RT{BR}',
     vchrSortOrder: 301,
+    vchrDeliveryMode: null,
+  },
+  {
+    vchrTypeId: 69,
+    vchrTypeCode: 'Bil-WS',
+    vchrTypeName: 'Wholesale',
+    vchrTypeShort: 'WS',
+    vchrParentId: 3,
+    vchrNoPrefix: 'WS{BR}',
+    vchrSortOrder: 302,
+    vchrDeliveryMode: 'PICKUP',
   },
 ];
 
@@ -103,8 +115,9 @@ describe('BillVoucherTypeService.choices (review N11)', () => {
     expect(deviceCodes()).toEqual([
       [3, DEV],
       [68, null],
+      [69, null],
     ]);
-    expect(data.choices.map((c) => c.nextRefno)).toEqual(['NEXT', 'NEXT']);
+    expect(data.choices.map((c) => c.nextRefno)).toEqual(['NEXT', 'NEXT', 'NEXT']);
   });
 
   it('previews the branch counter in WHOLESALE mode, or when the setting is off', async () => {
@@ -113,8 +126,10 @@ describe('BillVoucherTypeService.choices (review N11)', () => {
     expect(deviceCodes()).toEqual([
       [3, null],
       [68, null],
+      [69, null],
       [3, null],
       [68, null],
+      [69, null],
     ]);
   });
 });
@@ -150,5 +165,21 @@ describe('BillVoucherTypeService.choices at an offline site (decision 64, re-rev
     const data = await service.choices(query('WHOLESALE'));
     expect(data.choices.map((c) => c.vchrTypeId)).toEqual([3]);
     expect(data.hasChildTypes).toBe(false);
+  });
+});
+
+describe('BillVoucherTypeService.choices — deliveryMode (delivery tracking Q3, decision 42)', () => {
+  it('gives each choice its own mode, else Sales Bill’s, else INSTANT', async () => {
+    const data = await make(true).service.choices(query('WHOLESALE'));
+    expect(data.choices.map((c) => [c.vchrTypeId, c.deliveryMode])).toEqual([
+      [3, 'INSTANT'],
+      [68, 'INSTANT'],
+      [69, 'PICKUP'],
+    ]);
+  });
+
+  it('answers INSTANT for every choice of a POS bill', async () => {
+    const data = await make(true).service.choices(query('POS'));
+    expect(data.choices.map((c) => c.deliveryMode)).toEqual(['INSTANT', 'INSTANT', 'INSTANT']);
   });
 });

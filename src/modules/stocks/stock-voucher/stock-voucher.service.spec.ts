@@ -3131,6 +3131,171 @@ describe('StockVoucherService', () => {
       });
     });
 
+    // ── delivery tracking (addendum §5.3, decision 68): the SHELF count ─────
+    describe('shelfQty — the shelf compared with Physical = book + Billed not delivered', () => {
+      /** BND rows of the holding, as readHoldingUndelivered reads them (base unit). */
+      const bndRow = (pending: number) => ({
+        bill_id: '01a20000-0000-7000-8000-000000000001',
+        bill_acc_year: '2026-2027',
+        bill_refno: 'WS/0016',
+        cust_name: 'ZT-A',
+        godown_id: GODOWN_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        bucket: 'SALEABLE',
+        pending_qty: new Prisma.Decimal(pending),
+        pending_base: new Prisma.Decimal(pending),
+        unit_name: 'Kg',
+      });
+      const stubBnd = (pending: number[], extra?: (sql: string) => unknown[] | undefined) => {
+        client.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+          const sql = strings.join(' ');
+          const hit = extra?.(sql);
+          if (hit) return Promise.resolve(hit);
+          if (sql.includes('op.pending_qty, op.pending_base')) return Promise.resolve(pending.map(bndRow));
+          if (sql.includes('stock_balance')) return Promise.resolve([balanceRow()]);
+          if (sql.includes('svh_freeze_stock = true')) return Promise.resolve([]);
+          return Promise.resolve([{ locked: 1, next_slno: BigInt(1) }]);
+        });
+      };
+      const shelfLine = (shelf: unknown, more: Record<string, unknown> = {}) =>
+        countPayload({
+          lines: [{ lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, shelfQty: shelf, ...more }] as never,
+        });
+
+      it('stores shelf, the BND snapshot, and counted = shelf − BND (variance = shelf − Physical)', async () => {
+        // book 120, billed not delivered 30 + 10 → Physical 160; the shelf holds 158.
+        stubBnd([30, 10]);
+        await service.save(PHYSICAL_RULES, shelfLine(158));
+
+        const line = createdLine();
+        expect(Number(line.sviShelfQty)).toBe(158);
+        expect(Number(line.sviUndeliveredQty)).toBe(40);
+        expect(Number(line.sviCountedQty)).toBe(118);
+        expect(Number(line.sviBookQty)).toBe(120);
+        // svi_diff_qty (GENERATED) = 118 − 120 = −2 = 158 − 160: shelf − Physical.
+      });
+
+      it('counted may be NEGATIVE: billed before the stock came (decision 68)', async () => {
+        // book −6 (billed ahead), billed not delivered 10, the shelf holds 4.
+        stubBnd([10], (sql) =>
+          sql.includes('stock_balance') ? [balanceRow({ sbl_on_hand_qty: new Prisma.Decimal(-6) })] : undefined,
+        );
+        await service.save(PHYSICAL_RULES, shelfLine(4));
+
+        const line = createdLine();
+        expect(Number(line.sviCountedQty)).toBe(-6);
+        expect(Number(line.sviUndeliveredQty)).toBe(10);
+        expect(Number(line.sviBookQty)).toBe(-6);
+      });
+
+      it('no BND: counted = shelf, snapshot 0', async () => {
+        stubBnd([]);
+        await service.save(PHYSICAL_RULES, shelfLine(118));
+        const line = createdLine();
+        expect(Number(line.sviCountedQty)).toBe(118);
+        expect(Number(line.sviUndeliveredQty)).toBe(0);
+      });
+
+      it('a line counted the old way keeps countedQty, with the BND snapshot beside it', async () => {
+        stubBnd([5]);
+        await service.save(PHYSICAL_RULES, countPayload());
+        const line = createdLine();
+        expect(Number(line.sviCountedQty)).toBe(118);
+        expect(line.sviShelfQty).toBeNull();
+        expect(Number(line.sviUndeliveredQty)).toBe(5);
+      });
+
+      it('a shelf line is counted (no COUNT_NOT_COUNTED); shelf 0 is a real answer', async () => {
+        stubBnd([]);
+        await service.save(PHYSICAL_RULES, shelfLine(0));
+        expect(Number(createdLine().sviCountedQty)).toBe(0);
+      });
+
+      it('refuses shelfQty with countedQty: PHY_SHELF_AND_COUNTED', async () => {
+        stubBnd([]);
+        await expect(service.save(PHYSICAL_RULES, shelfLine(10, { countedQty: 10 }))).rejects.toMatchObject({
+          response: {
+            errors: expect.arrayContaining([
+              expect.objectContaining({ code: 'PHY_SHELF_AND_COUNTED', params: { n: 1 } }),
+            ]),
+          },
+        });
+      });
+
+      it('refuses a negative shelf: STOCK_COUNT_QTY_NEGATIVE, shelf wording', async () => {
+        stubBnd([]);
+        await expect(service.save(PHYSICAL_RULES, shelfLine(-1))).rejects.toMatchObject({
+          response: {
+            errors: expect.arrayContaining([
+              expect.objectContaining({
+                code: 'STOCK_COUNT_QTY_NEGATIVE',
+                message: expect.stringContaining('shelfQty is a count and cannot be negative'),
+              }),
+            ]),
+          },
+        });
+      });
+
+      it('a re-save whose BND moved: undeliveredChanged, previousUndeliveredQty, WARN PHY_UNDELIVERED_CHANGED', async () => {
+        const LINE_ID = '01000000-0000-7000-8000-0000000000e2';
+        stubBnd([25], (sql) =>
+          sql.includes('FOR UPDATE')
+            ? [
+                {
+                  status: 'DRAFT',
+                  refno: 'PHY0001',
+                  locked: 1,
+                  ...lockedHeader({ svh_refno: 'PHY0001', svh_voucher_type: 'PHYSICAL', doc_date: '2026-06-30' }),
+                },
+              ]
+            : undefined,
+        );
+        client.stockVoucherItem.findMany.mockResolvedValue([
+          {
+            sviId: LINE_ID,
+            sviLineNo: 1,
+            sviSplitNo: 1,
+            sviItemId: ITEM_ID,
+            sviGodownId: GODOWN_ID,
+            sviLotId: LOT_ID,
+            sviBucket: 'SALEABLE',
+            sviBookQty: new Prisma.Decimal(120),
+            sviCountedQty: new Prisma.Decimal(118),
+            sviShelfQty: new Prisma.Decimal(158),
+            // Drawn when 40 were billed not delivered; a note gave 15 since.
+            sviUndeliveredQty: new Prisma.Decimal(40),
+          },
+        ]);
+
+        const result = await service.save(
+          PHYSICAL_RULES,
+          countPayload({
+            header: { svhId: SVH_ID } as never,
+            lines: [
+              { sviId: LINE_ID, lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, shelfQty: 158 },
+            ] as never,
+          }),
+        );
+
+        expect(result.undeliveredChanges).toEqual([
+          { sviId: LINE_ID, lineNo: 1, itemId: ITEM_ID, previousUndeliveredQty: 40, undeliveredQty: 25 },
+        ]);
+        expect(result.warnings).toEqual([
+          expect.objectContaining({
+            code: 'PHY_UNDELIVERED_CHANGED',
+            level: 'WARN',
+            params: expect.objectContaining({ n: 1, old: 40, new: 25 }),
+          }),
+        ]);
+        // counted re-based too: 158 − 25 = 133.
+        const update = client.stockVoucherItem.update.mock.calls.find(
+          (c: [{ data: Record<string, unknown> }]) => c[0].data.sviCountedQty !== undefined,
+        );
+        expect(Number(update[0].data.sviCountedQty)).toBe(133);
+      });
+    });
+
     it('refuses a count sheet for a document type that states its own lines', async () => {
       await expect(
         service.countSheet(OPENING_RULES, {

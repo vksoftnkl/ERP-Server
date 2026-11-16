@@ -60,6 +60,9 @@ import {
   numberedByOf,
   printDocTypeOf,
   sameValue,
+  checkDeliveryMode,
+  effectiveDeliveryMode,
+  hasDeliveryMode,
   type BranchFact,
   type MirrorField,
   type NamedRow,
@@ -89,6 +92,8 @@ interface Judged {
   warnings: VtIssue[];
   preview: NumberingPreview;
   offerBase: boolean | undefined;
+  /** Sales Bill or one of its children: the type carries a delivery mode (Q3). */
+  deliveryApplies: boolean;
 }
 
 interface TargetRow {
@@ -107,6 +112,8 @@ interface TargetRow {
   vchrPrintPurposeId: string | null;
   vchrPrintAfterPost: boolean;
   vchrTallyVoucherTypeName: string | null;
+  /** Delivery tracking (Q3): null on a child = the base's. */
+  vchrDeliveryMode: string | null;
 }
 
 const iso = (d: Date): string => d.toISOString().slice(0, 10);
@@ -330,9 +337,18 @@ export class VoucherTypesService {
       facts,
     );
     const inherited = this.inheritedOf(base ?? row);
+    const deliveryApplies = hasDeliveryMode(row, base);
+    const inheritedDeliveryMode = deliveryApplies ? ((base ?? row).vchrDeliveryMode ?? null) : null;
     return {
       type: row,
       inherited,
+      deliveryModeApplies: deliveryApplies,
+      inheritedDeliveryMode,
+      effectiveDeliveryMode: effectiveDeliveryMode(
+        row.vchrDeliveryMode,
+        inheritedDeliveryMode,
+        deliveryApplies,
+      ),
       kind: kindOf(row),
       numberedBy: numberedByOf(row),
       isBase: isBaseType(row),
@@ -381,6 +397,9 @@ export class VoucherTypesService {
         ? await this.loadForCompany(this.prisma, dto.vchrTypeId, company)
         : null;
     const judged = await this.judge(this.prisma, dto, existing, company);
+    const inheritedDeliveryMode = judged.deliveryApplies
+      ? ((judged.isBase ? judged.target.vchrDeliveryMode : judged.base?.vchrDeliveryMode) ?? null)
+      : null;
     return {
       ok: judged.errors.length === 0,
       // A success body's `errors` is not worded by the interceptor (it words
@@ -388,6 +407,14 @@ export class VoucherTypesService {
       errors: wordIssues(judged.errors),
       warnings: judged.warnings,
       preview: judged.preview,
+      vchrDeliveryMode: judged.target.vchrDeliveryMode,
+      deliveryModeApplies: judged.deliveryApplies,
+      inheritedDeliveryMode,
+      effectiveDeliveryMode: effectiveDeliveryMode(
+        judged.target.vchrDeliveryMode,
+        inheritedDeliveryMode,
+        judged.deliveryApplies,
+      ),
     };
   }
 
@@ -577,6 +604,12 @@ export class VoucherTypesService {
         dto.vchrTallyVoucherTypeName,
         existing ? existing.vchrTallyVoucherTypeName : null,
       ),
+      // A new child starts with null: the base's mode until one is chosen (§7.5 item 2).
+      vchrDeliveryMode: pick(
+        'vchrDeliveryMode',
+        dto.vchrDeliveryMode,
+        existing ? existing.vchrDeliveryMode : null,
+      ),
     };
     if (!isBase && target.vchrTallyVoucherTypeName === null) {
       // Q9: a child's Tally name defaults to its name.
@@ -680,6 +713,18 @@ export class VoucherTypesService {
       }
     }
 
+    // ── 4b · delivery mode (delivery tracking §8.4 item 11) ──
+    const deliveryApplies = hasDeliveryMode(
+      existing ?? { vchrTypeCode: '', vchrParentId: target.vchrParentId ?? base?.vchrTypeId ?? null },
+      isBase ? existing : base,
+    );
+    errors.push(
+      ...checkDeliveryMode(dto.vchrDeliveryMode, target.vchrDeliveryMode, {
+        applies: deliveryApplies,
+        isBase,
+      }),
+    );
+
     // ── 5 · print design ──
     const purposeChanged = target.vchrPrintPurposeId !== (existing?.vchrPrintPurposeId ?? null);
     if (target.vchrPrintPurposeId && purposeChanged) {
@@ -709,6 +754,7 @@ export class VoucherTypesService {
       warnings,
       preview,
       offerBase: dto.offerBase ?? undefined,
+      deliveryApplies,
     };
   }
 
@@ -743,6 +789,8 @@ export class VoucherTypesService {
           ...(numberedByOf(stored) === 'SCREEN' ? {} : numbering),
           ...print,
           vchrSortOrder: t.vchrSortOrder,
+          // Sales Bill (base) only: no other base type is ever sent one (NOT_ALLOWED).
+          ...(j.deliveryApplies ? { vchrDeliveryMode: t.vchrDeliveryMode } : {}),
         };
         const changed = Object.fromEntries(
           Object.entries(wanted).filter(
@@ -768,6 +816,7 @@ export class VoucherTypesService {
         vchrSortOrder: t.vchrSortOrder,
         vchrIsActive: t.vchrIsActive,
         vchrTallyVoucherTypeName: t.vchrTallyVoucherTypeName,
+        vchrDeliveryMode: j.deliveryApplies ? t.vchrDeliveryMode : null,
       };
       if (j.existing) {
         return await tx.accVoucherType.update({

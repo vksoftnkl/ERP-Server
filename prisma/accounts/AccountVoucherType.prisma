@@ -104,6 +104,10 @@ model AccVoucherType {
   vchrPrintPurposeId         String?              @db.Uuid @map("vchr_print_purpose_id")
   /// Print right after posting (Ctrl+Enter), never after a draft save
   vchrPrintAfterPost         Boolean              @default(false) @map("vchr_print_after_post")
+  /// Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
+  /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
+  /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type
+  vchrDeliveryMode           String?              @db.VarChar(10) @map("vchr_delivery_mode")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")

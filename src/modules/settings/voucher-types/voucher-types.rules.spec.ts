@@ -13,6 +13,9 @@ import {
   type BranchFact,
   type NumberingDraft,
   type NumberingFacts,
+  checkDeliveryMode,
+  effectiveDeliveryMode,
+  hasDeliveryMode,
 } from './voucher-types.rules';
 
 /** Voucher Types plan §5 / §7.2 — the master's rules that need no database. */
@@ -329,5 +332,39 @@ describe('lockedFieldChanges (§7.2 item 3, Q26)', () => {
     expect(sameValue(' srt ', 'srt')).toBe(true);
     expect(sameValue('SRT', 'srt')).toBe(false);
     expect(lockedFieldChanges(stored, { vchrNoSuffix: null }, ['vchrNoSuffix'], 'x')).toEqual([]);
+  });
+});
+
+describe('delivery mode rules (delivery tracking §8.4 item 11)', () => {
+  const bil = { vchrTypeCode: 'Bil', vchrParentId: null };
+  const child = { vchrTypeCode: 'Bil-RT', vchrParentId: 3 };
+  const jrl = { vchrTypeCode: 'Jrl', vchrParentId: null };
+
+  it('applies to Sales Bill and its children only', () => {
+    expect(hasDeliveryMode(bil, null)).toBe(true);
+    expect(hasDeliveryMode(child, { vchrTypeCode: 'Bil' })).toBe(true);
+    expect(hasDeliveryMode(jrl, null)).toBe(false);
+    expect(hasDeliveryMode({ vchrTypeCode: 'X', vchrParentId: 24 }, { vchrTypeCode: 'Jrl' })).toBe(
+      false,
+    );
+    expect(hasDeliveryMode(null, null)).toBe(false);
+  });
+
+  it('works out the effective mode child → base → INSTANT', () => {
+    expect(effectiveDeliveryMode('PICKUP', 'INSTANT', true)).toBe('PICKUP');
+    expect(effectiveDeliveryMode(null, 'DISPATCH', true)).toBe('DISPATCH');
+    expect(effectiveDeliveryMode(null, null, true)).toBe('INSTANT');
+    expect(effectiveDeliveryMode('PICKUP', null, false)).toBeNull();
+  });
+
+  it('refuses a cleared mode on a Sales Bill type and any mode elsewhere', () => {
+    const codes = (sent: string | null | undefined, applies: boolean) =>
+      checkDeliveryMode(sent, null, { applies }).map((i) => i.code);
+    expect(codes(null, true)).toEqual(['VT_DELIVERY_MODE_REQUIRED']);
+    expect(codes(undefined, true)).toEqual([]);
+    expect(codes('PICKUP', true)).toEqual([]);
+    expect(codes('PICKUP', false)).toEqual(['VT_DELIVERY_MODE_NOT_ALLOWED']);
+    expect(codes(null, false)).toEqual([]);
+    expect(codes(undefined, false)).toEqual([]);
   });
 });

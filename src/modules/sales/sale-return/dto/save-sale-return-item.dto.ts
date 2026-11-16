@@ -97,6 +97,17 @@ export class SaveSaleReturnItemDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sriFreeQty?: string | number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    minimum: 0,
+    description:
+      'Delivery tracking (addendum §5.2): "Not taken" — the part of this row (return + free, row unit) that ' +
+      'never left the godown. Left out / null = the server default (the smaller of the qty and what the bill ' +
+      'line still has to give, in row order; 0 on a Claim, on SCRAP, or in another godown / lot). Send it only ' +
+      'for a typed row. Refusals: DELIVERY_RETURN_OVER_QTY, _CLAIM, _OVER, _NOT_GIVEN, _GODOWN.',
+  })
+  @NullableNumber(0)
+  sriUndeliveredQty?: string | number | null;
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sriNetQty?: string | number | null;
@@ -381,6 +392,8 @@ export const SRI_OPTIONAL_FIELDS = [
   'sriCaseQty',
   'sriReturnQty',
   'sriFreeQty',
+  // Delivery tracking: always written by the server (typed, else the default).
+  'sriUndeliveredQty',
   'sriNetQty',
   'sriWeightQty',
   'sriRate',

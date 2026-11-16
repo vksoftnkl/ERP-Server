@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (1582 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (1584 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -675,12 +675,16 @@ SELECT v.* FROM (VALUES
     ,('019fd02d-0093-7e58-a0bc-a6490a6cae50', 86 , 9 , 'Items'              , 'sb_tot_items'              , 'Text'          , 6.00  , 10.00, 'center', true , false, false, false, NULL, NULL, NULL, 'sb_tot_items'         , false, 'system')
     ,('019fd02d-0094-75e2-bcf1-cb70ce500edb', 86 , 10, 'Total'              , 'sb_bill_amt'               , 'Text'          , 11.00 , 11.00, 'right' , true , false, false, false, NULL, NULL, NULL, 'sb_bill_amt'          , false, 'system')
     ,('019fd02d-0094-7d4a-9cb1-0d821e8d7b47', 86 , 11, 'Status'             , 'sb_status'                 , 'Text'          , 9.00  , 12.00, 'center', true , false, false, false, NULL, NULL, NULL, 'sb_status'            , false, 'system')
-    ,('019fd02d-0095-7477-9c84-e4a4140c85f8', 86 , 12, 'Prints'             , 'sb_print_count'            , 'Text'          , 4.00  , 13.00, 'center', true , false, false, false, NULL, NULL, NULL, 'sb_print_count'       , false, 'system')
-    ,('019fd02d-0095-7ced-95fa-ae8514eeb898', 86 , 13, 'By'                 , 'sb_created_by'             , 'Text'          , 18.00 , 14.00, 'left'  , true , false, false, false, NULL, NULL, NULL, 'sb_created_by'        , false, 'system')
+    ,('019fd02d-0095-7477-9c84-e4a4140c85f8', 86 , 12, 'Prints'             , 'sb_print_count'            , 'Text'          , 4.00  , 14.00, 'center', true , false, false, false, NULL, NULL, NULL, 'sb_print_count'       , false, 'system')
+    ,('019fd02d-0095-7ced-95fa-ae8514eeb898', 86 , 13, 'By'                 , 'sb_created_by'             , 'Text'          , 18.00 , 15.00, 'left'  , true , false, false, false, NULL, NULL, NULL, 'sb_created_by'        , false, 'system')
     -- 20261116100000_voucher_types_master (Voucher Types P1, VT-36): the bill's voucher type
     -- after Bill No (the columns after it moved one place right) and the hidden print design.
     ,('01a1da95-cae5-75b1-a435-e6d36b8d40b6', 86 , 14, 'Vch Type'           , 'sb_vchr_type'              , 'Text'          , 5.00  , 7.00 , 'left'  , true , false, false, false, NULL, NULL, NULL, 'sb_vchr_type'         , false, 'system')
-    ,('01a1da95-cae5-75d1-bcec-9e7b89a4c22c', 86 , 15, 'Print design'       , 'print_purpose_code'        , 'Text'          , 10.00 , 15.00, 'left'  , false, false, false, false, NULL, NULL, NULL, 'print_purpose_code'   , false, 'system')
+    ,('01a1da95-cae5-75d1-bcec-9e7b89a4c22c', 86 , 15, 'Print design'       , 'print_purpose_code'        , 'Text'          , 10.00 , 16.00, 'left'  , false, false, false, false, NULL, NULL, NULL, 'print_purpose_code'   , false, 'system')
+    -- 20261117100000_delivery_tracking (delivery tracking P1, plan §7.7): the bill's computed delivery
+    -- status after Status (Prints, By and Print design moved one place right) and the hidden mode.
+    ,('01a1e1d0-0860-7000-8000-000000086016', 86 , 16, 'Delivery'           , 'sb_delivery_status'        , 'Text'          , 9.00  , 13.00, 'center', true , false, false, false, NULL, NULL, NULL, 'sb_delivery_status'   , false, 'system')
+    ,('01a1e1d0-0860-7000-8000-000000086017', 86 , 17, 'Delivery mode'      , 'sb_delivery_mode'          , 'Text'          , 9.00  , 17.00, 'left'  , false, false, false, false, NULL, NULL, NULL, 'sb_delivery_mode'     , false, 'system')
     -- ============ TXN MAIN LIST - SALES ORDER (id 87) ============
     ,('019feac1-bb92-7438-a784-7be9689d97db', 87 , 1 , '#'                  , 'so_id'                     , 'Text'          , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb93-7a20-be81-e6a04d09fc94', 87 , 2 , 'Comp#'              , 'so_company_id'             , 'Text'          , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')

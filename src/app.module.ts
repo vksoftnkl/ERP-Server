@@ -85,6 +85,7 @@ import { SaleOrderDeskModule } from './modules/sales/sale-order-desk/sale-order-
 import { DeliveryChallanModule } from './modules/sales/delivery-challan/delivery-challan.module';
 import { DcReturnModule } from './modules/sales/dc-return/dc-return.module';
 import { SaleReturnModule } from './modules/sales/sale-return/sale-return.module';
+import { DeliveryModule } from './modules/sales/delivery/delivery.module';
 import { TempCreditModule } from './modules/sales/temp-credit/temp-credit.module';
 import { TxnHoldModule } from './modules/sales/txn-hold/txn-hold.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
@@ -113,6 +114,7 @@ import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/sell
 import { CostPriceBulkModule } from './modules/stocks/cost-price-bulk/cost-price-bulk.module';
 import { ItemLedgerModule } from './modules/stocks/reports/item-ledger/item-ledger.module';
 import { StockSummaryModule } from './modules/stocks/reports/stock-summary/stock-summary.module';
+import { GodownPositionModule } from './modules/stocks/reports/godown-position/godown-position.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -271,6 +273,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     DeliveryChallanModule,
     DcReturnModule,
     SaleReturnModule,
+    // Delivery tracking phase 1: /delivery-notes/* (menu 305), /deliveries/* (304).
+    DeliveryModule,
     TempCreditModule,
     TxnHoldModule,
     BankListModule,
@@ -301,6 +305,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemLedgerModule,
     // Stock Summary (menu 302), /stock/reports/summary/*.
     StockSummaryModule,
+    // Godown Stock Position (menu 306), /stock/reports/godown-position/*.
+    GodownPositionModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,

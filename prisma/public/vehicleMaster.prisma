@@ -30,6 +30,7 @@ model VehicleMaster {
   driver            EmployeeMaster?    @relation("VehicleDriver",      fields: [vehDriverId],      references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_driver")
 
   saleReturns       SaleReturn[]       @relation("SaleReturnVehicle")
+  deliveryNotes     SaleDeliveryNote[] @relation("SaleDeliveryNoteVehicle")
   saleDcs           SaleDc[]           @relation("SaleDcVehicle")
   saleDcReturns     SaleDcReturn[]     @relation("SaleDcReturnVehicle")
 

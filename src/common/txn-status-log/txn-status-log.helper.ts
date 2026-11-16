@@ -62,6 +62,9 @@ export enum TxnStatusDocType {
   // the bill, moved by every receipt (PARTIAL / SETTLED / REOPENED /
   // WRITTEN_OFF), cancelled with the bill or a voided tender. Keyed by atc_id.
   TEMP_CREDIT = 'TEMP_CREDIT',
+  // Delivery tracking (20261117100000, ck_tsl_src_doc_type): the Delivery
+  // Note / gate pass (menu 305) — CREATED, POSTED, GOODS_BACK, CANCELLED.
+  DELIVERY_NOTE = 'DELIVERY_NOTE',
   OTHER = 'OTHER',
 }
 // tsl_event has no value CHECK of its own — ck_tsl_event_shape only demands a
@@ -123,6 +126,12 @@ export enum TxnStatusEvent {
   // Orders merged on the desk: on each old order ("Merged into …") and on the
   // new one ("Made from …").
   MERGED = 'MERGED',
+  // Delivery tracking: goods refused at the door came back on a posted
+  // Delivery Note (the note stays POSTED; remarks = the reason).
+  GOODS_BACK = 'GOODS_BACK',
+  // Delivery tracking: a posted bill's Pickup ↔ Dispatch switch
+  // (/deliveries/mode; from / to = the modes, remarks = the reason).
+  DELIVERY_MODE = 'DELIVERY_MODE',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

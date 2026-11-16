@@ -281,6 +281,9 @@ describe('SaleReturnService', () => {
   let promo: { reverse: jest.Mock };
   let gst: { enqueueAfterPost: jest.Mock; cancelIrn: jest.Mock; cancelEwb: jest.Mock };
   let till: { resolveForMoney: jest.Mock; stampTenderRows: jest.Mock };
+  // Delivery tracking (§8.4 item 9): no Pickup / Dispatch bill lines unless a test says so.
+  let deliveryPending: { linesByKeys: jest.Mock; linesOfBills: jest.Mock };
+  let deliveryStatus: { recompute: jest.Mock };
   let audit: { logDocumentRevision: jest.Mock };
   let service: SaleReturnService;
   let row: Record<string, unknown>;
@@ -525,6 +528,11 @@ describe('SaleReturnService', () => {
     tenderDetail = { syncDocumentTenders: jest.fn().mockResolvedValue([]) };
     let revNo = 0;
     audit = { logDocumentRevision: jest.fn(async () => ({ revNo: ++revNo })) };
+    deliveryPending = {
+      linesByKeys: jest.fn().mockResolvedValue([]),
+      linesOfBills: jest.fn().mockResolvedValue([]),
+    };
+    deliveryStatus = { recompute: jest.fn().mockResolvedValue([]) };
     approvals = {
       assessGate: jest.fn(async () => ({ state: 'NONE' })),
       settleGate: jest.fn(async () => null),
@@ -719,6 +727,7 @@ describe('SaleReturnService', () => {
         priceLevel: 1,
       })),
       returnCharges: jest.fn(async () => []),
+      lockBillHeader: jest.fn(async () => 1),
       lockBillLines: jest.fn(async () => 1),
       lockBillCharges: jest.fn(async () => 0),
       billTenders: jest.fn(async () => ({
@@ -775,6 +784,8 @@ describe('SaleReturnService', () => {
       tenderDetail as never,
       till as never,
       approvals as never,
+      deliveryPending as never,
+      deliveryStatus as never,
     );
     // The document store is built inside the constructor; swap in the mock.
     (service as unknown as { store: unknown }).store = store;
@@ -4740,6 +4751,380 @@ describe('SaleReturnService', () => {
         expect.any(Date),
         null,
       );
+    });
+  });
+
+  describe('delivery tracking — goods never taken (plan §8.4 item 9, addendum §5.2)', () => {
+    /** The bill line as /post sees it: a Pickup bill, 10 billed, 4 given, 6 still to give. */
+    const pickupLine = (over: Record<string, unknown> = {}) => ({
+      billItemId: BILL_LINE,
+      billAccYear: ACC_YEAR,
+      billId: BILL_ID,
+      billRefno: 'bil00101',
+      billDate: TODAY,
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      billStatus: 'POSTED',
+      billDeleted: false,
+      billMode: 'WHOLESALE',
+      deliveryMode: 'PICKUP',
+      deliveryStatus: 'PART',
+      custId: CUST_ID,
+      custName: 'ZT',
+      lineNo: 1,
+      splitNo: 1,
+      lineDeleted: false,
+      isService: false,
+      srcDocType: null,
+      srcDocRefno: null,
+      itemId: ITEM_ID,
+      unitId: UNIT_ID,
+      godownId: GODOWN_ID,
+      lotId: null,
+      bucket: 'SALEABLE',
+      billedQty: D(10),
+      factor: D(1),
+      unitKg: D(0),
+      settledQty: D(4),
+      givenQty: D(4),
+      pendingQty: D(6),
+      settledBase: D(4),
+      givenBase: D(4),
+      pendingBase: D(6),
+      eligible: true,
+      ...over,
+    });
+    const inserts = (kind: string) =>
+      tx.$executeRaw.mock.calls.filter(([strings]: [TemplateStringsArray]) =>
+        strings.join('?').includes('INSERT INTO sales.sale_delivery_event') &&
+        strings.join('?').includes(`'${kind}'`),
+      );
+
+    beforeEach(() => {
+      deliveryPending.linesByKeys.mockResolvedValue([pickupLine()]);
+    });
+
+    it('stores the default on save: the smaller of the qty and what is still to give', async () => {
+      await service.save({
+        ...KEYS,
+        srId: undefined,
+        srBillId: BILL_ID,
+        srBillAccYear: ACC_YEAR,
+        items: [srItem({ sriId: undefined, sriReturnQty: D(1) })],
+      } as unknown as SaveSaleReturnDto);
+
+      const [line] = (store.saveDraft.mock.calls[0][1] as Record<string, unknown>).items as Record<
+        string,
+        unknown
+      >[];
+      expect(String(line.sriUndeliveredQty)).toBe('1');
+    });
+
+    it('refuses a typed figure over the row qty at save (DELIVERY_RETURN_OVER_QTY), writing nothing', async () => {
+      const refusal = await refusalOf(
+        service.save({
+          ...KEYS,
+          srId: undefined,
+          srBillId: BILL_ID,
+          srBillAccYear: ACC_YEAR,
+          items: [srItem({ sriId: undefined, sriReturnQty: D(1), sriUndeliveredQty: 2 })],
+        } as unknown as SaveSaleReturnDto),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: 'DELIVERY_RETURN_OVER_QTY', line: 1 }] },
+      });
+      expect(store.saveDraft).not.toHaveBeenCalled();
+    });
+
+    it('posts one RETURN event for the not-taken part (settle +u, out 0), then recomputes the bill', async () => {
+      items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(1) })];
+
+      await service.post(KEYS);
+
+      const [call] = inserts('RETURN');
+      expect(call).toBeDefined();
+      const values = call.slice(1).map(String);
+      expect(values).toEqual(expect.arrayContaining([BILL_LINE, SR_ID, LINE_A, '1']));
+      expect(inserts('RETURN_CANCEL')).toHaveLength(0);
+      expect(deliveryStatus.recompute).toHaveBeenCalledWith(tx, [
+        { billId: BILL_ID, billAccYear: ACC_YEAR },
+      ]);
+    });
+
+    it('refuses the post when the taken part never left the godown (DELIVERY_RETURN_NOT_GIVEN)', async () => {
+      deliveryPending.linesByKeys.mockResolvedValue([
+        pickupLine({ givenBase: D(0), givenQty: D(0), settledQty: D(0), pendingBase: D(10) }),
+      ]);
+      items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(0) })];
+
+      const refusal = await refusalOf(service.post(KEYS));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: 'DELIVERY_RETURN_NOT_GIVEN' }] },
+      });
+      expect(stock.post).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing for an Instant bill’s line (not eligible)', async () => {
+      deliveryPending.linesByKeys.mockResolvedValue([
+        pickupLine({ eligible: false, deliveryMode: 'INSTANT' }),
+      ]);
+      items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(0) })];
+
+      await service.post(KEYS);
+
+      expect(inserts('RETURN')).toHaveLength(0);
+    });
+
+    it('cancel reverses each live RETURN with a RETURN_CANCEL and recomputes the bill', async () => {
+      row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+      const base = tx.$queryRaw.getMockImplementation()!;
+      tx.$queryRaw.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (strings.join('?').includes("e.sde_kind = 'RETURN'")) {
+          return [
+            {
+              sde_id: '019c6f6c-be87-7a11-8905-36092c46e0f0',
+              sde_acc_year: ACC_YEAR,
+              sde_src_line_id: LINE_A,
+              sde_settle_qty: D(1),
+              sde_settle_base_qty: D(1),
+              sde_bill_item_id: BILL_LINE,
+              sde_bill_acc_year: ACC_YEAR,
+              sde_bill_id: BILL_ID,
+              reversed: false,
+            },
+          ];
+        }
+        return base(strings, ...values);
+      });
+
+      await service.cancel({ ...KEYS, reason: 'Posted twice' });
+
+      expect(inserts('RETURN_CANCEL')).toHaveLength(1);
+      expect(deliveryStatus.recompute).toHaveBeenCalledWith(tx, [
+        { billId: BILL_ID, billAccYear: ACC_YEAR },
+      ]);
+    });
+
+    it('bill-lines answers each line’s To give in its unit and base (0 when not eligible)', async () => {
+      deliveryPending.linesByKeys.mockResolvedValue([pickupLine()]);
+
+      const out = await service.billLines({
+        sbId: BILL_ID,
+        sbAccYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+      } as never);
+
+      const [line] = (out as { lines: Record<string, unknown>[] }).lines;
+      expect(line).toMatchObject({ billPendingQty: 6, billPendingBase: 6 });
+    });
+
+    describe('P6 review round (2026-11-16): S1 and N7', () => {
+      const order = (m: jest.Mock) => m.mock.invocationCallOrder[0];
+      /** The return's line LINE_A carries a live RETURN of `settle` (base = row unit here). */
+      const liveReturn = (settle: Prisma.Decimal.Value) => {
+        const base = tx.$queryRaw.getMockImplementation()!;
+        tx.$queryRaw.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join('?').includes("e.sde_kind = 'RETURN'")) {
+            return [
+              {
+                sde_id: '019c6f6c-be87-7a11-8905-36092c46e0f0',
+                sde_acc_year: ACC_YEAR,
+                sde_src_line_id: LINE_A,
+                sde_settle_qty: D(settle),
+                sde_settle_base_qty: D(settle),
+                sde_bill_item_id: BILL_LINE,
+                sde_bill_acc_year: ACC_YEAR,
+                sde_bill_id: BILL_ID,
+                reversed: false,
+              },
+            ];
+          }
+          return base(strings, ...values);
+        });
+      };
+
+      it('S1: post locks the bill HEADER before its lines (the note post’s order)', async () => {
+        await service.post(KEYS);
+
+        expect(rd.lockBillHeader).toHaveBeenCalledWith(tx, { sbId: BILL_ID, accYear: ACC_YEAR });
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(rd.lockBillLines));
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(deliveryPending.linesByKeys));
+      });
+
+      it('S1: cancel and amend lock the bill header before its lines and before anything unwinds', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        await service.cancel({ ...KEYS, reason: 'Posted twice' });
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(rd.lockBillLines));
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(legs.reverseLegs));
+
+        rd.lockBillHeader.mockClear();
+        rd.lockBillLines.mockClear();
+        legs.reverseLegs.mockClear();
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        await service.amend({
+          ...KEYS,
+          srCustId: CUST_ID,
+          baseRevision: 1,
+          editRemark: 'Wrong qty',
+          overrides: [],
+        } as never);
+        expect(rd.lockBillHeader).toHaveBeenCalledWith(tx, { sbId: BILL_ID, accYear: ACC_YEAR });
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(rd.lockBillLines));
+        expect(order(rd.lockBillHeader)).toBeLessThan(order(legs.reverseLegs));
+      });
+
+      it('S1: rule 3 again at the event write — a note gave the rest meanwhile → DELIVERY_RETURN_OVER, no RETURN written', async () => {
+        let reads = 0;
+        deliveryPending.linesByKeys.mockImplementation(async () => [
+          ++reads === 1
+            ? pickupLine()
+            : pickupLine({
+                settledQty: D(10),
+                givenQty: D(10),
+                pendingQty: D(0),
+                settledBase: D(10),
+                givenBase: D(10),
+                pendingBase: D(0),
+              }),
+        ]);
+        items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(1) })];
+
+        const refusal = await refusalOf(service.post(KEYS));
+
+        expect(reads).toBeGreaterThanOrEqual(2);
+        expect(refusal).toMatchObject({
+          status: 422,
+          body: { errors: [{ code: 'DELIVERY_RETURN_OVER' }] },
+        });
+        expect(inserts('RETURN')).toHaveLength(0);
+      });
+
+      it('N7: an amend that sends no Not taken on a line with a live RETURN keeps the posted figure', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        liveReturn('0.5');
+        // The posted line holds 0.5; the body names it and sends no
+        // sriUndeliveredQty. The default from today's pending (6) would be 1
+        // and the amend lock would refuse it.
+        items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D('0.5') })];
+
+        await service.amend({
+          ...KEYS,
+          srCustId: CUST_ID,
+          baseRevision: 1,
+          editRemark: 'Rate fix',
+          overrides: [],
+          srBillId: BILL_ID,
+          srBillAccYear: ACC_YEAR,
+          items: [srItem({ sriReturnQty: D(1) })],
+        } as never);
+
+        const [line] = (store.saveDraft.mock.calls[0][1] as Record<string, unknown>).items as Record<
+          string,
+          unknown
+        >[];
+        expect(String(line.sriUndeliveredQty)).toBe('0.5');
+        expect(inserts('RETURN')).toHaveLength(0);
+        expect(inserts('RETURN_CANCEL')).toHaveLength(0);
+      });
+
+      it('N7: a line posted with 0 (no RETURN) keeps 0 on an amend that sends nothing, though pending is open', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        // posted with 0 not taken; pending is 6 now, so the default would be 1
+        items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(0) })];
+
+        await service.amend({
+          ...KEYS,
+          srCustId: CUST_ID,
+          baseRevision: 1,
+          editRemark: 'Rate fix',
+          overrides: [],
+          srBillId: BILL_ID,
+          srBillAccYear: ACC_YEAR,
+          items: [srItem({ sriReturnQty: D(1) })],
+        } as never);
+
+        const [line] = (store.saveDraft.mock.calls[0][1] as Record<string, unknown>).items as Record<
+          string,
+          unknown
+        >[];
+        expect(String(line.sriUndeliveredQty)).toBe('0');
+        expect(inserts('RETURN')).toHaveLength(0);
+      });
+
+      it('N7: a typed number on an amend still changes a line posted with 0 (a new RETURN)', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(0) })];
+
+        await service.amend({
+          ...KEYS,
+          srCustId: CUST_ID,
+          baseRevision: 1,
+          editRemark: 'Never taken after all',
+          overrides: [],
+          srBillId: BILL_ID,
+          srBillAccYear: ACC_YEAR,
+          items: [srItem({ sriReturnQty: D(1), sriUndeliveredQty: 1 })],
+        } as never);
+
+        const [line] = (store.saveDraft.mock.calls[0][1] as Record<string, unknown>).items as Record<
+          string,
+          unknown
+        >[];
+        expect(String(line.sriUndeliveredQty)).toBe('1');
+      });
+
+      it('N7: a typed 0 on that line still clears it (RETURN_CANCEL)', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        liveReturn('0.5');
+        items = [srItem({ sriReturnQty: D(1), sriUndeliveredQty: D(0) })];
+
+        await service.amend({
+          ...KEYS,
+          srCustId: CUST_ID,
+          baseRevision: 1,
+          editRemark: 'All taken',
+          overrides: [],
+          srBillId: BILL_ID,
+          srBillAccYear: ACC_YEAR,
+          items: [srItem({ sriReturnQty: D(1), sriUndeliveredQty: 0 })],
+        } as never);
+
+        expect(inserts('RETURN_CANCEL')).toHaveLength(1);
+      });
+
+      it('N7: /get on a posted return sends undeliveredDefaultQty — the kept figure on a line with a live RETURN', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        liveReturn('0.5');
+        items = [srItem({ sriBillAccYear: ACC_YEAR, sriUndeliveredQty: D('0.5') })];
+
+        const result = (await service.get({
+          id: SR_ID,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          accYear: ACC_YEAR,
+        })) as { items: Record<string, unknown>[] };
+
+        expect(result.items[0]).toMatchObject({ undeliveredDefaultQty: 0.5, sriUndeliveredQty: D('0.5') });
+      });
+
+      it('N7: /get on a posted line with 0 sends undeliveredDefaultQty 0 (kept), not today’s default', async () => {
+        row = srRow({ srStatus: 'POSTED', srPostedVoucherId: VOUCHER_ID });
+        items = [srItem({ sriBillAccYear: ACC_YEAR, sriUndeliveredQty: D(0) })];
+
+        const result = (await service.get({
+          id: SR_ID,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          accYear: ACC_YEAR,
+        })) as { items: Record<string, unknown>[] };
+
+        expect(result.items[0]).toMatchObject({ undeliveredDefaultQty: 0, billPendingQty: 6 });
+      });
     });
   });
 });

@@ -28,7 +28,7 @@ describe('BillController', () => {
   };
   let voids: { void: jest.Mock; check: jest.Mock };
   let read: { openSources: jest.Mock; partyContext: jest.Mock; tenderContext: jest.Mock };
-  let band: { deliveryStatus: jest.Mock; updateRemarks: jest.Mock; transport: jest.Mock };
+  let band: { updateRemarks: jest.Mock; transport: jest.Mock };
   let retender: { retender: jest.Mock };
   let controller: BillController;
 
@@ -55,7 +55,6 @@ describe('BillController', () => {
       tenderContext: jest.fn().mockResolvedValue({ canRetender: true }),
     };
     band = {
-      deliveryStatus: jest.fn().mockResolvedValue({ sbDeliveryStatus: 'PACKED' }),
       updateRemarks: jest.fn().mockResolvedValue({ sbRemarks: 'x' }),
       transport: jest.fn().mockResolvedValue({ lrNo: 'LR1' }),
     };
@@ -191,11 +190,10 @@ describe('BillController', () => {
   });
 
   it('wraps the three band verbs', async () => {
-    await expect(controller.deliveryStatus({ ...KEYS, event: 'PACKED' })).resolves.toEqual({
-      success: true,
-      message: 'Delivery status updated',
-      data: { sbDeliveryStatus: 'PACKED' },
-    });
+    // §2.10 is retired (delivery tracking §8.4 item 8): 410, whatever is sent.
+    expect(() => controller.deliveryStatus({ ...KEYS, event: 'PACKED' })).toThrow(
+      expect.objectContaining({ status: 410 }) as unknown as Error,
+    );
     await expect(
       controller.updateRemarks({ ...KEYS, sbRemarks: 'x', editRemark: 'typo' }),
     ).resolves.toMatchObject({ message: 'Remarks updated', data: { sbRemarks: 'x' } });

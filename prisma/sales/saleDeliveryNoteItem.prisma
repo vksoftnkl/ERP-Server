@@ -1,0 +1,92 @@
+/// A Delivery Note line: one bill line given now, in the bill line's unit,
+/// from the note's godown and the lot actually given (migration
+/// 20261117100000_delivery_tracking, plan §7.2).
+///
+/// LIST-partitioned by sdniAccYear (= the note's year), PK (sdniId,
+/// sdniAccYear). The client may send its own uuidv7 sdniId. No UNIQUE on
+/// (note, bill line): one bill line may be given in two lots on one note.
+/// Zero-qty lines are kept on a draft and soft-deleted at post.
+///
+/// sdniItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId (the bill line's unit).
+model SaleDeliveryNoteItem {
+  sdniId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdni_id")
+  sdniNoteId            String    @db.Uuid                             @map("sdni_note_id")
+  sdniAccYear           String    @db.Char(9)                          @map("sdni_acc_year")
+  sdniCompanyId         String    @db.Uuid                             @map("sdni_company_id")
+  sdniBranchId          String    @db.Uuid                             @map("sdni_branch_id")
+  sdniTenantId          String?   @db.Uuid                             @map("sdni_tenant_id")
+  /// ck_sdni_line_no >= 1.
+  sdniLineNo            Int                                            @map("sdni_line_no")
+
+  // ── The bill line this gives ─────────────────────────────────────────
+  sdniBillId            String    @db.Uuid                             @map("sdni_bill_id")
+  sdniBillAccYear       String    @db.Char(9)                          @map("sdni_bill_acc_year")
+  sdniBillItemId        String    @db.Uuid                             @map("sdni_bill_item_id")
+  /// Snapshot.
+  sdniBillLineNo        Int                                            @map("sdni_bill_line_no")
+  /// Snapshot.
+  sdniBillRefno         String?   @db.VarChar(40)                      @map("sdni_bill_refno")
+  sdniItemId            String    @db.Uuid                             @map("sdni_item_id")
+  sdniItemUnitId        String    @db.Uuid                             @map("sdni_item_unit_id")
+  /// The bill line's factor (§5.1: its own sbiToBaseFactor when > 0, else the
+  /// unit conversion, else 1).
+  sdniToBaseFactor      Decimal   @db.Decimal(15, 6)                   @map("sdni_to_base_factor")
+
+  // ── Where it was billed from, and where it was given from ────────────
+  /// The bill line's godown.
+  sdniBillGodownId      String    @db.Uuid                             @map("sdni_bill_godown_id")
+  /// The giving godown (= the note's). Different from the bill's only with
+  /// the Override right (Q18): post then moves it on the books.
+  sdniGodownId          String    @db.Uuid                             @map("sdni_godown_id")
+  /// The bill's lot.
+  sdniBillLotId         String?   @db.Uuid                             @map("sdni_bill_lot_id")
+  /// The lot given; another lot = a re-lot pair at post (decision 38).
+  sdniLotId             String?   @db.Uuid                             @map("sdni_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE (ck_sdni_bucket, as ck_sbi_bucket).
+  sdniBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sdni_bucket")
+
+  // ── Quantities ───────────────────────────────────────────────────────
+  /// Give now, in the line's unit (ck_sdni_qty >= 0).
+  sdniQty               Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_qty")
+  /// ck_sdni_base_qty >= 0.
+  sdniBaseQty           Decimal   @default(0) @db.Decimal(18, 6)       @map("sdni_base_qty")
+  sdniWeightKg          Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_weight_kg")
+  /// How many came by scanner.
+  sdniScannedQty        Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_scanned_qty")
+  /// The Override was used for this line (logged in sdnOverrides too).
+  sdniOtherGodownOk     Boolean   @default(false)                      @map("sdni_other_godown_ok")
+  sdniRemarks           String?   @db.VarChar(200)                     @map("sdni_remarks")
+
+  sdniIsDeleted         Boolean   @default(false)                      @map("sdni_is_deleted")
+  sdniSyncDate          DateTime? @db.Timestamptz(6)                   @map("sdni_sync_date")
+  sdniCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdni_created_on")
+  sdniCreatedBy         String    @db.VarChar(60)                      @map("sdni_created_by")
+  sdniModifiedOn        DateTime? @db.Timestamptz(6)                   @map("sdni_modified_on")
+  sdniModifiedBy        String?   @db.VarChar(60)                      @map("sdni_modified_by")
+
+  // Relations
+  note                  SaleDeliveryNote   @relation("SaleDeliveryNoteItems",       fields: [sdniNoteId, sdniAccYear],          references: [sdnId, sdnAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_note")
+  billItem              SaleBillItem       @relation("SaleDeliveryNoteItemBill",    fields: [sdniBillItemId, sdniBillAccYear], references: [sbiId, sbiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_bill_item")
+  item                  ItemMaster         @relation("SaleDeliveryNoteItemItem",    fields: [sdniItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_item")
+  unit                  ItemUnitConversion @relation("SaleDeliveryNoteItemUnit",    fields: [sdniItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_item_unit")
+  billLot               StockLot?          @relation("SaleDeliveryNoteItemBillLot", fields: [sdniBillLotId],  references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_bill_lot")
+  lot                   StockLot?          @relation("SaleDeliveryNoteItemLot",     fields: [sdniLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_lot")
+
+  // No FK on sdniBillId, sdniBillGodownId or sdniGodownId (plan §7.2): the
+  // bill line's FK carries the bill, and both godowns are checked by the
+  // service against the bill line and the note.
+
+  @@id([sdniId, sdniAccYear], map: "pk_sale_delivery_note_item")
+
+  // Partial indexes are DB-only: ix_sdni_note (note, year, line no),
+  // ix_sdni_bill_item (bill line, bill year: the bill's Delivery box finds
+  // drafts), FK-covering ix_sdni_item / ix_sdni_lot, all WHERE NOT deleted;
+  // ix_sync_pending_sale_delivery_note_item.
+  //
+  // CHECK constraints (DB-only): ck_sdni_line_no, ck_sdni_bucket, ck_sdni_qty,
+  //   ck_sdni_base_qty.
+
+  @@map("sale_delivery_note_item")
+  @@schema("sales")
+}

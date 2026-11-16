@@ -160,6 +160,13 @@ SELECT v.company, v.code, v.name, v.direction,
     (NULL, 'RETURN_STORE',  'Back to main store',        'BOTH',
      ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 210,
      'Unsold or surplus stock sent back to the main store.'),
+    -- The system reason of the same-branch transfer a Delivery Note posts when the
+    -- goods were given from another godown than the bill's (delivery tracking P1,
+    -- decision 38). Migration 20261117100000_delivery_tracking inserts the same row
+    -- on a database that already has the table.
+    (NULL, 'DELIVERY_GODOWN', 'Given from another godown at delivery', 'BOTH',
+     ARRAY['TRANSFER_OUT','TRANSFER_IN']::text[],         false, 220,
+     'Posted by a Delivery Note: the books follow the goods to the bill''s godown.'),
 
     -- ── purchase returns: why goods went back to the supplier ─────────────
     -- The per-line reason on a Purchase Return (menu 25). OUT, and named only

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { SHADOW_DOC_TYPES } from './item-ledger.rules';
+import { AMENDABLE_SHADOW_DOC_TYPES } from './item-ledger.rules';
 
 /**
  * The Item Ledger's SQL (plan 2026-11-11 §5.4). Every statement is built here,
@@ -298,7 +298,7 @@ export function ledgerChain(s: LedgerSqlScope): Prisma.Sql {
                        AND w.svh_created_on > v.svh_created_on
                        AND w.svh_status <> 'DRAFT'
                      WHERE v.svh_id = p.doc_id AND v.svh_acc_year = p.src_year
-                       AND v.svh_link_src_doc_type IN (${Prisma.join([...SHADOW_DOC_TYPES])}))
+                       AND v.svh_link_src_doc_type IN (${Prisma.join([...AMENDABLE_SHADOW_DOC_TYPES])}))
                   ELSE EXISTS (
                     SELECT 1 FROM stock.stock_cost_revaluation x
                      WHERE x.scr_src_doc_id = p.doc_id AND x.scr_src_acc_year = p.src_year

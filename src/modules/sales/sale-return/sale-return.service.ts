@@ -71,8 +71,26 @@ import {
 } from '../posting/sales-doc.utils';
 import type { SalesSettings } from '../posting/sales.settings';
 import { SaleReturnBillReader } from './sale-return-bill-reader';
-import { D, ZERO, n, r6, signed } from './sale-return-money';
+import { D, ZERO, n, r6, signed, type Dec } from './sale-return-money';
 import { allocateSaleReturnNumber } from './sale-return-numbering';
+import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
+import { DeliveryStatusService } from '../delivery/core/delivery-status.service';
+import { DELIVERY_ERROR_CODES } from '../delivery/core/delivery.constants';
+import {
+  amendLockIssues,
+  deliveryStatusOf,
+  loadNotTakenLines,
+  notTakenRowsOf,
+  resolveNotTaken,
+  returnEventsOf,
+  postedNotTakenOf,
+  unitNamesOf,
+  withKeptNotTaken,
+  type NotTakenBillLine,
+  type NotTakenIssue,
+  type NotTakenRow,
+  type NotTakenVerdict,
+} from './sale-return-delivery';
 import {
   billLinesJson,
   bringsStock,
@@ -166,6 +184,11 @@ export const SR_SPEC: DocSpec = {
 
 const TX = { timeout: 60_000, maxWait: 10_000 } as const;
 
+/** What the not-taken rules read off the money: each row's qty, factor and bill line. */
+type NotTakenMoney = {
+  lines: readonly { qty: Dec; factor: Dec; billItemId: string | null; billAccYear: string | null }[];
+};
+
 /** Setting keys the money reads beside SalesSettings (plan v5 D20 / D57). */
 const MONEY_SETTING_KEYS = [
   'sales.freight_calc_type',
@@ -200,6 +223,8 @@ interface SavedFacts {
   freight: string | null;
   loading: string | null;
   settleMode: string | null;
+  /** sr_status (review N7: a /validate naming a POSTED return is an amend's preview). */
+  status?: string | null;
 }
 
 /**
@@ -244,6 +269,9 @@ export class SaleReturnService {
     tenders: TenderDetailService,
     private readonly till: TillSessionService,
     private readonly approvals: TillApprovalService,
+    // Delivery tracking (§8.4 item 9): pending of the bill lines, and the bill's computed status.
+    private readonly deliveryPending: DeliveryPendingService,
+    private readonly deliveryStatus: DeliveryStatusService,
   ) {
     this.store = new SalesDocStore(SR_SPEC, audit, charges, tenders, transportBand);
     this.chargeDetail = charges;
@@ -489,12 +517,13 @@ export class SaleReturnService {
       return null;
     }
     const [r] = await c.$queryRaw<
-      { cust: string | null; f: string | null; l: string | null; m: string | null }[]
+      { cust: string | null; f: string | null; l: string | null; m: string | null; s?: string | null }[]
     >`
-      SELECT sr_cust_id AS cust, sr_freight_calc_type AS f, sr_loading_calc_type AS l, sr_settle_mode AS m
+      SELECT sr_cust_id AS cust, sr_freight_calc_type AS f, sr_loading_calc_type AS l, sr_settle_mode AS m,
+             sr_status AS s
         FROM sales.sale_return
        WHERE sr_id = ${srId}::uuid AND sr_is_deleted = false`;
-    return r ? { custId: r.cust, freight: r.f, loading: r.l, settleMode: r.m } : null;
+    return r ? { custId: r.cust, freight: r.f, loading: r.l, settleMode: r.m, status: r.s ?? null } : null;
   }
 
   /** cd_src_cd_id → the return's own cd_id, so a re-save updates its rows. */
@@ -589,6 +618,10 @@ export class SaleReturnService {
       calcOf(savedRow, ms),
     );
     await this.applyMoneyToBody(tx, body, items, money);
+    // Delivery tracking (addendum §5.2): each row's Not taken — typed, else the
+    // default — is stored; the two row rules (over the qty, a claim) refuse here
+    // so ck_sri_undelivered never sees a bad figure. Pending is judged at post.
+    await this.applyNotTaken(tx, body, money, { amend: opts.amend === true });
     // D4 — a new return with no settle mode starts from the branch's default.
     if (!dto.srId && (body.srSettleMode === undefined || body.srSettleMode === null)) {
       const due = money.bill ? await this.reader.billDue(tx, money.bill) : ZERO;
@@ -655,7 +688,8 @@ export class SaleReturnService {
   async get(keys: DocKeys): Promise<Record<string, unknown>> {
     const c = this.prisma as unknown as Prisma.TransactionClient;
     const rights = await this.assertRight('view', c);
-    return { ...(await this.documentOf(c, keys)), rights };
+    const doc = await this.documentOf(c, keys);
+    return { ...(await this.withDeliveryOnGet(c, doc)), rights };
   }
 
   /**
@@ -905,7 +939,9 @@ export class SaleReturnService {
         left: j.cap,
       };
     });
-    return billLinesJson({
+    // Delivery tracking (addendum §5.2): each line's To give.
+    const pendingByLine = await this.billPendingOf(c, lines, exclude);
+    const json = billLinesJson({
       bill,
       lines,
       prior,
@@ -923,6 +959,17 @@ export class SaleReturnService {
         tenders.money.plus(receivedLater).minus(priorHeader.refund),
       ),
     });
+    return {
+      ...json,
+      lines: (json.lines as Record<string, unknown>[]).map((l) => {
+        const p = pendingByLine.get(l.billItemId as string);
+        return {
+          ...l,
+          billPendingQty: p ? n(p.qty) : 0,
+          billPendingBase: p ? n(p.base) : 0,
+        };
+      }),
+    };
   }
 
   // ── validate / post ──────────────────────────────────────────────────────
@@ -1002,6 +1049,11 @@ export class SaleReturnService {
         });
       body.srSettleMode = mode;
       const verdict = await this.guards(tx, body, items, ctx, g, money);
+      // N7 — the preview of an amend (srId names a POSTED return): an untyped
+      // row keeps its posted Not taken, as the amend will store it.
+      const posted =
+        saved?.status === 'POSTED' ? postedNotTakenOf(await this.store.loadItems(tx, body)) : null;
+      const notTaken = await this.deliveryGuards(tx, body, items, money, g, posted);
       const plan = await buildSettlement(this.reader, tx, money, {
         mode,
         companyId: dto.srCompanyId,
@@ -1036,12 +1088,16 @@ export class SaleReturnService {
         (body.srId as string | null) ?? null,
         unwound !== null,
       );
+      const claim = ((body.srReturnKind as string | null) ?? 'RETURN').toUpperCase() === 'CLAIM';
       return {
-        ...previewOf(
-          money,
+        ...(await this.withDeliveryPreview(
+          tx,
+          previewOf(money, items, claim),
           items,
-          ((body.srReturnKind as string | null) ?? 'RETURN').toUpperCase() === 'CLAIM',
-        ),
+          money,
+          notTaken,
+          claim,
+        )),
         ...this.extrasJson(plan),
         gstMode: verdict.financial ? 'FINANCIAL' : 'GST',
         cutoffPassed: verdict.cutoffPassed,
@@ -1126,6 +1182,7 @@ export class SaleReturnService {
       throwOnRefusal: false,
     });
     const verdict = await this.guards(tx, row, items, ctx, g, money);
+    await this.deliveryGuards(tx, row, items, money, g);
     this.refuseStale(g, row, money);
     // Review 11-14 N1 — the amend re-works the money (D45); a figure the
     // operator saw that it no longer agrees with is not posted unseen.
@@ -1197,6 +1254,9 @@ export class SaleReturnService {
       money,
       plan,
     );
+    // Delivery tracking: the not-taken part settles the bill line (RETURN
+    // events), then the bill's computed status follows.
+    await this.writeReturnEvents(tx, fresh.row, fresh.items, money, ctx.actor, opts.now);
     // An approved request is taken; under WARN a review is filed (D67). Not
     // written into the status trail (D72).
     for (const { ask, verdict: v } of verdicts) {
@@ -1219,6 +1279,8 @@ export class SaleReturnService {
   ): Promise<{ items: DocRow[]; money: ReturnMoney; ms: MoneySettings }> {
     if (row.srIsAgainstBill !== false && row.srBillId && row.srBillAccYear) {
       const bill = { sbId: row.srBillId as string, accYear: (row.srBillAccYear as string).trim() };
+      // Delivery review S1 — the header first, as a note post and a bill amend lock it.
+      await this.reader.lockBillHeader(tx, bill);
       await this.reader.lockBillLines(tx, bill);
       await this.reader.lockBillCharges(tx, bill);
     }
@@ -2363,6 +2425,8 @@ export class SaleReturnService {
       await this.assertUnwindable(tx, row, dto.reason, 'cancel');
       const reversal = await this.unwind(tx, row, ctx.actor, ctx.actorName, dto.reason, now);
       await this.store.setStatus(tx, row, 'CANCELLED', {}, ctx.actor, now);
+      // Delivery tracking: every live RETURN event is reversed; the bill follows.
+      await this.cancelReturnEvents(tx, row, ctx.actor, now, dto.reason);
       await this.refreshBillOf(tx, row, ctx.actorName, now);
       await this.store.trail(
         tx,
@@ -2649,10 +2713,11 @@ export class SaleReturnService {
     }
   }
 
-  /** S6 — lock the return's bill lines and charge rows as /post does (lockAndWorkOut). */
+  /** S6 — lock the return's bill (header, then lines — delivery review S1) and charge rows as /post does (lockAndWorkOut). */
   private async lockBillOf(tx: Prisma.TransactionClient, row: DocRow): Promise<void> {
     if (row.srBillId && row.srBillAccYear) {
       const bill = { sbId: row.srBillId as string, accYear: (row.srBillAccYear as string).trim() };
+      await this.reader.lockBillHeader(tx, bill);
       await this.reader.lockBillLines(tx, bill);
       await this.reader.lockBillCharges(tx, bill);
     }
@@ -2938,6 +3003,422 @@ export class SaleReturnService {
     );
     await this.promo.reverse(tx, { docId: keys.id, accYear: keys.accYear }, reason, actor);
     return reversal;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Delivery tracking — goods never taken (plan §8.4 item 9, addendum §5.2)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * The not-taken verdict of a return's rows: the bill lines' facts (pending
+   * with this return's own live RETURN events added back, what was given,
+   * what earlier returns took), each row's default and stored figure, and
+   * every refusal in rule order. No bill line and nothing typed → no reads.
+   */
+  private async notTakenOf(
+    tx: Prisma.TransactionClient,
+    header: DocRow,
+    items: readonly DocRow[],
+    money: NotTakenMoney,
+    /**
+     * Review N7 — an amend of a POSTED return: its lines' posted figures
+     * (postedNotTakenOf). A row naming one that sends no value keeps it.
+     */
+    opts: { posted?: ReadonlyMap<string, { qty: Dec; factor: Dec }> | null } = {},
+  ): Promise<{
+    rows: NotTakenRow[];
+    lines: Map<string, NotTakenBillLine>;
+    verdict: NotTakenVerdict;
+    claim: boolean;
+  }> {
+    const claim = ((header.srReturnKind as string | null) ?? 'RETURN').toUpperCase() === 'CLAIM';
+    const srId = (header.srId as string | null | undefined) ?? null;
+    let rows = notTakenRowsOf(items, money, new Map());
+    const lines = await loadNotTakenLines(
+      tx,
+      this.deliveryPending,
+      rows,
+      isUuid(srId) ? srId : null,
+    );
+    if (lines.size > 0 || rows.some((r) => r.typed !== null && r.typed.gt(0))) {
+      rows = notTakenRowsOf(
+        items,
+        money,
+        await unitNamesOf(
+          tx,
+          items.map((i) => i.sriItemUnitId as string),
+        ),
+      );
+    }
+    // Review N7 — on an amend every posted line keeps its posted figure when
+    // the body sends none (a live RETURN's figure, or 0).
+    if (opts.posted && opts.posted.size > 0) {
+      rows = withKeptNotTaken(rows, opts.posted);
+    }
+    return { rows, lines, verdict: resolveNotTaken(rows, lines, claim), claim };
+  }
+
+  private static refusalsOf(issues: readonly NotTakenIssue[]) {
+    return issues.map((i) => ({
+      code: i.code,
+      message: i.message,
+      field: i.field,
+      line: i.line,
+      params: i.params,
+    }));
+  }
+
+  /**
+   * /create, /amend's re-save: store each row's Not taken; refuse the two row
+   * rules. On /amend (N7) a row that sends none keeps its posted figure — the
+   * posted lines are read before this re-save overwrites them.
+   */
+  private async applyNotTaken(
+    tx: Prisma.TransactionClient,
+    body: DocRow,
+    money: ReturnMoney,
+    opts: { amend?: boolean } = {},
+  ): Promise<void> {
+    const items = (body.items as DocRow[] | undefined) ?? [];
+    if (items.length === 0) {
+      return;
+    }
+    const posted =
+      opts.amend && isUuid(body.srId as string | null | undefined)
+        ? postedNotTakenOf(await this.store.loadItems(tx, body))
+        : null;
+    const nt = await this.notTakenOf(tx, body, items, money, { posted });
+    const rowRules = nt.verdict.issues.filter(
+      (i) =>
+        i.code === DELIVERY_ERROR_CODES.DELIVERY_RETURN_OVER_QTY ||
+        i.code === DELIVERY_ERROR_CODES.DELIVERY_RETURN_CLAIM,
+    );
+    if (rowRules.length > 0) {
+      throwSalesRefusals('Sale return not saved', SaleReturnService.refusalsOf(rowRules));
+    }
+    body.items = items.map((item, i) => ({
+      ...item,
+      sriUndeliveredQty: nt.verdict.rows[i]?.resolvedQty ?? ZERO,
+    }));
+  }
+
+  /**
+   * /validate and /post (and the amend's re-post): the five not-taken rules,
+   * then the amend lock (a posted line keeps or clears its figure, never
+   * changes it — DELIVERY_RETURN_AMEND_LOCKED). Raised as refusals on `g`.
+   */
+  private async deliveryGuards(
+    tx: Prisma.TransactionClient,
+    header: DocRow,
+    items: readonly DocRow[],
+    money: NotTakenMoney,
+    g: SalesGuardContext,
+    posted: ReadonlyMap<string, { qty: Dec; factor: Dec }> | null = null,
+  ): Promise<{ rows: NotTakenRow[]; lines: Map<string, NotTakenBillLine>; verdict: NotTakenVerdict }> {
+    const nt = await this.notTakenOf(tx, header, items, money, { posted });
+    const issues = [...nt.verdict.issues];
+    const srId = (header.srId as string | null | undefined) ?? null;
+    if (isUuid(srId) && nt.lines.size > 0) {
+      issues.push(...amendLockIssues(nt.rows, nt.verdict, await returnEventsOf(tx, srId)));
+    }
+    for (const i of issues) {
+      refuse(g, i.code, i.message, { field: i.field, line: i.line, params: i.params });
+    }
+    return nt;
+  }
+
+  /**
+   * After the post (or the amend's re-post): one RETURN event per row whose
+   * not-taken figure is > 0 against an eligible bill line (settle +u in the
+   * bill line's unit, out 0, in the bill line's godown and lot); a row that
+   * already carries a live RETURN keeps it (an amend); a live RETURN whose
+   * row is gone or now 0 gets its RETURN_CANCEL. Then the bill's status.
+   */
+  private async writeReturnEvents(
+    tx: Prisma.TransactionClient,
+    row: DocRow,
+    items: readonly DocRow[],
+    money: ReturnMoney,
+    actor: string,
+    now: Date,
+  ): Promise<void> {
+    const srId = row.srId as string;
+    const nt = await this.notTakenOf(tx, row, items, money);
+    // Delivery review S1 — rules 3 and 4 again on the event sums read now,
+    // under the bill header lock (lockAndWorkOut): a note posted or cancelled
+    // on this bill since the guards read pending can no longer slip past.
+    const moved = nt.verdict.issues.filter(
+      (i) =>
+        i.code === DELIVERY_ERROR_CODES.DELIVERY_RETURN_OVER ||
+        i.code === DELIVERY_ERROR_CODES.DELIVERY_RETURN_NOT_GIVEN,
+    );
+    if (moved.length > 0) {
+      throwSalesRefusals('Sale return cannot be posted', SaleReturnService.refusalsOf(moved));
+    }
+    const events = nt.lines.size > 0 ? await returnEventsOf(tx, srId) : null;
+    if (!events) {
+      return;
+    }
+    const at = (row.srReturnDatetime as Date | null) ?? now;
+    const accYear = (row.srAccYear as string).trim();
+    const refno = (row.srReturnRefno as string | null) ?? null;
+    const deviceId = (row.srDeviceId as string | null) ?? null;
+    const bills = new Map<string, { billId: string; billAccYear: string }>();
+    const kept = new Set<string>();
+    nt.rows.forEach((r, i) => {
+      const res = nt.verdict.rows[i];
+      const bl =
+        r.billItemId && r.billAccYear ? nt.lines.get(`${r.billItemId}|${r.billAccYear}`) : undefined;
+      if (!r.sriId || !bl || !bl.eligible || !res || res.resolvedBase.lte(0)) {
+        return;
+      }
+      kept.add(r.sriId);
+    });
+    for (let i = 0; i < nt.rows.length; i++) {
+      const r = nt.rows[i];
+      const res = nt.verdict.rows[i];
+      if (!r.sriId || !kept.has(r.sriId)) {
+        continue;
+      }
+      const bl = nt.lines.get(`${r.billItemId}|${r.billAccYear}`)!;
+      bills.set(`${bl.billId}|${bl.billAccYear}`, { billId: bl.billId, billAccYear: bl.billAccYear });
+      if (events.live.has(r.sriId)) {
+        continue; // the amend kept it (the guard refused any change)
+      }
+      const blFactor = bl.factor.gt(0) ? bl.factor : D(1);
+      const base = res.resolvedBase.toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
+      const qty = res.resolvedBase.dividedBy(blFactor).toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
+      await tx.$executeRaw`
+        INSERT INTO sales.sale_delivery_event (
+          sde_company_id, sde_branch_id, sde_tenant_id, sde_acc_year, sde_kind,
+          sde_bill_id, sde_bill_acc_year, sde_bill_item_id, sde_bill_line_no, sde_item_id,
+          sde_godown_id, sde_lot_id,
+          sde_settle_qty, sde_settle_base_qty, sde_out_qty, sde_out_base_qty,
+          sde_src_doc_type, sde_src_doc_id, sde_src_acc_year, sde_src_line_id, sde_src_refno,
+          sde_event_datetime, sde_reason, sde_device_id, sde_created_on, sde_created_by
+        ) VALUES (
+          ${row.srCompanyId as string}::uuid, ${row.srBranchId as string}::uuid,
+          ${(row.srTenantId as string | null) ?? null}::uuid, ${accYear}::bpchar, 'RETURN',
+          ${bl.billId}::uuid, ${bl.billAccYear}::bpchar, ${bl.billItemId}::uuid, ${bl.lineNo}::int,
+          ${bl.itemId}::uuid, ${bl.godownId}::uuid, ${bl.lotId}::uuid,
+          ${qty}::numeric, ${base}::numeric, 0, 0,
+          'SALE_RETURN', ${srId}::uuid, ${accYear}::bpchar, ${r.sriId}::uuid, ${refno},
+          ${at}::timestamptz, ${'Sale return: goods never taken'}, ${deviceId}, ${now}::timestamptz, ${actor}
+        )`;
+    }
+    for (const [sriId, ev] of events.live) {
+      bills.set(`${ev.billId}|${ev.billAccYear}`, { billId: ev.billId, billAccYear: ev.billAccYear });
+      if (!kept.has(sriId)) {
+        await this.insertReturnCancel(tx, row, ev, sriId, actor, now, 'Sale return amended: not taken cleared');
+      }
+    }
+    await this.deliveryStatus.recompute(tx, [...bills.values()]);
+  }
+
+  /** /cancel: every live RETURN of the return gets its RETURN_CANCEL; the bills follow. */
+  private async cancelReturnEvents(
+    tx: Prisma.TransactionClient,
+    row: DocRow,
+    actor: string,
+    now: Date,
+    reason: string,
+  ): Promise<void> {
+    if (!row.srBillId) {
+      return;
+    }
+    const events = await returnEventsOf(tx, row.srId as string);
+    const bills = new Map<string, { billId: string; billAccYear: string }>();
+    for (const [sriId, ev] of events.live) {
+      bills.set(`${ev.billId}|${ev.billAccYear}`, { billId: ev.billId, billAccYear: ev.billAccYear });
+      await this.insertReturnCancel(tx, row, ev, sriId, actor, now, reason);
+    }
+    if (bills.size > 0) {
+      await this.deliveryStatus.recompute(tx, [...bills.values()]);
+    }
+  }
+
+  private async insertReturnCancel(
+    tx: Prisma.TransactionClient,
+    row: DocRow,
+    ev: { sdeId: string; accYear: string; settleQty: Dec; settleBase: Dec; billItemId: string; billAccYear: string; billId: string },
+    sriId: string,
+    actor: string,
+    now: Date,
+    reason: string,
+  ): Promise<void> {
+    // The reversal copies its RETURN (bill line, godown, lot, item) and negates it.
+    await tx.$executeRaw`
+      INSERT INTO sales.sale_delivery_event (
+        sde_company_id, sde_branch_id, sde_tenant_id, sde_acc_year, sde_kind,
+        sde_bill_id, sde_bill_acc_year, sde_bill_item_id, sde_bill_line_no, sde_item_id,
+        sde_godown_id, sde_lot_id,
+        sde_settle_qty, sde_settle_base_qty, sde_out_qty, sde_out_base_qty,
+        sde_src_doc_type, sde_src_doc_id, sde_src_acc_year, sde_src_line_id, sde_src_refno,
+        sde_reverses_id, sde_event_datetime, sde_reason, sde_device_id, sde_created_on, sde_created_by
+      )
+      SELECT e.sde_company_id, e.sde_branch_id, e.sde_tenant_id, e.sde_acc_year, 'RETURN_CANCEL',
+             e.sde_bill_id, e.sde_bill_acc_year, e.sde_bill_item_id, e.sde_bill_line_no, e.sde_item_id,
+             e.sde_godown_id, e.sde_lot_id,
+             -e.sde_settle_qty, -e.sde_settle_base_qty, 0, 0,
+             e.sde_src_doc_type, e.sde_src_doc_id, e.sde_src_acc_year, e.sde_src_line_id, e.sde_src_refno,
+             e.sde_id, ${now}::timestamptz, ${reason.slice(0, 200)},
+             ${(row.srDeviceId as string | null) ?? null}, ${now}::timestamptz, ${actor}
+        FROM sales.sale_delivery_event e
+       WHERE e.sde_id = ${ev.sdeId}::uuid AND e.sde_acc_year = ${ev.accYear}::bpchar`;
+    void sriId;
+  }
+
+  /** /validate's preview, with the not-taken keys (addendum §5.2). */
+  private async withDeliveryPreview(
+    tx: Prisma.TransactionClient,
+    preview: Record<string, unknown>,
+    items: readonly DocRow[],
+    money: ReturnMoney,
+    nt: { rows: NotTakenRow[]; lines: Map<string, NotTakenBillLine>; verdict: NotTakenVerdict },
+    claim: boolean,
+  ): Promise<Record<string, unknown>> {
+    const lines = (preview.lines as Record<string, unknown>[]).map((l, i) => {
+      const r = nt.verdict.rows[i];
+      return {
+        ...l,
+        sriUndeliveredQty: r ? n(r.resolvedQty) : 0,
+        undeliveredDefaultQty: r ? n(r.defaultQty) : 0,
+        billPendingQty: r ? n(r.billPendingQty) : 0,
+        billPendingBase: r ? n(r.billPendingBase) : 0,
+      };
+    });
+    const byBucket = new Map<string, Dec>();
+    money.lines.forEach((l, i) => {
+      if (l.qtyBase.lte(0) || l.copy?.isService || !bringsStock(items[i], claim)) {
+        return;
+      }
+      const bucket = lineBucketOf(items[i], claim);
+      byBucket.set(bucket, (byBucket.get(bucket) ?? ZERO).plus(nt.verdict.rows[i]?.resolvedBase ?? ZERO));
+    });
+    const stockByBucket = (preview.stockByBucket as Record<string, unknown>[]).map((b) => ({
+      ...b,
+      undeliveredBase: n(r6(byBucket.get(b.bucket as string) ?? ZERO)),
+    }));
+    return {
+      ...preview,
+      lines,
+      stockByBucket,
+      ...(await this.deliveryAfterJson(tx, nt.verdict)),
+    };
+  }
+
+  /** `delivery[]` and `deliveryStatusAfter`: the bill lines this return settles, and the bill after. */
+  private async deliveryAfterJson(
+    tx: Prisma.TransactionClient,
+    verdict: NotTakenVerdict,
+  ): Promise<{ delivery: Record<string, unknown>[]; deliveryStatusAfter: string | null }> {
+    const delivery = verdict.delivery.map((d) => ({
+      billId: d.billId,
+      billAccYear: d.billAccYear,
+      billRefno: d.billRefno,
+      billItemId: d.billItemId,
+      billLineNo: d.billLineNo,
+      unitName: d.unitName,
+      pendingBefore: n(d.pendingBefore),
+      pendingAfter: n(d.pendingAfter),
+    }));
+    if (verdict.delivery.length === 0) {
+      return { delivery, deliveryStatusAfter: null };
+    }
+    const first = verdict.delivery[0];
+    const facts = await this.deliveryPending.linesOfBills(tx, [
+      { billId: first.billId, billAccYear: first.billAccYear },
+    ]);
+    const settle = new Map(verdict.delivery.map((d) => [d.billItemId, d]));
+    const status = deliveryStatusOf(
+      facts.map((f) => {
+        const s = settle.get(f.billItemId);
+        // pendingBefore already adds this return's own events back: settled = billed − before + now.
+        const settled = s ? f.billedQty.minus(s.pendingBefore).plus(s.settleQty) : f.settledQty;
+        return {
+          eligible: f.eligible,
+          settled,
+          pending: f.billedQty.minus(settled),
+          given: f.givenQty,
+        };
+      }),
+      facts.length > 0 && facts[0].billStatus === 'POSTED' && !facts[0].billDeleted,
+    );
+    return { delivery, deliveryStatusAfter: status };
+  }
+
+  /** /get: each line's To give (and on a draft its default + the delivery block). */
+  private async withDeliveryOnGet(
+    c: Prisma.TransactionClient,
+    doc: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const items = (doc.items as DocRow[] | undefined) ?? [];
+    if (items.length === 0) {
+      return doc;
+    }
+    // The stored lines carry their bill keys and factors (lineFieldsOf).
+    const money = {
+      lines: items.map((i) => ({
+        qty: D(i.sriReturnQty as string).plus(D(i.sriFreeQty as string)),
+        factor: D((i.sriToBaseFactor as string) || 1),
+        billItemId: (i.sriBillItemId as string | null) ?? null,
+        billAccYear: ((i.sriBillAccYear as string | null) ?? null)?.trim() ?? null,
+      })),
+    };
+    const draft = doc.srStatus === 'DRAFT';
+    const posted = doc.srStatus === 'POSTED';
+    // Review N7 — a POSTED return carries the default too: what an amend that
+    // sends no Not taken stores, i.e. each line's posted figure (kept).
+    const nt = await this.notTakenOf(c, doc, items, money, {
+      posted: posted ? postedNotTakenOf(items) : null,
+    });
+    const withDefault = draft || posted;
+    return {
+      ...doc,
+      items: items.map((i, idx) => {
+        const r = nt.verdict.rows[idx];
+        return {
+          ...i,
+          billPendingQty: r ? n(r.billPendingQty) : 0,
+          billPendingBase: r ? n(r.billPendingBase) : 0,
+          ...(withDefault ? { undeliveredDefaultQty: r ? n(r.defaultQty) : 0 } : {}),
+        };
+      }),
+      ...(draft ? await this.deliveryAfterJson(c, nt.verdict) : {}),
+    };
+  }
+
+  /** /bill-lines: each line's To give — pending (≥ 0) in its unit and base; 0 when not eligible. */
+  private async billPendingOf(
+    c: Prisma.TransactionClient,
+    lines: readonly { billItemId: string; accYear: string }[],
+    srId: string | null,
+  ): Promise<Map<string, { qty: Dec; base: Dec }>> {
+    const rows: NotTakenRow[] = lines.map((l, i) => ({
+      index: i,
+      lineNo: i + 1,
+      sriId: null,
+      billItemId: l.billItemId,
+      billAccYear: l.accYear.trim(),
+      godownId: null,
+      lotId: null,
+      condition: null,
+      qty: ZERO,
+      factor: D(1),
+      typed: null,
+      unitName: null,
+    }));
+    const facts = await loadNotTakenLines(c, this.deliveryPending, rows, isUuid(srId) ? srId : null);
+    const out = new Map<string, { qty: Dec; base: Dec }>();
+    for (const f of facts.values()) {
+      const base = f.eligible ? Prisma.Decimal.max(ZERO, f.pendingBase) : ZERO;
+      const factor = f.factor.gt(0) ? f.factor : D(1);
+      out.set(f.billItemId, {
+        base: r6(base),
+        qty: base.dividedBy(factor).toDecimalPlaces(3, Prisma.Decimal.ROUND_DOWN),
+      });
+    }
+    return out;
   }
 
   async transport(dto: SaleReturnTransportDto): Promise<Record<string, unknown>> {

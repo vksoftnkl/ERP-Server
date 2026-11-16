@@ -917,4 +917,102 @@ describe('Stock Summary rules', () => {
       ).toBe('NEGATIVE · EXP 16/11 · NO SALE 61 D · NEVER SOLD · OTHER COMPANY · NOT TIED');
     });
   });
+
+  // ── delivery tracking (plan §8.4 item 12) ──────────────────────────────
+  describe('Not delivered + Physical (delivery tracking, today only)', () => {
+    const passA = [
+      hold({ item: A, godown: G1, oq: dec(60), cv_engine: dec(600) }),
+      hold({ item: A, godown: G2, oq: dec(15), cv_engine: dec(150) }),
+    ];
+    const bnd = [
+      { item: A, godown: G1, bucket: 'SALEABLE', bnd: dec(40) },
+      { item: A, godown: G2, bucket: 'SALEABLE', bnd: dec(5) },
+      // another bucket: out of the SALEABLE scope
+      { item: A, godown: G1, bucket: 'DAMAGED', bnd: dec(3) },
+    ];
+
+    it('row: notDelivered = BND in the godown + bucket scope; physical = closing + it', () => {
+      const [r] = buildItemRows(input({ pass: passA, facts: [fact(A)], bnd }));
+      expect(r.wire.closing).toBe('75.000');
+      expect(r.wire.notDelivered).toBe('45.000');
+      expect(r.wire.physical).toBe('120.000');
+      expect(r.num.physical?.toString()).toBe('120');
+      const [one] = buildItemRows(
+        input({ scope: { ...SCOPE, godownId: G1 }, pass: passA, facts: [fact(A)], bnd }),
+      );
+      expect(one.wire.closing).toBe('60.000');
+      expect(one.wire.notDelivered).toBe('40.000');
+      expect(one.wire.physical).toBe('100.000');
+      const [all] = buildItemRows(
+        input({ scope: { ...SCOPE, bucket: null }, pass: passA, facts: [fact(A)], bnd }),
+      );
+      expect(all.wire.notDelivered).toBe('48.000');
+    });
+
+    it('a past To: both null, whatever is sent', () => {
+      const [r] = buildItemRows(
+        input({ scope: { ...SCOPE, todayOnly: false }, pass: passA, facts: [fact(A)], bnd }),
+      );
+      expect(r.wire.notDelivered).toBeNull();
+      expect(r.wire.physical).toBeNull();
+      expect(godownRow(r, [{ godownId: G1 }]).physical).toBeNull();
+    });
+
+    it('the Qty-in unit applies (default unit of 25)', () => {
+      const [r] = buildItemRows(
+        input({
+          scope: { ...SCOPE, qtyIn: 'DEFAULT' },
+          pass: passA,
+          bnd,
+          facts: [
+            fact(A, { default_iuc_id: LOT, default_factor: dec(25), default_unit: 'Bag', default_is_base: false }),
+          ],
+        }),
+      );
+      expect(r.wire.notDelivered).toBe('1.800');
+      expect(r.wire.physical).toBe('4.800');
+    });
+
+    it('Godown-wise: physical per cell and per row; a godown with only BND is a column', () => {
+      const G3 = '019c9935-79f4-772b-8666-2b46b9fc82cc';
+      const rows = buildItemRows(
+        input({
+          pass: passA,
+          facts: [fact(A)],
+          bnd: [...bnd, { item: A, godown: G3, bucket: 'SALEABLE', bnd: dec(7) }],
+        }),
+      );
+      const cols = godownColumns(rows, [
+        { godownId: G1, name: 'Coimbatore' },
+        { godownId: G2, name: 'Trichy' },
+        { godownId: G3, name: 'namakkal' },
+      ]);
+      expect(cols.map((c) => c.godownId)).toEqual([G1, G2, G3]);
+      const g = godownRow(rows[0], cols);
+      expect(g.cells.map((c) => [c.qty, c.physical])).toEqual([
+        ['60.000', '100.000'],
+        ['15.000', '20.000'],
+        ['0.000', '7.000'],
+      ]);
+      expect(g.qty).toBe('75.000');
+      expect(g.physical).toBe('127.000');
+    });
+
+    it('sorts on notDelivered / physical; a zero-closing row with goods to give is not "zero"', () => {
+      const rows = buildItemRows(
+        input({
+          pass: [hold({ item: A, oq: dec(10) }), hold({ item: B, oq: dec(0) })],
+          facts: [fact(A), fact(B)],
+          bnd: [{ item: B, godown: G1, bucket: 'SALEABLE', bnd: dec(12) }],
+        }),
+      );
+      const b = rows.find((r) => r.itemId === B)!;
+      expect(b.flags.zero).toBe(false);
+      expect(b.wire.physical).toBe('12.000');
+      const v = viewOf({ sort: 'notDelivered', dir: 'desc' });
+      expect(itemView(rows, v).map((r) => r.itemId)).toEqual([B, A]);
+      const p = viewOf({ sort: 'physical', dir: 'asc' });
+      expect(itemView(rows, p).map((r) => r.itemId)).toEqual([A, B]);
+    });
+  });
 });

@@ -151,6 +151,10 @@
       "description": "fixed.grid_details + fixed.grid_columns for the Sale Return (menu 13) grids 207 (MAIN LIST - SALE RETURNS), 208 (POPUP - SALE RETURN BILLS), 209 (POPUP - SALE RETURN APPROVALS), 210 (POPUP - SALE RETURN CREDIT USES) and 211 (POPUP - SALE RETURN LAST SALES); the same rows as migrations 20261113160000 and 20261114100000 left them, pinned column ids; after Grid_Details.sql / Grid_Columns.sql, which do not carry them"
     },
     {
+      "file": "Delivery_Grids_212_218.sql",
+      "description": "fixed.grid_details + fixed.grid_columns for the delivery tracking grids 212 (MAIN LIST - PENDING DELIVERIES), 213 (PENDING DELIVERIES - BEATS), 214 (PENDING DELIVERIES - ITEM-WISE), 215 (PENDING DELIVERIES - OPEN LINES), 216 (MAIN LIST - DELIVERY NOTES), 217 (POPUP - DELIVERY NOTE PENDINGS) and 218 (POPUP - BILL DELIVERIES); the same rows as migration 20261117100000, pinned column ids; after Grid_Details.sql / Grid_Columns.sql, which do not carry them"
+    },
+    {
       "file": "Sale_Order_Widget_Config_Menu11_Desktop.sql",
       "description": "fixed.form_section + fixed.form_field for menu 11 (Sales Order), platform Desktop: 6 sections / 27 fields for the Qt screen's Visibility Settings, matched by name, ids from the sequences; the same rows as migration 20261110200000; after Menu_Master.sql (FK) and Form_Section.sql / Form_Field.sql"
     },

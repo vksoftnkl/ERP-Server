@@ -1,3 +1,4 @@
+import type { BillDeliveryBlock, BillGodownSlip } from '../bill-delivery-read';
 import type { BillVoucherTypeBlock } from '../bill-voucher-type.helper';
 import { SaleBill, SaleBillItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
@@ -99,6 +100,10 @@ export type BillPayload = Omit<
   transport?: TransportBandRow | null;
   /** Voucher Types plan §7.4: the bill's type, print design, title and print-after-posting. */
   voucherType?: BillVoucherTypeBlock;
+  /** Delivery tracking §8.4 item 5: the chip, the Delivery box, the godown QR. */
+  delivery?: BillDeliveryBlock;
+  /** Delivery tracking §8.4 item 2 (Q11): /bills/post only — the godown slips to print. */
+  godownSlips?: BillGodownSlip[];
   // The band, echoed flat as §2.1 sends it.
   sbShipAddrId?: string | null;
   sbShipName?: string | null;
@@ -173,6 +178,11 @@ export type BillItemPayload = Omit<
   // dimension; nothing is stored on the line. GET only.
   sbiSizeName?: string | null;
   sbiColourName?: string | null;
+  // Delivery tracking §8.4 item 5 — line unit, GET only: what left the godown
+  // (Σ out) and what is still to give (billed − settled). '0' on a line that
+  // is not delivered by note (Instant bill, service, challan line).
+  deliveredQty?: string;
+  pendingQty?: string;
   sbiModel?: string | null;
 };
 // An applied charge line is exactly what the charge-detail module answers with,

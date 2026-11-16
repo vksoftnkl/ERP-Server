@@ -30,6 +30,18 @@ import {
   StockSummaryPrintSource,
 } from './data/providers/stock-summary.providers';
 import { StockSummaryModule } from '../../stocks/reports/stock-summary/stock-summary.module';
+import {
+  DELIVERY_PRINT_PROVIDERS,
+  DeliveryPrintSource,
+} from './data/providers/delivery.providers';
+import {
+  GODOWN_POSITION_PRINT_PROVIDERS,
+  GodownPositionPrintSource,
+} from './data/providers/godown-position.providers';
+import { DeliveryCoreModule } from '../../sales/delivery/core/delivery-core.module';
+import { DeliveryModule } from '../../sales/delivery/delivery.module';
+import { SalesPostingModule } from '../../sales/posting/posting.module';
+import { GodownPositionModule } from '../../stocks/reports/godown-position/godown-position.module';
 import { FontRegistry } from './engine/fonts/font.registry';
 import { LayoutEngine } from './engine/layout/layout.engine';
 import { TextMeasurer } from './engine/layout/text-measure';
@@ -67,6 +79,10 @@ import { PrintShareService } from './print-share.service';
   // print the report's own /export rows. ItemLedgerModule: the same for the
   // reports.item_ledger.* providers (purpose ITEM_LEDGER, menu 301).
   // StockSummaryModule: reports.stock_summary.* read its runs (purpose STOCK_SUMMARY, menu 302).
+  // Delivery tracking P5: DeliveryModule (the note's GET payload), DeliveryCoreModule
+  // (pending lines), SalesPostingModule (the aging settings) for sales.delivery_note.*,
+  // sales.bill.godown_slip.*, sales.bill.delivery and sales.delivery.*; GodownPositionModule
+  // for reports.godown_position.* (purposes GODOWN_POSITION and COUNT_SHEET, menu 306).
   imports: [
     PgModule,
     PrintTemplateAssignmentModule,
@@ -74,6 +90,10 @@ import { PrintShareService } from './print-share.service';
     ReportsPartyOutstandingModule,
     ItemLedgerModule,
     StockSummaryModule,
+    DeliveryCoreModule,
+    DeliveryModule,
+    SalesPostingModule,
+    GodownPositionModule,
   ],
   // PrintShareController: documents handed out as a link (the sale bill's
   // WhatsApp send) — the module's one public route.
@@ -108,6 +128,10 @@ import { PrintShareService } from './print-share.service';
     ...ITEM_LEDGER_PRINT_PROVIDERS,
     StockSummaryPrintSource,
     ...STOCK_SUMMARY_PRINT_PROVIDERS,
+    DeliveryPrintSource,
+    ...DELIVERY_PRINT_PROVIDERS,
+    GodownPositionPrintSource,
+    ...GODOWN_POSITION_PRINT_PROVIDERS,
     {
       provide: PRINT_DATA_PROVIDERS,
       useFactory: (...providers: PrintDataProvider[]): PrintDataProvider[] => providers,
@@ -122,6 +146,8 @@ import { PrintShareService } from './print-share.service';
         ...PARTY_OUTSTANDING_PRINT_PROVIDERS,
         ...ITEM_LEDGER_PRINT_PROVIDERS,
         ...STOCK_SUMMARY_PRINT_PROVIDERS,
+        ...DELIVERY_PRINT_PROVIDERS,
+        ...GODOWN_POSITION_PRINT_PROVIDERS,
       ],
     },
     PrintDataProviderRegistry,

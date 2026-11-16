@@ -71,6 +71,30 @@ export interface OfferedBillType {
   vchrParentId: number | null;
   vchrNoPrefix: string | null;
   vchrSortOrder: number;
+  /** Delivery tracking (Q3): the type's own mode; null on a child = the base's. */
+  vchrDeliveryMode: string | null;
+}
+
+/** The modes a bill may carry (ck_sb_delivery_mode). */
+const BILL_DELIVERY_MODES = ['INSTANT', 'PICKUP', 'DISPATCH'] as const;
+
+/**
+ * Delivery tracking §8.4 item 1 / Q3: the delivery mode a new bill of the type
+ * defaults to — the type's own, else its base's (Sales Bill), else INSTANT. A
+ * POS bill is always INSTANT (decision 42).
+ */
+export function billTypeDeliveryMode(
+  own: string | null | undefined,
+  baseMode: string | null | undefined,
+  billMode?: string | null,
+): 'INSTANT' | 'PICKUP' | 'DISPATCH' {
+  if ((billMode ?? '').trim().toUpperCase() === 'POS') {
+    return 'INSTANT';
+  }
+  const pick = (own ?? '').trim().toUpperCase() || (baseMode ?? '').trim().toUpperCase();
+  return (BILL_DELIVERY_MODES as readonly string[]).includes(pick)
+    ? (pick as 'INSTANT' | 'PICKUP' | 'DISPATCH')
+    : 'INSTANT';
 }
 
 const pickBool = (v: string | null | undefined): boolean => {
@@ -148,10 +172,11 @@ export async function offeredBillTypes(
       vchr_parent_id: number | null;
       vchr_no_prefix: string | null;
       vchr_sort_order: number;
+      vchr_delivery_mode: string | null;
     }[]
   >`
     SELECT vchr_type_id, vchr_type_code, vchr_type_name, vchr_type_short, vchr_parent_id,
-           vchr_no_prefix, vchr_sort_order
+           vchr_no_prefix, vchr_sort_order, vchr_delivery_mode
       FROM accounts.acc_voucher_types
      WHERE (vchr_parent_id = ${BILL_BASE_VCHR_TYPE_ID}::int AND vchr_company_id = ${companyId}::uuid
             AND vchr_is_active = true)
@@ -165,6 +190,7 @@ export async function offeredBillTypes(
     vchrParentId: r.vchr_parent_id,
     vchrNoPrefix: r.vchr_no_prefix,
     vchrSortOrder: r.vchr_sort_order,
+    vchrDeliveryMode: r.vchr_delivery_mode ?? null,
   }));
   if (offlineSite) {
     return all.filter((t) => t.vchrTypeId === BILL_BASE_VCHR_TYPE_ID);

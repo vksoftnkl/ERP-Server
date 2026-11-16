@@ -92,6 +92,8 @@ model EmployeeMaster {
   vehiclesDriven        VehicleMaster[]           @relation("VehicleDriver")
   saleReturnsDriven     SaleReturn[]              @relation("SaleReturnDriver")
   saleReturnsSupervised SaleReturn[]              @relation("SaleReturnSupervisor")
+  deliveryNotesDriven   SaleDeliveryNote[]        @relation("SaleDeliveryNoteDriver")
+  deliveryNotesSupervised SaleDeliveryNote[]      @relation("SaleDeliveryNoteSupervisor")
   saleDcsDriven         SaleDc[]                  @relation("SaleDcDriver")
   saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
   saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")

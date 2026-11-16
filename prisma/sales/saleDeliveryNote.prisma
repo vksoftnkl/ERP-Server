@@ -1,0 +1,117 @@
+/// The Delivery Note / gate pass (menu 305): what physically left ONE godown
+/// against posted Pickup / Dispatch bills (delivery tracking phase 1,
+/// migration 20261117100000_delivery_tracking, plan §7.1).
+///
+/// LIST-partitioned by sdnAccYear, PK (sdnId, sdnAccYear). Partitions come
+/// from public.ensure_acc_year_partitions, which 20261117100000 taught about
+/// this table. The client may send its own uuidv7 sdnId on the first save, so
+/// a re-sent save finds the same note.
+///
+/// The note moves no stock of its own: posting writes one GIVEN row per line
+/// into SaleDeliveryEvent, and Physical = Owned + Billed not delivered follows
+/// from those events. Only a different lot or godown posts a correction (a
+/// shadow stock voucher linked by svh_link_src_*, decisions 38 / 39).
+///
+/// Numbered per DEVICE, like the Sale Return: DN/{accYear}/{device}/{00000}.
+/// The transporter, LR no and LR date live in TxnTransportDetail with
+/// ttd_doc_type 'DELIVERY_NOTE'.
+model SaleDeliveryNote {
+  sdnId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdn_id")
+  sdnCompanyId          String    @db.Uuid                             @map("sdn_company_id")
+  sdnBranchId           String    @db.Uuid                             @map("sdn_branch_id")
+  sdnTenantId           String?   @db.Uuid                             @map("sdn_tenant_id")
+  /// The note's year (= the post year).
+  sdnAccYear            String    @db.Char(9)                          @map("sdn_acc_year")
+  sdnDeviceId           String                                         @map("sdn_device_id")
+  sdnDeviceType         String?   @db.VarChar(20)                      @map("sdn_device_type")
+  sdnSessionId          String?   @db.Uuid                             @map("sdn_session_id")
+
+  // ── Document identity ────────────────────────────────────────────────
+  /// Per device, from the first save (ck_sdn_slno > 0).
+  sdnSlno               BigInt                                         @map("sdn_slno")
+  /// DN/2026-2027/D3/00042
+  sdnRefno              String    @db.VarChar(40)                      @map("sdn_refno")
+  /// The post date (shown grey on screen).
+  sdnDate               DateTime  @db.Date                             @map("sdn_date")
+  /// Set at post: when the goods left.
+  sdnDatetime           DateTime  @default(now()) @db.Timestamptz(6)   @map("sdn_datetime")
+
+  // ── Where from, and how ──────────────────────────────────────────────
+  /// The giving godown; locked once the note has lines (decision 48).
+  sdnGodownId           String    @db.Uuid                             @map("sdn_godown_id")
+  /// SELF | VEHICLE | TRANSPORTER (ck_sdn_mode).
+  sdnMode               String    @default("SELF") @db.VarChar(12)     @map("sdn_mode")
+  sdnVehicleId          String?   @db.Uuid                             @map("sdn_vehicle_id")
+  /// As printed, or the collector's own vehicle.
+  sdnVehicleNo          String?   @db.VarChar(20)                      @map("sdn_vehicle_no")
+  /// The vehicle's capacity at post.
+  sdnVehicleCapacityKg  Decimal?  @db.Decimal(12, 3)                   @map("sdn_vehicle_capacity_kg")
+  sdnDriverId           String?   @db.Uuid                             @map("sdn_driver_id")
+  sdnSupervisorId       String?   @db.Uuid                             @map("sdn_supervisor_id")
+  /// uuid[]: no FK on the elements; the service checks each against employee_master.
+  sdnLoadmanId          String[]  @db.Uuid                             @map("sdn_loadman_id")
+  /// Self pickup: who took the goods.
+  sdnCollectedBy        String?   @db.VarChar(100)                     @map("sdn_collected_by")
+  sdnCollectorPhone     String?   @db.VarChar(20)                      @map("sdn_collector_phone")
+
+  // ── The note's own totals, written at save / post ───────────────────
+  sdnTotLines           Int       @default(0)                          @map("sdn_tot_lines")
+  /// Packages.
+  sdnTotQty             Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_qty")
+  sdnTotBags            Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_bags")
+  sdnTotWeightKg        Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_weight_kg")
+  sdnBillCount          Int       @default(0)                          @map("sdn_bill_count")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED (ck_sdn_status). A posted note is never changed.
+  sdnStatus             String    @default("DRAFT") @db.VarChar(10)    @map("sdn_status")
+  /// The WARN codes ticked at post (overrideWarnings), comma separated.
+  sdnOverrides          String?   @db.VarChar(400)                     @map("sdn_overrides")
+  sdnPostedOn           DateTime? @db.Timestamptz(6)                   @map("sdn_posted_on")
+  sdnPostedBy           String?   @db.VarChar(60)                      @map("sdn_posted_by")
+  sdnCancelledOn        DateTime? @db.Timestamptz(6)                   @map("sdn_cancelled_on")
+  sdnCancelledBy        String?   @db.VarChar(60)                      @map("sdn_cancelled_by")
+  /// Required when CANCELLED (ck_sdn_cancel_reason).
+  sdnCancelReason       String?   @db.VarChar(200)                     @map("sdn_cancel_reason")
+  /// The DUPLICATE label on a reprint.
+  sdnPrintCount         Int       @default(0)                          @map("sdn_print_count")
+  /// Draft saves (DN_REVISION_STALE).
+  sdnRevisionNo         Int       @default(1)                          @map("sdn_revision_no")
+  sdnRemarks            String?   @db.VarChar(250)                     @map("sdn_remarks")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  /// Drafts only.
+  sdnIsDeleted          Boolean   @default(false)                      @map("sdn_is_deleted")
+  sdnSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdn_sync_date")
+  sdnCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdn_created_on")
+  sdnCreatedBy          String    @db.VarChar(60)                      @map("sdn_created_by")
+  sdnModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdn_modified_on")
+  sdnModifiedBy         String?   @db.VarChar(60)                      @map("sdn_modified_by")
+
+  // Relations
+  godown                GodownLocation     @relation("SaleDeliveryNoteGodown",     fields: [sdnGodownId],     references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_godown")
+  vehicle               VehicleMaster?     @relation("SaleDeliveryNoteVehicle",    fields: [sdnVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_vehicle")
+  driver                EmployeeMaster?    @relation("SaleDeliveryNoteDriver",     fields: [sdnDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_driver")
+  supervisor            EmployeeMaster?    @relation("SaleDeliveryNoteSupervisor", fields: [sdnSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_supervisor")
+  items                 SaleDeliveryNoteItem[] @relation("SaleDeliveryNoteItems")
+
+  // No relation fields for sdnCompanyId / sdnBranchId: the DDL declares no FKs
+  // for them, matching sale_bill and sale_return.
+
+  @@id([sdnId, sdnAccYear], map: "pk_sale_delivery_note")
+
+  /// Numbers are per DEVICE (Q19).
+  @@unique([sdnCompanyId, sdnBranchId, sdnAccYear, sdnDeviceId, sdnSlno], map: "ux_sdn_device_slno")
+  @@unique([sdnCompanyId, sdnBranchId, sdnAccYear, sdnRefno], map: "ux_sdn_refno")
+
+  // Partial indexes are DB-only: ix_sdn_branch_date (company, branch, date
+  // DESC) WHERE NOT deleted, ix_sdn_godown (godown, date DESC) WHERE POSTED,
+  // and FK-covering ix_sdn_vehicle / ix_sdn_driver / ix_sdn_supervisor
+  // (WHERE ... IS NOT NULL); ix_sync_pending_sale_delivery_note.
+  //
+  // CHECK constraints (DB-only): ck_sdn_mode, ck_sdn_status,
+  //   ck_sdn_cancel_reason, ck_sdn_slno, ck_sdn_acc_year.
+
+  @@map("sale_delivery_note")
+  @@schema("sales")
+}

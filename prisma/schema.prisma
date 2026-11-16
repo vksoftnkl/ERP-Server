@@ -2958,6 +2958,10 @@ model AccVoucherType {
   vchrPrintPurposeId         String?              @db.Uuid @map("vchr_print_purpose_id")
   /// Print right after posting (Ctrl+Enter), never after a draft save
   vchrPrintAfterPost         Boolean              @default(false) @map("vchr_print_after_post")
+  /// Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
+  /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
+  /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type
+  vchrDeliveryMode           String?              @db.VarChar(10) @map("vchr_delivery_mode")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -4932,6 +4936,7 @@ model GodownLocation {
 
   // ── Sales documents (20260921200000) ────────────────────────────────────
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemGodown")
+  deliveryNotes         SaleDeliveryNote[]        @relation("SaleDeliveryNoteGodown")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemGodown")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemGodown")
 
@@ -5399,6 +5404,7 @@ model ItemMaster {
 
   // ── Sales documents (20260921200000) ────────────────────────────────────
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
@@ -6102,6 +6108,7 @@ model ItemUnitConversion {
   // item_unit_master — a DC line becomes a bill line, so the two must
   // share an id space.
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemUnit")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemUnit")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
 
@@ -10168,6 +10175,7 @@ model VehicleMaster {
   driver            EmployeeMaster?    @relation("VehicleDriver",      fields: [vehDriverId],      references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_driver")
 
   saleReturns       SaleReturn[]       @relation("SaleReturnVehicle")
+  deliveryNotes     SaleDeliveryNote[] @relation("SaleDeliveryNoteVehicle")
   saleDcs           SaleDc[]           @relation("SaleDcVehicle")
   saleDcReturns     SaleDcReturn[]     @relation("SaleDcReturnVehicle")
 
@@ -11537,6 +11545,8 @@ model EmployeeMaster {
   vehiclesDriven        VehicleMaster[]           @relation("VehicleDriver")
   saleReturnsDriven     SaleReturn[]              @relation("SaleReturnDriver")
   saleReturnsSupervised SaleReturn[]              @relation("SaleReturnSupervisor")
+  deliveryNotesDriven   SaleDeliveryNote[]        @relation("SaleDeliveryNoteDriver")
+  deliveryNotesSupervised SaleDeliveryNote[]      @relation("SaleDeliveryNoteSupervisor")
   saleDcsDriven         SaleDc[]                  @relation("SaleDcDriver")
   saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
   saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")
@@ -13813,10 +13823,18 @@ model SaleBill {
   sbDcTaxableAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_dc_taxable_amt")
   /// What THIS bill posted as COGS.
   sbCogsAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cogs_amt")
-  /// NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
-  /// the events themselves are TxnStatusLog rows.
+  /// NA | PENDING | PART | OUT | DELIVERED | RETURNED (ck_sb_delivery_status,
+  /// 20261117100000_delivery_tracking). A site-local derived CACHE used only as
+  /// an index prefilter (ix_sb_delivery_open): written by one method,
+  /// DeliveryStatusService.recompute; the figures always come from the
+  /// SaleDeliveryEvent rows (decision 36). OUT is reserved for phase 2 (POD).
   sbDeliveryStatus   String    @default("NA") @db.VarChar(20) @map("sb_delivery_status")
   sbDeliveredOn      DateTime? @db.Timestamptz(6) @map("sb_delivered_on")
+  /// INSTANT | PICKUP | DISPATCH (ck_sb_delivery_mode, 20261117100000). INSTANT
+  /// = given at the counter, never pending; a POS bill is always INSTANT. The
+  /// default on a new bill comes from the voucher type (vchrDeliveryMode, Q3);
+  /// a posted bill changes only Pickup <-> Dispatch, on /deliveries/mode (Q4).
+  sbDeliveryMode     String    @default("INSTANT") @db.VarChar(10) @map("sb_delivery_mode")
   /// The identity stamp on a cash sale over the rule 114B limit: what was
   /// shown at the counter, kept WITH the bill and never re-derived.
   sbCustPan          String?   @db.VarChar(10) @map("sb_cust_pan")
@@ -14184,6 +14202,9 @@ model SaleBillItem {
   // would re-create it without one. Do NOT add @@index for it.
   // ── Sales documents (20260921200000) ────────────────────────────────────
   returnItems           SaleReturnItem[]          @relation("SaleReturnItemBill")
+  // ── Delivery tracking (20261117100000) ──────────────────────────────────
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemBill")
+  deliveryEvents        SaleDeliveryEvent[]       @relation("SaleDeliveryEventBillItem")
 
   // ── Sales plan (20260921220000) ───────────────────────────────────────
   lot                StockLot? @relation("SaleBillItemLot", fields: [sbiLotId], references: [sltId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbi_lot")
@@ -14729,6 +14750,323 @@ model SaleDcReturnItem {
   // CHECK constraints (DB-only): ck_sdri_qty, ck_sdri_condition, ck_sdri_bucket
 
   @@map("sale_dc_return_item")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDeliveryEvent.prisma -----
+/// Insert-only delivery events of a bill line (migration
+/// 20261117100000_delivery_tracking, plan §7.3, decisions 34-37, 46).
+///
+/// Never updated, never deleted. Every reader sums the signed columns through
+/// one SQL fragment (delivery-pending.sql.ts), never by kind:
+///   settled = SUM(sdeSettleQty)  -> pending = sbi_bill_qty - settled
+///   given   = SUM(sdeOutQty)     -> what physically left the godown
+/// Phase 2 adds sde_pod_qty / sde_pod_base_qty (ADD COLUMN NOT NULL DEFAULT 0)
+/// and the kinds POD_OK / POD_SHORT, with no reader change (§14).
+///
+///   kind           settle   out      source
+///   GIVEN          +q       +q       DELIVERY_NOTE line (one per sdni, ux_sde_given)
+///   CANCEL         -r       -r       reverses a GIVEN (sdeReversesId)
+///   GOODS_BACK     -q       -q       DELIVERY_NOTE line, refused at the door
+///   RETURN         +u       0        SALE_RETURN line, goods never taken (ux_sde_return)
+///   RETURN_CANCEL  -u       0        reverses a RETURN
+///   CLEANUP        +q       +q       go-live (Q15), the bill's year, no source doc
+///
+/// LIST-partitioned by sdeAccYear = the source document's year (the note's, the
+/// return's; the bill's for CLEANUP). No CHECK or UNIQUE over a quantity two
+/// sites draw on: over-delivery that arrives by sync is recorded and flagged
+/// (/deliveries/exceptions), never refused here. The client may send its own
+/// uuidv7 sdeId (goods-back retry safety, addendum decision 69).
+model SaleDeliveryEvent {
+  sdeId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sde_id")
+  sdeCompanyId          String    @db.Uuid                             @map("sde_company_id")
+  sdeBranchId           String    @db.Uuid                             @map("sde_branch_id")
+  sdeTenantId           String?   @db.Uuid                             @map("sde_tenant_id")
+  sdeAccYear            String    @db.Char(9)                          @map("sde_acc_year")
+  /// GIVEN | CANCEL | GOODS_BACK | RETURN | RETURN_CANCEL | CLEANUP (ck_sde_kind).
+  sdeKind               String    @db.VarChar(16)                      @map("sde_kind")
+
+  // ── The bill line ────────────────────────────────────────────────────
+  sdeBillId             String    @db.Uuid                             @map("sde_bill_id")
+  sdeBillAccYear        String    @db.Char(9)                          @map("sde_bill_acc_year")
+  sdeBillItemId         String    @db.Uuid                             @map("sde_bill_item_id")
+  sdeBillLineNo         Int                                            @map("sde_bill_line_no")
+  sdeItemId             String    @db.Uuid                             @map("sde_item_id")
+  /// Where the goods physically left / came back (the bill line's godown for
+  /// RETURN / CLEANUP).
+  sdeGodownId           String    @db.Uuid                             @map("sde_godown_id")
+  /// The lot given.
+  sdeLotId              String?   @db.Uuid                             @map("sde_lot_id")
+
+  // ── Signed quantities (ck_sde_signs) ─────────────────────────────────
+  /// What the line no longer has to give; line unit.
+  sdeSettleQty          Decimal   @db.Decimal(14, 3)                   @map("sde_settle_qty")
+  sdeSettleBaseQty      Decimal   @db.Decimal(18, 6)                   @map("sde_settle_base_qty")
+  /// What physically left the godown; line unit.
+  sdeOutQty             Decimal   @default(0) @db.Decimal(14, 3)       @map("sde_out_qty")
+  sdeOutBaseQty         Decimal   @default(0) @db.Decimal(18, 6)       @map("sde_out_base_qty")
+
+  // ── Source ───────────────────────────────────────────────────────────
+  /// DELIVERY_NOTE | SALE_RETURN | CLEANUP (ck_sde_src_doc_type); CLEANUP and
+  /// only CLEANUP has no sdeSrcDocId (ck_sde_src).
+  sdeSrcDocType         String    @db.VarChar(20)                      @map("sde_src_doc_type")
+  sdeSrcDocId           String?   @db.Uuid                             @map("sde_src_doc_id")
+  sdeSrcAccYear         String?   @db.Char(9)                          @map("sde_src_acc_year")
+  /// sdni_id / sri_id.
+  sdeSrcLineId          String?   @db.Uuid                             @map("sde_src_line_id")
+  sdeSrcRefno           String?   @db.VarChar(40)                      @map("sde_src_refno")
+  /// CANCEL -> its GIVEN; RETURN_CANCEL -> its RETURN (ck_sde_reverses).
+  sdeReversesId         String?   @db.Uuid                             @map("sde_reverses_id")
+  /// When it happened (device time).
+  sdeEventDatetime      DateTime  @db.Timestamptz(6)                   @map("sde_event_datetime")
+  sdeReason             String?   @db.VarChar(200)                     @map("sde_reason")
+  sdeDeviceId           String?                                        @map("sde_device_id")
+
+  /// Never set (registry shape; the partial indexes read it).
+  sdeIsDeleted          Boolean   @default(false)                      @map("sde_is_deleted")
+  sdeSyncDate           DateTime? @db.Timestamptz(6)                   @map("sde_sync_date")
+  sdeCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sde_created_on")
+  sdeCreatedBy          String    @db.VarChar(60)                      @map("sde_created_by")
+
+  // Relations
+  billItem              SaleBillItem       @relation("SaleDeliveryEventBillItem", fields: [sdeBillItemId, sdeBillAccYear], references: [sbiId, sbiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sde_bill_item")
+
+  // No other FK (plan §7.3): an event row is history, read through its bill line.
+
+  @@id([sdeId, sdeAccYear], map: "pk_sale_delivery_event")
+
+  @@index([sdeBillId, sdeBillAccYear], map: "ix_sde_bill")
+  @@index([sdeSrcDocType, sdeSrcDocId], map: "ix_sde_src")
+
+  // DB-only (partial or INCLUDE, which Prisma cannot express):
+  //   ix_sde_bill_item (bill line, bill year) INCLUDE (the four qty columns)
+  //     WHERE sde_is_deleted = false  -- the readers' sum
+  //   ix_sde_godown_time (company, branch, godown, event time DESC) WHERE GIVEN
+  //   ux_sde_given    (src line, year) WHERE GIVEN
+  //   ux_sde_return   (src line, year) WHERE RETURN
+  //   ux_sde_reversal (reverses id, year) WHERE CANCEL / RETURN_CANCEL
+  //   ux_sde_cleanup  (bill line, year) WHERE CLEANUP
+  //   ix_sync_pending_sale_delivery_event
+  // The partial UNIQUEs are single-writer safe: only the note's / the
+  // return's own site writes them (decision 37).
+  //
+  // CHECK constraints (DB-only): ck_sde_kind, ck_sde_src_doc_type,
+  //   ck_sde_signs, ck_sde_reverses, ck_sde_src.
+
+  @@map("sale_delivery_event")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDeliveryNote.prisma -----
+/// The Delivery Note / gate pass (menu 305): what physically left ONE godown
+/// against posted Pickup / Dispatch bills (delivery tracking phase 1,
+/// migration 20261117100000_delivery_tracking, plan §7.1).
+///
+/// LIST-partitioned by sdnAccYear, PK (sdnId, sdnAccYear). Partitions come
+/// from public.ensure_acc_year_partitions, which 20261117100000 taught about
+/// this table. The client may send its own uuidv7 sdnId on the first save, so
+/// a re-sent save finds the same note.
+///
+/// The note moves no stock of its own: posting writes one GIVEN row per line
+/// into SaleDeliveryEvent, and Physical = Owned + Billed not delivered follows
+/// from those events. Only a different lot or godown posts a correction (a
+/// shadow stock voucher linked by svh_link_src_*, decisions 38 / 39).
+///
+/// Numbered per DEVICE, like the Sale Return: DN/{accYear}/{device}/{00000}.
+/// The transporter, LR no and LR date live in TxnTransportDetail with
+/// ttd_doc_type 'DELIVERY_NOTE'.
+model SaleDeliveryNote {
+  sdnId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdn_id")
+  sdnCompanyId          String    @db.Uuid                             @map("sdn_company_id")
+  sdnBranchId           String    @db.Uuid                             @map("sdn_branch_id")
+  sdnTenantId           String?   @db.Uuid                             @map("sdn_tenant_id")
+  /// The note's year (= the post year).
+  sdnAccYear            String    @db.Char(9)                          @map("sdn_acc_year")
+  sdnDeviceId           String                                         @map("sdn_device_id")
+  sdnDeviceType         String?   @db.VarChar(20)                      @map("sdn_device_type")
+  sdnSessionId          String?   @db.Uuid                             @map("sdn_session_id")
+
+  // ── Document identity ────────────────────────────────────────────────
+  /// Per device, from the first save (ck_sdn_slno > 0).
+  sdnSlno               BigInt                                         @map("sdn_slno")
+  /// DN/2026-2027/D3/00042
+  sdnRefno              String    @db.VarChar(40)                      @map("sdn_refno")
+  /// The post date (shown grey on screen).
+  sdnDate               DateTime  @db.Date                             @map("sdn_date")
+  /// Set at post: when the goods left.
+  sdnDatetime           DateTime  @default(now()) @db.Timestamptz(6)   @map("sdn_datetime")
+
+  // ── Where from, and how ──────────────────────────────────────────────
+  /// The giving godown; locked once the note has lines (decision 48).
+  sdnGodownId           String    @db.Uuid                             @map("sdn_godown_id")
+  /// SELF | VEHICLE | TRANSPORTER (ck_sdn_mode).
+  sdnMode               String    @default("SELF") @db.VarChar(12)     @map("sdn_mode")
+  sdnVehicleId          String?   @db.Uuid                             @map("sdn_vehicle_id")
+  /// As printed, or the collector's own vehicle.
+  sdnVehicleNo          String?   @db.VarChar(20)                      @map("sdn_vehicle_no")
+  /// The vehicle's capacity at post.
+  sdnVehicleCapacityKg  Decimal?  @db.Decimal(12, 3)                   @map("sdn_vehicle_capacity_kg")
+  sdnDriverId           String?   @db.Uuid                             @map("sdn_driver_id")
+  sdnSupervisorId       String?   @db.Uuid                             @map("sdn_supervisor_id")
+  /// uuid[]: no FK on the elements; the service checks each against employee_master.
+  sdnLoadmanId          String[]  @db.Uuid                             @map("sdn_loadman_id")
+  /// Self pickup: who took the goods.
+  sdnCollectedBy        String?   @db.VarChar(100)                     @map("sdn_collected_by")
+  sdnCollectorPhone     String?   @db.VarChar(20)                      @map("sdn_collector_phone")
+
+  // ── The note's own totals, written at save / post ───────────────────
+  sdnTotLines           Int       @default(0)                          @map("sdn_tot_lines")
+  /// Packages.
+  sdnTotQty             Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_qty")
+  sdnTotBags            Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_bags")
+  sdnTotWeightKg        Decimal   @default(0) @db.Decimal(14, 3)       @map("sdn_tot_weight_kg")
+  sdnBillCount          Int       @default(0)                          @map("sdn_bill_count")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED (ck_sdn_status). A posted note is never changed.
+  sdnStatus             String    @default("DRAFT") @db.VarChar(10)    @map("sdn_status")
+  /// The WARN codes ticked at post (overrideWarnings), comma separated.
+  sdnOverrides          String?   @db.VarChar(400)                     @map("sdn_overrides")
+  sdnPostedOn           DateTime? @db.Timestamptz(6)                   @map("sdn_posted_on")
+  sdnPostedBy           String?   @db.VarChar(60)                      @map("sdn_posted_by")
+  sdnCancelledOn        DateTime? @db.Timestamptz(6)                   @map("sdn_cancelled_on")
+  sdnCancelledBy        String?   @db.VarChar(60)                      @map("sdn_cancelled_by")
+  /// Required when CANCELLED (ck_sdn_cancel_reason).
+  sdnCancelReason       String?   @db.VarChar(200)                     @map("sdn_cancel_reason")
+  /// The DUPLICATE label on a reprint.
+  sdnPrintCount         Int       @default(0)                          @map("sdn_print_count")
+  /// Draft saves (DN_REVISION_STALE).
+  sdnRevisionNo         Int       @default(1)                          @map("sdn_revision_no")
+  sdnRemarks            String?   @db.VarChar(250)                     @map("sdn_remarks")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  /// Drafts only.
+  sdnIsDeleted          Boolean   @default(false)                      @map("sdn_is_deleted")
+  sdnSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdn_sync_date")
+  sdnCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdn_created_on")
+  sdnCreatedBy          String    @db.VarChar(60)                      @map("sdn_created_by")
+  sdnModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdn_modified_on")
+  sdnModifiedBy         String?   @db.VarChar(60)                      @map("sdn_modified_by")
+
+  // Relations
+  godown                GodownLocation     @relation("SaleDeliveryNoteGodown",     fields: [sdnGodownId],     references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_godown")
+  vehicle               VehicleMaster?     @relation("SaleDeliveryNoteVehicle",    fields: [sdnVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_vehicle")
+  driver                EmployeeMaster?    @relation("SaleDeliveryNoteDriver",     fields: [sdnDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_driver")
+  supervisor            EmployeeMaster?    @relation("SaleDeliveryNoteSupervisor", fields: [sdnSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdn_supervisor")
+  items                 SaleDeliveryNoteItem[] @relation("SaleDeliveryNoteItems")
+
+  // No relation fields for sdnCompanyId / sdnBranchId: the DDL declares no FKs
+  // for them, matching sale_bill and sale_return.
+
+  @@id([sdnId, sdnAccYear], map: "pk_sale_delivery_note")
+
+  /// Numbers are per DEVICE (Q19).
+  @@unique([sdnCompanyId, sdnBranchId, sdnAccYear, sdnDeviceId, sdnSlno], map: "ux_sdn_device_slno")
+  @@unique([sdnCompanyId, sdnBranchId, sdnAccYear, sdnRefno], map: "ux_sdn_refno")
+
+  // Partial indexes are DB-only: ix_sdn_branch_date (company, branch, date
+  // DESC) WHERE NOT deleted, ix_sdn_godown (godown, date DESC) WHERE POSTED,
+  // and FK-covering ix_sdn_vehicle / ix_sdn_driver / ix_sdn_supervisor
+  // (WHERE ... IS NOT NULL); ix_sync_pending_sale_delivery_note.
+  //
+  // CHECK constraints (DB-only): ck_sdn_mode, ck_sdn_status,
+  //   ck_sdn_cancel_reason, ck_sdn_slno, ck_sdn_acc_year.
+
+  @@map("sale_delivery_note")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDeliveryNoteItem.prisma -----
+/// A Delivery Note line: one bill line given now, in the bill line's unit,
+/// from the note's godown and the lot actually given (migration
+/// 20261117100000_delivery_tracking, plan §7.2).
+///
+/// LIST-partitioned by sdniAccYear (= the note's year), PK (sdniId,
+/// sdniAccYear). The client may send its own uuidv7 sdniId. No UNIQUE on
+/// (note, bill line): one bill line may be given in two lots on one note.
+/// Zero-qty lines are kept on a draft and soft-deleted at post.
+///
+/// sdniItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId (the bill line's unit).
+model SaleDeliveryNoteItem {
+  sdniId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdni_id")
+  sdniNoteId            String    @db.Uuid                             @map("sdni_note_id")
+  sdniAccYear           String    @db.Char(9)                          @map("sdni_acc_year")
+  sdniCompanyId         String    @db.Uuid                             @map("sdni_company_id")
+  sdniBranchId          String    @db.Uuid                             @map("sdni_branch_id")
+  sdniTenantId          String?   @db.Uuid                             @map("sdni_tenant_id")
+  /// ck_sdni_line_no >= 1.
+  sdniLineNo            Int                                            @map("sdni_line_no")
+
+  // ── The bill line this gives ─────────────────────────────────────────
+  sdniBillId            String    @db.Uuid                             @map("sdni_bill_id")
+  sdniBillAccYear       String    @db.Char(9)                          @map("sdni_bill_acc_year")
+  sdniBillItemId        String    @db.Uuid                             @map("sdni_bill_item_id")
+  /// Snapshot.
+  sdniBillLineNo        Int                                            @map("sdni_bill_line_no")
+  /// Snapshot.
+  sdniBillRefno         String?   @db.VarChar(40)                      @map("sdni_bill_refno")
+  sdniItemId            String    @db.Uuid                             @map("sdni_item_id")
+  sdniItemUnitId        String    @db.Uuid                             @map("sdni_item_unit_id")
+  /// The bill line's factor (§5.1: its own sbiToBaseFactor when > 0, else the
+  /// unit conversion, else 1).
+  sdniToBaseFactor      Decimal   @db.Decimal(15, 6)                   @map("sdni_to_base_factor")
+
+  // ── Where it was billed from, and where it was given from ────────────
+  /// The bill line's godown.
+  sdniBillGodownId      String    @db.Uuid                             @map("sdni_bill_godown_id")
+  /// The giving godown (= the note's). Different from the bill's only with
+  /// the Override right (Q18): post then moves it on the books.
+  sdniGodownId          String    @db.Uuid                             @map("sdni_godown_id")
+  /// The bill's lot.
+  sdniBillLotId         String?   @db.Uuid                             @map("sdni_bill_lot_id")
+  /// The lot given; another lot = a re-lot pair at post (decision 38).
+  sdniLotId             String?   @db.Uuid                             @map("sdni_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE (ck_sdni_bucket, as ck_sbi_bucket).
+  sdniBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sdni_bucket")
+
+  // ── Quantities ───────────────────────────────────────────────────────
+  /// Give now, in the line's unit (ck_sdni_qty >= 0).
+  sdniQty               Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_qty")
+  /// ck_sdni_base_qty >= 0.
+  sdniBaseQty           Decimal   @default(0) @db.Decimal(18, 6)       @map("sdni_base_qty")
+  sdniWeightKg          Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_weight_kg")
+  /// How many came by scanner.
+  sdniScannedQty        Decimal   @default(0) @db.Decimal(14, 3)       @map("sdni_scanned_qty")
+  /// The Override was used for this line (logged in sdnOverrides too).
+  sdniOtherGodownOk     Boolean   @default(false)                      @map("sdni_other_godown_ok")
+  sdniRemarks           String?   @db.VarChar(200)                     @map("sdni_remarks")
+
+  sdniIsDeleted         Boolean   @default(false)                      @map("sdni_is_deleted")
+  sdniSyncDate          DateTime? @db.Timestamptz(6)                   @map("sdni_sync_date")
+  sdniCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdni_created_on")
+  sdniCreatedBy         String    @db.VarChar(60)                      @map("sdni_created_by")
+  sdniModifiedOn        DateTime? @db.Timestamptz(6)                   @map("sdni_modified_on")
+  sdniModifiedBy        String?   @db.VarChar(60)                      @map("sdni_modified_by")
+
+  // Relations
+  note                  SaleDeliveryNote   @relation("SaleDeliveryNoteItems",       fields: [sdniNoteId, sdniAccYear],          references: [sdnId, sdnAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_note")
+  billItem              SaleBillItem       @relation("SaleDeliveryNoteItemBill",    fields: [sdniBillItemId, sdniBillAccYear], references: [sbiId, sbiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_bill_item")
+  item                  ItemMaster         @relation("SaleDeliveryNoteItemItem",    fields: [sdniItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_item")
+  unit                  ItemUnitConversion @relation("SaleDeliveryNoteItemUnit",    fields: [sdniItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_item_unit")
+  billLot               StockLot?          @relation("SaleDeliveryNoteItemBillLot", fields: [sdniBillLotId],  references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_bill_lot")
+  lot                   StockLot?          @relation("SaleDeliveryNoteItemLot",     fields: [sdniLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdni_lot")
+
+  // No FK on sdniBillId, sdniBillGodownId or sdniGodownId (plan §7.2): the
+  // bill line's FK carries the bill, and both godowns are checked by the
+  // service against the bill line and the note.
+
+  @@id([sdniId, sdniAccYear], map: "pk_sale_delivery_note_item")
+
+  // Partial indexes are DB-only: ix_sdni_note (note, year, line no),
+  // ix_sdni_bill_item (bill line, bill year: the bill's Delivery box finds
+  // drafts), FK-covering ix_sdni_item / ix_sdni_lot, all WHERE NOT deleted;
+  // ix_sync_pending_sale_delivery_note_item.
+  //
+  // CHECK constraints (DB-only): ck_sdni_line_no, ck_sdni_bucket, ck_sdni_qty,
+  //   ck_sdni_base_qty.
+
+  @@map("sale_delivery_note_item")
   @@schema("sales")
 }
 
@@ -15922,6 +16260,11 @@ model SaleReturnItem {
   /// bill may be another branch's (D78).
   sriRateSrcItemId      String?   @db.Uuid                             @map("sri_rate_src_item_id")
   sriRateSrcAccYear     String?   @db.Char(9)                          @map("sri_rate_src_acc_year")
+  /// The part of this row the customer never took (delivery tracking,
+  /// 20261117100000, N3 / addendum A3): it settles the bill line's pending with
+  /// a RETURN event instead of coming off the shelf. ck_sri_undelivered: >= 0
+  /// and <= return + free qty. 0 on a Claim (a service rule).
+  sriUndeliveredQty     Decimal   @default(0) @db.Decimal(14, 3)       @map("sri_undelivered_qty")
 
   // Relations
   saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")
@@ -17094,6 +17437,8 @@ model StockLot {
   // Goods come back to the lot they left from, which is what keeps a
   // returned unit valued at what it actually cost.
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemLot")
+  deliveryNoteItemsBillLot SaleDeliveryNoteItem[]  @relation("SaleDeliveryNoteItemBillLot")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemLot")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemLot")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
 
@@ -18398,6 +18743,13 @@ model StockVoucherItem {
   /// GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
   /// never sent — the variance must not be editable.
   sviDiffQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("svi_diff_qty")
+  /// Delivery tracking (20261117100000, Q17 / addendum decision 68): the shelf
+  /// as counted, billed goods included, when the count compares with Physical.
+  /// The server then stores sviCountedQty = sviShelfQty - sviUndeliveredQty,
+  /// which may be negative (no CHECK on sviCountedQty).
+  sviShelfQty          Decimal?  @db.Decimal(18, 6)                  @map("svi_shelf_qty")
+  /// The billed-not-delivered of the holding, re-read at every save.
+  sviUndeliveredQty    Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_undelivered_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
   sviCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate")

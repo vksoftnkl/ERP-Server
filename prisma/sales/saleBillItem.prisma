@@ -191,6 +191,9 @@ model SaleBillItem {
   // would re-create it without one. Do NOT add @@index for it.
   // ── Sales documents (20260921200000) ────────────────────────────────────
   returnItems           SaleReturnItem[]          @relation("SaleReturnItemBill")
+  // ── Delivery tracking (20261117100000) ──────────────────────────────────
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemBill")
+  deliveryEvents        SaleDeliveryEvent[]       @relation("SaleDeliveryEventBillItem")
 
   // ── Sales plan (20260921220000) ───────────────────────────────────────
   lot                StockLot? @relation("SaleBillItemLot", fields: [sbiLotId], references: [sltId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbi_lot")

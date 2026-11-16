@@ -312,6 +312,9 @@ const TABLES = [
       column('vchr_raise_bill_type', 'literal', 'varchar'),
       column('vchr_gst_register', 'literal', 'varchar'),
       column('vchr_gst_side', 'literal', 'varchar'),
+      // 20261117100000_delivery_tracking (Q3): the default delivery mode of a Sales Bill
+      // type; INSTANT on the base Sales Bill, NULL elsewhere (a child takes the base's).
+      column('vchr_delivery_mode', 'literal', 'varchar'),
       column('vchr_created_by', 'const', 'varchar', { value: "'system'" }),
     ],
   },

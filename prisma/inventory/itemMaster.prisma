@@ -132,6 +132,7 @@ model ItemMaster {
 
   // ── Sales documents (20260921200000) ────────────────────────────────────
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).

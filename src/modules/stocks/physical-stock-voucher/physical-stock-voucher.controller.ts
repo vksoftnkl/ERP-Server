@@ -35,6 +35,12 @@ import type {
 import { PHYSICAL_DEFAULT_RATE_SOURCE } from '../stock-voucher/types/stock-voucher.types';
 import { SavePhysicalStockVoucherDto } from './dto/save-physical-stock-voucher.dto';
 import {
+  withUndeliveredOnDocument,
+  withUndeliveredOnSheet,
+  withUndeliveredOnValidate,
+  type ValidateRowWithUndelivered,
+} from './physical-stock-delivery';
+import {
   GenerateCountSheetQueryDto,
   GetPhysicalStockVoucherQueryDto,
   PhysicalStockVarianceQueryDto,
@@ -154,7 +160,13 @@ export class PhysicalStockVoucherController {
     @Query() query: GenerateCountSheetQueryDto,
   ): Promise<StockVoucherSuccessResponse<PagedResult<StockCountSheetRow>>> {
     await this.requireRight('view', 'generate a count sheet');
-    const data = await this.stockVoucherService.countSheet(PHYSICAL_RULES, query);
+    // Delivery tracking (addendum §5.3): each holding's Billed not delivered,
+    // Physical = book + it, the bills behind it and the selling unit.
+    const data = await withUndeliveredOnSheet(
+      this.prisma,
+      { companyId: query.companyId, branchId: query.branchId, godownId: query.godownId },
+      await this.stockVoucherService.countSheet(PHYSICAL_RULES, query),
+    );
     return {
       success: true,
       message: `${data.items.length} holdings to count`,
@@ -191,9 +203,9 @@ export class PhysicalStockVoucherController {
     if (dto.header.post === true || dto.header.status === 'POSTED') {
       await this.requireRight('post', 'post a physical count');
     }
-    const data = await this.stockVoucherService.save(
-      PHYSICAL_RULES,
-      dto as unknown as SaveStockVoucherDto,
+    const data = await withUndeliveredOnDocument(
+      this.prisma,
+      await this.stockVoucherService.save(PHYSICAL_RULES, dto as unknown as SaveStockVoucherDto),
     );
     const saved = dto.header.svhId ? 'updated' : 'created';
     return {
@@ -220,12 +232,15 @@ export class PhysicalStockVoucherController {
   ): Promise<StockVoucherSuccessResponse<StockVoucherPayload | StockVoucherListResult>> {
     await this.requireRight('view', 'view physical counts');
     if (query.svhId) {
-      const data = await this.stockVoucherService.getById(
-        PHYSICAL_RULES,
-        query.svhId,
-        query.accYear,
-        query.companyId,
-        query.branchId,
+      const data = await withUndeliveredOnDocument(
+        this.prisma,
+        await this.stockVoucherService.getById(
+          PHYSICAL_RULES,
+          query.svhId,
+          query.accYear,
+          query.companyId,
+          query.branchId,
+        ),
       );
       return { success: true, message: 'Physical stock count fetched successfully', data };
     }
@@ -245,14 +260,25 @@ export class PhysicalStockVoucherController {
   @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
   async validate(
     @Query() query: PhysicalStockVoucherRefQueryDto,
-  ): Promise<StockVoucherSuccessResponse<StockVoucherLineProblem[]>> {
+  ): Promise<StockVoucherSuccessResponse<ValidateRowWithUndelivered[]>> {
     await this.requireRight('view', 'validate a physical count');
-    const data = await this.stockVoucherService.validate(
-      PHYSICAL_RULES,
-      query.svhId,
-      query.accYear,
-      query.companyId,
-      query.branchId,
+    // Delivery tracking (addendum §5.3): + the WARN PHY_UNDELIVERED_CHANGED
+    // per line whose Billed-not-delivered moved since the last save (advisory).
+    const data = await withUndeliveredOnValidate(
+      this.prisma,
+      {
+        svhId: query.svhId,
+        accYear: query.accYear,
+        companyId: query.companyId,
+        branchId: query.branchId,
+      },
+      await this.stockVoucherService.validate(
+        PHYSICAL_RULES,
+        query.svhId,
+        query.accYear,
+        query.companyId,
+        query.branchId,
+      ),
     );
     const failing = data.filter((row) => row.problem !== null).length;
     return {

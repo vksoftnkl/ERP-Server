@@ -143,27 +143,11 @@ export class AmendBillDto extends ValidateBillDto {
 /** §2.6 — `/bills/delete`, DRAFT only. */
 export class DeleteBillDto extends BillKeysDto {}
 
-export const DELIVERY_EVENTS = ['VERIFIED', 'PACKED', 'DISPATCHED', 'DELIVERED'] as const;
-export type DeliveryEvent = (typeof DELIVERY_EVENTS)[number];
-
-/** §2.10 — `PUT /bills/delivery-status`. */
-export class DeliveryStatusDto extends BillKeysDto {
-  @ApiProperty({ enum: DELIVERY_EVENTS })
-  @IsIn(DELIVERY_EVENTS)
-  event!: DeliveryEvent;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableStringStrict(250)
-  remarks?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableStringStrict(20)
-  vehicleNo?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @NullableStringStrict(50)
-  lrNo?: string | null;
-}
+/**
+ * §2.10 `PUT /bills/delivery-status` is retired (delivery tracking plan §8.4
+ * item 8): its DTO is gone and the route answers 410 SALES_DELIVERY_RETIRED
+ * whatever it is sent.
+ */
 
 /** §2.11 — `PUT /bills/update-remarks`. */
 export class UpdateRemarksDto extends BillKeysDto {

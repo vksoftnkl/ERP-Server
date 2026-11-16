@@ -1,0 +1,102 @@
+/// Insert-only delivery events of a bill line (migration
+/// 20261117100000_delivery_tracking, plan §7.3, decisions 34-37, 46).
+///
+/// Never updated, never deleted. Every reader sums the signed columns through
+/// one SQL fragment (delivery-pending.sql.ts), never by kind:
+///   settled = SUM(sdeSettleQty)  -> pending = sbi_bill_qty - settled
+///   given   = SUM(sdeOutQty)     -> what physically left the godown
+/// Phase 2 adds sde_pod_qty / sde_pod_base_qty (ADD COLUMN NOT NULL DEFAULT 0)
+/// and the kinds POD_OK / POD_SHORT, with no reader change (§14).
+///
+///   kind           settle   out      source
+///   GIVEN          +q       +q       DELIVERY_NOTE line (one per sdni, ux_sde_given)
+///   CANCEL         -r       -r       reverses a GIVEN (sdeReversesId)
+///   GOODS_BACK     -q       -q       DELIVERY_NOTE line, refused at the door
+///   RETURN         +u       0        SALE_RETURN line, goods never taken (ux_sde_return)
+///   RETURN_CANCEL  -u       0        reverses a RETURN
+///   CLEANUP        +q       +q       go-live (Q15), the bill's year, no source doc
+///
+/// LIST-partitioned by sdeAccYear = the source document's year (the note's, the
+/// return's; the bill's for CLEANUP). No CHECK or UNIQUE over a quantity two
+/// sites draw on: over-delivery that arrives by sync is recorded and flagged
+/// (/deliveries/exceptions), never refused here. The client may send its own
+/// uuidv7 sdeId (goods-back retry safety, addendum decision 69).
+model SaleDeliveryEvent {
+  sdeId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sde_id")
+  sdeCompanyId          String    @db.Uuid                             @map("sde_company_id")
+  sdeBranchId           String    @db.Uuid                             @map("sde_branch_id")
+  sdeTenantId           String?   @db.Uuid                             @map("sde_tenant_id")
+  sdeAccYear            String    @db.Char(9)                          @map("sde_acc_year")
+  /// GIVEN | CANCEL | GOODS_BACK | RETURN | RETURN_CANCEL | CLEANUP (ck_sde_kind).
+  sdeKind               String    @db.VarChar(16)                      @map("sde_kind")
+
+  // ── The bill line ────────────────────────────────────────────────────
+  sdeBillId             String    @db.Uuid                             @map("sde_bill_id")
+  sdeBillAccYear        String    @db.Char(9)                          @map("sde_bill_acc_year")
+  sdeBillItemId         String    @db.Uuid                             @map("sde_bill_item_id")
+  sdeBillLineNo         Int                                            @map("sde_bill_line_no")
+  sdeItemId             String    @db.Uuid                             @map("sde_item_id")
+  /// Where the goods physically left / came back (the bill line's godown for
+  /// RETURN / CLEANUP).
+  sdeGodownId           String    @db.Uuid                             @map("sde_godown_id")
+  /// The lot given.
+  sdeLotId              String?   @db.Uuid                             @map("sde_lot_id")
+
+  // ── Signed quantities (ck_sde_signs) ─────────────────────────────────
+  /// What the line no longer has to give; line unit.
+  sdeSettleQty          Decimal   @db.Decimal(14, 3)                   @map("sde_settle_qty")
+  sdeSettleBaseQty      Decimal   @db.Decimal(18, 6)                   @map("sde_settle_base_qty")
+  /// What physically left the godown; line unit.
+  sdeOutQty             Decimal   @default(0) @db.Decimal(14, 3)       @map("sde_out_qty")
+  sdeOutBaseQty         Decimal   @default(0) @db.Decimal(18, 6)       @map("sde_out_base_qty")
+
+  // ── Source ───────────────────────────────────────────────────────────
+  /// DELIVERY_NOTE | SALE_RETURN | CLEANUP (ck_sde_src_doc_type); CLEANUP and
+  /// only CLEANUP has no sdeSrcDocId (ck_sde_src).
+  sdeSrcDocType         String    @db.VarChar(20)                      @map("sde_src_doc_type")
+  sdeSrcDocId           String?   @db.Uuid                             @map("sde_src_doc_id")
+  sdeSrcAccYear         String?   @db.Char(9)                          @map("sde_src_acc_year")
+  /// sdni_id / sri_id.
+  sdeSrcLineId          String?   @db.Uuid                             @map("sde_src_line_id")
+  sdeSrcRefno           String?   @db.VarChar(40)                      @map("sde_src_refno")
+  /// CANCEL -> its GIVEN; RETURN_CANCEL -> its RETURN (ck_sde_reverses).
+  sdeReversesId         String?   @db.Uuid                             @map("sde_reverses_id")
+  /// When it happened (device time).
+  sdeEventDatetime      DateTime  @db.Timestamptz(6)                   @map("sde_event_datetime")
+  sdeReason             String?   @db.VarChar(200)                     @map("sde_reason")
+  sdeDeviceId           String?                                        @map("sde_device_id")
+
+  /// Never set (registry shape; the partial indexes read it).
+  sdeIsDeleted          Boolean   @default(false)                      @map("sde_is_deleted")
+  sdeSyncDate           DateTime? @db.Timestamptz(6)                   @map("sde_sync_date")
+  sdeCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sde_created_on")
+  sdeCreatedBy          String    @db.VarChar(60)                      @map("sde_created_by")
+
+  // Relations
+  billItem              SaleBillItem       @relation("SaleDeliveryEventBillItem", fields: [sdeBillItemId, sdeBillAccYear], references: [sbiId, sbiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sde_bill_item")
+
+  // No other FK (plan §7.3): an event row is history, read through its bill line.
+
+  @@id([sdeId, sdeAccYear], map: "pk_sale_delivery_event")
+
+  @@index([sdeBillId, sdeBillAccYear], map: "ix_sde_bill")
+  @@index([sdeSrcDocType, sdeSrcDocId], map: "ix_sde_src")
+
+  // DB-only (partial or INCLUDE, which Prisma cannot express):
+  //   ix_sde_bill_item (bill line, bill year) INCLUDE (the four qty columns)
+  //     WHERE sde_is_deleted = false  -- the readers' sum
+  //   ix_sde_godown_time (company, branch, godown, event time DESC) WHERE GIVEN
+  //   ux_sde_given    (src line, year) WHERE GIVEN
+  //   ux_sde_return   (src line, year) WHERE RETURN
+  //   ux_sde_reversal (reverses id, year) WHERE CANCEL / RETURN_CANCEL
+  //   ux_sde_cleanup  (bill line, year) WHERE CLEANUP
+  //   ix_sync_pending_sale_delivery_event
+  // The partial UNIQUEs are single-writer safe: only the note's / the
+  // return's own site writes them (decision 37).
+  //
+  // CHECK constraints (DB-only): ck_sde_kind, ck_sde_src_doc_type,
+  //   ck_sde_signs, ck_sde_reverses, ck_sde_src.
+
+  @@map("sale_delivery_event")
+  @@schema("sales")
+}

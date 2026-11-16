@@ -24,7 +24,10 @@ export type TransportDocType =
   | 'PURCHASE_BILL'
   // GRN (menu 196, INWARD) and Purchase Return (menu 25, OUTWARD — goods back to the supplier)
   | 'GRN'
-  | 'PURCHASE_RETURN';
+  | 'PURCHASE_RETURN'
+  // Delivery tracking (ck_ttd_doc_type since 20261117100000): the note's
+  // transporter / LR, OUTWARD from the note's godown.
+  | 'DELIVERY_NOTE';
 
 export interface TransportEnd {
   godownId?: string | null;

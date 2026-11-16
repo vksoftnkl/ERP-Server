@@ -7,10 +7,19 @@ import { SaleReturnController } from './sale-return.controller';
 import { SaleReturnExceptionFilter } from './sale-return-exception.filter';
 import { SaleReturnService } from './sale-return.service';
 import { TillModule } from '../../till/till.module';
+import { DeliveryCoreModule } from '../delivery/core/delivery-core.module';
 
 @Module({
   // TillModule: a cash refund leaves TODAY's drawer (TILL_DESIGN.md D7).
-  imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule, SalesPostingModule, TillModule],
+  // DeliveryCoreModule: goods never taken settle the bill line's pending (delivery tracking §8.4 item 9).
+  imports: [
+    AuditLogModule,
+    ChargeDetailModule,
+    TenderDetailModule,
+    SalesPostingModule,
+    TillModule,
+    DeliveryCoreModule,
+  ],
   controllers: [SaleReturnController],
   providers: [SaleReturnService, SaleReturnExceptionFilter],
   exports: [SaleReturnService],

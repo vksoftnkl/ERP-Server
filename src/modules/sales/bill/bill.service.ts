@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertPosDeliveryMode, resolveBillDeliveryMode } from './bill-delivery.helper';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { isOfflineSite } from '../../../config/offline-site';
@@ -814,6 +815,9 @@ export class BillService {
    * lines AND the number back. Run `prepareSave` first.
    */
   async createBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill> {
+    // Delivery tracking decision 42 (round 2): a POS bill asking for Pickup /
+    // Dispatch is refused before anything is read or a number is drawn.
+    assertPosDeliveryMode(saveBillDto.sbBillMode, saveBillDto.sbDeliveryMode);
     saveBillDto.sbSessionId = await tillSessionIdOrNull(tx, saveBillDto.sbSessionId);
     const normalizedCustName = normalizeRequiredText<BillErrorDetail, BillErrorResponse>(
       saveBillDto.sbCustName ?? '',
@@ -878,6 +882,15 @@ export class BillService {
     this.applyOptionalFields(data, saveBillDto);
     data.sbCustName = normalizedCustName;
     data.sbBillDate = billDate;
+    // Delivery tracking §8.4 item 1: the mode is settled at the first save.
+    data.sbDeliveryMode = await resolveBillDeliveryMode(tx, {
+      billMode: saveBillDto.sbBillMode,
+      vchrTypeId,
+      requested: saveBillDto.sbDeliveryMode,
+      srcDocType: saveBillDto.sbSrcDocType,
+      srcDocId: saveBillDto.sbSrcDocId,
+      items: saveBillDto.items,
+    });
     await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
     const created = await tx.saleBill.create({ data });
     const scope = this.toScope(created);
@@ -1017,6 +1030,19 @@ export class BillService {
       sbModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveBillDto);
+    // Delivery tracking §8.4 item 1: a draft keeps its mode unless one is sent;
+    // a bill that is (now) POS is INSTANT whatever it held.
+    const billModeNow = saveBillDto.sbBillMode ?? existing.sbBillMode;
+    if (
+      (billModeNow ?? '').toUpperCase() === 'POS' ||
+      (saveBillDto.sbDeliveryMode !== undefined && saveBillDto.sbDeliveryMode !== null)
+    ) {
+      data.sbDeliveryMode = await resolveBillDeliveryMode(tx, {
+        billMode: billModeNow,
+        vchrTypeId: existing.sbVchrTypeId,
+        requested: saveBillDto.sbDeliveryMode,
+      });
+    }
     await this.ensurePosStateExists(tx, saveBillDto);
     await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
     const updated = await tx.saleBill.update({

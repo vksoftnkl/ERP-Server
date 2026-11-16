@@ -7,7 +7,7 @@ import {
   SaveStockReasonDto,
   StockReasonPickerQueryDto,
 } from './dto/stock-reason.dto';
-import { StockReasonsService } from './stock-reasons.service';
+import { StockReasonsService, SYSTEM_ONLY_REASON_CODES } from './stock-reasons.service';
 
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46b201';
 const OTHER_COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46b202';
@@ -191,6 +191,12 @@ describe('StockReasonsService', () => {
         expect((strings as unknown as string[]).join('?')).toContain(
           "AND (NOT ?::boolean OR r.srm_direction = 'BOTH')",
         );
+        // Delivery tracking (plan §7.6): the system reason a Delivery Note's
+        // godown correction posts under is never offered.
+        expect((strings as unknown as string[]).join('?')).toContain(
+          "AND r.srm_code <> 'DELIVERY_GODOWN'",
+        );
+        expect(SYSTEM_ONLY_REASON_CODES).toEqual(['DELIVERY_GODOWN']);
       },
     );
   });

@@ -62,6 +62,8 @@ const row = (over: Partial<SummaryRow> = {}): SummaryRow => ({
   reserved: '10.000',
   available: '3310.000',
   inTransit: '0.000',
+  notDelivered: '40.000',
+  physical: '3360.000',
   rate: '23.83',
   value: '79130.77',
   openingValue: '0.00',
@@ -297,6 +299,9 @@ describe('Stock Summary print providers', () => {
       last_sale: '10/11/2026',
       today_only: true,
       reserved: 10,
+      // Delivery tracking (plan §8.4 item 12): today only.
+      not_delivered: 40,
+      physical: 3360,
       negative: false,
     });
     const neg = summaryPrintRow(
@@ -313,6 +318,8 @@ describe('Stock Summary print providers', () => {
       reserved: null,
       available: null,
       in_transit: null,
+      not_delivered: null,
+      physical: null,
     });
   });
 });

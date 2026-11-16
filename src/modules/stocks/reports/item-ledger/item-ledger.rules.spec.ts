@@ -122,6 +122,12 @@ describe('item-ledger rules', () => {
       walkInName: 'MADHAVAN',
     };
 
+    it('a Delivery Note correction has no party (not "Counter (cash)")', () => {
+      expect(
+        partyOf({ ...base, docKind: 'DELIVERY_NOTE', partyId: null, billCustomerId: null, billCustomerName: null }),
+      ).toBeNull();
+    });
+
     it('a walk-in bill with no typed name is "Counter (cash)"', () => {
       expect(partyOf(base)).toEqual({ id: WALK, label: COUNTER_CASH, walkIn: true });
     });
@@ -237,6 +243,9 @@ describe('item-ledger rules', () => {
       [{ linkDocType: null, voucherType: 'TRANSFER_OUT' }, 'GODOWN_TRANSFER'],
       [{ linkDocType: 'STOCK_VOUCHER', voucherType: 'TRANSFER_IN' }, 'BRANCH_INWARD'],
       [{ linkDocType: null, voucherType: null, srcDocType: 'PURCHASE_BILL' }, 'PURCHASE_BILL'],
+      // Delivery tracking (§8.4 item 13): a Delivery Note's corrections open menu 305.
+      [{ linkDocType: 'DELIVERY_NOTE', voucherType: 'ADJUSTMENT' }, 'DELIVERY_NOTE'],
+      [{ linkDocType: 'DELIVERY_NOTE', voucherType: 'TRANSFER_OUT' }, 'DELIVERY_NOTE'],
     ])('%j → %s', (input, expected) => {
       const blank: Parameters<typeof docKindOf>[0] = {
         linkDocType: null,

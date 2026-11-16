@@ -1,4 +1,4 @@
-import { REPORT_TYPE_CODES, SHADOW_DOC_TYPES } from './item-ledger.rules';
+import { AMENDABLE_SHADOW_DOC_TYPES, REPORT_TYPE_CODES } from './item-ledger.rules';
 import {
   ledgerChain,
   openingSql,
@@ -150,7 +150,9 @@ describe('item-ledger SQL', () => {
       expect(text).toContain('w.svh_link_src_doc_id = v.svh_link_src_doc_id');
       expect(text).toContain('w.svh_created_on > v.svh_created_on');
       expect(text).toContain("w.svh_status <> 'DRAFT'");
-      expect(ledgerChain(scope()).values).toEqual(expect.arrayContaining([...SHADOW_DOC_TYPES]));
+      expect(ledgerChain(scope()).values).toEqual(expect.arrayContaining([...AMENDABLE_SHADOW_DOC_TYPES]));
+      // A Delivery Note posts several corrections and is never amended (delivery tracking §8.4 item 13).
+      expect(ledgerChain(scope()).values).not.toContain('DELIVERY_NOTE');
     });
 
     it('sorts a reversal right after its original', () => {

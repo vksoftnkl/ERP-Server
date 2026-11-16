@@ -105,6 +105,16 @@ export interface VoucherTypePayload {
   printDocType: string | null;
   printDesigns: VoucherTypePrintDesign[];
   preview: NumberingPreview;
+  /**
+   * Delivery tracking (Q3). true for Sales Bill and its children: the screen
+   * shows its Delivery section only then. `type.vchrDeliveryMode` is the row's
+   * own value (a child never saved with one: null = the base's).
+   */
+  deliveryModeApplies: boolean;
+  /** The base's mode (a base: its own); null when the type has none. */
+  inheritedDeliveryMode: string | null;
+  /** What a new bill of the type defaults to: own → base → INSTANT; null when none applies. */
+  effectiveDeliveryMode: string | null;
 }
 
 /** POST /voucher-types/validate → data. */
@@ -113,4 +123,9 @@ export interface VoucherTypeValidation {
   errors: VtIssue[];
   warnings: VtIssue[];
   preview: NumberingPreview;
+  /** The mode the save would store (null = the base's on a child). */
+  vchrDeliveryMode: string | null;
+  deliveryModeApplies: boolean;
+  inheritedDeliveryMode: string | null;
+  effectiveDeliveryMode: string | null;
 }

@@ -62,6 +62,7 @@ const row = (over: Partial<AccVoucherType>): AccVoucherType => ({
   vchrStartNo: 1,
   vchrPrintPurposeId: null,
   vchrPrintAfterPost: false,
+  vchrDeliveryMode: null,
   vchrSyncDate: null,
   vchrCreatedOn: new Date('2026-08-04T00:00:00Z'),
   vchrCreatedBy: 'system',
@@ -1056,6 +1057,97 @@ describe('review round 11-15', () => {
       const names = w.locks.map((l) => l[0]);
       expect(names).toEqual(['accounts.acc_voucher_types.save', 'accounts.acc_voucher_types.code']);
       expect(w.locks[1]).toEqual(['accounts.acc_voucher_types.code', 'Bil']);
+    });
+  });
+});
+
+describe('delivery mode (delivery tracking plan §8.4 item 11, Q3)', () => {
+  it('saves a child’s mode, and keeps null (the base’s) when the key is left out', async () => {
+    const { service, accVoucherType } = makeService(makeWorld());
+
+    await service.save(child({ vchrDeliveryMode: 'PICKUP' }));
+    expect(accVoucherType.create.mock.calls[0][0].data.vchrDeliveryMode).toBe('PICKUP');
+
+    const { service: s2, accVoucherType: a2 } = makeService(makeWorld());
+    const out = await s2.save(child());
+    expect(a2.create.mock.calls[0][0].data.vchrDeliveryMode).toBeNull();
+    expect(out).toMatchObject({
+      deliveryModeApplies: true,
+      inheritedDeliveryMode: null,
+      effectiveDeliveryMode: 'INSTANT',
+    });
+  });
+
+  it('answers the base’s mode as inherited and the effective one on a child', async () => {
+    const w = makeWorld();
+    w.types[0].vchrDeliveryMode = 'INSTANT';
+    const { service } = makeService(w);
+
+    const out = await service.save(child({ vchrDeliveryMode: 'DISPATCH' }));
+
+    expect(out.type.vchrDeliveryMode).toBe('DISPATCH');
+    expect(out).toMatchObject({
+      deliveryModeApplies: true,
+      inheritedDeliveryMode: 'INSTANT',
+      effectiveDeliveryMode: 'DISPATCH',
+    });
+  });
+
+  it('refuses a cleared mode on a Sales Bill type (VT_DELIVERY_MODE_REQUIRED), child and base', async () => {
+    const { service, accVoucherType } = makeService(makeWorld());
+    expect((await refusal(service.save(child({ vchrDeliveryMode: null })))).codes).toEqual([
+      'VT_DELIVERY_MODE_REQUIRED',
+    ]);
+    expect((await refusal(service.save(base3({ vchrDeliveryMode: null })))).codes).toEqual([
+      'VT_DELIVERY_MODE_REQUIRED',
+    ]);
+    expect(accVoucherType.create).not.toHaveBeenCalled();
+    expect(accVoucherType.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a mode on any other type (VT_DELIVERY_MODE_NOT_ALLOWED); null there is fine', async () => {
+    const { service } = makeService(makeWorld());
+
+    const r = await refusal(
+      service.save({ companyId: ACME, vchrTypeId: 24, vchrDeliveryMode: 'PICKUP' }),
+    );
+    expect(r.codes).toEqual(['VT_DELIVERY_MODE_NOT_ALLOWED']);
+
+    const v = await service.validate({ companyId: ACME, vchrTypeId: 24, vchrDeliveryMode: null });
+    expect(v.errors).toEqual([]);
+    expect(v).toMatchObject({
+      deliveryModeApplies: false,
+      vchrDeliveryMode: null,
+      inheritedDeliveryMode: null,
+      effectiveDeliveryMode: null,
+    });
+  });
+
+  it('writes the base’s new mode on Sales Bill itself, only that column', async () => {
+    const w = makeWorld();
+    w.types[0].vchrDeliveryMode = 'INSTANT';
+    const { service, accVoucherType } = makeService(w);
+
+    await service.save(base3({ vchrDeliveryMode: 'PICKUP' }));
+
+    const data = accVoucherType.update.mock.calls[0][0].data;
+    expect(Object.keys(data).sort()).toEqual(['vchrDeliveryMode', 'vchrUpdatedBy', 'vchrUpdatedOn']);
+    expect(data.vchrDeliveryMode).toBe('PICKUP');
+  });
+
+  it('validate answers the mode the save would store', async () => {
+    const w = makeWorld();
+    w.types[0].vchrDeliveryMode = 'INSTANT';
+    const { service } = makeService(w);
+
+    const v = await service.validate(child({ vchrDeliveryMode: 'PICKUP' }));
+
+    expect(v).toMatchObject({
+      ok: true,
+      vchrDeliveryMode: 'PICKUP',
+      deliveryModeApplies: true,
+      inheritedDeliveryMode: 'INSTANT',
+      effectiveDeliveryMode: 'PICKUP',
     });
   });
 });

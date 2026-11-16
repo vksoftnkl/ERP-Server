@@ -52,6 +52,8 @@ const ROUTES: [string, string][] = [
   ["'S'::text AS part", 'ilSummary'],
   ['sp.led_name AS supplier, b.sbl_on_hand_qty', 'lotsNow'],
   ["'L'::text AS k", 'lotNames'],
+  // Delivery tracking (plan §8.4 item 12): Billed not delivered now (bndNowSql).
+  ['SUM(op.pending_base) AS bnd', 'bnd'],
 ];
 
 function makeDb() {

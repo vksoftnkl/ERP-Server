@@ -65,10 +65,22 @@ describe('PhysicalStockVoucherController', () => {
   let controller: PhysicalStockVoucherController;
   let rightsRow: Record<string, boolean> | null;
   let rightsRead: jest.Mock;
+  /** Delivery tracking reads (BND per holding, sell units, the stored snapshot): by SQL marker. */
+  let deliveryRows: { bnd: unknown[]; units: unknown[]; stored: unknown[] };
 
   beforeEach(() => {
     rightsRow = allRights();
-    rightsRead = jest.fn(async () => (rightsRow ? [rightsRow] : []));
+    deliveryRows = { bnd: [], units: [], stored: [] };
+    rightsRead = jest.fn(async (strings: TemplateStringsArray | { strings?: string[] }) => {
+      const text = Array.isArray(strings)
+        ? strings.join('?')
+        : ((strings as { strings?: string[] }).strings ?? []).join('?');
+      if (text.includes('FROM public.user_menus')) return rightsRow ? [rightsRow] : [];
+      if (text.includes('op.pending_qty, op.pending_base, um.unit_name')) return deliveryRows.bnd;
+      if (text.includes('COALESCE(dfl.factor, 1) AS factor')) return deliveryRows.units;
+      if (text.includes('svi.svi_undelivered_qty, itm.item_name_en')) return deliveryRows.stored;
+      return [];
+    });
     service = {
       post: jest.fn(),
       cancel: jest.fn(),
@@ -140,11 +152,79 @@ describe('PhysicalStockVoucherController', () => {
     await expect(controller.countSheet(query as never)).resolves.toEqual({
       success: true,
       message: '2 holdings to count',
-      data: sheet,
+      data: {
+        ...sheet,
+        // Delivery tracking (addendum §5.3): nothing billed-not-delivered here.
+        items: sheet.items.map((i) => ({
+          ...i,
+          undeliveredQty: 0,
+          physicalQty: 0,
+          undeliveredBills: [],
+          sellUnitName: undefined,
+          sellUnitFactor: 1,
+        })),
+      },
     });
     const [rules, sent] = service.countSheet.mock.calls[0] as [StockVoucherTypeRules, unknown];
     expect(rules.voucherType).toBe('PHYSICAL');
     expect(sent).toBe(query);
+  });
+
+  // ── delivery tracking (addendum §5.3) ───────────────────────────────────
+  describe('Billed not delivered on the count (delivery tracking)', () => {
+    const ITEM = '01a161d8-4fd1-78ed-841a-a6e28b641ec2';
+    const LOT = 'dd08de2b-18f1-575d-b653-df1765055465';
+    const GODOWN = '019daae6-c65c-7eb8-9ba2-7659611b0a01';
+
+    it('count-sheet: undeliveredQty, physicalQty = book + it, the bills oldest first, the selling unit', async () => {
+      service.countSheet.mockResolvedValue({
+        items: [{ itemId: ITEM, lotId: LOT, godownId: GODOWN, bucket: 'SALEABLE', bookQty: 1500, unitName: 'Kg' }],
+        meta: { limit: 200, offset: 0, count: 1 },
+      });
+      deliveryRows.bnd = [
+        { bill_id: 'b1', bill_acc_year: '2026-2027', bill_refno: 'WS/0016', cust_name: 'ZT-A', godown_id: GODOWN, item_id: ITEM, lot_id: LOT, bucket: 'SALEABLE', pending_qty: '16', pending_base: '400', unit_name: 'Bag' },
+        { bill_id: 'b2', bill_acc_year: '2026-2027', bill_refno: 'WS/0017', cust_name: 'ZT-B', godown_id: GODOWN, item_id: ITEM, lot_id: LOT, bucket: 'SALEABLE', pending_qty: '24', pending_base: '600', unit_name: 'Bag' },
+      ];
+      deliveryRows.units = [{ item_id: ITEM, unit_name: 'Bag', factor: '25' }];
+
+      const res = await controller.countSheet({ companyId: COMPANY_ID, branchId: BRANCH_ID, godownId: GODOWN } as never);
+
+      expect(res.data.items[0]).toMatchObject({
+        undeliveredQty: 1000,
+        physicalQty: 2500,
+        sellUnitName: 'Bag',
+        sellUnitFactor: 25,
+        undeliveredBills: [
+          { billId: 'b1', billRefno: 'WS/0016', custName: 'ZT-A', qty: 16, unitName: 'Bag', baseQty: 400 },
+          { billId: 'b2', billRefno: 'WS/0017', custName: 'ZT-B', qty: 24, unitName: 'Bag', baseQty: 600 },
+        ],
+      });
+    });
+
+    it('validate: WARN PHY_UNDELIVERED_CHANGED when the snapshot differs from now (advisory, problem untouched)', async () => {
+      service.validate.mockResolvedValue([
+        { sviId: 's1', lineNo: 1, splitNo: 1, itemId: ITEM, itemCode: 'R', itemName: 'Rice', problem: null },
+        { sviId: 's2', lineNo: 2, splitNo: 1, itemId: ITEM, itemCode: 'R', itemName: 'Rice', problem: null },
+      ]);
+      deliveryRows.stored = [
+        { svi_id: 's1', svi_line_no: 1, svi_godown_id: GODOWN, svi_item_id: ITEM, svi_lot_id: LOT, svi_bucket: 'SALEABLE', svi_undelivered_qty: '1000', item_name: 'Rice' },
+        { svi_id: 's2', svi_line_no: 2, svi_godown_id: GODOWN, svi_item_id: ITEM, svi_lot_id: 'other', svi_bucket: 'SALEABLE', svi_undelivered_qty: '0', item_name: 'Rice' },
+      ];
+      deliveryRows.bnd = [
+        { bill_id: 'b1', bill_acc_year: '2026-2027', bill_refno: 'WS/0016', cust_name: 'ZT-A', godown_id: GODOWN, item_id: ITEM, lot_id: LOT, bucket: 'SALEABLE', pending_qty: '16', pending_base: '400', unit_name: 'Bag' },
+      ];
+
+      const res = await controller.validate(REF as never);
+
+      expect(res.data[0]).toMatchObject({
+        problem: null,
+        undeliveredQty: 400,
+        previousUndeliveredQty: 1000,
+        undeliveredChanged: true,
+        warning: { code: 'PHY_UNDELIVERED_CHANGED', level: 'WARN', params: { n: 1, item: 'Rice', old: 1000, new: 400 } },
+      });
+      expect(res.data[1]).toMatchObject({ undeliveredChanged: false, warning: null, undeliveredQty: 0 });
+    });
   });
 
   // ── create ────────────────────────────────────────────────────────────────

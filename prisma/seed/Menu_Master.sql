@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (127 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (130 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -50,7 +50,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 39 rows) ============
+    -- ============ &1 Sales (menu 1, 41 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,  10.00, '0', NULL, NULL, true , false)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
@@ -73,8 +73,14 @@ VALUES
     ,( 177,   17, 'Loading Charges'                      , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
     -- 125 Vehicle Master (20261112120000_vehicle_transporter_masters, plan-vehicle-master D1).
     ,( 125,   17, 'Vehicle Master'                       , NULL                  , true ,  75.00, NULL, NULL, NULL, true , false)
-    ,( 182,    1, 'Deliver Note'                         , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
-    ,( 226,    1, 'Delivery Status'                      , 'true'                , true ,  40.00, NULL, NULL, NULL, true , false)
+    -- 182 renamed "Delivery Challan" (label only, still hidden) and 226 Delivery Status hidden
+    -- (its hand-set status is replaced by the computed one) by 20261117100000_delivery_tracking
+    -- (plan-delivery-tracking-p1 Q2, D8). 304 Pending Deliveries and 305 Delivery Note (same
+    -- migration, Q1): the desk of bills still to give, and the note that gives them. Verbs below.
+    ,( 182,    1, 'Delivery Challan'                     , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
+    ,( 226,    1, 'Delivery Status'                      , 'true'                , false,  40.00, NULL, NULL, NULL, true , false)
+    ,( 304,    1, 'Pending Deliveries'                   , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
+    ,( 305,    1, 'Delivery Note'                        , NULL                  , true ,  41.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Schemes'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , true)
     -- 299 (20261110180000_sale_order_desk): Sales Order Management, the order desk
@@ -181,7 +187,7 @@ VALUES
     ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  50.00, NULL, NULL, NULL, true , false)
     ,( 262,    5, 'Voucher Register'                     , NULL                  , true , 160.00, NULL, NULL, NULL, true , true)
     ,( 263,    5, 'Cheque Books'                         , NULL                  , true , 140.00, NULL, NULL, NULL, true , false)
-    -- ============ &6 Reports (menu 6, 11 rows) ============
+    -- ============ &6 Reports (menu 6, 12 rows) ============
     -- 290 Price Change Log (notes 144, 20261023130000_price_change_log_menu_notes_144):
     -- the report over inventory.item_price_change_log, beside Audit Logs.
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,  60.00, '0', NULL, NULL, true , false)
@@ -198,6 +204,9 @@ VALUES
     -- report/plan-stock-summary-2026-11-13.md §4.1(a)): item-wise opening, inward,
     -- outward and closing with value, in the folder before the Item Ledger.
     ,( 302,  300, 'Stock Summary'                        , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    -- 306 Godown Stock Position (20261117100000_delivery_tracking, plan-delivery-tracking-p1 Q1):
+    -- per godown, what is on the shelf = owned + billed not delivered, today only.
+    ,( 306,  300, 'Godown Stock Position'                , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , false,   0.50, NULL, NULL, NULL, true , false)
     ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 144,  137, 'Ledger Monthly Summary'               , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
@@ -414,6 +423,18 @@ UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,AMEND,OVERRIDE}'
  WHERE menu_id = 13
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 304 Pending Deliveries and 306 Godown Stock Position (20261117100000_delivery_tracking) are
+-- read-only desks: view, print, export. 305 Delivery Note posts and cancels its notes, deletes a
+-- draft, and OVERRIDE gives goods from another godown than the bill's (Q18). Same guard as above.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (304, '{VIEW,PRINT,EXPORT}'),
+               (305, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'),
+               (306, '{VIEW,PRINT,EXPORT}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu
 -- created from the UI reuses id 1 and fails on the primary key.

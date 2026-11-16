@@ -15,8 +15,6 @@ import { isoDate, isoToday } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
 import type {
   BillTransportDto,
-  DeliveryEvent,
-  DeliveryStatusDto,
   UpdateRemarksDto,
 } from './dto/bill-lifecycle.dto';
 import {
@@ -26,20 +24,15 @@ import {
 } from './types/bill-api.types';
 
 /**
- * The three verbs that edit a POSTED bill WITHOUT amending it — HANDOVER §2.10
- * `delivery-status`, §2.11 `update-remarks`, §2.12 `transport`.
+ * The verbs that edit a POSTED bill WITHOUT amending it — §2.11
+ * `update-remarks`, §2.12 `transport`. §2.10 `delivery-status` (menu 226's
+ * hand-set PACKED / DISPATCHED steps) is retired by delivery tracking (plan
+ * §8.4 item 8, D8): the bill's delivery status is computed from Delivery Note
+ * events by DeliveryStatusService, and the route answers 410.
  *
  * None of them bumps `sb_revision_no`: the document did not change. Each
  * writes its own `txn_status_log` row so the trail says what moved.
  */
-const DELIVERY_ORDER: readonly string[] = [
-  'NA',
-  'PENDING',
-  'VERIFIED',
-  'PACKED',
-  'DISPATCHED',
-  'DELIVERED',
-];
 
 @Injectable()
 export class BillBandService {
@@ -50,82 +43,6 @@ export class BillBandService {
     private readonly transportBand: TransportBandService,
     private readonly audit: AuditLogService,
   ) {}
-
-  /** §2.10 — VERIFIED (when required) → PACKED → DISPATCHED → DELIVERED, in order. */
-  async deliveryStatus(dto: DeliveryStatusDto): Promise<{ sbDeliveryStatus: string }> {
-    const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      const bill = await this.bills.lockHeader(tx, dto);
-      this.assertPosted(bill);
-      await this.assertDayOpen(tx, bill);
-      const settings = await this.salesContext.settings(bill.sbCompanyId, bill.sbBranchId);
-      const requireVerify = await this.requireVerification(bill.sbCompanyId, bill.sbBranchId);
-      void settings;
-      const current = bill.sbDeliveryStatus === 'NA' ? 'PENDING' : bill.sbDeliveryStatus;
-      const next: DeliveryEvent = dto.event;
-      const from = DELIVERY_ORDER.indexOf(current);
-      const to = DELIVERY_ORDER.indexOf(next);
-      // VERIFIED is a step only when the branch asks for it.
-      const expectedPrev = next === 'PACKED' && requireVerify ? 'VERIFIED' : DELIVERY_ORDER[to - 1];
-      const allowed =
-        to > from &&
-        (next === 'VERIFIED' || (next === 'PACKED' && !requireVerify)
-          ? true
-          : current === expectedPrev);
-      if (!allowed) {
-        throwSalesLocked(
-          `Delivery is ${current}; ${next} is not the next step${requireVerify ? ' (this branch verifies before dispatch)' : ''}`,
-          SALES_ERROR_CODES.DELIVERY_ORDER,
-          'event',
-        );
-      }
-      const actor = this.salesContext.actor();
-      await tx.saleBill.update({
-        where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-        data: {
-          sbDeliveryStatus: next,
-          sbDeliveredOn: next === 'DELIVERED' ? now : bill.sbDeliveredOn,
-          sbVehicleNo: dto.vehicleNo ?? bill.sbVehicleNo,
-          sbModifiedOn: now,
-          sbModifiedBy: await this.salesContext.actorName(tx),
-        },
-      });
-      if (dto.lrNo) {
-        const band = await this.transportBand.read(
-          { docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear },
-          tx,
-        );
-        if (!band || band.lrNo !== dto.lrNo) {
-          await this.transportBand.write(
-            tx,
-            this.ref(bill),
-            { ...(band ?? { direction: 'OUTWARD' }), lrNo: dto.lrNo },
-            actor,
-            { gdrId: bill.sbDocRegisterId, now },
-          );
-        }
-      }
-      await appendTxnStatusLog(tx, {
-        companyId: bill.sbCompanyId,
-        branchId: bill.sbBranchId,
-        tenantId: bill.sbTenantId,
-        accYear: bill.sbAccYear,
-        srcModule: BILL_STATUS_SRC_MODULE,
-        srcDocType: BILL_STATUS_SRC_DOC_TYPE,
-        srcDocId: bill.sbId,
-        srcDocRefno: bill.sbBillRefno,
-        event: next as unknown as TxnStatusEvent,
-        fromStatus: current,
-        toStatus: next,
-        changedOn: now,
-        changedBy: actor,
-        remarks: dto.remarks ?? null,
-        deviceId: bill.sbDeviceId,
-        sessionId: bill.sbSessionId,
-      });
-      return { sbDeliveryStatus: next };
-    });
-  }
 
   /** §2.11 — text only, on a POSTED bill. */
   async updateRemarks(dto: UpdateRemarksDto): Promise<{ sbRemarks: string | null }> {
@@ -255,16 +172,4 @@ export class BillBandService {
     }
   }
 
-  private async requireVerification(companyId: string, branchId: string): Promise<boolean> {
-    const v = (
-      (await this.salesContext.setting(
-        companyId,
-        branchId,
-        'sales.require_verification_before_dispatch',
-      )) ?? ''
-    )
-      .trim()
-      .toLowerCase();
-    return v === 'true' || v === '1' || v === 'yes';
-  }
 }

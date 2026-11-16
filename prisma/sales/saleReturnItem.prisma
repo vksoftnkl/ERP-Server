@@ -146,6 +146,11 @@ model SaleReturnItem {
   /// bill may be another branch's (D78).
   sriRateSrcItemId      String?   @db.Uuid                             @map("sri_rate_src_item_id")
   sriRateSrcAccYear     String?   @db.Char(9)                          @map("sri_rate_src_acc_year")
+  /// The part of this row the customer never took (delivery tracking,
+  /// 20261117100000, N3 / addendum A3): it settles the bill line's pending with
+  /// a RETURN event instead of coming off the shelf. ck_sri_undelivered: >= 0
+  /// and <= return + free qty. 0 on a Claim (a service rule).
+  sriUndeliveredQty     Decimal   @default(0) @db.Decimal(14, 3)       @map("sri_undelivered_qty")
 
   // Relations
   saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")

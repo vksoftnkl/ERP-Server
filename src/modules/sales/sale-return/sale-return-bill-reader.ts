@@ -465,6 +465,23 @@ export class SaleReturnBillReader {
     }));
   }
 
+  /**
+   * Delivery review S1 — the bill HEADER, locked before its lines: the same
+   * header-then-lines order a Delivery Note post (its bill headers, ordered)
+   * and a bill amend take, so a return and a note on one bill serialise and
+   * the second reads the first's delivery events.
+   */
+  async lockBillHeader(
+    tx: Client,
+    bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>,
+  ): Promise<number> {
+    const rows = await tx.$queryRaw<{ sb_id: string }[]>`
+      SELECT sb_id FROM sales.sale_bill
+       WHERE sb_id = ${bill.sbId}::uuid AND sb_acc_year = ${bill.accYear}::char(9)
+         FOR UPDATE`;
+    return rows.length;
+  }
+
   /** D51 — lock every line of the bill, in id order, before the qty and the remainders are read. */
   async lockBillLines(
     tx: Client,

@@ -54,7 +54,7 @@ describe('BillReadService', () => {
     saleBill: { findFirst: jest.Mock };
     accTempCredit: { findMany: jest.Mock };
   };
-  let salesContext: { settings: jest.Mock; rights: jest.Mock };
+  let salesContext: { settings: jest.Mock; rights: jest.Mock; setting: jest.Mock };
   let docBlocks: { build: jest.Mock };
   let transportBand: { read: jest.Mock };
   let statutory: { limit: jest.Mock };
@@ -74,6 +74,8 @@ describe('BillReadService', () => {
         .fn()
         .mockResolvedValue({ defaultCustomerId: WALK_IN_ID, creditLimitMode: 'WARN' }),
       rights: jest.fn().mockResolvedValue({ view: true }),
+      // Delivery tracking Q8: sales.delivery_old_days (absent → 30).
+      setting: jest.fn().mockResolvedValue(null),
     };
     docBlocks = { build: jest.fn().mockResolvedValue({ posting: { p: 1 }, locks: { l: 1 } }) };
     transportBand = { read: jest.fn().mockResolvedValue(null) };
@@ -86,6 +88,8 @@ describe('BillReadService', () => {
       transportBand as never,
       statutory as never,
       loyalty as never,
+      // Delivery tracking §8.4: the readers behind the bill's delivery block.
+      { linesOfBills: jest.fn().mockResolvedValue([]) } as never,
     );
   });
 

@@ -7,6 +7,7 @@ import {
   RECEIPT_VOUCHER_TYPE_CODE,
 } from '../accountsModule/receipt/types/receipt-enum';
 import { SALES_MENU_ID } from '../sales/posting/sales-doc.utils';
+import { DELIVERY_MENU_ID } from '../sales/delivery/core/delivery.constants';
 import { STOCK_ADJUSTMENT_KINDS } from '../stocks/stock-adjustment/stock-adjustment.rules';
 
 /**
@@ -37,6 +38,7 @@ export const TXN_DOC_TYPES = [
   'DELIVERY_CHALLAN',
   'DC_RETURN',
   'SALE_RETURN',
+  'DELIVERY_NOTE',
   'RECEIPT',
   'PAYMENT',
   'VOUCHER',
@@ -365,6 +367,22 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     POSTING_STATUSES,
     SALES_MENU_ID.SALE_RETURN,
   ),
+
+  // Delivery tracking (menu 305): numbered per DEVICE (DN/2026-2027/D3/00042),
+  // so the serial stays out of the key — entry order, as the Sale Return.
+  // The note has no type column: `type` answers its mode (SELF / VEHICLE /
+  // TRANSPORTER), which no caller filters on.
+  DELIVERY_NOTE: {
+    ...salesDoc(
+      'delivery note',
+      'sales.sale_delivery_note',
+      'sdn',
+      { date: 'sdn_date', slno: null, refno: 'sdn_refno' },
+      POSTING_STATUSES,
+      DELIVERY_MENU_ID.DELIVERY_NOTE,
+    ),
+    type: 'h.sdn_mode',
+  },
 
   RECEIPT: moduleVoucher('receipt', RECEIPT_VOUCHER_TYPE_CODE, RECEIPT_MENU_ID),
   PAYMENT: moduleVoucher('payment', PAYMENT_VOUCHER_TYPE_CODE, PAYMENT_MENU_ID),

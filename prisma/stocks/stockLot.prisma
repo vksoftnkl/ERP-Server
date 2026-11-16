@@ -168,6 +168,8 @@ model StockLot {
   // Goods come back to the lot they left from, which is what keeps a
   // returned unit valued at what it actually cost.
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemLot")
+  deliveryNoteItemsBillLot SaleDeliveryNoteItem[]  @relation("SaleDeliveryNoteItemBillLot")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemLot")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemLot")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
 

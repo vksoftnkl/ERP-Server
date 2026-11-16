@@ -1,3 +1,6 @@
+import { GoneException } from '@nestjs/common';
+import { buildErrorResponse } from 'src/common/utils/module-service.utils';
+import { DELIVERY_ERROR_CODES } from '../delivery/core/delivery.constants';
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
@@ -43,7 +46,6 @@ import {
   BillTransportDto,
   CancelBillDto,
   DeleteBillDto,
-  DeliveryStatusDto,
   PostBillDto,
   RetenderBillDto,
   UpdateRemarksDto,
@@ -340,17 +342,30 @@ export class BillController {
     );
   }
 
-  // ── §2.10 ─────────────────────────────────────────────────────────────────
+  // ── §2.10 — retired ────────────────────────────────────────────────────────
+  // Delivery tracking (plan §8.4 item 8, D8): a bill's delivery status is
+  // computed from Delivery Note events (DeliveryStatusService). Menu 226's
+  // hand-set VERIFIED / PACKED / DISPATCHED steps are gone; the route stays
+  // only to tell an old client where the work went.
   @Put('delivery-status')
   @Version(API_VERSION)
   @ApiOperation({
     summary:
-      'VERIFIED → PACKED → DISPATCHED → DELIVERED, order enforced (409 SALES_DELIVERY_ORDER)',
+      'RETIRED — always 410 SALES_DELIVERY_RETIRED. Delivery is worked out from Delivery Notes ' +
+      '(/delivery-notes/*, menu 305); a posted bill\'s Pickup ↔ Dispatch switch is POST /deliveries/mode.',
   })
-  async deliveryStatus(
-    @Body() dto: DeliveryStatusDto,
-  ): Promise<BillSuccessResponse<{ sbDeliveryStatus: string }>> {
-    return this.ok('Delivery status updated', await this.band.deliveryStatus(dto));
+  deliveryStatus(@Body() _body: unknown): never {
+    void _body;
+    throw new GoneException(
+      buildErrorResponse('Delivery status is retired', [
+        {
+          field: 'event',
+          code: DELIVERY_ERROR_CODES.SALES_DELIVERY_RETIRED,
+          message:
+            'PUT /bills/delivery-status is retired: delivery is worked out from Delivery Notes. Use Pending Deliveries (menu 304).',
+        },
+      ]),
+    );
   }
 
   // ── §2.11 ─────────────────────────────────────────────────────────────────

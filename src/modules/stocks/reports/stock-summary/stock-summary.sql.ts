@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { costValueCol } from '../item-ledger/item-ledger.sql';
 import { poolValuationCtes } from '../common/stock-valuation.sql';
+import { pendingLinesCte } from '../../../sales/delivery/core/delivery-pending.sql';
 
 /**
  * The Stock Summary's SQL (plan 2026-11-13 §5.4 / §5.5 / §5.7). Read-only; the
@@ -538,4 +539,21 @@ export function lastPurchaseSql(s: SummarySqlScope, itemId: string): Prisma.Sql 
             AND y.sml_is_reversal = true AND y.sml_is_deleted = false)
      ORDER BY x.sml_doc_datetime DESC, x.sml_id DESC
      LIMIT 1`;
+}
+
+/**
+ * Delivery tracking plan §8.4 item 12 — Billed not delivered NOW per
+ * (item, godown, bucket) at the branch, base unit, from the shared §5.1
+ * fragment (delivery-pending.sql.ts). Today only: the service reads it when
+ * `to` ≥ today. The godown / bucket scope is applied by the rules (the
+ * Godown-wise tab ignores the Godown filter); the item filter here.
+ */
+export function bndNowSql(s: SummarySqlScope): Prisma.Sql {
+  return Prisma.sql`
+    ${withItems(s)} op AS (${pendingLinesCte(s.companyId, s.branchId, itemIn('i.sbi_item_id', s))})
+    SELECT op.item_id AS item, op.godown_id AS godown, op.bucket::text AS bucket,
+           SUM(op.pending_base) AS bnd
+      FROM op
+     GROUP BY op.item_id, op.godown_id, op.bucket
+    HAVING SUM(op.pending_base) <> 0`;
 }

@@ -53,6 +53,7 @@ model ItemUnitConversion {
   // item_unit_master — a DC line becomes a bill line, so the two must
   // share an id space.
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemUnit")
+  deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemUnit")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
 

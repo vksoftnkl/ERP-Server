@@ -45,7 +45,9 @@ export type DocKind =
   | 'ISSUE'
   | 'GODOWN_TRANSFER'
   | 'BRANCH_OUTWARD'
-  | 'BRANCH_INWARD';
+  | 'BRANCH_INWARD'
+  // Delivery tracking: a Delivery Note's book correction (menu 305).
+  | 'DELIVERY_NOTE';
 
 export interface UnitRef {
   /** inventory.item_unit_conversion.iuc_id; null only when the item has no base row. */

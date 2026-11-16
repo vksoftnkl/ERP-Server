@@ -79,6 +79,11 @@ export enum VoucherTypeErrorCode {
   BILL_TYPE_INVALID = 'VT_BILL_TYPE_INVALID',
   /** A saved bill keeps its type (Q5). */
   BILL_TYPE_LOCKED = 'VT_BILL_TYPE_LOCKED',
+  // ── delivery tracking (plan 2026-11-15 §8.4 item 11) ──────────────────────
+  /** A Sales Bill type (the base or a child) was sent no delivery mode (null / ''). */
+  DELIVERY_MODE_REQUIRED = 'VT_DELIVERY_MODE_REQUIRED',
+  /** A type other than Sales Bill and its children was sent a delivery mode. */
+  DELIVERY_MODE_NOT_ALLOWED = 'VT_DELIVERY_MODE_NOT_ALLOWED',
 }
 
 /** Warnings of /voucher-types/validate and /save — never a refusal. */

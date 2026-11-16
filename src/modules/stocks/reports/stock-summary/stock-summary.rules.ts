@@ -56,6 +56,9 @@ export const SORT_KEYS = [
   'rate',
   'value',
   'lastSale',
+  // Delivery tracking (plan §8.4 item 12): today only, null otherwise.
+  'notDelivered',
+  'physical',
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
@@ -238,6 +241,14 @@ export interface AfterRow {
   n: number;
 }
 
+/** Billed not delivered now per holding (delivery tracking §8.4 item 12), base unit. */
+export interface BndRow {
+  item: string;
+  godown: string;
+  bucket: string;
+  bnd: Dec;
+}
+
 export interface TransitDbRow {
   out_id: string;
   doc_no: string | null;
@@ -321,6 +332,9 @@ export interface ItemRunRow {
     inTransit: Dec | null;
     rate: Dec;
     value: Dec;
+    /** Today-only (null otherwise): Billed not delivered in the scope, and closing + it. */
+    notDelivered: Dec | null;
+    physical: Dec | null;
   };
   readonly vals: {
     openingValue: Dec;
@@ -340,8 +354,12 @@ export interface ItemRunRow {
     noSale: boolean;
     notTied: boolean;
   };
-  /** Closing per godown over the bucket scope (the Godown-wise tab ignores the Godown filter). */
-  readonly godowns: readonly { godownId: string; qty: Dec; value: Dec }[];
+  /**
+   * Closing per godown over the bucket scope (the Godown-wise tab ignores the
+   * Godown filter); `bnd` = Billed not delivered of that godown (today only,
+   * null otherwise), so the tab's Physical = qty + bnd.
+   */
+  readonly godowns: readonly { godownId: string; qty: Dec; value: Dec; bnd: Dec | null }[];
   readonly nonSaleableByBucket: readonly { bucket: string; value: Dec }[];
   /** Today-only (tiles): reserved value, in-transit value to this branch. */
   readonly reservedValue: Dec | null;
@@ -362,6 +380,10 @@ interface ItemAcc {
   nonSaleableByBucket: Map<string, Dec>;
   godowns: Map<string, { qty: Dec; value: Dec }>;
   vm: string;
+  /** Billed not delivered in the godown + bucket scope (today only). */
+  bnd: Dec;
+  /** Per godown over the bucket scope (today only). */
+  bndByGodown: Map<string, Dec>;
 }
 
 function newAcc(): ItemAcc {
@@ -378,6 +400,8 @@ function newAcc(): ItemAcc {
     nonSaleableByBucket: new Map(),
     godowns: new Map(),
     vm: 'WAVG',
+    bnd: D0,
+    bndByGodown: new Map(),
   };
 }
 
@@ -400,6 +424,8 @@ export interface BuildInput {
   balance: readonly BalanceRow[];
   after: readonly AfterRow[];
   transitIn: readonly TransitDbRow[];
+  /** Today-only (empty / absent otherwise): Billed not delivered per holding. */
+  bnd?: readonly BndRow[];
 }
 
 /** The Qty-in unit of one item (D27): the base unit, or the item's default unit when asked and set. */
@@ -511,6 +537,27 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
     if (!acc.has(item)) acc.set(item, newAcc());
   }
 
+  // Delivery tracking (plan §8.4 item 12, today only): Billed not delivered —
+  // the customers' goods still on this branch's shelves — in the godown +
+  // bucket scope for the row, per godown (bucket scope) for the Godown-wise
+  // tab. An item with goods to give is a row even with no ledger row (it
+  // cannot happen: its bill moved stock here; kept for safety).
+  if (s.todayOnly) {
+    for (const b of input.bnd ?? []) {
+      const q = dec(b.bnd);
+      if (q.isZero()) continue;
+      let a = acc.get(b.item);
+      if (!a) {
+        a = newAcc();
+        acc.set(b.item, a);
+      }
+      if (holdingInScope(b, s)) a.bnd = a.bnd.plus(q);
+      if (!s.bucket || b.bucket === s.bucket) {
+        a.bndByGodown.set(b.godown, (a.bndByGodown.get(b.godown) ?? D0).plus(q));
+      }
+    }
+  }
+
   const facts = new Map(input.facts.map((f) => [f.item_id, f]));
   const rows: ItemRunRow[] = [];
   for (const [itemId, a] of acc) {
@@ -522,6 +569,8 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
     const reserved = s.todayOnly ? (n?.reserved ?? D0) : null;
     const available = s.todayOnly ? (n?.available ?? D0) : null;
     const inTransit = s.todayOnly ? (tr?.q ?? D0) : null;
+    const notDelivered = s.todayOnly ? a.bnd : null;
+    const physical = notDelivered === null ? null : a.closing.plus(notDelivered);
     const costAdj = a.value.minus(a.openingValue.plus(a.inwardValue).minus(a.outwardValue));
     const lastSale = input.lastSale.get(itemId) ?? null;
     const otherCompany = !!f?.company_id && f.company_id !== s.companyId;
@@ -600,6 +649,8 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
       reserved: reserved === null ? null : qty(reserved, factor),
       available: available === null ? null : qty(available, factor),
       inTransit: inTransit === null ? null : qty(inTransit, factor),
+      notDelivered: notDelivered === null ? null : qty(notDelivered, factor),
+      physical: physical === null ? null : qty(physical, factor),
       rate: rateText(a.value, a.closing, factor),
       value: money(a.value),
       openingValue: money(a.openingValue),
@@ -648,6 +699,8 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
           inTransit,
           rate: a.closing.isZero() ? D0 : a.value.dividedBy(a.closing).times(factor),
           value: a.value,
+          notDelivered,
+          physical,
         },
         vals: {
           openingValue: a.openingValue,
@@ -666,7 +719,8 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
             a.outward.isZero() &&
             a.closing.isZero() &&
             (reserved?.isZero() ?? true) &&
-            (inTransit?.isZero() ?? true),
+            (inTransit?.isZero() ?? true) &&
+            (notDelivered?.isZero() ?? true),
           negative: a.closing.lessThan(0),
           // As the tile counts it (review N6): any non-saleable stock, also at value 0.
           nonSaleable: nonSaleableByBucket.length > 0,
@@ -675,7 +729,7 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
           noSale,
           notTied: !!tie && !tie.equal,
         },
-        godowns: [...a.godowns.entries()].map(([godownId, g]) => ({ godownId, ...g })),
+        godowns: godownsOf(a, s.todayOnly),
         nonSaleableByBucket,
         reservedValue: s.todayOnly ? (n?.reservedValue ?? D0) : null,
         inTransitValue: s.todayOnly ? (tr?.v ?? D0) : null,
@@ -684,6 +738,23 @@ export function buildItemRows(input: BuildInput): ItemRunRow[] {
     );
   }
   return rows;
+}
+
+/** The run row's per-godown cells: closing qty / value, and Billed not delivered (today only). */
+function godownsOf(
+  a: ItemAcc,
+  todayOnly: boolean,
+): { godownId: string; qty: Dec; value: Dec; bnd: Dec | null }[] {
+  const ids = new Set<string>([...a.godowns.keys(), ...a.bndByGodown.keys()]);
+  return [...ids].map((godownId) => {
+    const g = a.godowns.get(godownId) ?? { qty: D0, value: D0 };
+    return {
+      godownId,
+      qty: g.qty,
+      value: g.value,
+      bnd: todayOnly ? (a.bndByGodown.get(godownId) ?? D0) : null,
+    };
+  });
 }
 
 // ── tiles, totals, the tie ────────────────────────────────────────────────
@@ -922,6 +993,8 @@ export function itemSortValue(r: ItemRunRow, key: SortKey): SortValue {
     case 'inTransit':
     case 'rate':
     case 'value':
+    case 'notDelivered':
+    case 'physical':
       return r.num[key];
     default:
       return r.nameKey;
@@ -1070,7 +1143,9 @@ export function godownColumns(
   const used = new Set<string>();
   for (const r of rows) {
     for (const g of r.godowns) {
-      if (!g.qty.isZero() || !g.value.isZero()) used.add(g.godownId);
+      if (!g.qty.isZero() || !g.value.isZero() || (g.bnd !== null && !g.bnd.isZero())) {
+        used.add(g.godownId);
+      }
     }
   }
   const known = branchGodowns.filter((g) => used.has(g.godownId));
@@ -1084,11 +1159,22 @@ export function godownColumns(
 export function godownRow(r: ItemRunRow, columns: readonly { godownId: string }[]): GodownRow {
   let q = D0;
   let v = D0;
+  // Delivery tracking (§8.4 item 12): Physical per godown = qty + Billed not
+  // delivered there; null on a past `to` (the run is not today-only).
+  const todayOnly = r.num.physical !== null;
+  let p = D0;
   const cells = columns.map((c) => {
     const g = r.godowns.find((x) => x.godownId === c.godownId);
     q = q.plus(g?.qty ?? D0);
     v = v.plus(g?.value ?? D0);
-    return { godownId: c.godownId, qty: qty(g?.qty ?? D0, r.factor), value: money(g?.value ?? D0) };
+    const physical = (g?.qty ?? D0).plus(g?.bnd ?? D0);
+    p = p.plus(physical);
+    return {
+      godownId: c.godownId,
+      qty: qty(g?.qty ?? D0, r.factor),
+      value: money(g?.value ?? D0),
+      physical: todayOnly ? qty(physical, r.factor) : null,
+    };
   });
   return {
     itemId: r.itemId,
@@ -1100,6 +1186,7 @@ export function godownRow(r: ItemRunRow, columns: readonly { godownId: string }[
     cells,
     qty: qty(q, r.factor),
     value: money(v),
+    physical: todayOnly ? qty(p, r.factor) : null,
   };
 }
 

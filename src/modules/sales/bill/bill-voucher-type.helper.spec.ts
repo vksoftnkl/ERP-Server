@@ -25,6 +25,7 @@ import {
   designUsable,
   resolveBillVoucherType,
   type BillSettingValues,
+  billTypeDeliveryMode,
 } from './bill-voucher-type.helper';
 
 /**
@@ -608,5 +609,19 @@ describe('an offline site bills plain Sales Bill only (decision 64, re-review R2
     } finally {
       setErrorWording([], null);
     }
+  });
+});
+
+describe('billTypeDeliveryMode (delivery tracking Q3, decision 42)', () => {
+  it('takes the type’s own, else the base’s, else INSTANT', () => {
+    expect(billTypeDeliveryMode('PICKUP', 'INSTANT')).toBe('PICKUP');
+    expect(billTypeDeliveryMode(null, 'DISPATCH')).toBe('DISPATCH');
+    expect(billTypeDeliveryMode(null, null)).toBe('INSTANT');
+    expect(billTypeDeliveryMode('bogus', null)).toBe('INSTANT');
+  });
+
+  it('is INSTANT for a POS bill whatever the type says', () => {
+    expect(billTypeDeliveryMode('DISPATCH', 'PICKUP', 'POS')).toBe('INSTANT');
+    expect(billTypeDeliveryMode('DISPATCH', 'PICKUP', 'WHOLESALE')).toBe('DISPATCH');
   });
 });

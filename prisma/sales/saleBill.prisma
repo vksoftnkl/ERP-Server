@@ -63,10 +63,18 @@ model SaleBill {
   sbDcTaxableAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_dc_taxable_amt")
   /// What THIS bill posted as COGS.
   sbCogsAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cogs_amt")
-  /// NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
-  /// the events themselves are TxnStatusLog rows.
+  /// NA | PENDING | PART | OUT | DELIVERED | RETURNED (ck_sb_delivery_status,
+  /// 20261117100000_delivery_tracking). A site-local derived CACHE used only as
+  /// an index prefilter (ix_sb_delivery_open): written by one method,
+  /// DeliveryStatusService.recompute; the figures always come from the
+  /// SaleDeliveryEvent rows (decision 36). OUT is reserved for phase 2 (POD).
   sbDeliveryStatus   String    @default("NA") @db.VarChar(20) @map("sb_delivery_status")
   sbDeliveredOn      DateTime? @db.Timestamptz(6) @map("sb_delivered_on")
+  /// INSTANT | PICKUP | DISPATCH (ck_sb_delivery_mode, 20261117100000). INSTANT
+  /// = given at the counter, never pending; a POS bill is always INSTANT. The
+  /// default on a new bill comes from the voucher type (vchrDeliveryMode, Q3);
+  /// a posted bill changes only Pickup <-> Dispatch, on /deliveries/mode (Q4).
+  sbDeliveryMode     String    @default("INSTANT") @db.VarChar(10) @map("sb_delivery_mode")
   /// The identity stamp on a cash sale over the rule 114B limit: what was
   /// shown at the counter, kept WITH the bill and never re-derived.
   sbCustPan          String?   @db.VarChar(10) @map("sb_cust_pan")

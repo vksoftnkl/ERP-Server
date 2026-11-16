@@ -1,3 +1,6 @@
+import { DELIVERY_SETTING_KEYS, DEFAULT_OLD_DAYS } from '../delivery/core/delivery.constants';
+import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
+import { billDeliveryRead, oldPendingDeliveries } from './bill-delivery-read';
 import { Injectable } from '@nestjs/common';
 import { Prisma, SaleBill } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -50,6 +53,8 @@ export class BillReadService {
     private readonly transportBand: TransportBandService,
     private readonly statutory: StatutoryService,
     private readonly loyalty: LoyaltyLedgerService,
+    // Delivery tracking §8.4 items 5 / 6.
+    private readonly deliveryPending: DeliveryPendingService,
   ) {}
 
   /** §2.7 — add `posting`, `locks`, `rights`, `sources`, `tempCredits`, `transport`. */
@@ -59,7 +64,7 @@ export class BillReadService {
     client?: Prisma.TransactionClient,
   ): Promise<BillPayload> {
     const c = client ?? this.prisma;
-    const [counts, rights, sources, tempCredits, adjustments, transport, batches, voucherType] =
+    const [counts, rights, sources, tempCredits, adjustments, transport, batches, voucherType, delivery] =
       await Promise.all([
         this.lockCounts(c, bill),
         this.salesContext.rights(SALES_MENU_ID.SALE_BILL, c),
@@ -78,6 +83,8 @@ export class BillReadService {
         ),
         // Voucher Types plan §7.4 / §5.4.
         billVoucherTypeBlock(c, bill),
+        // Delivery tracking §8.4 item 5.
+        billDeliveryRead(c as Prisma.TransactionClient, this.deliveryPending, bill),
       ]);
     const { posting, locks } = await this.docBlocks.build(
       {
@@ -101,11 +108,14 @@ export class BillReadService {
       items: payload.items?.map((item) => {
         const batch =
           item.sbiBatchNo && batches.get(batchDetailKey(item.sbiItemId, item.sbiBatchNo));
+        const dl = delivery.byLine.get(item.sbiId);
         return {
           ...item,
           sbiSizeName: batch ? batch.sizeName : null,
           sbiColourName: batch ? batch.colourName : null,
           sbiModel: batch ? batch.model : null,
+          deliveredQty: dl?.delivered ?? '0',
+          pendingQty: dl?.pending ?? '0',
         };
       }),
       posting,
@@ -116,6 +126,7 @@ export class BillReadService {
       adjustments,
       transport,
       voucherType,
+      delivery: delivery.block,
       sbShipAddrId: transport?.to.addrId ?? null,
       sbShipName: transport?.to.name ?? null,
       sbShipAddr: transport?.to.addr ?? null,
@@ -674,7 +685,27 @@ export class BillReadService {
         dueDate: isoDate(t.atc_due_date),
       })),
       openSources: { dc: Number(counts?.dc ?? 0), orders: Number(counts?.orders ?? 0) },
+      // Delivery tracking Q8 (§8.4 item 6): bills of this customer with goods
+      // still in the godown after sales.delivery_old_days, oldest first.
+      oldPendingDeliveries: await this.oldPendingDeliveriesOf(q.companyId, q.branchId, cus.cus_id),
     };
+  }
+
+  /** Q8 — the customer's bills pending past `sales.delivery_old_days` (default 30). */
+  async oldPendingDeliveriesOf(
+    companyId: string,
+    branchId: string,
+    custId: string,
+    client?: Prisma.TransactionClient,
+  ) {
+    const raw = await this.salesContext.setting(companyId, branchId, DELIVERY_SETTING_KEYS.OLD_DAYS);
+    const n = Number(raw);
+    const oldDays = Number.isInteger(n) && n > 0 ? n : DEFAULT_OLD_DAYS;
+    const rows = await oldPendingDeliveries(
+      client ?? (this.prisma as unknown as Prisma.TransactionClient),
+      { companyId, branchId, custId, oldDays },
+    );
+    return rows;
   }
 
   // ═════════════════════════════════════════════════════════════════════════

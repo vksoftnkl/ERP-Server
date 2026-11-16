@@ -576,3 +576,90 @@ export function lockedFieldChanges(
     .filter((k) => draft[k] !== undefined && !sameValue(draft[k], stored[k]))
     .map((k) => issue(VoucherTypeErrorCode.BASE_FIELD_LOCKED, k, `${k} ${why}`));
 }
+
+// ── delivery mode (delivery tracking plan §8.4 item 11, Q3) ──────────────────
+
+/** acc_voucher_types.vchr_delivery_mode (ck_vchr_delivery_mode): NULL or one of these. */
+export const VT_DELIVERY_MODES = ['INSTANT', 'PICKUP', 'DISPATCH'] as const;
+export type VtDeliveryMode = (typeof VT_DELIVERY_MODES)[number];
+
+/** The mode a Sales Bill type falls back to when neither it nor its base names one. */
+export const VT_DEFAULT_DELIVERY_MODE: VtDeliveryMode = 'INSTANT';
+
+/**
+ * Only Sales Bill and its children carry a delivery mode (Q3): the base row
+ * itself (code Bil) or a row whose base is it.
+ */
+export function hasDeliveryMode(
+  row: Pick<AccVoucherType, 'vchrTypeCode' | 'vchrParentId'> | null,
+  base: Pick<AccVoucherType, 'vchrTypeCode'> | null,
+): boolean {
+  if (!row) {
+    return false;
+  }
+  if (row.vchrParentId == null) {
+    return row.vchrTypeCode === SALES_BILL_TYPE_CODE;
+  }
+  return base?.vchrTypeCode === SALES_BILL_TYPE_CODE;
+}
+
+/**
+ * What a bill of the type defaults to (child → base → INSTANT); null for a type
+ * that has no delivery mode.
+ */
+export function effectiveDeliveryMode(
+  own: string | null | undefined,
+  baseMode: string | null | undefined,
+  applies: boolean,
+): VtDeliveryMode | null {
+  if (!applies) {
+    return null;
+  }
+  const pick = (own ?? '').trim() || (baseMode ?? '').trim();
+  return (VT_DELIVERY_MODES as readonly string[]).includes(pick)
+    ? (pick as VtDeliveryMode)
+    : VT_DEFAULT_DELIVERY_MODE;
+}
+
+/**
+ * The save rules of the delivery mode (plan §8.4 item 11):
+ *
+ *  - VT_DELIVERY_MODE_NOT_ALLOWED: a type that is not Sales Bill nor one of its
+ *    children is sent a mode;
+ *  - VT_DELIVERY_MODE_REQUIRED: a Sales Bill type (the base or a child) is sent
+ *    null / '' — the mode cannot be cleared once the screen sends the key.
+ *
+ * A key left out keeps the stored value. A child that has never been saved with
+ * a mode keeps NULL, which means "the base's" (plan §7.5 item 2), so an edit
+ * from a screen that does not send the key yet is not refused.
+ *
+ * `sent` is the DTO value: undefined = left out, null = cleared.
+ */
+export function checkDeliveryMode(
+  sent: string | null | undefined,
+  resolved: string | null,
+  ctx: { applies: boolean; isBase?: boolean },
+): VtIssue[] {
+  if (!ctx.applies) {
+    return sent !== undefined && sent !== null
+      ? [
+          issue(
+            VoucherTypeErrorCode.DELIVERY_MODE_NOT_ALLOWED,
+            'vchrDeliveryMode',
+            'Only Sales Bill types have a delivery mode.',
+          ),
+        ]
+      : [];
+  }
+  void resolved;
+  if (sent === null) {
+    return [
+      issue(
+        VoucherTypeErrorCode.DELIVERY_MODE_REQUIRED,
+        'vchrDeliveryMode',
+        'A Sales Bill type needs a delivery mode: Instant, Pickup or Dispatch.',
+      ),
+    ];
+  }
+  return [];
+}

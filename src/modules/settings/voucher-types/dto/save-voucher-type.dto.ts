@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { VoucherNumberingMode, VoucherResetFreq } from '@prisma/client';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsIn, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 import {
   NullableInteger,
   NullableStringStrict,
@@ -11,6 +12,7 @@ import {
   OptionalUuid,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
+import { VT_DELIVERY_MODES } from '../voucher-types.rules';
 
 const NUMBERING_MODES = Object.values(VoucherNumberingMode);
 const RESET_FREQS = Object.values(VoucherResetFreq);
@@ -118,6 +120,22 @@ export class SaveVoucherTypeDto {
   })
   @NullableStringStrict(100)
   vchrTallyVoucherTypeName?: string | null;
+
+  @ApiPropertyOptional({
+    enum: VT_DELIVERY_MODES,
+    nullable: true,
+    description:
+      'Delivery tracking (Q3): the delivery mode a new bill of this type defaults to — Sales Bill and its ' +
+      'children only (VT_DELIVERY_MODE_NOT_ALLOWED elsewhere). Left out = keep the stored value (a child ' +
+      "never saved with one keeps null = the base's). null / '' on a Sales Bill type → VT_DELIVERY_MODE_REQUIRED.",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || null : value,
+  )
+  @ValidateIf((_: unknown, value: unknown) => value !== null && value !== undefined)
+  @IsIn(VT_DELIVERY_MODES)
+  vchrDeliveryMode?: string | null;
 
   @ApiPropertyOptional({
     description:
