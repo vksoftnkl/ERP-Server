@@ -27,6 +27,7 @@ export declare class SalesContextService {
     }, menuId: number, client?: Prisma.TransactionClient): Promise<SalesCallContext>;
     settings(companyId: string, branchId: string, deviceId?: string | null): Promise<SalesSettings>;
     setting(companyId: string, branchId: string, key: string): Promise<string | null>;
+    values(companyId: string, branchId: string, deviceId: string | null | undefined, keys: readonly string[]): Promise<Record<string, string | null>>;
     rights(menuId: number, client?: Prisma.TransactionClient): Promise<RightsBlock>;
     hasRight(ctx: SalesCallContext, right: SalesRight): boolean;
 }

@@ -30,14 +30,6 @@ export declare class AmendBillDto extends ValidateBillDto {
 }
 export declare class DeleteBillDto extends BillKeysDto {
 }
-export declare const DELIVERY_EVENTS: readonly ["VERIFIED", "PACKED", "DISPATCHED", "DELIVERED"];
-export type DeliveryEvent = (typeof DELIVERY_EVENTS)[number];
-export declare class DeliveryStatusDto extends BillKeysDto {
-    event: DeliveryEvent;
-    remarks?: string | null;
-    vehicleNo?: string | null;
-    lrNo?: string | null;
-}
 export declare class UpdateRemarksDto extends BillKeysDto {
     sbRemarks?: string | null;
     editRemark: string;

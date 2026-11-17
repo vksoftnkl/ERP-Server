@@ -12,8 +12,15 @@ var BillLifecycleService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillLifecycleService = void 0;
 exports.orderLineQtys = orderLineQtys;
+const bill_delivery_read_1 = require("./bill-delivery-read");
+const delivery_constants_1 = require("../delivery/core/delivery.constants");
+const bill_delivery_helper_1 = require("./bill-delivery.helper");
+const delivery_status_service_1 = require("../delivery/core/delivery-status.service");
+const delivery_pending_service_1 = require("../delivery/core/delivery-pending.service");
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const purchase_sister_1 = require("../../purchase/sister/purchase-sister");
+const offline_site_1 = require("../../../config/offline-site");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -45,6 +52,7 @@ const bill_counter_allocation_helper_1 = require("./bill-counter-allocation.help
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
 const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
+const bill_voucher_type_helper_1 = require("./bill-voucher-type.helper");
 const till_session_service_1 = require("../../till/services/till-session.service");
 const till_enum_1 = require("../../till/types/till-enum");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -68,8 +76,11 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     gst;
     audit;
     till;
+    config;
+    deliveryStatus;
+    deliveryPending;
     logger = new common_1.Logger(BillLifecycleService_1.name);
-    constructor(prisma, bills, salesContext, statutory, legs, register, stock, reservations, loyalty, promo, chargeCarry, dcFulfilment, saleOrders, transportBand, docBlocks, gst, audit, till) {
+    constructor(prisma, bills, salesContext, statutory, legs, register, stock, reservations, loyalty, promo, chargeCarry, dcFulfilment, saleOrders, transportBand, docBlocks, gst, audit, till, config, deliveryStatus, deliveryPending) {
         this.prisma = prisma;
         this.bills = bills;
         this.salesContext = salesContext;
@@ -88,19 +99,29 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         this.gst = gst;
         this.audit = audit;
         this.till = till;
+        this.config = config;
+        this.deliveryStatus = deliveryStatus;
+        this.deliveryPending = deliveryPending;
     }
     async validate(dto) {
         const ctx = await this.salesContext.resolve({ companyId: dto.sbCompanyId, branchId: dto.sbBranchId, deviceId: dto.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL);
         const masters = await this.tenderMasters(this.prisma, (dto.tenders ?? []).map((t) => t.tdTenderId));
-        const snap = (0, bill_snapshot_1.snapshotFromDto)(dto, masters);
+        const chargeTypes = await this.bills.chargeTypesOf(this.prisma, dto.charges);
+        const snap = (0, bill_snapshot_1.snapshotFromDto)(dto, masters, chargeTypes);
         const guard = (0, posting_types_1.createGuardContext)({
             overrides: dto.overrides ?? [],
             canOverride: ctx.rights.override,
             throwOnRefusal: false,
             dryRun: true,
         });
+        const posMode = (0, bill_delivery_helper_1.posDeliveryModeRefusal)(dto.sbBillMode, dto.sbDeliveryMode);
+        if (posMode) {
+            guard.refusals.push(posMode);
+        }
         await this.prisma.$transaction(async (tx) => {
+            guard.refusals.push(...(await (0, bill_voucher_type_helper_1.billTypeRefusals)(tx, (companyId, branchId, deviceId, keys) => this.salesContext.values(companyId, branchId, deviceId, keys), dto, { offlineSite: (0, offline_site_1.isOfflineSite)(this.config) })));
             await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+            await this.oldPendingDeliveryWarning(tx, dto, guard);
         });
         const proposals = await this.proposals(snap, ctx);
         return {
@@ -118,7 +139,49 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             posted = await this.postDraftInTx(tx, bill, dto, new Date());
         }, POST_TX_OPTIONS);
         this.afterPost(posted);
-        return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
+        return this.withGodownSlips(await this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear));
+    }
+    async withGodownSlips(payload) {
+        const godownSlips = payload.sbStatus === bill_api_types_1.BILL_STATUS_POSTED
+            ? await (0, bill_delivery_read_1.billGodownSlips)(this.prisma, this.deliveryPending, {
+                sbId: payload.sbId,
+                sbAccYear: payload.sbAccYear,
+                sbDeliveryMode: payload.sbDeliveryMode,
+            })
+            : [];
+        return { ...payload, godownSlips };
+    }
+    async oldPendingDeliveryWarning(tx, dto, guard) {
+        if (!dto.sbCustId || (dto.sbBillMode ?? '').toUpperCase() === 'POS') {
+            return;
+        }
+        const raw = await this.salesContext.setting(dto.sbCompanyId, dto.sbBranchId, delivery_constants_1.DELIVERY_SETTING_KEYS.OLD_DAYS);
+        const n = Number(raw);
+        const oldDays = Number.isInteger(n) && n > 0 ? n : delivery_constants_1.DEFAULT_OLD_DAYS;
+        const [oldest] = await (0, bill_delivery_read_1.oldPendingDeliveries)(tx, {
+            companyId: dto.sbCompanyId,
+            branchId: dto.sbBranchId,
+            custId: dto.sbCustId,
+            oldDays,
+            limit: 1,
+        });
+        if (!oldest) {
+            return;
+        }
+        const customer = dto.sbCustName ?? '';
+        guard.warnings.push({
+            code: delivery_constants_1.DELIVERY_ERROR_CODES.BILL_OLD_PENDING_DELIVERY,
+            level: 'WARN',
+            message: `${customer || 'This customer'} still has ${oldest.billRefno ?? ''} with ${oldest.leftText} not collected after ${oldest.days} days`,
+            field: 'sbCustId',
+            overridable: false,
+            params: {
+                customer,
+                bill: oldest.billRefno ?? '',
+                qty: oldest.leftText,
+                days: oldest.days,
+            },
+        });
     }
     async saveAndPost(dto) {
         const { post: _post, overrides, ...saveDto } = dto;
@@ -148,7 +211,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         }
         this.afterPost(posted);
         const k = keys;
-        return this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear);
+        return this.withGodownSlips(await this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear));
     }
     async postDraftInTx(tx, bill, opts, now) {
         if (bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
@@ -161,6 +224,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         if (!ctx.rights.post) {
             (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
         }
+        (0, bill_voucher_type_helper_1.assertBillTypeAtSite)(bill, { offlineSite: (0, offline_site_1.isOfflineSite)(this.config) });
         const till = await this.till.resolveForMoney(tx, {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -265,6 +329,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             data: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
         });
         await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
+        await this.deliveryStatus.recompute(tx, [{ billId: bill.sbId, billAccYear: bill.sbAccYear }]);
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -353,7 +418,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 (0, sales_errors_1.throwSalesLocked)(`This bill has been amended since you opened it (now revision ${bill.sbRevisionNo}, you sent ${dto.baseRevision}). Reload it and make the change again.`, posting_types_1.SALES_ERROR_CODES.REVISION_STALE, 'baseRevision');
             }
             await (0, sales_guards_1.assertAmendable)(tx, bill.sbDocRegisterId);
-            await this.assertUnwindable(tx, bill, ctx, dto.editRemark, 'amend');
+            await this.assertUnwindable(tx, bill, ctx, dto.editRemark, 'amend', dto);
             const priorItems = await tx.saleBillItem.findMany({
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
             });
@@ -491,9 +556,9 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         if (Math.abs(debit - snap.billAmt) > 0.01) {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `The bill does not add up: taxable + tax + charges + round-off + TCS − discounts make ${debit.toFixed(2)}, the bill says ${snap.billAmt.toFixed(2)}`, { field: 'sbBillAmt' });
         }
-        const lineTax = (0, sales_doc_utils_1.round2)(snap.items.reduce((t, i) => t + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt, 0));
-        if (Math.abs(lineTax - snap.taxAmt) > 0.01) {
-            (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `Line taxes total ${lineTax.toFixed(2)} but sbTaxAmt says ${snap.taxAmt.toFixed(2)}`, { field: 'sbTaxAmt' });
+        const docTax = (0, bill_snapshot_1.docTaxOf)(snap);
+        if (Math.abs(docTax - snap.taxAmt) > 0.01) {
+            (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `Line and charge taxes total ${docTax.toFixed(2)} but sbTaxAmt says ${snap.taxAmt.toFixed(2)}`, { field: 'sbTaxAmt' });
         }
         const tendered = (0, sales_doc_utils_1.round2)(snap.tenders.reduce((t, x) => t + x.amount, 0));
         (0, sales_guards_1.assertTenderTotal)(g, tendered + (0, bill_snapshot_1.setOffAmtOf)(snap), snap.billAmt, s);
@@ -754,7 +819,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         const legs = (0, sales_leg_sources_1.buildBillLegs)({
             partyLedgerId: partyId,
             supplyNature,
-            salesAmount: snap.taxableAmt,
+            salesAmount: (0, bill_snapshot_1.salesAmountOf)(snap),
             taxes: (0, sales_doc_utils_1.bucketTaxes)(snap.items.map((i) => ({
                 taxId: i.taxId,
                 cgst: i.cgstAmt,
@@ -763,16 +828,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 cess: i.cessAmt,
                 acess: i.acessAmt,
             }))),
-            charges: snap.charges.map((c) => ({
-                ledgerId: c.ledgerId,
-                amount: c.amount,
-                separatelyPosted: c.separatelyPosted,
-                cgst: c.cgst,
-                sgst: c.sgst,
-                igst: c.igst,
-                cess: c.cess,
-                name: c.name,
-            })),
+            charges: (0, bill_snapshot_1.chargeLegsOf)(snap),
             cashDiscount: snap.cashDisc,
             schemeDiscount: ctx.settings.postSchemeDiscSeparately ? snap.schDisc + snap.billSchDisc : 0,
             roundOff: snap.roundOff,
@@ -794,7 +850,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 branchId: bill.sbBranchId,
                 tenantId: bill.sbTenantId,
                 accYear: bill.sbAccYear,
-                voucherTypeId: sales_doc_utils_1.SALES_VOUCHER_TYPE.BILL,
+                voucherTypeId: (0, bill_voucher_type_helper_1.billVoucherTypeOf)(bill),
                 voucherDate: snap.billDate,
                 srcModule: 'SALES',
                 srcDocType: 'SALE_BILL',
@@ -985,7 +1041,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         await this.chargeCarry.consume(tx, snap.charges.map((c) => ({
             srcChargeId: c.srcChargeId,
             srcAccYear: c.srcAccYear,
-            amount: c.amount,
+            amount: Math.abs(c.amount),
             basis: (c.carryBasis ?? undefined),
         })), { canOverride: ctx.rights.override });
         const paid = (0, sales_doc_utils_1.round2)(settled + advanceAdjusted + noteAdjusted);
@@ -1010,7 +1066,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 sbPaidAmt: (0, bill_snapshot_1.decimal)(paid),
                 sbBalanceAmt: (0, bill_snapshot_1.decimal)(balance),
                 sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
-                sbDeliveryStatus: snap.billMode === 'POS' ? 'NA' : 'PENDING',
                 sbRevisionNo: revisionNo,
                 sbDraftCheques: client_1.Prisma.DbNull,
                 sbHasDc: snap.items.some((i) => i.srcDocType === 'DELIVERY_CHALLAN'),
@@ -1019,6 +1074,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             },
         });
         await this.afterStatusChange(tx, posted, items, actor, now, opts.priorItems);
+        await this.deliveryStatus.recompute(tx, [{ billId: bill.sbId, billAccYear: bill.sbAccYear }]);
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -1067,7 +1123,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             ewaybill: reg.ewaybillApplicable,
         };
     }
-    async assertUnwindable(tx, bill, ctx, reason, verb) {
+    async assertUnwindable(tx, bill, ctx, reason, verb, amend) {
         const docDate = (0, sales_doc_utils_1.isoDate)(bill.sbBillDate) ?? (0, sales_doc_utils_1.isoToday)();
         await (0, sales_guards_1.assertAccYearWritable)(tx, bill.sbCompanyId, bill.sbAccYear, 'sbAccYear');
         if (await (0, sales_guards_1.loadDayClosed)(tx, bill.sbCompanyId, bill.sbBranchId, docDate)) {
@@ -1079,6 +1135,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             companyId: bill.sbCompanyId,
         });
         await (0, bill_pdc_posting_helper_1.assertBillPdcHeld)(tx, bill);
+        await this.assertDeliveryUnwindable(tx, bill, verb, amend);
         const { irnLive, ewbLive } = await (0, sales_guards_1.loadDeclaredLocks)(tx, bill.sbDocRegisterId);
         if (irnLive || ewbLive) {
             const gst = await this.docBlocks.gstRows(tx, bill.sbDocRegisterId, bill.sbAccYear);
@@ -1112,6 +1169,39 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             }
         }
         void ctx;
+    }
+    async assertDeliveryUnwindable(tx, bill, verb, amend) {
+        if (verb === 'amend') {
+            const requested = amend?.sbDeliveryMode;
+            const lines = await this.deliveryPending.linesOfBills(tx, [
+                { billId: bill.sbId, billAccYear: bill.sbAccYear },
+            ]);
+            const evented = lines.filter((l) => !l.settledQty.isZero() || !l.givenQty.isZero());
+            const names = await (0, bill_delivery_helper_1.deliveryLineNames)(tx, evented.map((l) => l.billItemId));
+            (0, bill_delivery_helper_1.assertAmendKeepsDelivery)({ sbDeliveryMode: bill.sbDeliveryMode, sbBillRefno: bill.sbBillRefno }, requested, evented, (amend?.items ?? []), names);
+            return;
+        }
+        if (bill.sbDeliveryMode === 'INSTANT' && bill.sbDeliveryStatus === 'NA') {
+            const [any] = await tx.$queryRaw `
+        SELECT count(*)::int AS n FROM sales.sale_delivery_event
+         WHERE sde_bill_id = ${bill.sbId}::uuid AND sde_bill_acc_year = ${bill.sbAccYear}::bpchar`;
+            if (!any || any.n === 0) {
+                return;
+            }
+        }
+        const lines = await this.deliveryPending.linesOfBills(tx, [
+            { billId: bill.sbId, billAccYear: bill.sbAccYear },
+        ]);
+        if (lines.every((l) => l.givenQty.isZero())) {
+            return;
+        }
+        const [last] = await tx.$queryRaw `
+      SELECT e.sde_src_refno AS refno, e.sde_event_datetime AS at
+        FROM sales.sale_delivery_event e
+       WHERE e.sde_bill_id = ${bill.sbId}::uuid AND e.sde_bill_acc_year = ${bill.sbAccYear}::bpchar
+         AND e.sde_kind IN ('GIVEN', 'CLEANUP')
+       ORDER BY e.sde_event_datetime DESC LIMIT 1`;
+        (0, bill_delivery_helper_1.assertNothingGiven)({ sbBillRefno: bill.sbBillRefno }, lines, last ? { refno: last.refno ?? 'go-live cleanup', date: (0, bill_delivery_helper_1.istDateText)(last.at) } : null);
     }
     async unwind(tx, bill, items, ctx, reason, now, mode = 'cancel') {
         const actor = ctx.actor;
@@ -1341,15 +1431,13 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         });
         const taxed = lines.filter((l) => l.taxability === 'TAXABLE').length;
         const services = snap.items.filter((i) => i.isService).length;
-        const charges = (0, sales_leg_sources_1.splitRegisterCharges)(snap.charges
-            .filter((c) => c.separatelyPosted)
-            .map((c) => c.amount + c.cgst + c.sgst + c.igst + c.cess));
+        const charges = (0, bill_snapshot_1.registerChargesOf)(snap);
         return {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
             accYear: bill.sbAccYear,
             voucherId,
-            voucherTypeId: sales_doc_utils_1.SALES_VOUCHER_TYPE.BILL,
+            voucherTypeId: (0, bill_voucher_type_helper_1.billVoucherTypeOf)(bill),
             voucherNo: bill.sbBillSlno ?? (0, sales_doc_utils_1.numericTail)(bill.sbBillRefno, voucherNo),
             voucherDate: snap.billDate,
             voucherRefno: bill.sbBillRefno,
@@ -1414,7 +1502,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 ablSrcDocId: bill.sbId,
                 ablSrcAccYear: bill.sbAccYear,
                 ablVoucherId: voucherId,
-                ablVoucherTypeId: sales_doc_utils_1.SALES_VOUCHER_TYPE.BILL,
+                ablVoucherTypeId: (0, bill_voucher_type_helper_1.billVoucherTypeOf)(bill),
                 ablVoucherNo: bill.sbBillSlno ?? voucherNo,
                 ablVoucherDate: bill.sbBillDate,
                 ablVoucherRefno: bill.sbBillRefno,
@@ -1680,7 +1768,10 @@ exports.BillLifecycleService = BillLifecycleService = BillLifecycleService_1 = _
         sales_doc_blocks_service_1.SalesDocBlocksService,
         gst_gateway_service_1.GstGatewayService,
         audit_log_service_1.AuditLogService,
-        till_session_service_1.TillSessionService])
+        till_session_service_1.TillSessionService,
+        config_1.ConfigService,
+        delivery_status_service_1.DeliveryStatusService,
+        delivery_pending_service_1.DeliveryPendingService])
 ], BillLifecycleService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {

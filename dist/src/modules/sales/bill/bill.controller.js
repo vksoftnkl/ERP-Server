@@ -13,8 +13,11 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillController = void 0;
-const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const delivery_constants_1 = require("../delivery/core/delivery.constants");
+const cache_manager_1 = require("@nestjs/cache-manager");
+const common_2 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const api_version_1 = require("../../../common/constants/api-version");
@@ -25,6 +28,8 @@ const bill_read_service_1 = require("./bill-read.service");
 const bill_band_service_1 = require("./bill-band.service");
 const bill_retender_service_1 = require("./bill-retender.service");
 const bill_void_service_1 = require("./bill-void.service");
+const bill_voucher_type_service_1 = require("./bill-voucher-type.service");
+const bill_voucher_type_choices_dto_1 = require("./dto/bill-voucher-type-choices.dto");
 const save_bill_dto_1 = require("./dto/save-bill.dto");
 const bill_lifecycle_dto_1 = require("./dto/bill-lifecycle.dto");
 const bill_response_dto_1 = require("./dto/bill-response.dto");
@@ -38,13 +43,15 @@ let BillController = class BillController {
     read;
     band;
     retenderService;
-    constructor(billService, lifecycle, voids, read, band, retenderService) {
+    voucherTypes;
+    constructor(billService, lifecycle, voids, read, band, retenderService, voucherTypes) {
         this.billService = billService;
         this.lifecycle = lifecycle;
         this.voids = voids;
         this.read = read;
         this.band = band;
         this.retenderService = retenderService;
+        this.voucherTypes = voucherTypes;
     }
     ok(message, data) {
         return { success: true, message, data };
@@ -80,6 +87,9 @@ let BillController = class BillController {
     async getById(sbId, sbCompanyId, sbBranchId, sbAccYear) {
         return this.ok('Bill fetched successfully', await this.billService.getById(sbId, sbCompanyId, sbBranchId, sbAccYear));
     }
+    async voucherTypeChoices(q) {
+        return this.ok('Voucher type choices fetched', await this.voucherTypes.choices(q));
+    }
     async openSources(companyId, branchId, partyId, kind, accYear) {
         const k = (kind ?? '').toUpperCase() === 'ORDER' ? 'ORDER' : 'DC';
         return this.ok('Open sources fetched', await this.read.openSources({
@@ -99,8 +109,15 @@ let BillController = class BillController {
             billDate: billDate || null,
         }));
     }
-    async deliveryStatus(dto) {
-        return this.ok('Delivery status updated', await this.band.deliveryStatus(dto));
+    deliveryStatus(_body) {
+        void _body;
+        throw new common_1.GoneException((0, module_service_utils_1.buildErrorResponse)('Delivery status is retired', [
+            {
+                field: 'event',
+                code: delivery_constants_1.DELIVERY_ERROR_CODES.SALES_DELIVERY_RETIRED,
+                message: 'PUT /bills/delivery-status is retired: delivery is worked out from Delivery Notes. Use Pending Deliveries (menu 304).',
+            },
+        ]));
     }
     async updateRemarks(dto) {
         return this.ok('Remarks updated', await this.band.updateRemarks(dto));
@@ -117,8 +134,8 @@ let BillController = class BillController {
 };
 exports.BillController = BillController;
 __decorate([
-    (0, common_1.Post)('create'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('create'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a DRAFT bill (by sbId presence) — or save and post in one call',
         description: 'A saved bill is a DRAFT until /bills/post, unless the body carries `post: true` (or ' +
@@ -132,26 +149,26 @@ __decorate([
     (0, swagger_1.ApiCreatedResponse)({ type: bill_response_dto_1.BillSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_bill_dto_1.SaveBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "save", null);
 __decorate([
-    (0, common_1.Post)('validate'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('validate'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Dry-run the post: every refusal and warning, plus proposals. Writes nothing.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: '{ ok, refusals[], warnings[], rights, proposals }' }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.ValidateBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "validate", null);
 __decorate([
-    (0, common_1.Post)('post'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('post'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Post a DRAFT bill — the one-way door',
         description: 'One transaction: stock, legs, register, receivable, set-offs, temp credits, loyalty, promotions, ' +
@@ -159,14 +176,14 @@ __decorate([
             'code; a WARN passes only when its code is in overrides[] AND um_can_override.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: bill_response_dto_1.BillSuccessSingleDto }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.PostBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "post", null);
 __decorate([
-    (0, common_1.Post)('cancel'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('cancel'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Cancel a POSTED bill by reversal (never a delete). Reason mandatory.',
         description: 'A bill whose till session still takes money (OPEN / SUSPENDED) is refused with 409 SALES_USE_VOID: ' +
@@ -175,14 +192,14 @@ __decorate([
     (0, swagger_1.ApiOkResponse)({
         description: '{ ...keys, sbStatus: CANCELLED, reversalVoucherRefno, cancelledOn }',
     }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.CancelBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "cancel", null);
 __decorate([
-    (0, common_1.Post)('void'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('void'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Void a POSTED bill of a live till session: cancel’s unwind, a till_void evidence row, BILL_VOID',
         description: 'The same reversal as /bills/cancel (status CANCELLED), plus one accounts.till_void row stamped once — ' +
@@ -198,14 +215,14 @@ __decorate([
         description: '{ ...keys, sbBillRefno, sbStatus: CANCELLED, voidedOn, reversalVoucherRefno, void: { … } }',
     }),
     (0, swagger_1.ApiResponse)({ status: 428, type: bill_response_dto_1.BillErrorResponseDto, description: 'TILL_APPROVAL_REQUIRED' }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.VoidBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "void", null);
 __decorate([
-    (0, common_1.Get)('void-check'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Get)('void-check'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'What the Void popup shows before a void: the door this bill takes, its prints, the minutes since post',
         description: 'Reads only. route: VOID (live session) · RETURN (counted / closed) · CANCEL (no till) · VOIDED · CANCELLED · ' +
@@ -221,40 +238,40 @@ __decorate([
         description: '{ route, code, canVoid, session, printed, printCount, prints[], minutesAfterPost, nextVoidNo, reasons[], void }',
     }),
     (0, swagger_1.ApiNotFoundResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
+    __param(0, (0, common_2.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.BillKeysDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "voidCheck", null);
 __decorate([
-    (0, common_1.Post)('amend'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('amend'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Amend a POSTED bill (R20): unwind, re-apply, re-post, revision + 1',
         description: 'Gated by sales.allow_posted_amend (409 SALES_AMEND_OFF), baseRevision (409 SALES_REVISION_STALE) ' +
             'and lock 2 (409 SALES_IRN_LIVE / SALES_EWB_LIVE — a declared document is cancelled, never amended).',
     }),
     (0, swagger_1.ApiOkResponse)({ type: bill_response_dto_1.BillSuccessSingleDto }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.AmendBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "amend", null);
 __decorate([
-    (0, common_1.Post)('delete'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('delete'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a DRAFT bill. A POSTED id answers 409 SALES_BILL_POSTED (use /bills/cancel).',
     }),
     (0, swagger_1.ApiOkResponse)({ description: '{ sbId, deleted: true }' }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.DeleteBillDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "remove", null);
 __decorate([
-    (0, common_1.Get)('get'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Get)('get'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Get bill by id — header, items, charges, tenders, posting, locks, rights, sources',
     }),
@@ -264,100 +281,116 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'sbAccYear', schema: { type: 'string' } }),
     (0, swagger_1.ApiOkResponse)({ type: bill_response_dto_1.BillSuccessSingleDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
-    __param(0, (0, common_1.Query)('sbId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('sbCompanyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(2, (0, common_1.Query)('sbBranchId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(3, (0, common_1.Query)('sbAccYear')),
+    __param(0, (0, common_2.Query)('sbId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(1, (0, common_2.Query)('sbCompanyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(2, (0, common_2.Query)('sbBranchId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(3, (0, common_2.Query)('sbAccYear')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "getById", null);
 __decorate([
-    (0, common_1.Get)('open-sources'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Get)('voucher-type-choices'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The bill header’s Voucher Type pick: offered types, next numbers, the counter default',
+        description: 'Offered: the company’s active child types of Sales Bill (3), plus 3 itself when it has none or ' +
+            'sales.offer_base_bill_type is on. defaultVchrTypeId = the device’s sales.bill_voucher_type when offered, ' +
+            'else null (the screen takes the user’s last pick, else choices[0]). nextRefno is not drawn. ' +
+            'Menu 12 View (SALES_RIGHT_VIEW).',
+    }),
+    __param(0, (0, common_2.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [bill_voucher_type_choices_dto_1.BillVoucherTypeChoicesQueryDto]),
+    __metadata("design:returntype", Promise)
+], BillController.prototype, "voucherTypeChoices", null);
+__decorate([
+    (0, common_2.Get)('open-sources'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'Open challan / order lines of a party a bill can take' }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'branchId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'partyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'kind', schema: { type: 'string', enum: ['DC', 'ORDER'] } }),
     (0, swagger_1.ApiQuery)({ name: 'accYear', required: false, schema: { type: 'string' } }),
-    __param(0, (0, common_1.Query)('companyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('branchId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(2, (0, common_1.Query)('partyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(3, (0, common_1.Query)('kind')),
-    __param(4, (0, common_1.Query)('accYear')),
+    __param(0, (0, common_2.Query)('companyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(1, (0, common_2.Query)('branchId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(2, (0, common_2.Query)('partyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(3, (0, common_2.Query)('kind')),
+    __param(4, (0, common_2.Query)('accYear')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "openSources", null);
 __decorate([
-    (0, common_1.Get)('party-context'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Get)('party-context'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'Everything the screen needs on customer pick, in one call' }),
     (0, swagger_1.ApiQuery)({ name: 'partyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'branchId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'accYear', schema: { type: 'string' } }),
     (0, swagger_1.ApiQuery)({ name: 'billDate', required: false, schema: { type: 'string', format: 'date' } }),
-    __param(0, (0, common_1.Query)('partyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('companyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(2, (0, common_1.Query)('branchId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(3, (0, common_1.Query)('accYear')),
-    __param(4, (0, common_1.Query)('billDate')),
+    __param(0, (0, common_2.Query)('partyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(1, (0, common_2.Query)('companyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(2, (0, common_2.Query)('branchId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(3, (0, common_2.Query)('accYear')),
+    __param(4, (0, common_2.Query)('billDate')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "partyContext", null);
 __decorate([
-    (0, common_1.Put)('delivery-status'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Put)('delivery-status'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'VERIFIED → PACKED → DISPATCHED → DELIVERED, order enforced (409 SALES_DELIVERY_ORDER)',
+        summary: 'RETIRED — always 410 SALES_DELIVERY_RETIRED. Delivery is worked out from Delivery Notes ' +
+            '(/delivery-notes/*, menu 305); a posted bill\'s Pickup ↔ Dispatch switch is POST /deliveries/mode.',
     }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [bill_lifecycle_dto_1.DeliveryStatusDto]),
-    __metadata("design:returntype", Promise)
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
 ], BillController.prototype, "deliveryStatus", null);
 __decorate([
-    (0, common_1.Put)('update-remarks'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Put)('update-remarks'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'Edit the remarks of a POSTED bill — text only' }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.UpdateRemarksDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "updateRemarks", null);
 __decorate([
-    (0, common_1.Put)('transport'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Put)('transport'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'The transport band on its own verb — open between POST and declaration, refused after (GST_DECLARED_LOCKED)',
     }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.BillTransportDto]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "transport", null);
 __decorate([
-    (0, common_1.Get)('tender-context'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Get)('tender-context'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: "The re-tender dialog's ONLY read — small, no items, no party context" }),
     (0, swagger_1.ApiQuery)({ name: 'sbId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'sbCompanyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'sbBranchId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'sbAccYear', schema: { type: 'string' } }),
-    __param(0, (0, common_1.Query)('sbId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('sbCompanyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(2, (0, common_1.Query)('sbBranchId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(3, (0, common_1.Query)('sbAccYear')),
+    __param(0, (0, common_2.Query)('sbId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(1, (0, common_2.Query)('sbCompanyId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(2, (0, common_2.Query)('sbBranchId', new common_2.ParseUUIDPipe({ version: '7' }))),
+    __param(3, (0, common_2.Query)('sbAccYear')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], BillController.prototype, "tenderContext", null);
 __decorate([
-    (0, common_1.Post)('retender'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_2.Post)('retender'),
+    (0, common_2.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Change how it was paid, not what was sold',
         description: 'Voids the rows that did not happen (kept, td_is_voided) and writes what really happened ' +
@@ -365,7 +398,7 @@ __decorate([
             'um_can_retender. Refused when the totals differ, the day is closed, or a PDC has moved.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: bill_response_dto_1.BillSuccessSingleDto }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_2.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [bill_lifecycle_dto_1.RetenderBillDto]),
     __metadata("design:returntype", Promise)
@@ -378,13 +411,14 @@ exports.BillController = BillController = __decorate([
     (0, swagger_1.ApiConflictResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({ type: bill_response_dto_1.BillErrorResponseDto }),
     (0, cache_manager_1.CacheTTL)(1),
-    (0, common_1.Controller)('bills'),
-    (0, common_1.UseFilters)(bill_exception_filter_1.BillExceptionFilter),
+    (0, common_2.Controller)('bills'),
+    (0, common_2.UseFilters)(bill_exception_filter_1.BillExceptionFilter),
     __metadata("design:paramtypes", [bill_service_1.BillService,
         bill_lifecycle_service_1.BillLifecycleService,
         bill_void_service_1.BillVoidService,
         bill_read_service_1.BillReadService,
         bill_band_service_1.BillBandService,
-        bill_retender_service_1.BillRetenderService])
+        bill_retender_service_1.BillRetenderService,
+        bill_voucher_type_service_1.BillVoucherTypeService])
 ], BillController);
 //# sourceMappingURL=bill.controller.js.map

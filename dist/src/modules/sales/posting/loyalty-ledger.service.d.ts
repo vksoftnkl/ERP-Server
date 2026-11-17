@@ -91,6 +91,26 @@ export declare class LoyaltyLedgerService {
         clawedBack: number;
         shortfall: number;
     }>;
+    restoreRedeemForReturn(tx: Prisma.TransactionClient, ret: {
+        docId: string;
+        accYear: string;
+        companyId: string;
+        branchId: string;
+        docDate: string;
+        docRefno?: string | null;
+        memberId: string;
+    }, bill: {
+        billId: string;
+        billAccYear: string;
+        refno?: string | null;
+    }, points: number, opts: {
+        approvedBy: string;
+        createdBy?: string;
+    }): Promise<{
+        rowsWritten: number;
+        pointsRestored: number;
+    }>;
+    private validityFrom;
     preview(bill: LoyaltyBillSource, tx?: Prisma.TransactionClient): Promise<LoyaltyPreview>;
     expiryRun(companyId: string, accYear: string, on?: string, createdBy?: string): Promise<number>;
     couponExpiryRun(companyId: string, accYear: string, on?: string, createdBy?: string): Promise<number>;

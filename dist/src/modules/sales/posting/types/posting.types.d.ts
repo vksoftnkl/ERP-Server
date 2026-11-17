@@ -54,6 +54,27 @@ export declare const SALES_ERROR_CODES: {
     readonly RETURN_ITEM_NOT_ALLOWED: "SALES_RETURN_ITEM_NOT_ALLOWED";
     readonly FREE_RETURN_OFF: "SALES_FREE_RETURN_OFF";
     readonly RETURN_WINDOW: "SALES_RETURN_WINDOW";
+    readonly RETURN_NO_LINES: "SALES_RETURN_NO_LINES";
+    readonly RETURN_NO_BILL_OFF: "SALES_RETURN_NO_BILL_OFF";
+    readonly RETURN_SETTLE_MODE: "SALES_RETURN_SETTLE_MODE";
+    readonly RETURN_NOT_ON_BILL: "SALES_RETURN_NOT_ON_BILL";
+    readonly RETURN_UNIT: "SALES_RETURN_UNIT";
+    readonly RETURN_LOT_EXPIRED: "SALES_RETURN_LOT_EXPIRED";
+    readonly RETURN_ON_DRAFTS: "SALES_RETURN_ON_DRAFTS";
+    readonly RETURN_NEVER_SOLD: "SALES_RETURN_NEVER_SOLD";
+    readonly RETURN_REFUND_TENDER: "SALES_RETURN_REFUND_TENDER";
+    readonly RETURN_REFUND_REF: "SALES_RETURN_REFUND_REF";
+    readonly RETURN_REFUND_OVER_PAID: "SALES_RETURN_REFUND_OVER_PAID";
+    readonly RETURN_ADJUST_OVER: "SALES_RETURN_ADJUST_OVER";
+    readonly RETURN_ADJUST_STALE: "SALES_RETURN_ADJUST_STALE";
+    readonly RETURN_REFUND_SESSION_CLOSED: "SALES_RETURN_REFUND_SESSION_CLOSED";
+    readonly RETURN_SCHEME_SHORT: "SALES_RETURN_SCHEME_SHORT";
+    readonly RETURN_CLAIM_GOODS: "SALES_RETURN_CLAIM_GOODS";
+    readonly RETURN_NO_PRICE: "SALES_RETURN_NO_PRICE";
+    readonly RETURN_APPROVAL_PENDING: "SALES_RETURN_APPROVAL_PENDING";
+    readonly RETURN_NEGATIVE: "SALES_RETURN_NEGATIVE";
+    readonly RETURN_CUSTOMER_LOCKED: "SALES_RETURN_CUSTOMER_LOCKED";
+    readonly RETURN_FINANCIAL: "SALES_RETURN_FINANCIAL";
     readonly CN_APPLIED: "SALES_CN_APPLIED";
     readonly DOC_POSTED: "SALES_DOC_POSTED";
     readonly DOC_CANCELLED: "SALES_DOC_CANCELLED";
@@ -78,6 +99,7 @@ export declare const SALES_ERROR_CODES: {
     readonly ORDER_LINE_OVER: "SALES_ORDER_LINE_OVER";
     readonly STOCK_NEGATIVE: "SALES_STOCK_NEGATIVE";
     readonly EWAY_TRANSPORT_MISSING: "SALES_EWAY_TRANSPORT_MISSING";
+    readonly TRANSPORT_NO_END: "SALES_TRANSPORT_NO_END";
     readonly DELIVERY_ORDER: "SALES_DELIVERY_ORDER";
     readonly TEMP_CREDIT_DETAILS_MISSING: "SALES_TEMP_CREDIT_DETAILS_MISSING";
     readonly TEMP_CREDIT_DAYS: "SALES_TEMP_CREDIT_DAYS";
@@ -120,13 +142,16 @@ export interface SalesWarning {
     line?: number;
     overridable: boolean;
     statutory?: SalesStatutoryRef;
+    params?: SalesMessageParams;
 }
+export type SalesMessageParams = Record<string, string | number>;
 export interface SalesRefusal {
     code: SalesErrorCodeLike;
     message: string;
     field?: string;
     line?: number;
     statutory?: SalesStatutoryRef;
+    params?: SalesMessageParams;
 }
 export interface SalesGuardContext {
     warnings: SalesWarning[];

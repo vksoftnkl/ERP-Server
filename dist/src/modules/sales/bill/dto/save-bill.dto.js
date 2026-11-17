@@ -52,6 +52,8 @@ class SaveBillDto {
     sbBillType;
     sbCategoryId;
     sbPriceLevel;
+    sbVchrTypeId;
+    sbDeliveryMode;
     sbBillSlno;
     sbBillRefno;
     sbUsrRefno;
@@ -275,6 +277,28 @@ __decorate([
     (0, dtoDecorators_1.RequiredInteger)(),
     __metadata("design:type", Number)
 ], SaveBillDto.prototype, "sbPriceLevel", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Voucher type from /bills/voucher-type-choices. Omitted on a company with no child types = 3. ' +
+            'Fixed after the first save (VT_BILL_TYPE_LOCKED).',
+    }),
+    (0, dtoDecorators_1.NullableInteger)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbVchrTypeId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: ['INSTANT', 'PICKUP', 'DISPATCH'],
+        nullable: true,
+        description: 'INSTANT | PICKUP | DISPATCH. Omit for the default (POS → INSTANT; else the voucher type\'s mode; ' +
+            'a bill from a Sales Order follows the order unless the type is Instant). Kept on later draft saves when omitted. ' +
+            '422 BILL_DELIVERY_MODE_POS (POS bill not INSTANT); 409 BILL_DELIVERY_MODE_LOCKED (amend changing it).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() || null : value),
+    (0, class_validator_1.IsIn)(['INSTANT', 'PICKUP', 'DISPATCH', null]),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDeliveryMode", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         readOnly: true,

@@ -174,6 +174,9 @@ export interface StockVoucherLinePayload {
     bookQty: number | null;
     countedQty: number | null;
     diffQty: number | null;
+    shelfQty?: number | null;
+    undeliveredQty?: number;
+    physicalQty?: number | null;
     reasonId: string | null;
     reasonName: string | null;
     direction: number | null;
@@ -220,10 +223,29 @@ export interface StockVoucherSaveResult extends StockVoucherPayload {
     lines: StockVoucherSavedLine[];
     rowsPosted: number | null;
     bookChanges: StockBookChange[];
+    undeliveredChanges?: StockUndeliveredChange[];
+    warnings?: StockUndeliveredWarning[];
 }
 export interface StockVoucherSavedLine extends StockVoucherLinePayload {
     bookChanged: boolean;
     previousBookQty: number | null;
+    undeliveredChanged?: boolean;
+    previousUndeliveredQty?: number | null;
+}
+export interface StockUndeliveredChange {
+    sviId: string;
+    lineNo: number;
+    itemId: string;
+    previousUndeliveredQty: number;
+    undeliveredQty: number;
+}
+export interface StockUndeliveredWarning {
+    code: string;
+    level: 'WARN';
+    field: string;
+    line: number;
+    message: string;
+    params: Record<string, string | number>;
 }
 export interface StockBookChange {
     sviId: string;
@@ -302,6 +324,19 @@ export interface StockCountSheetRow {
     avgCostRate: number;
     stockValue: number;
     countedQty: null;
+    undeliveredQty?: number;
+    physicalQty?: number;
+    undeliveredBills?: {
+        billId: string;
+        billAccYear: string;
+        billRefno: string | null;
+        custName: string | null;
+        qty: number;
+        unitName: string | null;
+        baseQty: number;
+    }[];
+    sellUnitName?: string | null;
+    sellUnitFactor?: number;
     sizeId: string | null;
     sizeName: string | null;
     colourId: string | null;

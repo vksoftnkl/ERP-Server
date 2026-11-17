@@ -13,6 +13,8 @@ exports.TransportBandService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const sales_guards_1 = require("./sales.guards");
+const sales_errors_1 = require("./sales.errors");
+const posting_types_1 = require("./types/posting.types");
 let TransportBandService = class TransportBandService {
     prisma;
     constructor(prisma) {
@@ -44,6 +46,9 @@ let TransportBandService = class TransportBandService {
         });
         const from = input.from ?? {};
         const to = input.to ?? {};
+        if (!hasAnEnd(from, to)) {
+            (0, sales_errors_1.throwSalesRefused)('The transport details name neither end: give the from / to godown, or a from / to name', posting_types_1.SALES_ERROR_CODES.TRANSPORT_NO_END, 'transport');
+        }
         const data = {
             ttdDirection: input.direction,
             ttdDocRefno: ref.docRefno ?? null,
@@ -128,6 +133,9 @@ exports.TransportBandService = TransportBandService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], TransportBandService);
+function hasAnEnd(from, to) {
+    return [from.godownId, to.godownId, from.name, to.name].some((v) => v !== null && v !== undefined);
+}
 function toRow(r) {
     return {
         ttdId: r.ttdId,

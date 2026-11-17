@@ -21184,3 +21184,713 @@ Raw query failed. Code: `42601`. Message: `ERROR: non-integer constant in ORDER 
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async ItemLedgerController.ledger (/home/vk/Dev/erp/ERP server/src/modules/stocks/reports/item-ledger/item-ledger.controller.ts:96:18)
 2026-11-11T12:33:35.021Z ERROR [HttpError] 500 GET /api/v1/stock/reports/item-ledger code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:12:38.914Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-returns/post
+PrismaClientValidationError: 
+Invalid `this.items(tx).update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-doc-store.ts:715:27
+
+  712 }
+  713 
+  714 async updateItem(tx: Prisma.TransactionClient, item: DocRow, data: DocRow): Promise<DocRow> {
+→ 715   return this.items(tx).update({
+          where: {
+            sriId_sriAccYear: {
+              sriId: "01a1d577-c5a7-7567-ae29-c2a9f9f6b712",
+              sriAccYear: "2026-2027"
+            }
+          },
+          data: {
+            sriBillItemId: "01a1d577-c4f4-7ec5-b07b-524256c16625",
+            sriBillAccYear: "2026-2027",
+            sriBillLineNo: 1,
+            sriToBaseFactor: new Prisma.Decimal("1"),
+            sriNetQty: new Prisma.Decimal("2"),
+            sriHsnCode: null,
+            sriTaxId: "01a090cd-4a59-71c8-b844-cc2fb2741293",
+            sriIsTaxIncl: false,
+            sriIsFree: false,
+            sriFreeType: null,
+            sriIsService: false,
+            sriSchemeId: null,
+            sriSchemeName: null,
+            sriPriceLevel: 1,
+            sriEanCode: null,
+            sriSalesmanId: null,
+            sriPromoUsageId: null,
+            sriQtyPriceId: null,
+            sriSize: null,
+            sriSizeUom: null,
+            sriLotId: "dd08de2b-18f1-575d-b653-df1765055465",
+            sriBatchNo: "ZT-SR-EXP",
+            sriBatchDate: null,
+            sriExpiryDate: "2026-10-24",
+                           ~~~~~~~~~~~~
+            sriSerialNo: null,
+            sriGrossAmt: new Prisma.Decimal("250"),
+            sriItemDiscAmt: new Prisma.Decimal("0"),
+            sriSplDiscAmt: new Prisma.Decimal("0"),
+            sriSchDiscAmt: new Prisma.Decimal("0"),
+            sriBillSchAmt: new Prisma.Decimal("0"),
+            sriAddlDisc1Amt: new Prisma.Decimal("0"),
+            sriAddlDisc2Amt: new Prisma.Decimal("0"),
+            sriCashDiscAmt: new Prisma.Decimal("0"),
+            sriDiscAmt: new Prisma.Decimal("0"),
+            sriNetGross: new Prisma.Decimal("250"),
+            sriChrgBeforeTax: new Prisma.Decimal("0"),
+            sriChrgAfterTax: new Prisma.Decimal("0"),
+            sriTaxableAmt: new Prisma.Decimal("250"),
+            sriCgstAmt: new Prisma.Decimal("22.5"),
+            sriSgstAmt: new Prisma.Decimal("22.5"),
+            sriIgstAmt: new Prisma.Decimal("0"),
+            sriCessAmt: new Prisma.Decimal("0"),
+            sriAcessAmt: new Prisma.Decimal("0"),
+            sriTaxAmt: new Prisma.Decimal("45"),
+            sriRoundOff: new Prisma.Decimal("0"),
+            sriNetAmt: new Prisma.Decimal("295"),
+            sriCogsAmt: new Prisma.Decimal("159.88"),
+            sriWeightQty: new Prisma.Decimal("0"),
+            sriLoyaltyPv: new Prisma.Decimal("0"),
+            sriLoyaltyPoints: new Prisma.Decimal("0"),
+            sriItemDiscPerc: new Prisma.Decimal("0"),
+            sriSplDiscPerc: new Prisma.Decimal("0"),
+            sriSchDiscPerc: new Prisma.Decimal("0"),
+            sriBillSchPerc: new Prisma.Decimal("0"),
+            sriAddlDisc1Perc: new Prisma.Decimal("0"),
+            sriAddlDisc2Perc: new Prisma.Decimal("0"),
+            sriCashDiscPerc: new Prisma.Decimal("0"),
+            sriTaxPerc: new Prisma.Decimal("18"),
+            sriCgstPerc: new Prisma.Decimal("9"),
+            sriSgstPerc: new Prisma.Decimal("9"),
+            sriIgstPerc: new Prisma.Decimal("0"),
+            sriCessPerc: new Prisma.Decimal("0"),
+            sriAcessPerc: new Prisma.Decimal("0"),
+            sriRate: new Prisma.Decimal("125"),
+            sriRatePreTax: new Prisma.Decimal("125"),
+            sriMaxPrice: null,
+            sriMinPrice: null,
+            sriActPrice: null,
+            sriItemDiscQty: new Prisma.Decimal("0"),
+            sriSplDiscQty: new Prisma.Decimal("0"),
+            sriSchDiscQty: new Prisma.Decimal("0"),
+            sriBillSchQty: new Prisma.Decimal("0"),
+            sriCessPerUnit: new Prisma.Decimal("0"),
+            sriAcessPerUnit: new Prisma.Decimal("0"),
+            sriCostPrice: new Prisma.Decimal("79.94"),
+            sriRateSource: "BILL",
+            sriRateSrcItemId: null,
+            sriRateSrcAccYear: null
+          }
+        })
+
+Invalid value for argument `sriExpiryDate`: premature end of input. Expected ISO-8601 DateTime.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleReturnService.writeMoney (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:1190:9)
+    at async SaleReturnService.postPipeline (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:911:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:828:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:794:5)
+2026-11-13T15:12:38.915Z ERROR [HttpError] 500 POST /api/v1/sale-returns/post code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:14:29.608Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-returns/post
+PrismaClientValidationError: 
+Invalid `this.items(tx).update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-doc-store.ts:715:27
+
+  712 }
+  713 
+  714 async updateItem(tx: Prisma.TransactionClient, item: DocRow, data: DocRow): Promise<DocRow> {
+→ 715   return this.items(tx).update({
+          where: {
+            sriId_sriAccYear: {
+              sriId: "01a1d579-75f4-7c8b-92a3-468fe4462122",
+              sriAccYear: "2026-2027"
+            }
+          },
+          data: {
+            sriBillItemId: "01a1d579-7503-7ba9-ad6a-5abf32fd3d8f",
+            sriBillAccYear: "2026-2027",
+            sriBillLineNo: 1,
+            sriToBaseFactor: new Prisma.Decimal("1"),
+            sriNetQty: new Prisma.Decimal("2"),
+            sriHsnCode: null,
+            sriTaxId: "01a090cd-4a59-71c8-b844-cc2fb2741293",
+            sriIsTaxIncl: false,
+            sriIsFree: false,
+            sriFreeType: null,
+            sriIsService: false,
+            sriSchemeId: null,
+            sriSchemeName: null,
+            sriPriceLevel: 1,
+            sriEanCode: null,
+            sriSalesmanId: null,
+            sriPromoUsageId: null,
+            sriQtyPriceId: null,
+            sriSize: null,
+            sriSizeUom: null,
+            sriLotId: "dd08de2b-18f1-575d-b653-df1765055465",
+            sriBatchNo: "ZT-SR-EXP",
+            sriBatchDate: null,
+            sriExpiryDate: "2026-10-24",
+                           ~~~~~~~~~~~~
+            sriSerialNo: null,
+            sriGrossAmt: new Prisma.Decimal("250"),
+            sriItemDiscAmt: new Prisma.Decimal("0"),
+            sriSplDiscAmt: new Prisma.Decimal("0"),
+            sriSchDiscAmt: new Prisma.Decimal("0"),
+            sriBillSchAmt: new Prisma.Decimal("0"),
+            sriAddlDisc1Amt: new Prisma.Decimal("0"),
+            sriAddlDisc2Amt: new Prisma.Decimal("0"),
+            sriCashDiscAmt: new Prisma.Decimal("0"),
+            sriDiscAmt: new Prisma.Decimal("0"),
+            sriNetGross: new Prisma.Decimal("250"),
+            sriChrgBeforeTax: new Prisma.Decimal("0"),
+            sriChrgAfterTax: new Prisma.Decimal("0"),
+            sriTaxableAmt: new Prisma.Decimal("250"),
+            sriCgstAmt: new Prisma.Decimal("22.5"),
+            sriSgstAmt: new Prisma.Decimal("22.5"),
+            sriIgstAmt: new Prisma.Decimal("0"),
+            sriCessAmt: new Prisma.Decimal("0"),
+            sriAcessAmt: new Prisma.Decimal("0"),
+            sriTaxAmt: new Prisma.Decimal("45"),
+            sriRoundOff: new Prisma.Decimal("0"),
+            sriNetAmt: new Prisma.Decimal("295"),
+            sriCogsAmt: new Prisma.Decimal("159.88"),
+            sriWeightQty: new Prisma.Decimal("0"),
+            sriLoyaltyPv: new Prisma.Decimal("0"),
+            sriLoyaltyPoints: new Prisma.Decimal("0"),
+            sriItemDiscPerc: new Prisma.Decimal("0"),
+            sriSplDiscPerc: new Prisma.Decimal("0"),
+            sriSchDiscPerc: new Prisma.Decimal("0"),
+            sriBillSchPerc: new Prisma.Decimal("0"),
+            sriAddlDisc1Perc: new Prisma.Decimal("0"),
+            sriAddlDisc2Perc: new Prisma.Decimal("0"),
+            sriCashDiscPerc: new Prisma.Decimal("0"),
+            sriTaxPerc: new Prisma.Decimal("18"),
+            sriCgstPerc: new Prisma.Decimal("9"),
+            sriSgstPerc: new Prisma.Decimal("9"),
+            sriIgstPerc: new Prisma.Decimal("0"),
+            sriCessPerc: new Prisma.Decimal("0"),
+            sriAcessPerc: new Prisma.Decimal("0"),
+            sriRate: new Prisma.Decimal("125"),
+            sriRatePreTax: new Prisma.Decimal("125"),
+            sriMaxPrice: null,
+            sriMinPrice: null,
+            sriActPrice: null,
+            sriItemDiscQty: new Prisma.Decimal("0"),
+            sriSplDiscQty: new Prisma.Decimal("0"),
+            sriSchDiscQty: new Prisma.Decimal("0"),
+            sriBillSchQty: new Prisma.Decimal("0"),
+            sriCessPerUnit: new Prisma.Decimal("0"),
+            sriAcessPerUnit: new Prisma.Decimal("0"),
+            sriCostPrice: new Prisma.Decimal("79.94"),
+            sriRateSource: "BILL",
+            sriRateSrcItemId: null,
+            sriRateSrcAccYear: null
+          }
+        })
+
+Invalid value for argument `sriExpiryDate`: premature end of input. Expected ISO-8601 DateTime.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleReturnService.writeMoney (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:1190:9)
+    at async SaleReturnService.postPipeline (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:911:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:828:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:794:5)
+2026-11-13T15:14:29.609Z ERROR [HttpError] 500 POST /api/v1/sale-returns/post code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:20:29.125Z ERROR [ModuleExceptionFilter] PUT /api/v1/sale-returns/transport
+PrismaClientUnknownRequestError: 
+Invalid `tx.txnTransportDetail.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:37
+
+  148     where: { ttdId_ttdAccYear: { ttdId: existing.ttdId, ttdAccYear: ref.accYear } },
+  149     data: { ...data, ttdModifiedOn: now, ttdModifiedBy: actor },
+  150   })
+→ 151 : await tx.txnTransportDetail.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"txn_transport_detail_2026_2027\" violates check constraint \"ck_ttd_has_an_end\"", severity: "ERROR", detail: Some("Failing row contains (01a1d57e-f2c2-7651-a868-93b8699479bb, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, null, 2026-2027, SALE_RETURN, 01a1d57e-f001-78ad-9199-7388daa7262c, SRT/2026-2027/D7/00086, INWARD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, ROAD, null, ZT-TRANSPORT, null, ZTLR1, null, null, ZT sale return suite, f, null, 2026-11-13 20:50:29.116+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async TransportBandService.write (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:9)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:2449:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnController.transport (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.controller.ts:145:42)
+2026-11-13T15:20:29.125Z ERROR [HttpError] 500 PUT /api/v1/sale-returns/transport code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:20:51.294Z ERROR [ModuleExceptionFilter] PUT /api/v1/sale-returns/transport
+PrismaClientUnknownRequestError: 
+Invalid `tx.txnTransportDetail.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:37
+
+  148     where: { ttdId_ttdAccYear: { ttdId: existing.ttdId, ttdAccYear: ref.accYear } },
+  149     data: { ...data, ttdModifiedOn: now, ttdModifiedBy: actor },
+  150   })
+→ 151 : await tx.txnTransportDetail.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"txn_transport_detail_2026_2027\" violates check constraint \"ck_ttd_has_an_end\"", severity: "ERROR", detail: Some("Failing row contains (01a1d57f-495d-7850-8474-04eca41a33b6, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, null, 2026-2027, SALE_RETURN, 01a1d57f-46c8-76af-9be5-ae087f3250be, SRT/2026-2027/D7/00090, INWARD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, ROAD, null, ZT-TRANSPORT, null, ZTLR1, null, null, ZT sale return suite, f, null, 2026-11-13 20:50:51.287+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async TransportBandService.write (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:9)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:2449:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnController.transport (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.controller.ts:145:42)
+2026-11-13T15:20:51.294Z ERROR [HttpError] 500 PUT /api/v1/sale-returns/transport code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:21:44.698Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-returns/post
+PrismaClientValidationError: 
+Invalid `this.items(tx).update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-doc-store.ts:715:27
+
+  712 }
+  713 
+  714 async updateItem(tx: Prisma.TransactionClient, item: DocRow, data: DocRow): Promise<DocRow> {
+→ 715   return this.items(tx).update({
+          where: {
+            sriId_sriAccYear: {
+              sriId: "01a1d580-19b8-79a4-844c-1f42299a34ac",
+              sriAccYear: "2026-2027"
+            }
+          },
+          data: {
+            sriBillItemId: "01a1d580-1901-7123-a498-faa689018c12",
+            sriBillAccYear: "2026-2027",
+            sriBillLineNo: 1,
+            sriToBaseFactor: new Prisma.Decimal("1"),
+            sriNetQty: new Prisma.Decimal("2"),
+            sriHsnCode: null,
+            sriTaxId: "01a090cd-4a59-71c8-b844-cc2fb2741293",
+            sriIsTaxIncl: false,
+            sriIsFree: false,
+            sriFreeType: null,
+            sriIsService: false,
+            sriSchemeId: null,
+            sriSchemeName: null,
+            sriPriceLevel: 1,
+            sriEanCode: null,
+            sriSalesmanId: null,
+            sriPromoUsageId: null,
+            sriQtyPriceId: null,
+            sriSize: null,
+            sriSizeUom: null,
+            sriLotId: "dd08de2b-18f1-575d-b653-df1765055465",
+            sriBatchNo: "ZT-SR-EXP",
+            sriBatchDate: null,
+            sriExpiryDate: "2026-10-24",
+                           ~~~~~~~~~~~~
+            sriSerialNo: null,
+            sriGrossAmt: new Prisma.Decimal("250"),
+            sriItemDiscAmt: new Prisma.Decimal("0"),
+            sriSplDiscAmt: new Prisma.Decimal("0"),
+            sriSchDiscAmt: new Prisma.Decimal("0"),
+            sriBillSchAmt: new Prisma.Decimal("0"),
+            sriAddlDisc1Amt: new Prisma.Decimal("0"),
+            sriAddlDisc2Amt: new Prisma.Decimal("0"),
+            sriCashDiscAmt: new Prisma.Decimal("0"),
+            sriDiscAmt: new Prisma.Decimal("0"),
+            sriNetGross: new Prisma.Decimal("250"),
+            sriChrgBeforeTax: new Prisma.Decimal("0"),
+            sriChrgAfterTax: new Prisma.Decimal("0"),
+            sriTaxableAmt: new Prisma.Decimal("250"),
+            sriCgstAmt: new Prisma.Decimal("22.5"),
+            sriSgstAmt: new Prisma.Decimal("22.5"),
+            sriIgstAmt: new Prisma.Decimal("0"),
+            sriCessAmt: new Prisma.Decimal("0"),
+            sriAcessAmt: new Prisma.Decimal("0"),
+            sriTaxAmt: new Prisma.Decimal("45"),
+            sriRoundOff: new Prisma.Decimal("0"),
+            sriNetAmt: new Prisma.Decimal("295"),
+            sriCogsAmt: new Prisma.Decimal("159.88"),
+            sriWeightQty: new Prisma.Decimal("0"),
+            sriLoyaltyPv: new Prisma.Decimal("0"),
+            sriLoyaltyPoints: new Prisma.Decimal("0"),
+            sriItemDiscPerc: new Prisma.Decimal("0"),
+            sriSplDiscPerc: new Prisma.Decimal("0"),
+            sriSchDiscPerc: new Prisma.Decimal("0"),
+            sriBillSchPerc: new Prisma.Decimal("0"),
+            sriAddlDisc1Perc: new Prisma.Decimal("0"),
+            sriAddlDisc2Perc: new Prisma.Decimal("0"),
+            sriCashDiscPerc: new Prisma.Decimal("0"),
+            sriTaxPerc: new Prisma.Decimal("18"),
+            sriCgstPerc: new Prisma.Decimal("9"),
+            sriSgstPerc: new Prisma.Decimal("9"),
+            sriIgstPerc: new Prisma.Decimal("0"),
+            sriCessPerc: new Prisma.Decimal("0"),
+            sriAcessPerc: new Prisma.Decimal("0"),
+            sriRate: new Prisma.Decimal("125"),
+            sriRatePreTax: new Prisma.Decimal("125"),
+            sriMaxPrice: null,
+            sriMinPrice: null,
+            sriActPrice: null,
+            sriItemDiscQty: new Prisma.Decimal("0"),
+            sriSplDiscQty: new Prisma.Decimal("0"),
+            sriSchDiscQty: new Prisma.Decimal("0"),
+            sriBillSchQty: new Prisma.Decimal("0"),
+            sriCessPerUnit: new Prisma.Decimal("0"),
+            sriAcessPerUnit: new Prisma.Decimal("0"),
+            sriCostPrice: new Prisma.Decimal("79.94"),
+            sriRateSource: "BILL",
+            sriRateSrcItemId: null,
+            sriRateSrcAccYear: null
+          }
+        })
+
+Invalid value for argument `sriExpiryDate`: premature end of input. Expected ISO-8601 DateTime.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleReturnService.writeMoney (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:1190:9)
+    at async SaleReturnService.postPipeline (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:911:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:828:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:794:5)
+2026-11-13T15:21:44.699Z ERROR [HttpError] 500 POST /api/v1/sale-returns/post code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:21:52.905Z ERROR [ModuleExceptionFilter] PUT /api/v1/sale-returns/transport
+PrismaClientUnknownRequestError: 
+Invalid `tx.txnTransportDetail.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:37
+
+  148     where: { ttdId_ttdAccYear: { ttdId: existing.ttdId, ttdAccYear: ref.accYear } },
+  149     data: { ...data, ttdModifiedOn: now, ttdModifiedBy: actor },
+  150   })
+→ 151 : await tx.txnTransportDetail.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"txn_transport_detail_2026_2027\" violates check constraint \"ck_ttd_has_an_end\"", severity: "ERROR", detail: Some("Failing row contains (01a1d580-3a08-74d2-bcbd-171f44d3ca58, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, null, 2026-2027, SALE_RETURN, 01a1d580-3773-7229-b354-7744bd4ec119, SRT/2026-2027/D7/00123, INWARD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, ROAD, null, ZT-TRANSPORT, null, ZTLR1, null, null, ZT sale return suite, f, null, 2026-11-13 20:51:52.897+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async TransportBandService.write (/home/vk/Dev/erp/ERP server/src/modules/sales/posting/transport-band.service.ts:151:9)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:2449:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnController.transport (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.controller.ts:145:42)
+2026-11-13T15:21:52.905Z ERROR [HttpError] 500 PUT /api/v1/sale-returns/transport code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-13T15:22:30.526Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-returns/post
+PrismaClientValidationError: 
+Invalid `this.items(tx).update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/posting/sales-doc-store.ts:715:27
+
+  712 }
+  713 
+  714 async updateItem(tx: Prisma.TransactionClient, item: DocRow, data: DocRow): Promise<DocRow> {
+→ 715   return this.items(tx).update({
+          where: {
+            sriId_sriAccYear: {
+              sriId: "01a1d580-ccb7-7c45-9a1b-1acdd5b22842",
+              sriAccYear: "2026-2027"
+            }
+          },
+          data: {
+            sriBillItemId: "01a1d580-cbf0-7bf1-b3c1-a4a7281169b9",
+            sriBillAccYear: "2026-2027",
+            sriBillLineNo: 1,
+            sriToBaseFactor: new Prisma.Decimal("1"),
+            sriNetQty: new Prisma.Decimal("2"),
+            sriHsnCode: null,
+            sriTaxId: "01a090cd-4a59-71c8-b844-cc2fb2741293",
+            sriIsTaxIncl: false,
+            sriIsFree: false,
+            sriFreeType: null,
+            sriIsService: false,
+            sriSchemeId: null,
+            sriSchemeName: null,
+            sriPriceLevel: 1,
+            sriEanCode: null,
+            sriSalesmanId: null,
+            sriPromoUsageId: null,
+            sriQtyPriceId: null,
+            sriSize: null,
+            sriSizeUom: null,
+            sriLotId: "dd08de2b-18f1-575d-b653-df1765055465",
+            sriBatchNo: "ZT-SR-EXP",
+            sriBatchDate: null,
+            sriExpiryDate: "2026-10-24",
+                           ~~~~~~~~~~~~
+            sriSerialNo: null,
+            sriGrossAmt: new Prisma.Decimal("250"),
+            sriItemDiscAmt: new Prisma.Decimal("0"),
+            sriSplDiscAmt: new Prisma.Decimal("0"),
+            sriSchDiscAmt: new Prisma.Decimal("0"),
+            sriBillSchAmt: new Prisma.Decimal("0"),
+            sriAddlDisc1Amt: new Prisma.Decimal("0"),
+            sriAddlDisc2Amt: new Prisma.Decimal("0"),
+            sriCashDiscAmt: new Prisma.Decimal("0"),
+            sriDiscAmt: new Prisma.Decimal("0"),
+            sriNetGross: new Prisma.Decimal("250"),
+            sriChrgBeforeTax: new Prisma.Decimal("0"),
+            sriChrgAfterTax: new Prisma.Decimal("0"),
+            sriTaxableAmt: new Prisma.Decimal("250"),
+            sriCgstAmt: new Prisma.Decimal("22.5"),
+            sriSgstAmt: new Prisma.Decimal("22.5"),
+            sriIgstAmt: new Prisma.Decimal("0"),
+            sriCessAmt: new Prisma.Decimal("0"),
+            sriAcessAmt: new Prisma.Decimal("0"),
+            sriTaxAmt: new Prisma.Decimal("45"),
+            sriRoundOff: new Prisma.Decimal("0"),
+            sriNetAmt: new Prisma.Decimal("295"),
+            sriCogsAmt: new Prisma.Decimal("159.88"),
+            sriWeightQty: new Prisma.Decimal("0"),
+            sriLoyaltyPv: new Prisma.Decimal("0"),
+            sriLoyaltyPoints: new Prisma.Decimal("0"),
+            sriItemDiscPerc: new Prisma.Decimal("0"),
+            sriSplDiscPerc: new Prisma.Decimal("0"),
+            sriSchDiscPerc: new Prisma.Decimal("0"),
+            sriBillSchPerc: new Prisma.Decimal("0"),
+            sriAddlDisc1Perc: new Prisma.Decimal("0"),
+            sriAddlDisc2Perc: new Prisma.Decimal("0"),
+            sriCashDiscPerc: new Prisma.Decimal("0"),
+            sriTaxPerc: new Prisma.Decimal("18"),
+            sriCgstPerc: new Prisma.Decimal("9"),
+            sriSgstPerc: new Prisma.Decimal("9"),
+            sriIgstPerc: new Prisma.Decimal("0"),
+            sriCessPerc: new Prisma.Decimal("0"),
+            sriAcessPerc: new Prisma.Decimal("0"),
+            sriRate: new Prisma.Decimal("125"),
+            sriRatePreTax: new Prisma.Decimal("125"),
+            sriMaxPrice: null,
+            sriMinPrice: null,
+            sriActPrice: null,
+            sriItemDiscQty: new Prisma.Decimal("0"),
+            sriSplDiscQty: new Prisma.Decimal("0"),
+            sriSchDiscQty: new Prisma.Decimal("0"),
+            sriBillSchQty: new Prisma.Decimal("0"),
+            sriCessPerUnit: new Prisma.Decimal("0"),
+            sriAcessPerUnit: new Prisma.Decimal("0"),
+            sriCostPrice: new Prisma.Decimal("79.94"),
+            sriRateSource: "BILL",
+            sriRateSrcItemId: null,
+            sriRateSrcAccYear: null
+          }
+        })
+
+Invalid value for argument `sriExpiryDate`: premature end of input. Expected ISO-8601 DateTime.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleReturnService.writeMoney (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:1190:9)
+    at async SaleReturnService.postPipeline (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:911:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:828:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleReturnService.post (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-return/sale-return.service.ts:794:5)
+2026-11-13T15:22:30.527Z ERROR [HttpError] 500 POST /api/v1/sale-returns/post code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:18:17.621Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:18:17.622Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:20:23.461Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:20:23.461Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:20:31.799Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:20:31.799Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:20:31.812Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:20:31.812Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:20:31.825Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:20:31.825Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:21:16.753Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:21:16.753Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-15T15:23:45.642Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-15T15:23:45.643Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T03:00:12.213Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-16T03:00:12.213Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T03:00:12.252Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:844:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-16T03:00:12.253Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T03:05:38.743Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherSeq.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:577:27
+
+  574 });
+  575 const startNo = voucherStartNo(voucherType);
+  576 await assertCounterRules(tx, scope, voucherType, format, startNo);
+→ 577 return tx.accVoucherSeq.create(
+The provided value for the column is too long for the column's type. Column: (not available)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async allocateVoucherNumber (/home/vk/Dev/erp/ERP server/src/common/Sequence/voucher-sequence.helper.ts:188:20)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:847:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:805:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
+2026-11-16T03:05:38.743Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS

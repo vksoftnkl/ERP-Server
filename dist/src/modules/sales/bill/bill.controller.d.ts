@@ -4,8 +4,10 @@ import { BillReadService } from './bill-read.service';
 import { BillBandService } from './bill-band.service';
 import { BillRetenderService } from './bill-retender.service';
 import { BillVoidService } from './bill-void.service';
+import { BillVoucherTypeService } from './bill-voucher-type.service';
+import { BillVoucherTypeChoicesQueryDto } from './dto/bill-voucher-type-choices.dto';
 import { SaveBillDto } from './dto/save-bill.dto';
-import { AmendBillDto, BillKeysDto, BillTransportDto, CancelBillDto, DeleteBillDto, DeliveryStatusDto, PostBillDto, RetenderBillDto, UpdateRemarksDto, ValidateBillDto, VoidBillDto } from './dto/bill-lifecycle.dto';
+import { AmendBillDto, BillKeysDto, BillTransportDto, CancelBillDto, DeleteBillDto, PostBillDto, RetenderBillDto, UpdateRemarksDto, ValidateBillDto, VoidBillDto } from './dto/bill-lifecycle.dto';
 import type { BillPayload, BillSuccessResponse } from './types/bill-api.types';
 export declare class BillController {
     private readonly billService;
@@ -14,7 +16,8 @@ export declare class BillController {
     private readonly read;
     private readonly band;
     private readonly retenderService;
-    constructor(billService: BillService, lifecycle: BillLifecycleService, voids: BillVoidService, read: BillReadService, band: BillBandService, retenderService: BillRetenderService);
+    private readonly voucherTypes;
+    constructor(billService: BillService, lifecycle: BillLifecycleService, voids: BillVoidService, read: BillReadService, band: BillBandService, retenderService: BillRetenderService, voucherTypes: BillVoucherTypeService);
     private ok;
     save(dto: SaveBillDto): Promise<BillSuccessResponse<BillPayload>>;
     validate(dto: ValidateBillDto): Promise<BillSuccessResponse<Record<string, unknown>>>;
@@ -28,11 +31,10 @@ export declare class BillController {
         deleted: true;
     }>>;
     getById(sbId: string, sbCompanyId: string, sbBranchId: string, sbAccYear: string): Promise<BillSuccessResponse<BillPayload>>;
+    voucherTypeChoices(q: BillVoucherTypeChoicesQueryDto): Promise<BillSuccessResponse<unknown>>;
     openSources(companyId: string, branchId: string, partyId: string, kind: string, accYear?: string): Promise<BillSuccessResponse<unknown>>;
     partyContext(partyId: string, companyId: string, branchId: string, accYear: string, billDate?: string): Promise<BillSuccessResponse<Record<string, unknown>>>;
-    deliveryStatus(dto: DeliveryStatusDto): Promise<BillSuccessResponse<{
-        sbDeliveryStatus: string;
-    }>>;
+    deliveryStatus(_body: unknown): never;
     updateRemarks(dto: UpdateRemarksDto): Promise<BillSuccessResponse<{
         sbRemarks: string | null;
     }>>;

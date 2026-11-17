@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockReasonsService = void 0;
+exports.StockReasonsService = exports.SYSTEM_ONLY_REASON_CODES = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -17,6 +17,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const module_service_utils_2 = require("../../../common/utils/module-service.utils");
 const stock_adjustment_rules_1 = require("./stock-adjustment.rules");
 const stock_error_codes_1 = require("../types/stock-error-codes");
+exports.SYSTEM_ONLY_REASON_CODES = ['DELIVERY_GODOWN'];
 let StockReasonsService = class StockReasonsService {
     prisma;
     requestContextService;
@@ -45,6 +46,10 @@ let StockReasonsService = class StockReasonsService {
          AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
               OR r.srm_allowed_txn_types && ${kindTypes}::text[])
          AND (NOT ${transfer}::boolean OR r.srm_direction = 'BOTH')
+         -- Delivery tracking (plan §7.6): DELIVERY_GODOWN is a SYSTEM reason a
+         -- Delivery Note's godown correction posts under; nobody picks it
+         -- (SYSTEM_ONLY_REASON_CODES — fixed text, not a bound value).
+         AND r.srm_code <> 'DELIVERY_GODOWN'
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

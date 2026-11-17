@@ -4,6 +4,7 @@ exports.TXN_DOC_REGISTRY = exports.TXN_DOC_TYPES = void 0;
 const payment_enum_1 = require("../accountsModule/payment/types/payment-enum");
 const receipt_enum_1 = require("../accountsModule/receipt/types/receipt-enum");
 const sales_doc_utils_1 = require("../sales/posting/sales-doc.utils");
+const delivery_constants_1 = require("../sales/delivery/core/delivery.constants");
 const stock_adjustment_rules_1 = require("../stocks/stock-adjustment/stock-adjustment.rules");
 exports.TXN_DOC_TYPES = [
     'OPENING_STOCK',
@@ -17,6 +18,7 @@ exports.TXN_DOC_TYPES = [
     'DELIVERY_CHALLAN',
     'DC_RETURN',
     'SALE_RETURN',
+    'DELIVERY_NOTE',
     'RECEIPT',
     'PAYMENT',
     'VOUCHER',
@@ -157,7 +159,11 @@ exports.TXN_DOC_REGISTRY = {
     SALE_ORDER: salesDoc('sales order', 'sales.sale_order', 'so', { date: 'so_order_date', slno: 'so_order_slno', refno: 'so_order_refno' }, ORDER_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER),
     DELIVERY_CHALLAN: salesDoc('delivery challan', 'sales.sale_dc', 'sdc', { date: 'sdc_dc_date', slno: 'sdc_dc_slno', refno: 'sdc_dc_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DELIVERY_CHALLAN),
     DC_RETURN: salesDoc('DC return', 'sales.sale_dc_return', 'sdr', { date: 'sdr_return_date', slno: 'sdr_return_slno', refno: 'sdr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DC_RETURN),
-    SALE_RETURN: salesDoc('sales return', 'sales.sale_return', 'sr', { date: 'sr_return_date', slno: 'sr_return_slno', refno: 'sr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_RETURN),
+    SALE_RETURN: salesDoc('sales return', 'sales.sale_return', 'sr', { date: 'sr_return_date', slno: null, refno: 'sr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_RETURN),
+    DELIVERY_NOTE: {
+        ...salesDoc('delivery note', 'sales.sale_delivery_note', 'sdn', { date: 'sdn_date', slno: null, refno: 'sdn_refno' }, POSTING_STATUSES, delivery_constants_1.DELIVERY_MENU_ID.DELIVERY_NOTE),
+        type: 'h.sdn_mode',
+    },
     RECEIPT: moduleVoucher('receipt', receipt_enum_1.RECEIPT_VOUCHER_TYPE_CODE, receipt_enum_1.RECEIPT_MENU_ID),
     PAYMENT: moduleVoucher('payment', payment_enum_1.PAYMENT_VOUCHER_TYPE_CODE, payment_enum_1.PAYMENT_MENU_ID),
     VOUCHER: {

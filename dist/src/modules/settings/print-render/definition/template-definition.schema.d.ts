@@ -590,8 +590,8 @@ export declare const qrcodeElementSchema: z.ZodObject<{
     errorCorrection: z.ZodDefault<z.ZodEnum<{
         M: "M";
         L: "L";
-        Q: "Q";
         H: "H";
+        Q: "Q";
     }>>;
 }, z.core.$strip>;
 export declare const pagebreakElementSchema: z.ZodObject<{
@@ -1398,8 +1398,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     errorCorrection: z.ZodDefault<z.ZodEnum<{
         M: "M";
         L: "L";
-        Q: "Q";
         H: "H";
+        Q: "Q";
     }>>;
 }, z.core.$strip>, z.ZodObject<{
     id: z.ZodString;
@@ -2238,8 +2238,8 @@ export declare const bandSchema: z.ZodObject<{
         errorCorrection: z.ZodDefault<z.ZodEnum<{
             M: "M";
             L: "L";
-            Q: "Q";
             H: "H";
+            Q: "Q";
         }>>;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
@@ -3112,8 +3112,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             errorCorrection: z.ZodDefault<z.ZodEnum<{
                 M: "M";
                 L: "L";
-                Q: "Q";
                 H: "H";
+                Q: "Q";
             }>>;
         }, z.core.$strip>, z.ZodObject<{
             id: z.ZodString;

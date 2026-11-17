@@ -10,6 +10,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillReadService = void 0;
+const delivery_constants_1 = require("../delivery/core/delivery.constants");
+const delivery_pending_service_1 = require("../delivery/core/delivery-pending.service");
+const bill_delivery_read_1 = require("./bill-delivery-read");
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -21,6 +24,7 @@ const statutory_service_1 = require("../../../common/posting/statutory.service")
 const transport_band_service_1 = require("../posting/transport-band.service");
 const batch_detail_helper_1 = require("../../stocks/batch-detail/batch-detail.helper");
 const statutory_types_1 = require("../../../common/posting/statutory.types");
+const bill_voucher_type_helper_1 = require("./bill-voucher-type.helper");
 const posting_types_1 = require("../posting/types/posting.types");
 const sale_bill_error_codes_1 = require("./types/sale-bill-error-codes");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
@@ -31,17 +35,19 @@ let BillReadService = class BillReadService {
     transportBand;
     statutory;
     loyalty;
-    constructor(prisma, salesContext, docBlocks, transportBand, statutory, loyalty) {
+    deliveryPending;
+    constructor(prisma, salesContext, docBlocks, transportBand, statutory, loyalty, deliveryPending) {
         this.prisma = prisma;
         this.salesContext = salesContext;
         this.docBlocks = docBlocks;
         this.transportBand = transportBand;
         this.statutory = statutory;
         this.loyalty = loyalty;
+        this.deliveryPending = deliveryPending;
     }
     async decorate(bill, payload, client) {
         const c = client ?? this.prisma;
-        const [counts, rights, sources, tempCredits, adjustments, transport, batches] = await Promise.all([
+        const [counts, rights, sources, tempCredits, adjustments, transport, batches, voucherType, delivery] = await Promise.all([
             this.lockCounts(c, bill),
             this.salesContext.rights(sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, c),
             this.sources(c, bill),
@@ -49,6 +55,8 @@ let BillReadService = class BillReadService {
             this.adjustments(c, bill),
             this.transportBand.read({ docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear }, c),
             (0, batch_detail_helper_1.batchDetailsFor)(c, bill.sbCompanyId, (payload.items ?? []).map((i) => ({ itemId: i.sbiItemId, batchNo: i.sbiBatchNo }))),
+            (0, bill_voucher_type_helper_1.billVoucherTypeBlock)(c, bill),
+            (0, bill_delivery_read_1.billDeliveryRead)(c, this.deliveryPending, bill),
         ]);
         const { posting, locks } = await this.docBlocks.build({
             status: bill.sbStatus,
@@ -68,11 +76,14 @@ let BillReadService = class BillReadService {
             ...payload,
             items: payload.items?.map((item) => {
                 const batch = item.sbiBatchNo && batches.get((0, batch_detail_helper_1.batchDetailKey)(item.sbiItemId, item.sbiBatchNo));
+                const dl = delivery.byLine.get(item.sbiId);
                 return {
                     ...item,
                     sbiSizeName: batch ? batch.sizeName : null,
                     sbiColourName: batch ? batch.colourName : null,
                     sbiModel: batch ? batch.model : null,
+                    deliveredQty: dl?.delivered ?? '0',
+                    pendingQty: dl?.pending ?? '0',
                 };
             }),
             posting,
@@ -82,6 +93,8 @@ let BillReadService = class BillReadService {
             tempCredits,
             adjustments,
             transport,
+            voucherType,
+            delivery: delivery.block,
             sbShipAddrId: transport?.to.addrId ?? null,
             sbShipName: transport?.to.name ?? null,
             sbShipAddr: transport?.to.addr ?? null,
@@ -112,6 +125,10 @@ let BillReadService = class BillReadService {
              ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
           WHERE b.abl_src_doc_id = ${bill.sbId}::uuid AND b.abl_acc_year = ${bill.sbAccYear}::char(9)
             AND j.abj_is_deleted = false
+            -- As assertCancellable: a reversed row and its reversal are no allocation.
+            AND j.abj_reversal_of_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM accounts.acc_bill_adjustment x
+                             WHERE x.abj_reversal_of_id = j.abj_id AND x.abj_is_deleted = false)
             -- Same exclusion as assertCancellable: only the set-offs the bill's
             -- own /post wrote, which carry no voucher.
             AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
@@ -465,7 +482,15 @@ let BillReadService = class BillReadService {
                 dueDate: (0, sales_doc_utils_1.isoDate)(t.atc_due_date),
             })),
             openSources: { dc: Number(counts?.dc ?? 0), orders: Number(counts?.orders ?? 0) },
+            oldPendingDeliveries: await this.oldPendingDeliveriesOf(q.companyId, q.branchId, cus.cus_id),
         };
+    }
+    async oldPendingDeliveriesOf(companyId, branchId, custId, client) {
+        const raw = await this.salesContext.setting(companyId, branchId, delivery_constants_1.DELIVERY_SETTING_KEYS.OLD_DAYS);
+        const n = Number(raw);
+        const oldDays = Number.isInteger(n) && n > 0 ? n : delivery_constants_1.DEFAULT_OLD_DAYS;
+        const rows = await (0, bill_delivery_read_1.oldPendingDeliveries)(client ?? this.prisma, { companyId, branchId, custId, oldDays });
+        return rows;
     }
     async tenderContext(keys) {
         const bill = await this.prisma.saleBill.findFirst({
@@ -543,7 +568,8 @@ exports.BillReadService = BillReadService = __decorate([
         sales_doc_blocks_service_1.SalesDocBlocksService,
         transport_band_service_1.TransportBandService,
         statutory_service_1.StatutoryService,
-        loyalty_ledger_service_1.LoyaltyLedgerService])
+        loyalty_ledger_service_1.LoyaltyLedgerService,
+        delivery_pending_service_1.DeliveryPendingService])
 ], BillReadService);
 function groupOpen(rows, extra) {
     const by = new Map();

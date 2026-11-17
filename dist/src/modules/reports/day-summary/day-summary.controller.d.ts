@@ -9,7 +9,7 @@ interface Ok<T> {
 export declare class DaySummaryController {
     private readonly service;
     constructor(service: DaySummaryService);
-    voucherTypes(): Promise<Ok<VoucherTypesPayload>>;
+    voucherTypes(companyId?: string): Promise<Ok<VoucherTypesPayload>>;
     summary(q: DaySummaryScopeDto): Promise<Ok<SummaryPayload>>;
     vouchers(q: DaySummaryVouchersDto): Promise<Ok<VouchersPayload>>;
     daily(q: DaySummaryScopeDto): Promise<Ok<DailyPayload>>;

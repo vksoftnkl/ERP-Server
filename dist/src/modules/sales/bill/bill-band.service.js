@@ -22,14 +22,6 @@ const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
 const bill_api_types_1 = require("./types/bill-api.types");
-const DELIVERY_ORDER = [
-    'NA',
-    'PENDING',
-    'VERIFIED',
-    'PACKED',
-    'DISPATCHED',
-    'DELIVERED',
-];
 let BillBandService = class BillBandService {
     prisma;
     bills;
@@ -42,65 +34,6 @@ let BillBandService = class BillBandService {
         this.salesContext = salesContext;
         this.transportBand = transportBand;
         this.audit = audit;
-    }
-    async deliveryStatus(dto) {
-        const now = new Date();
-        return this.prisma.$transaction(async (tx) => {
-            const bill = await this.bills.lockHeader(tx, dto);
-            this.assertPosted(bill);
-            await this.assertDayOpen(tx, bill);
-            const settings = await this.salesContext.settings(bill.sbCompanyId, bill.sbBranchId);
-            const requireVerify = await this.requireVerification(bill.sbCompanyId, bill.sbBranchId);
-            void settings;
-            const current = bill.sbDeliveryStatus === 'NA' ? 'PENDING' : bill.sbDeliveryStatus;
-            const next = dto.event;
-            const from = DELIVERY_ORDER.indexOf(current);
-            const to = DELIVERY_ORDER.indexOf(next);
-            const expectedPrev = next === 'PACKED' && requireVerify ? 'VERIFIED' : DELIVERY_ORDER[to - 1];
-            const allowed = to > from &&
-                (next === 'VERIFIED' || (next === 'PACKED' && !requireVerify)
-                    ? true
-                    : current === expectedPrev);
-            if (!allowed) {
-                (0, sales_errors_1.throwSalesLocked)(`Delivery is ${current}; ${next} is not the next step${requireVerify ? ' (this branch verifies before dispatch)' : ''}`, posting_types_1.SALES_ERROR_CODES.DELIVERY_ORDER, 'event');
-            }
-            const actor = this.salesContext.actor();
-            await tx.saleBill.update({
-                where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-                data: {
-                    sbDeliveryStatus: next,
-                    sbDeliveredOn: next === 'DELIVERED' ? now : bill.sbDeliveredOn,
-                    sbVehicleNo: dto.vehicleNo ?? bill.sbVehicleNo,
-                    sbModifiedOn: now,
-                    sbModifiedBy: await this.salesContext.actorName(tx),
-                },
-            });
-            if (dto.lrNo) {
-                const band = await this.transportBand.read({ docType: 'SALE_BILL', docId: bill.sbId, accYear: bill.sbAccYear }, tx);
-                if (!band || band.lrNo !== dto.lrNo) {
-                    await this.transportBand.write(tx, this.ref(bill), { ...(band ?? { direction: 'OUTWARD' }), lrNo: dto.lrNo }, actor, { gdrId: bill.sbDocRegisterId, now });
-                }
-            }
-            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
-                companyId: bill.sbCompanyId,
-                branchId: bill.sbBranchId,
-                tenantId: bill.sbTenantId,
-                accYear: bill.sbAccYear,
-                srcModule: bill_api_types_1.BILL_STATUS_SRC_MODULE,
-                srcDocType: bill_api_types_1.BILL_STATUS_SRC_DOC_TYPE,
-                srcDocId: bill.sbId,
-                srcDocRefno: bill.sbBillRefno,
-                event: next,
-                fromStatus: current,
-                toStatus: next,
-                changedOn: now,
-                changedBy: actor,
-                remarks: dto.remarks ?? null,
-                deviceId: bill.sbDeviceId,
-                sessionId: bill.sbSessionId,
-            });
-            return { sbDeliveryStatus: next };
-        });
     }
     async updateRemarks(dto) {
         const now = new Date();
@@ -205,12 +138,6 @@ let BillBandService = class BillBandService {
         if (await (0, sales_guards_1.loadDayClosed)(tx, bill.sbCompanyId, bill.sbBranchId, d)) {
             (0, sales_errors_1.throwSalesLocked)(`The books for ${d} are closed at this branch`, posting_types_1.SALES_ERROR_CODES.DAY_CLOSED, 'sbBillDate');
         }
-    }
-    async requireVerification(companyId, branchId) {
-        const v = ((await this.salesContext.setting(companyId, branchId, 'sales.require_verification_before_dispatch')) ?? '')
-            .trim()
-            .toLowerCase();
-        return v === 'true' || v === '1' || v === 'yes';
     }
 };
 exports.BillBandService = BillBandService;

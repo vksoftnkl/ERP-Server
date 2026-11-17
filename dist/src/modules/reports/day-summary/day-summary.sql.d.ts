@@ -6,6 +6,9 @@ export interface DsSqlScope extends BooksScope {
     voucherTypeId: number | null;
 }
 export type PairRule = 'RANGE' | 'DAY';
+export declare function typeFilterSql(s: {
+    voucherTypeId: number | null;
+}, col: Prisma.Sql): Prisma.Sql;
 export declare function coreCtes(s: DsSqlScope, rule: PairRule): Prisma.Sql;
 export declare function draftsSql(s: DsSqlScope): Prisma.Sql;
 export declare function leglessSql(s: DsSqlScope): Prisma.Sql;

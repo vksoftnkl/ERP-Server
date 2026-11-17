@@ -25,7 +25,10 @@
 #   BUILD          required
 #   COMMIT         optional: build-info.json must carry it
 #   VERSION        default: package.json version
-#   TARGET         default: win-x64 on Windows, linux-x64 elsewhere
+#   TARGET         default: win-x64 on Windows, linux-x64 elsewhere. win-x64 on Linux is a
+#                  cross build (ci/backend/release-local.sh): node_modules must come from
+#                  `npm ci --omit=dev --os=win32 --cpu=x64` with PRISMA_CLI_BINARY_TARGETS=windows
+#   NODE_EXE       the Windows node.exe to ship; required for win-x64 built on Linux
 #   OUT_DIR        default: release
 #   PACKAGE_MOVE   1 = move dist/ and node_modules/ into the package instead of copying
 #                  (CI only: fast on Windows, but it empties the working tree)
@@ -41,6 +44,10 @@ case "$(uname -s)" in
   *) os=linux ;;
 esac
 target="${TARGET:-$([[ $os == win ]] && echo win-x64 || echo linux-x64)}"
+case "$target" in
+  win-*) plat=win ;; # the OS the zip runs on (os = the OS building it)
+  *) plat=linux ;;
+esac
 out="${OUT_DIR:-release}"
 name="vknex-backend-${version}-b${BUILD}-${target}"
 stage="$out/$name"
@@ -69,7 +76,7 @@ done
 [[ -f node_modules/prisma/build/index.js ]] || die "the Prisma CLI is missing from the production install (prisma must stay in dependencies)"
 echo "package: Prisma CLI in the production install:"
 node node_modules/prisma/build/index.js --version | sed 's/^/    /'
-if [[ $os == win ]]; then
+if [[ $plat == win ]]; then
   [[ -f node_modules/.prisma/client/query_engine-windows.dll.node ]] || die "the Windows Prisma query engine is missing"
   [[ -f node_modules/@prisma/engines/schema-engine-windows.exe ]] || die "the Windows Prisma schema engine is missing (migrate deploy needs it)"
 fi
@@ -83,6 +90,9 @@ if [[ $os == win ]]; then
   # Windows program here: MSYS rewrites it to "C:/Program Files/Git/".)
   node_bin="$(cygpath -u "$node_bin")"
   cp "$node_bin" "$stage/node.exe"
+elif [[ $plat == win ]]; then
+  [[ -f "${NODE_EXE:-}" ]] || die "NODE_EXE (a Windows node.exe) is required to build $target on $os"
+  cp "$NODE_EXE" "$stage/node.exe"
 else
   cp "$node_bin" "$stage/node"
 fi
@@ -101,6 +111,13 @@ cp deploy/exe/.env.example "$stage/.env.example"
 find "$stage" -type f \( -name '*.map' -o -name '*.tsbuildinfo' \) -delete
 find "$stage/node_modules/.prisma" -type f -name '*.bak' -delete 2>/dev/null || true
 rm -rf "$stage/node_modules/.cache" # Prisma's engine download cache (~38 MB), never read at runtime
+if [[ $plat == win ]]; then
+  # A cross build (Linux -> win-x64) also holds the Linux Prisma engines: the CLI fetches the
+  # engines of the OS it runs on (even `prisma --version` above does). They never load on Windows.
+  find "$stage/node_modules" -type f \( -name 'libquery_engine-*.so.node' -o \
+    \( -path '*/@prisma/engines/schema-engine-*' ! -name '*.exe' \) \) -print -delete |
+    sed "s|^$stage/|package: removed Linux-only |"
+fi
 find "$stage" -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print -delete
 
 # ---- zip
@@ -118,7 +135,7 @@ find "$stage" -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example
 )
 
 # ---- content check (§2.2 step 9)
-node ci/backend/check-package.mjs "$zip" --platform "$os" --build "$BUILD" ${COMMIT:+--commit "$COMMIT"}
+node "$(dirname "${BASH_SOURCE[0]}")/check-package.mjs" "$zip" --platform "$plat" --build "$BUILD" ${COMMIT:+--commit "$COMMIT"}
 
 # ---- sha256 (§2.2 step 10)
 sha="$(sha256sum "$zip" | cut -d' ' -f1)"

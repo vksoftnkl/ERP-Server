@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -26,7 +27,8 @@ export declare class BillService {
     private readonly salesContext;
     private readonly docBlocks;
     private readonly billRead;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService, quotationService: QuotationService, transportBand: TransportBandService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, billRead: BillReadService);
+    private readonly config;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService, quotationService: QuotationService, transportBand: TransportBandService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, billRead: BillReadService, config: ConfigService);
     save(saveBillDto: SaveBillDto): Promise<BillPayload>;
     prepareSave(saveBillDto: SaveBillDto): void;
     throwIfDuplicate(error: unknown): void;
@@ -73,6 +75,11 @@ export declare class BillService {
     private toOrderHeaderRefs;
     private toQuotationRefs;
     private requireItemField;
+    chargeTypesOf(db: Pick<Prisma.TransactionClient, 'chargeMaster'>, charges: {
+        cdType?: string | null;
+        cdChgId?: string | null;
+    }[] | undefined): Promise<Map<string, string>>;
+    private fillChargeTypes;
     private toChargeScope;
     private toTenderScope;
     private requireCustomerLedgerId;

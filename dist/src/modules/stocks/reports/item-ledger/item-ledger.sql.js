@@ -223,7 +223,7 @@ function ledgerChain(s) {
                        AND w.svh_created_on > v.svh_created_on
                        AND w.svh_status <> 'DRAFT'
                      WHERE v.svh_id = p.doc_id AND v.svh_acc_year = p.src_year
-                       AND v.svh_link_src_doc_type IN (${client_1.Prisma.join([...item_ledger_rules_1.SHADOW_DOC_TYPES])}))
+                       AND v.svh_link_src_doc_type IN (${client_1.Prisma.join([...item_ledger_rules_1.AMENDABLE_SHADOW_DOC_TYPES])}))
                   ELSE EXISTS (
                     SELECT 1 FROM stock.stock_cost_revaluation x
                      WHERE x.scr_src_doc_id = p.doc_id AND x.scr_src_acc_year = p.src_year

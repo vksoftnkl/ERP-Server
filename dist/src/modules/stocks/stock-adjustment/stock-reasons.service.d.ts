@@ -30,6 +30,7 @@ export interface StockReasonUsage {
     voucherLines: number;
     lastUsedOn: string | null;
 }
+export declare const SYSTEM_ONLY_REASON_CODES: readonly ["DELIVERY_GODOWN"];
 export declare class StockReasonsService {
     private readonly prisma;
     private readonly requestContextService;

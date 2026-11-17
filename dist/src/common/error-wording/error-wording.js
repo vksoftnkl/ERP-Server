@@ -7,6 +7,7 @@ exports.withUserWording = withUserWording;
 exports.withUserWordingOnNotes = withUserWordingOnNotes;
 exports.wordingLangOf = wordingLangOf;
 exports.wordedResponse = wordedResponse;
+exports.fillPlaceholders = fillPlaceholders;
 const DEFAULT_LANG = 'en';
 let exact = new Map();
 let prefixes = new Map();
@@ -52,13 +53,13 @@ function wordingFor(detail, lang = DEFAULT_LANG) {
         const entry = exact.get(l)?.get(code);
         const row = entry ? pick(entry, detail) : null;
         if (row) {
-            return toUser(row);
+            return toUser(row, detail);
         }
         for (const p of prefixes.get(l) ?? []) {
             if (code.startsWith(p.prefix)) {
                 const prefixed = pick(p.entry, detail);
                 if (prefixed) {
-                    return toUser(prefixed);
+                    return toUser(prefixed, detail);
                 }
             }
         }
@@ -141,8 +142,64 @@ function parseVariant(variant) {
     const value = variant.slice(at + 1);
     return { key: variant.slice(0, at), value: value === '*' ? null : value };
 }
-function toUser(row) {
-    return { title: row.title, line: row.line, todo: row.todo };
+function toUser(row, detail = {}) {
+    const values = placeholderValues(detail);
+    return {
+        title: fillPlaceholders(row.title, values),
+        line: fillPlaceholders(row.line, values),
+        todo: fillPlaceholders(row.todo, values),
+    };
+}
+const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9_]*)\}/g;
+function placeholderValues(detail) {
+    const out = new Map();
+    const put = (k, v) => {
+        if (out.has(k)) {
+            return;
+        }
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'bigint') {
+            const text = String(v).trim();
+            if (text) {
+                out.set(k, text);
+            }
+        }
+        else if (Array.isArray(v)) {
+            const text = v
+                .filter((x) => typeof x === 'string' || typeof x === 'number')
+                .map(String)
+                .join(', ');
+            if (text) {
+                out.set(k, text);
+            }
+        }
+    };
+    if (isRecord(detail.params)) {
+        for (const [k, v] of Object.entries(detail.params)) {
+            put(k, v);
+        }
+    }
+    for (const [k, v] of Object.entries(detail)) {
+        if (k !== 'params' && k !== 'user' && k !== 'message') {
+            put(k, v);
+        }
+    }
+    return out;
+}
+function fillPlaceholders(text, values) {
+    if (!text || !text.includes('{')) {
+        return text;
+    }
+    let out = text.replace(PLACEHOLDER, (whole, name) => values.get(name) ?? whole);
+    if (!/\{[A-Za-z][A-Za-z0-9_]*\}/.test(out)) {
+        return out;
+    }
+    out = out
+        .replace(/\s*\(\s*\{[A-Za-z][A-Za-z0-9_]*\}\s*\)/g, '')
+        .replace(/ ?\{[A-Za-z][A-Za-z0-9_]*\}/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([.,;:!?])/g, '$1')
+        .trim();
+    return out;
 }
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

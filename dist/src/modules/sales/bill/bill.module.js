@@ -19,11 +19,13 @@ const bill_read_service_1 = require("./bill-read.service");
 const bill_band_service_1 = require("./bill-band.service");
 const bill_retender_service_1 = require("./bill-retender.service");
 const bill_void_service_1 = require("./bill-void.service");
+const bill_voucher_type_service_1 = require("./bill-voucher-type.service");
 const sale_order_module_1 = require("../sale-order/sale-order.module");
 const quotation_module_1 = require("../quotation/quotation.module");
 const posting_module_1 = require("../posting/posting.module");
 const bill_balance_module_1 = require("../../accountsModule/billBalance/bill-balance.module");
 const till_module_1 = require("../../till/till.module");
+const delivery_core_module_1 = require("../delivery/core/delivery-core.module");
 let BillModule = class BillModule {
 };
 exports.BillModule = BillModule;
@@ -38,6 +40,7 @@ exports.BillModule = BillModule = __decorate([
             posting_module_1.SalesPostingModule,
             bill_balance_module_1.BillBalanceModule,
             till_module_1.TillModule,
+            delivery_core_module_1.DeliveryCoreModule,
         ],
         controllers: [bill_controller_1.BillController],
         providers: [
@@ -47,6 +50,7 @@ exports.BillModule = BillModule = __decorate([
             bill_band_service_1.BillBandService,
             bill_retender_service_1.BillRetenderService,
             bill_void_service_1.BillVoidService,
+            bill_voucher_type_service_1.BillVoucherTypeService,
             bill_exception_filter_1.BillExceptionFilter,
         ],
         exports: [bill_service_1.BillService, bill_read_service_1.BillReadService],

@@ -1,0 +1,40 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.VOUCHER_TYPE_RIGHT_PREFIX = exports.VoucherTypeWarningCode = exports.VoucherTypeErrorCode = void 0;
+var VoucherTypeErrorCode;
+(function (VoucherTypeErrorCode) {
+    VoucherTypeErrorCode["NAME_REQUIRED"] = "VT_NAME_REQUIRED";
+    VoucherTypeErrorCode["NAME_TAKEN"] = "VT_NAME_TAKEN";
+    VoucherTypeErrorCode["ABBR_REQUIRED"] = "VT_ABBR_REQUIRED";
+    VoucherTypeErrorCode["CODE_TAKEN"] = "VT_CODE_TAKEN";
+    VoucherTypeErrorCode["ABBR_INVALID"] = "VT_ABBR_INVALID";
+    VoucherTypeErrorCode["ABBR_TAKEN"] = "VT_ABBR_TAKEN";
+    VoucherTypeErrorCode["NOT_FOUND"] = "VT_NOT_FOUND";
+    VoucherTypeErrorCode["PARENT_NOT_ALLOWED"] = "VT_PARENT_NOT_ALLOWED";
+    VoucherTypeErrorCode["PARENT_LOCKED"] = "VT_PARENT_LOCKED";
+    VoucherTypeErrorCode["BASE_FIELD_LOCKED"] = "VT_BASE_FIELD_LOCKED";
+    VoucherTypeErrorCode["COMPANY_MISMATCH"] = "VT_COMPANY_MISMATCH";
+    VoucherTypeErrorCode["METHOD_GST_AUTO_ONLY"] = "VT_METHOD_GST_AUTO_ONLY";
+    VoucherTypeErrorCode["NO_TOO_LONG"] = "VT_NO_TOO_LONG";
+    VoucherTypeErrorCode["NO_BAD_CHAR"] = "VT_NO_BAD_CHAR";
+    VoucherTypeErrorCode["BR_REQUIRED"] = "VT_BR_REQUIRED";
+    VoucherTypeErrorCode["PREFIX_TAKEN"] = "VT_PREFIX_TAKEN";
+    VoucherTypeErrorCode["WIDTH_INVALID"] = "VT_WIDTH_INVALID";
+    VoucherTypeErrorCode["START_NO_INVALID"] = "VT_START_NO_INVALID";
+    VoucherTypeErrorCode["PURPOSE_INVALID"] = "VT_PURPOSE_INVALID";
+    VoucherTypeErrorCode["PURPOSE_CODE_TAKEN"] = "VT_PURPOSE_CODE_TAKEN";
+    VoucherTypeErrorCode["IN_USE"] = "VT_IN_USE";
+    VoucherTypeErrorCode["OFFLINE"] = "VT_OFFLINE";
+    VoucherTypeErrorCode["BILL_TYPE_REQUIRED"] = "VT_BILL_TYPE_REQUIRED";
+    VoucherTypeErrorCode["BILL_TYPE_INVALID"] = "VT_BILL_TYPE_INVALID";
+    VoucherTypeErrorCode["BILL_TYPE_LOCKED"] = "VT_BILL_TYPE_LOCKED";
+    VoucherTypeErrorCode["DELIVERY_MODE_REQUIRED"] = "VT_DELIVERY_MODE_REQUIRED";
+    VoucherTypeErrorCode["DELIVERY_MODE_NOT_ALLOWED"] = "VT_DELIVERY_MODE_NOT_ALLOWED";
+})(VoucherTypeErrorCode || (exports.VoucherTypeErrorCode = VoucherTypeErrorCode = {}));
+var VoucherTypeWarningCode;
+(function (VoucherTypeWarningCode) {
+    VoucherTypeWarningCode["FORMAT_NEXT_COUNTER"] = "VT_FORMAT_NEXT_COUNTER";
+    VoucherTypeWarningCode["NO_OVER_16"] = "VT_NO_OVER_16";
+})(VoucherTypeWarningCode || (exports.VoucherTypeWarningCode = VoucherTypeWarningCode = {}));
+exports.VOUCHER_TYPE_RIGHT_PREFIX = 'VT';
+//# sourceMappingURL=voucher-types-error-codes.js.map

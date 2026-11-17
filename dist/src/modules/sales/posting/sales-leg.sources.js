@@ -1,13 +1,30 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.chargePostsSeparately = chargePostsSeparately;
+exports.chargeInsideTaxable = chargeInsideTaxable;
+exports.signedCharge = signedCharge;
 exports.splitRegisterCharges = splitRegisterCharges;
 exports.buildBillLegs = buildBillLegs;
 exports.buildReturnLegs = buildReturnLegs;
 exports.buildCogsLegs = buildCogsLegs;
 exports.buildTenderLegs = buildTenderLegs;
+const sales_doc_utils_1 = require("./sales-doc.utils");
 function chargePostsSeparately(c) {
     return c.cdSepPost === true || c.cdBeforeTax !== true;
+}
+function chargeInsideTaxable(c) {
+    return c.cdBeforeTax === true || c.cdTaxApl === true;
+}
+function signedCharge(c) {
+    const deduct = c.cdType === 'DEDUCT';
+    const signed = (v) => (deduct ? 0 - Math.abs((0, sales_doc_utils_1.num)(v)) : (0, sales_doc_utils_1.num)(v));
+    return {
+        amount: signed(c.cdAmount),
+        cgst: signed(c.cdCgstAmt),
+        sgst: signed(c.cdSgstAmt),
+        igst: signed(c.cdIgstAmt),
+        cess: signed(c.cdCessAmt),
+    };
 }
 function splitRegisterCharges(nets) {
     let other = 0;
@@ -44,9 +61,10 @@ function buildBillLegs(input) {
         if (!charge.separatelyPosted || round2(charge.amount) === 0) {
             continue;
         }
+        const side = charge.amount >= 0 ? 'CR' : 'DR';
         push(legs, {
             ledgerId: charge.ledgerId,
-            drCr: charge.amount >= 0 ? 'CR' : 'DR',
+            drCr: side,
             amount: Math.abs(charge.amount),
             remarks: charge.name ?? null,
             field: 'charges',
@@ -54,13 +72,13 @@ function buildBillLegs(input) {
         pushTaxLegs(legs, [
             {
                 taxId: charge.taxId ?? null,
-                cgst: charge.cgst ?? 0,
-                sgst: charge.sgst ?? 0,
-                igst: charge.igst ?? 0,
-                cess: charge.cess ?? 0,
+                cgst: Math.abs(charge.cgst ?? 0),
+                sgst: Math.abs(charge.sgst ?? 0),
+                igst: Math.abs(charge.igst ?? 0),
+                cess: Math.abs(charge.cess ?? 0),
                 acess: 0,
             },
-        ], input.supplyNature, charge.amount >= 0 ? 'CR' : 'DR');
+        ], input.supplyNature, side);
     }
     push(legs, {
         role: 'DISCOUNT_ALLOWED',
@@ -137,13 +155,24 @@ function buildReturnLegs(input) {
         if (!charge.separatelyPosted || round2(charge.amount) === 0) {
             continue;
         }
+        const side = charge.amount >= 0 ? 'DR' : 'CR';
         push(legs, {
             ledgerId: charge.ledgerId,
-            drCr: charge.amount >= 0 ? 'DR' : 'CR',
+            drCr: side,
             amount: Math.abs(charge.amount),
             remarks: charge.name ?? null,
             field: 'charges',
         });
+        pushTaxLegs(legs, [
+            {
+                taxId: charge.taxId ?? null,
+                cgst: Math.abs(charge.cgst ?? 0),
+                sgst: Math.abs(charge.sgst ?? 0),
+                igst: Math.abs(charge.igst ?? 0),
+                cess: Math.abs(charge.cess ?? 0),
+                acess: 0,
+            },
+        ], input.supplyNature, side);
     }
     push(legs, {
         role: 'DISCOUNT_ALLOWED',
@@ -241,7 +270,9 @@ function billPartyDebit(input) {
 }
 function returnPartyCredit(input) {
     const tax = input.taxes.reduce((s, t) => s + t.cgst + t.sgst + t.igst + t.cess + t.acess, 0);
-    const charges = input.charges.filter((c) => c.separatelyPosted).reduce((s, c) => s + c.amount, 0);
+    const charges = input.charges
+        .filter((c) => c.separatelyPosted)
+        .reduce((s, c) => s + c.amount + (c.cgst ?? 0) + (c.sgst ?? 0) + (c.igst ?? 0) + (c.cess ?? 0), 0);
     return round2(input.salesAmount + tax + charges + input.roundOff - input.cashDiscount - input.schemeDiscount);
 }
 function pushTaxLegs(legs, buckets, supplyNature, drCr) {

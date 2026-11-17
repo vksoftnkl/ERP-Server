@@ -7,7 +7,7 @@ export declare class DaySummaryService {
     private readonly requestContext;
     private readonly logger;
     constructor(prisma: PrismaService, requestContext: RequestContextService);
-    voucherTypes(): Promise<VoucherTypesPayload>;
+    voucherTypes(companyId?: string | null): Promise<VoucherTypesPayload>;
     summary(q: DaySummaryScopeDto): Promise<SummaryPayload>;
     vouchers(q: DaySummaryVouchersDto): Promise<VouchersPayload>;
     daily(q: DaySummaryScopeDto): Promise<DailyPayload>;

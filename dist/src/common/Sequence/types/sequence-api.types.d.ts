@@ -3,6 +3,8 @@ export interface SequenceErrorDetail {
     field: string;
     message: string;
     code: SequenceErrorCode;
+    params?: Record<string, string>;
+    rule?: string;
 }
 export interface SequenceErrorResponse {
     success: false;

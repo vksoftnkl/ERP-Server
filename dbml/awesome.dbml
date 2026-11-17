@@ -1642,7 +1642,7 @@ Table acc_voucher_seq {
 Table acc_voucher_types {
   vchrTypeId Int [pk, increment]
   vchrTypeCode String [unique, not null]
-  vchrTypeName String [unique, not null]
+  vchrTypeName String [not null]
   vchrTypeShort String
   vchrCategory VoucherCategory [not null, default: 'ACCOUNTING']
   vchrNature VoucherNature [not null]
@@ -1651,7 +1651,6 @@ Table acc_voucher_types {
   vchrNoSuffix String
   vchrNoWidth Int [not null, default: 5]
   vchrResetFreq VoucherResetFreq [not null, default: 'YEARLY']
-  vchrAllowManualNo Boolean [not null, default: false]
   vchrAffectsAccounts Boolean [not null, default: true]
   vchrAffectsInventory Boolean [not null, default: false]
   vchrIsCashVoucher Boolean [not null, default: false]
@@ -1675,6 +1674,14 @@ Table acc_voucher_types {
   vchrInRegister Boolean [not null, default: false, note: 'Offered on the register\'s type band']
   vchrInstruments Boolean [not null, default: false, note: 'notes (54): the typed lines carry INSTRUMENTS (tenders); the money legs are generated
 from the tenders\' ledgers and a cheque becomes a HELD register row (menu 51)']
+  vchrParentId Int [note: 'The base this child type sits under; NULL = a base type']
+  vchrCompanyId String [note: 'The company a child type belongs to; NULL = a base type ("All companies")']
+  vchrStartNo Int [not null, default: 1, note: 'First number of every NEW counter (lastNo = start - 1 at creation); >= 1']
+  vchrPrintPurposeId String [note: 'The print design (public.print_purpose) this type prints with; NULL = the base\'s, else SALE_INVOICE']
+  vchrPrintAfterPost Boolean [not null, default: false, note: 'Print right after posting (Ctrl+Enter), never after a draft save']
+  vchrDeliveryMode String [note: 'Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
+delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
+Sales Bill; a child keeps NULL (= the base\'s) until saved; NULL on every other type']
   vchrSyncDate DateTime
   vchrCreatedOn DateTime [default: `now()`, not null]
   vchrCreatedBy String
@@ -1686,6 +1693,11 @@ from the tenders\' ledgers and a cheque becomes a HELD register row (menu 51)']
   vouchers acc_vouchers [not null]
   bills acc_bill_balance [not null]
   menu menu_master
+  parent acc_voucher_types
+  children acc_voucher_types [not null]
+  company companys
+  printPurpose print_purpose
+  saleBills sale_bill [not null]
 }
 
 Table acc_ship_addrs {
@@ -3011,6 +3023,7 @@ Table godown_locations {
   stockReorderPolicies stock_reorder_policy [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
   saleReturnItems sale_return_item [not null]
+  deliveryNotes sale_delivery_note [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
   transportBandsFrom txn_transport_detail [not null]
@@ -3322,6 +3335,7 @@ changes nothing until this item is explicitly re-saved.']
   stockMovementClasses stock_movement_class [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
   saleReturnItems sale_return_item [not null]
+  deliveryNoteItems sale_delivery_note_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
   itemSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
@@ -3769,6 +3783,7 @@ Table item_unit_conversion {
   stockForecastBaseUom stock_forecast [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
   saleReturnItems sale_return_item [not null]
+  deliveryNoteItems sale_delivery_note_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
 }
@@ -4380,6 +4395,7 @@ the e-invoice applicability rows in StatutoryLimit.']
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
   voucherHeaders acc_voucher_header [not null]
+  voucherTypes acc_voucher_types [not null]
   saleAgents sale_agents [not null]
   chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
@@ -5135,7 +5151,7 @@ Table printer_profile {
 
   Note: 'public.printer_profile — §6, the physical device.
 
-┌───────────────────────────────────────────────────���─────────────────────┐
+┌─────────────────────────────────────────────────────────────────────────┐
 │ RECONSTRUCTED, NOT TRANSCRIBED. §6 of 17_printing.sql has not reached   │
 │ me — both pastes of the file hit the 50,000-character message limit     │
 │ before it. This model is derived from what the rest of the file states  │
@@ -5296,6 +5312,7 @@ Table print_purpose {
   templates print_template [not null]
   assignments print_template_assignment [not null]
   printLogs print_log [not null]
+  voucherTypes acc_voucher_types [not null]
 
   Note: 'public.print_purpose — §1, WHAT can be printed.
 
@@ -6330,6 +6347,7 @@ Table vehicle_master {
   transporter transporter_master
   driver employee_master
   saleReturns sale_return [not null]
+  deliveryNotes sale_delivery_note [not null]
   saleDcs sale_dc [not null]
   saleDcReturns sale_dc_return [not null]
   saleBills sale_bill [not null]
@@ -7529,6 +7547,8 @@ Table employee_master {
   vehiclesDriven vehicle_master [not null]
   saleReturnsDriven sale_return [not null]
   saleReturnsSupervised sale_return [not null]
+  deliveryNotesDriven sale_delivery_note [not null]
+  deliveryNotesSupervised sale_delivery_note [not null]
   saleDcsDriven sale_dc [not null]
   saleDcsSupervised sale_dc [not null]
   saleDcReturnsDriven sale_dc_return [not null]
@@ -8988,6 +9008,10 @@ Table sale_bill {
   sbDeviceId String [not null]
   sbDocType String [not null, default: 'TAX_INVOICE']
   sbBillType String [not null, default: 'CASH']
+  sbVchrTypeId Int [not null, default: 3, note: 'The voucher type the bill is numbered and posted under: 3 Sales Bill or
+one of the company\'s child types (Retail, Wholesale ...). Given at the
+first save and never changed (Q5). The DB default is the id of code \'Bil\'
+(3), resolved by 20261116100000_voucher_types_master.']
   sbCategoryId String
   sbPriceLevel Int [not null]
   sbBillSlno BigInt
@@ -9026,9 +9050,16 @@ device series, WHOLESALE from the branch MAIN series.']
 part were posted AT THE DC; the bill posts them only for direct lines.']
   sbDcTaxableAmt Decimal [not null, default: 0]
   sbCogsAmt Decimal [not null, default: 0, note: 'What THIS bill posted as COGS.']
-  sbDeliveryStatus String [not null, default: 'NA', note: 'NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
-the events themselves are TxnStatusLog rows.']
+  sbDeliveryStatus String [not null, default: 'NA', note: 'NA | PENDING | PART | OUT | DELIVERED | RETURNED (ck_sb_delivery_status,
+20261117100000_delivery_tracking). A site-local derived CACHE used only as
+an index prefilter (ix_sb_delivery_open): written by one method,
+DeliveryStatusService.recompute; the figures always come from the
+SaleDeliveryEvent rows (decision 36). OUT is reserved for phase 2 (POD).']
   sbDeliveredOn DateTime
+  sbDeliveryMode String [not null, default: 'INSTANT', note: 'INSTANT | PICKUP | DISPATCH (ck_sb_delivery_mode, 20261117100000). INSTANT
+= given at the counter, never pending; a POS bill is always INSTANT. The
+default on a new bill comes from the voucher type (vchrDeliveryMode, Q3);
+a posted bill changes only Pickup <-> Dispatch, on /deliveries/mode (Q4).']
   sbCustPan String [note: 'The identity stamp on a cash sale over the rule 114B limit: what was
 shown at the counter, kept WITH the bill and never re-derived.']
   sbForm60Ref String
@@ -9136,6 +9167,7 @@ clears it to NULL. Nothing else reads it.']
   customer customers
   posState state_codes
   priceLevel item_price_levels [not null]
+  voucherType acc_voucher_types [not null]
   returns sale_return [not null]
   driver employee_master
   supervisor employee_master
@@ -9280,6 +9312,8 @@ because a bill posted offline can reach the cloud before its slab
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
   returnItems sale_return_item [not null]
+  deliveryNoteItems sale_delivery_note_item [not null]
+  deliveryEvents sale_delivery_event [not null]
   lot stock_lot
 
   indexes {
@@ -9692,6 +9726,204 @@ line\'s lot rather than a fresh one.
 
 The money columns are the DC line\'s figures, carried for the INWARD e-way
 bill: goods coming back still have a value the portal wants.'
+}
+
+Table sale_delivery_event {
+  sdeId String [not null]
+  sdeCompanyId String [not null]
+  sdeBranchId String [not null]
+  sdeTenantId String
+  sdeAccYear String [not null]
+  sdeKind String [not null, note: 'GIVEN | CANCEL | GOODS_BACK | RETURN | RETURN_CANCEL | CLEANUP (ck_sde_kind).']
+  sdeBillId String [not null]
+  sdeBillAccYear String [not null]
+  sdeBillItemId String [not null]
+  sdeBillLineNo Int [not null]
+  sdeItemId String [not null]
+  sdeGodownId String [not null, note: 'Where the goods physically left / came back (the bill line\'s godown for
+RETURN / CLEANUP).']
+  sdeLotId String [note: 'The lot given.']
+  sdeSettleQty Decimal [not null, note: 'What the line no longer has to give; line unit.']
+  sdeSettleBaseQty Decimal [not null]
+  sdeOutQty Decimal [not null, default: 0, note: 'What physically left the godown; line unit.']
+  sdeOutBaseQty Decimal [not null, default: 0]
+  sdeSrcDocType String [not null, note: 'DELIVERY_NOTE | SALE_RETURN | CLEANUP (ck_sde_src_doc_type); CLEANUP and
+only CLEANUP has no sdeSrcDocId (ck_sde_src).']
+  sdeSrcDocId String
+  sdeSrcAccYear String
+  sdeSrcLineId String [note: 'sdni_id / sri_id.']
+  sdeSrcRefno String
+  sdeReversesId String [note: 'CANCEL -> its GIVEN; RETURN_CANCEL -> its RETURN (ck_sde_reverses).']
+  sdeEventDatetime DateTime [not null, note: 'When it happened (device time).']
+  sdeReason String
+  sdeDeviceId String
+  sdeIsDeleted Boolean [not null, default: false, note: 'Never set (registry shape; the partial indexes read it).']
+  sdeSyncDate DateTime
+  sdeCreatedOn DateTime [default: `now()`, not null]
+  sdeCreatedBy String [not null]
+  billItem sale_bill_item [not null]
+
+  indexes {
+    (sdeId, sdeAccYear) [pk]
+  }
+
+  Note: 'Insert-only delivery events of a bill line (migration
+20261117100000_delivery_tracking, plan §7.3, decisions 34-37, 46).
+
+Never updated, never deleted. Every reader sums the signed columns through
+one SQL fragment (delivery-pending.sql.ts), never by kind:
+settled = SUM(sdeSettleQty)  -> pending = sbi_bill_qty - settled
+given   = SUM(sdeOutQty)     -> what physically left the godown
+Phase 2 adds sde_pod_qty / sde_pod_base_qty (ADD COLUMN NOT NULL DEFAULT 0)
+and the kinds POD_OK / POD_SHORT, with no reader change (§14).
+
+kind           settle   out      source
+GIVEN          +q       +q       DELIVERY_NOTE line (one per sdni, ux_sde_given)
+CANCEL         -r       -r       reverses a GIVEN (sdeReversesId)
+GOODS_BACK     -q       -q       DELIVERY_NOTE line, refused at the door
+RETURN         +u       0        SALE_RETURN line, goods never taken (ux_sde_return)
+RETURN_CANCEL  -u       0        reverses a RETURN
+CLEANUP        +q       +q       go-live (Q15), the bill\'s year, no source doc
+
+LIST-partitioned by sdeAccYear = the source document\'s year (the note\'s, the
+return\'s; the bill\'s for CLEANUP). No CHECK or UNIQUE over a quantity two
+sites draw on: over-delivery that arrives by sync is recorded and flagged
+(/deliveries/exceptions), never refused here. The client may send its own
+uuidv7 sdeId (goods-back retry safety, addendum decision 69).'
+}
+
+Table sale_delivery_note {
+  sdnId String [not null]
+  sdnCompanyId String [not null]
+  sdnBranchId String [not null]
+  sdnTenantId String
+  sdnAccYear String [not null, note: 'The note\'s year (= the post year).']
+  sdnDeviceId String [not null]
+  sdnDeviceType String
+  sdnSessionId String
+  sdnSlno BigInt [not null, note: 'Per device, from the first save (ck_sdn_slno > 0).']
+  sdnRefno String [not null, note: 'DN/2026-2027/D3/00042']
+  sdnDate DateTime [not null, note: 'The post date (shown grey on screen).']
+  sdnDatetime DateTime [default: `now()`, not null, note: 'Set at post: when the goods left.']
+  sdnGodownId String [not null, note: 'The giving godown; locked once the note has lines (decision 48).']
+  sdnMode String [not null, default: 'SELF', note: 'SELF | VEHICLE | TRANSPORTER (ck_sdn_mode).']
+  sdnVehicleId String
+  sdnVehicleNo String [note: 'As printed, or the collector\'s own vehicle.']
+  sdnVehicleCapacityKg Decimal [note: 'The vehicle\'s capacity at post.']
+  sdnDriverId String
+  sdnSupervisorId String
+  sdnLoadmanId String[] [not null, note: 'uuid[]: no FK on the elements; the service checks each against employee_master.']
+  sdnCollectedBy String [note: 'Self pickup: who took the goods.']
+  sdnCollectorPhone String
+  sdnTotLines Int [not null, default: 0]
+  sdnTotQty Decimal [not null, default: 0, note: 'Packages.']
+  sdnTotBags Decimal [not null, default: 0]
+  sdnTotWeightKg Decimal [not null, default: 0]
+  sdnBillCount Int [not null, default: 0]
+  sdnStatus String [not null, default: 'DRAFT', note: 'DRAFT | POSTED | CANCELLED (ck_sdn_status). A posted note is never changed.']
+  sdnOverrides String [note: 'The WARN codes ticked at post (overrideWarnings), comma separated.']
+  sdnPostedOn DateTime
+  sdnPostedBy String
+  sdnCancelledOn DateTime
+  sdnCancelledBy String
+  sdnCancelReason String [note: 'Required when CANCELLED (ck_sdn_cancel_reason).']
+  sdnPrintCount Int [not null, default: 0, note: 'The DUPLICATE label on a reprint.']
+  sdnRevisionNo Int [not null, default: 1, note: 'Draft saves (DN_REVISION_STALE).']
+  sdnRemarks String
+  sdnIsDeleted Boolean [not null, default: false, note: 'Drafts only.']
+  sdnSyncDate DateTime
+  sdnCreatedOn DateTime [default: `now()`, not null]
+  sdnCreatedBy String [not null]
+  sdnModifiedOn DateTime
+  sdnModifiedBy String
+  godown godown_locations [not null]
+  vehicle vehicle_master
+  driver employee_master
+  supervisor employee_master
+  items sale_delivery_note_item [not null]
+
+  indexes {
+    (sdnId, sdnAccYear) [pk]
+    (sdnCompanyId, sdnBranchId, sdnAccYear, sdnDeviceId, sdnSlno) [unique]
+    (sdnCompanyId, sdnBranchId, sdnAccYear, sdnRefno) [unique]
+  }
+
+  Note: 'The Delivery Note / gate pass (menu 305): what physically left ONE godown
+against posted Pickup / Dispatch bills (delivery tracking phase 1,
+migration 20261117100000_delivery_tracking, plan §7.1).
+
+LIST-partitioned by sdnAccYear, PK (sdnId, sdnAccYear). Partitions come
+from public.ensure_acc_year_partitions, which 20261117100000 taught about
+this table. The client may send its own uuidv7 sdnId on the first save, so
+a re-sent save finds the same note.
+
+The note moves no stock of its own: posting writes one GIVEN row per line
+into SaleDeliveryEvent, and Physical = Owned + Billed not delivered follows
+from those events. Only a different lot or godown posts a correction (a
+shadow stock voucher linked by svh_link_src_*, decisions 38 / 39).
+
+Numbered per DEVICE, like the Sale Return: DN/{accYear}/{device}/{00000}.
+The transporter, LR no and LR date live in TxnTransportDetail with
+ttd_doc_type \'DELIVERY_NOTE\'.'
+}
+
+Table sale_delivery_note_item {
+  sdniId String [not null]
+  sdniNoteId String [not null]
+  sdniAccYear String [not null]
+  sdniCompanyId String [not null]
+  sdniBranchId String [not null]
+  sdniTenantId String
+  sdniLineNo Int [not null, note: 'ck_sdni_line_no >= 1.']
+  sdniBillId String [not null]
+  sdniBillAccYear String [not null]
+  sdniBillItemId String [not null]
+  sdniBillLineNo Int [not null, note: 'Snapshot.']
+  sdniBillRefno String [note: 'Snapshot.']
+  sdniItemId String [not null]
+  sdniItemUnitId String [not null]
+  sdniToBaseFactor Decimal [not null, note: 'The bill line\'s factor (§5.1: its own sbiToBaseFactor when > 0, else the
+unit conversion, else 1).']
+  sdniBillGodownId String [not null, note: 'The bill line\'s godown.']
+  sdniGodownId String [not null, note: 'The giving godown (= the note\'s). Different from the bill\'s only with
+the Override right (Q18): post then moves it on the books.']
+  sdniBillLotId String [note: 'The bill\'s lot.']
+  sdniLotId String [note: 'The lot given; another lot = a re-lot pair at post (decision 38).']
+  sdniBucket String [not null, default: 'SALEABLE', note: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE (ck_sdni_bucket, as ck_sbi_bucket).']
+  sdniQty Decimal [not null, default: 0, note: 'Give now, in the line\'s unit (ck_sdni_qty >= 0).']
+  sdniBaseQty Decimal [not null, default: 0, note: 'ck_sdni_base_qty >= 0.']
+  sdniWeightKg Decimal [not null, default: 0]
+  sdniScannedQty Decimal [not null, default: 0, note: 'How many came by scanner.']
+  sdniOtherGodownOk Boolean [not null, default: false, note: 'The Override was used for this line (logged in sdnOverrides too).']
+  sdniRemarks String
+  sdniIsDeleted Boolean [not null, default: false]
+  sdniSyncDate DateTime
+  sdniCreatedOn DateTime [default: `now()`, not null]
+  sdniCreatedBy String [not null]
+  sdniModifiedOn DateTime
+  sdniModifiedBy String
+  note sale_delivery_note [not null]
+  billItem sale_bill_item [not null]
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  billLot stock_lot
+  lot stock_lot
+
+  indexes {
+    (sdniId, sdniAccYear) [pk]
+  }
+
+  Note: 'A Delivery Note line: one bill line given now, in the bill line\'s unit,
+from the note\'s godown and the lot actually given (migration
+20261117100000_delivery_tracking, plan §7.2).
+
+LIST-partitioned by sdniAccYear (= the note\'s year), PK (sdniId,
+sdniAccYear). The client may send its own uuidv7 sdniId. No UNIQUE on
+(note, bill line): one bill line may be given in two lots on one note.
+Zero-qty lines are kept on a draft and soft-deleted at post.
+
+sdniItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+SaleBillItem.sbiItemUnitId (the bill line\'s unit).'
 }
 
 Table sale_freight_charges {
@@ -10523,6 +10755,10 @@ line names its source" is a server check.']
   sriRateSrcItemId String [note: 'The SaleBillItem whose rate a no-bill line used (grid 211). No FK: the
 bill may be another branch\'s (D78).']
   sriRateSrcAccYear String
+  sriUndeliveredQty Decimal [not null, default: 0, note: 'The part of this row the customer never took (delivery tracking,
+20261117100000, N3 / addendum A3): it settles the bill line\'s pending with
+a RETURN event instead of coming off the shelf. ck_sri_undelivered: >= 0
+and <= return + free qty. 0 on a Claim (a service rule).']
   saleReturn sale_return [not null]
   billItem sale_bill_item
   item item_master [not null]
@@ -11429,6 +11665,8 @@ StockLedger by fn_sml_apply(). NEVER written from application code.']
   transits stock_transit [not null]
   valuationSnaps stock_valuation_snap [not null]
   saleReturnItems sale_return_item [not null]
+  deliveryNoteItemsBillLot sale_delivery_note_item [not null]
+  deliveryNoteItems sale_delivery_note_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
   saleBillItems sale_bill_item [not null]
@@ -12489,6 +12727,11 @@ what the storekeeper held under the gun.']
   sviCountedQty Decimal [note: 'What was actually on the shelf.']
   sviDiffQty Decimal [note: 'GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
 never sent — the variance must not be editable.']
+  sviShelfQty Decimal [note: 'Delivery tracking (20261117100000, Q17 / addendum decision 68): the shelf
+as counted, billed goods included, when the count compares with Physical.
+The server then stores sviCountedQty = sviShelfQty - sviUndeliveredQty,
+which may be negative (no CHECK on sviCountedQty).']
+  sviUndeliveredQty Decimal [not null, default: 0, note: 'The billed-not-delivered of the holding, re-read at every save.']
   sviCostRate Decimal [not null, default: 0]
   sviCostRateWot Decimal [not null, default: 0]
   sviLandedRate Decimal [not null, default: 0]
@@ -12941,6 +13184,12 @@ Ref: acc_voucher_seq.companyId > companys.compId
 Ref: acc_voucher_seq.branchId > branch_master.brId
 
 Ref: acc_voucher_types.vchrMenuId > menu_master.menuId [delete: Restrict]
+
+Ref: acc_voucher_types.vchrParentId - acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_voucher_types.vchrCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_voucher_types.vchrPrintPurposeId > print_purpose.ppoId [delete: Restrict]
 
 Ref: acc_ship_addrs.saaCompanyId > companys.compId [delete: Restrict]
 
@@ -13522,6 +13771,8 @@ Ref: sale_bill.sbPosStcd > state_codes.stateCode [delete: Restrict]
 
 Ref: sale_bill.sbPriceLevel > item_price_levels.iplId [delete: Restrict]
 
+Ref: sale_bill.sbVchrTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
 Ref: sale_bill.sbDriverId > employee_master.empId [delete: Restrict]
 
 Ref: sale_bill.sbSupervisorId > employee_master.empId [delete: Restrict]
@@ -13583,6 +13834,28 @@ Ref: sale_dc_return_item.sdriItemUnitId > item_unit_conversion.iucId [delete: Re
 Ref: sale_dc_return_item.sdriGodownId > godown_locations.gdlId [delete: Restrict]
 
 Ref: sale_dc_return_item.sdriLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: sale_delivery_event.(sdeBillItemId, sdeBillAccYear) > sale_bill_item.(sbiId, sbiAccYear) [delete: Restrict]
+
+Ref: sale_delivery_note.sdnGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: sale_delivery_note.sdnVehicleId > vehicle_master.vehId [delete: Restrict]
+
+Ref: sale_delivery_note.sdnDriverId > employee_master.empId [delete: Restrict]
+
+Ref: sale_delivery_note.sdnSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: sale_delivery_note_item.(sdniNoteId, sdniAccYear) > sale_delivery_note.(sdnId, sdnAccYear) [delete: Restrict]
+
+Ref: sale_delivery_note_item.(sdniBillItemId, sdniBillAccYear) > sale_bill_item.(sbiId, sbiAccYear) [delete: Restrict]
+
+Ref: sale_delivery_note_item.sdniItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_delivery_note_item.sdniItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_delivery_note_item.sdniBillLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: sale_delivery_note_item.sdniLotId > stock_lot.sltId [delete: Restrict]
 
 Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
 

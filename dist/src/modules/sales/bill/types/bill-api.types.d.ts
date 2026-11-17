@@ -1,3 +1,5 @@
+import type { BillDeliveryBlock, BillGodownSlip } from '../bill-delivery-read';
+import type { BillVoucherTypeBlock } from '../bill-voucher-type.helper';
 import { SaleBill, SaleBillItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
 import type { ChargeDetailPayload, ChargeDocumentAudit } from '../../../master/charge-detail/types/charge-detail-api.types';
@@ -34,6 +36,9 @@ export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBil
     tempCredits?: BillTempCreditSummary[];
     adjustments?: BillAdjustmentSummary[];
     transport?: TransportBandRow | null;
+    voucherType?: BillVoucherTypeBlock;
+    delivery?: BillDeliveryBlock;
+    godownSlips?: BillGodownSlip[];
     sbShipAddrId?: string | null;
     sbShipName?: string | null;
     sbShipAddr?: string | null;
@@ -92,6 +97,8 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
     sbiAllowNegativeStock?: boolean | null;
     sbiSizeName?: string | null;
     sbiColourName?: string | null;
+    deliveredQty?: string;
+    pendingQty?: string;
     sbiModel?: string | null;
 };
 export type BillChargePayload = ChargeDetailPayload;

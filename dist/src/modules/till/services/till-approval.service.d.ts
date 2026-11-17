@@ -113,6 +113,7 @@ export type GateVerdict = {
     state: 'WARN';
     need: TillApprovalNeed;
     rule: TillApprovalRuleRow;
+    selfAllowed: boolean;
 };
 export interface NewApprovalRequest {
     companyId: string;
@@ -161,6 +162,14 @@ export declare class TillApprovalService {
     }): Promise<TillApprovalNeed | null>;
     assessGate(client: Client, ask: GateAsk): Promise<GateVerdict>;
     settleGate(tx: Prisma.TransactionClient, ask: GateAsk, verdict: GateVerdict): Promise<string | null>;
+    withdrawForDocument(tx: Prisma.TransactionClient, doc: {
+        companyId: string;
+        srcDocType: string;
+        srcDocId: string;
+        userId: string;
+        deviceId: string | null;
+        note: string;
+    }): Promise<string[]>;
     throwApprovalRequired(need: TillApprovalNeed, ask: GateAsk): never;
     fileRequest(tx: Prisma.TransactionClient, input: NewApprovalRequest): Promise<string>;
     private approvedFor;

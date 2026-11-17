@@ -34,6 +34,13 @@ export interface PostedAdjustment {
     settlementMode: string;
 }
 export declare function syncBillAdjustments(tx: Prisma.TransactionClient, ctx: BillAdjustmentContext, adjustments: BillAdjustmentInput[] | undefined, actor: string, now: Date): Promise<BillAdjustmentSyncResult>;
+export declare function addBillAdjustment(tx: Prisma.TransactionClient, ctx: BillAdjustmentContext, adjustment: Omit<BillAdjustmentInput, 'amount'> & {
+    amount: Prisma.Decimal | number;
+}, actor: string, now: Date): Promise<PostedAdjustment>;
+export declare function reverseBillAdjustmentsWith(tx: Prisma.TransactionClient, ctx: BillAdjustmentContext, credit: {
+    ablId: string;
+    ablAccYear: string;
+}, reason: string, actor: string, now: Date): Promise<Prisma.Decimal>;
 export interface SetOffCredit {
     ablId: string;
     ablAccYear: string;

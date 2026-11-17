@@ -53,8 +53,8 @@ let SaleReturnController = class SaleReturnController {
             accYear: srAccYear,
         }));
     }
-    async billLines(sbId, sbAccYear) {
-        return ok('Bill lines fetched', await this.service.billLines(sbId, sbAccYear));
+    async billLines(q) {
+        return ok('Bill lines fetched', await this.service.billLines(q));
     }
     async transport(dto) {
         return ok('Transport details saved', await this.service.transport(dto));
@@ -64,7 +64,10 @@ exports.SaleReturnController = SaleReturnController;
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Create or update a DRAFT sale return (by srId presence)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Create (menu 13 CREATE) or update (EDIT) a DRAFT sale return. Money keys are ignored: the server works ' +
+            'every figure out from the bill line (D45). Numbered per device at the first save (SRT/<year>/<device>/00001).',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_sale_return_dto_1.SaveSaleReturnDto]),
@@ -73,7 +76,11 @@ __decorate([
 __decorate([
     (0, common_1.Post)('validate'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Dry-run the post. Writes nothing.' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Dry-run the post (menu 13 CREATE). Writes nothing. Answers ok, refusals[], warnings[] (WARN + INFO), ' +
+            'rights and preview { lines[], totals, charges[], emptiesBill, onOtherDrafts[], stockByBucket[], … } — ' +
+            'the money the server works out from the bill (D45). A srReturnAmt that no longer matches → SALES_AMOUNT_MISMATCH.',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [sale_return_lifecycle_dto_1.ValidateSaleReturnDto]),
@@ -139,13 +146,15 @@ __decorate([
 __decorate([
     (0, common_1.Get)('bill-lines'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'The bill lines still returnable' }),
-    (0, swagger_1.ApiQuery)({ name: 'sbId' }),
-    (0, swagger_1.ApiQuery)({ name: 'sbAccYear' }),
-    __param(0, (0, common_1.Query)('sbId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('sbAccYear')),
+    (0, swagger_1.ApiOperation)({
+        summary: 'A posted bill for a return (plan v5 §6.2): { bill, lines[], charges[] } — every line with its full money set, ' +
+            'what earlier posted returns took and what is left in base units, what other drafts hold; every charge row. ' +
+            'Menu 13 VIEW. 404 SALES_NOT_FOUND (not in this company / branch without allBranches); ' +
+            '422 SALES_RETURN_BILL_NOT_POSTED; 403 SALES_RIGHT_VIEW.',
+    }),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [sale_return_lifecycle_dto_1.SaleReturnBillLinesQueryDto]),
     __metadata("design:returntype", Promise)
 ], SaleReturnController.prototype, "billLines", null);
 __decorate([

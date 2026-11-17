@@ -1,12 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GAP_SPAN_CAP = void 0;
+exports.typeFilterSql = typeFilterSql;
 exports.coreCtes = coreCtes;
 exports.draftsSql = draftsSql;
 exports.leglessSql = leglessSql;
 exports.numberGapsSql = numberGapsSql;
 const client_1 = require("@prisma/client");
 const voucher_books_sql_1 = require("../common/voucher-books.sql");
+function typeFilterSql(s, col) {
+    return client_1.Prisma.sql `(${s.voucherTypeId}::int IS NULL OR ${col} = ${s.voucherTypeId}::int
+         OR ${col} IN (SELECT vt_c.vchr_type_id FROM accounts.acc_voucher_types vt_c
+                        WHERE vt_c.vchr_parent_id = ${s.voucherTypeId}::int))`;
+}
 function coreCtes(s, rule) {
     const pairCol = rule === 'DAY' ? client_1.Prisma.raw('k.pair_day') : client_1.Prisma.raw('k.pair_in');
     return client_1.Prisma.sql `
@@ -49,7 +55,7 @@ function coreCtes(s, rule) {
         FROM lg
         JOIN k ON k.vid = lg.vid AND k.vyr = lg.vyr
        WHERE NOT ${pairCol}
-         AND (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int))`;
+         AND ${typeFilterSql(s, client_1.Prisma.raw('k.vt'))})`;
 }
 function draftsSql(s) {
     return client_1.Prisma.sql `
@@ -64,7 +70,7 @@ function draftsSql(s) {
          AND h.avh_voucher_status = 'DRAFT'
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)`;
+         AND ${typeFilterSql(s, client_1.Prisma.raw('h.avh_voucher_type_id'))}`;
 }
 function leglessSql(s) {
     return client_1.Prisma.sql `
@@ -78,7 +84,7 @@ function leglessSql(s) {
          AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)
+         AND ${typeFilterSql(s, client_1.Prisma.raw('h.avh_voucher_type_id'))}
          AND NOT EXISTS (
                SELECT 1 FROM accounts.acc_vouchers v
                 WHERE v.av_voucher_id = h.avh_voucher_id AND v.av_acc_year = h.avh_acc_year
@@ -97,7 +103,7 @@ function numberGapsSql(s) {
          AND h.avh_voucher_status <> 'DRAFT'
          AND h.avh_voucher_date BETWEEN ${s.from}::date AND ${s.to}::date
          AND (${s.branchId}::uuid IS NULL OR h.avh_branch_id = ${s.branchId}::uuid)
-         AND (${s.voucherTypeId}::int IS NULL OR h.avh_voucher_type_id = ${s.voucherTypeId}::int)
+         AND ${typeFilterSql(s, client_1.Prisma.raw('h.avh_voucher_type_id'))}
        GROUP BY 1, 2
       HAVING MAX(h.avh_voucher_no) - MIN(h.avh_voucher_no) <= ${exports.GAP_SPAN_CAP}),
     held AS (

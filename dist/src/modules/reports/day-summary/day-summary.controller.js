@@ -32,8 +32,8 @@ let DaySummaryController = class DaySummaryController {
     constructor(service) {
         this.service = service;
     }
-    async voucherTypes() {
-        const data = await this.service.voucherTypes();
+    async voucherTypes(companyId) {
+        const data = await this.service.voucherTypes(companyId ?? null);
         return { success: true, message: `${data.items.length} voucher type(s)`, data };
     }
     async summary(q) {
@@ -71,8 +71,17 @@ __decorate([
         description: 'Active voucher types that post legs, in vchr_sort_order. The INVENTORY types that post ' +
             '(OPENING, Phy, StkAdj) are in; Quo and SOr (vchr_affects_accounts = false) are not.',
     }),
+    (0, swagger_1.ApiQuery)({
+        name: 'companyId',
+        required: false,
+        schema: { type: 'string', format: 'uuid' },
+        description: 'Voucher Types: also offer this company’s child types (Retail, Wholesale …). Checked as ' +
+            '/voucher-types/* check it: a user bound to a company may name only that one, a user bound ' +
+            'to none any live company; else 403 VT_COMPANY_MISMATCH.',
+    }),
+    __param(0, (0, common_1.Query)('companyId', new common_1.ParseUUIDPipe({ optional: true }))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], DaySummaryController.prototype, "voucherTypes", null);
 __decorate([

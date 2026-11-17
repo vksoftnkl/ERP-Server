@@ -154,13 +154,15 @@ class SalesDocStore {
             const docDate = dto[this.spec.dateField]
                 ? new Date(dto[this.spec.dateField])
                 : now;
-            const number = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
-                vchrTypeId: this.spec.voucherTypeId,
-                companyId: dto[this.f('CompanyId')],
-                branchId: dto[this.f('BranchId')],
-                accYear,
-                documentDate: docDate,
-            });
+            const number = hooks.numberFor
+                ? await hooks.numberFor(docDate)
+                : await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
+                    vchrTypeId: this.spec.voucherTypeId,
+                    companyId: dto[this.f('CompanyId')],
+                    branchId: dto[this.f('BranchId')],
+                    accYear,
+                    documentDate: docDate,
+                });
             Object.assign(data, {
                 ...(id ? { [this.f('Id')]: id } : {}),
                 [this.f('CompanyId')]: dto[this.f('CompanyId')],
@@ -258,6 +260,9 @@ class SalesDocStore {
             await hooks.afterWrite(row, items);
         }
         await this.trail(tx, row, existing ? txn_status_log_helper_1.TxnStatusEvent.STATUS_CHANGED : txn_status_log_helper_1.TxnStatusEvent.CREATED, existing ? 'DRAFT' : null, 'DRAFT', actor, now, null, !existing);
+        if (hooks.revision) {
+            return row;
+        }
         await this.audit.logEntityChange({
             action: existing ? 'update' : 'New',
             tableName: this.spec.tableName,

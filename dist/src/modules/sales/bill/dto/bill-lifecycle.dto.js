@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RetenderBillDto = exports.RetenderVoidDto = exports.VOID_REASONS = exports.BillTransportDto = exports.TransportBandDto = exports.TRANSPORT_DIRECTIONS = exports.TransportEndDto = exports.UpdateRemarksDto = exports.DeliveryStatusDto = exports.DELIVERY_EVENTS = exports.DeleteBillDto = exports.AmendBillDto = exports.VoidBillDto = exports.CancelBillDto = exports.PostBillDto = exports.ValidateBillDto = exports.BillKeysDto = void 0;
+exports.RetenderBillDto = exports.RetenderVoidDto = exports.VOID_REASONS = exports.BillTransportDto = exports.TransportBandDto = exports.TRANSPORT_DIRECTIONS = exports.TransportEndDto = exports.UpdateRemarksDto = exports.DeleteBillDto = exports.AmendBillDto = exports.VoidBillDto = exports.CancelBillDto = exports.PostBillDto = exports.ValidateBillDto = exports.BillKeysDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -148,34 +148,6 @@ __decorate([
 class DeleteBillDto extends BillKeysDto {
 }
 exports.DeleteBillDto = DeleteBillDto;
-exports.DELIVERY_EVENTS = ['VERIFIED', 'PACKED', 'DISPATCHED', 'DELIVERED'];
-class DeliveryStatusDto extends BillKeysDto {
-    event;
-    remarks;
-    vehicleNo;
-    lrNo;
-}
-exports.DeliveryStatusDto = DeliveryStatusDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ enum: exports.DELIVERY_EVENTS }),
-    (0, class_validator_1.IsIn)(exports.DELIVERY_EVENTS),
-    __metadata("design:type", String)
-], DeliveryStatusDto.prototype, "event", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(250),
-    __metadata("design:type", Object)
-], DeliveryStatusDto.prototype, "remarks", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(20),
-    __metadata("design:type", Object)
-], DeliveryStatusDto.prototype, "vehicleNo", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(50),
-    __metadata("design:type", Object)
-], DeliveryStatusDto.prototype, "lrNo", void 0);
 class UpdateRemarksDto extends BillKeysDto {
     sbRemarks;
     editRemark;

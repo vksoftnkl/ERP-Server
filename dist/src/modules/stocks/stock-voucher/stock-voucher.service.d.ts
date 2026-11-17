@@ -4,7 +4,7 @@ import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import { StockPostingService } from '../posting/stock-posting.service';
-import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockTransferRecallResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow, type StockPostHooks } from './types/stock-voucher.types';
+import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockUndeliveredChange, type StockUndeliveredWarning, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockTransferRecallResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow, type StockPostHooks } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
     branchId: string;
@@ -97,4 +97,8 @@ export declare class StockVoucherService {
     private toNullableDecimal;
     private clamp;
 }
+export declare function undeliveredWarnings(changes: readonly StockUndeliveredChange[], lines: readonly {
+    sviId: string;
+    itemName: string;
+}[]): StockUndeliveredWarning[];
 export {};

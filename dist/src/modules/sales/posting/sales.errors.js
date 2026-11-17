@@ -19,6 +19,7 @@ function throwSalesRefusals(message, refusals) {
         code: r.code,
         ...(r.line === undefined ? {} : { line: r.line }),
         ...(r.statutory === undefined ? {} : { statutory: r.statutory }),
+        ...(r.params === undefined ? {} : { params: r.params }),
     })));
 }
 function throwSalesRight(message, code, field = 'userId') {

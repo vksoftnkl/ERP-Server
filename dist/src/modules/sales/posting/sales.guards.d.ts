@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { loadRights, NO_RIGHTS, type MenuRight } from '../../../common/posting/rights';
 import { assertAccYearWritable, assertVoucherPartitionExists } from '../../accountsModule/receipt/receipt.guards';
-import { type SalesGuardContext } from './types/posting.types';
+import { type SalesGuardContext, type SalesMessageParams } from './types/posting.types';
 import type { SalesSettings } from './sales.settings';
 export { assertAccYearWritable, assertVoucherPartitionExists };
 export type SalesWriteClient = Prisma.TransactionClient;
@@ -10,11 +10,18 @@ export declare function warn(ctx: SalesGuardContext, code: string, message: stri
     line?: number;
     overridable?: boolean;
     statutory?: SalesGuardContext['warnings'][number]['statutory'];
+    params?: SalesMessageParams;
 }): void;
 export declare function refuse(ctx: SalesGuardContext, code: string, message: string, opts?: {
     field?: string;
     line?: number;
     statutory?: SalesGuardContext['refusals'][number]['statutory'];
+    params?: SalesMessageParams;
+}): void;
+export declare function info(ctx: SalesGuardContext, code: string, message: string, opts?: {
+    field?: string;
+    line?: number;
+    params?: SalesMessageParams;
 }): void;
 export type SalesRight = MenuRight;
 export { loadRights, NO_RIGHTS };

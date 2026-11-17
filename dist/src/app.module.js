@@ -93,6 +93,7 @@ const sale_order_desk_module_1 = require("./modules/sales/sale-order-desk/sale-o
 const delivery_challan_module_1 = require("./modules/sales/delivery-challan/delivery-challan.module");
 const dc_return_module_1 = require("./modules/sales/dc-return/dc-return.module");
 const sale_return_module_1 = require("./modules/sales/sale-return/sale-return.module");
+const delivery_module_1 = require("./modules/sales/delivery/delivery.module");
 const temp_credit_module_1 = require("./modules/sales/temp-credit/temp-credit.module");
 const txn_hold_module_1 = require("./modules/sales/txn-hold/txn-hold.module");
 const bank_list_module_1 = require("./modules/fixed/bank-list/bank-list.module");
@@ -120,12 +121,15 @@ const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/sto
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const cost_price_bulk_module_1 = require("./modules/stocks/cost-price-bulk/cost-price-bulk.module");
 const item_ledger_module_1 = require("./modules/stocks/reports/item-ledger/item-ledger.module");
+const stock_summary_module_1 = require("./modules/stocks/reports/stock-summary/stock-summary.module");
+const godown_position_module_1 = require("./modules/stocks/reports/godown-position/godown-position.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
 const charge_master_module_1 = require("./modules/master/charge-master/charge-master.module");
 const vehicle_module_1 = require("./modules/master/vehicle/vehicle.module");
 const transporter_module_1 = require("./modules/master/transporter/transporter.module");
+const voucher_types_module_1 = require("./modules/settings/voucher-types/voucher-types.module");
 const charge_detail_module_1 = require("./modules/master/charge-detail/charge-detail.module");
 const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promotion-loyalty-points.module");
 const loyalty_members_module_1 = require("./modules/sales/loyalty/members/loyalty-members.module");
@@ -273,6 +277,7 @@ exports.AppModule = AppModule = __decorate([
             delivery_challan_module_1.DeliveryChallanModule,
             dc_return_module_1.DcReturnModule,
             sale_return_module_1.SaleReturnModule,
+            delivery_module_1.DeliveryModule,
             temp_credit_module_1.TempCreditModule,
             txn_hold_module_1.TxnHoldModule,
             bank_list_module_1.BankListModule,
@@ -300,12 +305,15 @@ exports.AppModule = AppModule = __decorate([
             selling_price_bulk_module_1.SellingPriceBulkModule,
             cost_price_bulk_module_1.CostPriceBulkModule,
             item_ledger_module_1.ItemLedgerModule,
+            stock_summary_module_1.StockSummaryModule,
+            godown_position_module_1.GodownPositionModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,
             charge_master_module_1.ChargeMasterModule,
             vehicle_module_1.VehicleModule,
             transporter_module_1.TransporterModule,
+            voucher_types_module_1.VoucherTypesModule,
             charge_detail_module_1.ChargeDetailModule,
             itemStockBalanceModule_1.ItemStockBalanceModule,
             itemBatchStockModule_1.ItemBatchStockModule,

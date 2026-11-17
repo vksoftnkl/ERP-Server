@@ -26,6 +26,7 @@ class SavePhysicalStockVoucherItemDto {
     bucket;
     lotId;
     countedQty;
+    shelfQty;
     reasonId;
     remarks;
 }
@@ -106,6 +107,18 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(0),
     __metadata("design:type", Object)
 ], SavePhysicalStockVoucherItemDto.prototype, "countedQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Delivery tracking (addendum §5.3) — WHAT IS ON THE SHELF, the customers\' billed-not-delivered goods too. ' +
+            'Send this INSTEAD of countedQty (both → 422 PHY_SHELF_AND_COUNTED). The server re-reads the holding\'s ' +
+            'Billed not delivered at this save and stores svi_counted_qty = shelfQty − it (which may be negative), so the ' +
+            'posted variance is shelf − Physical. A count, so not below 0 (422 STOCK_COUNT_QTY_NEGATIVE); a line with ' +
+            'shelfQty is counted.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SavePhysicalStockVoucherItemDto.prototype, "shelfQty", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

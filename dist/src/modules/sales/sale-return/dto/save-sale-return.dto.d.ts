@@ -2,6 +2,9 @@ import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-char
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import { TransportBandDto } from '../../bill/dto/bill-lifecycle.dto';
 import { SaveSaleReturnItemDto } from './save-sale-return-item.dto';
+export declare class SaleReturnChargeDto extends SaveChargeDetailDto {
+    giveBack?: boolean;
+}
 export declare class SaveSaleReturnDto {
     srId?: string;
     srCompanyId: string;
@@ -90,13 +93,20 @@ export declare class SaveSaleReturnDto {
     srPostedVoucherId?: string | null;
     srRevisionNo?: number | null;
     srPrintCount?: number | null;
+    srReturnKind?: string;
+    srFreightCalcType?: string | null;
+    srLoadingCalcType?: string | null;
+    srGstMode?: string | null;
+    srPointsBack?: string | number | null;
+    srPointsBackAmt?: string | number | null;
+    srVoucherShareAmt?: string | number | null;
     srCreatedBy?: string | null;
     srModifiedBy?: string | null;
     items?: SaveSaleReturnItemDto[];
-    charges?: SaveChargeDetailDto[];
+    charges?: SaleReturnChargeDto[];
     tenders?: SaveTenderDetailDto[];
     transport?: TransportBandDto | null;
 }
-export declare const SR_OPTIONAL_FIELDS: readonly ["srTenantId", "srSessionId", "srCounterId", "srDocType", "srBillMode", "srUsrRefno", "srUsrRefdate", "srReturnDate", "srReturnDatetime", "srIsAgainstBill", "srBillId", "srBillAccYear", "srBillRefno", "srBillDate", "srReasonId", "srReturnReason", "srCustAddr", "srCustPlace", "srCustPin", "srCustPhone", "srCustGstin", "srCustGstType", "srCustStcd", "srPosStcd", "srStateName", "srPriceLevel", "srSalesmanId", "srTotItems", "srTotWeight", "srGrossAmt", "srDiscAmt", "srTaxableAmt", "srCgstAmt", "srSgstAmt", "srIgstAmt", "srCessAmt", "srTaxAmt", "srOtherAmt", "srRoundOff", "srReturnAmt", "srTotalCost", "srSettleMode", "srHasLoad", "srHasUnload", "srHasFreight", "srHasPromo", "srHasLoyalty", "srAgentId", "srAgentCommAmt", "srDriverId", "srSupervisorId", "srLoadmanId", "srVehicleId", "srVehicleNo", "srTotBags", "srItemDisc", "srSplDisc", "srSchDisc", "srBillSchDisc", "srCashDisc", "srFreightAmt", "srLoadAmt", "srUnloadAmt", "srDiscAlterBase", "srRoundOffStep", "srRemarks", "srCreatedBy", "srModifiedBy"];
+export declare const SR_OPTIONAL_FIELDS: readonly ["srTenantId", "srCounterId", "srDocType", "srBillMode", "srUsrRefno", "srUsrRefdate", "srReturnDate", "srReturnDatetime", "srIsAgainstBill", "srBillId", "srBillAccYear", "srBillRefno", "srBillDate", "srReasonId", "srReturnReason", "srCustAddr", "srCustPlace", "srCustPin", "srCustPhone", "srCustGstin", "srCustGstType", "srCustStcd", "srPosStcd", "srStateName", "srPriceLevel", "srSalesmanId", "srTotItems", "srTotWeight", "srGrossAmt", "srDiscAmt", "srTaxableAmt", "srCgstAmt", "srSgstAmt", "srIgstAmt", "srCessAmt", "srTaxAmt", "srOtherAmt", "srRoundOff", "srReturnAmt", "srTotalCost", "srSettleMode", "srHasLoad", "srHasUnload", "srHasFreight", "srHasPromo", "srHasLoyalty", "srAgentId", "srAgentCommAmt", "srDriverId", "srSupervisorId", "srLoadmanId", "srVehicleId", "srVehicleNo", "srTotBags", "srItemDisc", "srSplDisc", "srSchDisc", "srBillSchDisc", "srCashDisc", "srFreightAmt", "srLoadAmt", "srUnloadAmt", "srDiscAlterBase", "srRoundOffStep", "srRemarks", "srCreatedBy", "srModifiedBy", "srReturnKind", "srFreightCalcType", "srLoadingCalcType"];
 export declare const SR_DATE_FIELDS: readonly ["srUsrRefdate", "srReturnDate", "srReturnDatetime", "srBillDate"];
-export declare const SR_SERVER_OWNED: readonly ["srReturnSlno", "srReturnRefno", "srRefundAmt", "srAdjustedAmt", "srCreditAmt", "srSettleStatus", "srLoyaltyReversePoints", "srPromoClawbackAmt", "srStatus", "srPostedVoucherId", "srRevisionNo", "srPrintCount"];
+export declare const SR_SERVER_OWNED: readonly ["srReturnSlno", "srReturnRefno", "srRefundAmt", "srAdjustedAmt", "srCreditAmt", "srSettleStatus", "srLoyaltyReversePoints", "srPromoClawbackAmt", "srStatus", "srPostedVoucherId", "srRevisionNo", "srPrintCount", "srGstMode", "srPointsBack", "srPointsBackAmt", "srVoucherShareAmt", "srSessionId"];

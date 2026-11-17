@@ -97,7 +97,12 @@ let TillApprovalService = class TillApprovalService {
         }
         return refuse
             ? { state: 'REFUSE', need: { ...need, enforced: true }, rule }
-            : { state: 'WARN', need, rule };
+            : {
+                state: 'WARN',
+                need,
+                rule,
+                selfAllowed: rule.tar_allow_self || settings.singleOperator,
+            };
     }
     async settleGate(tx, ask, verdict) {
         if (verdict.state === 'APPROVED') {
@@ -141,8 +146,49 @@ let TillApprovalService = class TillApprovalService {
             rule: verdict.rule,
             reasonId: null,
             note: null,
+            selfAllowed: verdict.selfAllowed,
             payload: { ...(ask.payload ?? {}), filedBy: 'gate', after: true },
         });
+    }
+    async withdrawForDocument(tx, doc) {
+        const rows = await tx.tillApproval.findMany({
+            where: {
+                tapCompanyId: doc.companyId,
+                tapSrcDocType: doc.srcDocType,
+                tapSrcDocId: doc.srcDocId,
+                tapStatus: 'PENDING',
+                tapIsDeleted: false,
+            },
+        });
+        const now = new Date();
+        for (const row of rows) {
+            await tx.tillApproval.update({
+                where: { tapId_tapAccYear: { tapId: row.tapId, tapAccYear: row.tapAccYear } },
+                data: {
+                    tapStatus: 'CANCELLED',
+                    tapDecisionNote: doc.note.slice(0, 500),
+                    tapModifiedOn: now,
+                },
+            });
+            await this.events.log(tx, {
+                companyId: row.tapCompanyId,
+                branchId: row.tapBranchId,
+                accYear: row.tapAccYear,
+                code: till_enum_1.TillEventCode.APPROVAL_DECIDED,
+                sessionId: row.tapSessionId,
+                counterId: row.tapCounterId,
+                deviceId: doc.deviceId,
+                userId: doc.userId,
+                srcDocType: row.tapSrcDocType,
+                srcDocId: row.tapSrcDocId,
+                srcRefno: row.tapSrcRefno,
+                amount: row.tapAmount,
+                reasonId: row.tapReasonId,
+                approvalId: row.tapId,
+                payload: { event: row.tapEventCode, status: 'CANCELLED', note: doc.note },
+            });
+        }
+        return rows.map((r) => r.tapId);
     }
     throwApprovalRequired(need, ask) {
         (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVAL_REQUIRED, `${ask.event} of ${need.amount.toFixed(2)} needs an approval at ${need.minRole} or above: ` +

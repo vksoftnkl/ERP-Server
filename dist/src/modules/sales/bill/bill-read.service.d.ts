@@ -1,3 +1,4 @@
+import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
 import { Prisma, SaleBill } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
@@ -13,7 +14,8 @@ export declare class BillReadService {
     private readonly transportBand;
     private readonly statutory;
     private readonly loyalty;
-    constructor(prisma: PrismaService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, transportBand: TransportBandService, statutory: StatutoryService, loyalty: LoyaltyLedgerService);
+    private readonly deliveryPending;
+    constructor(prisma: PrismaService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, transportBand: TransportBandService, statutory: StatutoryService, loyalty: LoyaltyLedgerService, deliveryPending: DeliveryPendingService);
     decorate(bill: SaleBill, payload: BillPayload, client?: Prisma.TransactionClient): Promise<BillPayload>;
     lockCounts(c: Prisma.TransactionClient, bill: SaleBill): Promise<{
         returns: number;
@@ -38,6 +40,7 @@ export declare class BillReadService {
         accYear: string;
         billDate?: string | null;
     }): Promise<Record<string, unknown>>;
+    oldPendingDeliveriesOf(companyId: string, branchId: string, custId: string, client?: Prisma.TransactionClient): Promise<import("./bill-delivery-read").OldPendingDelivery[]>;
     tenderContext(keys: {
         sbId: string;
         sbCompanyId: string;

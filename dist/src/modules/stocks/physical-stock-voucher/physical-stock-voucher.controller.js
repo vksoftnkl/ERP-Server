@@ -25,6 +25,7 @@ const stock_voucher_exception_filter_1 = require("../stock-voucher/stock-voucher
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
 const stock_voucher_types_1 = require("../stock-voucher/types/stock-voucher.types");
 const save_physical_stock_voucher_dto_1 = require("./dto/save-physical-stock-voucher.dto");
+const physical_stock_delivery_1 = require("./physical-stock-delivery");
 const list_physical_stock_voucher_query_dto_1 = require("./dto/list-physical-stock-voucher-query.dto");
 const post_physical_stock_voucher_dto_1 = require("./dto/post-physical-stock-voucher.dto");
 const physical_stock_voucher_response_dto_1 = require("./dto/physical-stock-voucher-response.dto");
@@ -60,7 +61,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
     }
     async countSheet(query) {
         await this.requireRight('view', 'generate a count sheet');
-        const data = await this.stockVoucherService.countSheet(PHYSICAL_RULES, query);
+        const data = await (0, physical_stock_delivery_1.withUndeliveredOnSheet)(this.prisma, { companyId: query.companyId, branchId: query.branchId, godownId: query.godownId }, await this.stockVoucherService.countSheet(PHYSICAL_RULES, query));
         return {
             success: true,
             message: `${data.items.length} holdings to count`,
@@ -72,7 +73,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         if (dto.header.post === true || dto.header.status === 'POSTED') {
             await this.requireRight('post', 'post a physical count');
         }
-        const data = await this.stockVoucherService.save(PHYSICAL_RULES, dto);
+        const data = await (0, physical_stock_delivery_1.withUndeliveredOnDocument)(this.prisma, await this.stockVoucherService.save(PHYSICAL_RULES, dto));
         const saved = dto.header.svhId ? 'updated' : 'created';
         return {
             success: true,
@@ -85,7 +86,7 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
     async listOrLoad(query) {
         await this.requireRight('view', 'view physical counts');
         if (query.svhId) {
-            const data = await this.stockVoucherService.getById(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
+            const data = await (0, physical_stock_delivery_1.withUndeliveredOnDocument)(this.prisma, await this.stockVoucherService.getById(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId));
             return { success: true, message: 'Physical stock count fetched successfully', data };
         }
         const data = await this.stockVoucherService.list(PHYSICAL_RULES, query);
@@ -93,7 +94,12 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
     }
     async validate(query) {
         await this.requireRight('view', 'validate a physical count');
-        const data = await this.stockVoucherService.validate(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
+        const data = await (0, physical_stock_delivery_1.withUndeliveredOnValidate)(this.prisma, {
+            svhId: query.svhId,
+            accYear: query.accYear,
+            companyId: query.companyId,
+            branchId: query.branchId,
+        }, await this.stockVoucherService.validate(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId));
         const failing = data.filter((row) => row.problem !== null).length;
         return {
             success: true,

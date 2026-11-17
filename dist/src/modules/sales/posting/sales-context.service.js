@@ -74,6 +74,15 @@ let SalesContextService = class SalesContextService {
         });
         return effective.find((i) => i.asdKey === key)?.value ?? null;
     }
+    async values(companyId, branchId, deviceId, keys) {
+        const effective = await this.appSettings.resolveEffective({
+            companyId,
+            branchId,
+            deviceId: isUuid(deviceId) ? deviceId : null,
+            userId: null,
+        });
+        return Object.fromEntries(keys.map((k) => [k, effective.find((i) => i.asdKey === k)?.value ?? null]));
+    }
     async rights(menuId, client) {
         const userId = this.requestContext.getUserId();
         if (!isUuid(userId)) {

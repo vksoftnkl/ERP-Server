@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncBillAdjustments = syncBillAdjustments;
+exports.addBillAdjustment = addBillAdjustment;
+exports.reverseBillAdjustmentsWith = reverseBillAdjustmentsWith;
 exports.loadSetOffCredits = loadSetOffCredits;
 exports.setOffKey = setOffKey;
 exports.splitSetOffs = splitSetOffs;
@@ -37,6 +39,127 @@ async function syncBillAdjustments(tx, ctx, adjustments, actor, now) {
     await settleInvoiceAllocation(tx, ctx, posted, actor, now);
     const action = live.length === 0 ? 'posted' : posted.length === 0 ? 'reversed' : 'replaced';
     return { action, adjustments: posted };
+}
+async function addBillAdjustment(tx, ctx, adjustment, actor, now) {
+    const request = adjustment;
+    const amount = new client_1.Prisma.Decimal(adjustment.amount);
+    if (amount.lessThanOrEqualTo(0)) {
+        (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+            {
+                field: 'adjustments[0].amount',
+                code: sale_bill_error_codes_1.SaleBillErrorCode.ADJUSTMENT_AMOUNT_NOT_POSITIVE,
+                message: `An adjustment must be for a positive amount; got ${amount.toString()}.`,
+            },
+        ]);
+    }
+    const credit = await lockCredit(tx, ctx, request, 0);
+    const routing = deriveRouting(credit, 0);
+    ensureCreditCovers(credit, amount, 0);
+    let rowNo = await nextRowNo(tx, ctx.billId);
+    await tx.accBillAdjustment.create({
+        data: {
+            ...commonColumns(ctx, routing, actor, now),
+            abjBillId: ctx.billId,
+            abjBillAccYear: ctx.billAccYear,
+            abjAgainstBillId: credit.ablId,
+            abjAgainstBillAccYear: credit.ablAccYear,
+            abjRowNo: rowNo++,
+            abjDrCr: INVOICE_MOVEMENT,
+            abjAmount: amount,
+            abjRemarks: request.remarks ?? null,
+        },
+    });
+    await tx.accBillAdjustment.create({
+        data: {
+            ...commonColumns(ctx, routing, actor, now),
+            abjBillId: credit.ablId,
+            abjBillAccYear: credit.ablAccYear,
+            abjAgainstBillId: ctx.billId,
+            abjAgainstBillAccYear: ctx.billAccYear,
+            abjRowNo: rowNo++,
+            abjDrCr: CREDIT_MOVEMENT,
+            abjAmount: amount,
+            abjRemarks: request.remarks ?? null,
+        },
+    });
+    await addToAllocation(tx, credit, amount, actor, now);
+    await addToAllocation(tx, { ablId: ctx.billId, ablAccYear: ctx.billAccYear }, amount, actor, now);
+    return {
+        againstBillId: credit.ablId,
+        againstBillAccYear: credit.ablAccYear,
+        amount,
+        adjType: routing.adjType,
+        settlementMode: routing.settlementMode,
+    };
+}
+async function reverseBillAdjustmentsWith(tx, ctx, credit, reason, actor, now) {
+    const rows = await tx.accBillAdjustment.findMany({
+        where: {
+            abjIsDeleted: false,
+            abjReversalOfId: null,
+            abjVoucherId: null,
+            abjAdjType: { in: ['NOTE_ADJUST', 'ADVANCE_ADJUST'] },
+            OR: [
+                { abjBillId: ctx.billId, abjAgainstBillId: credit.ablId },
+                { abjBillId: credit.ablId, abjAgainstBillId: ctx.billId },
+            ],
+        },
+        orderBy: { abjRowNo: 'asc' },
+    });
+    if (rows.length === 0) {
+        return new client_1.Prisma.Decimal(0);
+    }
+    const alreadyReversed = new Set((await tx.accBillAdjustment.findMany({
+        where: { abjReversalOfId: { in: rows.map((row) => row.abjId) }, abjIsDeleted: false },
+        select: { abjReversalOfId: true },
+    })).map((row) => row.abjReversalOfId));
+    let rowNo = await nextRowNo(tx, ctx.billId);
+    let offInvoice = new client_1.Prisma.Decimal(0);
+    let offCredit = new client_1.Prisma.Decimal(0);
+    for (const row of rows) {
+        if (alreadyReversed.has(row.abjId)) {
+            continue;
+        }
+        await tx.accBillAdjustment.create({
+            data: {
+                abjCompanyId: ctx.companyId,
+                abjBranchId: ctx.branchId,
+                abjTenantId: ctx.tenantId,
+                abjAccYear: ctx.accYear,
+                abjBillId: row.abjBillId,
+                abjBillAccYear: row.abjBillAccYear,
+                abjAgainstBillId: row.abjAgainstBillId,
+                abjAgainstBillAccYear: row.abjAgainstBillAccYear,
+                abjPartyId: ctx.partyId,
+                abjRowNo: rowNo++,
+                abjAdjType: row.abjAdjType,
+                abjAdjDate: ctx.adjDate,
+                abjDrCr: row.abjDrCr,
+                abjAmount: row.abjAmount.negated(),
+                abjSettlementMode: row.abjSettlementMode,
+                abjSettlementLedgerId: row.abjSettlementLedgerId,
+                abjReversalOfId: row.abjId,
+                abjReversalReason: reason.slice(0, 250),
+                abjUserId: ctx.userId,
+                abjSessionId: ctx.sessionId,
+                abjCreatedOn: now,
+                abjCreatedBy: actor,
+            },
+        });
+        if (row.abjBillId === ctx.billId) {
+            offInvoice = offInvoice.plus(row.abjAmount);
+        }
+        else {
+            offCredit = offCredit.plus(row.abjAmount);
+        }
+    }
+    if (offCredit.gt(0)) {
+        await addToAllocation(tx, credit, offCredit.negated(), actor, now);
+    }
+    if (offInvoice.gt(0)) {
+        await addToAllocation(tx, { ablId: ctx.billId, ablAccYear: ctx.billAccYear }, offInvoice.negated(), actor, now);
+    }
+    return offInvoice;
 }
 function normalizeRequest(adjustments) {
     const merged = new Map();

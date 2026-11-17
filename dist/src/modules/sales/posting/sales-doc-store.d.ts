@@ -77,6 +77,11 @@ export declare class SalesDocStore {
     saveDraft(tx: Prisma.TransactionClient, dto: DocRow, actor: string, now: Date, hooks?: {
         beforeWrite?: (data: DocRow, existing: DocRow | null) => Promise<void> | void;
         afterWrite?: (row: DocRow, items: DocRow[]) => Promise<void> | void;
+        numberFor?: (docDate: Date) => Promise<{
+            lastNo: bigint;
+            refno: string;
+        }>;
+        revision?: boolean;
     }): Promise<DocRow>;
     private syncItems;
     deleteDraft(tx: Prisma.TransactionClient, keys: DocKeys, actor: string, now: Date): Promise<DocRow>;

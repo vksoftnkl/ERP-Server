@@ -12,7 +12,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillService = void 0;
 exports.flatTransportOf = flatTransportOf;
 const common_1 = require("@nestjs/common");
+const bill_delivery_helper_1 = require("./bill-delivery.helper");
+const config_1 = require("@nestjs/config");
 const client_1 = require("@prisma/client");
+const offline_site_1 = require("../../../config/offline-site");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const till_session_id_1 = require("../../till/till-session-id");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -22,10 +25,12 @@ const sale_order_api_types_1 = require("../sale-order/types/sale-order-api.types
 const quotation_service_1 = require("../quotation/quotation.service");
 const quotation_api_types_1 = require("../quotation/types/quotation-api.types");
 const charge_detail_service_1 = require("../../master/charge-detail/charge-detail.service");
+const charge_detail_api_types_1 = require("../../master/charge-detail/types/charge-detail-api.types");
 const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tender-detail.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
+const bill_voucher_type_helper_1 = require("./bill-voucher-type.helper");
 const sales_context_service_1 = require("../posting/sales-context.service");
 const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
@@ -38,7 +43,6 @@ const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustmen
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_cheque_details_1 = require("./bill-cheque-details");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
-const BILL_VCHR_TYPE_ID = 3;
 const BILL_TABLE_NAME = 'sale_bill';
 const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
@@ -318,7 +322,8 @@ let BillService = class BillService {
     salesContext;
     docBlocks;
     billRead;
-    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService, quotationService, transportBand, salesContext, docBlocks, billRead) {
+    config;
+    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService, quotationService, transportBand, salesContext, docBlocks, billRead, config) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
@@ -330,6 +335,7 @@ let BillService = class BillService {
         this.salesContext = salesContext;
         this.docBlocks = docBlocks;
         this.billRead = billRead;
+        this.config = config;
     }
     async save(saveBillDto) {
         this.prepareSave(saveBillDto);
@@ -515,6 +521,7 @@ let BillService = class BillService {
         }
     }
     async createBillInTx(tx, saveBillDto) {
+        (0, bill_delivery_helper_1.assertPosDeliveryMode)(saveBillDto.sbBillMode, saveBillDto.sbDeliveryMode);
         saveBillDto.sbSessionId = await (0, till_session_id_1.tillSessionIdOrNull)(tx, saveBillDto.sbSessionId);
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveBillDto.sbCustName ?? '', 'sbCustName');
         const now = new Date();
@@ -522,13 +529,18 @@ let BillService = class BillService {
         const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
         await this.ensurePosStateExists(tx, saveBillDto);
         const settings = await this.salesContext.settings(saveBillDto.sbCompanyId, saveBillDto.sbBranchId);
-        const posSeries = (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
+        const vchrTypeId = await (0, bill_voucher_type_helper_1.resolveBillVoucherType)(tx, (companyId, branchId, deviceId, keys) => this.salesContext.values(companyId, branchId, deviceId, keys), saveBillDto, { offlineSite: (0, offline_site_1.isOfflineSite)(this.config) });
         const billNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
-            vchrTypeId: BILL_VCHR_TYPE_ID,
+            vchrTypeId,
             companyId: saveBillDto.sbCompanyId,
             branchId: saveBillDto.sbBranchId,
             accYear: saveBillDto.sbAccYear,
-            deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
+            deviceCode: (0, bill_voucher_type_helper_1.billSeriesDeviceCode)({
+                vchrTypeId,
+                billMode: saveBillDto.sbBillMode,
+                posSeriesPerDevice: settings.posSeriesPerDevice,
+                deviceId: saveBillDto.sbDeviceId,
+            }),
             documentDate: billDate,
         });
         const data = {
@@ -540,6 +552,7 @@ let BillService = class BillService {
             sbDeviceType: saveBillDto.sbDeviceType,
             sbDeviceId: saveBillDto.sbDeviceId,
             sbPriceLevel: saveBillDto.sbPriceLevel,
+            sbVchrTypeId: vchrTypeId,
             sbBillSlno: billNumber.lastNo,
             sbBillRefno: billNumber.refno,
             sbBillDate: billDate,
@@ -554,10 +567,19 @@ let BillService = class BillService {
         this.applyOptionalFields(data, saveBillDto);
         data.sbCustName = normalizedCustName;
         data.sbBillDate = billDate;
+        data.sbDeliveryMode = await (0, bill_delivery_helper_1.resolveBillDeliveryMode)(tx, {
+            billMode: saveBillDto.sbBillMode,
+            vchrTypeId,
+            requested: saveBillDto.sbDeliveryMode,
+            srcDocType: saveBillDto.sbSrcDocType,
+            srcDocId: saveBillDto.sbSrcDocId,
+            items: saveBillDto.items,
+        });
         await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
         const created = await tx.saleBill.create({ data });
         const scope = this.toScope(created);
         const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
+        await this.fillChargeTypes(tx, saveBillDto.charges);
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
         const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
@@ -617,12 +639,23 @@ let BillService = class BillService {
         return updated;
     }
     async applySaveInTx(tx, existing, saveBillDto, modifiedBy, now, opts = {}) {
+        (0, bill_voucher_type_helper_1.assertBillTypeAtSite)(existing, { offlineSite: (0, offline_site_1.isOfflineSite)(this.config) });
+        (0, bill_voucher_type_helper_1.assertBillTypeUnchanged)(existing, saveBillDto.sbVchrTypeId);
         const settings = await this.salesContext.settings(existing.sbCompanyId, existing.sbBranchId);
         const data = {
             sbModifiedOn: now,
             sbModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveBillDto);
+        const billModeNow = saveBillDto.sbBillMode ?? existing.sbBillMode;
+        if ((billModeNow ?? '').toUpperCase() === 'POS' ||
+            (saveBillDto.sbDeliveryMode !== undefined && saveBillDto.sbDeliveryMode !== null)) {
+            data.sbDeliveryMode = await (0, bill_delivery_helper_1.resolveBillDeliveryMode)(tx, {
+                billMode: billModeNow,
+                vchrTypeId: existing.sbVchrTypeId,
+                requested: saveBillDto.sbDeliveryMode,
+            });
+        }
         await this.ensurePosStateExists(tx, saveBillDto);
         await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
         const updated = await tx.saleBill.update({
@@ -634,6 +667,7 @@ let BillService = class BillService {
             where: { sbiBillId: existing.sbId, sbiIsDeleted: false },
         });
         const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
+        await this.fillChargeTypes(tx, saveBillDto.charges);
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
         const draftCheques = await this.saveDraftCheques(tx, updated, saveBillDto.tenders, tenders);
@@ -1092,6 +1126,28 @@ let BillService = class BillService {
         }
         return value;
     }
+    async chargeTypesOf(db, charges) {
+        const ids = [
+            ...new Set((charges ?? []).filter((c) => !c.cdType && c.cdChgId).map((c) => c.cdChgId)),
+        ];
+        if (ids.length === 0) {
+            return new Map();
+        }
+        const rows = await db.chargeMaster.findMany({
+            where: { chgId: { in: ids } },
+            select: { chgId: true, chgType: true },
+        });
+        return new Map(rows.map((r) => [r.chgId, r.chgType]));
+    }
+    async fillChargeTypes(tx, charges) {
+        const types = await this.chargeTypesOf(tx, charges);
+        for (const c of charges ?? []) {
+            const type = !c.cdType && c.cdChgId ? types.get(c.cdChgId) : undefined;
+            if (type === charge_detail_api_types_1.ChargeType.ADD || type === charge_detail_api_types_1.ChargeType.DEDUCT) {
+                c.cdType = type;
+            }
+        }
+    }
     toChargeScope(scope) {
         return {
             cdDocType: bill_api_types_1.BILL_CHARGE_DOC_TYPE,
@@ -1260,7 +1316,8 @@ exports.BillService = BillService = __decorate([
         transport_band_service_1.TransportBandService,
         sales_context_service_1.SalesContextService,
         sales_doc_blocks_service_1.SalesDocBlocksService,
-        bill_read_service_1.BillReadService])
+        bill_read_service_1.BillReadService,
+        config_1.ConfigService])
 ], BillService);
 function stripServerOwned(dto) {
     const d = dto;

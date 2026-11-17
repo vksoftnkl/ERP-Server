@@ -1,6 +1,6 @@
 import { SaleReturnService } from './sale-return.service';
 import { SaveSaleReturnDto } from './dto/save-sale-return.dto';
-import { AmendSaleReturnDto, CancelSaleReturnDto, PostSaleReturnDto, SaleReturnKeysDto, SaleReturnTransportDto, ValidateSaleReturnDto } from './dto/sale-return-lifecycle.dto';
+import { AmendSaleReturnDto, CancelSaleReturnDto, PostSaleReturnDto, SaleReturnBillLinesQueryDto, SaleReturnKeysDto, SaleReturnTransportDto, ValidateSaleReturnDto } from './dto/sale-return-lifecycle.dto';
 export declare class SaleReturnController {
     private readonly service;
     constructor(service: SaleReturnService);
@@ -42,10 +42,10 @@ export declare class SaleReturnController {
         message: string;
         data: Record<string, unknown>;
     }>;
-    billLines(sbId: string, sbAccYear: string): Promise<{
+    billLines(q: SaleReturnBillLinesQueryDto): Promise<{
         success: true;
         message: string;
-        data: Record<string, unknown>[];
+        data: Record<string, unknown>;
     }>;
     transport(dto: SaleReturnTransportDto): Promise<{
         success: true;

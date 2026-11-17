@@ -39,6 +39,7 @@ var TxnStatusDocType;
     TxnStatusDocType["CHEQUE_RECEIVED"] = "CHEQUE_RECEIVED";
     TxnStatusDocType["CHEQUE_ISSUED"] = "CHEQUE_ISSUED";
     TxnStatusDocType["TEMP_CREDIT"] = "TEMP_CREDIT";
+    TxnStatusDocType["DELIVERY_NOTE"] = "DELIVERY_NOTE";
     TxnStatusDocType["OTHER"] = "OTHER";
 })(TxnStatusDocType || (exports.TxnStatusDocType = TxnStatusDocType = {}));
 var TxnStatusEvent;
@@ -70,6 +71,8 @@ var TxnStatusEvent;
     TxnStatusEvent["DELIVERY_RELEASED"] = "DELIVERY_RELEASED";
     TxnStatusEvent["PRIORITY_CHANGED"] = "PRIORITY_CHANGED";
     TxnStatusEvent["MERGED"] = "MERGED";
+    TxnStatusEvent["GOODS_BACK"] = "GOODS_BACK";
+    TxnStatusEvent["DELIVERY_MODE"] = "DELIVERY_MODE";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

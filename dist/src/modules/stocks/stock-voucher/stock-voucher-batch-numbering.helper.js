@@ -4,6 +4,7 @@ exports.BATCH_VOUCHER_TYPE_CODE = exports.AUTO_BATCH_NO_SETTING = void 0;
 exports.assignAutoBatchNumbers = assignAutoBatchNumbers;
 exports.autoBatchNoIsOn = autoBatchNoIsOn;
 const client_1 = require("@prisma/client");
+const branch_number_code_helper_1 = require("../../../common/Sequence/branch-number-code.helper");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_error_codes_1 = require("../types/stock-error-codes");
@@ -91,11 +92,8 @@ async function storedBatchNumbers(tx, scope, sviIds) {
     return new Map(rows.map((row) => [row.svi_id, row.svi_batch_no]));
 }
 async function branchBatchCode(tx, branchId) {
-    const [row] = await tx.$queryRaw `
-    SELECT upper(COALESCE(NULLIF(btrim(br_bill_prefix), ''), NULLIF(btrim(br_code), ''))) AS code
-      FROM public.branch_master
-     WHERE br_id = ${branchId}::uuid`;
-    if (!row?.code) {
+    const code = await (0, branch_number_code_helper_1.branchNumberCode)(tx, branchId);
+    if (!code) {
         (0, module_service_utils_1.throwStockUnprocessable)(BATCH_PREFIX_MISSING_MESSAGE, [
             {
                 field: 'branchId',
@@ -104,7 +102,7 @@ async function branchBatchCode(tx, branchId) {
             },
         ]);
     }
-    return row.code;
+    return code;
 }
 async function batchVoucherTypeId(tx) {
     const [row] = await tx.$queryRaw `

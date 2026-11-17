@@ -79,12 +79,16 @@ __decorate([
     __metadata("design:type", String)
 ], CreateSequenceDto.prototype, "periodKey", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 60,
+        nullable: true,
+        description: '{FY} and {BR} are expanded as the row is written (the expanded text must fit 60).',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => (0, dto_transforms_1.toNullableString)(value)),
     (0, class_validator_1.ValidateIf)((_, value) => value !== null && value !== undefined),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MaxLength)(20),
+    (0, class_validator_1.MaxLength)(60),
     __metadata("design:type", Object)
 ], CreateSequenceDto.prototype, "voucherPrefix", void 0);
 __decorate([
@@ -106,7 +110,11 @@ __decorate([
     __metadata("design:type", Object)
 ], CreateSequenceDto.prototype, "branchCode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        nullable: true,
+        description: '{FY} and {BR} are expanded as the row is written (the expanded text must fit 20).',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => (0, dto_transforms_1.toNullableString)(value)),
     (0, class_validator_1.ValidateIf)((_, value) => value !== null && value !== undefined),

@@ -6,7 +6,12 @@ exports.isCreditTender = isCreditTender;
 exports.settledByTenders = settledByTenders;
 exports.cashTendered = cashTendered;
 exports.setOffAmtOf = setOffAmtOf;
+exports.chargeTaxOf = chargeTaxOf;
+exports.docTaxOf = docTaxOf;
+exports.salesAmountOf = salesAmountOf;
 exports.partyDebitOf = partyDebitOf;
+exports.chargeLegsOf = chargeLegsOf;
+exports.registerChargesOf = registerChargesOf;
 exports.decimal = decimal;
 const client_1 = require("@prisma/client");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
@@ -123,13 +128,13 @@ function snapshotFromRows(bill, items, charges, tenders) {
             cdId: c.cdId,
             ledgerId: c.cdLedgerCode,
             name: c.cdChgName,
-            amount: (0, sales_doc_utils_1.num)(c.cdAmount),
+            type: chargeTypeOf(c.cdType),
+            ...(0, sales_leg_sources_1.signedCharge)(c),
             separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
             beforeTax: c.cdBeforeTax,
-            cgst: (0, sales_doc_utils_1.num)(c.cdCgstAmt),
-            sgst: (0, sales_doc_utils_1.num)(c.cdSgstAmt),
-            igst: (0, sales_doc_utils_1.num)(c.cdIgstAmt),
-            cess: (0, sales_doc_utils_1.num)(c.cdCessAmt),
+            taxApl: c.cdTaxApl,
+            insideTaxable: (0, sales_leg_sources_1.chargeInsideTaxable)(c),
+            taxId: c.cdTaxCode ?? null,
             srcChargeId: c.cdSrcCdId ?? null,
             srcAccYear: c.cdSrcAccYear?.trim() ?? null,
             carryBasis: c.cdCarryBasis ?? null,
@@ -165,7 +170,10 @@ function transportFromDto(dto) {
         lrNo: dto.sbLrNo ?? null,
     };
 }
-function snapshotFromDto(dto, tenderMasters) {
+function chargeTypeOf(v) {
+    return v === 'DEDUCT' ? 'DEDUCT' : 'ADD';
+}
+function snapshotFromDto(dto, tenderMasters, chargeTypes = new Map()) {
     const billDate = dto.sbBillDate ?? (0, sales_doc_utils_1.isoToday)();
     return {
         transport: transportFromDto(dto),
@@ -274,21 +282,24 @@ function snapshotFromDto(dto, tenderMasters) {
             toBaseFactor: (0, sales_doc_utils_1.num)(i.sbiToBaseFactor) || null,
             weightQty: i.sbiWeightQty === null || i.sbiWeightQty === undefined ? null : (0, sales_doc_utils_1.num)(i.sbiWeightQty),
         })),
-        charges: (dto.charges ?? []).map((c) => ({
-            cdId: c.cdId ?? null,
-            ledgerId: c.cdLedgerCode ?? null,
-            name: c.cdChgName ?? null,
-            amount: (0, sales_doc_utils_1.num)(c.cdAmount),
-            separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
-            beforeTax: c.cdBeforeTax ?? false,
-            cgst: (0, sales_doc_utils_1.num)(c.cdCgstAmt),
-            sgst: (0, sales_doc_utils_1.num)(c.cdSgstAmt),
-            igst: (0, sales_doc_utils_1.num)(c.cdIgstAmt),
-            cess: (0, sales_doc_utils_1.num)(c.cdCessAmt),
-            srcChargeId: c.cdSrcCdId ?? null,
-            srcAccYear: c.cdSrcAccYear ?? null,
-            carryBasis: c.cdCarryBasis ?? null,
-        })),
+        charges: (dto.charges ?? []).map((c) => {
+            const type = chargeTypeOf(c.cdType ?? (c.cdChgId ? chargeTypes.get(c.cdChgId) : undefined));
+            return {
+                cdId: c.cdId ?? null,
+                ledgerId: c.cdLedgerCode ?? null,
+                name: c.cdChgName ?? null,
+                type,
+                ...(0, sales_leg_sources_1.signedCharge)({ ...c, cdType: type }),
+                separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
+                beforeTax: c.cdBeforeTax ?? false,
+                taxApl: c.cdTaxApl ?? false,
+                insideTaxable: (0, sales_leg_sources_1.chargeInsideTaxable)(c),
+                taxId: c.cdTaxCode ?? null,
+                srcChargeId: c.cdSrcCdId ?? null,
+                srcAccYear: c.cdSrcAccYear ?? null,
+                carryBasis: c.cdCarryBasis ?? null,
+            };
+        }),
         tenders: (dto.tenders ?? []).map((t) => {
             const master = t.tdTenderId ? tenderMasters.get(t.tdTenderId) : undefined;
             const typeId = t.tdTenderTypeId !== undefined ? Number(t.tdTenderTypeId) : (master?.tnd_type_id ?? 0);
@@ -330,18 +341,50 @@ function cashTendered(snap) {
 function setOffAmtOf(snap) {
     return (0, sales_doc_utils_1.round2)(snap.advanceAmt + snap.noteAdjAmt);
 }
+function lineTaxOf(snap) {
+    return snap.items.reduce((s, i) => s + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt, 0);
+}
+function chargeTaxOf(snap) {
+    return (0, sales_doc_utils_1.round2)(snap.charges
+        .filter((c) => c.separatelyPosted)
+        .reduce((s, c) => s + c.cgst + c.sgst + c.igst + c.cess, 0));
+}
+function docTaxOf(snap) {
+    return (0, sales_doc_utils_1.round2)(lineTaxOf(snap) + chargeTaxOf(snap));
+}
+function salesAmountOf(snap) {
+    return (0, sales_doc_utils_1.round2)(snap.taxableAmt -
+        snap.charges
+            .filter((c) => c.separatelyPosted && c.insideTaxable)
+            .reduce((s, c) => s + c.amount, 0));
+}
 function partyDebitOf(snap, schemeSeparately) {
-    const tax = snap.items.reduce((s, i) => s + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt, 0);
     const charges = snap.charges
         .filter((c) => c.separatelyPosted)
         .reduce((s, c) => s + c.amount + c.cgst + c.sgst + c.igst + c.cess, 0);
-    return (0, sales_doc_utils_1.round2)(snap.taxableAmt +
-        tax +
+    return (0, sales_doc_utils_1.round2)(salesAmountOf(snap) +
+        lineTaxOf(snap) +
         charges +
         snap.roundOff +
         snap.tcsAmt -
         snap.cashDisc -
         (schemeSeparately ? snap.schDisc + snap.billSchDisc : 0));
+}
+function chargeLegsOf(snap) {
+    return snap.charges.map((c) => ({
+        ledgerId: c.ledgerId,
+        amount: c.amount,
+        separatelyPosted: c.separatelyPosted,
+        taxId: c.taxId,
+        cgst: c.cgst,
+        sgst: c.sgst,
+        igst: c.igst,
+        cess: c.cess,
+        name: c.name,
+    }));
+}
+function registerChargesOf(snap) {
+    return (0, sales_leg_sources_1.splitRegisterCharges)(snap.charges.filter((c) => c.separatelyPosted || c.beforeTax).map((c) => c.amount));
 }
 function decimal(v) {
     return new client_1.Prisma.Decimal((0, sales_doc_utils_1.round2)(v).toFixed(2));

@@ -13,6 +13,7 @@ exports.SequenceService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const sequence_error_codes_1 = require("./types/sequence-error-codes");
+const voucher_sequence_helper_1 = require("./voucher-sequence.helper");
 const module_service_utils_1 = require("../utils/module-service.utils");
 const MAX_LIMIT = 100;
 const DEFAULT_DEVICE_CODE = 'MAIN';
@@ -35,29 +36,27 @@ let SequenceService = class SequenceService {
             return await this.prisma.$transaction(async (tx) => {
                 const scope = this.buildCreateScope(createSequenceDto);
                 const deviceId = this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId') ?? null;
-                const lastNoScope = {
-                    companyId: scope.companyId,
-                    branchId: scope.branchId,
-                    accYear: scope.accYear,
-                    deviceId,
-                };
-                await this.ensureReferencesExist(tx, scope);
-                await this.acquireLastNoScopeLock(tx, lastNoScope);
-                const nextLastNo = await this.getNextLastNo(tx, lastNoScope);
+                const voucherType = await this.ensureReferencesExist(tx, scope);
+                await (0, voucher_sequence_helper_1.acquireVoucherScopeLock)(tx, scope);
                 const existingSequence = await this.findSequenceByScope(tx, scope);
                 if (existingSequence) {
-                    const updated = await tx.accVoucherSeq.update({
-                        where: {
-                            id: existingSequence.id,
+                    const message = `Counter ${existingSequence.id}${existingSequence.isDeleted ? ' (deleted)' : ''} already holds ` +
+                        `voucher type ${scope.vchrTypeId} / ${scope.accYear} / ${scope.deviceCode} / ${scope.periodKey} ` +
+                        `at this branch; nothing was changed. Edit that row by its id instead.`;
+                    (0, module_service_utils_1.throwConflict)('Sequence scope already exists', [
+                        {
+                            field: 'scope',
+                            code: sequence_error_codes_1.SequenceErrorCode.SCOPE_DUPLICATE,
+                            message,
+                            params: { seqId: existingSequence.id },
                         },
-                        data: this.buildDuplicateScopeUpdateData(createSequenceDto, nextLastNo),
-                    });
-                    return this.toPayload(updated);
+                    ]);
                 }
+                const startNo = (0, voucher_sequence_helper_1.voucherStartNo)(voucherType);
                 const data = {
                     ...scope,
                     deviceId,
-                    lastNo: nextLastNo,
+                    lastNo: BigInt(startNo - 1),
                 };
                 const noWidth = this.normalizeOptionalInteger(createSequenceDto.noWidth, 'noWidth', {
                     min: 1,
@@ -69,6 +68,19 @@ let SequenceService = class SequenceService {
                     data.noWidth = DEFAULT_NO_WIDTH;
                 }
                 this.assignOptionalCreateFields(data, createSequenceDto);
+                const typedPrefix = typeof data.voucherPrefix === 'string' ? data.voucherPrefix : null;
+                const typedSuffix = typeof data.voucherSuffix === 'string' ? data.voucherSuffix : null;
+                await this.expandTypedFormat(tx, scope, data, null);
+                await (0, voucher_sequence_helper_1.assertCounterRules)(tx, scope, {
+                    vchrGstSide: voucherType.vchrGstSide,
+                    vchrParentId: voucherType.vchrParentId,
+                    vchrNoPrefix: typedPrefix,
+                    vchrNoSuffix: typedSuffix,
+                }, {
+                    prefix: typeof data.voucherPrefix === 'string' ? data.voucherPrefix : null,
+                    suffix: typeof data.voucherSuffix === 'string' ? data.voucherSuffix : null,
+                    noWidth: data.noWidth,
+                }, startNo);
                 const created = await tx.accVoucherSeq.create({ data });
                 return this.toPayload(created);
             });
@@ -146,6 +158,7 @@ let SequenceService = class SequenceService {
                 await this.ensureReferencesExist(tx, scope);
                 await this.ensureScopeIsUnique(tx, scope, sequenceId);
                 const data = this.buildUpdateData(updateSequenceDto);
+                await this.expandTypedFormat(tx, scope, data, existing);
                 const lastNoScope = this.resolveLastNoScope(existing, updateSequenceDto, scope);
                 if (this.hasLastNoScopeChanged(existing, lastNoScope)) {
                     await this.acquireLastNoScopeLock(tx, lastNoScope);
@@ -256,32 +269,6 @@ let SequenceService = class SequenceService {
         this.assignOptionalUpdateFields(data, updateSequenceDto);
         return data;
     }
-    buildDuplicateScopeUpdateData(createSequenceDto, lastNo) {
-        const data = {
-            lastNo,
-            isDeleted: false,
-            modifiedOn: new Date(),
-        };
-        const deviceId = this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId');
-        if (deviceId !== undefined) {
-            data.deviceId = deviceId;
-        }
-        const noWidth = this.normalizeOptionalInteger(createSequenceDto.noWidth, 'noWidth', {
-            min: 1,
-        });
-        if (noWidth !== undefined) {
-            data.noWidth = noWidth;
-        }
-        const isActive = this.normalizeOptionalBoolean(createSequenceDto.isActive, 'isActive');
-        if (isActive !== undefined) {
-            data.isActive = isActive;
-        }
-        else {
-            data.isActive = true;
-        }
-        this.assignOptionalTextFields(data, createSequenceDto);
-        return data;
-    }
     buildListWhere(queryDto) {
         const includeDeleted = this.normalizeOptionalBoolean(queryDto.includeDeleted, 'includeDeleted') ?? false;
         const where = includeDeleted ? {} : { isDeleted: false };
@@ -357,7 +344,7 @@ let SequenceService = class SequenceService {
     }
     assignOptionalTextFields(data, dto) {
         if (dto.voucherPrefix !== undefined) {
-            data.voucherPrefix = this.normalizeNullableString(dto.voucherPrefix, 'voucherPrefix', 20);
+            data.voucherPrefix = this.normalizeNullableString(dto.voucherPrefix, 'voucherPrefix', voucher_sequence_helper_1.SEQ_VOUCHER_PREFIX_MAX_LENGTH);
         }
         if (dto.companyCode !== undefined) {
             data.companyCode = this.normalizeNullableString(dto.companyCode, 'companyCode', 20);
@@ -372,6 +359,24 @@ let SequenceService = class SequenceService {
             data.lastRefno = this.normalizeNullableString(dto.lastRefno, 'lastRefno', 100);
         }
     }
+    async expandTypedFormat(tx, scope, data, current) {
+        const typedPrefix = typeof data.voucherPrefix === 'string' ? data.voucherPrefix : undefined;
+        const typedSuffix = typeof data.voucherSuffix === 'string' ? data.voucherSuffix : undefined;
+        if (!typedPrefix?.includes('{') && !typedSuffix?.includes('{')) {
+            return;
+        }
+        const expanded = await (0, voucher_sequence_helper_1.expandVoucherFormat)(tx, scope, {
+            prefix: data.voucherPrefix !== undefined ? (typedPrefix ?? null) : (current?.voucherPrefix ?? null),
+            suffix: data.voucherSuffix !== undefined ? (typedSuffix ?? null) : (current?.voucherSuffix ?? null),
+            noWidth: typeof data.noWidth === 'number' ? data.noWidth : (current?.noWidth ?? DEFAULT_NO_WIDTH),
+        });
+        if (typedPrefix !== undefined) {
+            data.voucherPrefix = expanded.prefix;
+        }
+        if (typedSuffix !== undefined) {
+            data.voucherSuffix = expanded.suffix;
+        }
+    }
     async ensureReferencesExist(client, scope) {
         const [voucherType, company, branch] = await Promise.all([
             client.accVoucherType.findFirst({
@@ -380,6 +385,9 @@ let SequenceService = class SequenceService {
                 },
                 select: {
                     vchrTypeId: true,
+                    vchrStartNo: true,
+                    vchrGstSide: true,
+                    vchrParentId: true,
                 },
             }),
             client.company.findFirst({
@@ -429,6 +437,7 @@ let SequenceService = class SequenceService {
                 },
             ]);
         }
+        return voucherType;
     }
     async ensureScopeIsUnique(client, scope, excludeId) {
         const existing = await client.accVoucherSeq.findFirst({

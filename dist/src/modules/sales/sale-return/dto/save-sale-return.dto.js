@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SR_SERVER_OWNED = exports.SR_DATE_FIELDS = exports.SR_OPTIONAL_FIELDS = exports.SaveSaleReturnDto = void 0;
+exports.SR_SERVER_OWNED = exports.SR_DATE_FIELDS = exports.SR_OPTIONAL_FIELDS = exports.SaveSaleReturnDto = exports.SaleReturnChargeDto = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
@@ -34,6 +34,18 @@ const toUuidArray = (value) => {
     return value;
 };
 const NullableUuidArray = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => toUuidArray(value)), (0, class_validator_1.IsArray)(), (0, class_validator_1.IsUUID)('all', { each: true }));
+class SaleReturnChargeDto extends save_charge_detail_dto_1.SaveChargeDetailDto {
+    giveBack;
+}
+exports.SaleReturnChargeDto = SaleReturnChargeDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'An after-tax addition: false = it stays with us (default true)',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaleReturnChargeDto.prototype, "giveBack", void 0);
 class SaveSaleReturnDto {
     srId;
     srCompanyId;
@@ -122,6 +134,13 @@ class SaveSaleReturnDto {
     srPostedVoucherId;
     srRevisionNo;
     srPrintCount;
+    srReturnKind;
+    srFreightCalcType;
+    srLoadingCalcType;
+    srGstMode;
+    srPointsBack;
+    srPointsBackAmt;
+    srVoucherShareAmt;
     srCreatedBy;
     srModifiedBy;
     items;
@@ -160,7 +179,11 @@ __decorate([
     __metadata("design:type", String)
 ], SaveSaleReturnDto.prototype, "srAccYear", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Ignored: the till session is stamped by the server at /post (the posting device’s live session).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveSaleReturnDto.prototype, "srSessionId", void 0);
@@ -593,6 +616,73 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleReturnDto.prototype, "srPrintCount", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: ['RETURN', 'CLAIM'],
+        default: 'RETURN',
+        description: 'RETURN = goods come back; CLAIM = damaged / expired at the shop (D23)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['RETURN', 'CLAIM']),
+    __metadata("design:type", String)
+], SaveSaleReturnDto.prototype, "srReturnKind", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 12,
+        nullable: true,
+        readOnly: true,
+        description: "Server-owned: the bill's sb_freight_calc_type, else sales.freight_calc_type (D20)",
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(12),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srFreightCalcType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 12,
+        nullable: true,
+        readOnly: true,
+        description: "Server-owned: the bill's sb_loading_calc_type, else sales.loading_calc_type (D20)",
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(12),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srLoadingCalcType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 10,
+        nullable: true,
+        readOnly: true,
+        description: 'Ignored — server-owned (D8)',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(10),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srGstMode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        readOnly: true,
+        description: 'Ignored — server-owned (D48)',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srPointsBack", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        readOnly: true,
+        description: 'Ignored — server-owned (D48)',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srPointsBackAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        readOnly: true,
+        description: 'Ignored — server-owned (D48)',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnDto.prototype, "srVoucherShareAmt", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
@@ -611,11 +701,18 @@ __decorate([
     __metadata("design:type", Array)
 ], SaveSaleReturnDto.prototype, "items", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: save_charge_detail_dto_1.SaveChargeDetailDto, isArray: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => SaleReturnChargeDto,
+        isArray: true,
+        description: "One row per bill charge the client has a say on, keyed by cdSrcCdId (the bill's cd_id): " +
+            'giveBack (an after-tax ADDITION only — deductions always come back, before-tax rows are inside the ' +
+            'lines, D46 / D70) and cdAmount (read only when the charge is manual, D20). The server writes the ' +
+            "return's charge rows itself; every other key is ignored. Omitted = every addition given back.",
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),
-    (0, class_transformer_1.Type)(() => save_charge_detail_dto_1.SaveChargeDetailDto),
+    (0, class_transformer_1.Type)(() => SaleReturnChargeDto),
     __metadata("design:type", Array)
 ], SaveSaleReturnDto.prototype, "charges", void 0);
 __decorate([
@@ -639,7 +736,6 @@ __decorate([
 ], SaveSaleReturnDto.prototype, "transport", void 0);
 exports.SR_OPTIONAL_FIELDS = [
     'srTenantId',
-    'srSessionId',
     'srCounterId',
     'srDocType',
     'srBillMode',
@@ -706,6 +802,9 @@ exports.SR_OPTIONAL_FIELDS = [
     'srRemarks',
     'srCreatedBy',
     'srModifiedBy',
+    'srReturnKind',
+    'srFreightCalcType',
+    'srLoadingCalcType',
 ];
 exports.SR_DATE_FIELDS = [
     'srUsrRefdate',
@@ -726,5 +825,10 @@ exports.SR_SERVER_OWNED = [
     'srPostedVoucherId',
     'srRevisionNo',
     'srPrintCount',
+    'srGstMode',
+    'srPointsBack',
+    'srPointsBackAmt',
+    'srVoucherShareAmt',
+    'srSessionId',
 ];
 //# sourceMappingURL=save-sale-return.dto.js.map

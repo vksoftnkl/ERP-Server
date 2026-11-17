@@ -144,6 +144,10 @@ export interface StockNowDbRow {
     value: Dec;
     in_scope: boolean;
 }
+export interface EngineClosing {
+    value: Dec;
+    rowsAfter: number;
+}
 export interface WalkIn {
     id: string | null;
     name: string | null;
@@ -164,6 +168,7 @@ export declare class ItemLedgerService {
     private fiscalYear;
     private lookupScope;
     private resolveScope;
+    private engineClosing;
     private revaluationsLeftOut;
     private walkIn;
     private walkInName;
@@ -177,12 +182,12 @@ export declare function headOf(scope: ResolvedScope, opts: {
 }): ReportHead;
 export declare function openingBlock(scope: ResolvedScope, open: OpeningRow): OpeningBlock;
 export declare function summaryOf(agg: readonly AggRow[]): AggRow;
-export declare function closingBlock(scope: ResolvedScope, open: OpeningRow, s: AggRow): ClosingBlock;
+export declare function closingBlock(scope: ResolvedScope, open: OpeningRow, s: AggRow, engineValue?: Num | null): ClosingBlock;
 export declare function totalsOf(s: AggRow, factor: Num): LedgerTotals;
 export declare function tilesOf(agg: readonly AggRow[]): LedgerTiles;
 export declare function byTypeOf(agg: readonly AggRow[], factor: Num): ByTypeRow[];
 export declare function stockNowBlock(today: string, rows: readonly StockNowDbRow[], factor: Num): StockNowBlock;
-export declare function tieOf(checked: boolean, open: OpeningRow, s: AggRow, stock: readonly StockNowDbRow[], factor: Num): TieCheck;
+export declare function tieOf(checked: boolean, open: OpeningRow, s: AggRow, stock: readonly StockNowDbRow[], factor: Num, engine?: EngineClosing | null): TieCheck;
 export declare function periodTieOf(open: OpeningRow, s: AggRow): PeriodTie;
 export declare function toRow(r: PageRow, scope: ResolvedScope, walkIn: WalkIn, base: OpeningBase): LedgerRow;
 export interface OpeningBase {

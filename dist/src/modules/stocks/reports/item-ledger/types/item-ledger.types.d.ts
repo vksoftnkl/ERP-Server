@@ -14,7 +14,7 @@ export declare const ITEM_LEDGER_ERROR: {
 export type RowKind = 'IN' | 'OUT' | 'INTERNAL' | 'VALUE';
 export type RowState = 'LIVE' | 'CANCELLED' | 'AMENDED' | 'REVERSAL';
 export type PairClass = 'LIVE' | 'CANCELLED' | 'AMENDED';
-export type DocKind = 'SALE_BILL' | 'DELIVERY_CHALLAN' | 'SALE_RETURN' | 'DC_RETURN' | 'GRN' | 'PURCHASE_BILL' | 'SHORTAGE_RECEIPT' | 'PURCHASE_RETURN' | 'OPENING' | 'PHYSICAL' | 'ADJUSTMENT' | 'ISSUE' | 'GODOWN_TRANSFER' | 'BRANCH_OUTWARD' | 'BRANCH_INWARD';
+export type DocKind = 'SALE_BILL' | 'DELIVERY_CHALLAN' | 'SALE_RETURN' | 'DC_RETURN' | 'GRN' | 'PURCHASE_BILL' | 'SHORTAGE_RECEIPT' | 'PURCHASE_RETURN' | 'OPENING' | 'PHYSICAL' | 'ADJUSTMENT' | 'ISSUE' | 'GODOWN_TRANSFER' | 'BRANCH_OUTWARD' | 'BRANCH_INWARD' | 'DELIVERY_NOTE';
 export interface UnitRef {
     unitId: string | null;
     name: string;
@@ -110,6 +110,8 @@ export interface ClosingBlock {
     qty: string;
     value: string;
     rate: string | null;
+    ledgerValue: string;
+    costAdj: string;
 }
 export interface LedgerTotals {
     receivedQty: string;
@@ -219,6 +221,8 @@ export interface TieCheck {
     stockNowQty: string | null;
     equal: boolean | null;
     difference: string | null;
+    stockNowValue: string | null;
+    valueEqual: boolean | null;
 }
 export interface PeriodTie {
     qtyEqual: boolean | null;

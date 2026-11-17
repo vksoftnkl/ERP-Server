@@ -34,6 +34,7 @@ const app_setting_value_service_1 = require("../../../settings/appSettings/app-s
 const sales_settings_1 = require("../../../sales/posting/sales.settings");
 const item_tax_rate_helper_1 = require("../../../Inventory/utils/item-tax-rate.helper");
 const cost_price_bulk_rules_1 = require("../../cost-price-bulk/cost-price-bulk.rules");
+const stock_valuation_sql_1 = require("../common/stock-valuation.sql");
 const item_ledger_query_dto_1 = require("./dto/item-ledger-query.dto");
 const item_ledger_rules_1 = require("./item-ledger.rules");
 const item_ledger_sql_1 = require("./item-ledger.sql");
@@ -191,10 +192,11 @@ let ItemLedgerService = class ItemLedgerService {
             const stock = await db.$queryRaw((0, item_ledger_sql_1.stockNowSql)(scope.sql));
             const leftOut = await this.revaluationsLeftOut(db, scope);
             const walk = await this.walkInName(db, walkIn);
+            const engine = await this.engineClosing(db, scope, tieChecked);
             const s = summaryOf(agg);
             const f = scope.unit.factor;
             const opening = openingBlock(scope, open);
-            const closing = closingBlock(scope, open, s);
+            const closing = closingBlock(scope, open, s, engine.value);
             const stockNow = stockNowBlock(today, stock, f);
             return {
                 head: headOf(scope, { order, rights, leftOut, showReversed: scope.sql.showReversed }),
@@ -202,7 +204,7 @@ let ItemLedgerService = class ItemLedgerService {
                 closing,
                 totals: totalsOf(s, f),
                 tiles: tilesOf(agg),
-                tie: tieOf(tieChecked, open, s, stock, f),
+                tie: tieOf(tieChecked, open, s, stock, f, engine),
                 periodTie: periodTieOf(open, s),
                 rows: rows.map((r) => toRow(r, scope, walk, openingBase(open))),
                 page: {
@@ -225,6 +227,7 @@ let ItemLedgerService = class ItemLedgerService {
             const agg = await db.$queryRaw((0, item_ledger_sql_1.summarySql)(scope.sql));
             const rows = await db.$queryRaw((0, item_ledger_sql_1.periodSql)(scope.sql, 'day'));
             const leftOut = await this.revaluationsLeftOut(db, scope);
+            const engine = await this.engineClosing(db, scope, false);
             const s = summaryOf(agg);
             const f = scope.unit.factor;
             let runQ = (0, item_ledger_rules_1.dec)(open.q);
@@ -237,7 +240,7 @@ let ItemLedgerService = class ItemLedgerService {
                     showReversed: scope.sql.showReversed,
                 }),
                 opening: openingBlock(scope, open),
-                closing: closingBlock(scope, open, s),
+                closing: closingBlock(scope, open, s, engine.value),
                 days: rows.map((r) => {
                     const openingQty = runQ;
                     runQ = runQ.plus(r.q_all);
@@ -344,6 +347,7 @@ let ItemLedgerService = class ItemLedgerService {
             const rows = await db.$queryRaw((0, item_ledger_sql_1.pageSql)(scope.sql, { order, limit: exports.EXPORT_ROW_CAP, offset: 0 }));
             const leftOut = await this.revaluationsLeftOut(db, scope);
             const walk = await this.walkInName(db, walkIn);
+            const engine = await this.engineClosing(db, scope, false);
             const head = headOf(scope, { order, rights, leftOut, showReversed: scope.sql.showReversed });
             return {
                 head,
@@ -361,7 +365,7 @@ let ItemLedgerService = class ItemLedgerService {
                     showReversed: scope.sql.showReversed,
                 }),
                 opening: openingBlock(scope, open),
-                closing: closingBlock(scope, open, s),
+                closing: closingBlock(scope, open, s, engine.value),
                 totals: totalsOf(s, scope.unit.factor),
                 rows: rows.map((r) => toRow(r, scope, walk, openingBase(open))),
                 totalRows: rows.length,
@@ -447,6 +451,33 @@ let ItemLedgerService = class ItemLedgerService {
     }
     async resolveScope(db, q) {
         return scopeOf(await this.lookupScope(db, q), q);
+    }
+    async engineClosing(db, scope, withAfter) {
+        const s = scope.sql;
+        const rows = await db.$queryRaw((0, stock_valuation_sql_1.itemValuationSql)({
+            companyId: s.companyId,
+            branchId: s.branchId,
+            itemId: s.itemId,
+            asOf: s.to,
+            wot: s.wot,
+        }));
+        const { value } = (0, stock_valuation_sql_1.valueInScope)(rows, {
+            godownId: s.godownId,
+            bucket: s.bucket,
+            lotId: s.lotId,
+        });
+        if (!withAfter)
+            return { value, rowsAfter: 0 };
+        const [after] = await db.$queryRaw `
+      SELECT COUNT(*)::int AS n
+        FROM stock.stock_ledger a
+       WHERE a.sml_company_id = ${s.companyId}::uuid AND a.sml_branch_id = ${s.branchId}::uuid
+         AND a.sml_item_id = ${s.itemId}::uuid AND a.sml_is_deleted = false
+         AND a.sml_doc_date > ${s.to}::date
+         ${s.godownId ? client_1.Prisma.sql `AND a.sml_godown_id = ${s.godownId}::uuid` : client_1.Prisma.empty}
+         ${s.bucket ? client_1.Prisma.sql `AND a.sml_bucket = ${s.bucket}` : client_1.Prisma.empty}
+         ${s.lotId ? client_1.Prisma.sql `AND a.sml_lot_id = ${s.lotId}::uuid` : client_1.Prisma.empty}`;
+        return { value, rowsAfter: after?.n ?? 0 };
     }
     async revaluationsLeftOut(db, scope) {
         if (scope.sql.withRevaluations)
@@ -584,14 +615,17 @@ function summaryOf(agg) {
         throw new Error('Item Ledger summary row missing');
     return s;
 }
-function closingBlock(scope, open, s) {
+function closingBlock(scope, open, s, engineValue) {
     const q = (0, item_ledger_rules_1.dec)(open.q).plus(s.q_all);
-    const v = (0, item_ledger_rules_1.dec)(open.v).plus(open.rv).plus(s.v_all);
+    const ledgerValue = (0, item_ledger_rules_1.dec)(open.v).plus(open.rv).plus(s.v_all);
+    const v = engineValue === undefined || engineValue === null ? ledgerValue : (0, item_ledger_rules_1.dec)(engineValue);
     return {
         date: scope.sql.to,
         qty: (0, item_ledger_rules_1.qtyIn)(q, scope.unit.factor),
         value: (0, item_ledger_rules_1.money)(v),
         rate: (0, item_ledger_rules_1.rateOf)(v, q, scope.unit.factor),
+        ledgerValue: (0, item_ledger_rules_1.money)(ledgerValue),
+        costAdj: (0, item_ledger_rules_1.money)(v.minus(ledgerValue)),
     };
 }
 function totalsOf(s, factor) {
@@ -694,21 +728,32 @@ function stockNowBlock(today, rows, factor) {
         },
     };
 }
-function tieOf(checked, open, s, stock, factor) {
+function tieOf(checked, open, s, stock, factor, engine) {
     if (!checked) {
-        return { checked: false, ledgerQty: null, stockNowQty: null, equal: null, difference: null };
+        return {
+            checked: false,
+            ledgerQty: null,
+            stockNowQty: null,
+            equal: null,
+            difference: null,
+            stockNowValue: null,
+            valueEqual: null,
+        };
     }
     const ledgerQty = (0, item_ledger_rules_1.dec)(open.q).plus(s.q_all).plus(open.after_q);
-    const stockNowQty = stock
-        .filter((r) => r.in_scope)
-        .reduce((sum, r) => sum.plus(r.on_hand), (0, item_ledger_rules_1.dec)(0));
+    const inScope = stock.filter((r) => r.in_scope);
+    const stockNowQty = inScope.reduce((sum, r) => sum.plus(r.on_hand), (0, item_ledger_rules_1.dec)(0));
     const diff = ledgerQty.minus(stockNowQty);
+    const valueChecked = !!engine && engine.rowsAfter === 0;
+    const stockNowValue = inScope.reduce((sum, r) => sum.plus(r.value), (0, item_ledger_rules_1.dec)(0));
     return {
         checked: true,
         ledgerQty: (0, item_ledger_rules_1.qtyIn)(ledgerQty, factor),
         stockNowQty: (0, item_ledger_rules_1.qtyIn)(stockNowQty, factor),
         equal: diff.isZero(),
         difference: (0, item_ledger_rules_1.qtyIn)(diff, factor),
+        stockNowValue: valueChecked ? (0, item_ledger_rules_1.money)(stockNowValue) : null,
+        valueEqual: valueChecked ? (0, item_ledger_rules_1.dec)(engine.value).equals(stockNowValue) : null,
     };
 }
 function periodTieOf(open, s) {

@@ -1,6 +1,7 @@
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import type { SaveBillDto } from './dto/save-bill.dto';
 import type { BillChargePayload, BillTenderPayload } from './types/bill-api.types';
+import type { ChargeLegInput } from '../posting/types/sales-leg.types';
 import { type TempCreditDetails } from './bill-temp-credit';
 export interface BillSnapshotItem {
     sbiId: string | null;
@@ -56,9 +57,13 @@ export interface BillSnapshotCharge {
     cdId: string | null;
     ledgerId: string | null;
     name: string | null;
+    type: 'ADD' | 'DEDUCT';
     amount: number;
     separatelyPosted: boolean;
     beforeTax: boolean;
+    taxApl: boolean;
+    insideTaxable: boolean;
+    taxId: string | null;
     cgst: number;
     sgst: number;
     igst: number;
@@ -150,10 +155,19 @@ export interface TenderMasterRow {
     tnd_type_id: number;
     tnd_ledger_id: string | null;
 }
-export declare function snapshotFromDto(dto: SaveBillDto, tenderMasters: Map<string, TenderMasterRow>): BillSnapshot;
+export type ChargeTypeMap = Map<string, string>;
+export declare function snapshotFromDto(dto: SaveBillDto, tenderMasters: Map<string, TenderMasterRow>, chargeTypes?: ChargeTypeMap): BillSnapshot;
 export declare function isCreditTender(t: BillSnapshotTender): boolean;
 export declare function settledByTenders(snap: BillSnapshot): number;
 export declare function cashTendered(snap: BillSnapshot): number;
 export declare function setOffAmtOf(snap: BillSnapshot): number;
+export declare function chargeTaxOf(snap: BillSnapshot): number;
+export declare function docTaxOf(snap: BillSnapshot): number;
+export declare function salesAmountOf(snap: BillSnapshot): number;
 export declare function partyDebitOf(snap: BillSnapshot, schemeSeparately: boolean): number;
+export declare function chargeLegsOf(snap: BillSnapshot): ChargeLegInput[];
+export declare function registerChargesOf(snap: BillSnapshot): {
+    other: number;
+    deduction: number;
+};
 export declare function decimal(v: number): Prisma.Decimal;

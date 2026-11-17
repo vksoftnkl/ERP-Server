@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const voucher_types_company_1 = require("../../settings/voucher-types/voucher-types-company");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const voucher_books_sql_1 = require("../common/voucher-books.sql");
 const day_summary_groups_1 = require("./day-summary.groups");
@@ -41,13 +42,17 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
         this.prisma = prisma;
         this.requestContext = requestContext;
     }
-    async voucherTypes() {
+    async voucherTypes(companyId) {
         return this.snapshot(async (db) => {
             await this.assertMenuRight(db);
+            const company = companyId
+                ? await (0, voucher_types_company_1.resolveVoucherTypeCompany)(db, this.requestContext.getCompanyId(), companyId)
+                : null;
             const types = await this.loadTypes(db);
             return {
                 items: [...types.values()]
                     .filter((t) => t.isActive && t.affectsAccounts)
+                    .filter((t) => t.companyId === null || (company !== null && t.companyId === company))
                     .map((t) => ({
                     voucherTypeId: t.id,
                     code: t.code,
@@ -272,7 +277,8 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
       SELECT vchr_type_id AS id, vchr_type_code AS code, vchr_type_short AS short,
              vchr_type_name AS name, vchr_nature::text AS nature, vchr_category::text AS category,
              vchr_sort_order AS sort_order, vchr_is_active AS is_active,
-             vchr_affects_accounts AS affects_accounts
+             vchr_affects_accounts AS affects_accounts,
+             vchr_parent_id AS parent_id, vchr_company_id AS company_id
         FROM accounts.acc_voucher_types
        ORDER BY vchr_sort_order, vchr_type_id`;
         return new Map(rows.map((r) => [
@@ -287,6 +293,8 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
                 sortOrder: r.sort_order,
                 isActive: r.is_active,
                 affectsAccounts: r.affects_accounts,
+                parentId: r.parent_id ?? null,
+                companyId: r.company_id ?? null,
             },
         ]));
     }
@@ -361,7 +369,8 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
             for (const t of books.types.values()) {
                 if (t.isActive &&
                     t.affectsAccounts &&
-                    (s.voucherTypeId === null || t.id === s.voucherTypeId)) {
+                    (t.companyId === null || t.companyId === s.companyId) &&
+                    (s.voucherTypeId === null || t.id === s.voucherTypeId || t.parentId === s.voucherTypeId)) {
                     typeIds.add(t.id);
                 }
             }
@@ -643,7 +652,7 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
       WITH ${(0, day_summary_sql_1.coreCtes)(s, 'RANGE')}
       SELECT vt, COUNT(*) AS n FROM k
        WHERE st = 'CANCELLED' AND pair_in
-         AND (${s.voucherTypeId}::int IS NULL OR vt = ${s.voucherTypeId}::int)
+         AND ${(0, day_summary_sql_1.typeFilterSql)(s, client_1.Prisma.raw('vt'))}
        GROUP BY vt`;
         return new Map(rows.map((r) => [r.vt, Number(r.n)]));
     }
@@ -841,7 +850,7 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
         WITH ${(0, day_summary_sql_1.coreCtes)(s, 'DAY')}
         SELECT vdate AS d, COUNT(*) AS n FROM k
          WHERE st = 'CANCELLED' AND pair_day
-           AND (${s.voucherTypeId}::int IS NULL OR vt = ${s.voucherTypeId}::int)
+           AND ${(0, day_summary_sql_1.typeFilterSql)(s, client_1.Prisma.raw('vt'))}
          GROUP BY vdate`,
             () => db.$queryRaw `
         SELECT x.vdate AS d, COUNT(*) AS n FROM (${(0, day_summary_sql_1.draftsSql)(s)}) x GROUP BY x.vdate`,
@@ -935,7 +944,7 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
           FROM k
           JOIN pv ON pv.vid = k.vid AND pv.vyr = k.vyr
           LEFT JOIN accounts.acc_voucher_types t ON t.vchr_type_id = k.vt
-         WHERE (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int)
+         WHERE ${(0, day_summary_sql_1.typeFilterSql)(s, client_1.Prisma.raw('k.vt'))}
            AND (${filter.nature}::text IS NULL OR t.vchr_nature::text = ${filter.nature}::text)
            AND (${filter.moneyKind}::text IS NULL OR pv.touches)
            AND (${filter.includeCancelledPairs}::boolean OR NOT k.pair_in))`;
@@ -1113,7 +1122,7 @@ let DaySummaryService = DaySummaryService_1 = class DaySummaryService {
             JOIN pv ON pv.vid = k.vid AND pv.vyr = k.vyr
             JOIN accounts.acc_voucher_header h ON h.avh_voucher_id = k.vid AND h.avh_acc_year = k.vyr
            WHERE k.kind <> 'NORMAL'
-             AND (${s.voucherTypeId}::int IS NULL OR k.vt = ${s.voucherTypeId}::int)
+             AND ${(0, day_summary_sql_1.typeFilterSql)(s, client_1.Prisma.raw('k.vt'))}
            ORDER BY k.vdate, h.avh_voucher_slno NULLS LAST, k.vid LIMIT ${cap}`;
                 return rows.map((r) => ({
                     voucherId: r.vid,
@@ -1276,6 +1285,8 @@ function unknownType(id) {
         sortOrder: Number.MAX_SAFE_INTEGER,
         isActive: false,
         affectsAccounts: true,
+        parentId: null,
+        companyId: null,
     };
 }
 function foldBusinessDay(rows) {

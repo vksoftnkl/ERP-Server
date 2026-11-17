@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.COUNTER_CASH = exports.PURCHASE_DOC_TYPES = exports.SALES_DOC_TYPES = exports.SHADOW_DOC_TYPES = exports.REPORT_TYPE_CODES = exports.REPORT_TYPES = exports.BUCKET_LABEL = exports.ORDERS = exports.VALUE_AT = exports.BUCKET_CHOICES = exports.STOCK_BUCKETS = void 0;
+exports.COUNTER_CASH = exports.PURCHASE_DOC_TYPES = exports.SALES_DOC_TYPES = exports.AMENDABLE_SHADOW_DOC_TYPES = exports.SHADOW_DOC_TYPES = exports.REPORT_TYPE_CODES = exports.REPORT_TYPES = exports.BUCKET_LABEL = exports.ORDERS = exports.VALUE_AT = exports.BUCKET_CHOICES = exports.STOCK_BUCKETS = void 0;
 exports.bucketLabel = bucketLabel;
 exports.reportTypeOrder = reportTypeOrder;
 exports.reportTypeOf = reportTypeOf;
@@ -162,7 +162,9 @@ exports.SHADOW_DOC_TYPES = [
     'PURCHASE_BILL',
     'SHORTAGE_RECEIPT',
     'PURCHASE_RETURN',
+    'DELIVERY_NOTE',
 ];
+exports.AMENDABLE_SHADOW_DOC_TYPES = exports.SHADOW_DOC_TYPES.filter((t) => t !== 'DELIVERY_NOTE');
 exports.SALES_DOC_TYPES = ['SALE_BILL', 'DELIVERY_CHALLAN', 'SALE_RETURN', 'DC_RETURN'];
 exports.PURCHASE_DOC_TYPES = ['GRN', 'PURCHASE_BILL', 'SHORTAGE_RECEIPT', 'PURCHASE_RETURN'];
 function docKindOf(input) {
@@ -189,6 +191,9 @@ exports.COUNTER_CASH = 'Counter (cash)';
 function partyOf(input) {
     const kind = input.docKind ?? '';
     const name = clean(input.ledgerName);
+    if (kind === 'DELIVERY_NOTE') {
+        return null;
+    }
     if (kind === 'SALE_BILL') {
         const customerId = input.billCustomerId ?? input.partyId;
         const isWalkInLedger = sameId(customerId, input.walkInId);

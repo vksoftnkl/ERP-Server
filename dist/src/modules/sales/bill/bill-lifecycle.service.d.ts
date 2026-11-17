@@ -1,3 +1,6 @@
+import { DeliveryStatusService } from '../delivery/core/delivery-status.service';
+import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -48,10 +51,15 @@ export declare class BillLifecycleService {
     private readonly gst;
     private readonly audit;
     private readonly till;
+    private readonly config;
+    private readonly deliveryStatus;
+    private readonly deliveryPending;
     private readonly logger;
-    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, reservations: StockReservationService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, chargeCarry: ChargeCarryService, dcFulfilment: DcFulfilmentService, saleOrders: SaleOrderService, transportBand: TransportBandService, docBlocks: SalesDocBlocksService, gst: GstGatewayService, audit: AuditLogService, till: TillSessionService);
+    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, reservations: StockReservationService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, chargeCarry: ChargeCarryService, dcFulfilment: DcFulfilmentService, saleOrders: SaleOrderService, transportBand: TransportBandService, docBlocks: SalesDocBlocksService, gst: GstGatewayService, audit: AuditLogService, till: TillSessionService, config: ConfigService, deliveryStatus: DeliveryStatusService, deliveryPending: DeliveryPendingService);
     validate(dto: ValidateBillDto): Promise<Record<string, unknown>>;
     post(dto: PostBillDto): Promise<BillPayload>;
+    private withGodownSlips;
+    private oldPendingDeliveryWarning;
     saveAndPost(dto: SaveBillDto): Promise<BillPayload>;
     private postDraftInTx;
     private afterPost;
@@ -84,6 +92,7 @@ export declare class BillLifecycleService {
         priorItems?: SaleBillItem[];
     }): Promise<PostResult>;
     private assertUnwindable;
+    private assertDeliveryUnwindable;
     private unwind;
     private afterStatusChange;
     private resolveAdjustments;

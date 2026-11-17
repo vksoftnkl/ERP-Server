@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SRI_DATE_FIELDS = exports.SRI_OPTIONAL_FIELDS = exports.SaveSaleReturnItemDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const class_validator_1 = require("class-validator");
 const sales_dto_decorators_1 = require("../../posting/sales-dto.decorators");
 class SaveSaleReturnItemDto {
     sriId;
@@ -40,6 +41,7 @@ class SaveSaleReturnItemDto {
     sriCaseQty;
     sriReturnQty;
     sriFreeQty;
+    sriUndeliveredQty;
     sriNetQty;
     sriWeightQty;
     sriRate;
@@ -87,6 +89,30 @@ class SaveSaleReturnItemDto {
     sriSize;
     sriSizeUom;
     sriRemarks;
+    sriClaimGoods;
+    sriSupplierClaim;
+    sriItemDiscQty;
+    sriSplDiscQty;
+    sriSchDiscQty;
+    sriBillSchPerc;
+    sriBillSchQty;
+    sriAddlDisc1Perc;
+    sriAddlDisc1Amt;
+    sriAddlDisc2Perc;
+    sriAddlDisc2Amt;
+    sriCashDiscPerc;
+    sriCashDiscAmt;
+    sriNetGross;
+    sriAcessPerc;
+    sriAcessPerUnit;
+    sriAcessAmt;
+    sriLoyaltyPv;
+    sriPromoUsageId;
+    sriQtyPriceId;
+    sriCogsAmt;
+    sriRateSource;
+    sriRateSrcItemId;
+    sriRateSrcAccYear;
     sriCreatedBy;
     sriModifiedBy;
 }
@@ -202,6 +228,10 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleReturnItemDto.prototype, "sriCondition", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Accepted and IGNORED: the server takes the bucket from sriCondition (D12; user 2026-11-14) — ' +
+            'a CLAIM line EXPIRED for an expired condition, else DAMAGED.',
+    }),
     (0, sales_dto_decorators_1.OptionalStockBucket)(),
     __metadata("design:type", String)
 ], SaveSaleReturnItemDto.prototype, "sriBucket", void 0);
@@ -220,6 +250,18 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], SaveSaleReturnItemDto.prototype, "sriFreeQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        minimum: 0,
+        description: 'Delivery tracking (addendum §5.2): "Not taken" — the part of this row (return + free, row unit) that ' +
+            'never left the godown. Left out / null = the server default (the smaller of the qty and what the bill ' +
+            'line still has to give, in row order; 0 on a Claim, on SCRAP, or in another godown / lot). Send it only ' +
+            'for a typed row. Refusals: DELIVERY_RETURN_OVER_QTY, _CLAIM, _OVER, _NOT_GIVEN, _GODOWN.',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(0),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriUndeliveredQty", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableNumber)(),
@@ -456,6 +498,160 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleReturnItemDto.prototype, "sriRemarks", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 10,
+        nullable: true,
+        enum: ['BACK', 'DESTROYED'],
+        description: 'A CLAIM line: the goods come Back, or were Destroyed at the shop (D23)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['BACK', 'DESTROYED']),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriClaimGoods", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned' }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSaleReturnItemDto.prototype, "sriSupplierClaim", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriItemDiscQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriSplDiscQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriSchDiscQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriBillSchPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriBillSchQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAddlDisc1Perc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAddlDisc1Amt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAddlDisc2Perc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAddlDisc2Amt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriCashDiscPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriCashDiscAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriNetGross", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAcessPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAcessPerUnit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriAcessAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, readOnly: true, description: 'Server-owned (D45)' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriLoyaltyPv", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        readOnly: true,
+        description: 'Server-owned',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriPromoUsageId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        readOnly: true,
+        description: 'Server-owned',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriQtyPriceId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        readOnly: true,
+        description: 'Server-owned: the COGS taken back (D54)',
+    }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriCogsAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 12,
+        nullable: true,
+        readOnly: true,
+        enum: ['BILL', 'LAST_SALE', 'TODAY_PRICE'],
+        description: 'Server-owned: where the rate came from (D56)',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(12),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriRateSource", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "A no-bill line: the customer's bill line (grid 211) whose rate it uses (D56 step 2). Omit to let the server take the last sale in the window.",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriRateSrcItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 9,
+        nullable: true,
+        description: 'The year of sriRateSrcItemId',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(9),
+    __metadata("design:type", Object)
+], SaveSaleReturnItemDto.prototype, "sriRateSrcAccYear", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(50),
     __metadata("design:type", Object)
@@ -488,6 +684,7 @@ exports.SRI_OPTIONAL_FIELDS = [
     'sriCaseQty',
     'sriReturnQty',
     'sriFreeQty',
+    'sriUndeliveredQty',
     'sriNetQty',
     'sriWeightQty',
     'sriRate',
@@ -537,6 +734,30 @@ exports.SRI_OPTIONAL_FIELDS = [
     'sriRemarks',
     'sriCreatedBy',
     'sriModifiedBy',
+    'sriClaimGoods',
+    'sriSupplierClaim',
+    'sriItemDiscQty',
+    'sriSplDiscQty',
+    'sriSchDiscQty',
+    'sriBillSchPerc',
+    'sriBillSchQty',
+    'sriAddlDisc1Perc',
+    'sriAddlDisc1Amt',
+    'sriAddlDisc2Perc',
+    'sriAddlDisc2Amt',
+    'sriCashDiscPerc',
+    'sriCashDiscAmt',
+    'sriNetGross',
+    'sriAcessPerc',
+    'sriAcessPerUnit',
+    'sriAcessAmt',
+    'sriLoyaltyPv',
+    'sriPromoUsageId',
+    'sriQtyPriceId',
+    'sriCogsAmt',
+    'sriRateSource',
+    'sriRateSrcItemId',
+    'sriRateSrcAccYear',
 ];
 exports.SRI_DATE_FIELDS = ['sriBatchDate', 'sriExpiryDate'];
 //# sourceMappingURL=save-sale-return-item.dto.js.map

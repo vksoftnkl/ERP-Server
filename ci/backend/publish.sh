@@ -28,13 +28,32 @@
 set -euo pipefail
 
 die() { echo "::error::publish: $*" >&2; exit 1; }
+# A pasted secret or variable often carries a stray space or Enter, or the quotes/backticks it was
+# shown in. ssh then says only "remote username contains invalid characters", and the gate refuses
+# '/var/www/updates/dev/backend<newline>'. Trim the edges, and name the setting if what is left is
+# still not a plain value (secret values are not printed).
+trim() { local s="${1//$'\r'/}"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+UPLOAD_DIR="$(trim "${UPLOAD_DIR:-}")"
+PUBLIC_BASE_URL="$(trim "${PUBLIC_BASE_URL:-}")"
 for v in ZIP BUILD VERSION COMMIT HAS_MIGRATIONS UPLOAD_DIR PUBLIC_BASE_URL; do
   [[ -n "${!v:-}" ]] || die "$v is not set"
 done
+[[ "$UPLOAD_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] ||
+  die "UPLOAD_DIR must be just the folder, e.g. /var/www/updates/dev/backend: no quotes, backticks or spaces"
+[[ "$PUBLIC_BASE_URL" =~ ^https?://[^[:space:]\"\'\`]+$ ]] ||
+  die "PUBLIC_BASE_URL must be just the address, e.g. https://<vps>/updates/dev/backend: no quotes, backticks or spaces"
 if [[ -z "${UPLOAD_GATE_LOCAL:-}" ]]; then
   for v in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS; do
     [[ -n "${!v:-}" ]] || die "secret $v is not configured in the GitHub Environment"
   done
+  VPS_USER="$(trim "$VPS_USER")"
+  VPS_HOST="$(trim "$VPS_HOST")"
+  VPS_PORT="$(trim "${VPS_PORT:-22}")"
+  [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] ||
+    die "secret VPS_USER must be just the user name, e.g. deployer-dev: no quotes, backticks or spaces"
+  [[ "$VPS_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] ||
+    die "secret VPS_HOST must be just the host name or IP, e.g. 169.58.213.171: no quotes, backticks, spaces or user@"
+  [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || die "VPS_PORT must be just a port number, e.g. 22"
 fi
 [[ "$BUILD" =~ ^[0-9]{1,10}$ ]] || die "bad BUILD"
 [[ "$HAS_MIGRATIONS" == true || "$HAS_MIGRATIONS" == false ]] || die "HAS_MIGRATIONS must be true or false"

@@ -8,6 +8,7 @@ export declare class SavePhysicalStockVoucherItemDto {
     bucket?: StockBucket;
     lotId: string;
     countedQty?: string | number | null;
+    shelfQty?: string | number | null;
     reasonId?: string | null;
     remarks?: string | null;
 }

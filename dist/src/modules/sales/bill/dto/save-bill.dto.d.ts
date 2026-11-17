@@ -16,6 +16,8 @@ export declare class SaveBillDto {
     sbBillType?: string | null;
     sbCategoryId?: string | null;
     sbPriceLevel: number;
+    sbVchrTypeId?: number | null;
+    sbDeliveryMode?: string | null;
     sbBillSlno?: string | number;
     sbBillRefno?: string | null;
     sbUsrRefno?: string | null;

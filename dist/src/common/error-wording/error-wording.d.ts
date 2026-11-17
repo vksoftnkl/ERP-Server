@@ -29,3 +29,4 @@ export declare function wordedResponse<TRes extends {
         json(body: unknown): unknown;
     };
 };
+export declare function fillPlaceholders(text: string, values: ReadonlyMap<string, string>): string;

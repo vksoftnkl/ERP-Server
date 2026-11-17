@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockVoucherService = void 0;
+exports.undeliveredWarnings = undeliveredWarnings;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const loose_search_1 = require("../../../common/search/loose-search");
@@ -26,6 +27,8 @@ const stock_voucher_posting_helper_1 = require("./stock-voucher-posting.helper")
 const stock_posting_service_1 = require("../posting/stock-posting.service");
 const stock_voucher_source_1 = require("../posting/stock-voucher.source");
 const stock_error_codes_1 = require("../types/stock-error-codes");
+const delivery_constants_1 = require("../../sales/delivery/core/delivery.constants");
+const count_undelivered_helper_1 = require("./count-undelivered.helper");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_voucher_types_1 = require("./types/stock-voucher.types");
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
@@ -36,6 +39,15 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
 const DOC_DATETIME_ONLINE_SKEW_MS = 15 * 60_000;
 const DOC_DATETIME_OFFLINE_MAX_MS = 7 * 24 * 3_600_000;
+const PHY_SHELF_AND_COUNTED = delivery_constants_1.DELIVERY_ERROR_CODES.PHY_SHELF_AND_COUNTED;
+const PHY_UNDELIVERED_CHANGED = delivery_constants_1.DELIVERY_ERROR_CODES.PHY_UNDELIVERED_CHANGED;
+function shelfOf(line) {
+    return line.shelfQty;
+}
+function hasShelf(line) {
+    const v = shelfOf(line);
+    return v !== undefined && v !== null && v !== '';
+}
 let StockVoucherService = class StockVoucherService {
     prisma;
     auditLogService;
@@ -55,7 +67,7 @@ let StockVoucherService = class StockVoucherService {
         await this.assertCrew(rules, dto);
         const postAfterSave = header.status === 'POSTED' || header.post === true;
         const postedOn = new Date();
-        const { svhId, rowsPosted, bookChanges } = await this.prisma.$transaction(async (tx) => {
+        const { svhId, rowsPosted, bookChanges, undeliveredChanges } = await this.prisma.$transaction(async (tx) => {
             if (header.svhId) {
                 const existing = await this.loadForWrite(tx, rules, header.svhId, header.accYear, header.companyId, header.branchId);
                 this.assertDraft(rules, existing);
@@ -76,7 +88,7 @@ let StockVoucherService = class StockVoucherService {
                 }, dto.lines)
                 : null;
             const saved = batches ? { ...dto, lines: batches.lines } : dto;
-            const { svhId: id, bookChanges } = header.svhId
+            const { svhId: id, bookChanges, undeliveredChanges } = header.svhId
                 ? await this.updateDraft(tx, rules, saved, actor, postedOn)
                 : await this.createDraft(tx, rules, saved, actor, postedOn);
             if (batches) {
@@ -90,7 +102,7 @@ let StockVoucherService = class StockVoucherService {
             }
             if (!postAfterSave) {
                 await this.logRevision(tx, rules, id, header, before, actor, false);
-                return { svhId: id, rowsPosted: null, bookChanges };
+                return { svhId: id, rowsPosted: null, bookChanges, undeliveredChanges };
             }
             await this.lockForPreflight(tx, rules, id, header.accYear);
             await hooks?.beforePost?.(tx, id);
@@ -120,19 +132,33 @@ let StockVoucherService = class StockVoucherService {
                 sessionId: header.sessionId ?? null,
             });
             await this.logRevision(tx, rules, id, header, before, actor, true);
-            return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges };
+            return { svhId: id, rowsPosted: posted.rowsPosted, bookChanges, undeliveredChanges };
         });
         const document = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
         const rebased = new Map(bookChanges.map((change) => [change.sviId, change]));
+        const isCount = rules.quantityMode === 'COUNT';
+        const moved = new Map(undeliveredChanges.map((change) => [change.sviId, change]));
         return {
             ...document,
             lines: document.lines.map((line) => ({
                 ...line,
                 bookChanged: rebased.has(line.sviId),
                 previousBookQty: rebased.get(line.sviId)?.previousBookQty ?? null,
+                ...(isCount
+                    ? {
+                        undeliveredChanged: moved.has(line.sviId),
+                        previousUndeliveredQty: moved.get(line.sviId)?.previousUndeliveredQty ?? null,
+                    }
+                    : {}),
             })),
             rowsPosted,
             bookChanges,
+            ...(isCount
+                ? {
+                    undeliveredChanges,
+                    warnings: undeliveredWarnings(undeliveredChanges, document.lines),
+                }
+                : {}),
         };
     }
     async logRevision(tx, rules, svhId, header, before, actor, posted) {
@@ -449,7 +475,25 @@ let StockVoucherService = class StockVoucherService {
                         message: `Line ${line.lineNo}: bookQty is read from stock_balance at save time and is never taken from the payload.`,
                     });
                 }
-                if (line.countedQty === undefined || line.countedQty === null || line.countedQty === '') {
+                const shelf = shelfOf(line);
+                if (hasShelf(line)) {
+                    if (line.countedQty !== undefined && line.countedQty !== null && line.countedQty !== '') {
+                        errors.push({
+                            field: `${field}.shelfQty`,
+                            code: PHY_SHELF_AND_COUNTED,
+                            message: `Line ${line.lineNo}: both a shelf count and a counted qty were sent. Send the shelf count only.`,
+                            params: { n: line.lineNo },
+                        });
+                    }
+                    else if (this.toDecimalNumber(shelf) < 0) {
+                        errors.push({
+                            field: `${field}.shelfQty`,
+                            code: stock_error_codes_1.StockErrorCode.COUNT_QTY_NEGATIVE,
+                            message: `Line ${line.lineNo}: shelfQty is a count and cannot be negative. Only the derived difference is signed.`,
+                        });
+                    }
+                }
+                else if (line.countedQty === undefined || line.countedQty === null || line.countedQty === '') {
                     errors.push({
                         field,
                         code: stock_error_codes_1.StockErrorCode.COUNT_NOT_COUNTED,
@@ -774,7 +818,11 @@ let StockVoucherService = class StockVoucherService {
             deviceId: header.deviceId,
             sessionId: header.sessionId ?? null,
         });
-        return { svhId: created.svhId, bookChanges: written.bookChanges };
+        return {
+            svhId: created.svhId,
+            bookChanges: written.bookChanges,
+            undeliveredChanges: written.undeliveredChanges,
+        };
     }
     async writeHeaderTotals(tx, rules, svhId, header, written) {
         const totals = this.documentTotals(rules, written);
@@ -948,7 +996,11 @@ let StockVoucherService = class StockVoucherService {
         });
         const written = await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
         await this.writeHeaderTotals(tx, rules, svhId, header, written);
-        return { svhId, bookChanges: written.bookChanges };
+        return {
+            svhId,
+            bookChanges: written.bookChanges,
+            undeliveredChanges: written.undeliveredChanges,
+        };
     }
     async replaceLines(tx, rules, dto, svhId, actor, author, now) {
         const { header, lines } = dto;
@@ -966,13 +1018,26 @@ let StockVoucherService = class StockVoucherService {
             });
         }
         if (!lines.length) {
-            return { rows: [], holdings: null, bookChanges: [] };
+            return { rows: [], holdings: null, bookChanges: [], undeliveredChanges: [] };
         }
         const isCount = rules.quantityMode === 'COUNT';
         const zeroCost = isCount || rules.zeroesLineCost === true;
         const holdings = isCount ? await this.loadCountHoldings(tx, header, lines) : null;
+        const undelivered = isCount
+            ? await (0, count_undelivered_helper_1.readHoldingUndelivered)(tx, {
+                companyId: header.companyId,
+                branchId: header.branchId,
+                godownIds: lines.map((line) => line.godownId),
+                itemIds: lines.map((line) => line.itemId),
+            })
+            : null;
         const data = lines.map((line) => {
             const holding = holdings?.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
+            const bnd = isCount
+                ? (undelivered?.get((0, count_undelivered_helper_1.undeliveredKey)(line.godownId, line.itemId, line.lotId, line.bucket))
+                    ?.bndBase ?? new client_1.Prisma.Decimal(0)).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP)
+                : null;
+            const shelf = isCount && hasShelf(line) ? this.toDecimalColumn(shelfOf(line)) : null;
             return {
                 sviVoucherId: svhId,
                 sviCompanyId: header.companyId,
@@ -1019,7 +1084,10 @@ let StockVoucherService = class StockVoucherService {
                 sviBookQty: isCount
                     ? holding.bookQty
                     : this.toNullableDecimal(line.bookQty),
-                sviCountedQty: this.toNullableDecimal(line.countedQty),
+                sviCountedQty: shelf !== null && bnd !== null
+                    ? (0, count_undelivered_helper_1.countedFromShelf)(shelf, bnd)
+                    : this.toNullableDecimal(line.countedQty),
+                ...(isCount ? { sviShelfQty: shelf, sviUndeliveredQty: bnd } : {}),
                 sviCostRate: zeroCost ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.costRate),
                 sviCostRateWot: zeroCost
                     ? new client_1.Prisma.Decimal(0)
@@ -1044,6 +1112,25 @@ let StockVoucherService = class StockVoucherService {
         });
         const storedById = new Map((stored ?? []).map((row) => [row.sviId, row]));
         const bookChanges = [];
+        const undeliveredChanges = [];
+        if (isCount) {
+            lines.forEach((line, index) => {
+                const row = line.sviId ? storedById.get(line.sviId) : undefined;
+                const next = data[index].sviUndeliveredQty;
+                if (!row || next === undefined) {
+                    return;
+                }
+                if (!new client_1.Prisma.Decimal(row.sviUndeliveredQty ?? 0).equals(next)) {
+                    undeliveredChanges.push({
+                        sviId: row.sviId,
+                        lineNo: line.lineNo,
+                        itemId: line.itemId,
+                        previousUndeliveredQty: (0, module_service_utils_1.toNumber)(new client_1.Prisma.Decimal(row.sviUndeliveredQty ?? 0)),
+                        undeliveredQty: (0, module_service_utils_1.toNumber)(next),
+                    });
+                }
+            });
+        }
         if (isCount) {
             lines.forEach((line, index) => {
                 const row = line.sviId ? storedById.get(line.sviId) : undefined;
@@ -1096,7 +1183,7 @@ let StockVoucherService = class StockVoucherService {
         if (inserted.length) {
             await tx.stockVoucherItem.createMany({ data: inserted });
         }
-        return { rows: data, holdings, bookChanges };
+        return { rows: data, holdings, bookChanges, undeliveredChanges };
     }
     assertLineIds(rules, lines, stored) {
         const errors = [];
@@ -1455,6 +1542,8 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_book_qty,
              svi.svi_counted_qty,
              svi.svi_diff_qty,
+             svi.svi_shelf_qty,
+             svi.svi_undelivered_qty,
              svi.svi_cost_rate,
              svi.svi_cost_rate_wot,
              svi.svi_landed_rate,
@@ -2773,6 +2862,15 @@ let StockVoucherService = class StockVoucherService {
             bookQty: (0, module_service_utils_1.toNullableNumber)(row.svi_book_qty),
             countedQty: (0, module_service_utils_1.toNullableNumber)(row.svi_counted_qty),
             diffQty: (0, module_service_utils_1.toNullableNumber)(row.svi_diff_qty),
+            ...(rules.quantityMode === 'COUNT'
+                ? {
+                    shelfQty: (0, module_service_utils_1.toNullableNumber)(row.svi_shelf_qty),
+                    undeliveredQty: (0, module_service_utils_1.toNumber)(row.svi_undelivered_qty ?? new client_1.Prisma.Decimal(0)),
+                    physicalQty: row.svi_book_qty === null
+                        ? null
+                        : (0, module_service_utils_1.toNumber)(new client_1.Prisma.Decimal(row.svi_book_qty).plus(row.svi_undelivered_qty ?? new client_1.Prisma.Decimal(0))),
+                }
+                : {}),
             costRate: (0, module_service_utils_1.toNumber)(row.svi_cost_rate),
             costRateWot: (0, module_service_utils_1.toNumber)(row.svi_cost_rate_wot),
             landedRate: (0, module_service_utils_1.toNumber)(row.svi_landed_rate),
@@ -2926,5 +3024,21 @@ function loadingFieldSent(header) {
         ['unloadSupervisorId', !!header.unloadSupervisorId],
     ];
     return filled.find(([, given]) => given)?.[0] ?? null;
+}
+function undeliveredWarnings(changes, lines) {
+    const names = new Map(lines.map((l) => [l.sviId, l.itemName]));
+    const index = new Map(lines.map((l, i) => [l.sviId, i]));
+    return changes.map((c) => {
+        const item = names.get(c.sviId) ?? c.itemId;
+        return {
+            code: PHY_UNDELIVERED_CHANGED,
+            level: 'WARN',
+            field: `lines.${index.get(c.sviId) ?? c.lineNo - 1}.shelfQty`,
+            line: c.lineNo,
+            message: `Line ${c.lineNo}: ${item} had ${c.previousUndeliveredQty} billed not delivered when the ` +
+                `sheet was drawn; now ${c.undeliveredQty}. Check the count before posting.`,
+            params: { n: c.lineNo, item, old: c.previousUndeliveredQty, new: c.undeliveredQty },
+        };
+    });
 }
 //# sourceMappingURL=stock-voucher.service.js.map

@@ -827,7 +827,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
       SELECT lld_id, lld_acc_year, lld_comp_id, lld_branch_id, lld_member_id, lld_cust_id,
              lld_txn_type, lld_points, lld_lot_balance, lld_lot_id, lld_lot_acc_year,
              lld_lsc_id, lld_rate, lld_money_value, lld_tender_id, lld_tender_acc_year,
-             lld_txn_date
+             lld_txn_date, lld_approved_by
         FROM sales.loyalty_ledger
        WHERE lld_src_doc_type   = ${doc.docType}
          AND lld_src_doc_id     = ${doc.docId}::uuid
@@ -888,7 +888,27 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 });
                 earnReversed += take;
             }
-            else if (o.lld_txn_type === 'REDEEM' || o.lld_txn_type === 'GIFT') {
+            else if (o.lld_txn_type === 'ADJUST' && Number(o.lld_points) > 0) {
+                const given = Number(o.lld_points);
+                const take = Math.min(given, Math.max(0, Number(o.lld_lot_balance ?? 0)));
+                if (take <= 0) {
+                    continue;
+                }
+                rows.push({
+                    ...base,
+                    txnType: 'ADJUST',
+                    rowNo: nextRowNo('ADJUST'),
+                    points: -take,
+                    approvedBy: o.lld_approved_by ?? null,
+                    remarks: take < given
+                        ? `Cancelled; ${round(given - take, 4)} of ${given} points had already been spent and could not be taken back`
+                        : null,
+                });
+                redeemReversed -= take;
+            }
+            else if (o.lld_txn_type === 'REDEEM' ||
+                o.lld_txn_type === 'GIFT' ||
+                (o.lld_txn_type === 'EXPIRE' && doc.docType === 'SALE_RETURN')) {
                 const spent = -Number(o.lld_points);
                 rows.push({
                     ...base,
@@ -999,6 +1019,70 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
             createdBy: opts.createdBy ?? 'SYSTEM',
         });
         return { rowsWritten, clawedBack: take, shortfall };
+    }
+    async restoreRedeemForReturn(tx, ret, bill, points, opts) {
+        const want = round(points, 4);
+        if (!(want > 0)) {
+            return { rowsWritten: 0, pointsRestored: 0 };
+        }
+        const redeemed = await tx.$queryRaw `
+      SELECT MAX(r.lld_lsc_id::text)::uuid AS lld_lsc_id,
+             MAX(lot.lld_lsc_id::text)::uuid AS lot_lsc_id,
+             MAX(lot.lld_expires_on) AS expires_on,
+             bool_or(lot.lld_id IS NOT NULL AND lot.lld_expires_on IS NULL) AS never,
+             MAX(lot.lld_expires_on - lot.lld_txn_date) AS span_days
+        FROM sales.loyalty_ledger r
+        LEFT JOIN sales.loyalty_ledger lot
+               ON lot.lld_id = r.lld_lot_id AND lot.lld_acc_year = r.lld_lot_acc_year
+       WHERE r.lld_src_doc_type = 'SALE_BILL' AND r.lld_src_doc_id = ${bill.billId}::uuid
+         AND r.lld_txn_type = 'REDEEM' AND r.lld_member_id = ${ret.memberId}::uuid
+         AND r.lld_reversal_of_id IS NULL AND r.lld_is_deleted = false`;
+        const member = await this.lockMember(tx, ret.memberId, ret.companyId, ['CLOSED', 'MERGED']);
+        const lastRow = (await this.maxRowNos(tx, { docId: ret.docId, accYear: ret.accYear, docType: 'SALE_RETURN' })).get('ADJUST');
+        const lotExpires = redeemed[0]?.never ? null : dateStr(redeemed[0]?.expires_on ?? null);
+        const expiry = lotExpires && lotExpires < ret.docDate
+            ? await this.validityFrom(tx, redeemed[0]?.lot_lsc_id ?? redeemed[0]?.lld_lsc_id ?? member.lscId, ret.docDate, redeemed[0]?.span_days ?? null)
+            : lotExpires;
+        await this.writeLedgerRows(tx, [
+            {
+                compId: ret.companyId,
+                branchId: ret.branchId,
+                accYear: ret.accYear,
+                memberId: ret.memberId,
+                custId: member.custId,
+                lscId: redeemed[0]?.lld_lsc_id ?? member.lscId,
+                txnType: 'ADJUST',
+                rowNo: (lastRow ?? 0) + 1,
+                points: want,
+                txnDate: ret.docDate,
+                expiresOn: expiry && expiry >= ret.docDate ? expiry : null,
+                srcModule: 'SALES',
+                srcDocType: 'SALE_RETURN',
+                srcDocId: ret.docId,
+                srcAccYear: ret.accYear,
+                srcDocRefno: ret.docRefno ?? null,
+                approvedBy: opts.approvedBy,
+                remarks: `Points back on return ${ret.docRefno ?? ret.docId} of bill ${bill.refno ?? bill.billId}`,
+                createdBy: opts.createdBy ?? 'SYSTEM',
+            },
+        ]);
+        return { rowsWritten: 1, pointsRestored: want };
+    }
+    async validityFrom(tx, lscId, fromDate, lotSpanDays) {
+        const rows = lscId
+            ? await tx.$queryRaw `
+          SELECT s.* FROM sales.loyalty_scheme s WHERE s.lsc_id = ${lscId}::uuid`
+            : [];
+        const scheme = rows[0] ? toScheme(rows[0]) : null;
+        const byBasis = scheme ? lotExpiry(scheme, fromDate) : null;
+        if (byBasis && byBasis >= fromDate) {
+            return byBasis;
+        }
+        if (scheme?.pointsValidDays && scheme.pointsValidDays > 0) {
+            return addDays(fromDate, scheme.pointsValidDays);
+        }
+        const span = Number(lotSpanDays ?? 0);
+        return span > 0 ? addDays(fromDate, span) : fromDate;
     }
     async preview(bill, tx) {
         const client = tx ?? this.prisma;

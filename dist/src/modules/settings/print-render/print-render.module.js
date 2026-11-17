@@ -17,12 +17,15 @@ const company_profile_provider_1 = require("./data/providers/company-profile.pro
 const sale_bill_header_provider_1 = require("./data/providers/sale-bill-header.provider");
 const sale_bill_items_provider_1 = require("./data/providers/sale-bill-items.provider");
 const sale_bill_tax_summary_provider_1 = require("./data/providers/sale-bill-tax-summary.provider");
+const sale_return_providers_1 = require("./data/providers/sale-return.providers");
 const till_providers_1 = require("./data/providers/till.providers");
 const till_module_1 = require("../../till/till.module");
 const party_outstanding_providers_1 = require("./data/providers/party-outstanding.providers");
 const party_outstanding_module_1 = require("../../reports/party-outstanding/party-outstanding.module");
 const item_ledger_providers_1 = require("./data/providers/item-ledger.providers");
 const item_ledger_module_1 = require("../../stocks/reports/item-ledger/item-ledger.module");
+const stock_summary_providers_1 = require("./data/providers/stock-summary.providers");
+const stock_summary_module_1 = require("../../stocks/reports/stock-summary/stock-summary.module");
 const font_registry_1 = require("./engine/fonts/font.registry");
 const layout_engine_1 = require("./engine/layout/layout.engine");
 const text_measure_1 = require("./engine/layout/text-measure");
@@ -48,6 +51,7 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             till_module_1.TillModule,
             party_outstanding_module_1.ReportsPartyOutstandingModule,
             item_ledger_module_1.ItemLedgerModule,
+            stock_summary_module_1.StockSummaryModule,
         ],
         controllers: [print_render_controller_1.PrintRenderController, print_share_controller_1.PrintShareController],
         providers: [
@@ -64,11 +68,14 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             sale_bill_header_provider_1.SaleBillHeaderProvider,
             sale_bill_items_provider_1.SaleBillItemsProvider,
             sale_bill_tax_summary_provider_1.SaleBillTaxSummaryProvider,
+            ...sale_return_providers_1.SALE_RETURN_PRINT_PROVIDERS,
             ...till_providers_1.TILL_PRINT_PROVIDERS,
             party_outstanding_providers_1.PartyOutstandingPrintSource,
             ...party_outstanding_providers_1.PARTY_OUTSTANDING_PRINT_PROVIDERS,
             item_ledger_providers_1.ItemLedgerPrintSource,
             ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
+            stock_summary_providers_1.StockSummaryPrintSource,
+            ...stock_summary_providers_1.STOCK_SUMMARY_PRINT_PROVIDERS,
             {
                 provide: print_data_provider_registry_1.PRINT_DATA_PROVIDERS,
                 useFactory: (...providers) => providers,
@@ -78,9 +85,11 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
                     sale_bill_header_provider_1.SaleBillHeaderProvider,
                     sale_bill_items_provider_1.SaleBillItemsProvider,
                     sale_bill_tax_summary_provider_1.SaleBillTaxSummaryProvider,
+                    ...sale_return_providers_1.SALE_RETURN_PRINT_PROVIDERS,
                     ...till_providers_1.TILL_PRINT_PROVIDERS,
                     ...party_outstanding_providers_1.PARTY_OUTSTANDING_PRINT_PROVIDERS,
                     ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
+                    ...stock_summary_providers_1.STOCK_SUMMARY_PRINT_PROVIDERS,
                 ],
             },
             print_data_provider_registry_1.PrintDataProviderRegistry,

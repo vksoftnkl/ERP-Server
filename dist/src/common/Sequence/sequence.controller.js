@@ -70,6 +70,10 @@ __decorate([
     (0, swagger_1.ApiBadRequestResponse)({ type: sequence_response_dto_1.SequenceErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: sequence_response_dto_1.SequenceErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: sequence_response_dto_1.SequenceErrorResponseDto }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: sequence_response_dto_1.SequenceErrorResponseDto,
+        description: 'A typed {FY} / {BR} prefix or suffix that cannot be expanded: SEQUENCE_FORMAT_TOKEN_UNKNOWN, SEQUENCE_BRANCH_CODE_MISSING, SEQUENCE_BRANCH_CODE_INVALID.',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_sequence_dto_1.SaveSequenceDto]),

@@ -16,7 +16,7 @@
 #   hello <dir>              OK when <dir> is this key's folder (catches a mixed-up secret)
 #   latest                   print latest.json (or {} when there is none yet)
 #   clean                    delete leftover *.part / *.tmp of an interrupted run
-#   put-part <zip>           stdin -> builds/<zip>.part           (zip = vknex-backend-…-b<n>-….zip)
+#   put-part <zip>           stdin -> builds/<zip>.part           (zip = vknex-{backend,desktop}-…-b<n>-….zip)
 #   commit <zip> <sha256>    sha256 of builds/<zip>.part must equal <sha256>, else the
 #                            .part is deleted and the call fails; then .part -> <zip>
 #                            and builds/<zip>.sha256 is written. A released zip is never
@@ -52,7 +52,10 @@ arg1="${words[1]:-}"
 arg2="${words[2]:-}"
 (( ${#words[@]} <= 3 )) || refuse "too many words"
 
-readonly ZIP_RE='^vknex-backend-[0-9A-Za-z.+-]{1,32}-b[0-9]{1,10}-[a-z0-9-]{1,20}\.zip$'
+# vknex-backend-… (ci/backend/publish.sh) or vknex-desktop-… (NexERP scripts/release-windows.sh,
+# which gives the desktop zip the backend release's build number). Each key still writes only
+# to its own folder: /var/www/updates/dev/backend, /var/www/updates/dev/desktop, ...
+readonly ZIP_RE='^vknex-(backend|desktop)-[0-9A-Za-z.+-]{1,32}-b[0-9]{1,10}-[a-z0-9-]{1,20}\.zip$'
 readonly SHA_RE='^[0-9a-f]{64}$'
 readonly BUILD_RE='^[0-9]{1,10}$'
 

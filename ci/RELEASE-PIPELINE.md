@@ -63,6 +63,29 @@ To share the test folder instead, run step 2 with `--user deployer-test --dir
 /var/www/updates/test/backend`. That REPLACES the test repo's key, so the test repo stops
 uploading.
 
+## Release from your own PC (no GitHub Actions)
+
+```bash
+bash ci/backend/release-local.sh            # checks, Windows zip, then asks "Upload build N?"
+bash ci/backend/release-local.sh --yes      # no question
+bash ci/backend/release-local.sh --no-upload --skip-tests   # just make and check a zip
+```
+
+It runs the workflow's steps on a throwaway git worktree of HEAD, so your working tree,
+`dist/` and `node_modules/` are untouched and **uncommitted changes are not in the zip**.
+The Windows zip is cross-built on Linux: `npm ci --omit=dev --os=win32 --cpu=x64`,
+`PRISMA_CLI_BINARY_TARGETS=windows` for the schema engine, `node.exe` from nodejs.org
+(sha256-checked). `check-package.mjs --platform win` checks the result like CI does. The
+upload goes through the same gate, key and `publish.sh` as GitHub. Settings live in
+`~/.config/vknex/release-dev.env` (VPS_HOST, VPS_PORT, VPS_USER, VPS_SSH_KEY_FILE,
+VPS_KNOWN_HOSTS_FILE, UPLOAD_DIR, PUBLIC_BASE_URL); see `--help`. Zips stay in
+`../release-local/out/`.
+
+Build number = one above the server's latest build, every `backend-build-*` tag and 2000.
+If you also leave GitHub releasing, a GitHub run whose number is not above the server's is
+refused by `publish.sh` (nothing is overwritten). Then raise `vars.BUILD_OFFSET`, or remove
+the `push:` trigger from `release.yml` to release only from the PC.
+
 ---
 
 # Test-repo record (`erp-part-b-step2`)

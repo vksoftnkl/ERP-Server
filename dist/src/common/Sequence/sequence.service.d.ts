@@ -25,11 +25,11 @@ export declare class SequenceService {
     private buildCreateScope;
     private resolveUpdateScope;
     private buildUpdateData;
-    private buildDuplicateScopeUpdateData;
     private buildListWhere;
     private assignOptionalCreateFields;
     private assignOptionalUpdateFields;
     private assignOptionalTextFields;
+    private expandTypedFormat;
     private ensureReferencesExist;
     private ensureScopeIsUnique;
     private findSequenceByScope;
