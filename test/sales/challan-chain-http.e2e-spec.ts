@@ -1,6 +1,8 @@
 import {
   API,
   BEARER,
+  BRANCH,
+  COMPANY,
   LISTED_CUSTOMER,
   LISTED_CUSTOMER_NAME,
   TENDER_LEDGER,
@@ -52,6 +54,7 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
   let rights: RightsMemo;
   let p: ReturnType<typeof probes>;
   let item: Item;
+  let reasonId: string; // stock_reason_master DCR_OTHER (the post wants a reason id since 2026-11-16)
 
   let dc: Record<string, any>;
   let dcLine: Record<string, any>;
@@ -60,6 +63,7 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
 
   const post = (path: string, body: Record<string, unknown>) =>
     h.http.post(`${API}/${path}`).set('Authorization', BEARER).send(body);
+  const dcrBody = (o: Parameters<typeof dcReturnBody>[0]) => ({ ...dcReturnBody(o), sdrReasonId: reasonId });
   const get = (path: string, query: Record<string, string>) =>
     h.http.get(`${API}/${path}`).set('Authorization', BEARER).query(query);
 
@@ -67,6 +71,10 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
     h = await bootApp(`e2e-dc-${tag}`);
     p = probes(h.prisma);
     rights = await grantSalesRights(h.prisma);
+    const [reason] = await h.prisma.$queryRaw<{ srm_id: string }[]>`
+      SELECT srm_id::text AS srm_id FROM stock.stock_reason_master
+       WHERE srm_code = 'DCR_OTHER' AND srm_is_deleted = false AND srm_company_id IS NULL`;
+    reasonId = reason.srm_id;
     item = await makeItem(h.prisma, `E2E-DC-${tag}`);
     await postOpeningStock(h, item, 50, 30, `E2E-DC-${tag} opening`);
   }, 180_000);
@@ -176,7 +184,8 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
 
     // The line carries the cost it left at and is fully open.
     const [line] = await p.dcItems(dc.sdcId);
-    expect(num(line.sdi_cost_price)).toBe(600);
+    // sdi_cost_price is the UNIT cost (since 2026-11-16): 30 here, not the line total 600
+    expect(num(line.sdi_cost_price)).toBe(30);
     expect(line.sdi_lot_id).toBe(ledger[0].sml_lot_id);
     expect(num(line.sdi_billed_qty)).toBe(0);
     expect(num(line.sdi_returned_qty)).toBe(0);
@@ -314,9 +323,14 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
   // ─────────────────────────────────────────────────────────────── DC return
 
   it('GET /dc-returns/open-lines shows the 8 open on the challan line', async () => {
-    const res = await get('dc-returns/open-lines', { sdcId: dc.sdcId, sdcAccYear: dc.sdcAccYear });
+    const res = await get('dc-returns/open-lines', {
+      companyId: COMPANY,
+      branchId: BRANCH,
+      sdcId: dc.sdcId,
+      sdcAccYear: dc.sdcAccYear,
+    });
     expect(res.status).toBe(200);
-    const line = (res.body.data as Record<string, any>[]).find((l) => l.dcItemId === dcLine.sdiId);
+    const line = (res.body.data.lines as Record<string, any>[]).find((l) => l.dcItemId === dcLine.sdiId);
     expect(line).toBeDefined();
     expect(num(line!.openQty)).toBe(8);
     expect(num(line!.billedQty)).toBe(12);
@@ -325,7 +339,7 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
   it('a DC return of 9 is refused at post: 422 SALES_DCR_OVER_OPEN', async () => {
     const created = await post(
       'dc-returns/create',
-      dcReturnBody({
+      dcrBody({
         sdcId: dc.sdcId,
         lines: [{ item, qty: 9, rate: 100, sdiId: dcLine.sdiId, costRate: 30 }],
         usrRefno: `E2E-DC-${tag}-DCR-OVER`,
@@ -344,7 +358,7 @@ describe('Challan → bill against it → DC return (e2e, live DB)', () => {
       'dcr create',
       await post(
         'dc-returns/create',
-        dcReturnBody({
+        dcrBody({
           sdcId: dc.sdcId,
           lines: [{ item, qty: 8, rate: 100, sdiId: dcLine.sdiId, costRate: 30 }],
           usrRefno: `E2E-DC-${tag}-DCR`,

@@ -145,6 +145,26 @@ describe('print data providers that read a document or a profile', () => {
       ).rejects.toThrow(/sales\.bill\.header reads a table partitioned/);
       expect(queryReadOnly).not.toHaveBeenCalled();
     });
+
+    it("answers against_challans: the lines' distinct challan numbers in line order (Sales DC P5, N1)", async () => {
+      queryReadOnly.mockResolvedValue(
+        resultOf(
+          [{ name: 'against_challans', oid: TEXT }],
+          [{ against_challans: 'DC2627D14-00012, DC2627D14-00013' }],
+        ),
+      );
+
+      await expect(new SaleBillHeaderProvider(pg).resolve(requestFor())).resolves.toEqual({
+        against_challans: 'DC2627D14-00012, DC2627D14-00013',
+      });
+      const sql = (queryReadOnly.mock.calls[0][0] as string).replace(/\s+/g, ' ');
+      expect(sql).toContain("string_agg(x.refno, ', ' ORDER BY x.first_line, x.refno)");
+      expect(sql).toContain("sbi.sbi_src_doc_type = 'DELIVERY_CHALLAN'");
+      // The bill line's own partition, and the challan read by ITS partition key.
+      expect(sql).toContain('sbi.sbi_acc_year = sb_acc_year');
+      expect(sql).toContain('dc.sdc_acc_year = sbi.sbi_src_doc_year');
+      expect(sql).toMatch(/\), ''\) AS against_challans/);
+    });
   });
 
   describe('sales.bill.items', () => {

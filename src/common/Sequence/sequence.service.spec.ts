@@ -112,6 +112,8 @@ const makePrisma = (
       findFirst: jest.fn(async () =>
         options.voucherType === false ? null : { vchrTypeId: 3, ...(options.typeRow ?? {}) },
       ),
+      // The device-wide check of the list / get payload (allBranches): no such type here.
+      findMany: jest.fn(async () => [] as Array<Record<string, unknown>>),
     },
     company: {
       findFirst: jest.fn(async () => (options.company === false ? null : { compId: COMPANY_ID })),

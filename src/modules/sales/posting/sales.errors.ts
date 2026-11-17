@@ -30,6 +30,8 @@ export interface SalesCodedErrorDetail extends SalesErrorDetail {
   status?: string;
   /** The figures the catalogue wording names ({value}, {bill} …), filled into `user`. */
   params?: SalesMessageParams;
+  /** Picks a `rule=<value>` wording variant of the code (fixed.error_message). */
+  rule?: string;
 }
 
 /** 409 — the row exists and the request is well formed; its STATE refuses. */
@@ -67,6 +69,7 @@ export function throwSalesRefusals(message: string, refusals: SalesRefusal[]): n
       ...(r.line === undefined ? {} : { line: r.line }),
       ...(r.statutory === undefined ? {} : { statutory: r.statutory }),
       ...(r.params === undefined ? {} : { params: r.params }),
+      ...(r.rule === undefined ? {} : { rule: r.rule }),
     })),
   );
 }

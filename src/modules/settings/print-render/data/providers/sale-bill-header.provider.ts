@@ -52,6 +52,28 @@ export class SaleBillHeaderProvider implements PrintDataProvider {
               sb_src_doc_type    AS src_doc_type,
               sb_src_doc_refno   AS src_doc_refno,
               sb_src_doc_date    AS src_doc_date,
+              -- Sales DC P5 (plan decision 27, N1): "Against challans: DC…, DC…".
+              -- The distinct challan numbers of the bill's lines, in line order,
+              -- joined ", " ('' when no line came from a challan). The header's
+              -- own source is NULL once the lines name two challans, so the
+              -- lines are the only place the list lives. The challan's own
+              -- refno wins (read by its partition key); the line's snapshot is
+              -- the fallback for a challan row no longer there.
+              COALESCE((
+                SELECT string_agg(x.refno, ', ' ORDER BY x.first_line, x.refno)
+                  FROM (SELECT COALESCE(dc.sdc_dc_refno, NULLIF(btrim(sbi.sbi_src_doc_refno), '')) AS refno,
+                               min(sbi.sbi_line_no) AS first_line
+                          FROM sales.sale_bill_item sbi
+                          LEFT JOIN sales.sale_dc dc
+                                 ON dc.sdc_id = sbi.sbi_src_doc_id
+                                AND dc.sdc_acc_year = sbi.sbi_src_doc_year
+                         WHERE sbi.sbi_bill_id = sb_id
+                           AND sbi.sbi_acc_year = sb_acc_year
+                           AND sbi.sbi_company_id = sb_company_id
+                           AND sbi.sbi_is_deleted = false
+                           AND sbi.sbi_src_doc_type = 'DELIVERY_CHALLAN'
+                         GROUP BY 1) x
+                 WHERE x.refno IS NOT NULL), '') AS against_challans,
               -- Customer, as snapshotted onto the document.
               sb_cust_id         AS cust_id,
               sb_cust_name       AS cust_name,

@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { assertSaleBillNotPulled } from 'src/modules/purchase/sister/purchase-sister';
 import { isOfflineSite } from '../../../config/offline-site';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
+import { BILL_SOURCE_KEYS, resolveSourceLines } from '../posting/source-lines';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import {
@@ -40,6 +41,7 @@ import {
 } from '../posting/stock-reservation.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
+import { dcSourceOrdersOfLines, lockChallansOfLines } from '../delivery-challan/dc-common';
 import {
   assertAccYearWritable,
   assertAmendable,
@@ -205,6 +207,13 @@ export class BillLifecycleService {
     // A charge row that does not say its cdType takes its master's, as the
     // save gives it — so this dry run and the post read the same sign.
     const chargeTypes = await this.bills.chargeTypesOf(this.prisma, dto.charges);
+    // P4: the source links as the save will store them, so /validate = /post.
+    await resolveSourceLines(
+      this.prisma as unknown as Prisma.TransactionClient,
+      dto.items as unknown as Record<string, unknown>[] | undefined,
+      BILL_SOURCE_KEYS,
+      ['SALES_ORDER', 'DELIVERY_CHALLAN'],
+    );
     const snap = snapshotFromDto(dto, masters, chargeTypes);
     const guard = createGuardContext({
       overrides: dto.overrides ?? [],
@@ -723,6 +732,15 @@ export class BillLifecycleService {
 
       // 0 · the source orders, old and new, locked BEFORE the unwind's stock
       //     writes (lock order: sale_order, then stock — lockSourceOrders).
+      //     P6 R3: the new lines' sources resolved first, so a line naming its
+      //     challan line by document + line number has its challan (and that
+      //     challan's orders) locked here too, not after the unwind.
+      await resolveSourceLines(
+        tx,
+        dto.items as unknown as Record<string, unknown>[] | undefined,
+        BILL_SOURCE_KEYS,
+        ['SALES_ORDER', 'DELIVERY_CHALLAN'],
+      );
       await lockBillOrders(tx, [bill, dto], [...priorItems, ...(dto.items ?? [])]);
 
       // 1 · unwind — the old money leaves, the old goods come back, DRAFT again.
@@ -1339,10 +1357,26 @@ export class BillLifecycleService {
         ].filter((id): id is string => !!id),
       ),
     ];
+    // P6 S1 (decision 36: orders → challan headers → challan lines → stock):
+    // the orders the bill's CHALLANS came from are locked in the same so_id
+    // order as its own, before any challan row (the bill re-derives them late,
+    // in afterStatusChange; a challan cancel / return holds them first).
+    const viaChallans = await dcSourceOrdersOfLines(
+      tx,
+      dcLines.map((l) => l.srcItemId),
+    );
+    if (viaChallans.orderIds.length > 0 || viaChallans.orderLineIds.length > 0) {
+      await lockSourceOrders(
+        tx,
+        [...orderIds, ...viaChallans.orderIds],
+        [...orderLines.map((l) => l.srcItemId!), ...viaChallans.orderLineIds],
+      );
+    }
     // Every source order — by id and by order-line id — locked FOR UPDATE in
     // so_id order and read under that lock: the status and the delivery hold
     // below come off these rows, and a bill takes the order rows before any
-    // stock lock (lockSourceOrders; review 2026-11-11).
+    // stock lock (lockSourceOrders; review 2026-11-11). (Already held when the
+    // call above took them with the challans'.)
     const sources = await lockSourceOrders(
       tx,
       orderIds,
@@ -1380,12 +1414,24 @@ export class BillLifecycleService {
     );
     if (orderLines.length > 0) {
       const rows = await tx.$queryRaw<
-        { soi_id: string; soi_pending_qty: Prisma.Decimal | null; so_status: string }[]
+        {
+          soi_id: string;
+          soi_pending_qty: Prisma.Decimal | null;
+          so_status: string;
+          soi_is_free: boolean | null;
+        }[]
       >`
-        SELECT d.soi_id, d.soi_pending_qty, h.so_status
+        SELECT d.soi_id, d.soi_pending_qty, h.so_status, d.soi_is_free
           FROM sales.sale_order_item d JOIN sales.sale_order h ON h.so_id = d.soi_order_id AND h.so_acc_year = d.soi_acc_year
          WHERE d.soi_id = ANY(${orderLines.map((l) => l.srcItemId)}::uuid[])`;
       const by = new Map(rows.map((r) => [r.soi_id, r]));
+      // User 2026-11-17: a line taken from an order keeps the order line's Free flag.
+      refuseFreeMismatch(
+        g,
+        orderLines,
+        new Map(rows.map((r) => [r.soi_id, r.soi_is_free === true])),
+        'order',
+      );
       const taken = new Map<string, number>();
       for (const l of orderLines) {
         taken.set(l.srcItemId!, (taken.get(l.srcItemId!) ?? 0) + l.qty);
@@ -1409,49 +1455,216 @@ export class BillLifecycleService {
       }
     }
     if (dcLines.length > 0) {
-      const rows = await tx.$queryRaw<
-        {
-          sdi_id: string;
-          sdi_open_qty: Prisma.Decimal | null;
-          sdc_purpose: string;
-          sdc_status: string;
-        }[]
-      >`
-        SELECT d.sdi_id, d.sdi_open_qty, h.sdc_purpose, h.sdc_status
-          FROM sales.sale_dc_item d JOIN sales.sale_dc h ON h.sdc_id = d.sdi_dc_id AND h.sdc_acc_year = d.sdi_acc_year
-         WHERE d.sdi_id = ANY(${dcLines.map((l) => l.srcItemId)}::uuid[])`;
-      const by = new Map(rows.map((r) => [r.sdi_id, r]));
-      const taken = new Map<string, number>();
-      for (const l of dcLines) {
-        taken.set(l.srcItemId!, (taken.get(l.srcItemId!) ?? 0) + l.qty);
+      await this.guardChallanSources(tx, snap, g, dcLines);
+    }
+  }
+
+  /**
+   * N1 (challan plan §5.4, decisions 25 / 36 / 37) — the challans a bill's
+   * lines name, checked after the order checks and before any stock lock:
+   *  1. their lines locked FOR UPDATE in sdi_id order (two counters cannot
+   *     over-draw one line);
+   *  2. each challan POSTED (else SALES_DC_LINE_OVER, as built);
+   *  3. of the bill's company and branch, else SALES_BILL_DC_MISMATCH rule BRANCH;
+   *  4. of the bill's customer, else rule PARTY;
+   *  5. GST No: refused only when the challan's and the bill's are both filled
+   *     and differ (Q-N1: a challan raised before the GST No was entered bills);
+   *  6. place of supply: refused (rule POS) only when the challan's and the
+   *     bill's are both filled and differ; with no POS on the bill, the
+   *     challans that have one must agree (user 11-16, as Q-N1);
+   *  7. purpose SUPPLY, else SALES_DC_PURPOSE_NOT_ALLOWED rule CONVERT;
+   *  8. per challan line, Σ this bill's qty in base units ≤ what is open in base
+   *     units, else SALES_DC_LINE_OVER. "Open" is re-derived from the rows under
+   *     the lock (dc − POSTED bills − POSTED returns, each × its own factor) with
+   *     THIS bill left out, so an amend's own prior quantity is added back
+   *     whatever the stored sdi_billed_qty last counted. Decimal, no epsilon.
+   * A challan's header mismatch is said once, not per line.
+   */
+  private async guardChallanSources(
+    tx: Prisma.TransactionClient,
+    snap: BillSnapshot,
+    g: SalesGuardContext,
+    dcLines: BillSnapshot['items'],
+  ): Promise<void> {
+    const sdiIds = [...new Set(dcLines.map((l) => l.srcItemId!))];
+    // P6 S1: the challan headers, then their lines (the orders are held).
+    await lockChallanLines(tx, sdiIds);
+    const rows = await tx.$queryRaw<
+      {
+        sdi_id: string;
+        sdi_line_no: number;
+        sdi_dc_qty: Prisma.Decimal | null;
+        sdi_to_base_factor: Prisma.Decimal | null;
+        billed_base: Prisma.Decimal | null;
+        returned_base: Prisma.Decimal | null;
+        sdc_id: string;
+        sdc_dc_refno: string | null;
+        sdc_purpose: string | null;
+        sdc_status: string;
+        sdc_company_id: string;
+        sdc_branch_id: string;
+        sdc_cust_id: string | null;
+        sdc_cust_name: string | null;
+        sdc_cust_gstin: string | null;
+        sdc_pos_stcd: string | null;
+        sdi_is_free: boolean | null;
+      }[]
+    >`
+      SELECT d.sdi_id, d.sdi_line_no, d.sdi_dc_qty, d.sdi_to_base_factor, d.sdi_is_free,
+             COALESCE((
+               SELECT SUM(b.sbi_bill_qty * COALESCE(NULLIF(b.sbi_to_base_factor, 0), 1))
+                 FROM sales.sale_bill_item b
+                 JOIN sales.sale_bill bh ON bh.sb_id = b.sbi_bill_id AND bh.sb_acc_year = b.sbi_acc_year
+                WHERE b.sbi_src_item_id = d.sdi_id AND b.sbi_src_doc_type = 'DELIVERY_CHALLAN'
+                  AND b.sbi_is_deleted = false AND bh.sb_is_deleted = false AND bh.sb_status = 'POSTED'
+                  AND bh.sb_id <> ${snap.sbId ?? NIL_UUID}::uuid), 0) AS billed_base,
+             COALESCE((
+               SELECT SUM(r.sdri_return_qty * COALESCE(NULLIF(r.sdri_to_base_factor, 0), 1))
+                 FROM sales.sale_dc_return_item r
+                 JOIN sales.sale_dc_return rh ON rh.sdr_id = r.sdri_return_id AND rh.sdr_acc_year = r.sdri_acc_year
+                WHERE r.sdri_dc_item_id = d.sdi_id
+                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0) AS returned_base,
+             h.sdc_id, h.sdc_dc_refno, h.sdc_purpose, h.sdc_status, h.sdc_company_id, h.sdc_branch_id,
+             h.sdc_cust_id, h.sdc_cust_name, h.sdc_cust_gstin, h.sdc_pos_stcd
+        FROM sales.sale_dc_item d
+        JOIN sales.sale_dc h ON h.sdc_id = d.sdi_dc_id AND h.sdc_acc_year = d.sdi_acc_year
+       WHERE d.sdi_id = ANY(${sdiIds}::uuid[]) AND d.sdi_is_deleted = false AND h.sdc_is_deleted = false`;
+    const by = new Map(rows.map((r) => [r.sdi_id, r]));
+    // User 2026-11-17: billing a challan keeps each line's Free flag.
+    refuseFreeMismatch(
+      g,
+      dcLines,
+      new Map(rows.map((r) => [r.sdi_id, r.sdi_is_free === true])),
+      'challan',
+    );
+    const factor = (v: Prisma.Decimal.Value | null | undefined): Prisma.Decimal => {
+      const f = new Prisma.Decimal(v ?? 0);
+      return f.isZero() ? new Prisma.Decimal(1) : f;
+    };
+    // Σ base qty per challan line; the bill's line numbers for the message.
+    const takenBase = new Map<string, Prisma.Decimal>();
+    const firstLine = new Map<string, number>();
+    for (const l of dcLines) {
+      const k = l.srcItemId!;
+      // Snapshot quantities are numbers read from numeric columns (or the body):
+      // Decimal(number) gives their exact decimal text back.
+      const base = new Prisma.Decimal(l.qty).times(factor(l.toBaseFactor));
+      takenBase.set(k, (takenBase.get(k) ?? new Prisma.Decimal(0)).plus(base));
+      if (!firstLine.has(k)) {
+        firstLine.set(k, l.lineNo);
       }
-      for (const [sdiId, qty] of taken) {
+    }
+    const blank = (v: string | null | undefined) => (v ?? '').trim();
+    const billGstin = blank(snap.custGstin).toUpperCase();
+    const billPos = blank(snap.posStcd);
+    // User 11-16 (as Q-N1 for the GSTIN): a blank place of supply never
+    // conflicts. A challan's POS is judged against the bill's; when the bill
+    // has none, against the first challan (in line order) that has one, so
+    // two challans of different states still cannot share a bill.
+    let refPos = billPos;
+    if (refPos === '') {
+      for (const sdiId of takenBase.keys()) {
         const r = by.get(sdiId);
-        if (!r || r.sdc_status !== 'POSTED') {
+        const p = r && r.sdc_status === 'POSTED' ? blank(r.sdc_pos_stcd) : '';
+        if (p !== '') {
+          refPos = p;
+          break;
+        }
+      }
+    }
+    const judged = new Set<string>();
+    for (const [sdiId, base] of takenBase) {
+      const r = by.get(sdiId);
+      const line = firstLine.get(sdiId);
+      if (!r || r.sdc_status !== 'POSTED') {
+        refuse(
+          g,
+          SALES_ERROR_CODES.DC_LINE_OVER,
+          r
+            ? `Challan ${r.sdc_dc_refno ?? r.sdc_id} is ${r.sdc_status}: only a POSTED challan is billed`
+            : `Challan line ${sdiId} is not on a POSTED challan`,
+          { field: 'items', line },
+        );
+        continue;
+      }
+      const dc = r.sdc_dc_refno ?? r.sdc_id;
+      if (!judged.has(r.sdc_id)) {
+        judged.add(r.sdc_id);
+        if (r.sdc_company_id !== snap.companyId || r.sdc_branch_id !== snap.branchId) {
+          refuse(g, SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} belongs to another branch`, {
+            field: 'items',
+            line,
+            rule: 'BRANCH',
+            params: { dc },
+          });
+        }
+        if ((r.sdc_cust_id ?? null) !== (snap.custId ?? null)) {
           refuse(
             g,
-            SALES_ERROR_CODES.DC_LINE_OVER,
-            `Challan line ${sdiId} is not on a POSTED challan`,
-            { field: 'items' },
+            SALES_ERROR_CODES.BILL_DC_MISMATCH,
+            `Challan ${dc} is for ${r.sdc_cust_name ?? r.sdc_cust_id ?? '—'}, not this bill's customer`,
+            {
+              field: 'items',
+              line,
+              rule: 'PARTY',
+              params: { dc, party: r.sdc_cust_name ?? r.sdc_cust_id ?? '' },
+            },
           );
-          continue;
         }
-        if (r.sdc_purpose !== 'SUPPLY') {
+        const dcGstin = blank(r.sdc_cust_gstin).toUpperCase();
+        if (dcGstin !== '' && billGstin !== '' && dcGstin !== billGstin) {
+          refuse(
+            g,
+            SALES_ERROR_CODES.BILL_DC_MISMATCH,
+            `Challan ${dc} carries GST No ${dcGstin}; this bill has ${billGstin}`,
+            { field: 'sbCustGstin', line, rule: 'GSTIN', params: { dc, gstin: dcGstin, billGstin } },
+          );
+        }
+        const dcPos = blank(r.sdc_pos_stcd);
+        if (dcPos !== '' && refPos !== '' && dcPos !== refPos) {
+          if (billPos !== '') {
+            refuse(
+              g,
+              SALES_ERROR_CODES.BILL_DC_MISMATCH,
+              `Challan ${dc} was sent to state ${dcPos}; this bill is for ${billPos}`,
+              { field: 'sbPosStcd', line, rule: 'POS', params: { dc, pos: dcPos, billPos } },
+            );
+          } else {
+            // The bill names no POS: the challans disagree among themselves.
+            refuse(
+              g,
+              SALES_ERROR_CODES.BILL_DC_MISMATCH,
+              `Challan ${dc} was sent to state ${dcPos}; the bill's other challans to ${refPos}`,
+              {
+                field: 'items',
+                line,
+                rule: 'POS_CHALLANS',
+                params: { dc, pos: dcPos, otherPos: refPos },
+              },
+            );
+          }
+        }
+        if ((r.sdc_purpose ?? 'SUPPLY') !== 'SUPPLY') {
           refuse(
             g,
             SALES_ERROR_CODES.DC_PURPOSE_NOT_ALLOWED,
-            `The challan's purpose is ${r.sdc_purpose} — convert it to SUPPLY before billing against it`,
-            { field: 'items' },
+            `Challan ${dc} was sent for ${r.sdc_purpose}: convert it to SUPPLY before billing against it`,
+            { field: 'items', line, rule: 'CONVERT', params: { dc, purpose: r.sdc_purpose ?? '' } },
           );
         }
-        if (qty > num(r.sdi_open_qty) + 0.0005) {
-          refuse(
-            g,
-            SALES_ERROR_CODES.DC_LINE_OVER,
-            `Challan line has ${num(r.sdi_open_qty)} open; this bill takes ${qty}`,
-            { field: 'items' },
-          );
-        }
+      }
+      const dcFactor = factor(r.sdi_to_base_factor);
+      const openBase = new Prisma.Decimal(r.sdi_dc_qty ?? 0)
+        .times(dcFactor)
+        .minus(new Prisma.Decimal(r.billed_base ?? 0))
+        .minus(new Prisma.Decimal(r.returned_base ?? 0));
+      if (base.greaterThan(openBase)) {
+        refuse(
+          g,
+          SALES_ERROR_CODES.DC_LINE_OVER,
+          `Challan ${dc} line ${r.sdi_line_no} has ${openBase.dividedBy(dcFactor).toString()} open; this bill takes ${base.dividedBy(dcFactor).toString()}`,
+          { field: 'items', line },
+        );
       }
     }
   }
@@ -2375,6 +2588,24 @@ export class BillLifecycleService {
         now,
       );
     }
+    // User 2026-11-17 — then re-derived from the documents (bills, challans,
+    // returns): a no-op when the moves above landed whole; it heals a line a
+    // short reservation or a challan left off the net. A bill line of a
+    // CHALLAN consumes nothing (the challan did).
+    const direct = new Map<string, number[]>();
+    for (const q of [...orderLineQtys(items, 1), ...orderLineQtys(priorItems, 1)]) {
+      direct.set(q.docId, [...(direct.get(q.docId) ?? []), q.lineNo]);
+    }
+    for (const [soId, lineNos] of direct) {
+      await this.reservations.rederiveOrderLines(tx, soId, lineNos, actor, now);
+    }
+    // A bill of a challan bills the challan's order line (user 2026-11-17):
+    // those orders are re-derived too, now and before an amend.
+    const dcLineIds = [...items, ...priorItems]
+      .filter((i) => i.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!i.sbiSrcItemId)
+      .map((i) => i.sbiSrcItemId as string);
+    const viaChallans =
+      dcLineIds.length > 0 ? await this.dcFulfilment.orderRefsOfDcLines(tx, dcLineIds) : [];
     await this.saleOrders.syncOrderFulfilment(
       tx,
       {
@@ -2384,6 +2615,7 @@ export class BillLifecycleService {
         refs: [
           ...this.bills.orderRefsOf(bill, items),
           ...(priorItems.length > 0 ? this.bills.orderRefsOf(bill, priorItems) : []),
+          ...viaChallans,
         ],
         // A cancel can hand a COMPLETED order quantity back: it reopens, and its
         // REOPENED step names the bill (Sales Order Management, 2026-11-10).
@@ -2395,7 +2627,13 @@ export class BillLifecycleService {
       now,
     );
     const dcs = await this.dcFulfilment.dcRefsOfBill(tx, bill.sbId, bill.sbAccYear);
-    await this.dcFulfilment.recompute(tx, dcs, actor, now);
+    // An amend may have dropped a challan line: that challan is re-derived too.
+    const priorDcLines = priorItems
+      .filter((i) => i.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!i.sbiSrcItemId)
+      .map((i) => i.sbiSrcItemId as string);
+    const droppedDcs =
+      priorDcLines.length > 0 ? await this.dcFulfilment.dcRefsOfLines(tx, priorDcLines) : [];
+    await this.dcFulfilment.recompute(tx, [...dcs, ...droppedDcs], actor, now);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -2911,8 +3149,40 @@ export class BillLifecycleService {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Stands in for a bill not saved yet: no bill has it, so `sb_id <> NIL_UUID` leaves every bill in. */
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 function isUuid(v: string | null | undefined): v is string {
   return !!v && UUID.test(v);
+}
+
+/**
+ * User 2026-11-17 — a bill line taken from a challan or an order line keeps
+ * that line's Free flag (the challan's came from its order, Ctrl+F4; nothing
+ * marks a sourced line free by hand). A mismatch is refused as
+ * SALES_AMOUNT_MISMATCH rule FREE_LINE_BILL (its own wording, catalogue
+ * 2026-11-17.1: pick the order or challan lines again), params `{n}`, one per line.
+ * A source line that does not exist is left to the caller's own refusal.
+ */
+export function refuseFreeMismatch(
+  g: SalesGuardContext,
+  lines: readonly Pick<BillSnapshot['items'][number], 'lineNo' | 'isFree' | 'srcItemId'>[],
+  sourceFree: ReadonlyMap<string, boolean>,
+  source: 'challan' | 'order',
+): void {
+  for (const l of lines) {
+    const srcFree = l.srcItemId ? sourceFree.get(l.srcItemId) : undefined;
+    if (srcFree === undefined || srcFree === (l.isFree === true)) {
+      continue;
+    }
+    refuse(
+      g,
+      SALES_ERROR_CODES.AMOUNT_MISMATCH,
+      srcFree
+        ? `Line ${l.lineNo}: its ${source} line is free, so the bill line must be free too`
+        : `Line ${l.lineNo}: its ${source} line is not free, so the bill line cannot be free`,
+      { field: 'items', line: l.lineNo, rule: 'FREE_LINE_BILL', params: { n: l.lineNo } },
+    );
+  }
 }
 
 // Referenced so the lock-2 helper stays importable for the band verb.
@@ -2997,5 +3267,33 @@ async function lockBillOrders(
       lineIds.add(l.sbiSrcItemId);
     }
   }
-  await lockSourceOrders(tx, [...ids], [...lineIds]);
+  const dcLineIds = lines
+    .filter((l) => l.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!l.sbiSrcItemId)
+    .map((l) => l.sbiSrcItemId as string);
+  // P6 S1 (decision 36: orders → challan headers → challan lines → stock): the
+  // orders its challans came from join the bill's own in ONE so_id-ordered lock.
+  const viaChallans = await dcSourceOrdersOfLines(tx, dcLineIds);
+  await lockSourceOrders(
+    tx,
+    [...ids, ...viaChallans.orderIds],
+    [...lineIds, ...viaChallans.orderLineIds],
+  );
+  // Then the challans: headers, then lines.
+  await lockChallanLines(tx, dcLineIds);
+}
+
+/**
+ * The challans a bill names (challan plan decision 36; P6 S1): their headers in
+ * sdc_id order, then the named lines in sdi_id order, FOR UPDATE — after the
+ * orders (the challans' too), before any stock. Then their orders again, read
+ * off the locked rows: a challan amended in between may name another order.
+ */
+async function lockChallanLines(tx: Prisma.TransactionClient, sdiIds: string[]): Promise<void> {
+  const ids = [...new Set(sdiIds)].filter((id) => isUuid(id)).sort();
+  if (ids.length === 0) {
+    return;
+  }
+  await lockChallansOfLines(tx, ids);
+  const again = await dcSourceOrdersOfLines(tx, ids);
+  await lockSourceOrders(tx, again.orderIds, again.orderLineIds);
 }

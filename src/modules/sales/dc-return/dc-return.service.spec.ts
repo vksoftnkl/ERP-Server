@@ -5,7 +5,8 @@ import { TxnStatusEvent } from '../../../common/txn-status-log/txn-status-log.he
 import * as guards from '../posting/sales.guards';
 import { SALES_MENU_ID, SALES_VOUCHER_TYPE } from '../posting/sales-doc.utils';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
-import { DCR_SPEC, DcReturnService } from './dc-return.service';
+import { SALES_SETTING_DEFAULTS, type SalesSettings } from '../posting/sales.settings';
+import { DCR_SPEC, DcReturnService, settleLastReturn } from './dc-return.service';
 import type { SaveDcReturnDto } from './dto/save-dc-return.dto';
 
 jest.mock('../posting/sales.guards', () => ({
@@ -32,6 +33,8 @@ const SDRI_ID_2 = '019c6f6c-be87-7a11-8905-36092c46b00d';
 const LOT_ID = '019c6f6c-be87-7a11-8905-36092c46b00e';
 const ACC_YEAR = '2026-2027';
 const RETURN_DATE = new Date('2026-10-10T00:00:00.000Z');
+const REASON_ID = '019c6f6c-be87-7a11-8905-36092c46b00f';
+const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46b010';
 
 const KEYS = {
   sdrId: SDR_ID,
@@ -67,6 +70,7 @@ const returnRow = (overrides: Record<string, unknown> = {}): Record<string, unkn
   sdrPosStcd: '33',
   sdrUserId: USER_ID,
   sdrRemarks: null,
+  sdrReasonId: REASON_ID,
   sdrReturnReason: 'Excess supply',
   sdrGrossAmt: dec('210'),
   sdrTaxableAmt: dec('200'),
@@ -127,22 +131,105 @@ async function refusalOf(promise: Promise<unknown>): Promise<{ status: number; b
   return { status: error.getStatus(), body: error.getResponse() };
 }
 
+/** The challan header the return answers (saleDc.findFirst, camelCase as Prisma reads it). */
+const challanRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  sdcId: DC_ID,
+  sdcAccYear: ACC_YEAR,
+  sdcCompanyId: COMPANY_ID,
+  sdcBranchId: BRANCH_ID,
+  sdcDcRefno: 'DC/00007',
+  sdcDcDate: new Date('2026-10-05T00:00:00.000Z'),
+  sdcStatus: 'POSTED',
+  sdcPurpose: 'SUPPLY',
+  sdcCustId: CUST_ID,
+  sdcCustName: 'Acme Stores',
+  sdcCustGstin: '33ABCDE1234F1Z5',
+  sdcCustStcd: '33',
+  sdcPosStcd: '33',
+  sdcDcAmt: dec('525'),
+  ...overrides,
+});
+
+/** A challan line the return copies its facts from (saleDcItem.findMany). */
+const challanLine = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  sdiId: DC_ITEM_ID,
+  sdiDcId: DC_ID,
+  sdiAccYear: ACC_YEAR,
+  sdiLineNo: 1,
+  sdiItemId: 'item-1',
+  sdiItemUnitId: 'unit-1',
+  sdiToBaseFactor: dec('1'),
+  sdiHsnCode: '3004',
+  sdiGodownId: 'godown-1',
+  sdiLotId: LOT_ID,
+  sdiBatchNo: 'B1',
+  sdiExpiryDate: null,
+  sdiSerialNo: null,
+  sdiDcQty: dec('10'),
+  sdiWeightQty: dec('0'),
+  sdiRate: dec('50'),
+  sdiCostPrice: dec('30'),
+  sdiTaxId: null,
+  sdiTaxPerc: dec('5'),
+  sdiCgstPerc: dec('2.5'),
+  sdiSgstPerc: dec('2.5'),
+  sdiIgstPerc: dec('0'),
+  sdiCessPerc: dec('0'),
+  sdiCessPerUnit: null,
+  sdiPriceLevel: 1,
+  sdiEanCode: null,
+  sdiIsTaxIncl: false,
+  sdiIsService: false,
+  sdiRatePreTax: null,
+  sdiMaxPrice: null,
+  sdiItemDiscPerc: dec('0'),
+  sdiItemDiscAmt: dec('0'),
+  sdiSchDiscAmt: dec('0'),
+  sdiGrossAmt: dec('500'),
+  sdiTaxableAmt: dec('500'),
+  sdiCgstAmt: dec('12.5'),
+  sdiSgstAmt: dec('12.5'),
+  sdiIgstAmt: dec('0'),
+  sdiCessAmt: dec('0'),
+  sdiSize: null,
+  sdiSizeUom: null,
+  ...overrides,
+});
+
 /** Raw-query answers, picked by a marker in the SQL text. Order matters: first match wins. */
 type SqlAnswers = {
-  dcHeader: unknown[];
-  dcStatus: unknown[];
+  existing: unknown[];
   dcLines: unknown[];
+  reason: unknown[];
+  openLock: unknown[];
+  openSum: unknown[];
   company: unknown[];
   voucherRefno: unknown[];
   openLines: unknown[];
+  bills: unknown[];
+  registerNo: unknown[];
+  srcOrderLines: unknown[];
+  orderRefs: unknown[];
+  orderKeys: unknown[];
+  postedSums: unknown[];
 };
 const SQL_MARKERS: Array<[string, keyof SqlAnswers]> = [
-  ['SELECT sdc_dc_refno', 'dcHeader'],
-  ['SELECT sdc_status FROM', 'dcStatus'],
-  ['SELECT sdi_id, sdi_open_qty', 'dcLines'],
+  ['FROM sales.sale_dc_return\n       WHERE sdr_id', 'existing'],
+  // postedReturnSums (P6 R4) — before 'AS dc_item_id' (open-lines), which it also holds.
+  ['SUM(r.sdri_return_qty) AS qty', 'postedSums'],
+  ['SELECT sdi_id, sdi_dc_id, sdi_acc_year, sdi_line_no, sdi_open_qty', 'dcLines'],
+  ['FROM stock.stock_reason_master', 'reason'],
+  ['SELECT sdi_open_qty AS open_qty', 'openLock'],
+  ['SUM(sdi_open_qty) AS open_qty', 'openSum'],
   ['SELECT comp_state_code', 'company'],
   ['SELECT avh_voucher_refno', 'voucherRefno'],
-  ['AS "dcItemId"', 'openLines'],
+  ['AS dc_item_id', 'openLines'],
+  ['h.sb_bill_date AS bill_date', 'bills'],
+  ['MAX(gdr_voucher_no)', 'registerNo'],
+  // dcSourceOrdersOfLines (P6 S1): the challan lines' order lines and orders.
+  ['END AS line_so_id', 'srcOrderLines'],
+  ['SELECT soi_id, soi_acc_year FROM sales.sale_order_item', 'orderRefs'],
+  ['SELECT soi_order_id, soi_line_no FROM sales.sale_order_item', 'orderKeys'],
 ];
 
 describe('DcReturnService', () => {
@@ -154,39 +241,53 @@ describe('DcReturnService', () => {
     actor: string;
     actorName: string;
     cogsMode: 'PERPETUAL' | 'PERIODIC';
-    rights: { post: boolean; cancel: boolean; override: boolean };
+    rights: { post: boolean; cancel: boolean; override: boolean; create?: boolean; edit?: boolean };
+    settings: SalesSettings;
   };
-  let salesContext: { actor: jest.Mock; rights: jest.Mock; resolve: jest.Mock };
-  let statutory: { withinCancelWindow: jest.Mock };
+  let salesContext: { actor: jest.Mock; rights: jest.Mock; resolve: jest.Mock; values: jest.Mock };
+  let statutory: { withinCancelWindow: jest.Mock; limit: jest.Mock };
+  let audit: { logDocumentRevision: jest.Mock };
+  let challan: Record<string, unknown> | null;
+  let challanLines: Record<string, unknown>[];
   let legs: { postLegs: jest.Mock; reverseLegs: jest.Mock };
   let register: { registerIdOf: jest.Mock; write: jest.Mock; cancel: jest.Mock };
   let stock: { post: jest.Mock; cancel: jest.Mock };
   let blocks: { build: jest.Mock; gstRows: jest.Mock };
   let transportBand: { write: jest.Mock };
   let fulfilment: { recompute: jest.Mock };
+  let saleOrders: { syncOrderFulfilment: jest.Mock };
+  let reservations: { rederiveOrderLines: jest.Mock };
   let gst: { enqueueAfterPost: jest.Mock; cancelEwb: jest.Mock };
   let service: DcReturnService;
 
   beforeEach(() => {
     sql = {
-      dcHeader: [
+      existing: [],
+      dcLines: [
         {
-          sdc_dc_refno: 'DC/00007',
-          sdc_dc_date: new Date('2026-10-05T00:00:00.000Z'),
-          sdc_cust_id: CUST_ID,
-          sdc_cust_name: 'Acme Stores',
-          sdc_cust_gstin: '33ABCDE1234F1Z5',
-          sdc_cust_stcd: '33',
-          sdc_pos_stcd: '33',
-          sdc_status: 'POSTED',
+          sdi_id: DC_ITEM_ID,
+          sdi_dc_id: DC_ID,
+          sdi_acc_year: ACC_YEAR,
+          sdi_line_no: 1,
+          sdi_open_qty: dec('10'),
+          sdi_to_base_factor: dec('1'),
         },
       ],
-      dcStatus: [{ sdc_status: 'POSTED' }],
-      dcLines: [{ sdi_id: DC_ITEM_ID, sdi_open_qty: dec('10') }],
+      reason: [{ remarks: false }],
+      openLock: [{ open_qty: dec('10') }],
+      openSum: [{ open_qty: dec('6') }],
       company: [{ comp_state_code: '33' }],
       voucherRefno: [{ avh_voucher_refno: 'DCR/00012/R' }],
       openLines: [],
+      bills: [],
+      registerNo: [{ n: 7n }],
+      srcOrderLines: [],
+      orderRefs: [],
+      orderKeys: [],
+      postedSums: [],
     };
+    challan = challanRow();
+    challanLines = [challanLine()];
     prisma = {
       $queryRaw: jest.fn((strings: TemplateStringsArray) => {
         const text = strings.join('?');
@@ -194,7 +295,9 @@ describe('DcReturnService', () => {
         return Promise.resolve(hit ? sql[hit[1]] : []);
       }),
       $transaction: jest.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
-    };
+      saleDc: { findFirst: jest.fn(async () => challan) },
+      saleDcItem: { findMany: jest.fn(async () => challanLines) },
+    } as unknown as { $queryRaw: jest.Mock; $transaction: jest.Mock };
     store = {
       saveDraft: jest.fn().mockResolvedValue(returnRow()),
       keysOf: jest.fn((row: Record<string, unknown>) => ({
@@ -219,14 +322,27 @@ describe('DcReturnService', () => {
       actor: USER_ID,
       actorName: 'tester1',
       cogsMode: 'PERPETUAL',
-      rights: { post: true, cancel: true, override: false },
+      rights: { post: true, cancel: true, override: false, create: true, edit: true },
+      settings: { ...SALES_SETTING_DEFAULTS, backdateMode: 'ALLOW' },
     };
     salesContext = {
       actor: jest.fn().mockReturnValue(USER_ID),
-      rights: jest.fn().mockResolvedValue({ view: true, post: true, amend: true }),
+      rights: jest.fn().mockResolvedValue({
+        view: true,
+        create: true,
+        edit: true,
+        delete: true,
+        post: true,
+        amend: true,
+      }),
       resolve: jest.fn(async () => ctx),
+      values: jest.fn().mockResolvedValue({}),
     };
-    statutory = { withinCancelWindow: jest.fn().mockResolvedValue({ within: true }) };
+    statutory = {
+      withinCancelWindow: jest.fn().mockResolvedValue({ within: true }),
+      limit: jest.fn().mockResolvedValue({ value: 180 }),
+    };
+    audit = { logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }) };
     legs = {
       postLegs: jest.fn().mockResolvedValue({ voucherId: VOUCHER_ID, voucherLastNo: 12n }),
       reverseLegs: jest.fn().mockResolvedValue({ voucherId: REVERSAL_ID }),
@@ -246,6 +362,8 @@ describe('DcReturnService', () => {
     };
     transportBand = { write: jest.fn().mockResolvedValue({ vehicleNo: 'TN01AB1234' }) };
     fulfilment = { recompute: jest.fn().mockResolvedValue(undefined) };
+    saleOrders = { syncOrderFulfilment: jest.fn().mockResolvedValue([]) };
+    reservations = { rederiveOrderLines: jest.fn().mockResolvedValue(undefined) };
     gst = {
       enqueueAfterPost: jest.fn(),
       cancelEwb: jest.fn().mockResolvedValue({ cancelledOn: '2026-10-11' }),
@@ -267,9 +385,11 @@ describe('DcReturnService', () => {
       transportBand as never,
       fulfilment as never,
       gst as never,
+      audit as never,
       {} as never,
       {} as never,
-      {} as never,
+      saleOrders as never,
+      reservations as never,
     );
     // The service builds its SalesDocStore itself; swap in the mock.
     (service as unknown as { store: typeof store }).store = store;
@@ -308,15 +428,52 @@ describe('DcReturnService', () => {
       sdrUserId: USER_ID,
     } as unknown as SaveDcReturnDto;
 
-    it('refuses a return against a challan that does not exist', async () => {
-      sql.dcHeader = [];
+    it('refuses a return against a challan that does not exist (as /open-lines: not found)', async () => {
+      challan = null;
 
       const refusal = await refusalOf(service.save(dto));
 
       expect(refusal).toMatchObject({
-        status: 409,
+        status: 422,
+        body: { errors: [{ field: 'sdrDcId', code: SALES_ERROR_CODES.NOT_FOUND }] },
+      });
+      expect(store.saveDraft).not.toHaveBeenCalled();
+    });
+
+    // P3 E6 (2026-11-16): a DRAFT challan may change or be deleted.
+    it('refuses a return against a DRAFT challan (422 SALES_DCR_DC_NOT_POSTED) and saves nothing', async () => {
+      challan = challanRow({ sdcStatus: 'DRAFT' });
+
+      const refusal = await refusalOf(service.save(dto));
+
+      expect(refusal).toMatchObject({
+        status: 422,
         body: { errors: [{ field: 'sdrDcId', code: SALES_ERROR_CODES.DCR_DC_NOT_POSTED }] },
       });
+      expect(store.saveDraft).not.toHaveBeenCalled();
+    });
+
+    it("refuses another company's challan as not found", async () => {
+      challan = challanRow({ sdcCompanyId: '019c6f6c-be87-7a11-8905-36092c46b0ff' });
+
+      const refusal = await refusalOf(service.save(dto));
+
+      expect(refusal.body).toMatchObject({
+        errors: [{ field: 'sdrDcId', code: SALES_ERROR_CODES.NOT_FOUND }],
+      });
+    });
+
+    // P6 S4 (user 11-17): the branch too, as /open-lines (the goods come back here).
+    it("refuses another BRANCH's challan of the same company as not found, once, and saves nothing", async () => {
+      challan = challanRow({ sdcBranchId: '019c6f6c-be87-7a11-8905-36092c46b0fe', sdcStatus: 'DRAFT' });
+
+      const refusal = await refusalOf(service.save(dto));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ field: 'sdrDcId', code: SALES_ERROR_CODES.NOT_FOUND }] },
+      });
+      expect((refusal.body as { errors: unknown[] }).errors).toHaveLength(1);
       expect(store.saveDraft).not.toHaveBeenCalled();
     });
 
@@ -346,7 +503,10 @@ describe('DcReturnService', () => {
     it('reads the challan by the id and year the body names', async () => {
       await service.save(dto);
 
-      expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([DC_ID, ACC_YEAR]);
+      const saleDc = (prisma as unknown as { saleDc: { findFirst: jest.Mock } }).saleDc;
+      expect(saleDc.findFirst.mock.calls[0][0]).toMatchObject({
+        where: { sdcId: DC_ID, sdcAccYear: ACC_YEAR, sdcIsDeleted: false },
+      });
     });
 
     it("lets the challan's own refno and date win over what the body sends", async () => {
@@ -358,14 +518,128 @@ describe('DcReturnService', () => {
       });
     });
 
-    it('keeps the party fields the body does send', async () => {
+    it("ignores the party the body sends: the challan's wins (decision 35)", async () => {
       await service.save({ ...dto, sdrCustName: 'Acme (walk-in)', sdrPosStcd: '29' });
 
       expect(lastCallArg(store.saveDraft, 1)).toMatchObject({
-        sdrCustName: 'Acme (walk-in)',
-        sdrPosStcd: '29',
+        sdrCustName: 'Acme Stores',
+        sdrPosStcd: '33',
         sdrCustStcd: '33',
       });
+    });
+
+    it('copies every line fact from the challan line and keeps only qty, condition, godown, remark', async () => {
+      await service.save({
+        ...dto,
+        items: [
+          {
+            sdriDcItemId: DC_ITEM_ID,
+            sdriReturnQty: '4',
+            sdriCondition: 'damaged',
+            sdriRemarks: 'torn',
+            // Client facts the server ignores:
+            sdriItemId: 'hacked-item',
+            sdriRate: '999',
+            sdriLotId: null,
+          },
+        ],
+      } as unknown as SaveDcReturnDto);
+
+      const body = lastCallArg(store.saveDraft, 1);
+      const [line] = body.items as Record<string, unknown>[];
+      expect(line).toMatchObject({
+        sdriDcItemId: DC_ITEM_ID,
+        sdriItemId: 'item-1',
+        sdriItemUnitId: 'unit-1',
+        sdriLotId: LOT_ID,
+        sdriBatchNo: 'B1',
+        sdriRate: dec('50'),
+        sdriCostPrice: dec('30'),
+        sdriGodownId: 'godown-1',
+        sdriCondition: 'DAMAGED',
+        sdriBucket: 'DAMAGED',
+        sdriReturnQty: '4.000',
+        sdriFreeQty: '0',
+        sdriRemarks: 'torn',
+        // 4 of the challan line's 10: its share of the money.
+        sdriTaxableAmt: '200.00',
+        sdriCgstAmt: '5.00',
+        sdriSgstAmt: '5.00',
+        sdriTaxAmt: '10.00',
+        sdriNetAmt: '210.00',
+      });
+      expect(body).toMatchObject({
+        sdrTaxableAmt: '200.00',
+        sdrTaxAmt: '10.00',
+        sdrReturnAmt: '210.00',
+        sdrTotalCost: '120.00',
+        sdrTotItems: 1,
+      });
+    });
+
+    it('refuses a line of another challan (422 SALES_DCR_LINE_NOT_ON_DC)', async () => {
+      challanLines = [challanLine({ sdiDcId: '019c6f6c-be87-7a11-8905-36092c46b0aa' })];
+
+      const refusal = await refusalOf(
+        service.save({
+          ...dto,
+          items: [{ sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }],
+        } as unknown as SaveDcReturnDto),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: SALES_ERROR_CODES.DCR_LINE_NOT_ON_DC, line: 1 }] },
+      });
+      expect(store.saveDraft).not.toHaveBeenCalled();
+    });
+
+    it('refuses a charge row (422 SALES_DC_CHARGES_NOT_ALLOWED) before anything is read', async () => {
+      const refusal = await refusalOf(
+        service.save({ ...dto, charges: [{ cdChargeId: 'x' }] } as unknown as SaveDcReturnDto),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: SALES_ERROR_CODES.DC_CHARGES_NOT_ALLOWED }] },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('needs CREATE on 251 for a new return and EDIT for a draft', async () => {
+      salesContext.rights.mockResolvedValue({ view: true, create: false, edit: true });
+      await expect(refusalOf(service.save(dto))).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: SALES_ERROR_CODES.RIGHT_CREATE }] },
+      });
+      expect(salesContext.rights).toHaveBeenCalledWith(251, prisma);
+
+      sql.existing = [
+        { sdr_id: SDR_ID, sdr_company_id: COMPANY_ID, sdr_branch_id: BRANCH_ID, sdr_acc_year: ACC_YEAR },
+      ];
+      salesContext.rights.mockResolvedValue({ view: true, create: true, edit: false });
+      await expect(refusalOf(service.save({ ...dto, sdrId: SDR_ID }))).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: SALES_ERROR_CODES.RIGHT_EDIT }] },
+      });
+    });
+
+    it('numbers a new return per PC and files ONE revision (screen 100)', async () => {
+      await service.save(dto);
+
+      const hooks = lastCallArg(store.saveDraft, 4) as { revision?: boolean; numberFor?: unknown };
+      expect(hooks.revision).toBe(true);
+      expect(typeof hooks.numberFor).toBe('function');
+      expect(audit.logDocumentRevision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          screenName: 'DC Return',
+          tableName: 'sale_dc_return',
+          docId: SDR_ID,
+          before: null,
+          notes: 'Challan return created',
+        }),
+        prisma,
+      );
     });
 
     it('stamps the return datetime with the save time only when the body has none', async () => {
@@ -451,7 +725,8 @@ describe('DcReturnService', () => {
     it('never offers amend, whatever the menu grants', async () => {
       const result = await service.get(keys);
 
-      expect(result.rights).toEqual({ view: true, post: true, amend: false });
+      expect(result.rights).toMatchObject({ view: true, post: true, amend: false });
+      expect(salesContext.rights).toHaveBeenCalledWith(251, prisma);
     });
 
     it('locks a POSTED return for good', async () => {
@@ -483,31 +758,117 @@ describe('DcReturnService', () => {
   });
 
   describe('openLines', () => {
-    it('turns decimals into numbers and leaves everything else alone', async () => {
+    const q = { companyId: COMPANY_ID, branchId: BRANCH_ID, sdcId: DC_ID, sdcAccYear: ACC_YEAR };
+
+    it('answers the challan and its lines with Decimal strings and what drafts hold (G7)', async () => {
       sql.openLines = [
         {
-          dcItemId: DC_ITEM_ID,
-          lineNo: 1,
-          itemName: 'Paracetamol',
-          dcQty: dec('10'),
-          openQty: dec('6.5'),
+          dc_item_id: DC_ITEM_ID,
+          line_no: 1,
+          item_id: 'item-1',
+          item_unit_id: 'unit-1',
+          to_base_factor: dec('1'),
+          godown_id: 'godown-1',
+          lot_id: null,
+          batch_no: null,
+          bucket: 'SALEABLE',
+          dc_qty: dec('10'),
+          billed_qty: dec('3'),
+          returned_qty: dec('0.5'),
+          open_qty: dec('6.5'),
+          on_drafts: dec('2'),
           rate: dec('12.25'),
-          batchNo: null,
+          cost_price: dec('8'),
+          tax_perc: dec('5'),
         },
       ];
+      sql.bills = [
+        { sb_id: 'bill-1', acc_year: ACC_YEAR, refno: 'bil00042', bill_date: new Date('2026-10-07T00:00:00Z'), qty: dec('3') },
+      ];
 
-      await expect(service.openLines(DC_ID, ACC_YEAR)).resolves.toEqual([
-        {
+      const result = await service.openLines(q);
+
+      expect(result.challan).toMatchObject({
+        sdcId: DC_ID,
+        refno: 'DC/00007',
+        status: 'POSTED',
+        custId: CUST_ID,
+        value: '525.00',
+        bills: [{ sbId: 'bill-1', refno: 'bil00042', date: '2026-10-07', qty: '3.000' }],
+      });
+      expect(result.lines).toEqual([
+        expect.objectContaining({
           dcItemId: DC_ITEM_ID,
-          lineNo: 1,
-          itemName: 'Paracetamol',
-          dcQty: 10,
-          openQty: 6.5,
-          rate: 12.25,
-          batchNo: null,
-        },
+          dcQty: '10.000',
+          billedQty: '3.000',
+          returnedQty: '0.500',
+          openQty: '6.500',
+          onDrafts: '2.000',
+          rate: '12.2500',
+          toBaseFactor: '1.000000',
+          unitKg: '0.000',
+        }),
       ]);
-      expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([DC_ID, ACC_YEAR]);
+    });
+
+    // P3b — the facts strip's "180 days · per company" and its past-window flag.
+    it('names the return window, read on the challan date, and whether the challan is past it', async () => {
+      statutory.limit.mockResolvedValue({ value: 180, isCompanyOverride: false, effectiveFrom: '2017-07-01' });
+
+      const supply = await service.openLines(q);
+      challan = challanRow({ sdcPurpose: 'APPROVAL', sdcDcDate: new Date('2026-01-02T00:00:00.000Z') });
+      statutory.limit.mockResolvedValue({ value: 90, isCompanyOverride: true, effectiveFrom: '2026-04-01' });
+      const approval = await service.openLines(q);
+
+      expect(statutory.limit).toHaveBeenNthCalledWith(1, COMPANY_ID, 'DC_RETURN_WINDOW_DAYS', '2026-10-05');
+      expect(statutory.limit).toHaveBeenLastCalledWith(COMPANY_ID, 'DC_RETURN_WINDOW_DAYS', '2026-01-02');
+      expect(supply.challan).toMatchObject({
+        returnWindow: { days: 180, source: 'SHIPPED', effectiveFrom: '2017-07-01' },
+        pastWindow: false,
+      });
+      expect(approval.challan).toMatchObject({
+        ageLevel: 'RED',
+        returnWindow: { days: 90, source: 'COMPANY', effectiveFrom: '2026-04-01' },
+        pastWindow: true,
+      });
+    });
+
+    // P6 N2 (user 11-17): nothing out on the challan = no age, as grids 116 / 220.
+    it('answers no age level once nothing is open on the challan', async () => {
+      statutory.limit.mockResolvedValue({ value: 90, isCompanyOverride: true, effectiveFrom: '2026-04-01' });
+      challan = challanRow({ sdcPurpose: 'APPROVAL', sdcDcDate: new Date('2026-01-02T00:00:00.000Z') });
+      sql.openSum = [{ open_qty: dec('0') }];
+
+      const result = await service.openLines(q);
+
+      expect(result.challan).toMatchObject({ ageLevel: '', pastWindow: true });
+    });
+
+    it('answers returnWindow null (no fallback figure) when no row is in force', async () => {
+      statutory.limit.mockResolvedValue(null);
+      challan = challanRow({ sdcPurpose: 'APPROVAL', sdcDcDate: new Date('2020-01-02T00:00:00.000Z') });
+
+      const result = await service.openLines(q);
+
+      expect(result.challan).toMatchObject({ ageLevel: '', returnWindow: null, pastWindow: false });
+    });
+
+    it('is scoped to the company and branch: another branch\'s challan is 404', async () => {
+      challan = challanRow({ sdcBranchId: '019c6f6c-be87-7a11-8905-36092c46b0bb' });
+
+      await expect(refusalOf(service.openLines(q))).resolves.toMatchObject({
+        status: 404,
+        body: { errors: [{ code: SALES_ERROR_CODES.NOT_FOUND }] },
+      });
+    });
+
+    it('needs VIEW on 251', async () => {
+      salesContext.rights.mockResolvedValue({ view: false });
+
+      await expect(refusalOf(service.openLines(q))).resolves.toMatchObject({
+        status: 403,
+        body: { errors: [{ code: SALES_ERROR_CODES.RIGHT_VIEW }] },
+      });
     });
   });
 
@@ -551,9 +912,45 @@ describe('DcReturnService', () => {
       expect(stock.post).not.toHaveBeenCalled();
     });
 
+    // P6 R4: settled again at /post under the challan lines' lock (a return may have posted since the draft).
+    it('settles the last return under the challan lock: the stored line and the header take the rest', async () => {
+      challanLines = [
+        challanLine({ sdiDcQty: dec('3'), sdiGrossAmt: dec('100'), sdiTaxableAmt: dec('100'), sdiCgstAmt: dec('7.88'), sdiSgstAmt: dec('7.87') }),
+      ];
+      store.loadItems.mockResolvedValue([
+        itemRow({ sdriReturnQty: dec('1'), sdriGrossAmt: dec('33.33'), sdriTaxableAmt: dec('33.33'), sdriCgstAmt: dec('2.63'),
+          sdriSgstAmt: dec('2.62'), sdriTaxAmt: dec('5.25'), sdriNetAmt: dec('38.58') }),
+      ]);
+      sql.postedSums = [
+        { dc_item_id: DC_ITEM_ID, qty: dec('2'), gross: dec('66.66'), item_disc: dec(0), sch_disc: dec(0),
+          taxable: dec('66.66'), cgst: dec('5.26'), sgst: dec('5.24'), igst: dec(0), cess: dec(0), weight: null },
+      ];
+
+      await service.post(KEYS);
+
+      expect(store.updateItem).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ sdriId: SDRI_ID }),
+        expect.objectContaining({ sdriTaxableAmt: '33.34', sdriCgstAmt: '2.62', sdriSgstAmt: '2.63', sdriTaxAmt: '5.25', sdriNetAmt: '38.59' }),
+      );
+      const totals = store.setStatus.mock.calls.find((c) => c[2] === 'DRAFT') as [unknown, unknown, string, Record<string, unknown>];
+      expect(totals[3]).toMatchObject({ sdrTaxableAmt: '33.34', sdrTaxAmt: '5.25', sdrReturnAmt: '38.59' });
+      const lockAt = prisma.$queryRaw.mock.calls.findIndex((c) => (c[0] as string[]).join('?').includes('SELECT sdi_open_qty AS open_qty'));
+      const sumsAt = prisma.$queryRaw.mock.calls.findIndex((c) => (c[0] as string[]).join('?').includes('SUM(r.sdri_return_qty) AS qty'));
+      expect(prisma.$queryRaw.mock.invocationCallOrder[lockAt]).toBeLessThan(prisma.$queryRaw.mock.invocationCallOrder[sumsAt]);
+      expect(store.setStatus.mock.invocationCallOrder[store.setStatus.mock.calls.indexOf(totals)]).toBeLessThan(stock.post.mock.invocationCallOrder[0]);
+    });
+
+    it('rewrites nothing when no line is the last one back', async () => {
+      await service.post(KEYS);
+
+      expect(store.updateItem.mock.calls.some((c) => 'sdriTaxableAmt' in (c[2] as object))).toBe(false);
+      expect(store.setStatus.mock.calls.some((c) => c[2] === 'DRAFT')).toBe(false);
+    });
+
     it('collects every refusal into one 422 instead of stopping at the first', async () => {
       jest.mocked(guards.loadDayClosed).mockResolvedValue(true);
-      sql.dcStatus = [{ sdc_status: 'DRAFT' }];
+      challan = challanRow({ sdcStatus: 'DRAFT' });
 
       const refusal = await refusalOf(service.post(KEYS));
 
@@ -597,8 +994,39 @@ describe('DcReturnService', () => {
       });
     });
 
-    it('refuses a challan that is missing or deleted', async () => {
-      sql.dcStatus = [];
+    // P6 N5 (user 11-17): a WARN goes on only overridden by a user who may, as the challan's.
+    it('refuses a backdated return under WARN unless SALES_BACKDATE is overridden by a user who may', async () => {
+      ctx.settings.backdateMode = 'WARN';
+
+      const refused = await refusalOf(service.post(KEYS));
+      expect(refused).toMatchObject({
+        status: 422,
+        body: { errors: [{ field: 'sdrReturnDate', code: SALES_ERROR_CODES.BACKDATE }] },
+      });
+      const noRight = await refusalOf(service.post({ ...KEYS, overrides: [SALES_ERROR_CODES.BACKDATE] }));
+      expect(noRight).toMatchObject({ status: 422 });
+      expect(stock.post).not.toHaveBeenCalled();
+
+      ctx.rights.override = true;
+      await service.post({ ...KEYS, overrides: [SALES_ERROR_CODES.BACKDATE] });
+      expect(stock.post).toHaveBeenCalledTimes(1);
+    });
+
+    // P6 S4: a stored return whose challan is another branch's (made through the API before the fix).
+    it("refuses at post a return against another branch's challan (not found)", async () => {
+      challan = challanRow({ sdcBranchId: '019c6f6c-be87-7a11-8905-36092c46b0fe' });
+
+      const refusal = await refusalOf(service.post(KEYS));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ field: 'sdrDcId', code: SALES_ERROR_CODES.NOT_FOUND }] },
+      });
+      expect(stock.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses a challan that is not POSTED any more', async () => {
+      challan = challanRow({ sdcStatus: 'CANCELLED' });
 
       const refusal = await refusalOf(service.post(KEYS));
 
@@ -608,19 +1036,19 @@ describe('DcReturnService', () => {
       });
     });
 
-    it('refuses a return with no lines', async () => {
-      store.loadItems.mockResolvedValue([]);
+    it('refuses a return with no line to take back (422 SALES_DCR_NO_LINES)', async () => {
+      store.loadItems.mockResolvedValue([itemRow({ sdriReturnQty: dec('0') })]);
 
       const refusal = await refusalOf(service.post(KEYS));
 
       expect(refusal).toMatchObject({
         status: 422,
-        body: { errors: [{ field: 'items', code: SALES_ERROR_CODES.STOCK_QTY_MISMATCH }] },
+        body: { errors: [{ field: 'items', code: SALES_ERROR_CODES.DCR_NO_LINES }] },
       });
     });
 
-    it('refuses a line naming a challan line that does not exist', async () => {
-      sql.dcLines = [];
+    it('refuses a line naming a line of another challan (SALES_DCR_LINE_NOT_ON_DC)', async () => {
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1'), sdi_dc_id: '019c6f6c-be87-7a11-8905-36092c46b0cc' }];
 
       const refusal = await refusalOf(service.post(KEYS));
 
@@ -630,16 +1058,65 @@ describe('DcReturnService', () => {
           errors: [
             {
               field: 'items',
-              code: SALES_ERROR_CODES.DCR_OVER_OPEN,
-              message: `Challan line ${DC_ITEM_ID} does not exist`,
+              code: SALES_ERROR_CODES.DCR_LINE_NOT_ON_DC,
+              line: 1,
+              params: { n: 1, dc: 'DC/00007' },
             },
           ],
         },
       });
     });
 
+    it('refuses a return with no reason, or a reason that is not a challan-return one', async () => {
+      store.lock.mockResolvedValue(returnRow({ sdrReasonId: null }));
+      await expect(refusalOf(service.post(KEYS))).resolves.toMatchObject({
+        body: { errors: [{ field: 'sdrReasonId', code: SALES_ERROR_CODES.DCR_REASON_REQUIRED }] },
+      });
+
+      store.lock.mockResolvedValue(returnRow());
+      sql.reason = [];
+      await expect(refusalOf(service.post(KEYS))).resolves.toMatchObject({
+        body: { errors: [{ field: 'sdrReasonId', code: SALES_ERROR_CODES.DCR_REASON_REQUIRED }] },
+      });
+    });
+
+    it('wants the remark when the reason does (DCR_OTHER)', async () => {
+      sql.reason = [{ remarks: true }];
+      store.lock.mockResolvedValue(returnRow({ sdrReturnReason: '  ' }));
+
+      await expect(refusalOf(service.post(KEYS))).resolves.toMatchObject({
+        body: { errors: [{ field: 'sdrReturnReason', code: SALES_ERROR_CODES.DCR_REASON_REQUIRED }] },
+      });
+    });
+
+    it('locks the challan lines FOR UPDATE in sdi_id order before the stock moves (decision 36)', async () => {
+      await service.post(KEYS);
+
+      const lockIdx = prisma.$queryRaw.mock.calls.findIndex(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('SELECT sdi_open_qty AS open_qty'),
+      );
+      const text = (prisma.$queryRaw.mock.calls[lockIdx][0] as TemplateStringsArray).join('?');
+      expect(text).toContain('ORDER BY sdi_id');
+      expect(text).toContain('FOR UPDATE');
+      expect(prisma.$queryRaw.mock.invocationCallOrder[lockIdx]).toBeLessThan(
+        stock.post.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('answers the challan\'s open qty before and after the post', async () => {
+      const result = await service.post(KEYS);
+
+      expect(result.challan).toMatchObject({
+        sdcId: DC_ID,
+        sdcAccYear: ACC_YEAR,
+        refno: 'DC/00007',
+        openBefore: '10.000',
+        openAfter: '6.000',
+      });
+    });
+
     it('refuses a line taking more than is still open on its challan line', async () => {
-      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_open_qty: dec('4') }];
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('4'), sdi_to_base_factor: dec('1') }];
       store.loadItems.mockResolvedValue([itemRow({ sdriReturnQty: dec('5') })]);
 
       const refusal = await refusalOf(service.post(KEYS));
@@ -651,7 +1128,8 @@ describe('DcReturnService', () => {
             {
               field: 'items',
               code: SALES_ERROR_CODES.DCR_OVER_OPEN,
-              message: 'Challan line has 4 open; this return takes 5',
+              message: 'Challan line 1 has 4 open; this return takes 5',
+              line: 1,
             },
           ],
         },
@@ -667,8 +1145,9 @@ describe('DcReturnService', () => {
         prisma.$queryRaw.mock.calls
           .find(([strings]) => (strings as TemplateStringsArray).join('?').includes(marker))!
           .slice(1);
-      expect(argsOf('SELECT sdc_status FROM')).toEqual([DC_ID, ACC_YEAR]);
-      expect(argsOf('SELECT sdi_id, sdi_open_qty')).toEqual([[DC_ITEM_ID]]);
+      expect(argsOf('SELECT sdi_id, sdi_dc_id, sdi_acc_year, sdi_line_no, sdi_open_qty')).toEqual([
+        [DC_ITEM_ID],
+      ]);
     });
 
     it('stops at a year it may not write before posting anything', async () => {
@@ -685,7 +1164,7 @@ describe('DcReturnService', () => {
     });
 
     it('adds up two return lines drawn on the same challan line', async () => {
-      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_open_qty: dec('6') }];
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('6'), sdi_to_base_factor: dec('1') }];
       store.loadItems.mockResolvedValue([
         itemRow({ sdriReturnQty: dec('4') }),
         itemRow({ sdriId: SDRI_ID_2, sdriLineNo: 2, sdriReturnQty: dec('3') }),
@@ -695,12 +1174,21 @@ describe('DcReturnService', () => {
 
       expect(refusal).toMatchObject({
         status: 422,
-        body: { errors: [{ message: 'Challan line has 6 open; this return takes 7' }] },
+        body: { errors: [{ message: 'Challan line 1 has 6 open; this return takes 7' }] },
       });
     });
 
     it('lets a return take exactly what is open', async () => {
-      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_open_qty: dec('4') }];
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('4'), sdi_to_base_factor: dec('1') }];
+
+      await service.post(KEYS);
+
+      expect(stock.post).toHaveBeenCalled();
+    });
+
+    it('compares in base units: 2 boxes of 12 against 24 pieces open', async () => {
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('2'), sdi_to_base_factor: dec('12') }];
+      store.loadItems.mockResolvedValue([itemRow({ sdriReturnQty: dec('2'), sdriToBaseFactor: dec('12') })]);
 
       await service.post(KEYS);
 
@@ -741,6 +1229,30 @@ describe('DcReturnService', () => {
       });
     });
 
+    // Live 2026-11-16 (DR2627D14-00005): 4 pcs went back at 300.76 EACH, the
+    // challan line's TOTAL. The engine takes a stated cost per BASE unit.
+    it('hands the engine the unit cost per BASE unit: 51 a box of 12 is 4.25', async () => {
+      store.loadItems.mockResolvedValue([
+        itemRow({ sdriCostPrice: dec('51'), sdriToBaseFactor: dec('12') }),
+      ]);
+      // The challan line is in boxes of 12 too (the return copies its unit).
+      sql.dcLines = [{ sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('12') }];
+
+      await service.post(KEYS);
+
+      const doc = stock.post.mock.calls[0][1] as { lines: { costRate: number | null }[] };
+      expect(doc.lines[0].costRate).toBe(4.25);
+    });
+
+    it('a 6-pc challan line at 50.1259 a piece: 4 go back at 50.1259 a piece, not at the line total', async () => {
+      store.loadItems.mockResolvedValue([itemRow({ sdriCostPrice: dec('50.1259') })]);
+
+      await service.post(KEYS);
+
+      const doc = stock.post.mock.calls[0][1] as { lines: { qty: number; costRate: number | null }[] };
+      expect(doc.lines[0]).toMatchObject({ qty: 4, costRate: 50.1259 });
+    });
+
     it.each([
       ['RESTOCK', null, 'SALEABLE'],
       ['DAMAGED', null, 'DAMAGED'],
@@ -748,7 +1260,8 @@ describe('DcReturnService', () => {
       ['SCRAP', null, 'QUARANTINE'],
       [null, null, 'SALEABLE'],
       ['SOMETHING_ELSE', null, 'SALEABLE'],
-      ['RESTOCK', 'DAMAGED', 'DAMAGED'],
+      // Decision 15: the bucket follows the condition, never a typed bucket.
+      ['RESTOCK', 'DAMAGED', 'SALEABLE'],
     ])('files a %s line with bucket %s into %s', async (condition, bucket, expected) => {
       store.loadItems.mockResolvedValue([
         itemRow({ sdriCondition: condition, sdriBucket: bucket }),
@@ -762,8 +1275,8 @@ describe('DcReturnService', () => {
 
     it('moves no stock for service lines or lines with nothing to return', async () => {
       sql.dcLines = [
-        { sdi_id: DC_ITEM_ID, sdi_open_qty: dec('10') },
-        { sdi_id: DC_ITEM_ID_2, sdi_open_qty: dec('10') },
+        { sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+        { sdi_id: DC_ITEM_ID_2, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
       ];
       store.loadItems.mockResolvedValue([
         itemRow({ sdriIsService: true }),
@@ -878,7 +1391,6 @@ describe('DcReturnService', () => {
         userId: USER_ID,
         createdBy: USER_ID,
         presetRefno: 'DCR/00012',
-        presetNo: 12n,
       });
       expect(call.legs).toEqual([
         expect.objectContaining({ role: 'COGS', drCr: 'CR', amount: 120 }),
@@ -951,11 +1463,12 @@ describe('DcReturnService', () => {
         Record<string, unknown>,
         Record<string, unknown>,
       ];
-      expect(opts).toEqual({ interState: false });
+      expect(opts).toEqual({ interState: false, ewayStateCode: '33' });
       expect(doc).toMatchObject({
         voucherId: VOUCHER_ID,
         voucherTypeId: SALES_VOUCHER_TYPE.DC_RETURN,
-        voucherNo: 12n,
+        // The register's own serial (per-device slnos repeat across PCs).
+        voucherNo: 7n,
         voucherDate: '2026-10-10',
         voucherRefno: 'DCR/00012',
         sourceDocId: SDR_ID,
@@ -985,6 +1498,34 @@ describe('DcReturnService', () => {
       });
     });
 
+    // 11-17: the return's header holds no GST split; its register header now
+    // takes the lines' sums, as the challan's carries its own (was all 0).
+    it("files the lines' CGST / SGST / IGST / cess sums on the register header", async () => {
+      sql.dcLines = [
+        { sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+        { sdi_id: DC_ITEM_ID_2, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 2, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+      ];
+      store.loadItems.mockResolvedValue([
+        itemRow({ sdriCessAmt: dec('1.25') }),
+        itemRow({
+          sdriId: SDRI_ID_2,
+          sdriLineNo: 2,
+          sdriDcItemId: DC_ITEM_ID_2,
+          sdriCgstAmt: dec('2.55'),
+          sdriSgstAmt: dec('2.55'),
+        }),
+      ]);
+
+      await service.post(KEYS);
+
+      expect(lastCallArg(register.write, 1)).toMatchObject({
+        cgstValue: 7.55,
+        sgstValue: 7.55,
+        igstValue: 0,
+        cessValue: 1.25,
+      });
+    });
+
     it('marks the register row inter-state when the place of supply is another state', async () => {
       store.lock.mockResolvedValue(returnRow({ sdrPosStcd: '29' }));
 
@@ -995,40 +1536,74 @@ describe('DcReturnService', () => {
         Record<string, unknown>,
         unknown,
       ];
-      expect(opts).toEqual({ interState: true });
+      expect(opts).toEqual({ interState: true, ewayStateCode: '29' });
       expect(doc.supplyNature).toBe('INTER_STATE');
+    });
+
+    // User 11-16: the inward e-way floor of a blank-POS return is the company
+    // state's, as the challan's; the register still files the POS as given.
+    it('judges a blank-POS return by the company state on the register write', async () => {
+      store.lock.mockResolvedValue(returnRow({ sdrPosStcd: null }));
+
+      await service.post(KEYS);
+
+      const [, doc, opts] = register.write.mock.calls[0] as [
+        unknown,
+        Record<string, unknown>,
+        unknown,
+      ];
+      expect(opts).toEqual({ interState: false, ewayStateCode: '33' });
+      expect(doc.placeOfSupplyCode).toBeNull();
+      expect(doc.supplyNature).toBe('INTRA_STATE');
     });
 
     it('files the register row against the return itself when no voucher was written', async () => {
       ctx.cogsMode = 'PERIODIC';
       store.lock.mockResolvedValue(returnRow({ sdrReturnSlno: null, sdrTaxAmt: dec('0') }));
+      // A 0 % line: the register's taxability follows the lines (P3 fix 11-17).
+      store.loadItems.mockResolvedValue([
+        itemRow({
+          sdriTaxPerc: dec('0'),
+          sdriCgstPerc: dec('0'),
+          sdriSgstPerc: dec('0'),
+          sdriCgstAmt: dec('0'),
+          sdriSgstAmt: dec('0'),
+          sdriNetAmt: dec('200'),
+        }),
+      ]);
 
       await service.post(KEYS);
 
       expect(lastCallArg(register.write, 1)).toMatchObject({
         voucherId: SDR_ID,
-        voucherNo: 12n,
+        // The register's own serial (per-device slnos repeat across PCs).
+        voucherNo: 7n,
         taxability: 'EXEMPT',
         partyGstin: '33ABCDE1234F1Z5',
       });
     });
 
-    it('numbers the register row from the voucher when the return has no serial number', async () => {
-      store.lock.mockResolvedValue(returnRow({ sdrReturnSlno: null }));
+    it('numbers the register row from its own serial, never the per-device slno or the voucher', async () => {
+      store.lock.mockResolvedValue(returnRow({ sdrReturnSlno: 3n }));
       legs.postLegs.mockResolvedValue({ voucherId: VOUCHER_ID, voucherLastNo: 99n });
+      sql.registerNo = [{ n: 41n }];
 
       await service.post(KEYS);
 
       expect(lastCallArg(register.write, 1)).toMatchObject({
         voucherId: VOUCHER_ID,
-        voucherNo: 99n,
+        voucherNo: 41n,
       });
+      const serial = prisma.$queryRaw.mock.calls.find(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('MAX(gdr_voucher_no)'),
+      )!;
+      expect(serial.slice(1)).toEqual([COMPANY_ID, BRANCH_ID, ACC_YEAR, SALES_VOUCHER_TYPE.DC_RETURN]);
     });
 
     it('values a register line at taxable plus tax when it has no net amount, EXEMPT when untaxed', async () => {
       sql.dcLines = [
-        { sdi_id: DC_ITEM_ID, sdi_open_qty: dec('10') },
-        { sdi_id: DC_ITEM_ID_2, sdi_open_qty: dec('10') },
+        { sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+        { sdi_id: DC_ITEM_ID_2, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
       ];
       store.loadItems.mockResolvedValue([
         itemRow({ sdriNetAmt: dec('0') }),
@@ -1038,6 +1613,10 @@ describe('DcReturnService', () => {
           sdriDcItemId: DC_ITEM_ID_2,
           sdriTaxableAmt: dec('80'),
           sdriNetAmt: dec('80'),
+          // A 0 % item: no rate either (a rate with no tax is a FREE line, TAXABLE).
+          sdriTaxPerc: dec('0'),
+          sdriCgstPerc: dec('0'),
+          sdriSgstPerc: dec('0'),
           sdriCgstAmt: dec('0'),
           sdriSgstAmt: dec('0'),
         }),
@@ -1060,6 +1639,87 @@ describe('DcReturnService', () => {
         totalValue: 80,
         billValue: 80,
         taxability: 'EXEMPT',
+      });
+      expect(doc.taxability).toBe('MIXED');
+    });
+
+    // Qt probe 2026-11-17: a returned FREE line (rate 0, so tax 0, GST 18 % =
+    // 9/9 copied from the challan line) was filed EXEMPT and
+    // chk_acc_voucher_doc_detail_non_taxable_zero answered a raw 500.
+    describe('register taxability (the Sales Bill\'s rule)', () => {
+      const registered = () =>
+        lastCallArg(register.write, 1) as Record<string, unknown> & {
+          lines: Array<Record<string, unknown>>;
+        };
+      const free18 = () =>
+        itemRow({
+          sdriRate: dec('0'),
+          sdriTaxableAmt: dec('0'),
+          sdriNetAmt: dec('0'),
+          sdriTaxPerc: dec('18'),
+          sdriCgstPerc: dec('9'),
+          sdriSgstPerc: dec('9'),
+          sdriCgstAmt: dec('0'),
+          sdriSgstAmt: dec('0'),
+        });
+      const nil0 = () =>
+        itemRow({
+          sdriTaxPerc: dec('0'),
+          sdriCgstPerc: dec('0'),
+          sdriSgstPerc: dec('0'),
+          sdriCgstAmt: dec('0'),
+          sdriSgstAmt: dec('0'),
+          sdriNetAmt: dec('200'),
+        });
+
+      it('files a returned FREE line (rate 0, no tax) TAXABLE with its 18 % kept', async () => {
+        store.loadItems.mockResolvedValue([free18()]);
+        store.lock.mockResolvedValue(
+          returnRow({ sdrGrossAmt: dec('0'), sdrTaxableAmt: dec('0'), sdrTaxAmt: dec('0'), sdrReturnAmt: dec('0') }),
+        );
+
+        await service.post(KEYS);
+
+        const doc = registered();
+        expect(doc.lines[0]).toMatchObject({
+          rate: 0,
+          taxableValue: 0,
+          totalTaxRate: 18,
+          cgstRate: 9,
+          sgstRate: 9,
+          cgstAmount: 0,
+          sgstAmount: 0,
+          totalValue: 0,
+          taxability: 'TAXABLE',
+        });
+        expect(doc.taxability).toBe('TAXABLE');
+      });
+
+      it('files a returned 0 % (nil-rated) line EXEMPT, and the return EXEMPT', async () => {
+        store.loadItems.mockResolvedValue([nil0()]);
+
+        await service.post(KEYS);
+
+        const doc = registered();
+        expect(doc.lines[0]).toMatchObject({ totalTaxRate: 0, cgstRate: 0, sgstRate: 0, taxability: 'EXEMPT' });
+        expect(doc.taxability).toBe('EXEMPT');
+      });
+
+      it('files a FREE 18 % line beside a 0 % line as a MIXED return', async () => {
+        sql.dcLines = [
+          { sdi_id: DC_ITEM_ID, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 1, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+          { sdi_id: DC_ITEM_ID_2, sdi_dc_id: DC_ID, sdi_acc_year: ACC_YEAR, sdi_line_no: 2, sdi_open_qty: dec('10'), sdi_to_base_factor: dec('1') },
+        ];
+        store.loadItems.mockResolvedValue([
+          free18(),
+          { ...nil0(), sdriId: SDRI_ID_2, sdriLineNo: 2, sdriDcItemId: DC_ITEM_ID_2 },
+        ]);
+
+        await service.post(KEYS);
+
+        const doc = registered();
+        expect(doc.lines.map((l) => l.taxability)).toEqual(['TAXABLE', 'EXEMPT']);
+        expect(doc.taxability).toBe('MIXED');
       });
     });
 
@@ -1101,6 +1761,92 @@ describe('DcReturnService', () => {
     });
   });
 
+  // User 2026-11-17 — a DC return re-opens the order lines its challan lines
+  // came from, and its cancel draws them down again.
+  describe('the order draw-down (user 11-17)', () => {
+    const SOI = '019c6f6c-be87-7a11-8905-36092c46b0e1';
+    const REF = {
+      srcDocId: SOI,
+      srcAccYear: ACC_YEAR,
+      soLineNo: null,
+      fields: { docId: 'sdiSrcItemId', accYear: 'sdiSrcDocAccYear', lineNo: 'sdiSrcLineNo' },
+    };
+    const callIdx = (marker: string) =>
+      prisma.$queryRaw.mock.calls.findIndex((c) => (c[0] as string[]).join('?').includes(marker));
+    beforeEach(() => {
+      sql.srcOrderLines = [{ soi_id: SOI }];
+      sql.orderRefs = [{ soi_id: SOI, soi_acc_year: `${ACC_YEAR} ` }];
+      sql.orderKeys = [{ soi_order_id: SO, soi_line_no: 2 }];
+    });
+    const SO = '019c6f6c-be87-7a11-8905-36092c46b0e2';
+
+    it('post and cancel re-derive the order lines\' reservations after the order (Q2)', async () => {
+      await service.post(KEYS);
+      expect(reservations.rederiveOrderLines).toHaveBeenCalledWith(prisma, SO, [2], USER_ID, expect.any(Date));
+      expect(reservations.rederiveOrderLines.mock.invocationCallOrder[0]).toBeGreaterThan(
+        saleOrders.syncOrderFulfilment.mock.invocationCallOrder[0],
+      );
+
+      store.lock.mockResolvedValue(returnRow({ sdrStatus: 'POSTED', sdrPostedVoucherId: VOUCHER_ID }));
+      await service.cancel({ ...KEYS, reason: 'Wrong challan' } as never);
+      expect(reservations.rederiveOrderLines).toHaveBeenCalledTimes(2);
+    });
+
+    it('post: locks the source orders before the challan lines, and re-opens them once POSTED', async () => {
+      await service.post(KEYS);
+
+      const orderLock = callIdx('FOR UPDATE OF h');
+      const lineLock = callIdx('SELECT sdi_open_qty AS open_qty');
+      expect(orderLock).toBeGreaterThanOrEqual(0);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[orderLock]).toBeLessThan(
+        prisma.$queryRaw.mock.invocationCallOrder[lineLock],
+      );
+      expect(prisma.$queryRaw.mock.calls[callIdx('END AS line_so_id')][1]).toEqual([DC_ITEM_ID]);
+      // P6 S1 — the challan HEADER is locked after the orders and before its lines.
+      const headLock = callIdx('SELECT sdc_id FROM sales.sale_dc\n');
+      expect(headLock).toBeGreaterThanOrEqual(0);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[orderLock]).toBeLessThan(
+        prisma.$queryRaw.mock.invocationCallOrder[headLock],
+      );
+      expect(prisma.$queryRaw.mock.invocationCallOrder[headLock]).toBeLessThan(
+        prisma.$queryRaw.mock.invocationCallOrder[lineLock],
+      );
+      expect(saleOrders.syncOrderFulfilment).toHaveBeenCalledWith(
+        prisma,
+        { refs: [REF], reopenRemark: 'Reopened: DC return DCR/00012 posted' },
+        USER_ID,
+        expect.any(Date),
+      );
+      expect(saleOrders.syncOrderFulfilment.mock.invocationCallOrder[0]).toBeGreaterThan(
+        store.setStatus.mock.invocationCallOrder.at(-1)!,
+      );
+    });
+
+    it('asks the order module nothing when the challan lines came from no order', async () => {
+      sql.srcOrderLines = [];
+
+      await service.post(KEYS);
+
+      expect(saleOrders.syncOrderFulfilment).not.toHaveBeenCalled();
+    });
+
+    it('cancel: locks the orders before the challan lines and draws them down again after', async () => {
+      store.lock.mockResolvedValue(returnRow({ sdrStatus: 'POSTED', sdrPostedVoucherId: VOUCHER_ID }));
+
+      await service.cancel({ ...KEYS, reason: 'Wrong challan' } as never);
+
+      expect(prisma.$queryRaw.mock.invocationCallOrder[callIdx('FOR UPDATE OF h')]).toBeLessThan(
+        prisma.$queryRaw.mock.invocationCallOrder[callIdx('SELECT sdi_open_qty AS open_qty')],
+      );
+      expect(saleOrders.syncOrderFulfilment).toHaveBeenCalledWith(
+        prisma,
+        { refs: [REF], reopenRemark: 'Reopened: DC return DCR/00012 cancelled' },
+        USER_ID,
+        expect.any(Date),
+      );
+    });
+  });
+
   describe('cancel', () => {
     const cancelDto = { ...KEYS, reason: 'Entered against the wrong challan' };
 
@@ -1113,12 +1859,12 @@ describe('DcReturnService', () => {
     it('answers a return that is already CANCELLED without touching it', async () => {
       store.lock.mockResolvedValue(returnRow({ sdrStatus: 'CANCELLED' }));
 
-      await expect(service.cancel(cancelDto)).resolves.toEqual({
-        id: SDR_ID,
-        companyId: COMPANY_ID,
-        branchId: BRANCH_ID,
-        accYear: ACC_YEAR,
-        sdrStatus: 'CANCELLED',
+      // The /get payload, with no reversal and no challan figures.
+      await expect(service.cancel(cancelDto)).resolves.toMatchObject({
+        sdrId: SDR_ID,
+        charges: [],
+        reversalVoucherRefno: null,
+        cancelledOn: null,
       });
       expect(salesContext.resolve).not.toHaveBeenCalled();
     });
@@ -1323,8 +2069,8 @@ describe('DcReturnService', () => {
         'DC return cancelled: Entered against the wrong challan',
       );
       expect(result).toMatchObject({
-        id: SDR_ID,
-        sdrStatus: 'CANCELLED',
+        sdrId: SDR_ID,
+        challan: { sdcId: DC_ID, openBefore: '10.000', openAfter: '6.000' },
         reversalVoucherRefno: 'DCR/00012/R',
         cancelledOn: expect.any(String),
       });
@@ -1379,7 +2125,8 @@ describe('DcReturnService', () => {
       store.lock.mockResolvedValue(returnRow({ sdrStatus: 'POSTED' }));
       register.registerIdOf.mockResolvedValue(GDR_ID);
 
-      await expect(service.transport(transportDto)).resolves.toEqual(band);
+      await expect(service.transport(transportDto)).resolves.toMatchObject({ sdrId: SDR_ID, charges: [] });
+      void band;
 
       expect(transportBand.write).toHaveBeenCalledWith(
         prisma,
@@ -1407,5 +2154,279 @@ describe('DcReturnService', () => {
         null,
       );
     });
+  });
+
+  // §8.3 /dc-returns/validate (G3): the post's guards on the body as it would be
+  // stored; nothing written.
+  describe('validate', () => {
+    const body = (items: Record<string, unknown>[], over: Record<string, unknown> = {}) =>
+      ({
+        ...KEYS,
+        sdrId: undefined,
+        sdrDcId: DC_ID,
+        sdrDcAccYear: ACC_YEAR,
+        sdrDeviceType: 'DESKTOP',
+        sdrDeviceId: DEVICE_ID,
+        sdrUserId: USER_ID,
+        sdrReturnDate: '2026-10-10',
+        sdrReasonId: REASON_ID,
+        items,
+        ...over,
+      }) as unknown as SaveDcReturnDto;
+
+    it('answers ok with an INFO for goods back DAMAGED, the rights and the totals; writes nothing', async () => {
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '4', sdriCondition: 'DAMAGED' }]),
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        refusals: [],
+        warnings: [
+          expect.objectContaining({
+            code: SALES_ERROR_CODES.DCR_DAMAGED_BUCKET,
+            level: 'INFO',
+            params: { qty: '4', unit: '', condition: 'DAMAGED' },
+          }),
+        ],
+        rights: ctx.rights,
+        // costBack = 4 × the challan line's cost 30, whatever the body says.
+        totals: { lines: 1, qty: '4.000', weightKg: '0.000', costBack: '120.00' },
+      });
+      expect(store.saveDraft).not.toHaveBeenCalled();
+      expect(stock.post).not.toHaveBeenCalled();
+    });
+
+    it('copies the challan line\'s UNIT cost: 4 back of a 6-pc line at 50.1259 a piece cost 200.50', async () => {
+      challanLines = [challanLine({ sdiDcQty: dec('6'), sdiCostPrice: dec('50.1259') })];
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '4', sdriCostPrice: 300.76 }]),
+      );
+
+      expect(result.totals).toMatchObject({ qty: '4.000', costBack: '200.50' });
+    });
+
+    it('lists a line of another challan once (LINE_NOT_ON_DC, not NO_LINES as well)', async () => {
+      challanLines = [challanLine({ sdiDcId: '019c6f6c-be87-7a11-8905-36092c46b0cc' })];
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]),
+      );
+
+      expect(result.ok).toBe(false);
+      expect((result.refusals as { code: string }[]).map((r) => r.code)).toEqual([
+        SALES_ERROR_CODES.DCR_LINE_NOT_ON_DC,
+      ]);
+    });
+
+    it('lists over-open, no reason and a charge row together', async () => {
+      sql.dcLines = [
+        {
+          sdi_id: DC_ITEM_ID,
+          sdi_dc_id: DC_ID,
+          sdi_acc_year: ACC_YEAR,
+          sdi_line_no: 1,
+          sdi_open_qty: dec('3'),
+          sdi_to_base_factor: dec('1'),
+        },
+      ];
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '4' }], {
+          sdrReasonId: null,
+          charges: [{ cdChgName: 'freight', cdAmount: 10 }],
+        }),
+      );
+
+      expect((result.refusals as { code: string }[]).map((r) => r.code).sort()).toEqual(
+        [
+          SALES_ERROR_CODES.DC_CHARGES_NOT_ALLOWED,
+          SALES_ERROR_CODES.DCR_OVER_OPEN,
+          SALES_ERROR_CODES.DCR_REASON_REQUIRED,
+        ].sort(),
+      );
+    });
+
+    it("lists another branch's challan as not found (P6 S4)", async () => {
+      challan = challanRow({ sdcBranchId: '019c6f6c-be87-7a11-8905-36092c46b0fe' });
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.refusals).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.NOT_FOUND, field: 'sdrDcId' }),
+      ]);
+    });
+
+    // P6 N5 (user 11-17): WARN warns, as the challan's; REFUSE refuses; ALLOW is quiet.
+    it('warns on a backdated return under sales.backdate_mode WARN (it posted silently)', async () => {
+      ctx.settings.backdateMode = 'WARN';
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.warnings).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.BACKDATE, level: 'WARN', field: 'sdrReturnDate' }),
+      ]);
+    });
+
+    it('refuses a backdated return under REFUSE', async () => {
+      ctx.settings.backdateMode = 'REFUSE';
+
+      const result = await service.validate(
+        body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]),
+      );
+
+      expect(result.refusals).toEqual([
+        expect.objectContaining({ code: SALES_ERROR_CODES.BACKDATE, field: 'sdrReturnDate' }),
+      ]);
+    });
+
+    // P6 S2: the challan's halves are shared pro rata, part by part, and the
+    // line's tax is the sum of the shared parts, so they add up to the paisa.
+    it.each([
+      ['the bill split 7.88 + 7.87 = 15.75', '7.88', '7.87', '2.63', '2.62', '5.25', '110.25'],
+      ['the old split 7.88 + 7.88 = 15.76', '7.88', '7.88', '2.63', '2.63', '5.26', '110.26'],
+    ])('1 back of 3 under %s: parts sum exactly to the line tax, net = taxable + tax', async (_n, cg, sg, rc, rs, rt, rn) => {
+      challanLines = [
+        challanLine({
+          sdiDcQty: dec('3'),
+          sdiRate: dec('105'),
+          sdiGrossAmt: dec('315'),
+          sdiTaxableAmt: dec('315'),
+          sdiCgstAmt: dec(cg),
+          sdiSgstAmt: dec(sg),
+        }),
+      ];
+      await service.save({
+        ...body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]),
+      } as unknown as SaveDcReturnDto);
+
+      const [, saved] = store.saveDraft.mock.calls[0] as [unknown, { items: Record<string, string>[] }];
+      const line = saved.items[0];
+      expect(line).toMatchObject({
+        sdriTaxableAmt: '105.00',
+        sdriCgstAmt: rc,
+        sdriSgstAmt: rs,
+        sdriTaxAmt: rt,
+        sdriNetAmt: rn,
+      });
+      expect(dec(line.sdriCgstAmt).plus(dec(line.sdriSgstAmt)).equals(dec(line.sdriTaxAmt))).toBe(true);
+      expect(dec(line.sdriTaxableAmt).plus(dec(line.sdriTaxAmt)).equals(dec(line.sdriNetAmt))).toBe(true);
+    });
+
+    // P6 R4 (re-review 11-17): 3 × 1 of a line of 3 drifted (taxable 100.00 → 99.99,
+    // CGST 7.88 → 7.89); the return bringing the LAST quantity back takes the rest.
+    it('the return that brings the last 1 of 3 back takes the rest: the three add up to the challan', async () => {
+      challanLines = [
+        challanLine({
+          sdiDcQty: dec('3'),
+          sdiGrossAmt: dec('100.00'),
+          sdiTaxableAmt: dec('100.00'),
+          sdiCgstAmt: dec('7.88'),
+          sdiSgstAmt: dec('7.87'),
+        }),
+      ];
+      // two returns of 1 already POSTED at their share: 33.33 / 2.63 / 2.62 each
+      sql.postedSums = [
+        { dc_item_id: DC_ITEM_ID, qty: dec('2'), gross: dec('66.66'), item_disc: dec(0), sch_disc: dec(0),
+          taxable: dec('66.66'), cgst: dec('5.26'), sgst: dec('5.24'), igst: dec(0), cess: dec(0), weight: null },
+      ];
+      await service.save(body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]));
+
+      const [, saved] = store.saveDraft.mock.calls[0] as [unknown, { items: Record<string, string>[] } & Record<string, string>];
+      expect(saved.items[0]).toMatchObject({
+        sdriTaxableAmt: '33.34', sdriCgstAmt: '2.62', sdriSgstAmt: '2.63', sdriTaxAmt: '5.25', sdriNetAmt: '38.59', sdriGrossAmt: '33.34',
+      });
+      expect(saved).toMatchObject({ sdrTaxableAmt: '33.34', sdrTaxAmt: '5.25', sdrReturnAmt: '38.59' });
+    });
+
+    it('keeps the share while the line is not fully back (a return of 1 of 3, or a line partly billed)', async () => {
+      challanLines = [challanLine({ sdiDcQty: dec('3'), sdiGrossAmt: dec('100'), sdiTaxableAmt: dec('100'), sdiCgstAmt: dec('7.88'), sdiSgstAmt: dec('7.87') })];
+      sql.postedSums = [{ dc_item_id: DC_ITEM_ID, qty: dec('1'), taxable: dec('33.33'), cgst: dec('2.63'), sgst: dec('2.62') }];
+
+      await service.save(body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }]));
+
+      const [, saved] = store.saveDraft.mock.calls[0] as [unknown, { items: Record<string, string>[] }];
+      expect(saved.items[0]).toMatchObject({ sdriTaxableAmt: '33.33', sdriCgstAmt: '2.63', sdriSgstAmt: '2.62' });
+    });
+
+    it('needs CREATE on 251 for a new return (403 SALES_RIGHT_CREATE)', async () => {
+      ctx.rights = { ...ctx.rights, create: false };
+
+      const refusal = await refusalOf(
+        service.validate(body([{ sdriLineNo: 1, sdriDcItemId: DC_ITEM_ID, sdriReturnQty: '1' }])),
+      );
+
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: SALES_ERROR_CODES.RIGHT_CREATE }] },
+      });
+      expect(salesContext.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: COMPANY_ID, branchId: BRANCH_ID }),
+        SALES_MENU_ID.DC_RETURN,
+      );
+    });
+  });
+});
+
+// P6 R4 — settleLastReturn, the pure half: the last return takes the rest.
+describe('settleLastReturn (P6 R4)', () => {
+  const D = (v: string | number) => new Prisma.Decimal(v);
+  const DCL = '019c6f6c-be87-7a11-8905-36092c46b0d1';
+  const dcl = { sdiId: DCL, sdiDcQty: D(3), sdiGrossAmt: D('100.00'), sdiItemDiscAmt: D(0), sdiSchDiscAmt: D(0), sdiTaxableAmt: D('100.00'),
+    sdiCgstAmt: D('7.88'), sdiSgstAmt: D('7.87'), sdiIgstAmt: D(0), sdiCessAmt: D(0), sdiWeightQty: D('0.900') };
+  const share = (qty: number, over: Record<string, unknown> = {}) => ({
+    sdriDcItemId: DCL, sdriReturnQty: D(qty), sdriGrossAmt: D('33.33'), sdriItemDiscAmt: D(0), sdriSchDiscAmt: D(0), sdriTaxableAmt: D('33.33'),
+    sdriCgstAmt: D('2.63'), sdriSgstAmt: D('2.62'), sdriIgstAmt: D(0), sdriCessAmt: D(0), sdriWeightQty: D('0.300'),
+    sdriTaxAmt: D('5.25'), sdriNetAmt: D('38.58'), ...over,
+  });
+  const posted = (rows: Record<string, unknown>[]) => {
+    const sum = (k: string) => rows.reduce<Prisma.Decimal>((a, r) => a.plus((r[k] as Prisma.Decimal) ?? 0), D(0));
+    return new Map([[DCL, { qty: sum('sdriReturnQty'), sdriGrossAmt: sum('sdriGrossAmt'), sdriItemDiscAmt: D(0), sdriSchDiscAmt: D(0),
+      sdriTaxableAmt: sum('sdriTaxableAmt'), sdriCgstAmt: sum('sdriCgstAmt'), sdriSgstAmt: sum('sdriSgstAmt'), sdriIgstAmt: D(0),
+      sdriCessAmt: D(0), sdriWeightQty: sum('sdriWeightQty') }]]);
+  };
+  const lines = new Map([[DCL, dcl as Record<string, unknown>]]);
+  const total = (rows: Record<string, unknown>[], k: string) => rows.reduce<Prisma.Decimal>((a, r) => a.plus(D(r[k] as string)), D(0)).toFixed(2);
+
+  it('3 × 1: the third takes 33.34 / 2.62 / 2.63, and the three make 100.00 / 7.88 / 7.87', () => {
+    const r1 = share(1); const r2 = share(1); const r3 = share(1);
+    expect(settleLastReturn([r3], lines, posted([r1, r2]))).toEqual([0]);
+    expect(r3).toMatchObject({ sdriTaxableAmt: '33.34', sdriCgstAmt: '2.62', sdriSgstAmt: '2.63', sdriTaxAmt: '5.25', sdriNetAmt: '38.59', sdriWeightQty: '0.300' });
+    const all = [r1, r2, r3];
+    expect([total(all, 'sdriTaxableAmt'), total(all, 'sdriCgstAmt'), total(all, 'sdriSgstAmt'), total(all, 'sdriNetAmt')]).toEqual(['100.00', '7.88', '7.87', '115.75']);
+  });
+
+  it('cancel the 2nd and return 1 again: still exact (the posted are R1 at its share and R3 at the rest)', () => {
+    const r1 = share(1);
+    const r3 = share(1, { sdriTaxableAmt: D('33.34'), sdriGrossAmt: D('33.34'), sdriCgstAmt: D('2.62'), sdriSgstAmt: D('2.63') });
+    const again = share(1);
+    // the rest is its share here (100 − 66.67 = 33.33, 7.88 − 5.25 = 2.63, 7.87 − 5.25 = 2.62): nothing to change
+    expect(settleLastReturn([again], lines, posted([r1, r3]))).toEqual([]);
+    const all = [r1, r3, again];
+    expect([total(all, 'sdriTaxableAmt'), total(all, 'sdriCgstAmt'), total(all, 'sdriSgstAmt')]).toEqual(['100.00', '7.88', '7.87']);
+  });
+
+  it('two lines of one return on the same challan line: the last of them takes the rest less the other', () => {
+    // 1 already back; this return takes 1 RESTOCK + 1 DAMAGED of the same line
+    const a = share(1);
+    const b = share(1, { sdriCondition: 'DAMAGED' });
+    expect(settleLastReturn([a, b], lines, posted([share(1)]))).toEqual([1]);
+    expect(b).toMatchObject({ sdriTaxableAmt: '33.34', sdriCgstAmt: '2.62', sdriSgstAmt: '2.63' });
+    expect(a.sdriTaxableAmt).toEqual(D('33.33'));
+  });
+
+  it('leaves a line that is not all back (partly billed, or more still out), and a rest that would go below 0', () => {
+    const r = share(1);
+    expect(settleLastReturn([r], lines, posted([share(1)]))).toEqual([]);
+    expect(r.sdriTaxableAmt).toEqual(D('33.33'));
+    const over = share(1);
+    expect(settleLastReturn([over], lines, posted([share(2, { sdriTaxableAmt: D('100.01') })]))).toEqual([]);
   });
 });

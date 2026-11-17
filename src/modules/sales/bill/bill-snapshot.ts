@@ -193,7 +193,7 @@ export function snapshotFromRows(
   charges: BillChargePayload[],
   tenders: BillTenderPayload[],
 ): BillSnapshot {
-  return {
+  return withChallanSourceRule({
     sbId: bill.sbId,
     companyId: bill.sbCompanyId,
     branchId: bill.sbBranchId,
@@ -331,7 +331,7 @@ export function snapshotFromRows(
         tdNotes: t.tdNotes,
       }),
     })),
-  };
+  });
 }
 
 /** A tender master row, for a `/validate` body whose tender rows carry only `tdTenderId`. */
@@ -375,7 +375,7 @@ export function snapshotFromDto(
   chargeTypes: ChargeTypeMap = new Map(),
 ): BillSnapshot {
   const billDate = dto.sbBillDate ?? isoToday();
-  return {
+  return withChallanSourceRule({
     transport: transportFromDto(dto),
     sbId: dto.sbId ?? null,
     companyId: dto.sbCompanyId,
@@ -529,7 +529,77 @@ export function snapshotFromDto(
             : null,
       };
     }),
-  };
+  });
+}
+
+// ─── N1: the header source of a bill made from several challans ────────────
+
+/** A bill line's / header's source type for a challan, and for an order. */
+export const BILL_SRC_DELIVERY_CHALLAN = 'DELIVERY_CHALLAN';
+export const BILL_SRC_SALES_ORDER = 'SALES_ORDER';
+
+/**
+ * How many distinct challans the lines name (by sbi_src_doc_id + its year).
+ * A challan line that does not name its challan is not counted.
+ */
+export function distinctChallanCount(
+  lines: readonly {
+    srcDocType?: string | null;
+    srcDocId?: string | null;
+    srcDocYear?: string | null;
+  }[],
+): number {
+  const keys = new Set<string>();
+  for (const l of lines) {
+    if (l.srcDocType === BILL_SRC_DELIVERY_CHALLAN && l.srcDocId) {
+      keys.add(`${l.srcDocId}|${(l.srcDocYear ?? '').trim()}`);
+    }
+  }
+  return keys.size;
+}
+
+/**
+ * Challan plan §5.4 / decision 26: when the lines name two or more distinct
+ * challans, the header names no source (`sb_src_doc_*` NULL); the client's
+ * value is ignored. A header that names a SALES_ORDER (whole-order import) is
+ * never touched.
+ */
+export function headerSourceCleared(
+  headerSrcDocType: string | null | undefined,
+  lines: Parameters<typeof distinctChallanCount>[0],
+): boolean {
+  return headerSrcDocType !== BILL_SRC_SALES_ORDER && distinctChallanCount(lines) >= 2;
+}
+
+function withChallanSourceRule(snap: BillSnapshot): BillSnapshot {
+  if (headerSourceCleared(snap.srcDocType, snap.items)) {
+    snap.srcDocType = null;
+    snap.srcDocId = null;
+    snap.srcDocYear = null;
+  }
+  return snap;
+}
+
+/**
+ * The same rule on a save body, before anything reads it (the header write,
+ * the delivery mode, the snapshot): its sbSrcDoc* become null. Idempotent.
+ */
+export function applyChallanSourceRule(dto: SaveBillDto): void {
+  if (dto.items === undefined) {
+    return;
+  }
+  const lines = dto.items.map((i) => ({
+    srcDocType: i.sbiSrcDocType ?? null,
+    srcDocId: i.sbiSrcDocId ?? null,
+    srcDocYear: i.sbiSrcDocYear ?? null,
+  }));
+  if (headerSourceCleared(dto.sbSrcDocType, lines)) {
+    dto.sbSrcDocType = null;
+    dto.sbSrcDocId = null;
+    dto.sbSrcDocRefno = null;
+    dto.sbSrcDocDate = null;
+    dto.sbSrcDocYear = null;
+  }
 }
 
 // ─── derived figures every guard and leg builder reads ─────────────────────

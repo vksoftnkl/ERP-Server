@@ -48,8 +48,46 @@ describe('PrintLogService print counters', () => {
     await log.record([entry(), entry({ copyNo: 2, copyLabel: 'DRIVER / CUSTOMER COPY' })]);
     expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     const { text, values } = sqlOf(prisma.$executeRaw.mock.calls[0] as unknown[]);
-    expect(text).toContain('UPDATE sales.sale_delivery_note SET sdn_print_count = sdn_print_count + 1');
+    expect(text).toContain(
+      'UPDATE sales.sale_delivery_note SET sdn_print_count = sdn_print_count + 1',
+    );
     expect(values).toEqual(['01a1e303-8daa-7d8c-9275-f7f62f7107b4', '2026-2027']);
+  });
+
+  it.each([
+    [
+      'DELIVERY_CHALLAN',
+      'UPDATE sales.sale_dc SET sdc_print_count = sdc_print_count + 1',
+      'sdc_acc_year',
+    ],
+    [
+      'DC_RETURN',
+      'UPDATE sales.sale_dc_return SET sdr_print_count = sdr_print_count + 1',
+      'sdr_acc_year',
+    ],
+  ])(
+    'Sales DC P5: a PRINT of a %s bumps its count once, by id and year (copy 1 only)',
+    async (docType, update, yearCol) => {
+      const { log, prisma } = make();
+      const DOC = '01a1e7cb-c786-75fd-b973-21b78e6a7a0e';
+      await log.record([
+        entry({ srcDocType: docType, srcDocId: DOC, copyLabel: 'ORIGINAL' }),
+        entry({ srcDocType: docType, srcDocId: DOC, copyNo: 2, copyLabel: 'DUPLICATE' }),
+        entry({ srcDocType: docType, srcDocId: DOC, copyNo: 3, copyLabel: 'TRIPLICATE' }),
+      ]);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      const { text, values } = sqlOf(prisma.$executeRaw.mock.calls[0]);
+      expect(text).toContain(update);
+      expect(text).toContain(`${yearCol} = ?::char(9)`);
+      expect(values).toEqual([DOC, '2026-2027']);
+    },
+  );
+
+  it('a REPRINT of a challan counts too; a preview-only FILE does not', async () => {
+    const { log, prisma } = make();
+    await log.record([entry({ srcDocType: 'DELIVERY_CHALLAN', outputMode: 'REPRINT' })]);
+    await log.record([entry({ srcDocType: 'DC_RETURN', outputMode: 'FILE' })]);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('a file save or a failed print does not count', async () => {

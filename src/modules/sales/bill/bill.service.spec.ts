@@ -23,7 +23,7 @@ import { ChargeDetailService } from '../../master/charge-detail/charge-detail.se
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { SaleOrderService } from '../sale-order/sale-order.service';
 import { QuotationService } from '../quotation/quotation.service';
-import { BillService } from './bill.service';
+import { BillService, lineLevelOf } from './bill.service';
 import { readDraftCheques } from './bill-cheque-details';
 import { BillReadService } from './bill-read.service';
 import { SalesContextService } from '../posting/sales-context.service';
@@ -1099,6 +1099,102 @@ describe('BillService', () => {
         sbiGodownId: GODOWN_ID,
         sbiStockId: STOCK_ID,
       });
+    });
+
+    // User 2026-11-17 (P1): a line level of 0 (or none) is the bill's own:
+    // 0 passed /validate and then 500'd on fk_sbi_price_level.
+    it('stores the bill\'s price level on a line that sends 0, null or none, and keeps a real one', async () => {
+      await service.save(
+        baseDto({
+          sbPriceLevel: 3,
+          items: [
+            { sbiItemId: ITEM_MASTER_ID, sbiItemUnitId: ITEM_UNIT_ID, sbiGodownId: GODOWN_ID, sbiStockId: STOCK_ID, sbiPriceLevel: 0 },
+            { sbiItemId: ITEM_MASTER_ID, sbiItemUnitId: ITEM_UNIT_ID, sbiGodownId: GODOWN_ID, sbiStockId: STOCK_ID, sbiLineNo: 2 },
+            { sbiItemId: ITEM_MASTER_ID, sbiItemUnitId: ITEM_UNIT_ID, sbiGodownId: GODOWN_ID, sbiStockId: STOCK_ID, sbiLineNo: 3, sbiPriceLevel: 2 },
+          ],
+        }),
+      );
+
+      expect(prisma.saleBillItem.create.mock.calls.map((c) => c[0].data.sbiPriceLevel)).toEqual([3, 3, 2]);
+    });
+
+    // P4 (user 11-17): a line that names its order by order id + line number is
+    // stored with the order line's id, so the guards and the reservations agree.
+    it('stores the order line id on a line that names only the order and the line number', async () => {
+      const SO = '019c6f6c-be87-7a11-8905-36092c46e101';
+      const SOI = '019c6f6c-be87-7a11-8905-36092c46e102';
+      (prisma as unknown as { $queryRaw: jest.Mock }).$queryRaw = jest.fn(async () => [
+        { id: SOI, doc_id: SO, line_no: 4, acc_year: '2026-2027' },
+      ]);
+      // the draft save re-derives the order it names; its own tests cover that
+      const sync = jest.spyOn(SaleOrderService.prototype, 'syncOrderFulfilment').mockResolvedValue([]);
+      await service.save(
+        baseDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiStockId: STOCK_ID,
+              sbiSrcDocType: 'SALES_ORDER',
+              sbiSrcDocId: SO,
+              sbiSrcDocLineNo: 4,
+            },
+          ],
+        }),
+      );
+
+      expect(prisma.saleBillItem.create.mock.calls[0][0].data).toMatchObject({
+        sbiSrcItemId: SOI,
+        sbiSrcDocId: SO,
+        sbiSrcDocLineNo: 4,
+        sbiSrcDocYear: '2026-2027',
+      });
+      expect(sync.mock.calls[0][1].refs).toEqual([expect.objectContaining({ srcDocId: SO, soLineNo: 4 })]);
+      sync.mockRestore();
+    });
+
+    // P6 N6 (user 11-17): the two-challan rule ran before the resolver, so a body
+    // naming its challan lines only by sbiSrcItemId kept its header source.
+    it('clears the header source of a bill of two challans named only by their line ids', async () => {
+      const DC1 = '019c6f6c-be87-7a11-8905-36092c46e201';
+      const DC2 = '019c6f6c-be87-7a11-8905-36092c46e202';
+      const L1 = '019c6f6c-be87-7a11-8905-36092c46e211';
+      const L2 = '019c6f6c-be87-7a11-8905-36092c46e212';
+      const fallback = prisma.$queryRaw.getMockImplementation()!;
+      prisma.$queryRaw.mockImplementation(async (...args: unknown[]) =>
+        (args[0] as readonly string[]).join('').includes('FROM sales.sale_dc_item')
+          ? [
+              { id: L1, doc_id: DC1, line_no: 1, acc_year: '2026-2027' },
+              { id: L2, doc_id: DC2, line_no: 1, acc_year: '2026-2027' },
+            ]
+          : fallback(...args),
+      );
+      const line = (sbiSrcItemId: string) => ({
+        sbiItemId: ITEM_MASTER_ID,
+        sbiItemUnitId: ITEM_UNIT_ID,
+        sbiGodownId: GODOWN_ID,
+        sbiStockId: STOCK_ID,
+        sbiSrcDocType: 'DELIVERY_CHALLAN',
+        sbiSrcItemId,
+      });
+
+      await service.save(
+        baseDto({
+          sbSrcDocType: 'DELIVERY_CHALLAN',
+          sbSrcDocId: DC1,
+          sbSrcDocRefno: 'DC2627D14-00001',
+          items: [line(L1), line(L2)],
+        } as Partial<SaveBillDto>),
+      );
+
+      const data = prisma.saleBill.create.mock.calls[0][0].data;
+      expect([data.sbSrcDocType, data.sbSrcDocId, data.sbSrcDocRefno]).toEqual([null, null, null]);
+      expect(prisma.saleBillItem.create.mock.calls.map((c) => c[0].data.sbiSrcDocId)).toEqual([DC1, DC2]);
+    });
+
+    it('lineLevelOf: absent, null and 0 take the bill\'s level', () => {
+      expect([lineLevelOf(undefined, 4), lineLevelOf(null, 4), lineLevelOf(0, 4), lineLevelOf(1, 4)]).toEqual([4, 4, 4, 1]);
     });
 
     // A 400: the field is missing off the payload, which is a bad request, not

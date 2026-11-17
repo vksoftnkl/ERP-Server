@@ -96,12 +96,13 @@ describe('DcReturnController', () => {
   });
 
   it('wraps the open challan lines', async () => {
-    await expect(controller.openLines(DC_ID, ACC_YEAR)).resolves.toEqual({
+    const q = { companyId: COMPANY_ID, branchId: BRANCH_ID, sdcId: DC_ID, sdcAccYear: ACC_YEAR };
+    await expect(controller.openLines(q)).resolves.toEqual({
       success: true,
       message: 'Open challan lines fetched',
       data: [{ dcItemId: 'x', openQty: 4 }],
     });
-    expect(service.openLines).toHaveBeenCalledWith(DC_ID, ACC_YEAR);
+    expect(service.openLines).toHaveBeenCalledWith(q);
   });
 
   it('wraps the transport band', async () => {

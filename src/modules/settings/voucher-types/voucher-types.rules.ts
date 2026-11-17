@@ -2,11 +2,14 @@ import { AccVoucherType, VoucherNumberingMode } from '@prisma/client';
 import {
   GST_DOC_NO_MAX_LENGTH,
   GST_OUTWARD_SIDE,
+  KNOWN_FORMAT_TOKENS,
   SEQ_VOUCHER_PREFIX_MAX_LENGTH,
   SEQ_VOUCHER_SUFFIX_MAX_LENGTH,
+  compactAccYear,
   fillVoucherFormatTokens,
   firstVoucherNumber,
   formatHasBranchToken,
+  formatHasDeviceToken,
   scanFormatTokens,
   shortAccYear,
 } from 'src/common/Sequence/voucher-sequence.helper';
@@ -90,6 +93,8 @@ export const MIRROR_FIELDS = [
   'vchrInstruments',
   'vchrTallyExportEnabled',
   'vchrTallyBaseVoucherType',
+  // Challan plan decision 32: a child of a GST document type is one too.
+  'vchrGstDocNo',
 ] as const satisfies ReadonlyArray<keyof AccVoucherType>;
 export type MirrorField = (typeof MIRROR_FIELDS)[number];
 
@@ -125,6 +130,23 @@ export function canHaveChildren(t: Pick<AccVoucherType, 'vchrParentId' | 'vchrTy
 export function isGstOutward(t: Pick<AccVoucherType, 'vchrGstSide'>): boolean {
   return t.vchrGstSide === GST_OUTWARD_SIDE;
 }
+
+/**
+ * Challan plan decision 32: a type whose number is a GST document number
+ * (acc_voucher_types.vchr_gst_doc_no: the challan 19 and the challan return 20,
+ * and a child's mirror) — at most 16 characters, A–Z a–z 0–9 - / only.
+ */
+export function isGstDocNo(t: Partial<Pick<AccVoucherType, 'vchrGstDocNo'>>): boolean {
+  return t.vchrGstDocNo === true;
+}
+
+/** VT_NO_TOO_LONG's wording variant for a vchr_gst_doc_no type that is not outward (rule=GST_DOC_NO). */
+export const VT_NO_TOO_LONG_DOC_RULE = 'GST_DOC_NO';
+
+/** Every known token, braced, to strip from a prefix / suffix before the charset check. */
+const KNOWN_TOKEN_TEXT = new RegExp(`\\{(${KNOWN_FORMAT_TOKENS.join('|')})\\}`, 'g');
+/** The known tokens as the refusal message lists them. */
+const KNOWN_TOKEN_LIST = KNOWN_FORMAT_TOKENS.map((t) => `{${t}}`).join(', ');
 
 /**
  * The print design kind (print_purpose.ppo_doc_type) a type's designs are of: the
@@ -212,6 +234,17 @@ export interface NumberingFacts {
   vchrTypeId: number | null;
   accYear: string;
   gstOutward: boolean;
+  /**
+   * Challan plan decision 32: the type (or its base) is a vchr_gst_doc_no type, held
+   * to 16 characters and the GST charset like an outward one. Left out = false.
+   */
+  gstDocNo?: boolean;
+  /**
+   * The longest live device code that can number for the company (a base: any
+   * company's), what {DV} is judged and previewed with. Null / left out = no
+   * live device: a {DV} format is then not length-checked here (its counter is).
+   */
+  deviceCode?: string | null;
   /** The active branches the type numbers at: the company's for a child, every company's for a base. */
   branches: readonly BranchFact[];
   /** The branch the preview strip shows (A11). */
@@ -229,6 +262,12 @@ export interface NumberingPreview {
   accYear: string;
   gstLimit: number | null;
   clashWith: string | null;
+  /**
+   * The device code the sample prints for {DV}: the company's longest live one
+   * (null when none). Sent for every type, so a screen can preview a {DV} typed
+   * into a type that had none (added 11-16, challan plan §5.1).
+   */
+  deviceCode: string | null;
 }
 
 export interface NumberingVerdict {
@@ -284,7 +323,7 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
         issue(
           SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
           field,
-          `"${text}" holds an unknown code "${scan.unknown}". Only {FY}, {YY} and {BR} are known.`,
+          `"${text}" holds an unknown code "${scan.unknown}". Only ${KNOWN_TOKEN_LIST} are known.`,
           // No braces: the wording filler would read "{QQ}" as a placeholder and drop it.
           { params: { token: scan.unknown.replace(/[{}]/g, ' ').trim() } },
         ),
@@ -292,17 +331,27 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
     }
   }
   const yy = shortAccYear(f.accYear);
-  if (tokensOk && names.has('YY') && yy === null) {
-    tokensOk = false;
-    errors.push(
-      issue(
-        SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
-        'vchrNoPrefix',
-        `{YY} needs an accounting year shaped NNNN-NNNN, not "${f.accYear}".`,
-        { params: { token: 'YY' } },
-      ),
-    );
+  const fyc = compactAccYear(f.accYear);
+  for (const [token, value] of [
+    ['YY', yy],
+    ['FYC', fyc],
+  ] as const) {
+    if (tokensOk && names.has(token) && value === null) {
+      tokensOk = false;
+      errors.push(
+        issue(
+          SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+          'vchrNoPrefix',
+          `{${token}} needs an accounting year shaped NNNN-NNNN, not "${f.accYear}".`,
+          { params: { token } },
+        ),
+      );
+    }
   }
+  // GST16 and the charset: outward types (Voucher Types §5.2) and GST document
+  // types (challan plan decision 32). VT_BR_REQUIRED stays outward-only.
+  const gstLimited = f.gstOutward || f.gstDocNo === true;
+  const deviceCode = f.deviceCode?.trim() || null;
   if (d.mode !== VoucherNumberingMode.AUTO) {
     errors.push(
       issue(
@@ -317,13 +366,20 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
   }
 
   const usesBr = formatHasBranchToken(d.prefix, d.suffix);
+  const usesDv = formatHasDeviceToken(d.prefix, d.suffix);
   const sampleAt = (
     branchCode: string | null,
   ): { prefix: string; suffix: string; first: string } | null => {
     if (!tokensOk) {
       return null;
     }
-    const values = { FY: f.accYear, YY: yy ?? '', BR: branchCode ?? '{BR}' };
+    const values = {
+      FY: f.accYear,
+      YY: yy ?? '',
+      FYC: fyc ?? '',
+      BR: branchCode ?? '{BR}',
+      DV: deviceCode ?? '{DV}',
+    };
     const prefix = fillVoucherFormatTokens(d.prefix, values) ?? '';
     const suffix = fillVoucherFormatTokens(d.suffix, values) ?? '';
     const first = firstVoucherNumber(
@@ -336,9 +392,14 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
   // The longest first number over the branches the type numbers at. A {BR}
   // format is judged per branch (a branch with no code is refused at its
   // counter with SEQUENCE_BRANCH_CODE_MISSING, not here); any other has one shape.
-  const codes = usesBr
-    ? [...new Set(f.branches.map((b) => b.numberCode).filter((c): c is string => !!c))]
-    : [null];
+  // A {DV} format is judged with the longest live device code; with no live
+  // device it is not judged here (each device's counter is, as it opens).
+  const codes =
+    usesDv && deviceCode === null
+      ? []
+      : usesBr
+        ? [...new Set(f.branches.map((b) => b.numberCode).filter((c): c is string => !!c))]
+        : [null];
   const samples = codes
     .map((c) => sampleAt(c))
     .filter((s): s is NonNullable<typeof s> => s !== null);
@@ -361,13 +422,16 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
       );
     } else if (longest.first.length > GST_DOC_NO_MAX_LENGTH) {
       const params = { sample: longest.first, len: String(longest.first.length) };
-      if (f.gstOutward) {
+      if (gstLimited) {
+        // A GST document type that is not an invoice (the challan, its return)
+        // takes the challan-worded variant rule=GST_DOC_NO (user 11-16).
+        const docNo = f.gstDocNo === true && !f.gstOutward;
         errors.push(
           issue(
             VoucherTypeErrorCode.NO_TOO_LONG,
             'vchrNoPrefix',
-            `${longest.first} has ${longest.first.length} characters; a GST invoice number may have ${GST_DOC_NO_MAX_LENGTH} at most.`,
-            { params },
+            `${longest.first} has ${longest.first.length} characters; a GST ${docNo ? 'document' : 'invoice'} number may have ${GST_DOC_NO_MAX_LENGTH} at most.`,
+            docNo ? { params, rule: VT_NO_TOO_LONG_DOC_RULE } : { params },
           ),
         );
       } else {
@@ -382,8 +446,8 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
       }
     }
   }
-  if (f.gstOutward) {
-    const bare = [d.prefix, d.suffix].map((t) => (t ?? '').replace(/\{(FY|YY|BR)\}/g, '')).join('');
+  if (gstLimited) {
+    const bare = [d.prefix, d.suffix].map((t) => (t ?? '').replace(KNOWN_TOKEN_TEXT, '')).join('');
     // An unknown token is already refused above; its braces are not "characters".
     if (tokensOk && !GST_DOC_NO_CHARS.test(bare)) {
       errors.push(
@@ -394,6 +458,8 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
         ),
       );
     }
+  }
+  if (f.gstOutward) {
     if (!usesBr) {
       const shared = sharedGstin(f.branches);
       if (shared) {
@@ -434,8 +500,9 @@ export function checkNumbering(d: NumberingDraft, f: NumberingFacts): NumberingV
       branchCode: f.previewBranch?.numberCode ?? null,
       branchName: f.previewBranch?.branchName ?? null,
       accYear: f.accYear,
-      gstLimit: f.gstOutward ? GST_DOC_NO_MAX_LENGTH : null,
+      gstLimit: gstLimited ? GST_DOC_NO_MAX_LENGTH : null,
       clashWith: clash?.vchrTypeName ?? null,
+      deviceCode,
     },
   };
 }

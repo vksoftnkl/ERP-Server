@@ -40,7 +40,18 @@ export class DocRegisterService {
   async write(
     tx: Prisma.TransactionClient,
     doc: RegisterDoc,
-    opts: { companyEinvoiceFlag?: boolean; aatoAmount?: number | null; interState?: boolean } = {},
+    opts: {
+      companyEinvoiceFlag?: boolean;
+      aatoAmount?: number | null;
+      interState?: boolean;
+      /**
+       * The state whose intra-state e-way floor applies, when it is not the
+       * filed place of supply: a challan / challan return with a blank POS is
+       * judged by the company's own state (user 11-16), while the register
+       * still files the POS as given. Absent = doc.placeOfSupplyCode.
+       */
+      ewayStateCode?: string | null;
+    } = {},
   ): Promise<RegisterWriteResult> {
     const interState = opts.interState ?? doc.supplyNature === 'INTER_STATE';
 
@@ -58,7 +69,11 @@ export class DocRegisterService {
         doc.companyId,
         doc.billValue,
         doc.docDate,
-        { interState, stateCode: doc.placeOfSupplyCode ?? null },
+        {
+          interState,
+          stateCode:
+            opts.ewayStateCode !== undefined ? opts.ewayStateCode : (doc.placeOfSupplyCode ?? null),
+        },
         tx,
       ),
     ]);

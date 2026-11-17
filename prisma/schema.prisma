@@ -2962,6 +2962,10 @@ model AccVoucherType {
   /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
   /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type
   vchrDeliveryMode           String?              @db.VarChar(10) @map("vchr_delivery_mode")
+  /// DC / DC return (20261118100000, decision 32): the number is a GST document number
+  /// (Rules 46 / 53 / 55): at most 16 characters, A–Z a–z 0–9 - /. Checked at counter
+  /// creation, at the type's save and at each draw. true on DCh / DCR (and any child of them)
+  vchrGstDocNo               Boolean              @default(false) @map("vchr_gst_doc_no")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -14367,7 +14371,9 @@ model SaleDc {
   @@id([sdcId, sdcAccYear], map: "pk_sale_dc")
 
   @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcDcRefno], map: "ux_sdc_refno")
-  @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcCounterId, sdcDcSlno], map: "ux_sdc_counter_slno")
+  // ux_sdc_counter_slno (company, branch, year, counter, slno) was dropped by
+  // 20261118100000_dc_dc_return (decision 33): numbers are per DEVICE, and two
+  // devices on one till counter would both draw 1. The refno holds the device code.
 
   // Partial indexes are DB-only:
   //   ix_sdc_company_branch_date

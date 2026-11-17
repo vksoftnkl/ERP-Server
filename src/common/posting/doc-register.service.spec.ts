@@ -139,6 +139,20 @@ describe('DocRegisterService', () => {
       );
     });
 
+    // A blank-POS challan's e-way floor is the company state's (user 11-16): the
+    // caller names the state, the POS column is filed as given.
+    it('reads the e-way state from ewayStateCode when the caller gives one, else the POS', async () => {
+      await service.write(client(), doc({ placeOfSupplyCode: null }), { ewayStateCode: '33' });
+      await service.write(client(), doc({ placeOfSupplyCode: null }));
+      await service.write(client(), doc(), { ewayStateCode: null });
+
+      expect(statutory.ewayApplicable.mock.calls.map((c) => c[3].stateCode)).toEqual([
+        '33',
+        null,
+        null,
+      ]);
+    });
+
     it('defaults the turnover to null and the company flag to off', async () => {
       await service.write(client(), doc());
 

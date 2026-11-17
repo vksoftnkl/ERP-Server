@@ -1,7 +1,7 @@
 import { throwBadRequest, throwNotFound, throwUnprocessable } from '../utils/module-shared.utils';
 import { BRANCH_NUMBER_CODE_PATTERN, branchNumberCode } from './branch-number-code.helper';
 import type { SequenceErrorDetail } from './types/sequence-api.types';
-import { SequenceErrorCode } from './types/sequence-error-codes';
+import { SequenceErrorCode, SequenceRefusalRule } from './types/sequence-error-codes';
 import {
   AccVoucherSeq,
   AccVoucherType,
@@ -36,15 +36,23 @@ const FORMAT_TOKEN = /\{([^{}]*)\}/g;
 // Voucher Types plan §5.2 / §7.3 (2026-11-14): {YY} = the two-digit years of the
 // accounting year ('2026-2027' → '26-27'), for numbers that must stay within the
 // GST 16-character limit.
-export const KNOWN_FORMAT_TOKENS = ['FY', 'YY', 'BR'] as const;
+// Challan plan §5.1 (decision 31, 2026-11-16): {FYC} = the compact year
+// ('2026-2027' → '2627') and {DV} = the counter's device code ('D14').
+export const KNOWN_FORMAT_TOKENS = ['FY', 'YY', 'BR', 'FYC', 'DV'] as const;
 export type FormatToken = (typeof KNOWN_FORMAT_TOKENS)[number];
+/** The tokens as a reader sees them, for refusal messages. */
+const KNOWN_FORMAT_TOKENS_TEXT = '{FY}, {YY}, {FYC}, {BR} and {DV}';
 const ACC_YEAR_SHAPE = /^(\d{4})-(\d{4})$/;
 /**
- * GST (CGST Rules r.46(b)): an outward invoice / note number has at most 16
- * characters. Checked at counter creation for every GST outward type (Voucher
- * Types plan decision 35) and at the type's save in the master.
+ * GST (CGST Rules r.46(b) / 53 / 55): an invoice, note or challan number has at
+ * most 16 characters. Checked at counter creation for every GST outward type
+ * (Voucher Types plan decision 35) and for every vchr_gst_doc_no type (challan
+ * plan decision 32, which also checks each draw), and at the type's save in the
+ * master.
  */
 export const GST_DOC_NO_MAX_LENGTH = 16;
+/** What a GST document number may hold (Rule 46(b) / 55): letters, digits, '-' and '/'. */
+export const GST_DOC_NO_PATTERN = /^[A-Za-z0-9/-]+$/;
 /** vchr_gst_side of a type (or a child's mirror) whose documents go on GSTR-1. */
 export const GST_OUTWARD_SIDE = 'OUTPUT';
 type VoucherTypeFormat = Pick<
@@ -54,7 +62,10 @@ type VoucherTypeFormat = Pick<
   // Optional so a caller (or a test double) that predates the Voucher Types
   // master still reads: start 1, Method AUTO, no GST rule, a base type.
   Partial<
-    Pick<AccVoucherType, 'vchrStartNo' | 'vchrNumberingMode' | 'vchrGstSide' | 'vchrParentId'>
+    Pick<
+      AccVoucherType,
+      'vchrStartNo' | 'vchrNumberingMode' | 'vchrGstSide' | 'vchrParentId' | 'vchrGstDocNo'
+    >
   >;
 export interface VoucherNumberScope {
   vchrTypeId: number;
@@ -99,6 +110,7 @@ const VOUCHER_TYPE_FORMAT_SELECT = {
   vchrNumberingMode: true,
   vchrGstSide: true,
   vchrParentId: true,
+  vchrGstDocNo: true,
 } as const;
 // The typed number to use, or null to draw from the counter (plan §7.3):
 //   AUTO        → null (a typed number is ignored and not consumed);
@@ -184,8 +196,14 @@ export async function allocateVoucherNumber(
     deviceCode,
     periodKey,
   };
-  await acquireVoucherScopeLock(tx, resolvedScope);
-  const sequence = await findOrCreateSequence(tx, resolvedScope, voucherType);
+  // User 11-16 ("one series per PC"): a device-wide type keeps ONE counter per
+  // device per company and year, whatever branch the document is for.
+  const sequence = isDeviceWideSeries(voucherType, deviceCode)
+    ? await findOrCreateDeviceSeries(tx, resolvedScope, voucherType)
+    : await (async () => {
+        await acquireVoucherScopeLock(tx, resolvedScope);
+        return findOrCreateSequence(tx, resolvedScope, voucherType);
+      })();
   // Relative increment rather than a read-then-write of a value we already read:
   // the row lock it takes keeps the counter correct even against the admin CRUD
   // path, which guards a different advisory lock.
@@ -200,6 +218,12 @@ export async function allocateVoucherNumber(
     },
   });
   const refno = buildRefno(consumed);
+  // Challan plan decision 32: a GST document number is checked at EVERY draw, so
+  // a counter that outgrows 16 (the 100,000th challan of a year on a 4-character
+  // device) is refused here; the throw rolls the increment back with the save.
+  if (voucherType.vchrGstDocNo === true) {
+    assertGstDocNumber(refno, vchrTypeId, 'draw');
+  }
   await tx.accVoucherSeq.update({
     where: {
       id: sequence.id,
@@ -221,6 +245,11 @@ export async function allocateVoucherNumber(
  * `refno` is null (and `code` says why) when the type is numbered by hand or the
  * counter could not open (an unknown token, a branch with no code, a GST16 or
  * {BR} refusal) — the save would answer that refusal itself.
+ *
+ * A type whose number prints {DV}, previewed with no device (or the shared MAIN
+ * counter), is shown as the company's longest live device code would number it
+ * (challan plan §5.1): the widest number any of its PCs would print. With no live
+ * device the {DV} refusal's code comes back.
  */
 export async function previewNextVoucherNumber(
   client: Prisma.TransactionClient,
@@ -239,33 +268,45 @@ export async function previewNextVoucherNumber(
     return { refno: null, code: SequenceErrorCode.NUMBER_REQUIRED };
   }
   const periodKey = buildPeriodKey(voucherType.vchrResetFreq, scope.accYear, scope.documentDate);
-  const existing = await client.accVoucherSeq.findFirst({
-    where: {
-      vchrTypeId: scope.vchrTypeId,
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-      accYear: scope.accYear,
-      deviceCode: scope.deviceCode?.trim() || DEFAULT_DEVICE_CODE,
-      periodKey,
-    },
-  });
+  let deviceCode = scope.deviceCode?.trim() || DEFAULT_DEVICE_CODE;
+  if (
+    isSharedDeviceCode(deviceCode) &&
+    formatHasDeviceToken(voucherType.vchrNoPrefix, voucherType.vchrNoSuffix)
+  ) {
+    deviceCode = (await longestLiveDeviceCode(client, scope.companyId)) ?? deviceCode;
+  }
+  const previewScope = { ...scope, deviceCode };
+  // A device-wide series (one per PC) is the device's counter at any branch.
+  const existing = isDeviceWideSeries(voucherType, deviceCode)
+    ? await findDeviceSeries(client, { ...scope, deviceCode, periodKey })
+    : await client.accVoucherSeq.findFirst({
+        where: {
+          vchrTypeId: scope.vchrTypeId,
+          companyId: scope.companyId,
+          branchId: scope.branchId,
+          accYear: scope.accYear,
+          deviceCode,
+          periodKey,
+        },
+      });
   try {
     if (existing) {
       if (existing.isDeleted || !existing.isActive) {
         return { refno: null, code: SequenceErrorCode.INACTIVE };
       }
-      return {
-        refno: buildRefno({ ...existing, lastNo: existing.lastNo + BigInt(1) }),
-        code: null,
-      };
+      const next = buildRefno({ ...existing, lastNo: existing.lastNo + BigInt(1) });
+      if (voucherType.vchrGstDocNo === true) {
+        assertGstDocNumber(next, scope.vchrTypeId, 'draw');
+      }
+      return { refno: next, code: null };
     }
-    const format = await expandVoucherFormat(client, scope, {
+    const format = await expandVoucherFormat(client, previewScope, {
       prefix: voucherType.vchrNoPrefix,
       suffix: voucherType.vchrNoSuffix,
       noWidth: voucherType.vchrNoWidth,
     });
     const startNo = voucherStartNo(voucherType);
-    await assertCounterRules(client, scope, voucherType, format, startNo);
+    await assertCounterRules(client, previewScope, voucherType, format, startNo);
     return { refno: firstVoucherNumber(format, startNo), code: null };
   } catch (error: unknown) {
     const code = refusalCodeOf(error);
@@ -342,17 +383,26 @@ export interface VoucherFormatScope {
   vchrTypeId: number;
   branchId: string;
   accYear: string;
+  /**
+   * The counter's device code, for {DV}. Blank or the shared 'MAIN' counter (a
+   * caller that does not number per device) cannot print {DV}: refused.
+   */
+  deviceCode?: string | null;
 }
 // Branch serial plan §5.2 / §5.5 (approved 2026-11-04): the tokens a voucher
 // type's prefix / suffix may hold, expanded only when a counter row is CREATED.
 // The row's seq_voucher_prefix / _suffix is the year's frozen format snapshot;
 // buildRefno just prints it.
-//   {FY} = the accounting year as stored ('2026-2027').
-//   {YY} = its two-digit years ('26-27'; Voucher Types plan §7.3). An accYear
-//          not shaped NNNN-NNNN is refused as SEQUENCE_FORMAT_TOKEN_UNKNOWN
-//          with params.token 'YY'.
-//   {BR} = the branch's number code (branch-number-code.helper.ts), which must
-//          match ^[A-Z0-9-]{1,10}$.
+//   {FY}  = the accounting year as stored ('2026-2027').
+//   {YY}  = its two-digit years ('26-27'; Voucher Types plan §7.3). An accYear
+//           not shaped NNNN-NNNN is refused as SEQUENCE_FORMAT_TOKEN_UNKNOWN
+//           with params.token 'YY'.
+//   {FYC} = the compact year ('2627'; challan plan §5.1), refused the same way
+//           (params.token 'FYC').
+//   {BR}  = the branch's number code (branch-number-code.helper.ts), which must
+//           match ^[A-Z0-9-]{1,10}$.
+//   {DV}  = the counter's device code (challan plan §5.1). A shared 'MAIN'
+//           counter has none: SEQUENCE_FORMAT_TOKEN_UNKNOWN, params.token 'DV'.
 // A format with no '{' comes back as it is, without a query: every counter in
 // use today keeps its exact behaviour. Refuses (nothing is written) an unknown
 // token or stray brace, a branch with no usable code, and a format whose first
@@ -372,7 +422,9 @@ export async function expandVoucherFormat(
   const values: Record<FormatToken, string> = {
     FY: scope.accYear,
     YY: tokens.includes('YY') ? requireShortAccYear(scope.accYear, scope.vchrTypeId) : '',
+    FYC: tokens.includes('FYC') ? requireCompactAccYear(scope.accYear, scope.vchrTypeId) : '',
     BR: tokens.includes('BR') ? await requireBranchNumberCode(tx, scope.branchId) : '',
+    DV: tokens.includes('DV') ? requireDeviceCode(scope.deviceCode, scope.vchrTypeId) : '',
   };
   const expanded: VoucherFormat = {
     prefix: fillFormatTokens(format.prefix, values),
@@ -387,7 +439,7 @@ export async function expandVoucherFormat(
 function formatTokens(text: string | null, part: string, vchrTypeId: number): FormatToken[] {
   const { names, unknown } = scanFormatTokens(text);
   if (unknown !== undefined) {
-    const message = `The number ${part} "${text}" of voucher type ${vchrTypeId} holds an unknown token "${unknown}". Only {FY}, {YY} and {BR} are expanded.`;
+    const message = `The number ${part} "${text}" of voucher type ${vchrTypeId} holds an unknown token "${unknown}". Only ${KNOWN_FORMAT_TOKENS_TEXT} are expanded.`;
     throwUnprocessable<SequenceErrorDetail>(message, [
       {
         field: 'vchrTypeId',
@@ -442,6 +494,199 @@ function requireShortAccYear(accYear: string, vchrTypeId: number): string {
     ]);
   }
   return yy;
+}
+/** '2026-2027' → '2627' ({FYC}); null for an accYear not shaped NNNN-NNNN. */
+export function compactAccYear(accYear: string): string | null {
+  const m = ACC_YEAR_SHAPE.exec(accYear.trim());
+  return m ? `${m[1].slice(2)}${m[2].slice(2)}` : null;
+}
+function requireCompactAccYear(accYear: string, vchrTypeId: number): string {
+  const fyc = compactAccYear(accYear);
+  if (fyc === null) {
+    const message = `Voucher type ${vchrTypeId} prints {FYC}, but the accounting year "${accYear}" is not shaped NNNN-NNNN.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+        message,
+        params: { token: 'FYC' },
+      },
+    ]);
+  }
+  return fyc;
+}
+/** True for the shared counter a caller that does not number per device draws from. */
+export function isSharedDeviceCode(deviceCode: string | null | undefined): boolean {
+  const code = deviceCode?.trim() ?? '';
+  return code === '' || code.toUpperCase() === DEFAULT_DEVICE_CODE;
+}
+// {DV} prints the counter's device code; the shared MAIN counter has none, so a
+// type that prints {DV} must be numbered per device (challan plan §5.1).
+function requireDeviceCode(deviceCode: string | null | undefined, vchrTypeId: number): string {
+  if (isSharedDeviceCode(deviceCode)) {
+    const message = `Voucher type ${vchrTypeId} prints {DV}, the device code, but this document is numbered on the shared ${DEFAULT_DEVICE_CODE} counter, not per device.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+        message,
+        // Picks the wording variant rule=DEVICE_COUNTER (user 11-16).
+        rule: SequenceRefusalRule.DEVICE_COUNTER,
+        params: { token: 'DV' },
+      },
+    ]);
+  }
+  return (deviceCode as string).trim();
+}
+/** True when the raw (unexpanded) prefix or suffix prints the device code. */
+export function formatHasDeviceToken(
+  prefix: string | null | undefined,
+  suffix: string | null | undefined,
+): boolean {
+  return [prefix, suffix].some((t) => scanFormatTokens(t).names.includes('DV'));
+}
+/**
+ * User 11-16 ("one series per PC", challan plan decision 31 as amended): a GST
+ * document type (vchr_gst_doc_no) whose number prints {DV} and no {BR} keeps ONE
+ * counter per DEVICE per company, year and period, whatever branch the document
+ * is for, so a number never repeats under a GSTIN when a PC posts for two
+ * branches. A rule of the type, not of ids 19 / 20 (the Sale Return can take it
+ * up in Q-N3). The shared MAIN counter (no device) is never one: {DV} refuses it.
+ *
+ * acc_voucher_seq.seq_branch_id is NOT NULL and in uq_acc_voucher_seq_scope, so
+ * the row is anchored on one branch of the company (deviceSeriesAnchorBranch);
+ * the document keeps its own branch.
+ */
+export function isDeviceWideSeries(
+  voucherType: Partial<Pick<AccVoucherType, 'vchrGstDocNo' | 'vchrNoPrefix' | 'vchrNoSuffix'>>,
+  deviceCode?: string | null,
+): boolean {
+  if (voucherType.vchrGstDocNo !== true) {
+    return false;
+  }
+  if (deviceCode !== undefined && isSharedDeviceCode(deviceCode)) {
+    return false;
+  }
+  const prefix = voucherType.vchrNoPrefix ?? null;
+  const suffix = voucherType.vchrNoSuffix ?? null;
+  return formatHasDeviceToken(prefix, suffix) && !formatHasBranchToken(prefix, suffix);
+}
+/** The branch half of a device-wide series' advisory lock key: one lock whatever branch posts. */
+const DEVICE_SERIES_LOCK_BRANCH = '*device-series*';
+/**
+ * The branch a NEW device-wide counter row is filed under: the company's oldest
+ * live branch (earliest br_created_on, then br_id). br_is_default and br_type are
+ * editable / free text, so they could move it; the oldest branch never changes
+ * while it lives, and every site that holds the company's branches picks the
+ * same one. A counter that already exists is found at ANY branch first
+ * (findDeviceSeries), so the series continues even if the anchor later moves.
+ */
+export async function deviceSeriesAnchorBranch(
+  client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  companyId: string,
+): Promise<string | null> {
+  const rows = await client.$queryRaw<Array<{ br_id: string }>>`
+    SELECT br_id FROM public.branch_master
+     WHERE br_comp_id = ${companyId}::uuid AND br_is_deleted = false
+     ORDER BY br_created_on ASC NULLS LAST, br_id ASC
+     LIMIT 1`;
+  return Array.isArray(rows) && rows[0]?.br_id ? rows[0].br_id : null;
+}
+/**
+ * The device's counter of a device-wide series in the company, year and period,
+ * at whatever branch it was filed (the oldest row when, by an admin's hand, there
+ * are two). Null when the device has not numbered this year yet.
+ */
+export async function findDeviceSeries(
+  client: Prisma.TransactionClient,
+  scope: {
+    vchrTypeId: number;
+    companyId: string;
+    accYear: string;
+    deviceCode: string;
+    periodKey: string;
+  },
+): Promise<AccVoucherSeq | null> {
+  return client.accVoucherSeq.findFirst({
+    where: {
+      vchrTypeId: scope.vchrTypeId,
+      companyId: scope.companyId,
+      accYear: scope.accYear,
+      deviceCode: scope.deviceCode,
+      periodKey: scope.periodKey,
+    },
+    orderBy: [{ createdOn: 'asc' }, { id: 'asc' }],
+  });
+}
+/** The device-wide series' advisory lock: the same key whatever branch the document is for. */
+export async function acquireDeviceSeriesLock(
+  tx: Prisma.TransactionClient,
+  scope: {
+    vchrTypeId: number;
+    companyId: string;
+    accYear: string;
+    deviceCode: string;
+    periodKey: string;
+  },
+): Promise<void> {
+  await acquireVoucherScopeLock(tx, { ...scope, branchId: DEVICE_SERIES_LOCK_BRANCH });
+}
+async function findOrCreateDeviceSeries(
+  tx: Prisma.TransactionClient,
+  scope: Required<Pick<VoucherNumberScope, 'vchrTypeId' | 'companyId' | 'branchId' | 'accYear'>> & {
+    deviceCode: string;
+    periodKey: string;
+  },
+  voucherType: VoucherTypeFormat,
+): Promise<AccVoucherSeq> {
+  await acquireDeviceSeriesLock(tx, scope);
+  const existing = await findDeviceSeries(tx, scope);
+  if (existing) {
+    if (existing.isDeleted || !existing.isActive) {
+      const message = `Voucher sequence ${existing.id} for voucher type ${scope.vchrTypeId} (device ${scope.deviceCode}) is inactive. Reactivate it before creating documents in ${scope.accYear}.`;
+      throwBadRequest<SequenceErrorDetail>(message, [
+        { field: 'vchrTypeId', code: SequenceErrorCode.INACTIVE, message },
+      ]);
+    }
+    return existing;
+  }
+  const anchor = await deviceSeriesAnchorBranch(tx, scope.companyId);
+  if (!anchor) {
+    const message = `Company ${scope.companyId} has no live branch to file device ${scope.deviceCode}'s series under.`;
+    throwBadRequest<SequenceErrorDetail>(message, [
+      { field: 'companyId', code: SequenceErrorCode.BRANCH_NOT_FOUND, message },
+    ]);
+  }
+  // The anchor has no row of this device (findDeviceSeries saw none at any branch).
+  return findOrCreateSequence(tx, { ...scope, branchId: anchor }, voucherType);
+}
+/**
+ * The longest code among the live devices (not deleted, active; blocked ones
+ * count, they may be unblocked) that can number for `companyId`: its own and the
+ * devices bound to no company (the office PC posts for any). `null` = every
+ * company's. Ties go to the highest code ('D14' over 'D10'), so the answer is
+ * stable. Null when no live device has a code.
+ *
+ * What a {DV} number is judged by before any counter opens: the Voucher Types
+ * master's GST16 check and the {DV} preview (challan plan decision 32).
+ */
+export async function longestLiveDeviceCode(
+  client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  companyId: string | null,
+): Promise<string | null> {
+  const rows = await client.$queryRaw<Array<{ dev_code: string | null }>>`
+    SELECT btrim(dev_code) AS dev_code
+      FROM fixed.device_master
+     WHERE dev_is_deleted = false
+       AND dev_is_active = true
+       AND NULLIF(btrim(dev_code), '') IS NOT NULL
+       AND (${companyId}::uuid IS NULL
+            OR dev_company_id IS NULL
+            OR dev_company_id = ${companyId}::uuid)
+     ORDER BY length(btrim(dev_code)) DESC, upper(btrim(dev_code)) DESC
+     LIMIT 1`;
+  const code = Array.isArray(rows) ? rows[0]?.dev_code : undefined;
+  return typeof code === 'string' && code.trim() ? code.trim() : null;
 }
 /**
  * Fills the known tokens of a prefix / suffix (pure: the caller supplies the
@@ -614,17 +859,24 @@ export function formatHasBranchToken(prefix: string | null, suffix: string | nul
  *    branch whose GSTIN another active branch of the company shares: the two
  *    branches would print the same numbers. Base types get this check only at
  *    their save in the master (decision 40: Acme's type 3 'bil' would refuse
- *    the next type-3 counter today).
+ *    the next type-3 counter today);
+ *  - a vchr_gst_doc_no type (challan plan decision 32: the challan and the
+ *    challan return) whose first number is over 16 characters, or holds a
+ *    character other than A–Z a–z 0–9 - /, is refused (422
+ *    SEQUENCE_REFNO_TOO_LONG with rule GST16_DEVICE / GST16_CHARS): the PC's
+ *    device code is too long or holds a '_'. Such a type is checked again at
+ *    every draw (allocateVoucherNumber).
  * Counters that already exist are never re-checked.
  */
 /**
- * What assertCounterRules reads of a counter's type: its GST side and parent, and
- * the RAW (unexpanded) prefix / suffix the counter prints, to see a {BR}. The
- * allocator passes the voucher type itself; /sequences/create passes the type's
- * side and parent with the prefix / suffix the administrator typed.
+ * What assertCounterRules reads of a counter's type: its GST side, GST document
+ * flag and parent, and the RAW (unexpanded) prefix / suffix the counter prints,
+ * to see a {BR}. The allocator passes the voucher type itself; /sequences/create
+ * passes the type's side, flag and parent with the prefix / suffix the
+ * administrator typed.
  */
 export type CounterRuleSubject = Pick<AccVoucherType, 'vchrNoPrefix' | 'vchrNoSuffix'> &
-  Partial<Pick<AccVoucherType, 'vchrGstSide' | 'vchrParentId'>>;
+  Partial<Pick<AccVoucherType, 'vchrGstSide' | 'vchrParentId' | 'vchrGstDocNo'>>;
 export async function assertCounterRules(
   tx: Prisma.TransactionClient,
   scope: { vchrTypeId: number; companyId: string; branchId: string; accYear: string },
@@ -632,11 +884,15 @@ export async function assertCounterRules(
   format: VoucherFormat,
   startNo: number,
 ): Promise<void> {
+  const gstDocNo = voucherType.vchrGstDocNo === true;
+  if (gstDocNo) {
+    assertGstDocNumber(firstVoucherNumber(format, startNo), scope.vchrTypeId, 'counter');
+  }
   if (voucherType.vchrGstSide !== GST_OUTWARD_SIDE) {
     return;
   }
   const first = firstVoucherNumber(format, startNo);
-  if (first.length > GST_DOC_NO_MAX_LENGTH) {
+  if (!gstDocNo && first.length > GST_DOC_NO_MAX_LENGTH) {
     const message = `Voucher type ${scope.vchrTypeId} would number GST documents at this branch like "${first}" (${first.length} characters); a GST invoice number may have at most ${GST_DOC_NO_MAX_LENGTH}.`;
     throwUnprocessable<SequenceErrorDetail>(message, [
       {
@@ -644,7 +900,7 @@ export async function assertCounterRules(
         code: SequenceErrorCode.REFNO_TOO_LONG,
         message,
         // Picks the wording variant rule=GST16 (fixed.error_message).
-        rule: 'GST16',
+        rule: SequenceRefusalRule.GST16,
         params: { sample: first, len: String(first.length) },
       },
     ]);
@@ -673,6 +929,47 @@ export async function assertCounterRules(
     const message = `Voucher type ${scope.vchrTypeId} has no {BR} in its number, and ${row.sharing} active branches of this company share this branch's GSTIN: their numbers would repeat.`;
     throwUnprocessable<SequenceErrorDetail>(message, [
       { field: 'vchrTypeId', code: SequenceErrorCode.BR_REQUIRED, message },
+    ]);
+  }
+}
+/**
+ * Challan plan decision 32 (GST Rules 46(b) / 55): a vchr_gst_doc_no type's
+ * number has at most 16 characters (422 SEQUENCE_REFNO_TOO_LONG, rule
+ * GST16_DEVICE, params sample / len) and only A–Z a–z 0–9 - / (rule
+ * GST16_CHARS, params sample). The length is judged first: a 5-character
+ * device code is the fix either way. `when` only words the log message.
+ */
+export function assertGstDocNumber(
+  sample: string,
+  vchrTypeId: number,
+  when: 'counter' | 'draw',
+): void {
+  const at =
+    when === 'counter'
+      ? 'would number its first document here like'
+      : 'would number the next document';
+  if (sample.length > GST_DOC_NO_MAX_LENGTH) {
+    const message = `Voucher type ${vchrTypeId} ${at} "${sample}" (${sample.length} characters); a GST document number may have at most ${GST_DOC_NO_MAX_LENGTH}.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.REFNO_TOO_LONG,
+        message,
+        rule: SequenceRefusalRule.GST16_DEVICE,
+        params: { sample, len: String(sample.length) },
+      },
+    ]);
+  }
+  if (!GST_DOC_NO_PATTERN.test(sample)) {
+    const message = `Voucher type ${vchrTypeId} ${at} "${sample}"; a GST document number may hold only letters, digits, - and /.`;
+    throwUnprocessable<SequenceErrorDetail>(message, [
+      {
+        field: 'vchrTypeId',
+        code: SequenceErrorCode.REFNO_TOO_LONG,
+        message,
+        rule: SequenceRefusalRule.GST16_CHARS,
+        params: { sample },
+      },
     ]);
   }
 }

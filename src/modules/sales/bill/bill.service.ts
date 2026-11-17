@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { assertPosDeliveryMode, resolveBillDeliveryMode } from './bill-delivery.helper';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
+import { BILL_SOURCE_KEYS, resolveSourceLines } from '../posting/source-lines';
 import { isOfflineSite } from '../../../config/offline-site';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { tillSessionIdOrNull } from '../../till/till-session-id';
@@ -33,6 +34,7 @@ import {
   BillTenderPayload,
 } from './types/bill-api.types';
 import { SaleOrderService } from '../sale-order/sale-order.service';
+import { applyChallanSourceRule } from './bill-snapshot';
 import {
   SALE_ORDER_SRC_DOC_TYPE,
   SaleOrderLineRef,
@@ -117,6 +119,15 @@ const BILL_TYPES = ['CASH', 'CREDIT'] as const;
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
+
+/**
+ * A bill line's price level: its own, or the bill's when it has none —
+ * absent, null or 0 (user 2026-11-17: a 0 passed /validate and then 500'd on
+ * fk_sbi_price_level at create / post). 0 is no level in item_price_levels.
+ */
+export function lineLevelOf(level: number | null | undefined, billLevel: number): number {
+  return level === undefined || level === null || level === 0 ? billLevel : level;
+}
 // How this module names the source-doc columns a line carries, handed to the
 // sale-order module so a rejection it raises (an unknown order line, an order
 // that is not there) comes back naming the field the client actually sent
@@ -513,6 +524,8 @@ export class BillService {
   prepareSave(saveBillDto: SaveBillDto): void {
     this.ensureBillValuesAreAllowed(saveBillDto);
     stripServerOwned(saveBillDto);
+    // N1 (challan plan §5.4): two or more challans → no header source.
+    applyChallanSourceRule(saveBillDto);
   }
   /**
    * Re-throws a unique-index clash as the 409 `/bills/create` answers; any
@@ -879,6 +892,8 @@ export class BillService {
       sbStatus: BILL_STATUS_DRAFT,
       sbRevisionNo: 1,
     };
+    // P6 N6: the lines' sources resolved before the two-challan rule reads them.
+    await this.resolveLineSources(tx, saveBillDto);
     this.applyOptionalFields(data, saveBillDto);
     data.sbCustName = normalizedCustName;
     data.sbBillDate = billDate;
@@ -1029,6 +1044,8 @@ export class BillService {
       sbModifiedOn: now,
       sbModifiedBy: modifiedBy,
     };
+    // P6 N6: the lines' sources resolved before the two-challan rule reads them.
+    await this.resolveLineSources(tx, saveBillDto);
     this.applyOptionalFields(data, saveBillDto);
     // Delivery tracking §8.4 item 1: a draft keeps its mode unless one is sent;
     // a bill that is (now) POS is INSTANT whatever it held.
@@ -1298,6 +1315,15 @@ export class BillService {
     if (inputItems === undefined) {
       return existing;
     }
+    // P4 (user 11-17): every line's order / challan link resolved to the source
+    // line's id (and its document, line number, year) before it is written,
+    // so the guards, the fulfilment and the reservations all read it alike.
+    await resolveSourceLines(
+      tx,
+      inputItems as unknown as Record<string, unknown>[],
+      BILL_SOURCE_KEYS,
+      ['SALES_ORDER', 'DELIVERY_CHALLAN'],
+    );
     const existingMap = new Map(existing.map((item) => [item.sbiId, item]));
     const now = new Date();
     // Line numbers first: an entry keeps the number it sent, otherwise it takes
@@ -1378,7 +1404,7 @@ export class BillService {
           sbiItemUnitId: inputItem.sbiItemUnitId ?? existingItem.sbiItemUnitId,
           sbiGodownId: inputItem.sbiGodownId ?? existingItem.sbiGodownId,
           sbiStockId: inputItem.sbiStockId ?? existingItem.sbiStockId,
-          sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+          sbiPriceLevel: lineLevelOf(inputItem.sbiPriceLevel, scope.sbPriceLevel),
           sbiTaxId:
             itemTaxIds.get(inputItem.sbiItemId ?? existingItem.sbiItemId) ?? existingItem.sbiTaxId,
           sbiModifiedOn: now,
@@ -1428,7 +1454,7 @@ export class BillService {
         sbiGodownId: this.requireItemField(inputItem.sbiGodownId, 'sbiGodownId'),
         // Nullable column: a line with no batch allocation is allowed.
         sbiStockId: inputItem.sbiStockId ?? null,
-        sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+        sbiPriceLevel: lineLevelOf(inputItem.sbiPriceLevel, scope.sbPriceLevel),
         sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? '') ?? null,
         sbiCreatedOn: now,
         sbiCreatedBy: resolveActor(inputItem.sbiCreatedBy, actorId),
@@ -1945,10 +1971,29 @@ export class BillService {
     }
     return TxnStatusEvent.STATUS_CHANGED;
   }
+  /**
+   * P6 N6 (user 11-17) — the save body's line sources resolved (source-lines.ts)
+   * BEFORE the header write's two-challan rule reads them: a line that names
+   * its challan line only by sbiSrcItemId has no sbiSrcDocId until then, so a
+   * bill of two challans kept its header source. syncItems resolves again
+   * (idempotent).
+   */
+  private async resolveLineSources(tx: Prisma.TransactionClient, dto: SaveBillDto): Promise<void> {
+    await resolveSourceLines(
+      tx,
+      dto.items as unknown as Record<string, unknown>[] | undefined,
+      BILL_SOURCE_KEYS,
+      ['SALES_ORDER', 'DELIVERY_CHALLAN'],
+    );
+  }
   private applyOptionalFields(
     data: Prisma.SaleBillUncheckedCreateInput | Prisma.SaleBillUncheckedUpdateInput,
     dto: SaveBillDto,
   ): void {
+    // N1 (challan plan §5.4, decision 26) — every header write (create, update,
+    // amend) goes through here: two or more challans on the lines → the header
+    // names no source, whatever the client sent (an order header is kept).
+    applyChallanSourceRule(dto);
     applyPresentFields(data, dto, BILL_OPTIONAL_FIELDS, BILL_DATE_TRANSFORMS);
   }
   // One batched read of the godowns the bill's lines point at, keyed by gdl_id.

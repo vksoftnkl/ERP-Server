@@ -31,8 +31,8 @@ or `null` at either end. `refno` is null on a draft that has no number yet.
 | `SALE_BILL` | sales.sale_bill | all | sb_doc_type | 12 | none: a POS bill numbers on the device's series (`posSeriesPerDevice`), a wholesale bill on the branch's |
 | `QUOTATION` | sales.sale_quotation | all | sq_doc_type | 14 | `sq_quote_slno` (branch MAIN series) |
 | `SALE_ORDER` | sales.sale_order | all | so_doc_type | 11 | `so_order_slno` (branch MAIN series) |
-| `DELIVERY_CHALLAN` | sales.sale_dc | all | sdc_doc_type | 182 | `sdc_dc_slno` (branch MAIN series) |
-| `DC_RETURN` | sales.sale_dc_return | all | sdr_doc_type | 182 | `sdr_return_slno` (branch MAIN series) |
+| `DELIVERY_CHALLAN` | sales.sale_dc | all | sdc_doc_type | 182 | none: per device since 2026-11-16 (`DC2627D14-00001`) |
+| `DC_RETURN` | sales.sale_dc_return | all | sdr_doc_type | 251 | none: per device since 2026-11-16 (`DR2627D14-00001`) |
 | `SALE_RETURN` | sales.sale_return | all | sr_doc_type | 13 | `sr_return_slno` (branch MAIN series) |
 | `RECEIPT` | accounts.acc_voucher_header | type `Rct`, no PDC child / reversal | vchr_type_code | 99 | `avh_voucher_slno` (company-wide); a draft at the new end (as /receipts/adjacent) |
 | `PAYMENT` | accounts.acc_voucher_header | type `Pmt`, no PDC child / reversal | vchr_type_code | 100 | `avh_voucher_slno`; a draft at the new end (as /payments/adjacent) |

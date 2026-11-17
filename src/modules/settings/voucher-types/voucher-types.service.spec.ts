@@ -63,6 +63,7 @@ const row = (over: Partial<AccVoucherType>): AccVoucherType => ({
   vchrPrintPurposeId: null,
   vchrPrintAfterPost: false,
   vchrDeliveryMode: null,
+  vchrGstDocNo: false,
   vchrSyncDate: null,
   vchrCreatedOn: new Date('2026-08-04T00:00:00Z'),
   vchrCreatedBy: 'system',
@@ -133,6 +134,10 @@ interface World {
   designSql: Array<{ sql: string }>;
   /** an error the next accVoucherType.create throws (a race) */
   createError: unknown;
+  /** what longestLiveDeviceCode reads (challan plan decision 32); null = no live device */
+  longestDevice: string | null;
+  /** the company each device_master read was bound to */
+  deviceCompanies: unknown[];
 }
 
 const makeWorld = (over: Partial<World> = {}): World => ({
@@ -166,6 +171,8 @@ const makeWorld = (over: Partial<World> = {}): World => ({
   takenSql: [],
   designSql: [],
   createError: null,
+  longestDevice: null,
+  deviceCompanies: [],
   ...over,
 });
 
@@ -236,6 +243,10 @@ const makeService = (w: World) => {
     if (sql.includes('n FROM accounts.acc_voucher_header')) return [{ n: 620 }];
     if (sql.includes('AS refno, avh_voucher_date AS vdate')) {
       return [{ refno: 'SRT/2026-2027/D9/00056', vdate: new Date('2026-11-14T00:00:00.000Z') }];
+    }
+    if (sql.includes('FROM fixed.device_master')) {
+      w.deviceCompanies.push(values[0]);
+      return w.longestDevice ? [{ dev_code: w.longestDevice }] : [];
     }
     if (sql.includes('FROM public.branch_master b')) return w.branches;
     if (sql.includes('FROM public.print_purpose p')) {
@@ -658,6 +669,112 @@ describe('VoucherTypesService.save', () => {
 
       expect(out.warnings.map((x) => x.code)).toEqual(['VT_NO_OVER_16']);
     });
+  });
+});
+
+describe('VoucherTypesService.save — the challan 19 / return 20 (challan plan decision 32)', () => {
+  const DCH = row({
+    vchrTypeId: 19,
+    vchrTypeCode: 'DCh',
+    vchrTypeName: 'Delivery Challan',
+    vchrTypeShort: 'DCh',
+    vchrNature: 'SALES',
+    vchrNoPrefix: 'dc',
+    vchrNoSuffix: null,
+    vchrGstSide: null,
+    vchrGstRegister: null,
+    vchrGstDocNo: true,
+    vchrSortOrder: 190,
+  });
+  const DCR = row({
+    ...DCH,
+    vchrTypeId: 20,
+    vchrTypeCode: 'DCR',
+    vchrTypeName: 'Delivery Challan Return',
+    vchrTypeShort: 'DCR',
+    vchrNoPrefix: 'dcr',
+    vchrSortOrder: 200,
+  });
+  const world = (over: Partial<World> = {}) =>
+    makeWorld({ types: [BASE3, SRT, JRL, DCH, DCR].map((t) => ({ ...t })), ...over });
+
+  it.each([
+    [19, 'DC{FYC}{DV}-', 'DC2627D14-00001'],
+    [20, 'DR{FYC}{DV}-', 'DR2627D14-00001'],
+  ])(
+    'saves type %p with %p, width 5, at a company whose branches share a GSTIN (no {BR} asked)',
+    async (vchrTypeId, prefix, sample) => {
+      const w = world({ longestDevice: 'D14' });
+      const { service, accVoucherType } = makeService(w);
+
+      const out = await service.save({
+        companyId: ACME,
+        vchrTypeId,
+        vchrNoPrefix: prefix,
+        vchrNoWidth: 5,
+        accYear: '2026-2027',
+      });
+
+      expect(accVoucherType.update.mock.calls[0][0].data).toMatchObject({ vchrNoPrefix: prefix });
+      expect(out.preview).toMatchObject({ sample, length: 15, gstLimit: 16, deviceCode: 'D14' });
+      expect(out.warnings).toEqual([]);
+      // A base numbers in every company: its devices are judged across all of them.
+      expect(w.deviceCompanies.length).toBeGreaterThan(0);
+      expect(w.deviceCompanies.every((c) => c === null)).toBe(true);
+    },
+  );
+
+  it('refuses 422 VT_NO_TOO_LONG while a live device has a 5-character code, writing nothing', async () => {
+    const { service, accVoucherType } = makeService(world({ longestDevice: 'ZTA-5' }));
+
+    const r = await refusal(
+      service.save({
+        companyId: ACME,
+        vchrTypeId: 19,
+        vchrNoPrefix: 'DC{FYC}{DV}-',
+        vchrNoWidth: 5,
+        accYear: '2026-2027',
+      }),
+    );
+
+    expect(r.error).toBeInstanceOf(UnprocessableEntityException);
+    expect(r.codes).toEqual(['VT_NO_TOO_LONG']);
+    expect(accVoucherType.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a width that takes D14 past 16 (VT_NO_TOO_LONG); a 4-character code at 16 saves', async () => {
+    const wide = makeService(world({ longestDevice: 'D14' }));
+    expect(
+      (
+        await refusal(
+          wide.service.save({ companyId: ACME, vchrTypeId: 19, vchrNoPrefix: 'DC{FYC}{DV}-', vchrNoWidth: 7 }),
+        )
+      ).codes,
+    ).toEqual(['VT_NO_TOO_LONG']);
+
+    const four = makeService(world({ longestDevice: 'D999' }));
+    const out = await four.service.save({
+      companyId: ACME,
+      vchrTypeId: 19,
+      vchrNoPrefix: 'DC{FYC}{DV}-',
+      vchrNoWidth: 5,
+      accYear: '2026-2027',
+    });
+    expect(out.preview).toMatchObject({ sample: 'DC2627D999-00001', length: 16 });
+  });
+
+  it('answers the flag on /get: type.vchrGstDocNo and the 16 limit on the strip', async () => {
+    const { service } = makeService(world({ longestDevice: 'D14' }));
+
+    const out = await service.get({
+      companyId: ACME,
+      branchId: CBE,
+      accYear: '2026-2027',
+      vchrTypeId: 19,
+    });
+
+    expect(out.type.vchrGstDocNo).toBe(true);
+    expect(out.preview.gstLimit).toBe(16);
   });
 });
 

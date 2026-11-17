@@ -13,9 +13,14 @@ import {
 import { SequenceErrorCode } from './types/sequence-error-codes';
 import {
   SEQ_VOUCHER_PREFIX_MAX_LENGTH,
+  acquireDeviceSeriesLock,
   acquireVoucherScopeLock,
   assertCounterRules,
+  deviceSeriesAnchorBranch,
   expandVoucherFormat,
+  findDeviceSeries,
+  isDeviceWideSeries,
+  isSharedDeviceCode,
   voucherStartNo,
 } from './voucher-sequence.helper';
 import {
@@ -67,8 +72,21 @@ export class SequenceService {
         const deviceId =
           this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId') ?? null;
         const voucherType = await this.ensureReferencesExist(tx, scope);
-        await acquireVoucherScopeLock(tx, scope);
-        const existingSequence = await this.findSequenceByScope(tx, scope);
+        // User 11-16 ("one series per PC"): a device-wide type has ONE counter per
+        // device in the company and year — at any branch it is the same row, and a
+        // new one is filed under the company's anchor branch, as the allocator does.
+        const deviceWide = isDeviceWideSeries(voucherType, scope.deviceCode);
+        if (deviceWide) {
+          await acquireDeviceSeriesLock(tx, scope);
+        } else {
+          await acquireVoucherScopeLock(tx, scope);
+        }
+        const existingSequence = deviceWide
+          ? await findDeviceSeries(tx, scope)
+          : await this.findSequenceByScope(tx, scope);
+        if (deviceWide && !existingSequence) {
+          scope.branchId = (await deviceSeriesAnchorBranch(tx, scope.companyId)) ?? scope.branchId;
+        }
         if (existingSequence) {
           const message =
             `Counter ${existingSequence.id}${existingSequence.isDeleted ? ' (deleted)' : ''} already holds ` +
@@ -108,6 +126,7 @@ export class SequenceService {
           {
             vchrGstSide: voucherType.vchrGstSide,
             vchrParentId: voucherType.vchrParentId,
+            vchrGstDocNo: voucherType.vchrGstDocNo,
             vchrNoPrefix: typedPrefix,
             vchrNoSuffix: typedSuffix,
           },
@@ -119,7 +138,7 @@ export class SequenceService {
           startNo,
         );
         const created = await tx.accVoucherSeq.create({ data });
-        return this.toPayload(created);
+        return this.toPayload(created, deviceWide);
       });
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -149,8 +168,17 @@ export class SequenceService {
         take: limit,
       }),
     ]);
+    const deviceWide = await this.deviceWideTypeIds(
+      this.prisma,
+      records.map((r) => r.vchrTypeId),
+    );
     return {
-      items: records.map((record) => this.toPayload(record)),
+      items: records.map((record) =>
+        this.toPayload(
+          record,
+          deviceWide.has(record.vchrTypeId) && !isSharedDeviceCode(record.deviceCode),
+        ),
+      ),
       meta: {
         page,
         limit,
@@ -178,7 +206,11 @@ export class SequenceService {
         SequenceErrorCode.NOT_FOUND,
       );
     }
-    return this.toPayload(record);
+    const deviceWide = await this.deviceWideTypeIds(this.prisma, [record.vchrTypeId]);
+    return this.toPayload(
+      record,
+      deviceWide.has(record.vchrTypeId) && !isSharedDeviceCode(record.deviceCode),
+    );
   }
   async getById(id: string): Promise<SequencePayload> {
     return this.findOne(id);
@@ -479,7 +511,18 @@ export class SequenceService {
     client: SequenceWriteClient,
     scope: Pick<SequenceScope, 'vchrTypeId' | 'companyId' | 'branchId'>,
   ): Promise<
-    Partial<Pick<AccVoucherType, 'vchrTypeId' | 'vchrStartNo' | 'vchrGstSide' | 'vchrParentId'>>
+    Partial<
+      Pick<
+        AccVoucherType,
+        | 'vchrTypeId'
+        | 'vchrStartNo'
+        | 'vchrGstSide'
+        | 'vchrParentId'
+        | 'vchrGstDocNo'
+        | 'vchrNoPrefix'
+        | 'vchrNoSuffix'
+      >
+    >
   > {
     const [voucherType, company, branch] = await Promise.all([
       client.accVoucherType.findFirst({
@@ -491,6 +534,9 @@ export class SequenceService {
           vchrStartNo: true,
           vchrGstSide: true,
           vchrParentId: true,
+          vchrGstDocNo: true,
+          vchrNoPrefix: true,
+          vchrNoSuffix: true,
         },
       }),
       client.company.findFirst({
@@ -666,7 +712,30 @@ export class SequenceService {
     );
   }
 
-  private toPayload(record: AccVoucherSeq): SequencePayload {
+  /**
+   * The voucher types among `ids` whose counters are one per device for every
+   * branch (isDeviceWideSeries: user 11-16 "one series per PC").
+   */
+  private async deviceWideTypeIds(
+    client: SequenceWriteClient,
+    ids: readonly number[],
+  ): Promise<Set<number>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) {
+      return new Set();
+    }
+    const types = await client.accVoucherType.findMany({
+      where: { vchrTypeId: { in: unique } },
+      select: { vchrTypeId: true, vchrGstDocNo: true, vchrNoPrefix: true, vchrNoSuffix: true },
+    });
+    return new Set(
+      (Array.isArray(types) ? types : [])
+        .filter((t) => isDeviceWideSeries(t))
+        .map((t) => t.vchrTypeId),
+    );
+  }
+
+  private toPayload(record: AccVoucherSeq, allBranches = false): SequencePayload {
     return {
       id: record.id,
       vchrTypeId: record.vchrTypeId,
@@ -689,6 +758,7 @@ export class SequenceService {
       createdBy: record.createdBy,
       modifiedOn: record.modifiedOn ? record.modifiedOn.toISOString() : null,
       modifiedBy: record.modifiedBy,
+      allBranches,
     };
   }
 

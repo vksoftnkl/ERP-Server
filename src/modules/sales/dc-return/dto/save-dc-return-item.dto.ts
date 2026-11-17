@@ -40,21 +40,33 @@ export class SaveDcReturnItemDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableInteger()
   sdriDcLineNo?: number | null;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sdriItemId!: string;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sdriItemUnitId!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: "Ignored: copied from the challan line's item (challan plan decision 35).",
+  })
+  @NullableUuid()
+  sdriItemId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: "Ignored: copied from the challan line's unit (challan plan decision 35).",
+  })
+  @NullableUuid()
+  sdriItemUnitId?: string | null;
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sdriToBaseFactor?: string | number | null;
   @ApiPropertyOptional({ maxLength: 8, nullable: true })
   @NullableStringStrict(8)
   sdriHsnCode?: string | null;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sdriGodownId!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: "Receive into: blank = the challan line's godown (Q14).",
+  })
+  @NullableUuid()
+  sdriGodownId?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sdriLotId?: string | null;

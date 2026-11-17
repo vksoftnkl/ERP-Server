@@ -498,11 +498,16 @@ describe('BillReadService', () => {
       tax_perc: new Prisma.Decimal('5'),
       hsn_code: '1006',
       free_qty: null,
+      is_free: false,
+      free_type: null,
       allow_negative_stock: true,
       ...overrides,
     });
     const q = { companyId: COMPANY_ID, branchId: BRANCH_ID, partyId: PARTY_ID };
 
+    // User 11-16: pastWindow is the challan's own rule (dc-common
+    // isPastReturnWindow): not SUPPLY, older than the window read on the
+    // CHALLAN's date. A SUPPLY challan is never past it, however old.
     it("groups challan lines by challan, flags those past the window and those not for supply", async () => {
       prisma.$queryRaw = routedRaw([
         [
@@ -511,25 +516,27 @@ describe('BillReadService', () => {
             line('dc-1', 1, dateDaysAgo(40)),
             line('dc-1', 2, dateDaysAgo(40)),
             line('dc-2', 1, dateDaysAgo(5), { purpose: 'APPROVAL' }),
+            line('dc-3', 1, dateDaysAgo(40), { purpose: 'APPROVAL' }),
           ],
         ],
       ]);
 
       const docs = await service.openSources({ ...q, kind: 'DC', accYear: ACC_YEAR });
 
-      expect(statutory.limit).toHaveBeenCalledWith(
-        COMPANY_ID,
-        'DC_RETURN_WINDOW_DAYS',
-        isoDaysAgo(0),
-      );
-      expect(docs).toHaveLength(2);
+      // One read per challan date, effective on that date (window 30 here).
+      expect(statutory.limit.mock.calls).toEqual([
+        [COMPANY_ID, 'DC_RETURN_WINDOW_DAYS', isoDaysAgo(40)],
+        [COMPANY_ID, 'DC_RETURN_WINDOW_DAYS', isoDaysAgo(5)],
+      ]);
+      expect(docs).toHaveLength(3);
       expect(docs[0]).toMatchObject({
         docId: 'dc-1',
         accYear: '2026-2027',
         ageDays: 40,
-        pastWindow: true,
+        pastWindow: false,
         convertRequired: false,
       });
+      expect(docs[2]).toMatchObject({ docId: 'dc-3', ageDays: 40, pastWindow: true, convertRequired: true });
       expect(docs[0].lines.map((l) => l.lineId)).toEqual(['dc-1-1', 'dc-1-2']);
       expect(docs[0].lines[0]).toEqual({
         lineId: 'dc-1-1',
@@ -544,6 +551,8 @@ describe('BillReadService', () => {
         docQty: 10,
         openQty: 4,
         freeQty: 0,
+        isFree: false,
+        freeType: null,
         rate: 1250.5,
         taxId: 'tax-5',
         taxPerc: 5,
@@ -555,7 +564,9 @@ describe('BillReadService', () => {
 
     it('flags nothing as past the window when the company sets no window', async () => {
       statutory.limit.mockResolvedValue(null);
-      prisma.$queryRaw = routedRaw([['FROM sales.sale_dc h', [line('dc-1', 1, dateDaysAgo(400))]]]);
+      prisma.$queryRaw = routedRaw([
+        ['FROM sales.sale_dc h', [line('dc-1', 1, dateDaysAgo(400), { purpose: 'APPROVAL' })]],
+      ]);
 
       const [doc] = await service.openSources({ ...q, kind: 'DC' });
 
@@ -575,6 +586,46 @@ describe('BillReadService', () => {
       ]);
       expect(docs[0]).not.toHaveProperty('convertRequired');
       expect(docs[0].lines[0].allowNegativeStock).toBe(false);
+    });
+
+    // User 11-17: the Free flag travels order line → challan (Ctrl+F4) → bill.
+    it("gives each order line's free flag and type, and reads them off the order line", async () => {
+      prisma.$queryRaw = routedRaw([
+        [
+          'FROM sales.sale_order h',
+          [
+            line('so-1', 1, dateDaysAgo(1), { purpose: null }),
+            line('so-1', 2, dateDaysAgo(1), {
+              purpose: null,
+              rate: new Prisma.Decimal('0'),
+              is_free: true,
+              free_type: 'SCHEME',
+              free_qty: new Prisma.Decimal('0'),
+            }),
+          ],
+        ],
+      ]);
+
+      const [doc] = await service.openSources({ ...q, kind: 'ORDER' });
+
+      expect(doc.lines.map((l) => [l.lineNo, l.isFree, l.freeType, l.freeQty, l.rate])).toEqual([
+        [1, false, null, 0, 1250.5],
+        [2, true, 'SCHEME', 0, 0],
+      ]);
+      const sql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+      expect(sql).toContain('d.soi_is_free AS is_free, d.soi_free_type AS free_type');
+    });
+
+    it("gives each challan line's free flag and type, read off the challan line", async () => {
+      prisma.$queryRaw = routedRaw([
+        ['FROM sales.sale_dc h', [line('dc-1', 1, dateDaysAgo(1), { is_free: true, free_type: 'SAMPLE' })]],
+      ]);
+
+      const [doc] = await service.openSources({ ...q, kind: 'DC' });
+
+      expect(doc.lines[0]).toMatchObject({ isFree: true, freeType: 'SAMPLE' });
+      const sql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+      expect(sql).toContain('d.sdi_is_free AS is_free, d.sdi_free_type AS free_type');
     });
 
     it('leaves an order on delivery hold out of the open orders (D18)', async () => {

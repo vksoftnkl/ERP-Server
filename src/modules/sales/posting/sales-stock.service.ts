@@ -82,8 +82,15 @@ export interface SalesStockDoc {
 export interface SalesStockResult {
   svhId: string | null;
   rowsPosted: number;
-  /** `lineId → cost relieved / received` for the document's own `*_cogs_amt`. */
+  /** `lineId → cost relieved / received` for the document's own `*_cogs_amt` (the line's TOTAL). */
   costByLine: Map<string, number>;
+  /**
+   * `lineId → the cost of ONE BASE unit` the engine booked the line at: its
+   * ledger rows' `sml_cost_rate` weighted by base qty (+ free), 6 places. A
+   * document's unit cost per its own unit is this × the line's to-base factor
+   * (challan plan, 2026-11-16: `sdi_cost_price` held the line total).
+   */
+  rateByLine?: Map<string, Prisma.Decimal>;
   lotByLine: Map<string, string | null>;
   cogsTotal: number;
 }
@@ -126,6 +133,7 @@ export class SalesStockService {
         svhId: null,
         rowsPosted: 0,
         costByLine: new Map(),
+        rateByLine: new Map(),
         lotByLine: new Map(),
         cogsTotal: 0,
       };
@@ -183,9 +191,17 @@ export class SalesStockService {
       // re-sums them from the ledger rows it wrote, on post and on cancel.
 
       const costs = await tx.$queryRaw<
-        { svi_line_no: number; svi_lot_id: string | null; cost: Prisma.Decimal | null }[]
+        {
+          svi_line_no: number;
+          svi_lot_id: string | null;
+          cost: Prisma.Decimal | null;
+          rate_x_qty: Prisma.Decimal | null;
+          base_qty: Prisma.Decimal | null;
+        }[]
       >`
-        SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost
+        SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost,
+               SUM(sml.sml_cost_rate * (sml.sml_base_qty + sml.sml_free_base_qty)) AS rate_x_qty,
+               SUM(sml.sml_base_qty + sml.sml_free_base_qty) AS base_qty
           FROM stock.stock_voucher_item svi
           LEFT JOIN stock.stock_ledger sml
                  ON sml.sml_src_doc_id = svi.svi_voucher_id
@@ -200,6 +216,8 @@ export class SalesStockService {
       const byLineNo = new Map(lines.map((l) => [l.lineNo, l]));
       const costByLine = new Map<string, number>();
       const lotByLine = new Map<string, string | null>();
+      // Σ rate × base qty and Σ base qty per line, across the line's lot rows.
+      const weighted = new Map<string, { rq: Prisma.Decimal; q: Prisma.Decimal }>();
       let total = 0;
       for (const r of costs) {
         const line = byLineNo.get(r.svi_line_no);
@@ -210,8 +228,22 @@ export class SalesStockService {
         costByLine.set(line.lineId, cost);
         lotByLine.set(line.lineId, r.svi_lot_id);
         total += cost;
+        const w = weighted.get(line.lineId) ?? { rq: new Prisma.Decimal(0), q: new Prisma.Decimal(0) };
+        weighted.set(line.lineId, {
+          rq: w.rq.plus(new Prisma.Decimal(r.rate_x_qty ?? 0)),
+          q: w.q.plus(new Prisma.Decimal(r.base_qty ?? 0)),
+        });
       }
-      return { svhId, rowsPosted, costByLine, lotByLine, cogsTotal: round2(total) };
+      const rateByLine = new Map<string, Prisma.Decimal>();
+      for (const [lineId, w] of weighted) {
+        rateByLine.set(
+          lineId,
+          w.q.isZero()
+            ? new Prisma.Decimal(0)
+            : w.rq.dividedBy(w.q).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP),
+        );
+      }
+      return { svhId, rowsPosted, costByLine, rateByLine, lotByLine, cogsTotal: round2(total) };
     } catch (error) {
       // The engine's BLOCK verdict is a 409 in stock's vocabulary; a sales
       // client switches on SALES_STOCK_NEGATIVE.

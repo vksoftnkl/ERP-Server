@@ -485,6 +485,53 @@ describe('StockReservationService', () => {
     });
   });
 
+  // User 2026-11-17 — consumed is re-derived from the documents, never incremented.
+  describe('rederiveOrderLines', () => {
+    const SO = '019c6f6c-be87-7a11-8905-36092c46ffa1';
+    const run = async (rows: unknown[], lineNos = [1, 2]) => {
+      const svc = new StockReservationService({} as PrismaService);
+      const consume = jest.spyOn(svc, 'consume').mockResolvedValue(undefined);
+      const tx = { $queryRaw: jest.fn(async () => rows) };
+      await svc.rederiveOrderLines(tx as never, SO, lineNos, 'actor', new Date('2026-11-17T05:00:00Z'));
+      return { consume, tx };
+    };
+
+    it('takes what the documents drew beyond what is consumed, and gives back what they no longer draw', async () => {
+      const { consume, tx } = await run([
+        { line_no: 1, target: new Prisma.Decimal('5.0000'), consumed: new Prisma.Decimal('3.0000') },
+        { line_no: 2, target: new Prisma.Decimal('1'), consumed: new Prisma.Decimal('4') },
+      ]);
+
+      expect(consume.mock.calls.map(([, order, qty]) => [order, (qty as Prisma.Decimal).toString()])).toEqual([
+        [{ docId: SO, lineNo: 1 }, '2'],
+        [{ docId: SO, lineNo: 2 }, '-3'],
+      ]);
+      const [strings, so, nos] = tx.$queryRaw.mock.calls[0] as unknown as [string[], string, number[]];
+      const sql = strings.join('?');
+      expect([so, nos]).toEqual([SO, [1, 2]]);
+      // bills straight from the order (both grains), challans, less returns: POSTED only
+      expect(sql).toContain("b.sbi_src_doc_type = 'SALES_ORDER'");
+      expect(sql).toContain('b.sbi_src_doc_id = o.soi_order_id AND b.sbi_src_doc_line_no = o.soi_line_no');
+      expect(sql).toContain("h.sdc_status = 'POSTED'");
+      expect(sql).toContain("rh.sdr_status = 'POSTED'");
+      expect(sql).toContain("bh.sb_status = 'POSTED'");
+      expect(sql).not.toContain('DELIVERY_CHALLAN');
+    });
+
+    it('touches nothing when the line already holds what its documents drew', async () => {
+      const { consume } = await run([
+        { line_no: 1, target: new Prisma.Decimal('2.00004'), consumed: new Prisma.Decimal('2') },
+      ]);
+      expect(consume).not.toHaveBeenCalled();
+    });
+
+    it('asks nothing for no lines', async () => {
+      const { consume, tx } = await run([], []);
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+      expect(consume).not.toHaveBeenCalled();
+    });
+  });
+
   describe('netOrderLineMoves', () => {
     const q = (docId: string, lineNo: number, qty: number | string) => ({
       docId,

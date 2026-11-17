@@ -81,7 +81,7 @@ export const VCHR = {
 } as const;
 
 /** fixed.menu_master.menu_id the four rights are keyed on. */
-export const MENU = { SALE_BILL: 12, SALE_RETURN: 13, DELIVERY_NOTE: 182 } as const;
+export const MENU = { SALE_BILL: 12, SALE_RETURN: 13, DELIVERY_NOTE: 182, DC_RETURN: 251 } as const;
 
 export const BEARER = 'Bearer dummy-test-token';
 export const API = '/api/v1';

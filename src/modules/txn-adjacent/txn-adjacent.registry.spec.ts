@@ -72,10 +72,13 @@ describe('TXN_DOC_REGISTRY', () => {
     expect(TXN_DOC_REGISTRY.SALE_BILL.serial).toBeNull();
     // Numbered per device since plan v5 D16 (SRT/<year>/<device>/00001).
     expect(TXN_DOC_REGISTRY.SALE_RETURN.serial).toBeNull();
+    // Per device since the challan plan §5.1 (DC2627D14-00001 / DR2627D14-00001).
+    expect(TXN_DOC_REGISTRY.DELIVERY_CHALLAN.serial).toBeNull();
+    expect(TXN_DOC_REGISTRY.DC_RETURN.serial).toBeNull();
   });
 
   it('keeps a branch-wide sales serial, NOT NULL, in the key', () => {
-    for (const docType of ['QUOTATION', 'SALE_ORDER', 'DELIVERY_CHALLAN', 'DC_RETURN'] as const) {
+    for (const docType of ['QUOTATION', 'SALE_ORDER'] as const) {
       const serial = TXN_DOC_REGISTRY[docType].serial;
       expect(serial).not.toBeNull();
       expect(serial?.draft).toBeNull();

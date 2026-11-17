@@ -34,10 +34,11 @@ const bill = (status: string): SaleBill =>
 /** The service with only what afterStatusChange touches. */
 const harness = () => {
   const consume = jest.fn().mockResolvedValue(undefined);
+  const rederiveOrderLines = jest.fn().mockResolvedValue(undefined);
   const syncOrderFulfilment = jest.fn().mockResolvedValue(undefined);
   const svc = Object.create(BillLifecycleService.prototype) as Record<string, unknown>;
   Object.assign(svc, {
-    reservations: { consume },
+    reservations: { consume, rederiveOrderLines },
     saleOrders: { syncOrderFulfilment },
     bills: { orderRefsOf: jest.fn().mockReturnValue([]) },
     dcFulfilment: {
@@ -59,7 +60,7 @@ const harness = () => {
       (order as { lineNo: number }).lineNo,
       Number(qty as Prisma.Decimal),
     ]);
-  return { run, moves, consume, syncOrderFulfilment, tx };
+  return { run, moves, consume, rederiveOrderLines, syncOrderFulfilment, tx };
 };
 
 describe('orderLineQtys', () => {
@@ -188,7 +189,7 @@ describe('BillLifecycleService.afterStatusChange — the orders re-derived', () 
       list.map((i) => ({ srcDocId: i.sbiSrcDocId })),
     );
     Object.assign(svc, {
-      reservations: { consume: jest.fn() },
+      reservations: { consume: jest.fn(), rederiveOrderLines: jest.fn() },
       saleOrders: { syncOrderFulfilment: h.syncOrderFulfilment },
       bills: { orderRefsOf },
       dcFulfilment: { dcRefsOfBill: jest.fn().mockResolvedValue([]), recompute: jest.fn() },
@@ -416,5 +417,31 @@ describe('BillLifecycleService.amend — lock order', () => {
     expect(queryRaw.mock.invocationCallOrder[lockCall]).toBeLessThan(
       unwind.mock.invocationCallOrder[0],
     );
+  });
+});
+
+// User 2026-11-17 — after its net moves the bill re-derives each order line it
+// names (bills + challans − returns): a no-op when the moves landed whole.
+describe('BillLifecycleService.afterStatusChange — reservations re-derived (user 11-17)', () => {
+  it('re-derives every order line the bill names now and named before, once per order', async () => {
+    const h = harness();
+    await h.run(bill('POSTED'), [item({ qty: 2 }), item({ qty: 1, line: 2 })], [item({ qty: 1, so: SO_B, line: 3 })]);
+
+    expect(h.rederiveOrderLines.mock.calls.map(([, so, lines]) => [so, lines])).toEqual([
+      [SO_A, [1, 2]],
+      [SO_B, [3]],
+    ]);
+    // after the net moves
+    expect(h.rederiveOrderLines.mock.invocationCallOrder[0]).toBeGreaterThan(
+      h.consume.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it('re-derives nothing for a bill whose lines name no order (a challan bill consumes nothing)', async () => {
+    const h = harness();
+    await h.run(bill('POSTED'), [item({ qty: 2, type: 'DELIVERY_CHALLAN' })]);
+
+    expect(h.rederiveOrderLines).not.toHaveBeenCalled();
+    expect(h.consume).not.toHaveBeenCalled();
   });
 });

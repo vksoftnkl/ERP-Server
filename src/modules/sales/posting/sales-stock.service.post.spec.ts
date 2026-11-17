@@ -98,7 +98,17 @@ function routedTx(answers: Answers) {
       return [answers.moved ?? { qty: new Prisma.Decimal(2), rows: 1n }];
     }
     if (sql.includes('GROUP BY svi.svi_line_no')) {
-      return answers.costs ?? [{ svi_line_no: 1, svi_lot_id: LOT_ID, cost: new Prisma.Decimal('160.004') }];
+      return (
+        answers.costs ?? [
+          {
+            svi_line_no: 1,
+            svi_lot_id: LOT_ID,
+            cost: new Prisma.Decimal('160.004'),
+            rate_x_qty: new Prisma.Decimal('160.004'),
+            base_qty: new Prisma.Decimal('2'),
+          },
+        ]
+      );
     }
     if (sql.includes("svh_link_src_module   = 'SALES'")) return answers.shadows ?? [];
     throw new Error(`unrouted SQL: ${sql.slice(0, 80)}`);
@@ -153,6 +163,7 @@ describe('SalesStockService — post / cancel', () => {
         svhId: null,
         rowsPosted: 0,
         costByLine: new Map(),
+        rateByLine: new Map(),
         lotByLine: new Map(),
         cogsTotal: 0,
       });
@@ -217,6 +228,7 @@ describe('SalesStockService — post / cancel', () => {
         svhId: SVH_ID,
         rowsPosted: 1,
         costByLine: new Map([['line-1', 160]]),
+        rateByLine: new Map([['line-1', new Prisma.Decimal('80.002')]]),
         lotByLine: new Map([['line-1', LOT_ID]]),
         cogsTotal: 160,
       });
@@ -398,6 +410,33 @@ describe('SalesStockService — post / cancel', () => {
         ]),
       );
       expect(result.cogsTotal).toBe(10.01);
+    });
+
+    // 2026-11-16: a challan stored the line TOTAL as its unit cost. The engine's
+    // per-BASE rate per line, weighted over the line's lot rows, is returned beside it.
+    it('returns each line its per-base cost rate, weighted by base qty over its lot rows (6 places)', async () => {
+      const tx = routedTx({
+        moved: { qty: new Prisma.Decimal(9), rows: 3n },
+        costs: [
+          // 6 pcs at 50.125945 (the ledger's own rate; the value rounds to 300.76).
+          { svi_line_no: 1, svi_lot_id: null, cost: new Prisma.Decimal('300.76'), rate_x_qty: new Prisma.Decimal('300.75567'), base_qty: new Prisma.Decimal('6') },
+          // One line over two lots: 2 at 10 and 1 at 13 → 11.
+          { svi_line_no: 2, svi_lot_id: LOT_ID, cost: new Prisma.Decimal('20'), rate_x_qty: new Prisma.Decimal('20'), base_qty: new Prisma.Decimal('2') },
+          { svi_line_no: 2, svi_lot_id: 'lot-2', cost: new Prisma.Decimal('13'), rate_x_qty: new Prisma.Decimal('13'), base_qty: new Prisma.Decimal('1') },
+        ],
+      });
+
+      const result = await post(
+        tx,
+        doc({ lines: [line({ qty: 6 }), line({ lineId: 'line-2', lineNo: 2, qty: 3 })] }),
+      );
+
+      expect(result.rateByLine).toEqual(
+        new Map([
+          ['line-1', new Prisma.Decimal('50.125945')],
+          ['line-2', new Prisma.Decimal('11')],
+        ]),
+      );
     });
   });
 

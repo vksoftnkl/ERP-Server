@@ -108,6 +108,10 @@ model AccVoucherType {
   /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
   /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type
   vchrDeliveryMode           String?              @db.VarChar(10) @map("vchr_delivery_mode")
+  /// DC / DC return (20261118100000, decision 32): the number is a GST document number
+  /// (Rules 46 / 53 / 55): at most 16 characters, A–Z a–z 0–9 - /. Checked at counter
+  /// creation, at the type's save and at each draw. true on DCh / DCR (and any child of them)
+  vchrGstDocNo               Boolean              @default(false) @map("vchr_gst_doc_no")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")

@@ -341,11 +341,13 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     ORDER_STATUSES,
     SALES_MENU_ID.SALES_ORDER,
   ),
+  // Numbered per DEVICE since the challan plan §5.1 (DC2627D14-00001, one
+  // series per PC), so like the Sale Return its serial stays out of the key.
   DELIVERY_CHALLAN: salesDoc(
     'delivery challan',
     'sales.sale_dc',
     'sdc',
-    { date: 'sdc_dc_date', slno: 'sdc_dc_slno', refno: 'sdc_dc_refno' },
+    { date: 'sdc_dc_date', slno: null, refno: 'sdc_dc_refno' },
     POSTING_STATUSES,
     SALES_MENU_ID.DELIVERY_CHALLAN,
   ),
@@ -353,7 +355,8 @@ export const TXN_DOC_REGISTRY: Readonly<Record<TxnDocType, TxnDocSpec>> = {
     'DC return',
     'sales.sale_dc_return',
     'sdr',
-    { date: 'sdr_return_date', slno: 'sdr_return_slno', refno: 'sdr_return_refno' },
+    // Per DEVICE too (DR2627D14-00001): entry order.
+    { date: 'sdr_return_date', slno: null, refno: 'sdr_return_refno' },
     POSTING_STATUSES,
     SALES_MENU_ID.DC_RETURN,
   ),

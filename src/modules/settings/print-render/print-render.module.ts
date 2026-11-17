@@ -38,6 +38,7 @@ import {
   GODOWN_POSITION_PRINT_PROVIDERS,
   GodownPositionPrintSource,
 } from './data/providers/godown-position.providers';
+import { DC_PRINT_PROVIDERS, DcPrintSource } from './data/providers/delivery-challan.providers';
 import { DeliveryCoreModule } from '../../sales/delivery/core/delivery-core.module';
 import { DeliveryModule } from '../../sales/delivery/delivery.module';
 import { SalesPostingModule } from '../../sales/posting/posting.module';
@@ -83,6 +84,8 @@ import { PrintShareService } from './print-share.service';
   // (pending lines), SalesPostingModule (the aging settings) for sales.delivery_note.*,
   // sales.bill.godown_slip.*, sales.bill.delivery and sales.delivery.*; GodownPositionModule
   // for reports.godown_position.* (purposes GODOWN_POSITION and COUNT_SHEET, menu 306).
+  // Sales DC P5: sales.dc.* (DELIVERY_CHALLAN, menu 182) and sales.dcr.* (DC_RETURN,
+  // menu 251) read the documents themselves (PrismaService, no module import).
   imports: [
     PgModule,
     PrintTemplateAssignmentModule,
@@ -132,6 +135,8 @@ import { PrintShareService } from './print-share.service';
     ...DELIVERY_PRINT_PROVIDERS,
     GodownPositionPrintSource,
     ...GODOWN_POSITION_PRINT_PROVIDERS,
+    DcPrintSource,
+    ...DC_PRINT_PROVIDERS,
     {
       provide: PRINT_DATA_PROVIDERS,
       useFactory: (...providers: PrintDataProvider[]): PrintDataProvider[] => providers,
@@ -148,6 +153,7 @@ import { PrintShareService } from './print-share.service';
         ...STOCK_SUMMARY_PRINT_PROVIDERS,
         ...DELIVERY_PRINT_PROVIDERS,
         ...GODOWN_POSITION_PRINT_PROVIDERS,
+        ...DC_PRINT_PROVIDERS,
       ],
     },
     PrintDataProviderRegistry,

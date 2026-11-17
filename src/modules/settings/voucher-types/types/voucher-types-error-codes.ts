@@ -43,9 +43,13 @@ export enum VoucherTypeErrorCode {
    * non-GST type the detail carries `rule: 'NO_NUMBER_BOX'` for a wording variant.
    */
   METHOD_GST_AUTO_ONLY = 'VT_METHOD_GST_AUTO_ONLY',
-  /** A GST outward type's first number passes 16 characters at a branch (params sample, len). */
+  /**
+   * A GST outward type's first number passes 16 characters at a branch (params sample, len).
+   * Also a vchr_gst_doc_no type's (challan, challan return; challan plan decision 32), judged
+   * with the company's longest live device code for {DV}.
+   */
   NO_TOO_LONG = 'VT_NO_TOO_LONG',
-  /** A GST outward type's number holds a character other than A–Z a–z 0–9 / -. */
+  /** A GST outward or vchr_gst_doc_no type's number holds a character other than A–Z a–z 0–9 / -. */
   NO_BAD_CHAR = 'VT_NO_BAD_CHAR',
   /** A GST outward type has no {BR} while two or more active branches share a GSTIN (Q13). */
   BR_REQUIRED = 'VT_BR_REQUIRED',

@@ -12,10 +12,10 @@ import { loadDayClosed } from '../posting/sales.guards';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import { batchDetailKey, batchDetailsFor } from '../../stocks/batch-detail/batch-detail.helper';
-import { STATUTORY_CODES } from '../../../common/posting/statutory.types';
 import { billVoucherTypeBlock } from './bill-voucher-type.helper';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { SaleBillErrorCode } from './types/sale-bill-error-codes';
+import { dcReturnWindowOf, isPastReturnWindow } from '../delivery-challan/dc-common';
 import {
   SALES_MENU_ID,
   TENDER_TYPE,
@@ -302,11 +302,6 @@ export class BillReadService {
     accYear?: string | null;
   }): Promise<OpenSourceDoc[]> {
     const today = isoToday();
-    const window = await this.statutory.limit(
-      q.companyId,
-      STATUTORY_CODES.DC_RETURN_WINDOW_DAYS,
-      today,
-    );
     const rows = await this.prisma.$queryRaw<OpenLineRow[]>`
       SELECT h.sdc_id AS doc_id, h.sdc_acc_year AS acc_year, h.sdc_dc_refno AS refno, h.sdc_dc_date AS doc_date,
              h.sdc_purpose AS purpose,
@@ -315,6 +310,9 @@ export class BillReadService {
              d.sdi_godown_id AS godown_id, d.sdi_dc_qty AS doc_qty, d.sdi_open_qty AS open_qty,
              d.sdi_rate AS rate, d.sdi_tax_id AS tax_id, d.sdi_tax_perc AS tax_perc, d.sdi_hsn_code AS hsn_code,
              d.sdi_free_qty AS free_qty,
+             -- User 11-17: a challan line is free only when its order line was
+             -- (Ctrl+F4); billing the challan keeps the flag.
+             d.sdi_is_free AS is_free, d.sdi_free_type AS free_type,
              -- The challan already moved the stock; billing it takes none.
              true AS allow_negative_stock
         FROM sales.sale_dc h
@@ -327,11 +325,27 @@ export class BillReadService {
          AND (${q.accYear ?? null}::text IS NULL OR h.sdc_acc_year = ${q.accYear ?? null}::char(9))
          AND d.sdi_open_qty > 0
        ORDER BY h.sdc_dc_date, h.sdc_dc_refno, d.sdi_line_no`;
+    // pastWindow is the challan's own rule (user 11-16, the same helpers as its
+    // ageing): POSTED (all of these are), not SUPPLY, older than the return
+    // window read effective on the CHALLAN's date (company row, then shipped).
+    const dates = [...new Set(rows.map((r) => isoDate(r.doc_date) ?? today))];
+    const windowOn = new Map(
+      await Promise.all(
+        dates.map(
+          async (d) => [d, await dcReturnWindowOf(this.statutory, q.companyId, d)] as const,
+        ),
+      ),
+    );
     return groupOpen(rows, (doc) => {
       const age = daysBetween(doc.date ?? today, today);
       return {
         ageDays: age,
-        pastWindow: window?.value != null ? age > window.value : false,
+        pastWindow: isPastReturnWindow(
+          doc.purpose,
+          age,
+          windowOn.get(doc.date ?? today)?.days ?? null,
+          'POSTED',
+        ),
         convertRequired: doc.purpose !== 'SUPPLY',
       };
     });
@@ -351,7 +365,10 @@ export class BillReadService {
              d.soi_item_unit_id AS unit_id, u.unit_name, NULL::uuid AS lot_id, NULL::text AS batch_no,
              d.soi_godown_id AS godown_id, d.soi_order_qty AS doc_qty, d.soi_pending_qty AS open_qty,
              d.soi_rate AS rate, d.soi_tax_id AS tax_id, d.soi_tax_perc AS tax_perc, d.soi_hsn_code AS hsn_code,
+             -- An order line has no separate free quantity: a free line (the
+             -- order's scheme engine) carries its whole quantity as free.
              0::numeric AS free_qty,
+             d.soi_is_free AS is_free, d.soi_free_type AS free_type,
              (im.item_is_service OR NOT (g.gdl_negative_stock IS FALSE
                                          AND c.comp_negstk_apl IS FALSE
                                          AND im.item_allow_neg_stock IS FALSE)) AS allow_negative_stock
@@ -835,6 +852,8 @@ interface OpenLineRow {
   tax_perc: Prisma.Decimal | null;
   hsn_code: string | null;
   free_qty: Prisma.Decimal | null;
+  is_free: boolean | null;
+  free_type: string | null;
   allow_negative_stock: boolean;
 }
 
@@ -859,7 +878,16 @@ export interface OpenSourceDoc {
     godownId: string | null;
     docQty: number;
     openQty: number;
+    /** The source's separate free quantity (sdi_free_qty; 0 on an order line). */
     freeQty: number;
+    /**
+     * User 11-17: the source line is a free line (sdi_is_free / soi_is_free):
+     * its whole docQty / openQty is free, at rate 0. The one thing that may
+     * mark a challan line free (Ctrl+F4), and a bill line taken from it keeps it.
+     */
+    isFree: boolean;
+    /** SCHEME / SAMPLE / REPLACEMENT, or null (sdi_free_type / soi_free_type). */
+    freeType: string | null;
     rate: number;
     taxId: string | null;
     taxPerc: number;
@@ -905,6 +933,8 @@ function groupOpen(
       docQty: num(r.doc_qty),
       openQty: num(r.open_qty),
       freeQty: num(r.free_qty),
+      isFree: r.is_free === true,
+      freeType: r.free_type ?? null,
       rate: num(r.rate),
       taxId: r.tax_id,
       taxPerc: num(r.tax_perc),

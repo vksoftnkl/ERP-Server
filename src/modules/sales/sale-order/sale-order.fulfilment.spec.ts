@@ -555,7 +555,10 @@ describe('SaleOrderService — bill-driven paths', () => {
       const results = await sync([lineRef(LINE_1), lineRef(LINE_2), headerRef()]);
 
       expect(results).toHaveLength(1);
-      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+      // One order lock, and (user 11-17) one read of the challans drawing it.
+      const sqls = tx.$queryRaw.mock.calls.map((c) => (c[0] as string[]).join('?'));
+      expect(sqls.filter((q) => q.includes('FOR UPDATE'))).toHaveLength(1);
+      expect(sqls.filter((q) => q.includes('sales.sale_dc_item'))).toHaveLength(1);
     });
 
     it('refuses a line number the order does not have, on the line-number field', async () => {
@@ -742,5 +745,149 @@ describe('SaleOrderService — bill-driven paths', () => {
     it('lets any other error pass untouched', () => {
       expect(() => service.throwIfDuplicate(new Error('deadlock detected'))).not.toThrow();
     });
+  });
+});
+
+// User 2026-11-17 — a delivery challan draws its order down and a DC return
+// re-opens it: delivered = Σ the line's own POSTED bills + Σ its POSTED
+// challans − Σ their POSTED returns (order-challan-draws), re-derived here.
+describe('SaleOrderService — challans draw the order down (user 11-17)', () => {
+  let tx: TxMock;
+  let service: SaleOrderService;
+  let lines: SaleOrderItem[];
+  let draws: { soi_id: string; dc_qty: Prisma.Decimal | null; returned_qty: Prisma.Decimal | null; dc_billed_amt?: Prisma.Decimal | null }[];
+  let bills: ReturnType<typeof billed>[];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    lines = LINES();
+    draws = [];
+    bills = [];
+    tx = {
+      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
+        Promise.resolve(strings.join('?').includes('sales.sale_dc_item') ? draws : [{ so_id: ORDER_ID }]),
+      ),
+      saleOrder: {
+        findMany: jest.fn(async () => [{ soId: ORDER_ID }]),
+        findFirst: jest.fn(async () => orderRow()),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      saleOrderItem: {
+        findMany: jest.fn(async (args: { select?: unknown }) =>
+          args.select ? lines.map((l) => ({ soiId: l.soiId, soiOrderId: ORDER_ID, soiLineNo: l.soiLineNo })) : lines,
+        ),
+        update: jest.fn(async ({ data, where }: { data: Partial<SaleOrderItem>; where: { soiId_soiAccYear: { soiId: string } } }) => {
+          const line = lines.find((l) => l.soiId === where.soiId_soiAccYear.soiId)!;
+          const net = D(String(data.soiNetQty ?? line.soiNetQty));
+          const delivered = D(String(data.soiDeliveredQty ?? line.soiDeliveredQty));
+          return { ...line, ...data, soiPendingQty: net.minus(delivered).minus(D(String(line.soiCancelledQty))) };
+        }),
+      },
+      saleBillItem: { findMany: jest.fn(async () => bills) },
+    };
+    service = new SaleOrderService(
+      tx as unknown as PrismaService,
+      { logEntityChange: jest.fn() } as never,
+      { getUserId: () => ACTOR } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  const sync = (refs: SaleOrderLineRef[] = [lineRef(LINE_1)], reopenRemark?: string) =>
+    service.syncOrderFulfilment(tx as unknown as Prisma.TransactionClient, { refs, reopenRemark }, ACTOR, NOW);
+  const written = (soiId: string) =>
+    tx.saleOrderItem.update.mock.calls.find((c) => c[0].where.soiId_soiAccYear.soiId === soiId)?.[0].data;
+
+  it('draws a line down by its POSTED challans, net of their POSTED returns', async () => {
+    draws = [{ soi_id: LINE_1, dc_qty: D('4'), returned_qty: D('1') }];
+
+    await sync();
+
+    expect(written(LINE_1)).toMatchObject({ soiDeliveredQty: D('3'), soiNetQty: D('10') });
+    // billed money is the bills' alone: a challan bills nothing
+    expect(written(LINE_1)!.soiBilledAmt).toEqual(D('0'));
+    const sql = (tx.$queryRaw.mock.calls.find((c) => (c[0] as string[]).join('?').includes('sales.sale_dc_item'))![0] as string[]).join('?');
+    expect(sql).toContain("h.sdc_status = 'POSTED'");
+    expect(sql).toContain("rh.sdr_status = 'POSTED'");
+    expect(sql).toContain("d.sdi_src_doc_type = 'SALES_ORDER'");
+  });
+
+  it('adds the line\'s own bills to its challans, and keeps a bill re-derive from wiping the challans', async () => {
+    draws = [{ soi_id: LINE_1, dc_qty: D('3'), returned_qty: D('0') }];
+    bills = [billed(LINE_1, null, '2', '236')];
+
+    await sync();
+
+    expect(written(LINE_1)).toMatchObject({ soiDeliveredQty: D('5'), soiBilledAmt: D('236') });
+  });
+
+  it('re-derives a line its challans drew though the caller named another line', async () => {
+    draws = [{ soi_id: LINE_2, dc_qty: D('5'), returned_qty: D('0') }];
+
+    await sync([lineRef(LINE_1)]);
+
+    expect(written(LINE_2)).toMatchObject({ soiDeliveredQty: D('5') });
+  });
+
+  it('completes the order when its challans and bills deliver every line', async () => {
+    draws = [
+      { soi_id: LINE_1, dc_qty: D('10'), returned_qty: D('0') },
+      { soi_id: LINE_2, dc_qty: D('3'), returned_qty: D('0') },
+    ];
+    bills = [billed(LINE_2, null, '2', '100')];
+
+    await sync([lineRef(LINE_1), lineRef(LINE_2)]);
+
+    expect(tx.saleOrder.updateMany.mock.calls[0][0].data).toMatchObject({
+      soFulfilStatus: 'COMPLETED',
+      soStatus: 'COMPLETED',
+      soDeliveredItems: 2,
+    });
+  });
+
+  it('re-opens a COMPLETED order when a return gives quantity back, with the caller\'s remark', async () => {
+    lines = [
+      lineRow({ soiDeliveredQty: D('10'), soiPendingQty: D('0'), soiLineStatus: 'DELIVERED' } as Partial<SaleOrderItem>),
+      lineRow({ soiId: LINE_2, soiLineNo: 2, soiNetQty: D('5'), soiDeliveredQty: D('5'), soiPendingQty: D('0'), soiNetAmt: D('250') }),
+    ];
+    tx.saleOrder.findFirst.mockResolvedValue(
+      orderRow({ soStatus: 'COMPLETED', soFulfilStatus: 'COMPLETED', soDeliveredItems: 2, soPendingAmt: D('0') }),
+    );
+    draws = [
+      { soi_id: LINE_1, dc_qty: D('10'), returned_qty: D('4') },
+      { soi_id: LINE_2, dc_qty: D('5'), returned_qty: D('0') },
+    ];
+
+    await sync([lineRef(LINE_1)], 'Reopened: DC return DR2627D14-00001 posted');
+
+    expect(written(LINE_1)).toMatchObject({ soiDeliveredQty: D('6') });
+    expect(tx.saleOrder.updateMany.mock.calls[0][0].data).toMatchObject({ soStatus: 'CONFIRMED', soFulfilStatus: 'PARTIAL' });
+    expect(jest.mocked(appendTxnStatusLog).mock.calls[0][1]).toMatchObject({
+      event: TxnStatusEvent.REOPENED,
+      fromStatus: 'COMPLETED',
+      toStatus: 'CONFIRMED',
+      remarks: 'Reopened: DC return DR2627D14-00001 posted',
+    });
+  });
+
+  // User 11-17 (Q3): the bills of its challans bill the order line too, once.
+  it('adds the money of the bills of its challans to the line\'s own bills', async () => {
+    draws = [{ soi_id: LINE_1, dc_qty: D('3'), returned_qty: D('1'), dc_billed_amt: D('210.00') }];
+    bills = [billed(LINE_1, null, '2', '236')];
+
+    await sync();
+
+    expect(written(LINE_1)).toMatchObject({ soiDeliveredQty: D('4'), soiBilledAmt: D('446') });
+    expect(tx.saleOrder.updateMany.mock.calls[0][0].data).toMatchObject({ soBilledAmt: D('446') });
+  });
+
+  it('leaves a line no challan or bill drew, and no caller named, as it stands', async () => {
+    draws = [];
+
+    await sync([lineRef(LINE_1)]);
+
+    expect(written(LINE_2)).toBeUndefined();
   });
 });

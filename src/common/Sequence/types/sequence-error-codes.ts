@@ -27,6 +27,10 @@ export enum SequenceErrorCode {
    * suffix (20) column, or a typed number is over 50.
    * And (422, the detail carries `rule: 'GST16'`, wording variant rule=GST16) when a GST outward
    * type's first number at a new counter is over 16 characters (Voucher Types plan decision 35).
+   * And (422) for a `vchr_gst_doc_no` type (the challan and the challan return, challan plan
+   * decision 32), at counter creation AND at every draw: `rule: 'GST16_DEVICE'` (params sample,
+   * len) when the number is over 16 characters, `rule: 'GST16_CHARS'` (params sample) when it holds
+   * a character other than A–Z a–z 0–9 - /. See SequenceRefusalRule.
    */
   REFNO_TOO_LONG = 'SEQUENCE_REFNO_TOO_LONG',
   /**
@@ -48,9 +52,11 @@ export enum SequenceErrorCode {
   /** 422 — the format holds `{BR}` and the branch's code is not `^[A-Z0-9-]{1,10}$` (§5.5). */
   BRANCH_CODE_INVALID = 'SEQUENCE_BRANCH_CODE_INVALID',
   /**
-   * 422 — the voucher type's prefix or suffix holds a `{…}` other than `{FY}` / `{YY}` / `{BR}`, or
-   * a stray brace. Refused rather than printed raw. `params.token` names it (no braces). Also when
-   * the format holds `{YY}` and the accounting year is not shaped NNNN-NNNN (`params.token` 'YY').
+   * 422 — the voucher type's prefix or suffix holds a `{…}` other than `{FY}` / `{YY}` / `{FYC}` /
+   * `{BR}` / `{DV}`, or a stray brace. Refused rather than printed raw. `params.token` names it (no
+   * braces). Also when the format holds `{YY}` / `{FYC}` and the accounting year is not shaped
+   * NNNN-NNNN (`params.token` 'YY' / 'FYC'), and when it holds `{DV}` and the counter is the shared
+   * MAIN one, not a device's (`params.token` 'DV'; challan plan §5.1).
    */
   FORMAT_TOKEN_UNKNOWN = 'SEQUENCE_FORMAT_TOKEN_UNKNOWN',
   /** A field that must be a UUID is not one. */
@@ -70,3 +76,22 @@ export enum SequenceErrorCode {
   /** A flag is not true / false. */
   FIELD_NOT_BOOLEAN = 'VALIDATION_IS_BOOLEAN',
 }
+
+/**
+ * The `rule` an error detail of SequenceErrorCode.REFNO_TOO_LONG carries to pick its wording
+ * variant `rule=<value>` (fixed.error_message, notes 120).
+ */
+export const SequenceRefusalRule = {
+  /** A GST outward type's first number at a new counter is over 16 (Voucher Types decision 35). */
+  GST16: 'GST16',
+  /** A vchr_gst_doc_no number (challan, challan return) is over 16: params sample, len. */
+  GST16_DEVICE: 'GST16_DEVICE',
+  /** A vchr_gst_doc_no number holds a character other than A–Z a–z 0–9 - /: params sample. */
+  GST16_CHARS: 'GST16_CHARS',
+  /**
+   * On SequenceErrorCode.FORMAT_TOKEN_UNKNOWN (token DV): the format prints the device code and
+   * the document is numbered on the shared MAIN counter (wording variant rule=DEVICE_COUNTER).
+   */
+  DEVICE_COUNTER: 'DEVICE_COUNTER',
+} as const;
+export type SequenceRefusalRule = (typeof SequenceRefusalRule)[keyof typeof SequenceRefusalRule];

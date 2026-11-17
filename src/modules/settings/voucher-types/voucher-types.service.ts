@@ -17,6 +17,10 @@ import {
   type ModuleErrorDetail,
 } from 'src/common/utils/module-shared.utils';
 import { PrismaService } from 'src/database/prisma/prisma.service';
+import {
+  isDeviceWideSeries,
+  longestLiveDeviceCode,
+} from 'src/common/Sequence/voucher-sequence.helper';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import {
   PRINT_DESIGN_ASSIGNMENT_RULE,
@@ -53,6 +57,7 @@ import {
   checkNumbering,
   childTypeCode,
   isBaseType,
+  isGstDocNo,
   isGstOutward,
   issue,
   kindOf,
@@ -314,14 +319,14 @@ export class VoucherTypesService {
       await Promise.all([
         this.billCount(client, row.vchrTypeId, company),
         this.inUse(client, row.vchrTypeId),
-        this.counters(client, row.vchrTypeId, company, accYear),
+        this.counters(client, row.vchrTypeId, company, accYear, isDeviceWideSeries(row)),
         this.printDocType(client, base ?? row),
         (base ?? row).vchrTypeCode === SALES_BILL_TYPE_CODE && row.vchrParentId == null
           ? this.readOfferBase(client, company)
           : Promise.resolve(null),
         this.numberingFacts(client, row, company, accYear, branch),
         this.voucherFacts(client, row.vchrTypeId, company, branch?.branchId ?? null, accYear),
-        this.branchStates(client, row.vchrTypeId, company, accYear),
+        this.branchStates(client, row.vchrTypeId, company, accYear, isDeviceWideSeries(row)),
       ]);
     const printDesigns = printDocType
       ? await this.printDesigns(client, printDocType, company, row.vchrParentId == null)
@@ -646,10 +651,16 @@ export class VoucherTypesService {
       existing ?? ({ ...base, vchrTypeId: 0, vchrParentId: target.vchrParentId } as AccVoucherType);
     const screenNumbered = existing !== null && numberedByOf(existing) === 'SCREEN';
     const gstOutward = !!base && isGstOutward(base);
+    // Challan plan decision 32: a child is held to its base's GST document rule.
+    const gstDocNo = !!base && isGstDocNo(base);
     const branch = await this.previewBranch(client, company, dto.branchId ?? null);
     const facts = await this.numberingFacts(
       client,
-      { ...subject, vchrGstSide: base?.vchrGstSide ?? subject.vchrGstSide },
+      {
+        ...subject,
+        vchrGstSide: base?.vchrGstSide ?? subject.vchrGstSide,
+        vchrGstDocNo: base?.vchrGstDocNo ?? subject.vchrGstDocNo,
+      },
       company,
       accYear,
       branch,
@@ -662,7 +673,7 @@ export class VoucherTypesService {
         width: target.vchrNoWidth,
         startNo: target.vchrStartNo,
       },
-      { ...facts, gstOutward },
+      { ...facts, gstOutward, gstDocNo },
     );
     let preview = verdict.preview;
     if (screenNumbered) {
@@ -1144,7 +1155,7 @@ export class VoucherTypesService {
     previewBranch: BranchFact | null,
   ) {
     const scopeCompany = subject.vchrParentId == null && subject.vchrTypeId !== 0 ? null : company;
-    const [branches, seriesRows] = await Promise.all([
+    const [branches, seriesRows, deviceCode] = await Promise.all([
       this.branchRows(client, scopeCompany),
       client.accVoucherType.findMany({
         where: scopeCompany
@@ -1159,6 +1170,9 @@ export class VoucherTypesService {
           vchrNoSuffix: true,
         },
       }),
+      // What {DV} is judged with (challan plan decision 32): the company's longest
+      // live device code; a base, like its branches, every company's.
+      longestLiveDeviceCode(client, scopeCompany),
     ]);
     const series: SeriesFact[] = seriesRows
       .filter((r) => numberedByOf(r) === 'COUNTER')
@@ -1172,6 +1186,8 @@ export class VoucherTypesService {
       vchrTypeId: subject.vchrTypeId === 0 ? null : subject.vchrTypeId,
       accYear,
       gstOutward: isGstOutward(subject),
+      gstDocNo: isGstDocNo(subject),
+      deviceCode,
       branches,
       previewBranch,
       series,
@@ -1228,6 +1244,8 @@ export class VoucherTypesService {
     vchrTypeId: number,
     company: string,
     accYear: string,
+    /** One series per PC (user 11-16): each device row serves every branch. */
+    deviceWide = false,
   ): Promise<VoucherTypeCounter[]> {
     const rows = await client.$queryRaw<
       {
@@ -1254,6 +1272,7 @@ export class VoucherTypesService {
       deviceCode: r.device_code,
       lastNo: r.last_no.toString(),
       lastRefno: r.last_refno,
+      allBranches: deviceWide && r.device_code.trim().toUpperCase() !== 'MAIN',
     }));
   }
 
@@ -1310,6 +1329,8 @@ export class VoucherTypesService {
     vchrTypeId: number,
     company: string,
     accYear: string,
+    /** One series per PC: a device's counter at any branch counts for every branch. */
+    deviceWide = false,
   ): Promise<VoucherTypeBranchState[]> {
     const rows = await client.$queryRaw<
       {
@@ -1325,7 +1346,9 @@ export class VoucherTypesService {
              upper(COALESCE(NULLIF(btrim(b.br_bill_prefix), ''), NULLIF(btrim(b.br_code), ''))) AS code,
              EXISTS (SELECT 1 FROM accounts.acc_voucher_seq s
                       WHERE s.seq_vchr_type_id = ${vchrTypeId}::int AND s.seq_company_id = ${company}::uuid
-                        AND s.seq_branch_id = b.br_id AND s.seq_acc_year = ${accYear}
+                        AND (s.seq_branch_id = b.br_id
+                             OR (${deviceWide} AND upper(btrim(s.seq_device_code)) <> 'MAIN'))
+                        AND s.seq_acc_year = ${accYear}
                         AND s.seq_is_deleted = false) AS has_counter,
              lv.refno
         FROM public.branch_master b

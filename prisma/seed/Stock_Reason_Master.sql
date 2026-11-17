@@ -1,4 +1,4 @@
--- Seed: stock.stock_reason_master -- why stock moved outside a trade document (29 rows).
+-- Seed: stock.stock_reason_master -- why stock moved outside a trade document (44 rows).
 --
 -- This is not decoration. fn_svh_txn_map REFUSES to post an ADJUSTMENT that does
 -- not cite a reason, and refuses one whose reason is direction BOTH, because a
@@ -251,6 +251,54 @@ SELECT v.company, v.code, v.name, 'IN',
     (NULL, 'SR_DAMAGED_SHOP', 'Damaged at the shop (claim)',  480, 'DAMAGED', true,
      'Claim: damaged at the customer''s shop.')
   ) AS v(company, code, name, sort_order, cond, charges, note)
+ WHERE NOT EXISTS (
+        SELECT 1
+          FROM stock.stock_reason_master e
+         WHERE e.srm_company_id IS NULL
+           AND e.srm_code       = v.code
+           AND e.srm_is_deleted = false)
+    $sql$;
+END
+$do$;
+
+-- ── challan returns: why un-billed challan goods came back ──────────────
+-- The header Reason on a Challan Return (menu 251, dropdown 79). IN, and named
+-- only for DC_RETURN, so no other picker offers them. DCR_ prefix, like SR_ above;
+-- DCR_DAMAGED gives a new line the condition Damaged, DCR_OTHER needs remarks.
+-- Migration 20261118100000_dc_dc_return inserts the same six on a database that
+-- already has the table (plan-dc-dc-return §7.3, Q16).
+DO $do$
+BEGIN
+    IF to_regclass('stock.stock_reason_master') IS NULL
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = 'stock' AND table_name = 'stock_reason_master'
+                         AND column_name = 'srm_default_condition') THEN
+        RAISE NOTICE 'stock.stock_reason_master has no srm_default_condition yet -- skipping the challan-return reasons.';
+        RETURN;
+    END IF;
+
+    EXECUTE $sql$
+INSERT INTO stock.stock_reason_master
+    (srm_company_id, srm_code, srm_name, srm_direction,
+     srm_allowed_txn_types, srm_require_remarks, srm_sort_order, srm_remarks,
+     srm_default_condition)
+SELECT v.company, v.code, v.name, 'IN',
+       ARRAY['DC_RETURN']::text[], v.require_remarks, v.sort_order, v.note,
+       v.cond
+  FROM (VALUES
+    (NULL::uuid, 'DCR_NOT_NEEDED'::varchar,    'Not needed / over-supply'::varchar, false, 510, NULL::varchar,
+     'Challan return: the customer did not need the goods, or more went than asked.'::varchar),
+    (NULL, 'DCR_APPROVAL_BACK', 'Approval goods not taken', false, 520, NULL,
+     'Challan return: goods sent on approval came back.'),
+    (NULL, 'DCR_JOB_WORK_BACK', 'Back from job work',       false, 530, NULL,
+     'Challan return: goods sent for job work came back.'),
+    (NULL, 'DCR_WRONG_ITEM',    'Wrong item sent',          false, 540, NULL,
+     'Challan return: we sent the wrong item.'),
+    (NULL, 'DCR_DAMAGED',       'Damaged in transit',       false, 550, 'DAMAGED',
+     'Challan return: damaged on the way; a new line takes the condition Damaged.'),
+    (NULL, 'DCR_OTHER',         'Other',                    true,  590, NULL,
+     'Challan return: any other reason; the remarks say which.')
+  ) AS v(company, code, name, require_remarks, sort_order, cond, note)
  WHERE NOT EXISTS (
         SELECT 1
           FROM stock.stock_reason_master e

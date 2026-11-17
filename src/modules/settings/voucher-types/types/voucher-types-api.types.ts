@@ -47,6 +47,11 @@ export interface VoucherTypeCounter {
   deviceCode: string;
   lastNo: string;
   lastRefno: string | null;
+  /**
+   * The device's ONE series for every branch (a device-wide type, user 11-16 "one series per
+   * PC"): branchId / branchName are then only the anchor branch the row is filed under.
+   */
+  allBranches: boolean;
 }
 
 export interface VoucherTypePrintDesign {

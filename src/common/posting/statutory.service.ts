@@ -319,12 +319,13 @@ export async function resolveStatutoryLimit(
       stl_effective_from: Date;
       stl_effective_to: Date | null;
       stl_source_ref: string | null;
+      stl_applies_to: string;
       is_company_override: boolean;
     }[]
   >`
     SELECT s.stl_id, s.stl_code, s.stl_section, s.stl_label, s.stl_value_type,
            s.stl_value, s.stl_value_text, s.stl_enforce,
-           s.stl_effective_from, s.stl_effective_to, s.stl_source_ref,
+           s.stl_effective_from, s.stl_effective_to, s.stl_source_ref, s.stl_applies_to,
            (s.stl_company_id IS NOT NULL) AS is_company_override
       FROM public.statutory_limits s
      WHERE s.stl_code = ${code}
@@ -356,6 +357,7 @@ function toLimit(row: {
   stl_effective_from: Date;
   stl_effective_to: Date | null;
   stl_source_ref: string | null;
+  stl_applies_to?: string | null;
   is_company_override: boolean;
 }): StatutoryLimit {
   return {
@@ -371,5 +373,6 @@ function toLimit(row: {
     effectiveTo: row.stl_effective_to === null ? null : toDateString(row.stl_effective_to),
     sourceRef: row.stl_source_ref,
     isCompanyOverride: row.is_company_override,
+    appliesTo: row.stl_applies_to ?? 'ALL',
   };
 }

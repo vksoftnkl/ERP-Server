@@ -23,7 +23,9 @@ import { ACC_YEAR_PATTERN, PlgOutputMode, PlgStatus } from './print-render.const
  * `tss_print_count` / `tbd_print_count` once per render, so the Z itself can
  * say "REPRINT n" — and since notes 135 a TILL_MOVEMENT / TILL_REMIT bumps
  * `tcm_print_count` (and since delivery tracking P5 a GATE_PASS bumps
- * `sdn_print_count`). Swallowed like the log: a counter never fails a print.
+ * `sdn_print_count`; since Sales DC P5 a DELIVERY_CHALLAN bumps
+ * `sdc_print_count` and a DC_RETURN `sdr_print_count`). Swallowed like the log:
+ * a counter never fails a print.
  *
  * ── IMMUTABLE MEANS IMMUTABLE ──────────────────────────────────────────────
  *
@@ -96,6 +98,16 @@ const PRINT_COUNTERS: Readonly<Record<string, (docId: string, accYear: string) =
   DELIVERY_NOTE: (docId, accYear) => Prisma.sql`
     UPDATE sales.sale_delivery_note SET sdn_print_count = sdn_print_count + 1
      WHERE sdn_id = ${docId}::uuid AND sdn_acc_year = ${accYear}::char(9)`,
+  // Sales DC P5: the challan (purpose DELIVERY_CHALLAN) and the challan return
+  // (purpose DC_RETURN), so a second print says REPRINT (header.reprint_mark of
+  // sales.dc.header / sales.dcr.header) and their /get answers sdcPrintCount /
+  // sdrPrintCount > 0. Once per printed document, as above.
+  DELIVERY_CHALLAN: (docId, accYear) => Prisma.sql`
+    UPDATE sales.sale_dc SET sdc_print_count = sdc_print_count + 1
+     WHERE sdc_id = ${docId}::uuid AND sdc_acc_year = ${accYear}::char(9)`,
+  DC_RETURN: (docId, accYear) => Prisma.sql`
+    UPDATE sales.sale_dc_return SET sdr_print_count = sdr_print_count + 1
+     WHERE sdr_id = ${docId}::uuid AND sdr_acc_year = ${accYear}::char(9)`,
 };
 
 @Injectable()

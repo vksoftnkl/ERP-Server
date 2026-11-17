@@ -320,6 +320,78 @@ export class StockReservationService {
     }
   }
 
+  /**
+   * User 2026-11-17 — what an order line's reservations have CONSUMED is
+   * re-derived from the documents that drew the line, never incremented:
+   *   Σ POSTED bill lines taken straight from it (bill qty × factor, as a
+   *     bill's own consume counts it; by order id + line no, or by the line id)
+   * + Σ POSTED challan lines taken from it (dc qty × factor)
+   * − Σ POSTED DC-return lines of those challan lines (return qty × factor),
+   * in base units. The difference to what the line's rows hold as consumed
+   * now goes through consume() — a FEFO take, or a give-back with its
+   * hand-over rules — so a challan consumes exactly as a bill does, its return
+   * gives back, and a cancel of either re-derives. A bill of a challan names
+   * the CHALLAN and is not counted (the challan already consumed).
+   *
+   * The caller holds the order row (sale_order FOR UPDATE), which serialises
+   * every document drawing the line; consume() locks the reservation rows.
+   * A line whose rows cannot take more (a short reservation) keeps what it has.
+   */
+  async rederiveOrderLines(
+    tx: Prisma.TransactionClient,
+    soId: string,
+    lineNos: readonly number[],
+    actor: string,
+    now: Date,
+  ): Promise<void> {
+    const nos = [...new Set(lineNos.filter((n) => Number.isInteger(n)))];
+    if (nos.length === 0) {
+      return;
+    }
+    const rows = await tx.$queryRaw<
+      { line_no: number; target: Prisma.Decimal | null; consumed: Prisma.Decimal | null }[]
+    >`
+      SELECT o.soi_line_no AS line_no,
+             COALESCE((SELECT SUM(b.sbi_bill_qty * COALESCE(NULLIF(b.sbi_to_base_factor, 0), 1))
+                         FROM sales.sale_bill_item b
+                         JOIN sales.sale_bill bh ON bh.sb_id = b.sbi_bill_id AND bh.sb_acc_year = b.sbi_acc_year
+                        WHERE b.sbi_src_doc_type = 'SALES_ORDER' AND b.sbi_is_deleted = false
+                          AND bh.sb_is_deleted = false AND bh.sb_status = 'POSTED'
+                          AND ((b.sbi_src_doc_id = o.soi_order_id AND b.sbi_src_doc_line_no = o.soi_line_no)
+                               OR b.sbi_src_doc_id = o.soi_id)), 0)
+           + COALESCE((SELECT SUM(d.sdi_dc_qty * COALESCE(NULLIF(d.sdi_to_base_factor, 0), 1))
+                         FROM sales.sale_dc_item d
+                         JOIN sales.sale_dc h ON h.sdc_id = d.sdi_dc_id AND h.sdc_acc_year = d.sdi_acc_year
+                        WHERE d.sdi_src_item_id = o.soi_id AND d.sdi_src_doc_type = 'SALES_ORDER'
+                          AND d.sdi_is_deleted = false AND h.sdc_is_deleted = false
+                          AND h.sdc_status = 'POSTED'), 0)
+           - COALESCE((SELECT SUM(r.sdri_return_qty * COALESCE(NULLIF(r.sdri_to_base_factor, 0), 1))
+                         FROM sales.sale_dc_return_item r
+                         JOIN sales.sale_dc_return rh ON rh.sdr_id = r.sdri_return_id AND rh.sdr_acc_year = r.sdri_acc_year
+                         JOIN sales.sale_dc_item d ON d.sdi_id = r.sdri_dc_item_id AND d.sdi_acc_year = r.sdri_dc_acc_year
+                        WHERE d.sdi_src_item_id = o.soi_id AND d.sdi_src_doc_type = 'SALES_ORDER'
+                          AND d.sdi_is_deleted = false AND r.sdri_is_deleted = false
+                          AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0) AS target,
+             COALESCE((SELECT SUM(s.srv_consumed_qty) FROM stock.stock_reservation s
+                        WHERE s.srv_src_doc_type = 'SALES_ORDER' AND s.srv_src_doc_id = o.soi_order_id
+                          AND s.srv_line_no = o.soi_line_no AND s.srv_is_deleted = false), 0) AS consumed
+        FROM sales.sale_order_item o
+       WHERE o.soi_order_id = ${soId}::uuid AND o.soi_line_no = ANY(${nos}::int[])
+         AND o.soi_is_deleted = false
+       ORDER BY o.soi_line_no`;
+    for (const r of rows ?? []) {
+      if (typeof r?.line_no !== 'number') {
+        continue;
+      }
+      const delta = new Prisma.Decimal(r.target ?? 0)
+        .toDecimalPlaces(4)
+        .minus(new Prisma.Decimal(r.consumed ?? 0).toDecimalPlaces(4));
+      if (!delta.isZero()) {
+        await this.consume(tx, { docId: soId, lineNo: r.line_no }, delta, actor, now);
+      }
+    }
+  }
+
   /** One row's consumed quantity moves (a take, or a give-back on the row itself). */
   private async writeConsumed(
     tx: Prisma.TransactionClient,

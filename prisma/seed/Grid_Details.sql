@@ -1,5 +1,11 @@
 -- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (125 rows).
 --
+-- 116 MAIN LIST - DELIVERY CHALLANS as migration 20261118100000_dc_dc_return leaves it: days,
+-- open_pkgs, open_kg, age_level and the tokens iamber_days / iold_days (an unsent one reads as
+-- 7 / 30); company / branch compared as text. By (sdc_created_by) is the creator's name and the
+-- fulfilment of a challan that is not POSTED reads '—' (fix of 2026-11-17). Grids 219-221 are
+-- in DC_Grids_219_221.sql.
+--
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
 -- dollar-quoted below ($seed$...$seed$) so quotes and newlines survive verbatim --
@@ -1600,7 +1606,7 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
             AND (NULLIF('ifrom_date', '') IS NULL OR b.sb_bill_date::text >= 'ifrom_date')
             AND (NULLIF('ito_date', '') IS NULL OR b.sb_bill_date::text <= 'ito_date'))
  ORDER BY b.sb_bill_datetime DESC$seed$)
-    ,(116, 'MAIN LIST - DELIVERY CHALLANS', 'Delivery challans (menu 182, plan-qt-sales 4). ifulfil narrows by sdc_fulfil_status ('''' = all, OPEN = OPEN+PARTIAL); search on DC no / customer / phone.', 'sdc_dc_date'     , 'Descending', 'Desktop', true , false, 'system', $seed$SELECT
+    ,(116, 'MAIN LIST - DELIVERY CHALLANS', 'Delivery challans (menu 182, TxnMainView). Tokens (send every one; '''' = no bound / all): icompany_id, ibranch_id, iacc_year, ifrom_date, ito_date (yyyy-MM-dd), ifulfil ('''' = all, OPEN = OPEN+PARTIAL, else that status; only a POSTED challan matches), iamber_days, iold_days (the company''s sales.delivery_amber_days / delivery_old_days; '''' or not sent = 7 / 30). days = today minus the challan date; open_pkgs / open_kg = what is still out on a POSTED challan (its lines with sdi_open_qty > 0; 0 on a draft or a cancelled one); age_level '''' / AMBER / RED, only while something is open (plan §5.6: Supply amber past iamber_days and red past iold_days; any other purpose red past DC_RETURN_WINDOW_DAYS from public.statutory_limits, the company row first, on the challan date; no row = never red). sdc_created_by = the creator''s name (user_master display name, else login name, else the stored id, as grid 219); sdc_fulfil_status = ''—'' on a challan that is not POSTED (a draft or a cancelled one). Search on DC no / customer / phone. Newest first.', 'sdc_dc_date'     , 'Descending', 'Desktop', true , false, 'system', $seed$SELECT
        d.sdc_id,
        d.sdc_company_id,
        d.sdc_branch_id,
@@ -1614,21 +1620,59 @@ ORDER BY t.tax_sort_order, t.tax_name$seed$)
        d.sdc_tot_items,
        d.sdc_dc_amt,
        d.sdc_status,
-       d.sdc_fulfil_status,
+       CASE WHEN d.sdc_status <> 'POSTED' THEN '—' ELSE d.sdc_fulfil_status END AS sdc_fulfil_status,
        d.sdc_vehicle_no,
        d.sdc_src_doc_refno,
-       d.sdc_created_by
+       COALESCE(NULLIF(us.usr_display_name, ''), us.usr_login_name, d.sdc_created_by) AS sdc_created_by,
+       (CURRENT_DATE - d.sdc_dc_date) AS days,
+       round(COALESCE(ol.open_pkgs, 0), 3) AS open_pkgs,
+       round(COALESCE(ol.open_kg, 0), 3) AS open_kg,
+       CASE WHEN d.sdc_status <> 'POSTED' OR COALESCE(ol.open_pkgs, 0) <= 0 THEN ''
+            WHEN d.sdc_purpose = 'SUPPLY' THEN
+                 CASE WHEN CURRENT_DATE - d.sdc_dc_date > lim.old_days THEN 'RED'
+                      WHEN CURRENT_DATE - d.sdc_dc_date > lim.amber_days THEN 'AMBER'
+                      ELSE '' END
+            WHEN win.window_days IS NOT NULL AND CURRENT_DATE - d.sdc_dc_date > win.window_days THEN 'RED'
+            ELSE '' END AS age_level
   FROM sales.sale_dc d
- WHERE d.sdc_company_id = 'icompany_id'::uuid
-   AND d.sdc_branch_id = 'ibranch_id'::uuid
+  CROSS JOIN (SELECT COALESCE(substring('iamber_days' FROM '^[0-9]{1,4}$')::integer, 7) AS amber_days,
+                     COALESCE(substring('iold_days' FROM '^[0-9]{1,4}$')::integer, 30) AS old_days) lim
+  LEFT JOIN LATERAL (SELECT SUM(di.sdi_open_qty) AS open_pkgs,
+                            SUM(di.sdi_open_qty * CASE WHEN di.sdi_weight_qty > 0 AND di.sdi_dc_qty > 0
+                                                       THEN di.sdi_weight_qty / di.sdi_dc_qty
+                                                       ELSE COALESCE(u.iuc_uom_weight, 0) END) AS open_kg
+                       FROM sales.sale_dc_item di
+                       LEFT JOIN inventory.item_unit_conversion u ON u.iuc_id = di.sdi_item_unit_id
+                      WHERE d.sdc_status = 'POSTED'
+                        AND di.sdi_dc_id = d.sdc_id
+                        AND di.sdi_acc_year = d.sdc_acc_year
+                        AND di.sdi_is_deleted = false
+                        AND di.sdi_open_qty > 0) ol ON true
+  LEFT JOIN LATERAL (SELECT s.stl_value AS window_days
+                       FROM public.statutory_limits s
+                      WHERE d.sdc_purpose <> 'SUPPLY'
+                        AND s.stl_code = 'DC_RETURN_WINDOW_DAYS'
+                        AND s.stl_is_deleted = false
+                        AND s.stl_is_active = true
+                        AND (s.stl_company_id IS NULL OR s.stl_company_id = d.sdc_company_id)
+                        AND s.stl_applies_to = 'ALL'
+                        AND s.stl_aato_class IS NULL
+                        AND s.stl_effective_from <= d.sdc_dc_date
+                        AND (s.stl_effective_to IS NULL OR s.stl_effective_to >= d.sdc_dc_date)
+                      ORDER BY (s.stl_company_id IS NOT NULL) DESC, s.stl_effective_from DESC
+                      LIMIT 1) win ON true
+  LEFT JOIN public.user_master us ON us.usr_id::text = d.sdc_created_by
+ WHERE d.sdc_company_id::text = 'icompany_id'
+   AND d.sdc_branch_id::text = 'ibranch_id'
    AND d.sdc_acc_year = 'iacc_year'
    AND d.sdc_is_deleted = false
    AND (NULLIF('ifrom_date', '') IS NULL OR d.sdc_dc_date::text >= 'ifrom_date')
    AND (NULLIF('ito_date', '') IS NULL OR d.sdc_dc_date::text <= 'ito_date')
    AND (CASE WHEN NULLIF('ifulfil', '') IS NULL THEN true
+             WHEN d.sdc_status <> 'POSTED' THEN false
              WHEN 'ifulfil' = 'OPEN' THEN d.sdc_fulfil_status IN ('OPEN', 'PARTIAL')
              ELSE d.sdc_fulfil_status = 'ifulfil' END)
- ORDER BY d.sdc_dc_date DESC, d.sdc_dc_slno DESC$seed$)
+ ORDER BY d.sdc_dc_date DESC, d.sdc_created_on DESC$seed$)
     ,(117, 'TXN MAIN LIST - VOUCHER REGISTER', 'Voucher Register vouchers for a company / branch / year, only the types the user may view. itype_code narrows to one type; '''' = every permitted type. Rev mirrors are not listed (they hang off their original); a CANCELLED original stays listed.', 'Date'            , 'Descending', 'Desktop', true , false, 'system', $seed$SELECT
        h.avh_voucher_id,
        h.avh_company_id,

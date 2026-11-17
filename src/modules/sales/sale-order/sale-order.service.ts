@@ -37,6 +37,7 @@ import {
   SaleOrderSrcDocPendingAmount,
   SaleOrderTenderPayload,
 } from './types/sale-order-api.types';
+import { challanDrawsOf } from './order-challan-draws';
 import { SaleOrderErrorCode } from './types/sale-order-error-codes';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { throwSalesLocked, throwSalesRight } from '../posting/sales.errors';
@@ -2147,6 +2148,9 @@ export class SaleOrderService {
         amt: total.amt.plus(dec(item.sbiNetAmt)),
       });
     }
+    // User 2026-11-17 — the POSTED challans taken from these lines draw them
+    // down too, less what their POSTED DC returns took back (order-challan-draws).
+    const challanByLineNo = await challanDrawsOf(tx, soAccYear, lines);
     const settledLines = lines.map((line) => {
       const stored = {
         line,
@@ -2162,12 +2166,21 @@ export class SaleOrderService {
       // quantity back when the bill that consumed it is edited to point
       // elsewhere. Every other line keeps exactly what it holds — a quantity
       // cancelled by hand is not this method's to reinterpret.
-      if (!lineNos.has(line.soiLineNo) && !billedByLineNo.has(line.soiLineNo)) {
+      if (
+        !lineNos.has(line.soiLineNo) &&
+        !billedByLineNo.has(line.soiLineNo) &&
+        !challanByLineNo.has(line.soiLineNo)
+      ) {
         return stored;
       }
       const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: ZERO, amt: ZERO };
-      const delivered = roundQty(billed.qty);
-      const billedAmt = roundAmount(billed.amt);
+      // Delivered = what the line's own bills took + what its challans took,
+      // net of their returns (user 11-17). Billed = the line's own bills'
+      // money + the money of the bills of its challans (user 11-17; a
+      // challan itself bills nothing, and each bill line is read once).
+      const viaChallans = challanByLineNo.get(line.soiLineNo);
+      const delivered = roundQty(billed.qty.plus(viaChallans?.qty ?? ZERO));
+      const billedAmt = roundAmount(billed.amt.plus(viaChallans?.billedAmt ?? ZERO));
       const cancelled = stored.cancelled;
       // soi_pending_qty is GENERATED as net − delivered − cancelled, so pending
       // is not written and not decided here: this mirrors the DB's expression
@@ -2242,7 +2255,7 @@ export class SaleOrderService {
           originalRecord: this.toItemPayload(line),
           modifiedRecord: this.toItemPayload(updated),
           userId: actor,
-          notes: 'Order line fulfilment recomputed from its bills',
+          notes: 'Order line fulfilment recomputed from its bills and challans',
         },
         tx,
       );
@@ -2411,7 +2424,7 @@ export class SaleOrderService {
         originalRecord: auditRecordOf(this.toPayload(order)),
         modifiedRecord: auditRecordOf(this.toPayload({ ...order, ...headerChanges } as SaleOrder)),
         userId: actor,
-        notes: `Order fulfilment recomputed from its bills (${fulfilledLines.length} line(s))`,
+        notes: `Order fulfilment recomputed from its bills and challans (${fulfilledLines.length} line(s))`,
       },
       tx,
     );

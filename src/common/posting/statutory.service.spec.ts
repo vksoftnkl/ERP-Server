@@ -18,6 +18,7 @@ type Row = {
   stl_effective_from: Date;
   stl_effective_to: Date | null;
   stl_source_ref: string | null;
+  stl_applies_to: string;
   is_company_override: boolean;
 };
 
@@ -33,6 +34,7 @@ const row = (code: string, value: number | null, overrides: Partial<Row> = {}): 
   stl_effective_from: new Date('2024-04-01T00:00:00.000Z'),
   stl_effective_to: null,
   stl_source_ref: null,
+  stl_applies_to: 'ALL',
   is_company_override: false,
   ...overrides,
 });
@@ -85,7 +87,19 @@ describe('resolveStatutoryLimit', () => {
       effectiveTo: '2027-03-31',
       sourceRef: 'CGST Rules',
       isCompanyOverride: true,
+      appliesTo: 'ALL',
     });
+  });
+
+  // Which figure applied: a state's own row says so (the e-way facts show it).
+  it('names the applies_to of the row that won', async () => {
+    const db = makeDb({
+      'EWAY_VALUE_LIMIT|33': row('EWAY_VALUE_LIMIT', 100000, { stl_applies_to: '33' }),
+    });
+
+    await expect(
+      resolveStatutoryLimit(db as unknown as PrismaService, COMPANY_ID, 'EWAY_VALUE_LIMIT', ON, '33'),
+    ).resolves.toMatchObject({ value: 100000, appliesTo: '33', isCompanyOverride: false });
   });
 
   it('keeps a TEXT row’s value null', async () => {

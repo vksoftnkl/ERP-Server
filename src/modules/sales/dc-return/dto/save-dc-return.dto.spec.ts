@@ -103,10 +103,8 @@ describe('SaveDcReturnDto', () => {
 });
 
 describe('SaveDcReturnItemDto', () => {
-  it('requires the challan line, item, unit and godown', () => {
-    expect(erroredFields(SaveDcReturnItemDto, {}).sort()).toEqual(
-      ['sdriDcItemId', 'sdriGodownId', 'sdriItemId', 'sdriItemUnitId'].sort(),
-    );
+  it('requires only the challan line: item, unit and godown come from it (decision 35)', () => {
+    expect(erroredFields(SaveDcReturnItemDto, {})).toEqual(['sdriDcItemId']);
   });
 
   it('upper-cases a bucket and accepts the five the column allows', () => {

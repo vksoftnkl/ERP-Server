@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (130 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (131 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -50,7 +50,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 41 rows) ============
+    -- ============ &1 Sales (menu 1, 42 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,  10.00, '0', NULL, NULL, true , false)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,  60.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,  30.00, NULL, NULL, NULL, true , false)
@@ -73,14 +73,17 @@ VALUES
     ,( 177,   17, 'Loading Charges'                      , NULL                  , true ,  70.00, NULL, NULL, NULL, true , false)
     -- 125 Vehicle Master (20261112120000_vehicle_transporter_masters, plan-vehicle-master D1).
     ,( 125,   17, 'Vehicle Master'                       , NULL                  , true ,  75.00, NULL, NULL, NULL, true , false)
-    -- 182 renamed "Delivery Challan" (label only, still hidden) and 226 Delivery Status hidden
-    -- (its hand-set status is replaced by the computed one) by 20261117100000_delivery_tracking
-    -- (plan-delivery-tracking-p1 Q2, D8). 304 Pending Deliveries and 305 Delivery Note (same
-    -- migration, Q1): the desk of bills still to give, and the note that gives them. Verbs below.
-    ,( 182,    1, 'Delivery Challan'                     , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
+    -- 182 renamed "Delivery Challan" and 226 Delivery Status hidden (its hand-set status is
+    -- replaced by the computed one) by 20261117100000_delivery_tracking (plan-delivery-tracking-p1
+    -- Q2, D8). 304 Pending Deliveries and 305 Delivery Note (same migration, Q1): the desk of
+    -- bills still to give, and the note that gives them. 182 shown at 42.00, after 305, and 251
+    -- Challan Return new at 43.00 by 20261118100000_dc_dc_return (plan-dc-dc-return Q1-Q3).
+    -- Verbs below.
+    ,( 182,    1, 'Delivery Challan'                     , NULL                  , true ,  42.00, NULL, NULL, NULL, true , false)
     ,( 226,    1, 'Delivery Status'                      , 'true'                , false,  40.00, NULL, NULL, NULL, true , false)
     ,( 304,    1, 'Pending Deliveries'                   , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
     ,( 305,    1, 'Delivery Note'                        , NULL                  , true ,  41.00, NULL, NULL, NULL, true , false)
+    ,( 251,    1, 'Challan Return'                       , NULL                  , true ,  43.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Schemes'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,  50.00, NULL, NULL, NULL, true , true)
     -- 299 (20261110180000_sale_order_desk): Sales Order Management, the order desk
@@ -432,6 +435,19 @@ UPDATE fixed.menu_master m
   FROM (VALUES (304, '{VIEW,PRINT,EXPORT}'),
                (305, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'),
                (306, '{VIEW,PRINT,EXPORT}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 182 Delivery Challan posts, cancels and amends its challans (OVERRIDE: a ticked WARN, as on
+-- 12); 251 Challan Return (20261118100000_dc_dc_return, plan-dc-dc-return Q3 / decision 34)
+-- posts and cancels, with no AMEND (a posted return is cancelled and keyed again) and no
+-- OVERRIDE. 182 already has its list on any database 20260922170000 found it on; this catches a
+-- fresh one. Same guard as above.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (182, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,AMEND,OVERRIDE}'),
+               (251, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}')
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';

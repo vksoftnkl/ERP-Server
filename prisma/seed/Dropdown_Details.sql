@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (65 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (66 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
@@ -8,6 +8,8 @@
 -- 20261113100000_item_ledger_layouts inserts it.
 -- 78 SALE RETURN REASONS (Sale Return's Reason picker) as migration
 -- 20261113160000_sale_return_screen inserts it.
+-- 79 DC RETURN REASONS (Challan Return's Reason picker, dropdown 78 on DC_RETURN) as migration
+-- 20261118100000_dc_dc_return inserts it.
 -- 48 PRINT PURPOSES - DESKTOP returns ppo_company_id (Voucher Types decision 61) as migration
 -- 20261116130000_print_purpose_dropdown_company sets it.
 --
@@ -539,6 +541,20 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
  WHERE r.srm_is_active = true
    AND r.srm_is_deleted = false
    AND r.srm_allowed_txn_types && ARRAY['SALE_RETURN']
+   AND (r.srm_company_id IS NULL OR r.srm_company_id::text = 'icompany_id')
+   AND NOT (r.srm_company_id IS NULL
+            AND EXISTS (SELECT 1 FROM stock.stock_reason_master c
+                         WHERE c.srm_company_id::text = 'icompany_id'
+                           AND c.srm_code = r.srm_code
+                           AND c.srm_is_deleted = false))
+ ORDER BY r.srm_sort_order, r.srm_name$seed$, NULL)
+    ,(79, 'DC RETURN REASONS', 'Challan Return (menu 251) Reason picker: active DC_RETURN reasons, shared (company NULL) and this company''s; a company row with a shared row''s code hides the shared one. Gives the default line Condition and whether the reason needs remarks. Param icompany_id, always sent; compared as text, never cast.', 'srm_name'            , 'asc'      , 10, true , 0   , 'Desktop', 'srm_name'          , 'system', $seed$SELECT r.srm_id, r.srm_name, r.srm_code,
+       COALESCE(r.srm_default_condition, '') AS srm_default_condition,
+       r.srm_require_remarks
+  FROM stock.stock_reason_master r
+ WHERE r.srm_is_active = true
+   AND r.srm_is_deleted = false
+   AND r.srm_allowed_txn_types && ARRAY['DC_RETURN']
    AND (r.srm_company_id IS NULL OR r.srm_company_id::text = 'icompany_id')
    AND NOT (r.srm_company_id IS NULL
             AND EXISTS (SELECT 1 FROM stock.stock_reason_master c

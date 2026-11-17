@@ -97,6 +97,8 @@ export function refuse(
     line?: number;
     statutory?: SalesGuardContext['refusals'][number]['statutory'];
     params?: SalesMessageParams;
+    /** A `rule=<value>` wording variant of the code. */
+    rule?: string;
   } = {},
 ): void {
   ctx.refusals.push({
@@ -106,12 +108,14 @@ export function refuse(
     line: opts.line,
     statutory: opts.statutory,
     ...(opts.params === undefined ? {} : { params: opts.params }),
+    ...(opts.rule === undefined ? {} : { rule: opts.rule }),
   });
   if (ctx.throwOnRefusal) {
     throwSalesRefused(message, code, opts.field ?? 'document', {
       ...(opts.line === undefined ? {} : { line: opts.line }),
       ...(opts.statutory === undefined ? {} : { statutory: opts.statutory }),
       ...(opts.params === undefined ? {} : { params: opts.params }),
+      ...(opts.rule === undefined ? {} : { rule: opts.rule }),
     });
   }
 }

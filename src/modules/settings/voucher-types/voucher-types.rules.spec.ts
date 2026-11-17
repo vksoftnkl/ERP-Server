@@ -16,6 +16,8 @@ import {
   checkDeliveryMode,
   effectiveDeliveryMode,
   hasDeliveryMode,
+  isGstDocNo,
+  MIRROR_FIELDS,
 } from './voucher-types.rules';
 
 /** Voucher Types plan §5 / §7.2 — the master's rules that need no database. */
@@ -105,6 +107,7 @@ describe('checkNumbering (§7.2 item 4)', () => {
       accYear: '2026-2027',
       gstLimit: 16,
       clashWith: null,
+      deviceCode: null,
     });
   });
 
@@ -258,6 +261,109 @@ describe('checkNumbering (§7.2 item 4)', () => {
   it('shows {BR} raw in the preview when the preview branch has no code', () => {
     const v = checkNumbering(draft(), facts({ previewBranch: branch({ numberCode: null }) }));
     expect(v.preview).toMatchObject({ sample: 'ZT{BR}0001', branchCode: null });
+  });
+});
+
+describe('checkNumbering for GST document types: the challan 19 / return 20 (challan plan decision 32)', () => {
+  // Acme's four branches share one GSTIN; challans need no {BR} ({DV} per device, not outward).
+  const acme = [
+    branch(),
+    branch({ branchId: 'b-c2', numberCode: 'COUNTER2' }),
+    branch({ branchId: 'b-dc', numberCode: 'E2EDC' }),
+    branch({ branchId: 'b-sf', numberCode: 'E2ESAFE' }),
+  ];
+  const challan = (over: Partial<NumberingFacts> = {}) =>
+    facts({ gstOutward: false, gstDocNo: true, deviceCode: 'D14', branches: acme, ...over });
+
+  it.each([
+    ['DC{FYC}{DV}-', 'DC2627D14-00001'],
+    ['DR{FYC}{DV}-', 'DR2627D14-00001'],
+  ])('saves %p with width 5 and previews %p (15) at D14', (prefix, sample) => {
+    const v = checkNumbering(draft({ prefix, width: 5 }), challan());
+    expect(v.errors).toEqual([]);
+    expect(v.warnings).toEqual([]);
+    expect(v.preview).toMatchObject({ sample, length: 15, gstLimit: 16, deviceCode: 'D14' });
+  });
+
+  it('passes a 4-character device code at exactly 16', () => {
+    const v = checkNumbering(
+      draft({ prefix: 'DC{FYC}{DV}-', width: 5 }),
+      challan({ deviceCode: 'D999' }),
+    );
+    expect(v.errors).toEqual([]);
+    expect(v.preview).toMatchObject({ sample: 'DC2627D999-00001', length: 16 });
+  });
+
+  it('refuses a 5-character device code: VT_NO_TOO_LONG with sample / len', () => {
+    const v = checkNumbering(
+      draft({ prefix: 'DC{FYC}{DV}-', width: 5 }),
+      challan({ deviceCode: 'ZTA-5' }),
+    );
+    expect(v.errors).toEqual([
+      expect.objectContaining({
+        code: 'VT_NO_TOO_LONG',
+        field: 'vchrNoPrefix',
+        params: { sample: 'DC2627ZTA-5-00001', len: '17' },
+      }),
+    ]);
+  });
+
+  it('refuses a too-wide number for a GST document type, but only warns when not flagged', () => {
+    // 'DC2627D14-' (10) + 7 digits = 17.
+    expect(
+      codes(checkNumbering(draft({ prefix: 'DC{FYC}{DV}-', width: 7 }), challan())),
+    ).toEqual(['VT_NO_TOO_LONG']);
+    const plain = checkNumbering(
+      draft({ prefix: 'DC{FYC}{DV}-', width: 7 }),
+      challan({ gstDocNo: false }),
+    );
+    expect(plain.errors).toEqual([]);
+    expect(plain.warnings).toEqual([expect.objectContaining({ code: 'VT_NO_OVER_16' })]);
+    expect(plain.preview.gstLimit).toBeNull();
+  });
+
+  it('refuses a character GST does not allow in the prefix (VT_NO_BAD_CHAR)', () => {
+    expect(codes(checkNumbering(draft({ prefix: 'DC_{FYC}{DV}-', width: 5 }), challan()))).toEqual(
+      ['VT_NO_BAD_CHAR'],
+    );
+  });
+
+  it('does not length-check a {DV} format when no live device has a code', () => {
+    const v = checkNumbering(
+      draft({ prefix: 'DC{FYC}{DV}-', width: 7 }),
+      challan({ deviceCode: null }),
+    );
+    expect(v.errors).toEqual([]);
+    expect(v.preview).toMatchObject({ sample: 'DC2627{DV}-0000001', deviceCode: null });
+  });
+
+  it('refuses {FYC} with an accounting year not shaped NNNN-NNNN', () => {
+    const v = checkNumbering(
+      draft({ prefix: 'DC{FYC}{DV}-', width: 5 }),
+      challan({ accYear: '2026-27' }),
+    );
+    expect(v.errors).toEqual([
+      expect.objectContaining({ code: 'SEQUENCE_FORMAT_TOKEN_UNKNOWN', params: { token: 'FYC' } }),
+    ]);
+  });
+
+  it('names all five known tokens when one is unknown', () => {
+    const v = checkNumbering(draft({ prefix: 'DC{DEV}-' }), challan());
+    expect(v.errors[0].message).toContain('{FY}, {YY}, {BR}, {FYC}, {DV}');
+  });
+
+  it('keeps VT_BR_REQUIRED for outward types only, {DV} or not', () => {
+    // A device posting at two branches of one GSTIN would repeat its numbers: {DV} is not {BR}.
+    expect(
+      codes(checkNumbering(draft({ prefix: 'RT{FYC}{DV}-', width: 4 }), challan({ gstOutward: true }))),
+    ).toEqual(['VT_BR_REQUIRED']);
+  });
+
+  it('reads the flag; a child mirrors it', () => {
+    expect(isGstDocNo({ vchrGstDocNo: true })).toBe(true);
+    expect(isGstDocNo({ vchrGstDocNo: false })).toBe(false);
+    expect(isGstDocNo({})).toBe(false);
+    expect(MIRROR_FIELDS).toContain('vchrGstDocNo');
   });
 });
 

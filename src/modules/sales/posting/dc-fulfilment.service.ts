@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { orderLineRefsOf, orderLinesOfDcLines } from '../delivery-challan/dc-common';
+import type { SaleOrderLineRef } from '../sale-order/types/sale-order-api.types';
 
 /**
  * The delivery challan's fulfilment caches — `sdi_billed_qty`,
@@ -33,6 +35,38 @@ export class DcFulfilmentService {
     return rows.map((r) => ({ dcId: r.sdi_dc_id, accYear: r.sdi_acc_year.trim() }));
   }
 
+  /**
+   * The challans of these challan lines (sdi_id), for lines a bill no longer
+   * holds: an amend that drops a challan line must re-derive that challan too
+   * (dcRefsOfBill reads the bill as it is now).
+   */
+  async dcRefsOfLines(
+    tx: Prisma.TransactionClient,
+    sdiIds: readonly string[],
+  ): Promise<{ dcId: string; accYear: string }[]> {
+    const ids = [...new Set(sdiIds.filter((v) => typeof v === 'string' && v.length === 36))];
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await tx.$queryRaw<{ sdi_dc_id: string; sdi_acc_year: string }[]>`
+      SELECT DISTINCT sdi_dc_id, sdi_acc_year FROM sales.sale_dc_item
+       WHERE sdi_id = ANY(${ids}::uuid[])`;
+    return rows.map((r) => ({ dcId: r.sdi_dc_id, accYear: r.sdi_acc_year.trim() }));
+  }
+
+  /**
+   * User 2026-11-17 — the order lines behind these challan lines, as
+   * references for SaleOrderService.syncOrderFulfilment: a bill of a challan
+   * bills its order line's money (soi_billed_amt), so its post / cancel /
+   * amend re-derives that order too.
+   */
+  async orderRefsOfDcLines(
+    tx: Prisma.TransactionClient,
+    sdiIds: readonly string[],
+  ): Promise<SaleOrderLineRef[]> {
+    return orderLineRefsOf(tx, await orderLinesOfDcLines(tx, sdiIds));
+  }
+
   async recompute(
     tx: Prisma.TransactionClient,
     refs: readonly { dcId: string; accYear: string }[],
@@ -57,20 +91,27 @@ export class DcFulfilmentService {
     actor: string,
     now: Date,
   ): Promise<void> {
+    // Challan plan §8.1 (G15): a bill or return line may be keyed in another
+    // unit of the item than the challan line, so each is summed in BASE units
+    // (qty × its own to-base factor) and stated back in the challan line's unit
+    // (÷ sdi_to_base_factor), which sdi_open_qty (GENERATED dc − billed −
+    // returned) is in. A factor of 0 / NULL counts as 1 (a base-unit line).
     await tx.$executeRaw`
       UPDATE sales.sale_dc_item d
          SET sdi_billed_qty = COALESCE((
-               SELECT SUM(b.sbi_bill_qty)
+               SELECT SUM(b.sbi_bill_qty * COALESCE(NULLIF(b.sbi_to_base_factor, 0), 1))
                  FROM sales.sale_bill_item b
                  JOIN sales.sale_bill h ON h.sb_id = b.sbi_bill_id AND h.sb_acc_year = b.sbi_acc_year
                 WHERE b.sbi_src_item_id = d.sdi_id AND b.sbi_src_doc_type = 'DELIVERY_CHALLAN'
-                  AND b.sbi_is_deleted = false AND h.sb_is_deleted = false AND h.sb_status = 'POSTED'), 0),
+                  AND b.sbi_is_deleted = false AND h.sb_is_deleted = false AND h.sb_status = 'POSTED'), 0)
+               / COALESCE(NULLIF(d.sdi_to_base_factor, 0), 1),
              sdi_returned_qty = COALESCE((
-               SELECT SUM(r.sdri_return_qty)
+               SELECT SUM(r.sdri_return_qty * COALESCE(NULLIF(r.sdri_to_base_factor, 0), 1))
                  FROM sales.sale_dc_return_item r
                  JOIN sales.sale_dc_return rh ON rh.sdr_id = r.sdri_return_id AND rh.sdr_acc_year = r.sdri_acc_year
                 WHERE r.sdri_dc_item_id = d.sdi_id
-                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0),
+                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0)
+               / COALESCE(NULLIF(d.sdi_to_base_factor, 0), 1),
              sdi_modified_on = ${now},
              sdi_modified_by = ${actor}
        WHERE d.sdi_dc_id = ${dcId}::uuid AND d.sdi_acc_year = ${accYear}::char(9)

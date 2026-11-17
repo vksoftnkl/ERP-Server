@@ -55,6 +55,12 @@ export interface StatutoryLimit {
   effectiveTo: string | null;
   sourceRef: string | null;
   isCompanyOverride: boolean;
+  /**
+   * `stl_applies_to` of the row that won: 'ALL', a direction or a state code.
+   * It says WHICH figure applied, e.g. Tamil Nadu's own intra-state e-way
+   * floor ('33') rather than the INTRA_STATE default.
+   */
+  appliesTo: StatutoryAppliesTo;
 }
 
 /** The codes the shipped pack defines. Not exhaustive — a company may add rows. */

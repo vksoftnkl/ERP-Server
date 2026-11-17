@@ -130,6 +130,21 @@ UPDATE accounts.acc_voucher_types
    AND vchr_menu_id IS NULL
    AND EXISTS (SELECT 1 FROM fixed.menu_master WHERE menu_id = 41);
 
+-- 20261118100000_dc_dc_return (plan-dc-dc-return §7.2): the same for the challan pair,
+-- 'DCh' (menu 182 Delivery Challan) and 'DCR' (menu 251 Challan Return). That migration
+-- also sets their per-device prefixes, vchr_gst_doc_no and print purposes on every
+-- database (both types are created by 20260921220000, never by a seed); only the menu
+-- link has to wait for Menu_Master.sql on a fresh one.
+UPDATE accounts.acc_voucher_types t
+   SET vchr_menu_id    = v.menu_id,
+       vchr_updated_on = now(),
+       vchr_updated_by = 'Acc_Voucher_Types_Register.sql'
+  FROM (VALUES ('DCh', 182), ('DCR', 251)) AS v(code, menu_id)
+ WHERE t.vchr_type_code = v.code
+   AND t.vchr_parent_id IS NULL
+   AND t.vchr_menu_id IS NULL
+   AND EXISTS (SELECT 1 FROM fixed.menu_master m WHERE m.menu_id = v.menu_id);
+
 -- Keep the identity sequence ahead of every id, as Acc_Voucher_Types.sql does.
 SELECT setval(
     pg_get_serial_sequence('accounts.acc_voucher_types', 'vchr_type_id'),

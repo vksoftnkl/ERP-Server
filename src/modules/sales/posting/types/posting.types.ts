@@ -89,6 +89,28 @@ export const SALES_ERROR_CODES = {
   DC_RETURNED: 'SALES_DC_RETURNED',
   DCR_OVER_OPEN: 'SALES_DCR_OVER_OPEN',
   DCR_DC_NOT_POSTED: 'SALES_DCR_DC_NOT_POSTED',
+  // Challan plan §7.7 (2026-11-16): the codes that replaced PAN_REQUIRED /
+  // STOCK_QTY_MISMATCH / DCR_OVER_OPEN where those were the wrong words (G5).
+  /** 422 — a challan names no customer. */
+  DC_CUSTOMER_REQUIRED: 'SALES_DC_CUSTOMER_REQUIRED',
+  /** 422 — a challan has no line. */
+  DC_NO_LINES: 'SALES_DC_NO_LINES',
+  /** 422 — a challan or a challan return is sent a charge row (N2, decision 30). */
+  DC_CHARGES_NOT_ALLOWED: 'SALES_DC_CHARGES_NOT_ALLOWED',
+  /** 422 — a return has no line with a quantity to take back. */
+  DCR_NO_LINES: 'SALES_DCR_NO_LINES',
+  /** 422 — a return line names a challan line of another challan (params n, dc). */
+  DCR_LINE_NOT_ON_DC: 'SALES_DCR_LINE_NOT_ON_DC',
+  /** 422 — a return names no reason. */
+  DCR_REASON_REQUIRED: 'SALES_DCR_REASON_REQUIRED',
+  /**
+   * 422 — a bill line names a challan of another customer / branch / GST No /
+   * place of supply (N1, challan plan §5.4). `rule` PARTY / BRANCH / GSTIN / POS
+   * picks the wording; params dc, party, gstin, billGstin, pos, billPos.
+   */
+  BILL_DC_MISMATCH: 'SALES_BILL_DC_MISMATCH',
+  /** INFO — goods come back DAMAGED / EXPIRED / SCRAP: value back, not for sale (params qty, unit, condition). */
+  DCR_DAMAGED_BUCKET: 'SALES_DCR_DAMAGED_BUCKET',
 
   // Sale returns
   RETURN_OVER_QTY: 'SALES_RETURN_OVER_QTY',
@@ -289,6 +311,11 @@ export interface SalesRefusal {
   line?: number;
   statutory?: SalesStatutoryRef;
   params?: SalesMessageParams;
+  /**
+   * Picks a `rule=<value>` wording variant of the code (fixed.error_message),
+   * e.g. SALES_BILL_DC_MISMATCH rule=PARTY (challan plan §7.7).
+   */
+  rule?: string;
 }
 
 /**
