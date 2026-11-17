@@ -37,8 +37,19 @@ let SequenceService = class SequenceService {
                 const scope = this.buildCreateScope(createSequenceDto);
                 const deviceId = this.normalizeOptionalNullableUuid(createSequenceDto.deviceId, 'deviceId') ?? null;
                 const voucherType = await this.ensureReferencesExist(tx, scope);
-                await (0, voucher_sequence_helper_1.acquireVoucherScopeLock)(tx, scope);
-                const existingSequence = await this.findSequenceByScope(tx, scope);
+                const deviceWide = (0, voucher_sequence_helper_1.isDeviceWideSeries)(voucherType, scope.deviceCode);
+                if (deviceWide) {
+                    await (0, voucher_sequence_helper_1.acquireDeviceSeriesLock)(tx, scope);
+                }
+                else {
+                    await (0, voucher_sequence_helper_1.acquireVoucherScopeLock)(tx, scope);
+                }
+                const existingSequence = deviceWide
+                    ? await (0, voucher_sequence_helper_1.findDeviceSeries)(tx, scope)
+                    : await this.findSequenceByScope(tx, scope);
+                if (deviceWide && !existingSequence) {
+                    scope.branchId = (await (0, voucher_sequence_helper_1.deviceSeriesAnchorBranch)(tx, scope.companyId)) ?? scope.branchId;
+                }
                 if (existingSequence) {
                     const message = `Counter ${existingSequence.id}${existingSequence.isDeleted ? ' (deleted)' : ''} already holds ` +
                         `voucher type ${scope.vchrTypeId} / ${scope.accYear} / ${scope.deviceCode} / ${scope.periodKey} ` +
@@ -74,6 +85,7 @@ let SequenceService = class SequenceService {
                 await (0, voucher_sequence_helper_1.assertCounterRules)(tx, scope, {
                     vchrGstSide: voucherType.vchrGstSide,
                     vchrParentId: voucherType.vchrParentId,
+                    vchrGstDocNo: voucherType.vchrGstDocNo,
                     vchrNoPrefix: typedPrefix,
                     vchrNoSuffix: typedSuffix,
                 }, {
@@ -82,7 +94,7 @@ let SequenceService = class SequenceService {
                     noWidth: data.noWidth,
                 }, startNo);
                 const created = await tx.accVoucherSeq.create({ data });
-                return this.toPayload(created);
+                return this.toPayload(created, deviceWide);
             });
         }
         catch (error) {
@@ -112,8 +124,9 @@ let SequenceService = class SequenceService {
                 take: limit,
             }),
         ]);
+        const deviceWide = await this.deviceWideTypeIds(this.prisma, records.map((r) => r.vchrTypeId));
         return {
-            items: records.map((record) => this.toPayload(record)),
+            items: records.map((record) => this.toPayload(record, deviceWide.has(record.vchrTypeId) && !(0, voucher_sequence_helper_1.isSharedDeviceCode)(record.deviceCode))),
             meta: {
                 page,
                 limit,
@@ -136,7 +149,8 @@ let SequenceService = class SequenceService {
         if (!record) {
             (0, module_service_utils_1.throwNotFound)('Sequence not found', 'id', `No active sequence found with id ${id}`, sequence_error_codes_1.SequenceErrorCode.NOT_FOUND);
         }
-        return this.toPayload(record);
+        const deviceWide = await this.deviceWideTypeIds(this.prisma, [record.vchrTypeId]);
+        return this.toPayload(record, deviceWide.has(record.vchrTypeId) && !(0, voucher_sequence_helper_1.isSharedDeviceCode)(record.deviceCode));
     }
     async getById(id) {
         return this.findOne(id);
@@ -388,6 +402,9 @@ let SequenceService = class SequenceService {
                     vchrStartNo: true,
                     vchrGstSide: true,
                     vchrParentId: true,
+                    vchrGstDocNo: true,
+                    vchrNoPrefix: true,
+                    vchrNoSuffix: true,
                 },
             }),
             client.company.findFirst({
@@ -523,7 +540,20 @@ let SequenceService = class SequenceService {
     buildLastNoScopeKey(scope) {
         return [scope.companyId, scope.branchId, scope.accYear, scope.deviceId ?? 'NO_DEVICE'].join('|');
     }
-    toPayload(record) {
+    async deviceWideTypeIds(client, ids) {
+        const unique = [...new Set(ids)];
+        if (unique.length === 0) {
+            return new Set();
+        }
+        const types = await client.accVoucherType.findMany({
+            where: { vchrTypeId: { in: unique } },
+            select: { vchrTypeId: true, vchrGstDocNo: true, vchrNoPrefix: true, vchrNoSuffix: true },
+        });
+        return new Set((Array.isArray(types) ? types : [])
+            .filter((t) => (0, voucher_sequence_helper_1.isDeviceWideSeries)(t))
+            .map((t) => t.vchrTypeId));
+    }
+    toPayload(record, allBranches = false) {
         return {
             id: record.id,
             vchrTypeId: record.vchrTypeId,
@@ -546,6 +576,7 @@ let SequenceService = class SequenceService {
             createdBy: record.createdBy,
             modifiedOn: record.modifiedOn ? record.modifiedOn.toISOString() : null,
             modifiedBy: record.modifiedBy,
+            allBranches,
         };
     }
     normalizeUuid(value, field) {

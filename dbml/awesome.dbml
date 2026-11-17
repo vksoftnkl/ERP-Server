@@ -1515,6 +1515,13 @@ post; nothing reads it but /receipts/get.']
   avhCreatedBy String
   avhModifiedOn DateTime
   avhModifiedBy String
+  avhClientUuid String [note: 'The phone\'s own id for a receipt uploaded from the mobile app
+(/mobile/receipts/create). A resend with the same (company, client uuid)
+answers the receipt already saved. NULL on everything else, including the
+receipt\'s own PDC and reversal vouchers: stamping it on a child would
+collide with the parent. The year is in ux_avh_client_uuid only because a
+unique index on a partitioned table must hold the partition key.
+Not partial: a cancelled receipt keeps its uuid.']
   company companys [not null]
   branch branch_master [not null]
   voucherType acc_voucher_types [not null]
@@ -1535,6 +1542,7 @@ post; nothing reads it but /receipts/get.']
 
   indexes {
     (avhVoucherId, avhAccYear) [pk]
+    (avhCompanyId, avhClientUuid, avhAccYear) [unique]
   }
 
   Note: 'Voucher head. Partitioned by acc_year, so the primary key is the
@@ -1682,6 +1690,9 @@ from the tenders\' ledgers and a cheque becomes a HELD register row (menu 51)']
   vchrDeliveryMode String [note: 'Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
 delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
 Sales Bill; a child keeps NULL (= the base\'s) until saved; NULL on every other type']
+  vchrGstDocNo Boolean [not null, default: false, note: 'DC / DC return (20261118100000, decision 32): the number is a GST document number
+(Rules 46 / 53 / 55): at most 16 characters, A–Z a–z 0–9 - /. Checked at counter
+creation, at the type\'s save and at each draw. true on DCh / DCR (and any child of them)']
   vchrSyncDate DateTime
   vchrCreatedOn DateTime [default: `now()`, not null]
   vchrCreatedBy String
@@ -2688,6 +2699,7 @@ because ADD COLUMN puts it last; device_master is referenced too widely to
 rebuild for column order.']
   txnStatusLogs txn_status_log [not null]
   saleOrders sale_order [not null]
+  customerVisits customer_visit [not null]
   stockVouchers stock_voucher [not null]
   txnHolds txn_hold [not null]
   txnHoldLocks txn_hold [not null]
@@ -7407,6 +7419,7 @@ Table customers {
   saleQuotations sale_quotation [not null]
   saleBills sale_bill [not null]
   saleOrders sale_order [not null]
+  visits customer_visit [not null]
   itemQtyPrices item_qty_price [not null]
   promotionSchemeParties promotion_scheme_party [not null]
   loyaltySchemeParties loyalty_scheme_party [not null]
@@ -7447,6 +7460,43 @@ Table cust_groups {
   loyaltySchemeParties loyalty_scheme_party [not null]
   couponBatches loyalty_coupon_batch [not null]
   cgrSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+}
+
+Table customer_visit {
+  cvId String [pk]
+  cvCompanyId String [not null]
+  cvBranchId String [not null]
+  cvDeviceId String [not null]
+  cvCustId String [not null]
+  cvSalesmanId String [not null, note: 'public.employee_master, as so_salesman_id names it.']
+  cvUserId String
+  cvReasonCode String [not null, note: 'shopClosed | noOrder | shopBusy | ownerAway | paymentPending | nextVisit
+(ck_cv_reason_code): the phone\'s own words.']
+  cvRemarks String
+  cvLatitude Decimal
+  cvLongitude Decimal
+  cvGpsAccuracy Decimal [note: 'Metres, as the phone reports it.']
+  cvVisitAt DateTime [not null, note: 'When the salesman checked in, by the phone\'s clock.']
+  cvClientUuid String [not null]
+  cvSyncDate DateTime
+  cvCreatedOn DateTime [default: `now()`, not null]
+  cvCreatedBy String [not null]
+  device device_master [not null]
+  customer customers [not null]
+  salesman employee_master [not null]
+
+  indexes {
+    (cvCompanyId, cvClientUuid) [unique]
+  }
+
+  Note: 'A salesman\'s check-in at a customer, uploaded from the mobile app
+(/mobile/visits/create; migration 20261118110000_mobile_orders_visits).
+
+Insert-only. The phone stamps every check-in with its own uuid
+(cvClientUuid); a resend of the same (company, client uuid) answers the row
+already saved instead of writing a second one (ux_cv_client_uuid).
+The server fills the branch and the device from the registered phone, and
+cvUserId from the login when the upload carries a token.'
 }
 
 Table employee_departments {
@@ -7542,6 +7592,7 @@ Table employee_master {
   saleBillsDriven sale_bill [not null]
   saleBillsSupervised sale_bill [not null]
   saleOrderAgents sale_order [not null]
+  customerVisits customer_visit [not null]
   txnHolds txn_hold [not null]
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
   vehiclesDriven vehicle_master [not null]
@@ -9173,9 +9224,17 @@ clears it to NULL. Nothing else reads it.']
   supervisor employee_master
   vehicle vehicle_master
   tempCredits acc_temp_credit [not null]
+  sbClientUuid String [note: 'The phone\'s own id for a bill uploaded from the mobile app
+(/mobile/bills/create). A resend with the same (company, client uuid)
+answers the bill already saved; NULL on desktop bills. The year is in
+ux_sb_client_uuid only because a unique index on a partitioned table must
+hold the partition key: the server checks across years under a lock.
+Not partial: a cancelled bill keeps its uuid. Set only on create, never
+copied by amend / void / retender (they update the same row).']
 
   indexes {
     (sbId, sbAccYear) [pk]
+    (sbCompanyId, sbClientUuid, sbAccYear) [unique]
   }
 }
 
@@ -9426,7 +9485,6 @@ counter created this row.']
   indexes {
     (sdcId, sdcAccYear) [pk]
     (sdcCompanyId, sdcBranchId, sdcAccYear, sdcDcRefno) [unique]
-    (sdcCompanyId, sdcBranchId, sdcAccYear, sdcCounterId, sdcDcSlno) [unique]
   }
 
   Note: 'Delivery challan: goods OUT before the invoice.
@@ -10118,9 +10176,15 @@ ck_so_delivery_hold (DB-only): a held order names a non-blank reason and a time.
   soDeliveryHoldReason String [note: 'Reason of the last hold or release.']
   soDeliveryHoldBy String [note: 'Who last held or released, as text like soModifiedBy.']
   soDeliveryHoldOn DateTime
+  soClientUuid String [note: 'The phone\'s own id for an order uploaded from the mobile app
+(/mobile/orders/create). A resend with the same (company, client uuid)
+answers the order already saved; NULL on desktop orders. The year is in
+ux_so_client_uuid only because a unique index on a partitioned table must
+hold the partition key: the server checks across years under a lock.']
 
   indexes {
     (soId, soAccYear) [pk]
+    (soCompanyId, soClientUuid, soAccYear) [unique]
   }
 }
 
@@ -13532,6 +13596,12 @@ Ref: customers.cusCompanyId > companys.compId
 Ref: customers.cusPriceLevelId > item_price_levels.iplId
 
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
+
+Ref: customer_visit.cvDeviceId > device_master.devId [delete: Restrict]
+
+Ref: customer_visit.cvCustId > customers.cusId [delete: Restrict]
+
+Ref: customer_visit.cvSalesmanId > employee_master.empId [delete: Restrict]
 
 Ref: employee_master.empCompanyId > companys.compId [delete: Restrict]
 

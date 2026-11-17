@@ -12,5 +12,6 @@ export declare class AccessTokenGuard implements CanActivate {
     private readonly authEpoch;
     constructor(reflector: Reflector, tokenService: TokenService, authSessionService: AuthSessionService, requestContextService: RequestContextService, authEpoch: AuthEpochService);
     canActivate(context: ExecutionContext): Promise<boolean>;
+    private isOptionalAuth;
     private extractBearerToken;
 }

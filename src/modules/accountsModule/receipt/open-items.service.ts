@@ -82,6 +82,64 @@ import { VCH } from '../vouchers/vouchers.errors';
  * operator ticks bills until the money runs out, and a bill below the cap is a
  * bill that gets collected twice.
  */
+/**
+ * The ONE definition of an open receivable: a live, active DR bill of a
+ * receivable type with something still pending. One party's (open-items), or
+ * the whole company's (listCompanyOpenBills). abl_is_deleted is in it because
+ * abl_status / abl_pending_amount are generated: a cancelled bill keeps
+ * reading OPEN with its old pending.
+ */
+export function openReceivableWhere(
+  companyId: string,
+  partyId?: string,
+): Prisma.AccBillBalanceWhereInput {
+  return {
+    ablCompanyId: companyId,
+    ...(partyId !== undefined ? { ablPartyId: partyId } : {}),
+    ablIsDeleted: false,
+    ablIsActive: true,
+    ablDrCr: 'DR',
+    ablBillType: { in: [...RECEIVABLE_BILL_TYPES] },
+    ablPendingAmount: { gt: 0 },
+  };
+}
+
+/** What a bill is ordered by: its two dates and its number. */
+export interface OpenBillOrderKey {
+  ablDueDate: Date | null;
+  ablDocDate: Date;
+  ablDocRefno: string;
+}
+
+/**
+ * R12 — the order is a setting, and it is not cosmetic: it is the order money
+ * fills the bills in at post, so DUE_DATE (a bill with no due date by its own
+ * date) settles what is most overdue first and BILL_DATE is plain FIFO. The
+ * refno tie-break is not decoration either — two bills of the same date must
+ * not swap places between two fetches, or the operator's ticks land on
+ * different rows than the ones they looked at.
+ */
+export function openBillOrder(
+  billSort: ReceiptBillSort,
+): (left: OpenBillOrderKey, right: OpenBillOrderKey) => number {
+  const byBillDate = billSort === ReceiptBillSort.BILL_DATE;
+  const primary = (bill: OpenBillOrderKey): number =>
+    (byBillDate ? bill.ablDocDate : (bill.ablDueDate ?? bill.ablDocDate)).getTime();
+  return (left, right) =>
+    primary(left) - primary(right) || left.ablDocRefno.localeCompare(right.ablDocRefno);
+}
+
+/** One row of `listCompanyOpenBills`. */
+export interface CompanyOpenBill extends OpenBillOrderKey {
+  ablId: string;
+  ablAccYear: string;
+  ablPartyId: string;
+  ablBillType: string;
+  ablBillAmount: Prisma.Decimal;
+  /** Generated (never null on a row the filter admits: it is > 0). */
+  ablPendingAmount: Prisma.Decimal | null;
+}
+
 @Injectable()
 export class OpenItemsService {
   constructor(
@@ -195,15 +253,7 @@ export class OpenItemsService {
     settings: ReceiptSettings,
   ): Promise<OpenBill[]> {
     const bills = await this.prisma.accBillBalance.findMany({
-      where: {
-        ablCompanyId: companyId,
-        ablPartyId: partyId,
-        ablIsDeleted: false,
-        ablIsActive: true,
-        ablDrCr: 'DR',
-        ablBillType: { in: [...RECEIVABLE_BILL_TYPES] },
-        ablPendingAmount: { gt: 0 },
-      },
+      where: openReceivableWhere(companyId, partyId),
       select: {
         ablId: true,
         ablAccYear: true,
@@ -265,31 +315,49 @@ export class OpenItemsService {
 
     // The sort keys live BESIDE the rows rather than on them, so the payload
     // type stays exactly OpenBill and nothing has to be stripped back off it.
-    const sortKeys = new Map(
-      bills.map((bill) => [
-        `${bill.ablId}|${bill.ablAccYear}`,
-        { due: bill.ablDueDate ?? bill.ablDocDate, doc: bill.ablDocDate },
-      ]),
-    );
-
-    // R12 — the order is a setting, and it is not cosmetic: it is the order
-    // money fills the bills in at post, so DUE_DATE settles what is most
-    // overdue first and BILL_DATE is plain FIFO. The refno tie-break is not
-    // decoration either — two bills of the same date must not swap places
-    // between two fetches, or the operator's ticks land on different rows than
-    // the ones they looked at.
-    const byBillDate = settings.billSort === ReceiptBillSort.BILL_DATE;
-    const primary = (row: OpenBill): number => {
-      const keys = sortKeys.get(`${row.billId}|${row.billAccYear}`)!;
-      return (byBillDate ? keys.doc : keys.due).getTime();
-    };
-
-    rows.sort(
-      (left, right) =>
-        primary(left) - primary(right) || left.docRefno.localeCompare(right.docRefno),
+    const sortKeys = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
+    const order = openBillOrder(settings.billSort);
+    rows.sort((left, right) =>
+      order(
+        sortKeys.get(`${left.billId}|${left.billAccYear}`)!,
+        sortKeys.get(`${right.billId}|${right.billAccYear}`)!,
+      ),
     );
 
     return rows;
+  }
+
+  /**
+   * Every open receivable of a company, every party's: the rows `loadBills`
+   * gives one party's /receipts/open-items (`openReceivableWhere`), by party,
+   * then in the open-items order within the party (`openBillOrder`), then by
+   * id so a page boundary never moves between two reads. Bare bill rows: no
+   * PDC, TCS, temp-credit or source facts. For GET /mobile/receipts/open-bills.
+   */
+  async listCompanyOpenBills(companyId: string): Promise<CompanyOpenBill[]> {
+    const settings = await this.loadSettings(companyId);
+    const bills = await this.prisma.accBillBalance.findMany({
+      where: openReceivableWhere(companyId),
+      select: {
+        ablId: true,
+        ablAccYear: true,
+        ablPartyId: true,
+        ablBillType: true,
+        ablDocRefno: true,
+        ablDocDate: true,
+        ablDueDate: true,
+        ablBillAmount: true,
+        ablPendingAmount: true,
+      },
+    });
+    const order = openBillOrder(settings.billSort);
+    return bills.sort(
+      (left, right) =>
+        left.ablPartyId.localeCompare(right.ablPartyId) ||
+        order(left, right) ||
+        left.ablId.localeCompare(right.ablId) ||
+        left.ablAccYear.localeCompare(right.ablAccYear),
+    );
   }
 
   /**

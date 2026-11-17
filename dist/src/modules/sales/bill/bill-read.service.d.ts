@@ -70,6 +70,8 @@ export interface OpenSourceDoc {
         docQty: number;
         openQty: number;
         freeQty: number;
+        isFree: boolean;
+        freeType: string | null;
         rate: number;
         taxId: string | null;
         taxPerc: number;

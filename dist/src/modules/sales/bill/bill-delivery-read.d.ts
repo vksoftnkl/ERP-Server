@@ -62,3 +62,4 @@ export declare function oldPendingDeliveries(c: Prisma.TransactionClient, q: {
     oldDays: number;
     limit?: number;
 }): Promise<OldPendingDelivery[]>;
+export declare function istTodayYmd(): string;

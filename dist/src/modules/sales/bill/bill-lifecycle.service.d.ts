@@ -26,11 +26,20 @@ import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
 import type { SaveBillDto } from './dto/save-bill.dto';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { type BillPayload } from './types/bill-api.types';
+export declare const POST_TX_OPTIONS: {
+    readonly timeout: 60000;
+    readonly maxWait: 10000;
+};
+type BillKeys = Pick<PostBillDto, 'sbId' | 'sbCompanyId' | 'sbBranchId' | 'sbAccYear'>;
 interface PostResult {
     bill: SaleBill;
     gdrId: string | null;
     einvoice: boolean;
     ewaybill: boolean;
+}
+export interface BillSavedAndPosted {
+    keys: BillKeys;
+    posted: PostResult | null;
 }
 export declare class BillLifecycleService {
     private readonly prisma;
@@ -61,6 +70,8 @@ export declare class BillLifecycleService {
     private withGodownSlips;
     private oldPendingDeliveryWarning;
     saveAndPost(dto: SaveBillDto): Promise<BillPayload>;
+    saveAndPostInTx(tx: Prisma.TransactionClient, dto: SaveBillDto): Promise<BillSavedAndPosted>;
+    afterSaveAndPost(done: BillSavedAndPosted): void;
     private postDraftInTx;
     private afterPost;
     cancel(dto: CancelBillDto): Promise<Record<string, unknown>>;
@@ -82,6 +93,7 @@ export declare class BillLifecycleService {
         priorItems?: SaleBillItem[];
     }): Promise<void>;
     private guardSources;
+    private guardChallanSources;
     private stampTillSession;
     postCore(tx: Prisma.TransactionClient, bill: SaleBill, items: SaleBillItem[], snap: BillSnapshot, ctx: SalesCallContext, opts: {
         adjustments?: SaveBillAdjustmentDto[];
@@ -107,5 +119,6 @@ export declare class BillLifecycleService {
     private company;
     private proposals;
 }
+export declare function refuseFreeMismatch(g: SalesGuardContext, lines: readonly Pick<BillSnapshot['items'][number], 'lineNo' | 'isFree' | 'srcItemId'>[], sourceFree: ReadonlyMap<string, boolean>, source: 'challan' | 'order'): void;
 export declare function orderLineQtys(items: SaleBillItem[], sign: 1 | -1): OrderLineQty[];
 export {};

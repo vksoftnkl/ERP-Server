@@ -31,6 +31,34 @@ let DeliveryPendingService = class DeliveryPendingService {
         return this.facts(client, client_1.Prisma.sql `JOIN (SELECT unnest(${ids}::uuid[]) AS id, unnest(${years}::text[]) AS yr) k
                    ON i.sbi_id = k.id AND i.sbi_acc_year = k.yr::bpchar`, client_1.Prisma.empty);
     }
+    async returnsTakenByLine(client, keys) {
+        const out = new Map();
+        if (keys.length === 0) {
+            return out;
+        }
+        const c = client ?? this.prisma;
+        const ids = keys.map((k) => k.billItemId);
+        const years = keys.map((k) => k.billAccYear.trim());
+        const rows = await c.$queryRaw `
+      SELECT sri.sri_bill_item_id AS id, sri.sri_bill_acc_year AS yr,
+             SUM((COALESCE(sri.sri_return_qty, 0) + COALESCE(sri.sri_free_qty, 0) - sri.sri_undelivered_qty)
+                 * CASE WHEN sri.sri_to_base_factor > 0 THEN sri.sri_to_base_factor
+                        ELSE COALESCE(NULLIF(u.iuc_to_base_factor, 0), 1) END) AS base,
+             array_agg(DISTINCT sr.sr_return_refno) FILTER (WHERE sr.sr_return_refno IS NOT NULL) AS refnos
+        FROM sales.sale_return_item sri
+        JOIN (SELECT unnest(${ids}::uuid[]) AS id, unnest(${years}::text[]) AS yr) k
+          ON sri.sri_bill_item_id = k.id AND sri.sri_bill_acc_year = k.yr::bpchar
+        JOIN sales.sale_return sr ON sr.sr_id = sri.sri_return_id AND sr.sr_acc_year = sri.sri_acc_year
+        LEFT JOIN inventory.item_unit_conversion u ON u.iuc_id = sri.sri_item_unit_id
+       WHERE sri.sri_is_deleted = false
+         AND sr.sr_is_deleted = false
+         AND sr.sr_status = 'POSTED'
+       GROUP BY sri.sri_bill_item_id, sri.sri_bill_acc_year`;
+        for (const r of rows) {
+            out.set(`${r.id}|${r.yr.trim()}`, { takenBase: dec(r.base), refnos: r.refnos ?? [] });
+        }
+        return out;
+    }
     async linesOfBills(client, bills) {
         if (bills.length === 0) {
             return [];

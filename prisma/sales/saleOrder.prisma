@@ -241,7 +241,15 @@ model SaleOrder {
   /// Who last held or released, as text like soModifiedBy.
   soDeliveryHoldBy     String?   @db.VarChar(50) @map("so_delivery_hold_by")
   soDeliveryHoldOn     DateTime? @db.Timestamptz(6) @map("so_delivery_hold_on")
+  // ── Mobile upload (20261118110000_mobile_orders_visits) ─────────────────
+  /// The phone's own id for an order uploaded from the mobile app
+  /// (/mobile/orders/create). A resend with the same (company, client uuid)
+  /// answers the order already saved; NULL on desktop orders. The year is in
+  /// ux_so_client_uuid only because a unique index on a partitioned table must
+  /// hold the partition key: the server checks across years under a lock.
+  soClientUuid         String?   @db.Uuid @map("so_client_uuid")
 
+  @@unique([soCompanyId, soClientUuid, soAccYear], map: "ux_so_client_uuid")
   @@map("sale_order")
   @@schema("sales")
 }

@@ -72,7 +72,7 @@ __decorate([
     (0, swagger_1.ApiNotFoundResponse)({ type: sequence_response_dto_1.SequenceErrorResponseDto }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({
         type: sequence_response_dto_1.SequenceErrorResponseDto,
-        description: 'A typed {FY} / {BR} prefix or suffix that cannot be expanded: SEQUENCE_FORMAT_TOKEN_UNKNOWN, SEQUENCE_BRANCH_CODE_MISSING, SEQUENCE_BRANCH_CODE_INVALID.',
+        description: 'A typed {FY} / {YY} / {FYC} / {BR} / {DV} prefix or suffix that cannot be expanded: SEQUENCE_FORMAT_TOKEN_UNKNOWN ({DV} on the shared MAIN counter: params.token DV), SEQUENCE_BRANCH_CODE_MISSING, SEQUENCE_BRANCH_CODE_INVALID. A GST number over 16 characters: SEQUENCE_REFNO_TOO_LONG (rule GST16; rule GST16_DEVICE / GST16_CHARS for a challan-type voucher type).',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),

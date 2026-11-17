@@ -54,6 +54,10 @@ import { TillModule } from '../../till/till.module';
     OpenItemsService,
     ReceiptExceptionFilter,
   ],
-  exports: [OpenItemsService],
+  // ReceiptService + ReceiptPostingService: the mobile receipt upload
+  // (src/mobile-modules/receipt) saves and posts through
+  // saveAndPostInTransaction inside its own transaction, and reads the
+  // stored receipt back for a resend.
+  exports: [OpenItemsService, ReceiptService, ReceiptPostingService],
 })
 export class ReceiptModule {}

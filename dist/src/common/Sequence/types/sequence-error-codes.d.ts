@@ -20,3 +20,10 @@ export declare enum SequenceErrorCode {
     FIELD_NOT_INTEGER = "VALIDATION_IS_INT",
     FIELD_NOT_BOOLEAN = "VALIDATION_IS_BOOLEAN"
 }
+export declare const SequenceRefusalRule: {
+    readonly GST16: "GST16";
+    readonly GST16_DEVICE: "GST16_DEVICE";
+    readonly GST16_CHARS: "GST16_CHARS";
+    readonly DEVICE_COUNTER: "DEVICE_COUNTER";
+};
+export type SequenceRefusalRule = (typeof SequenceRefusalRule)[keyof typeof SequenceRefusalRule];

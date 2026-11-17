@@ -28,7 +28,10 @@ let DocRegisterService = class DocRegisterService {
                 aatoAmount: opts.aatoAmount ?? null,
                 companyFlag: opts.companyEinvoiceFlag ?? false,
             }, tx),
-            this.statutory.ewayApplicable(doc.companyId, doc.billValue, doc.docDate, { interState, stateCode: doc.placeOfSupplyCode ?? null }, tx),
+            this.statutory.ewayApplicable(doc.companyId, doc.billValue, doc.docDate, {
+                interState,
+                stateCode: opts.ewayStateCode !== undefined ? opts.ewayStateCode : (doc.placeOfSupplyCode ?? null),
+            }, tx),
         ]);
         const einvoiceApplicable = doc.docType === 'BILL_OF_SUPPLY' ||
             doc.docType === 'DELIVERY_CHALLAN' ||

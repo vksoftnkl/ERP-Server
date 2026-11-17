@@ -10,7 +10,7 @@ export declare const ABBR_PATTERN: RegExp;
 export declare const WIDTH_MIN = 1;
 export declare const WIDTH_MAX = 9;
 export declare const START_NO_MAX = 999999999;
-export declare const MIRROR_FIELDS: readonly ["vchrCategory", "vchrNature", "vchrAffectsAccounts", "vchrAffectsInventory", "vchrIsCashVoucher", "vchrIsBankVoucher", "vchrPartyMode", "vchrPartySide", "vchrBillwiseMode", "vchrRaiseBillType", "vchrDrGroups", "vchrCrGroups", "vchrGstRegister", "vchrGstSide", "vchrTdsMode", "vchrMenuId", "vchrInRegister", "vchrInstruments", "vchrTallyExportEnabled", "vchrTallyBaseVoucherType"];
+export declare const MIRROR_FIELDS: readonly ["vchrCategory", "vchrNature", "vchrAffectsAccounts", "vchrAffectsInventory", "vchrIsCashVoucher", "vchrIsBankVoucher", "vchrPartyMode", "vchrPartySide", "vchrBillwiseMode", "vchrRaiseBillType", "vchrDrGroups", "vchrCrGroups", "vchrGstRegister", "vchrGstSide", "vchrTdsMode", "vchrMenuId", "vchrInRegister", "vchrInstruments", "vchrTallyExportEnabled", "vchrTallyBaseVoucherType", "vchrGstDocNo"];
 export type MirrorField = (typeof MIRROR_FIELDS)[number];
 export type VoucherKind = 'DOCUMENT' | 'VOUCHER_REGISTER' | 'NUMBERING_ONLY';
 export type NumberedBy = 'COUNTER' | 'SCREEN';
@@ -19,6 +19,8 @@ export declare function numberedByOf(t: Pick<AccVoucherType, 'vchrTypeCode' | 'v
 export declare function isBaseType(t: Pick<AccVoucherType, 'vchrParentId'>): boolean;
 export declare function canHaveChildren(t: Pick<AccVoucherType, 'vchrParentId' | 'vchrTypeCode'>): boolean;
 export declare function isGstOutward(t: Pick<AccVoucherType, 'vchrGstSide'>): boolean;
+export declare function isGstDocNo(t: Partial<Pick<AccVoucherType, 'vchrGstDocNo'>>): boolean;
+export declare const VT_NO_TOO_LONG_DOC_RULE = "GST_DOC_NO";
 export declare function printDocTypeOf(base: Pick<AccVoucherType, 'vchrTypeCode'>, basePurposeDocType: string | null): string | null;
 export declare function childTypeCode(baseCode: string, abbr: string, taken: ReadonlySet<string>): string;
 export interface VtIssue {
@@ -53,6 +55,8 @@ export interface NumberingFacts {
     vchrTypeId: number | null;
     accYear: string;
     gstOutward: boolean;
+    gstDocNo?: boolean;
+    deviceCode?: string | null;
     branches: readonly BranchFact[];
     previewBranch: BranchFact | null;
     series: readonly SeriesFact[];
@@ -65,6 +69,7 @@ export interface NumberingPreview {
     accYear: string;
     gstLimit: number | null;
     clashWith: string | null;
+    deviceCode: string | null;
 }
 export interface NumberingVerdict {
     errors: VtIssue[];

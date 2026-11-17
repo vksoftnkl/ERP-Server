@@ -24,6 +24,7 @@ exports.envValidationSchema = Joi.object({
         otherwise: Joi.string().trim().allow('').default(''),
     }),
     HTTPS_PASSPHRASE: Joi.string().allow('').default(''),
+    MOBILE_HTTP_PORT: Joi.number().port().empty('').default(0),
     APP_VERSION: Joi.string().allow('').optional(),
     APP_BUILD: Joi.string().allow('').optional(),
     APP_COMMIT: Joi.string().allow('').optional(),

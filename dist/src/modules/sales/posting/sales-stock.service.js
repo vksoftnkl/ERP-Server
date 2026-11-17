@@ -42,6 +42,7 @@ let SalesStockService = class SalesStockService {
                 svhId: null,
                 rowsPosted: 0,
                 costByLine: new Map(),
+                rateByLine: new Map(),
                 lotByLine: new Map(),
                 cogsTotal: 0,
             };
@@ -77,7 +78,9 @@ let SalesStockService = class SalesStockService {
                 throw new Error(`${posting_types_1.SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got.toString()} against ${expected.toString()} on its lines`);
             }
             const costs = await tx.$queryRaw `
-        SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost
+        SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost,
+               SUM(sml.sml_cost_rate * (sml.sml_base_qty + sml.sml_free_base_qty)) AS rate_x_qty,
+               SUM(sml.sml_base_qty + sml.sml_free_base_qty) AS base_qty
           FROM stock.stock_voucher_item svi
           LEFT JOIN stock.stock_ledger sml
                  ON sml.sml_src_doc_id = svi.svi_voucher_id
@@ -91,6 +94,7 @@ let SalesStockService = class SalesStockService {
             const byLineNo = new Map(lines.map((l) => [l.lineNo, l]));
             const costByLine = new Map();
             const lotByLine = new Map();
+            const weighted = new Map();
             let total = 0;
             for (const r of costs) {
                 const line = byLineNo.get(r.svi_line_no);
@@ -101,8 +105,19 @@ let SalesStockService = class SalesStockService {
                 costByLine.set(line.lineId, cost);
                 lotByLine.set(line.lineId, r.svi_lot_id);
                 total += cost;
+                const w = weighted.get(line.lineId) ?? { rq: new client_1.Prisma.Decimal(0), q: new client_1.Prisma.Decimal(0) };
+                weighted.set(line.lineId, {
+                    rq: w.rq.plus(new client_1.Prisma.Decimal(r.rate_x_qty ?? 0)),
+                    q: w.q.plus(new client_1.Prisma.Decimal(r.base_qty ?? 0)),
+                });
             }
-            return { svhId, rowsPosted, costByLine, lotByLine, cogsTotal: (0, sales_doc_utils_1.round2)(total) };
+            const rateByLine = new Map();
+            for (const [lineId, w] of weighted) {
+                rateByLine.set(lineId, w.q.isZero()
+                    ? new client_1.Prisma.Decimal(0)
+                    : w.rq.dividedBy(w.q).toDecimalPlaces(6, client_1.Prisma.Decimal.ROUND_HALF_UP));
+            }
+            return { svhId, rowsPosted, costByLine, rateByLine, lotByLine, cogsTotal: (0, sales_doc_utils_1.round2)(total) };
         }
         catch (error) {
             if (error instanceof common_2.ConflictException) {

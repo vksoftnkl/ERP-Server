@@ -10,7 +10,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var BillLifecycleService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BillLifecycleService = void 0;
+exports.BillLifecycleService = exports.POST_TX_OPTIONS = void 0;
+exports.refuseFreeMismatch = refuseFreeMismatch;
 exports.orderLineQtys = orderLineQtys;
 const bill_delivery_read_1 = require("./bill-delivery-read");
 const delivery_constants_1 = require("../delivery/core/delivery.constants");
@@ -22,6 +23,7 @@ const config_1 = require("@nestjs/config");
 const purchase_sister_1 = require("../../purchase/sister/purchase-sister");
 const offline_site_1 = require("../../../config/offline-site");
 const client_1 = require("@prisma/client");
+const source_lines_1 = require("../posting/source-lines");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
@@ -41,6 +43,7 @@ const sales_stock_service_1 = require("../posting/sales-stock.service");
 const stock_reservation_service_1 = require("../posting/stock-reservation.service");
 const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
+const dc_common_1 = require("../delivery-challan/dc-common");
 const sales_guards_1 = require("../posting/sales.guards");
 const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
@@ -56,7 +59,7 @@ const bill_voucher_type_helper_1 = require("./bill-voucher-type.helper");
 const till_session_service_1 = require("../../till/services/till-session.service");
 const till_enum_1 = require("../../till/types/till-enum");
 const bill_api_types_1 = require("./types/bill-api.types");
-const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
+exports.POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     prisma;
     bills;
@@ -107,6 +110,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         const ctx = await this.salesContext.resolve({ companyId: dto.sbCompanyId, branchId: dto.sbBranchId, deviceId: dto.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL);
         const masters = await this.tenderMasters(this.prisma, (dto.tenders ?? []).map((t) => t.tdTenderId));
         const chargeTypes = await this.bills.chargeTypesOf(this.prisma, dto.charges);
+        await (0, source_lines_1.resolveSourceLines)(this.prisma, dto.items, source_lines_1.BILL_SOURCE_KEYS, ['SALES_ORDER', 'DELIVERY_CHALLAN']);
         const snap = (0, bill_snapshot_1.snapshotFromDto)(dto, masters, chargeTypes);
         const guard = (0, posting_types_1.createGuardContext)({
             overrides: dto.overrides ?? [],
@@ -137,7 +141,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         await this.prisma.$transaction(async (tx) => {
             const bill = await this.bills.lockHeader(tx, dto);
             posted = await this.postDraftInTx(tx, bill, dto, new Date());
-        }, POST_TX_OPTIONS);
+        }, exports.POST_TX_OPTIONS);
         this.afterPost(posted);
         return this.withGodownSlips(await this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear));
     }
@@ -184,34 +188,41 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         });
     }
     async saveAndPost(dto) {
-        const { post: _post, overrides, ...saveDto } = dto;
-        void _post;
-        this.bills.prepareSave(saveDto);
-        let posted = null;
-        let keys = null;
+        let done = null;
         try {
             await this.prisma.$transaction(async (tx) => {
-                const now = new Date();
-                const saved = saveDto.sbId
-                    ? await this.bills.updateBillInTx(tx, saveDto)
-                    : await this.bills.createBillInTx(tx, saveDto);
-                keys = {
-                    sbId: saved.sbId,
-                    sbCompanyId: saved.sbCompanyId,
-                    sbBranchId: saved.sbBranchId,
-                    sbAccYear: saved.sbAccYear,
-                };
-                const bill = await this.bills.lockHeader(tx, keys);
-                posted = await this.postDraftInTx(tx, bill, { overrides, adjustments: saveDto.adjustments }, now);
-            }, POST_TX_OPTIONS);
+                done = await this.saveAndPostInTx(tx, dto);
+            }, exports.POST_TX_OPTIONS);
         }
         catch (error) {
             this.bills.throwIfDuplicate(error);
             throw error;
         }
-        this.afterPost(posted);
-        const k = keys;
+        const result = done;
+        this.afterSaveAndPost(result);
+        const k = result.keys;
         return this.withGodownSlips(await this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear));
+    }
+    async saveAndPostInTx(tx, dto) {
+        const { post: _post, overrides, ...saveDto } = dto;
+        void _post;
+        this.bills.prepareSave(saveDto);
+        const now = new Date();
+        const saved = saveDto.sbId
+            ? await this.bills.updateBillInTx(tx, saveDto)
+            : await this.bills.createBillInTx(tx, saveDto);
+        const keys = {
+            sbId: saved.sbId,
+            sbCompanyId: saved.sbCompanyId,
+            sbBranchId: saved.sbBranchId,
+            sbAccYear: saved.sbAccYear,
+        };
+        const bill = await this.bills.lockHeader(tx, keys);
+        const posted = await this.postDraftInTx(tx, bill, { overrides, adjustments: saveDto.adjustments }, now);
+        return { keys, posted };
+    }
+    afterSaveAndPost(done) {
+        this.afterPost(done.posted);
     }
     async postDraftInTx(tx, bill, opts, now) {
         if (bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
@@ -299,7 +310,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 reversalVoucherRefno: reversal.reversalRefno,
                 cancelledOn: now.toISOString(),
             };
-        }, POST_TX_OPTIONS);
+        }, exports.POST_TX_OPTIONS);
     }
     async liveSessionOf(tx, sessionId) {
         if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
@@ -423,6 +434,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
             });
             const before = await this.bills.getById(bill.sbId, bill.sbCompanyId, bill.sbBranchId, bill.sbAccYear);
+            await (0, source_lines_1.resolveSourceLines)(tx, dto.items, source_lines_1.BILL_SOURCE_KEYS, ['SALES_ORDER', 'DELIVERY_CHALLAN']);
             await lockBillOrders(tx, [bill, dto], [...priorItems, ...(dto.items ?? [])]);
             const { restateVoucherId } = await this.unwind(tx, bill, priorItems, ctx, `Amended: ${dto.editRemark}`, now, 'amend');
             const draft = await tx.saleBill.update({
@@ -500,7 +512,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 userId: ctx.actor,
                 notes: `Bill amended to revision ${bill.sbRevisionNo + 1}: ${dto.editRemark}`,
             }, tx);
-        }, POST_TX_OPTIONS);
+        }, exports.POST_TX_OPTIONS);
         if (posted) {
             const p = posted;
             this.gst.enqueueAfterPost({ gdrId: p.gdrId, einvoice: p.einvoice, ewaybill: p.ewaybill });
@@ -666,6 +678,10 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 ...snap.items.map((i) => (i.srcDocType === 'SALES_ORDER' ? i.srcDocId : null)),
             ].filter((id) => !!id)),
         ];
+        const viaChallans = await (0, dc_common_1.dcSourceOrdersOfLines)(tx, dcLines.map((l) => l.srcItemId));
+        if (viaChallans.orderIds.length > 0 || viaChallans.orderLineIds.length > 0) {
+            await (0, sales_guards_1.lockSourceOrders)(tx, [...orderIds, ...viaChallans.orderIds], [...orderLines.map((l) => l.srcItemId), ...viaChallans.orderLineIds]);
+        }
         const sources = await (0, sales_guards_1.lockSourceOrders)(tx, orderIds, orderLines.map((l) => l.srcItemId));
         if (orderIds.length > 0) {
             const byId = new Map(sources.map((o) => [o.soId, o]));
@@ -684,10 +700,11 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             : held);
         if (orderLines.length > 0) {
             const rows = await tx.$queryRaw `
-        SELECT d.soi_id, d.soi_pending_qty, h.so_status
+        SELECT d.soi_id, d.soi_pending_qty, h.so_status, d.soi_is_free
           FROM sales.sale_order_item d JOIN sales.sale_order h ON h.so_id = d.soi_order_id AND h.so_acc_year = d.soi_acc_year
          WHERE d.soi_id = ANY(${orderLines.map((l) => l.srcItemId)}::uuid[])`;
             const by = new Map(rows.map((r) => [r.soi_id, r]));
+            refuseFreeMismatch(g, orderLines, new Map(rows.map((r) => [r.soi_id, r.soi_is_free === true])), 'order');
             const taken = new Map();
             for (const l of orderLines) {
                 taken.set(l.srcItemId, (taken.get(l.srcItemId) ?? 0) + l.qty);
@@ -711,27 +728,120 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             }
         }
         if (dcLines.length > 0) {
-            const rows = await tx.$queryRaw `
-        SELECT d.sdi_id, d.sdi_open_qty, h.sdc_purpose, h.sdc_status
-          FROM sales.sale_dc_item d JOIN sales.sale_dc h ON h.sdc_id = d.sdi_dc_id AND h.sdc_acc_year = d.sdi_acc_year
-         WHERE d.sdi_id = ANY(${dcLines.map((l) => l.srcItemId)}::uuid[])`;
-            const by = new Map(rows.map((r) => [r.sdi_id, r]));
-            const taken = new Map();
-            for (const l of dcLines) {
-                taken.set(l.srcItemId, (taken.get(l.srcItemId) ?? 0) + l.qty);
+            await this.guardChallanSources(tx, snap, g, dcLines);
+        }
+    }
+    async guardChallanSources(tx, snap, g, dcLines) {
+        const sdiIds = [...new Set(dcLines.map((l) => l.srcItemId))];
+        await lockChallanLines(tx, sdiIds);
+        const rows = await tx.$queryRaw `
+      SELECT d.sdi_id, d.sdi_line_no, d.sdi_dc_qty, d.sdi_to_base_factor, d.sdi_is_free,
+             COALESCE((
+               SELECT SUM(b.sbi_bill_qty * COALESCE(NULLIF(b.sbi_to_base_factor, 0), 1))
+                 FROM sales.sale_bill_item b
+                 JOIN sales.sale_bill bh ON bh.sb_id = b.sbi_bill_id AND bh.sb_acc_year = b.sbi_acc_year
+                WHERE b.sbi_src_item_id = d.sdi_id AND b.sbi_src_doc_type = 'DELIVERY_CHALLAN'
+                  AND b.sbi_is_deleted = false AND bh.sb_is_deleted = false AND bh.sb_status = 'POSTED'
+                  AND bh.sb_id <> ${snap.sbId ?? NIL_UUID}::uuid), 0) AS billed_base,
+             COALESCE((
+               SELECT SUM(r.sdri_return_qty * COALESCE(NULLIF(r.sdri_to_base_factor, 0), 1))
+                 FROM sales.sale_dc_return_item r
+                 JOIN sales.sale_dc_return rh ON rh.sdr_id = r.sdri_return_id AND rh.sdr_acc_year = r.sdri_acc_year
+                WHERE r.sdri_dc_item_id = d.sdi_id
+                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0) AS returned_base,
+             h.sdc_id, h.sdc_dc_refno, h.sdc_purpose, h.sdc_status, h.sdc_company_id, h.sdc_branch_id,
+             h.sdc_cust_id, h.sdc_cust_name, h.sdc_cust_gstin, h.sdc_pos_stcd
+        FROM sales.sale_dc_item d
+        JOIN sales.sale_dc h ON h.sdc_id = d.sdi_dc_id AND h.sdc_acc_year = d.sdi_acc_year
+       WHERE d.sdi_id = ANY(${sdiIds}::uuid[]) AND d.sdi_is_deleted = false AND h.sdc_is_deleted = false`;
+        const by = new Map(rows.map((r) => [r.sdi_id, r]));
+        refuseFreeMismatch(g, dcLines, new Map(rows.map((r) => [r.sdi_id, r.sdi_is_free === true])), 'challan');
+        const factor = (v) => {
+            const f = new client_1.Prisma.Decimal(v ?? 0);
+            return f.isZero() ? new client_1.Prisma.Decimal(1) : f;
+        };
+        const takenBase = new Map();
+        const firstLine = new Map();
+        for (const l of dcLines) {
+            const k = l.srcItemId;
+            const base = new client_1.Prisma.Decimal(l.qty).times(factor(l.toBaseFactor));
+            takenBase.set(k, (takenBase.get(k) ?? new client_1.Prisma.Decimal(0)).plus(base));
+            if (!firstLine.has(k)) {
+                firstLine.set(k, l.lineNo);
             }
-            for (const [sdiId, qty] of taken) {
+        }
+        const blank = (v) => (v ?? '').trim();
+        const billGstin = blank(snap.custGstin).toUpperCase();
+        const billPos = blank(snap.posStcd);
+        let refPos = billPos;
+        if (refPos === '') {
+            for (const sdiId of takenBase.keys()) {
                 const r = by.get(sdiId);
-                if (!r || r.sdc_status !== 'POSTED') {
-                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_LINE_OVER, `Challan line ${sdiId} is not on a POSTED challan`, { field: 'items' });
-                    continue;
+                const p = r && r.sdc_status === 'POSTED' ? blank(r.sdc_pos_stcd) : '';
+                if (p !== '') {
+                    refPos = p;
+                    break;
                 }
-                if (r.sdc_purpose !== 'SUPPLY') {
-                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_PURPOSE_NOT_ALLOWED, `The challan's purpose is ${r.sdc_purpose} — convert it to SUPPLY before billing against it`, { field: 'items' });
+            }
+        }
+        const judged = new Set();
+        for (const [sdiId, base] of takenBase) {
+            const r = by.get(sdiId);
+            const line = firstLine.get(sdiId);
+            if (!r || r.sdc_status !== 'POSTED') {
+                (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_LINE_OVER, r
+                    ? `Challan ${r.sdc_dc_refno ?? r.sdc_id} is ${r.sdc_status}: only a POSTED challan is billed`
+                    : `Challan line ${sdiId} is not on a POSTED challan`, { field: 'items', line });
+                continue;
+            }
+            const dc = r.sdc_dc_refno ?? r.sdc_id;
+            if (!judged.has(r.sdc_id)) {
+                judged.add(r.sdc_id);
+                if (r.sdc_company_id !== snap.companyId || r.sdc_branch_id !== snap.branchId) {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} belongs to another branch`, {
+                        field: 'items',
+                        line,
+                        rule: 'BRANCH',
+                        params: { dc },
+                    });
                 }
-                if (qty > (0, sales_doc_utils_1.num)(r.sdi_open_qty) + 0.0005) {
-                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_LINE_OVER, `Challan line has ${(0, sales_doc_utils_1.num)(r.sdi_open_qty)} open; this bill takes ${qty}`, { field: 'items' });
+                if ((r.sdc_cust_id ?? null) !== (snap.custId ?? null)) {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} is for ${r.sdc_cust_name ?? r.sdc_cust_id ?? '—'}, not this bill's customer`, {
+                        field: 'items',
+                        line,
+                        rule: 'PARTY',
+                        params: { dc, party: r.sdc_cust_name ?? r.sdc_cust_id ?? '' },
+                    });
                 }
+                const dcGstin = blank(r.sdc_cust_gstin).toUpperCase();
+                if (dcGstin !== '' && billGstin !== '' && dcGstin !== billGstin) {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} carries GST No ${dcGstin}; this bill has ${billGstin}`, { field: 'sbCustGstin', line, rule: 'GSTIN', params: { dc, gstin: dcGstin, billGstin } });
+                }
+                const dcPos = blank(r.sdc_pos_stcd);
+                if (dcPos !== '' && refPos !== '' && dcPos !== refPos) {
+                    if (billPos !== '') {
+                        (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} was sent to state ${dcPos}; this bill is for ${billPos}`, { field: 'sbPosStcd', line, rule: 'POS', params: { dc, pos: dcPos, billPos } });
+                    }
+                    else {
+                        (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BILL_DC_MISMATCH, `Challan ${dc} was sent to state ${dcPos}; the bill's other challans to ${refPos}`, {
+                            field: 'items',
+                            line,
+                            rule: 'POS_CHALLANS',
+                            params: { dc, pos: dcPos, otherPos: refPos },
+                        });
+                    }
+                }
+                if ((r.sdc_purpose ?? 'SUPPLY') !== 'SUPPLY') {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_PURPOSE_NOT_ALLOWED, `Challan ${dc} was sent for ${r.sdc_purpose}: convert it to SUPPLY before billing against it`, { field: 'items', line, rule: 'CONVERT', params: { dc, purpose: r.sdc_purpose ?? '' } });
+                }
+            }
+            const dcFactor = factor(r.sdi_to_base_factor);
+            const openBase = new client_1.Prisma.Decimal(r.sdi_dc_qty ?? 0)
+                .times(dcFactor)
+                .minus(new client_1.Prisma.Decimal(r.billed_base ?? 0))
+                .minus(new client_1.Prisma.Decimal(r.returned_base ?? 0));
+            if (base.greaterThan(openBase)) {
+                (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DC_LINE_OVER, `Challan ${dc} line ${r.sdi_line_no} has ${openBase.dividedBy(dcFactor).toString()} open; this bill takes ${base.dividedBy(dcFactor).toString()}`, { field: 'items', line });
             }
         }
     }
@@ -1345,15 +1455,31 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         for (const m of moves) {
             await this.reservations.consume(tx, { docId: m.docId, lineNo: m.lineNo }, m.baseQty, actor, now);
         }
+        const direct = new Map();
+        for (const q of [...orderLineQtys(items, 1), ...orderLineQtys(priorItems, 1)]) {
+            direct.set(q.docId, [...(direct.get(q.docId) ?? []), q.lineNo]);
+        }
+        for (const [soId, lineNos] of direct) {
+            await this.reservations.rederiveOrderLines(tx, soId, lineNos, actor, now);
+        }
+        const dcLineIds = [...items, ...priorItems]
+            .filter((i) => i.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!i.sbiSrcItemId)
+            .map((i) => i.sbiSrcItemId);
+        const viaChallans = dcLineIds.length > 0 ? await this.dcFulfilment.orderRefsOfDcLines(tx, dcLineIds) : [];
         await this.saleOrders.syncOrderFulfilment(tx, {
             refs: [
                 ...this.bills.orderRefsOf(bill, items),
                 ...(priorItems.length > 0 ? this.bills.orderRefsOf(bill, priorItems) : []),
+                ...viaChallans,
             ],
             reopenRemark: `Reopened: bill ${bill.sbBillRefno || bill.sbId} ${bill.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED ? 'cancelled' : bill.sbStatus.toLowerCase()}`,
         }, actor, now);
         const dcs = await this.dcFulfilment.dcRefsOfBill(tx, bill.sbId, bill.sbAccYear);
-        await this.dcFulfilment.recompute(tx, dcs, actor, now);
+        const priorDcLines = priorItems
+            .filter((i) => i.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!i.sbiSrcItemId)
+            .map((i) => i.sbiSrcItemId);
+        const droppedDcs = priorDcLines.length > 0 ? await this.dcFulfilment.dcRefsOfLines(tx, priorDcLines) : [];
+        await this.dcFulfilment.recompute(tx, [...dcs, ...droppedDcs], actor, now);
     }
     async resolveAdjustments(tx, snap, partyId, named) {
         if (named && named.length > 0) {
@@ -1774,8 +1900,20 @@ exports.BillLifecycleService = BillLifecycleService = BillLifecycleService_1 = _
         delivery_pending_service_1.DeliveryPendingService])
 ], BillLifecycleService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 function isUuid(v) {
     return !!v && UUID.test(v);
+}
+function refuseFreeMismatch(g, lines, sourceFree, source) {
+    for (const l of lines) {
+        const srcFree = l.srcItemId ? sourceFree.get(l.srcItemId) : undefined;
+        if (srcFree === undefined || srcFree === (l.isFree === true)) {
+            continue;
+        }
+        (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, srcFree
+            ? `Line ${l.lineNo}: its ${source} line is free, so the bill line must be free too`
+            : `Line ${l.lineNo}: its ${source} line is not free, so the bill line cannot be free`, { field: 'items', line: l.lineNo, rule: 'FREE_LINE_BILL', params: { n: l.lineNo } });
+    }
 }
 void sales_guards_1.assertBandWritable;
 function orderLineQtys(items, sign) {
@@ -1835,6 +1973,20 @@ async function lockBillOrders(tx, headers, lines) {
             lineIds.add(l.sbiSrcItemId);
         }
     }
-    await (0, sales_guards_1.lockSourceOrders)(tx, [...ids], [...lineIds]);
+    const dcLineIds = lines
+        .filter((l) => l.sbiSrcDocType === 'DELIVERY_CHALLAN' && !!l.sbiSrcItemId)
+        .map((l) => l.sbiSrcItemId);
+    const viaChallans = await (0, dc_common_1.dcSourceOrdersOfLines)(tx, dcLineIds);
+    await (0, sales_guards_1.lockSourceOrders)(tx, [...ids, ...viaChallans.orderIds], [...lineIds, ...viaChallans.orderLineIds]);
+    await lockChallanLines(tx, dcLineIds);
+}
+async function lockChallanLines(tx, sdiIds) {
+    const ids = [...new Set(sdiIds)].filter((id) => isUuid(id)).sort();
+    if (ids.length === 0) {
+        return;
+    }
+    await (0, dc_common_1.lockChallansOfLines)(tx, ids);
+    const again = await (0, dc_common_1.dcSourceOrdersOfLines)(tx, ids);
+    await (0, sales_guards_1.lockSourceOrders)(tx, again.orderIds, again.orderLineIds);
 }
 //# sourceMappingURL=bill-lifecycle.service.js.map

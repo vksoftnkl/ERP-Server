@@ -23,10 +23,10 @@ const sales_guards_1 = require("../posting/sales.guards");
 const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
 const batch_detail_helper_1 = require("../../stocks/batch-detail/batch-detail.helper");
-const statutory_types_1 = require("../../../common/posting/statutory.types");
 const bill_voucher_type_helper_1 = require("./bill-voucher-type.helper");
 const posting_types_1 = require("../posting/types/posting.types");
 const sale_bill_error_codes_1 = require("./types/sale-bill-error-codes");
+const dc_common_1 = require("../delivery-challan/dc-common");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 let BillReadService = class BillReadService {
     prisma;
@@ -220,7 +220,6 @@ let BillReadService = class BillReadService {
     }
     async openChallans(q) {
         const today = (0, sales_doc_utils_1.isoToday)();
-        const window = await this.statutory.limit(q.companyId, statutory_types_1.STATUTORY_CODES.DC_RETURN_WINDOW_DAYS, today);
         const rows = await this.prisma.$queryRaw `
       SELECT h.sdc_id AS doc_id, h.sdc_acc_year AS acc_year, h.sdc_dc_refno AS refno, h.sdc_dc_date AS doc_date,
              h.sdc_purpose AS purpose,
@@ -229,6 +228,9 @@ let BillReadService = class BillReadService {
              d.sdi_godown_id AS godown_id, d.sdi_dc_qty AS doc_qty, d.sdi_open_qty AS open_qty,
              d.sdi_rate AS rate, d.sdi_tax_id AS tax_id, d.sdi_tax_perc AS tax_perc, d.sdi_hsn_code AS hsn_code,
              d.sdi_free_qty AS free_qty,
+             -- User 11-17: a challan line is free only when its order line was
+             -- (Ctrl+F4); billing the challan keeps the flag.
+             d.sdi_is_free AS is_free, d.sdi_free_type AS free_type,
              -- The challan already moved the stock; billing it takes none.
              true AS allow_negative_stock
         FROM sales.sale_dc h
@@ -241,11 +243,13 @@ let BillReadService = class BillReadService {
          AND (${q.accYear ?? null}::text IS NULL OR h.sdc_acc_year = ${q.accYear ?? null}::char(9))
          AND d.sdi_open_qty > 0
        ORDER BY h.sdc_dc_date, h.sdc_dc_refno, d.sdi_line_no`;
+        const dates = [...new Set(rows.map((r) => (0, sales_doc_utils_1.isoDate)(r.doc_date) ?? today))];
+        const windowOn = new Map(await Promise.all(dates.map(async (d) => [d, await (0, dc_common_1.dcReturnWindowOf)(this.statutory, q.companyId, d)])));
         return groupOpen(rows, (doc) => {
             const age = (0, sales_doc_utils_1.daysBetween)(doc.date ?? today, today);
             return {
                 ageDays: age,
-                pastWindow: window?.value != null ? age > window.value : false,
+                pastWindow: (0, dc_common_1.isPastReturnWindow)(doc.purpose, age, windowOn.get(doc.date ?? today)?.days ?? null, 'POSTED'),
                 convertRequired: doc.purpose !== 'SUPPLY',
             };
         });
@@ -259,7 +263,10 @@ let BillReadService = class BillReadService {
              d.soi_item_unit_id AS unit_id, u.unit_name, NULL::uuid AS lot_id, NULL::text AS batch_no,
              d.soi_godown_id AS godown_id, d.soi_order_qty AS doc_qty, d.soi_pending_qty AS open_qty,
              d.soi_rate AS rate, d.soi_tax_id AS tax_id, d.soi_tax_perc AS tax_perc, d.soi_hsn_code AS hsn_code,
+             -- An order line has no separate free quantity: a free line (the
+             -- order's scheme engine) carries its whole quantity as free.
              0::numeric AS free_qty,
+             d.soi_is_free AS is_free, d.soi_free_type AS free_type,
              (im.item_is_service OR NOT (g.gdl_negative_stock IS FALSE
                                          AND c.comp_negstk_apl IS FALSE
                                          AND im.item_allow_neg_stock IS FALSE)) AS allow_negative_stock
@@ -602,6 +609,8 @@ function groupOpen(rows, extra) {
             docQty: (0, sales_doc_utils_1.num)(r.doc_qty),
             openQty: (0, sales_doc_utils_1.num)(r.open_qty),
             freeQty: (0, sales_doc_utils_1.num)(r.free_qty),
+            isFree: r.is_free === true,
+            freeType: r.free_type ?? null,
             rate: (0, sales_doc_utils_1.num)(r.rate),
             taxId: r.tax_id,
             taxPerc: (0, sales_doc_utils_1.num)(r.tax_perc),

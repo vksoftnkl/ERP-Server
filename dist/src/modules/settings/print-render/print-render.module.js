@@ -26,6 +26,13 @@ const item_ledger_providers_1 = require("./data/providers/item-ledger.providers"
 const item_ledger_module_1 = require("../../stocks/reports/item-ledger/item-ledger.module");
 const stock_summary_providers_1 = require("./data/providers/stock-summary.providers");
 const stock_summary_module_1 = require("../../stocks/reports/stock-summary/stock-summary.module");
+const delivery_providers_1 = require("./data/providers/delivery.providers");
+const godown_position_providers_1 = require("./data/providers/godown-position.providers");
+const delivery_challan_providers_1 = require("./data/providers/delivery-challan.providers");
+const delivery_core_module_1 = require("../../sales/delivery/core/delivery-core.module");
+const delivery_module_1 = require("../../sales/delivery/delivery.module");
+const posting_module_1 = require("../../sales/posting/posting.module");
+const godown_position_module_1 = require("../../stocks/reports/godown-position/godown-position.module");
 const font_registry_1 = require("./engine/fonts/font.registry");
 const layout_engine_1 = require("./engine/layout/layout.engine");
 const text_measure_1 = require("./engine/layout/text-measure");
@@ -52,6 +59,10 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             party_outstanding_module_1.ReportsPartyOutstandingModule,
             item_ledger_module_1.ItemLedgerModule,
             stock_summary_module_1.StockSummaryModule,
+            delivery_core_module_1.DeliveryCoreModule,
+            delivery_module_1.DeliveryModule,
+            posting_module_1.SalesPostingModule,
+            godown_position_module_1.GodownPositionModule,
         ],
         controllers: [print_render_controller_1.PrintRenderController, print_share_controller_1.PrintShareController],
         providers: [
@@ -76,6 +87,12 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
             ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
             stock_summary_providers_1.StockSummaryPrintSource,
             ...stock_summary_providers_1.STOCK_SUMMARY_PRINT_PROVIDERS,
+            delivery_providers_1.DeliveryPrintSource,
+            ...delivery_providers_1.DELIVERY_PRINT_PROVIDERS,
+            godown_position_providers_1.GodownPositionPrintSource,
+            ...godown_position_providers_1.GODOWN_POSITION_PRINT_PROVIDERS,
+            delivery_challan_providers_1.DcPrintSource,
+            ...delivery_challan_providers_1.DC_PRINT_PROVIDERS,
             {
                 provide: print_data_provider_registry_1.PRINT_DATA_PROVIDERS,
                 useFactory: (...providers) => providers,
@@ -90,6 +107,9 @@ exports.PrintRenderModule = PrintRenderModule = __decorate([
                     ...party_outstanding_providers_1.PARTY_OUTSTANDING_PRINT_PROVIDERS,
                     ...item_ledger_providers_1.ITEM_LEDGER_PRINT_PROVIDERS,
                     ...stock_summary_providers_1.STOCK_SUMMARY_PRINT_PROVIDERS,
+                    ...delivery_providers_1.DELIVERY_PRINT_PROVIDERS,
+                    ...godown_position_providers_1.GODOWN_POSITION_PRINT_PROVIDERS,
+                    ...delivery_challan_providers_1.DC_PRINT_PROVIDERS,
                 ],
             },
             print_data_provider_registry_1.PrintDataProviderRegistry,

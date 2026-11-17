@@ -56,12 +56,14 @@ function refuse(ctx, code, message, opts = {}) {
         line: opts.line,
         statutory: opts.statutory,
         ...(opts.params === undefined ? {} : { params: opts.params }),
+        ...(opts.rule === undefined ? {} : { rule: opts.rule }),
     });
     if (ctx.throwOnRefusal) {
         (0, sales_errors_1.throwSalesRefused)(message, code, opts.field ?? 'document', {
             ...(opts.line === undefined ? {} : { line: opts.line }),
             ...(opts.statutory === undefined ? {} : { statutory: opts.statutory }),
             ...(opts.params === undefined ? {} : { params: opts.params }),
+            ...(opts.rule === undefined ? {} : { rule: opts.rule }),
         });
     }
 }

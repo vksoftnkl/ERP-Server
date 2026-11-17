@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DcFulfilmentService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const dc_common_1 = require("../delivery-challan/dc-common");
 let DcFulfilmentService = class DcFulfilmentService {
     prisma;
     constructor(prisma) {
@@ -25,6 +26,19 @@ let DcFulfilmentService = class DcFulfilmentService {
        WHERE b.sbi_bill_id = ${sbId}::uuid AND b.sbi_acc_year = ${sbAccYear}::char(9)
          AND b.sbi_src_doc_type = 'DELIVERY_CHALLAN' AND b.sbi_src_item_id IS NOT NULL`;
         return rows.map((r) => ({ dcId: r.sdi_dc_id, accYear: r.sdi_acc_year.trim() }));
+    }
+    async dcRefsOfLines(tx, sdiIds) {
+        const ids = [...new Set(sdiIds.filter((v) => typeof v === 'string' && v.length === 36))];
+        if (ids.length === 0) {
+            return [];
+        }
+        const rows = await tx.$queryRaw `
+      SELECT DISTINCT sdi_dc_id, sdi_acc_year FROM sales.sale_dc_item
+       WHERE sdi_id = ANY(${ids}::uuid[])`;
+        return rows.map((r) => ({ dcId: r.sdi_dc_id, accYear: r.sdi_acc_year.trim() }));
+    }
+    async orderRefsOfDcLines(tx, sdiIds) {
+        return (0, dc_common_1.orderLineRefsOf)(tx, await (0, dc_common_1.orderLinesOfDcLines)(tx, sdiIds));
     }
     async recompute(tx, refs, actor, now) {
         const seen = new Set();
@@ -41,17 +55,19 @@ let DcFulfilmentService = class DcFulfilmentService {
         await tx.$executeRaw `
       UPDATE sales.sale_dc_item d
          SET sdi_billed_qty = COALESCE((
-               SELECT SUM(b.sbi_bill_qty)
+               SELECT SUM(b.sbi_bill_qty * COALESCE(NULLIF(b.sbi_to_base_factor, 0), 1))
                  FROM sales.sale_bill_item b
                  JOIN sales.sale_bill h ON h.sb_id = b.sbi_bill_id AND h.sb_acc_year = b.sbi_acc_year
                 WHERE b.sbi_src_item_id = d.sdi_id AND b.sbi_src_doc_type = 'DELIVERY_CHALLAN'
-                  AND b.sbi_is_deleted = false AND h.sb_is_deleted = false AND h.sb_status = 'POSTED'), 0),
+                  AND b.sbi_is_deleted = false AND h.sb_is_deleted = false AND h.sb_status = 'POSTED'), 0)
+               / COALESCE(NULLIF(d.sdi_to_base_factor, 0), 1),
              sdi_returned_qty = COALESCE((
-               SELECT SUM(r.sdri_return_qty)
+               SELECT SUM(r.sdri_return_qty * COALESCE(NULLIF(r.sdri_to_base_factor, 0), 1))
                  FROM sales.sale_dc_return_item r
                  JOIN sales.sale_dc_return rh ON rh.sdr_id = r.sdri_return_id AND rh.sdr_acc_year = r.sdri_acc_year
                 WHERE r.sdri_dc_item_id = d.sdi_id
-                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0),
+                  AND r.sdri_is_deleted = false AND rh.sdr_is_deleted = false AND rh.sdr_status = 'POSTED'), 0)
+               / COALESCE(NULLIF(d.sdi_to_base_factor, 0), 1),
              sdi_modified_on = ${now},
              sdi_modified_by = ${actor}
        WHERE d.sdi_dc_id = ${dcId}::uuid AND d.sdi_acc_year = ${accYear}::char(9)

@@ -39,6 +39,7 @@ export interface SequencePayload {
     createdBy: string | null;
     modifiedOn: string | null;
     modifiedBy: string | null;
+    allBranches: boolean;
 }
 export type SequenceListItem = SequencePayload;
 export interface SequenceListMeta {

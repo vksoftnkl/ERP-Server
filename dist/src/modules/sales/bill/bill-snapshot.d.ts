@@ -157,6 +157,15 @@ export interface TenderMasterRow {
 }
 export type ChargeTypeMap = Map<string, string>;
 export declare function snapshotFromDto(dto: SaveBillDto, tenderMasters: Map<string, TenderMasterRow>, chargeTypes?: ChargeTypeMap): BillSnapshot;
+export declare const BILL_SRC_DELIVERY_CHALLAN = "DELIVERY_CHALLAN";
+export declare const BILL_SRC_SALES_ORDER = "SALES_ORDER";
+export declare function distinctChallanCount(lines: readonly {
+    srcDocType?: string | null;
+    srcDocId?: string | null;
+    srcDocYear?: string | null;
+}[]): number;
+export declare function headerSourceCleared(headerSrcDocType: string | null | undefined, lines: Parameters<typeof distinctChallanCount>[0]): boolean;
+export declare function applyChallanSourceRule(dto: SaveBillDto): void;
 export declare function isCreditTender(t: BillSnapshotTender): boolean;
 export declare function settledByTenders(snap: BillSnapshot): number;
 export declare function cashTendered(snap: BillSnapshot): number;

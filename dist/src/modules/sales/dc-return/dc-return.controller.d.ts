@@ -1,10 +1,15 @@
 import { DcReturnService } from './dc-return.service';
 import { SaveDcReturnDto } from './dto/save-dc-return.dto';
-import { CancelDcReturnDto, DcReturnKeysDto, DcReturnTransportDto, PostDcReturnDto } from './dto/dc-return-lifecycle.dto';
+import { CancelDcReturnDto, DcReturnKeysDto, DcReturnOpenLinesQueryDto, DcReturnTransportDto, PostDcReturnDto, ValidateDcReturnDto } from './dto/dc-return-lifecycle.dto';
 export declare class DcReturnController {
     private readonly service;
     constructor(service: DcReturnService);
     save(dto: SaveDcReturnDto): Promise<{
+        success: true;
+        message: string;
+        data: Record<string, unknown>;
+    }>;
+    validate(dto: ValidateDcReturnDto): Promise<{
         success: true;
         message: string;
         data: Record<string, unknown>;
@@ -32,10 +37,10 @@ export declare class DcReturnController {
         message: string;
         data: Record<string, unknown>;
     }>;
-    openLines(sdcId: string, sdcAccYear: string): Promise<{
+    openLines(q: DcReturnOpenLinesQueryDto): Promise<{
         success: true;
         message: string;
-        data: Record<string, unknown>[];
+        data: Record<string, unknown>;
     }>;
     transport(dto: DcReturnTransportDto): Promise<{
         success: true;

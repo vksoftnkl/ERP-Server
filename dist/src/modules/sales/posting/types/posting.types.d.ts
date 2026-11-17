@@ -49,6 +49,14 @@ export declare const SALES_ERROR_CODES: {
     readonly DC_RETURNED: "SALES_DC_RETURNED";
     readonly DCR_OVER_OPEN: "SALES_DCR_OVER_OPEN";
     readonly DCR_DC_NOT_POSTED: "SALES_DCR_DC_NOT_POSTED";
+    readonly DC_CUSTOMER_REQUIRED: "SALES_DC_CUSTOMER_REQUIRED";
+    readonly DC_NO_LINES: "SALES_DC_NO_LINES";
+    readonly DC_CHARGES_NOT_ALLOWED: "SALES_DC_CHARGES_NOT_ALLOWED";
+    readonly DCR_NO_LINES: "SALES_DCR_NO_LINES";
+    readonly DCR_LINE_NOT_ON_DC: "SALES_DCR_LINE_NOT_ON_DC";
+    readonly DCR_REASON_REQUIRED: "SALES_DCR_REASON_REQUIRED";
+    readonly BILL_DC_MISMATCH: "SALES_BILL_DC_MISMATCH";
+    readonly DCR_DAMAGED_BUCKET: "SALES_DCR_DAMAGED_BUCKET";
     readonly RETURN_OVER_QTY: "SALES_RETURN_OVER_QTY";
     readonly RETURN_BILL_NOT_POSTED: "SALES_RETURN_BILL_NOT_POSTED";
     readonly RETURN_ITEM_NOT_ALLOWED: "SALES_RETURN_ITEM_NOT_ALLOWED";
@@ -152,6 +160,7 @@ export interface SalesRefusal {
     line?: number;
     statutory?: SalesStatutoryRef;
     params?: SalesMessageParams;
+    rule?: string;
 }
 export interface SalesGuardContext {
     warnings: SalesWarning[];

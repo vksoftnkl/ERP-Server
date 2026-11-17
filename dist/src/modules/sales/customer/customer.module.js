@@ -22,6 +22,7 @@ exports.CustomerModule = CustomerModule = __decorate([
         imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule, party_module_1.PartyModule],
         controllers: [customer_controller_1.CustomerController],
         providers: [customer_service_1.CustomerService, customer_exception_filter_1.CustomerExceptionFilter],
+        exports: [customer_service_1.CustomerService],
     })
 ], CustomerModule);
 //# sourceMappingURL=customer.module.js.map

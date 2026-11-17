@@ -8,11 +8,11 @@ export declare class SaveDcReturnItemDto {
     sdriDcItemId: string;
     sdriDcAccYear?: string | null;
     sdriDcLineNo?: number | null;
-    sdriItemId: string;
-    sdriItemUnitId: string;
+    sdriItemId?: string | null;
+    sdriItemUnitId?: string | null;
     sdriToBaseFactor?: string | number | null;
     sdriHsnCode?: string | null;
-    sdriGodownId: string;
+    sdriGodownId?: string | null;
     sdriLotId?: string | null;
     sdriCondition?: string | null;
     sdriBucket?: string;

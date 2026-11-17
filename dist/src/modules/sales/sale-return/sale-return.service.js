@@ -305,10 +305,11 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
             return null;
         }
         const [r] = await c.$queryRaw `
-      SELECT sr_cust_id AS cust, sr_freight_calc_type AS f, sr_loading_calc_type AS l, sr_settle_mode AS m
+      SELECT sr_cust_id AS cust, sr_freight_calc_type AS f, sr_loading_calc_type AS l, sr_settle_mode AS m,
+             sr_status AS s
         FROM sales.sale_return
        WHERE sr_id = ${srId}::uuid AND sr_is_deleted = false`;
-        return r ? { custId: r.cust, freight: r.f, loading: r.l, settleMode: r.m } : null;
+        return r ? { custId: r.cust, freight: r.f, loading: r.l, settleMode: r.m, status: r.s ?? null } : null;
     }
     async storedChargeIds(tx, srId) {
         const rows = await this.reader.returnCharges(tx, srId);
@@ -354,7 +355,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
             : (0, sale_return_preview_1.chargeAsksOfStored)(await this.reader.returnCharges(tx, dto.srId));
         const money = await this.moneyOf(tx, { ...body, srReturnDate: body.srReturnDate ?? stored?.srReturnDate ?? (0, sales_doc_utils_1.isoToday)() }, items, asks, ms, calcOf(savedRow, ms));
         await this.applyMoneyToBody(tx, body, items, money);
-        await this.applyNotTaken(tx, body, money);
+        await this.applyNotTaken(tx, body, money, { amend: opts.amend === true });
         if (!dto.srId && (body.srSettleMode === undefined || body.srSettleMode === null)) {
             const due = money.bill ? await this.reader.billDue(tx, money.bill) : sale_return_money_1.ZERO;
             body.srSettleMode = (0, sale_return_settlement_1.defaultSettleMode)(ms.settleDefault, {
@@ -651,7 +652,8 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
                 });
             body.srSettleMode = mode;
             const verdict = await this.guards(tx, body, items, ctx, g, money);
-            const notTaken = await this.deliveryGuards(tx, body, items, money, g);
+            const posted = saved?.status === 'POSTED' ? (0, sale_return_delivery_1.postedNotTakenOf)(await this.store.loadItems(tx, body)) : null;
+            const notTaken = await this.deliveryGuards(tx, body, items, money, g, posted);
             const plan = await (0, sale_return_settlement_1.buildSettlement)(this.reader, tx, money, {
                 mode,
                 companyId: dto.srCompanyId,
@@ -787,6 +789,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
     async lockAndWorkOut(tx, row, ctx) {
         if (row.srIsAgainstBill !== false && row.srBillId && row.srBillAccYear) {
             const bill = { sbId: row.srBillId, accYear: row.srBillAccYear.trim() };
+            await this.reader.lockBillHeader(tx, bill);
             await this.reader.lockBillLines(tx, bill);
             await this.reader.lockBillCharges(tx, bill);
         }
@@ -1675,6 +1678,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
     async lockBillOf(tx, row) {
         if (row.srBillId && row.srBillAccYear) {
             const bill = { sbId: row.srBillId, accYear: row.srBillAccYear.trim() };
+            await this.reader.lockBillHeader(tx, bill);
             await this.reader.lockBillLines(tx, bill);
             await this.reader.lockBillCharges(tx, bill);
         }
@@ -1836,13 +1840,16 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         await this.promo.reverse(tx, { docId: keys.id, accYear: keys.accYear }, reason, actor);
         return reversal;
     }
-    async notTakenOf(tx, header, items, money) {
+    async notTakenOf(tx, header, items, money, opts = {}) {
         const claim = (header.srReturnKind ?? 'RETURN').toUpperCase() === 'CLAIM';
         const srId = header.srId ?? null;
         let rows = (0, sale_return_delivery_1.notTakenRowsOf)(items, money, new Map());
         const lines = await (0, sale_return_delivery_1.loadNotTakenLines)(tx, this.deliveryPending, rows, isUuid(srId) ? srId : null);
         if (lines.size > 0 || rows.some((r) => r.typed !== null && r.typed.gt(0))) {
             rows = (0, sale_return_delivery_1.notTakenRowsOf)(items, money, await (0, sale_return_delivery_1.unitNamesOf)(tx, items.map((i) => i.sriItemUnitId)));
+        }
+        if (opts.posted && opts.posted.size > 0) {
+            rows = (0, sale_return_delivery_1.withKeptNotTaken)(rows, opts.posted);
         }
         return { rows, lines, verdict: (0, sale_return_delivery_1.resolveNotTaken)(rows, lines, claim), claim };
     }
@@ -1855,12 +1862,15 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
             params: i.params,
         }));
     }
-    async applyNotTaken(tx, body, money) {
+    async applyNotTaken(tx, body, money, opts = {}) {
         const items = body.items ?? [];
         if (items.length === 0) {
             return;
         }
-        const nt = await this.notTakenOf(tx, body, items, money);
+        const posted = opts.amend && isUuid(body.srId)
+            ? (0, sale_return_delivery_1.postedNotTakenOf)(await this.store.loadItems(tx, body))
+            : null;
+        const nt = await this.notTakenOf(tx, body, items, money, { posted });
         const rowRules = nt.verdict.issues.filter((i) => i.code === delivery_constants_1.DELIVERY_ERROR_CODES.DELIVERY_RETURN_OVER_QTY ||
             i.code === delivery_constants_1.DELIVERY_ERROR_CODES.DELIVERY_RETURN_CLAIM);
         if (rowRules.length > 0) {
@@ -1871,8 +1881,8 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
             sriUndeliveredQty: nt.verdict.rows[i]?.resolvedQty ?? sale_return_money_1.ZERO,
         }));
     }
-    async deliveryGuards(tx, header, items, money, g) {
-        const nt = await this.notTakenOf(tx, header, items, money);
+    async deliveryGuards(tx, header, items, money, g, posted = null) {
+        const nt = await this.notTakenOf(tx, header, items, money, { posted });
         const issues = [...nt.verdict.issues];
         const srId = header.srId ?? null;
         if (isUuid(srId) && nt.lines.size > 0) {
@@ -1886,6 +1896,11 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
     async writeReturnEvents(tx, row, items, money, actor, now) {
         const srId = row.srId;
         const nt = await this.notTakenOf(tx, row, items, money);
+        const moved = nt.verdict.issues.filter((i) => i.code === delivery_constants_1.DELIVERY_ERROR_CODES.DELIVERY_RETURN_OVER ||
+            i.code === delivery_constants_1.DELIVERY_ERROR_CODES.DELIVERY_RETURN_NOT_GIVEN);
+        if (moved.length > 0) {
+            (0, sales_errors_1.throwSalesRefusals)('Sale return cannot be posted', SaleReturnService_1.refusalsOf(moved));
+        }
         const events = nt.lines.size > 0 ? await (0, sale_return_delivery_1.returnEventsOf)(tx, srId) : null;
         if (!events) {
             return;
@@ -2053,8 +2068,12 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
                 billAccYear: (i.sriBillAccYear ?? null)?.trim() ?? null,
             })),
         };
-        const nt = await this.notTakenOf(c, doc, items, money);
         const draft = doc.srStatus === 'DRAFT';
+        const posted = doc.srStatus === 'POSTED';
+        const nt = await this.notTakenOf(c, doc, items, money, {
+            posted: posted ? (0, sale_return_delivery_1.postedNotTakenOf)(items) : null,
+        });
+        const withDefault = draft || posted;
         return {
             ...doc,
             items: items.map((i, idx) => {
@@ -2063,7 +2082,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
                     ...i,
                     billPendingQty: r ? (0, sale_return_money_1.n)(r.billPendingQty) : 0,
                     billPendingBase: r ? (0, sale_return_money_1.n)(r.billPendingBase) : 0,
-                    ...(draft ? { undeliveredDefaultQty: r ? (0, sale_return_money_1.n)(r.defaultQty) : 0 } : {}),
+                    ...(withDefault ? { undeliveredDefaultQty: r ? (0, sale_return_money_1.n)(r.defaultQty) : 0 } : {}),
                 };
             }),
             ...(draft ? await this.deliveryAfterJson(c, nt.verdict) : {}),

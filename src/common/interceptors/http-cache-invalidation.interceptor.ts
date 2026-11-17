@@ -10,6 +10,8 @@ type CacheableRequest = {
 };
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CACHE_SKIP_PATH_SEGMENTS = new Set(['auth', 'profile', 'health']);
+/** The React Native app's routes (src/mobile-modules) sit under /mobile/<resource>/…. */
+const MOBILE_PATH_SEGMENT = 'mobile';
 /**
  * POST routes that only read: they check, preview or resolve something and
  * write nothing, so they must neither empty the cache nor make every connected
@@ -97,10 +99,13 @@ export class HttpCacheInvalidationInterceptor implements NestInterceptor {
       return undefined;
     }
     const segments = pathname.split('/').filter(Boolean);
-    if (segments.length < 3) {
+    // /api/v1/mobile/customers/create is the same resource as /api/v1/customers/create:
+    // open desktop lists of `customers` must re-read after a phone save.
+    const index = segments[2] === MOBILE_PATH_SEGMENT ? 3 : 2;
+    if (segments.length < index + 1) {
       return undefined;
     }
-    const resource = segments[2];
+    const resource = segments[index];
     if (CACHE_SKIP_PATH_SEGMENTS.has(resource)) {
       return undefined;
     }

@@ -4,6 +4,9 @@ exports.checkDeliveryNote = checkDeliveryNote;
 exports.noteTotals = noteTotals;
 exports.noteLoad = noteLoad;
 exports.firstRefusal = firstRefusal;
+exports.duplicateLineIds = duplicateLineIds;
+exports.yearChangedNote = yearChangedNote;
+exports.undoBelowReturned = undoBelowReturned;
 const client_1 = require("@prisma/client");
 const delivery_constants_1 = require("./core/delivery.constants");
 const delivery_weight_1 = require("./core/delivery-weight");
@@ -202,5 +205,51 @@ function noteLoad(header, totals) {
 }
 function firstRefusal(notes) {
     return notes.find((n) => n.severity === 'REFUSE') ?? null;
+}
+function duplicateLineIds(lines) {
+    const seen = new Map();
+    for (const [idx, l] of lines.entries()) {
+        if (!l.sdniId) {
+            continue;
+        }
+        const first = seen.get(l.sdniId);
+        if (first !== undefined) {
+            return (0, delivery_errors_1.note)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_LINE_DUPLICATE, 'REFUSE', `lines[${idx}].sdniId`, `Line ${idx + 1} repeats line ${first + 1} (sdniId ${l.sdniId}): each note line is sent once`, { n: idx + 1, first: first + 1 }, idx + 1);
+        }
+        seen.set(l.sdniId, idx);
+    }
+    return null;
+}
+function yearChangedNote(noteYear, yearNow, refno, draft) {
+    if (noteYear.trim() === yearNow.trim()) {
+        return null;
+    }
+    return (0, delivery_errors_1.note)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_DRAFT_YEAR_CHANGED, 'REFUSE', draft ? 'sdnId' : 'accYear', draft
+        ? `Draft ${refno ?? ''} was saved in ${noteYear.trim()}, but today falls in ${yearNow}: make the note again in ${yearNow}`
+        : `This note would be filed in ${noteYear.trim()}, but today falls in ${yearNow}: switch to ${yearNow}`, { refno: refno ?? '', year: noteYear.trim(), yearNow });
+}
+function undoBelowReturned(lines) {
+    for (const l of lines) {
+        const taken = l.takenBase.toDecimalPlaces(6);
+        if (taken.lte(0)) {
+            continue;
+        }
+        const after = l.givenBase.minus(l.removeBase).toDecimalPlaces(6);
+        if (after.greaterThanOrEqualTo(taken)) {
+            continue;
+        }
+        const f = l.factor.greaterThan(0) ? l.factor : new client_1.Prisma.Decimal(1);
+        const qty = q3(taken.dividedBy(f));
+        const shown = l.returnRefnos.slice(0, 3).join(', ') + (l.returnRefnos.length > 3 ? ', …' : '');
+        return (0, delivery_errors_1.note)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_UNDO_BELOW_RETURNED, 'REFUSE', l.field, `Line ${l.billLineNo} of ${l.billRefno}: ${qty} ${l.unitName} came back on sale return ${shown}; cancel or amend that return first`, {
+            n: l.billLineNo,
+            bill: l.billRefno,
+            qty,
+            unit: l.unitName,
+            sr: shown,
+            givenAfter: q3(client_1.Prisma.Decimal.max(Z, after).dividedBy(f)),
+        }, l.noteLineNo);
+    }
+    return null;
 }
 //# sourceMappingURL=delivery-note.rules.js.map

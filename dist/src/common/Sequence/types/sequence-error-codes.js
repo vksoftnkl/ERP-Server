@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SequenceErrorCode = void 0;
+exports.SequenceRefusalRule = exports.SequenceErrorCode = void 0;
 var SequenceErrorCode;
 (function (SequenceErrorCode) {
     SequenceErrorCode["NOT_FOUND"] = "SEQUENCE_NOT_FOUND";
@@ -24,4 +24,10 @@ var SequenceErrorCode;
     SequenceErrorCode["FIELD_NOT_INTEGER"] = "VALIDATION_IS_INT";
     SequenceErrorCode["FIELD_NOT_BOOLEAN"] = "VALIDATION_IS_BOOLEAN";
 })(SequenceErrorCode || (exports.SequenceErrorCode = SequenceErrorCode = {}));
+exports.SequenceRefusalRule = {
+    GST16: 'GST16',
+    GST16_DEVICE: 'GST16_DEVICE',
+    GST16_CHARS: 'GST16_CHARS',
+    DEVICE_COUNTER: 'DEVICE_COUNTER',
+};
 //# sourceMappingURL=sequence-error-codes.js.map

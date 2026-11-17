@@ -1,7 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.BILL_SRC_SALES_ORDER = exports.BILL_SRC_DELIVERY_CHALLAN = void 0;
 exports.snapshotFromRows = snapshotFromRows;
 exports.snapshotFromDto = snapshotFromDto;
+exports.distinctChallanCount = distinctChallanCount;
+exports.headerSourceCleared = headerSourceCleared;
+exports.applyChallanSourceRule = applyChallanSourceRule;
 exports.isCreditTender = isCreditTender;
 exports.settledByTenders = settledByTenders;
 exports.cashTendered = cashTendered;
@@ -18,7 +22,7 @@ const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const sales_leg_sources_1 = require("../posting/sales-leg.sources");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 function snapshotFromRows(bill, items, charges, tenders) {
-    return {
+    return withChallanSourceRule({
         sbId: bill.sbId,
         companyId: bill.sbCompanyId,
         branchId: bill.sbBranchId,
@@ -156,7 +160,7 @@ function snapshotFromRows(bill, items, charges, tenders) {
                 tdNotes: t.tdNotes,
             }),
         })),
-    };
+    });
 }
 function transportFromDto(dto) {
     if (dto.sbTransporterId === undefined &&
@@ -175,7 +179,7 @@ function chargeTypeOf(v) {
 }
 function snapshotFromDto(dto, tenderMasters, chargeTypes = new Map()) {
     const billDate = dto.sbBillDate ?? (0, sales_doc_utils_1.isoToday)();
-    return {
+    return withChallanSourceRule({
         transport: transportFromDto(dto),
         sbId: dto.sbId ?? null,
         companyId: dto.sbCompanyId,
@@ -325,7 +329,46 @@ function snapshotFromDto(dto, tenderMasters, chargeTypes = new Map()) {
                     : null,
             };
         }),
-    };
+    });
+}
+exports.BILL_SRC_DELIVERY_CHALLAN = 'DELIVERY_CHALLAN';
+exports.BILL_SRC_SALES_ORDER = 'SALES_ORDER';
+function distinctChallanCount(lines) {
+    const keys = new Set();
+    for (const l of lines) {
+        if (l.srcDocType === exports.BILL_SRC_DELIVERY_CHALLAN && l.srcDocId) {
+            keys.add(`${l.srcDocId}|${(l.srcDocYear ?? '').trim()}`);
+        }
+    }
+    return keys.size;
+}
+function headerSourceCleared(headerSrcDocType, lines) {
+    return headerSrcDocType !== exports.BILL_SRC_SALES_ORDER && distinctChallanCount(lines) >= 2;
+}
+function withChallanSourceRule(snap) {
+    if (headerSourceCleared(snap.srcDocType, snap.items)) {
+        snap.srcDocType = null;
+        snap.srcDocId = null;
+        snap.srcDocYear = null;
+    }
+    return snap;
+}
+function applyChallanSourceRule(dto) {
+    if (dto.items === undefined) {
+        return;
+    }
+    const lines = dto.items.map((i) => ({
+        srcDocType: i.sbiSrcDocType ?? null,
+        srcDocId: i.sbiSrcDocId ?? null,
+        srcDocYear: i.sbiSrcDocYear ?? null,
+    }));
+    if (headerSourceCleared(dto.sbSrcDocType, lines)) {
+        dto.sbSrcDocType = null;
+        dto.sbSrcDocId = null;
+        dto.sbSrcDocRefno = null;
+        dto.sbSrcDocDate = null;
+        dto.sbSrcDocYear = null;
+    }
 }
 function isCreditTender(t) {
     return sales_doc_utils_1.ON_ACCOUNT_TENDER_TYPES.includes(t.tenderTypeId);

@@ -76,6 +76,7 @@ model EmployeeMaster {
   saleBillsDriven      SaleBill[]                @relation("SaleBillDriver")
   saleBillsSupervised  SaleBill[]                @relation("SaleBillSupervisor")
   saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
+  customerVisits       CustomerVisit[]      @relation("CustomerVisitSalesman")
   txnHolds             TxnHold[]
   @@index([empCompanyId],    name: "idx_emp_company")
   @@index([empIsActive],     name: "idx_emp_active")

@@ -157,8 +157,8 @@ exports.TXN_DOC_REGISTRY = {
     SALE_BILL: salesDoc('sale bill', 'sales.sale_bill', 'sb', { date: 'sb_bill_date', slno: null, refno: 'sb_bill_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL),
     QUOTATION: salesDoc('quotation', 'sales.sale_quotation', 'sq', { date: 'sq_quote_date', slno: 'sq_quote_slno', refno: 'sq_quote_refno' }, QUOTATION_STATUSES, QUOTATION_MENU_ID),
     SALE_ORDER: salesDoc('sales order', 'sales.sale_order', 'so', { date: 'so_order_date', slno: 'so_order_slno', refno: 'so_order_refno' }, ORDER_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER),
-    DELIVERY_CHALLAN: salesDoc('delivery challan', 'sales.sale_dc', 'sdc', { date: 'sdc_dc_date', slno: 'sdc_dc_slno', refno: 'sdc_dc_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DELIVERY_CHALLAN),
-    DC_RETURN: salesDoc('DC return', 'sales.sale_dc_return', 'sdr', { date: 'sdr_return_date', slno: 'sdr_return_slno', refno: 'sdr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DC_RETURN),
+    DELIVERY_CHALLAN: salesDoc('delivery challan', 'sales.sale_dc', 'sdc', { date: 'sdc_dc_date', slno: null, refno: 'sdc_dc_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DELIVERY_CHALLAN),
+    DC_RETURN: salesDoc('DC return', 'sales.sale_dc_return', 'sdr', { date: 'sdr_return_date', slno: null, refno: 'sdr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.DC_RETURN),
     SALE_RETURN: salesDoc('sales return', 'sales.sale_return', 'sr', { date: 'sr_return_date', slno: null, refno: 'sr_return_refno' }, POSTING_STATUSES, sales_doc_utils_1.SALES_MENU_ID.SALE_RETURN),
     DELIVERY_NOTE: {
         ...salesDoc('delivery note', 'sales.sale_delivery_note', 'sdn', { date: 'sdn_date', slno: null, refno: 'sdn_refno' }, POSTING_STATUSES, delivery_constants_1.DELIVERY_MENU_ID.DELIVERY_NOTE),

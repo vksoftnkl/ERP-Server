@@ -10,17 +10,20 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillService = void 0;
+exports.lineLevelOf = lineLevelOf;
 exports.flatTransportOf = flatTransportOf;
 const common_1 = require("@nestjs/common");
 const bill_delivery_helper_1 = require("./bill-delivery.helper");
 const config_1 = require("@nestjs/config");
 const client_1 = require("@prisma/client");
+const source_lines_1 = require("../posting/source-lines");
 const offline_site_1 = require("../../../config/offline-site");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const till_session_id_1 = require("../../till/till-session-id");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const bill_api_types_1 = require("./types/bill-api.types");
 const sale_order_service_1 = require("../sale-order/sale-order.service");
+const bill_snapshot_1 = require("./bill-snapshot");
 const sale_order_api_types_1 = require("../sale-order/types/sale-order-api.types");
 const quotation_service_1 = require("../quotation/quotation.service");
 const quotation_api_types_1 = require("../quotation/types/quotation-api.types");
@@ -51,6 +54,9 @@ const BILL_TYPES = ['CASH', 'CREDIT'];
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'];
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'];
+function lineLevelOf(level, billLevel) {
+    return level === undefined || level === null || level === 0 ? billLevel : level;
+}
 const BILL_ITEM_SRC_DOC_FIELDS = {
     docId: 'sbiSrcDocId',
     accYear: 'sbiSrcDocYear',
@@ -347,6 +353,7 @@ let BillService = class BillService {
     prepareSave(saveBillDto) {
         this.ensureBillValuesAreAllowed(saveBillDto);
         stripServerOwned(saveBillDto);
+        (0, bill_snapshot_1.applyChallanSourceRule)(saveBillDto);
     }
     throwIfDuplicate(error) {
         const duplicate = this.describeDuplicate(error);
@@ -564,6 +571,7 @@ let BillService = class BillService {
             sbStatus: bill_api_types_1.BILL_STATUS_DRAFT,
             sbRevisionNo: 1,
         };
+        await this.resolveLineSources(tx, saveBillDto);
         this.applyOptionalFields(data, saveBillDto);
         data.sbCustName = normalizedCustName;
         data.sbBillDate = billDate;
@@ -646,6 +654,7 @@ let BillService = class BillService {
             sbModifiedOn: now,
             sbModifiedBy: modifiedBy,
         };
+        await this.resolveLineSources(tx, saveBillDto);
         this.applyOptionalFields(data, saveBillDto);
         const billModeNow = saveBillDto.sbBillMode ?? existing.sbBillMode;
         if ((billModeNow ?? '').toUpperCase() === 'POS' ||
@@ -820,6 +829,7 @@ let BillService = class BillService {
         if (inputItems === undefined) {
             return existing;
         }
+        await (0, source_lines_1.resolveSourceLines)(tx, inputItems, source_lines_1.BILL_SOURCE_KEYS, ['SALES_ORDER', 'DELIVERY_CHALLAN']);
         const existingMap = new Map(existing.map((item) => [item.sbiId, item]));
         const now = new Date();
         const resolvedItems = inputItems.map((inputItem, index) => ({
@@ -867,7 +877,7 @@ let BillService = class BillService {
                     sbiItemUnitId: inputItem.sbiItemUnitId ?? existingItem.sbiItemUnitId,
                     sbiGodownId: inputItem.sbiGodownId ?? existingItem.sbiGodownId,
                     sbiStockId: inputItem.sbiStockId ?? existingItem.sbiStockId,
-                    sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+                    sbiPriceLevel: lineLevelOf(inputItem.sbiPriceLevel, scope.sbPriceLevel),
                     sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? existingItem.sbiItemId) ?? existingItem.sbiTaxId,
                     sbiModifiedOn: now,
                     sbiModifiedBy: (0, module_service_utils_1.resolveActor)(inputItem.sbiModifiedBy, actorId),
@@ -907,7 +917,7 @@ let BillService = class BillService {
                 sbiItemUnitId: this.requireItemField(inputItem.sbiItemUnitId, 'sbiItemUnitId'),
                 sbiGodownId: this.requireItemField(inputItem.sbiGodownId, 'sbiGodownId'),
                 sbiStockId: inputItem.sbiStockId ?? null,
-                sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+                sbiPriceLevel: lineLevelOf(inputItem.sbiPriceLevel, scope.sbPriceLevel),
                 sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? '') ?? null,
                 sbiCreatedOn: now,
                 sbiCreatedBy: (0, module_service_utils_1.resolveActor)(inputItem.sbiCreatedBy, actorId),
@@ -1225,7 +1235,11 @@ let BillService = class BillService {
         }
         return txn_status_log_helper_1.TxnStatusEvent.STATUS_CHANGED;
     }
+    async resolveLineSources(tx, dto) {
+        await (0, source_lines_1.resolveSourceLines)(tx, dto.items, source_lines_1.BILL_SOURCE_KEYS, ['SALES_ORDER', 'DELIVERY_CHALLAN']);
+    }
     applyOptionalFields(data, dto) {
+        (0, bill_snapshot_1.applyChallanSourceRule)(dto);
         (0, module_service_utils_1.applyPresentFields)(data, dto, BILL_OPTIONAL_FIELDS, BILL_DATE_TRANSFORMS);
     }
     async resolveGodowns(items = []) {

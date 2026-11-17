@@ -10,5 +10,7 @@ import { PartyModule } from '../../../common/party/party.module';
   imports: [AuditLogModule, AccountLedgerMastersModule, PartyModule],
   controllers: [CustomerController],
   providers: [CustomerService, CustomerExceptionFilter],
+  // The mobile Customers module (src/mobile-modules/customer) saves through it.
+  exports: [CustomerService],
 })
 export class CustomerModule {}

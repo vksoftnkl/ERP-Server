@@ -61,6 +61,8 @@ import { DeliveryCoreModule } from '../delivery/core/delivery-core.module';
     BillVoucherTypeService,
     BillExceptionFilter,
   ],
-  exports: [BillService, BillReadService],
+  // BillLifecycleService: the mobile bill upload (src/mobile-modules/bill) saves
+  // and posts through saveAndPostInTx inside its own transaction.
+  exports: [BillService, BillReadService, BillLifecycleService],
 })
 export class BillModule {}

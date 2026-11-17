@@ -10,6 +10,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenItemsService = void 0;
+exports.openReceivableWhere = openReceivableWhere;
+exports.openBillOrder = openBillOrder;
 exports.creditRouting = creditRouting;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
@@ -22,6 +24,22 @@ const receipt_settings_1 = require("./receipt.settings");
 const ppd_slab_1 = require("./ppd-slab");
 const receipt_utils_1 = require("./receipt.utils");
 const vouchers_errors_1 = require("../vouchers/vouchers.errors");
+function openReceivableWhere(companyId, partyId) {
+    return {
+        ablCompanyId: companyId,
+        ...(partyId !== undefined ? { ablPartyId: partyId } : {}),
+        ablIsDeleted: false,
+        ablIsActive: true,
+        ablDrCr: 'DR',
+        ablBillType: { in: [...receipt_enum_1.RECEIVABLE_BILL_TYPES] },
+        ablPendingAmount: { gt: 0 },
+    };
+}
+function openBillOrder(billSort) {
+    const byBillDate = billSort === receipt_enum_1.ReceiptBillSort.BILL_DATE;
+    const primary = (bill) => (byBillDate ? bill.ablDocDate : (bill.ablDueDate ?? bill.ablDocDate)).getTime();
+    return (left, right) => primary(left) - primary(right) || left.ablDocRefno.localeCompare(right.ablDocRefno);
+}
 let OpenItemsService = class OpenItemsService {
     prisma;
     appSettingValueService;
@@ -95,15 +113,7 @@ let OpenItemsService = class OpenItemsService {
     }
     async loadBills(companyId, partyId, onDate, settings) {
         const bills = await this.prisma.accBillBalance.findMany({
-            where: {
-                ablCompanyId: companyId,
-                ablPartyId: partyId,
-                ablIsDeleted: false,
-                ablIsActive: true,
-                ablDrCr: 'DR',
-                ablBillType: { in: [...receipt_enum_1.RECEIVABLE_BILL_TYPES] },
-                ablPendingAmount: { gt: 0 },
-            },
+            where: openReceivableWhere(companyId, partyId),
             select: {
                 ablId: true,
                 ablAccYear: true,
@@ -154,17 +164,32 @@ let OpenItemsService = class OpenItemsService {
                 tcsPending: (0, receipt_utils_1.toAmount)(tcsByBill.get(`${bill.ablId}|${bill.ablAccYear}`)?.pending ?? receipt_utils_1.ZERO),
             };
         });
-        const sortKeys = new Map(bills.map((bill) => [
-            `${bill.ablId}|${bill.ablAccYear}`,
-            { due: bill.ablDueDate ?? bill.ablDocDate, doc: bill.ablDocDate },
-        ]));
-        const byBillDate = settings.billSort === receipt_enum_1.ReceiptBillSort.BILL_DATE;
-        const primary = (row) => {
-            const keys = sortKeys.get(`${row.billId}|${row.billAccYear}`);
-            return (byBillDate ? keys.doc : keys.due).getTime();
-        };
-        rows.sort((left, right) => primary(left) - primary(right) || left.docRefno.localeCompare(right.docRefno));
+        const sortKeys = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
+        const order = openBillOrder(settings.billSort);
+        rows.sort((left, right) => order(sortKeys.get(`${left.billId}|${left.billAccYear}`), sortKeys.get(`${right.billId}|${right.billAccYear}`)));
         return rows;
+    }
+    async listCompanyOpenBills(companyId) {
+        const settings = await this.loadSettings(companyId);
+        const bills = await this.prisma.accBillBalance.findMany({
+            where: openReceivableWhere(companyId),
+            select: {
+                ablId: true,
+                ablAccYear: true,
+                ablPartyId: true,
+                ablBillType: true,
+                ablDocRefno: true,
+                ablDocDate: true,
+                ablDueDate: true,
+                ablBillAmount: true,
+                ablPendingAmount: true,
+            },
+        });
+        const order = openBillOrder(settings.billSort);
+        return bills.sort((left, right) => left.ablPartyId.localeCompare(right.ablPartyId) ||
+            order(left, right) ||
+            left.ablId.localeCompare(right.ablId) ||
+            left.ablAccYear.localeCompare(right.ablAccYear));
     }
     async loadPostDatedHeld(bills, onDate) {
         if (bills.length === 0) {

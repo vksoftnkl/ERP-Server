@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GST_OUTWARD_SIDE = exports.GST_DOC_NO_MAX_LENGTH = exports.KNOWN_FORMAT_TOKENS = exports.SEQ_VOUCHER_SUFFIX_MAX_LENGTH = exports.SEQ_VOUCHER_PREFIX_MAX_LENGTH = void 0;
+exports.GST_OUTWARD_SIDE = exports.GST_DOC_NO_PATTERN = exports.GST_DOC_NO_MAX_LENGTH = exports.KNOWN_FORMAT_TOKENS = exports.SEQ_VOUCHER_SUFFIX_MAX_LENGTH = exports.SEQ_VOUCHER_PREFIX_MAX_LENGTH = void 0;
 exports.allocateVoucherNumber = allocateVoucherNumber;
 exports.previewNextVoucherNumber = previewNextVoucherNumber;
 exports.allocateVoucherSlno = allocateVoucherSlno;
@@ -8,11 +8,20 @@ exports.buildRefno = buildRefno;
 exports.expandVoucherFormat = expandVoucherFormat;
 exports.scanFormatTokens = scanFormatTokens;
 exports.shortAccYear = shortAccYear;
+exports.compactAccYear = compactAccYear;
+exports.isSharedDeviceCode = isSharedDeviceCode;
+exports.formatHasDeviceToken = formatHasDeviceToken;
+exports.isDeviceWideSeries = isDeviceWideSeries;
+exports.deviceSeriesAnchorBranch = deviceSeriesAnchorBranch;
+exports.findDeviceSeries = findDeviceSeries;
+exports.acquireDeviceSeriesLock = acquireDeviceSeriesLock;
+exports.longestLiveDeviceCode = longestLiveDeviceCode;
 exports.fillVoucherFormatTokens = fillVoucherFormatTokens;
 exports.voucherStartNo = voucherStartNo;
 exports.firstVoucherNumber = firstVoucherNumber;
 exports.formatHasBranchToken = formatHasBranchToken;
 exports.assertCounterRules = assertCounterRules;
+exports.assertGstDocNumber = assertGstDocNumber;
 exports.acquireVoucherScopeLock = acquireVoucherScopeLock;
 const module_shared_utils_1 = require("../utils/module-shared.utils");
 const branch_number_code_helper_1 = require("./branch-number-code.helper");
@@ -27,9 +36,11 @@ const POSTED_REFNO_MAX_LENGTH = 50;
 exports.SEQ_VOUCHER_PREFIX_MAX_LENGTH = 60;
 exports.SEQ_VOUCHER_SUFFIX_MAX_LENGTH = 20;
 const FORMAT_TOKEN = /\{([^{}]*)\}/g;
-exports.KNOWN_FORMAT_TOKENS = ['FY', 'YY', 'BR'];
+exports.KNOWN_FORMAT_TOKENS = ['FY', 'YY', 'BR', 'FYC', 'DV'];
+const KNOWN_FORMAT_TOKENS_TEXT = '{FY}, {YY}, {FYC}, {BR} and {DV}';
 const ACC_YEAR_SHAPE = /^(\d{4})-(\d{4})$/;
 exports.GST_DOC_NO_MAX_LENGTH = 16;
+exports.GST_DOC_NO_PATTERN = /^[A-Za-z0-9/-]+$/;
 exports.GST_OUTWARD_SIDE = 'OUTPUT';
 const VOUCHER_TYPE_FORMAT_SELECT = {
     vchrTypeId: true,
@@ -41,6 +52,7 @@ const VOUCHER_TYPE_FORMAT_SELECT = {
     vchrNumberingMode: true,
     vchrGstSide: true,
     vchrParentId: true,
+    vchrGstDocNo: true,
 };
 function typedNumberFor(voucherType, typedRefno) {
     const mode = voucherType.vchrNumberingMode ?? client_1.VoucherNumberingMode.AUTO;
@@ -102,8 +114,12 @@ async function allocateVoucherNumber(tx, scope) {
         deviceCode,
         periodKey,
     };
-    await acquireVoucherScopeLock(tx, resolvedScope);
-    const sequence = await findOrCreateSequence(tx, resolvedScope, voucherType);
+    const sequence = isDeviceWideSeries(voucherType, deviceCode)
+        ? await findOrCreateDeviceSeries(tx, resolvedScope, voucherType)
+        : await (async () => {
+            await acquireVoucherScopeLock(tx, resolvedScope);
+            return findOrCreateSequence(tx, resolvedScope, voucherType);
+        })();
     const consumed = await tx.accVoucherSeq.update({
         where: {
             id: sequence.id,
@@ -115,6 +131,9 @@ async function allocateVoucherNumber(tx, scope) {
         },
     });
     const refno = buildRefno(consumed);
+    if (voucherType.vchrGstDocNo === true) {
+        assertGstDocNumber(refno, vchrTypeId, 'draw');
+    }
     await tx.accVoucherSeq.update({
         where: {
             id: sequence.id,
@@ -142,33 +161,42 @@ async function previewNextVoucherNumber(client, scope) {
         return { refno: null, code: sequence_error_codes_1.SequenceErrorCode.NUMBER_REQUIRED };
     }
     const periodKey = buildPeriodKey(voucherType.vchrResetFreq, scope.accYear, scope.documentDate);
-    const existing = await client.accVoucherSeq.findFirst({
-        where: {
-            vchrTypeId: scope.vchrTypeId,
-            companyId: scope.companyId,
-            branchId: scope.branchId,
-            accYear: scope.accYear,
-            deviceCode: scope.deviceCode?.trim() || DEFAULT_DEVICE_CODE,
-            periodKey,
-        },
-    });
+    let deviceCode = scope.deviceCode?.trim() || DEFAULT_DEVICE_CODE;
+    if (isSharedDeviceCode(deviceCode) &&
+        formatHasDeviceToken(voucherType.vchrNoPrefix, voucherType.vchrNoSuffix)) {
+        deviceCode = (await longestLiveDeviceCode(client, scope.companyId)) ?? deviceCode;
+    }
+    const previewScope = { ...scope, deviceCode };
+    const existing = isDeviceWideSeries(voucherType, deviceCode)
+        ? await findDeviceSeries(client, { ...scope, deviceCode, periodKey })
+        : await client.accVoucherSeq.findFirst({
+            where: {
+                vchrTypeId: scope.vchrTypeId,
+                companyId: scope.companyId,
+                branchId: scope.branchId,
+                accYear: scope.accYear,
+                deviceCode,
+                periodKey,
+            },
+        });
     try {
         if (existing) {
             if (existing.isDeleted || !existing.isActive) {
                 return { refno: null, code: sequence_error_codes_1.SequenceErrorCode.INACTIVE };
             }
-            return {
-                refno: buildRefno({ ...existing, lastNo: existing.lastNo + BigInt(1) }),
-                code: null,
-            };
+            const next = buildRefno({ ...existing, lastNo: existing.lastNo + BigInt(1) });
+            if (voucherType.vchrGstDocNo === true) {
+                assertGstDocNumber(next, scope.vchrTypeId, 'draw');
+            }
+            return { refno: next, code: null };
         }
-        const format = await expandVoucherFormat(client, scope, {
+        const format = await expandVoucherFormat(client, previewScope, {
             prefix: voucherType.vchrNoPrefix,
             suffix: voucherType.vchrNoSuffix,
             noWidth: voucherType.vchrNoWidth,
         });
         const startNo = voucherStartNo(voucherType);
-        await assertCounterRules(client, scope, voucherType, format, startNo);
+        await assertCounterRules(client, previewScope, voucherType, format, startNo);
         return { refno: firstVoucherNumber(format, startNo), code: null };
     }
     catch (error) {
@@ -230,7 +258,9 @@ async function expandVoucherFormat(tx, scope, format) {
     const values = {
         FY: scope.accYear,
         YY: tokens.includes('YY') ? requireShortAccYear(scope.accYear, scope.vchrTypeId) : '',
+        FYC: tokens.includes('FYC') ? requireCompactAccYear(scope.accYear, scope.vchrTypeId) : '',
         BR: tokens.includes('BR') ? await requireBranchNumberCode(tx, scope.branchId) : '',
+        DV: tokens.includes('DV') ? requireDeviceCode(scope.deviceCode, scope.vchrTypeId) : '',
     };
     const expanded = {
         prefix: fillFormatTokens(format.prefix, values),
@@ -243,7 +273,7 @@ async function expandVoucherFormat(tx, scope, format) {
 function formatTokens(text, part, vchrTypeId) {
     const { names, unknown } = scanFormatTokens(text);
     if (unknown !== undefined) {
-        const message = `The number ${part} "${text}" of voucher type ${vchrTypeId} holds an unknown token "${unknown}". Only {FY}, {YY} and {BR} are expanded.`;
+        const message = `The number ${part} "${text}" of voucher type ${vchrTypeId} holds an unknown token "${unknown}". Only ${KNOWN_FORMAT_TOKENS_TEXT} are expanded.`;
         (0, module_shared_utils_1.throwUnprocessable)(message, [
             {
                 field: 'vchrTypeId',
@@ -286,6 +316,118 @@ function requireShortAccYear(accYear, vchrTypeId) {
         ]);
     }
     return yy;
+}
+function compactAccYear(accYear) {
+    const m = ACC_YEAR_SHAPE.exec(accYear.trim());
+    return m ? `${m[1].slice(2)}${m[2].slice(2)}` : null;
+}
+function requireCompactAccYear(accYear, vchrTypeId) {
+    const fyc = compactAccYear(accYear);
+    if (fyc === null) {
+        const message = `Voucher type ${vchrTypeId} prints {FYC}, but the accounting year "${accYear}" is not shaped NNNN-NNNN.`;
+        (0, module_shared_utils_1.throwUnprocessable)(message, [
+            {
+                field: 'vchrTypeId',
+                code: sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+                message,
+                params: { token: 'FYC' },
+            },
+        ]);
+    }
+    return fyc;
+}
+function isSharedDeviceCode(deviceCode) {
+    const code = deviceCode?.trim() ?? '';
+    return code === '' || code.toUpperCase() === DEFAULT_DEVICE_CODE;
+}
+function requireDeviceCode(deviceCode, vchrTypeId) {
+    if (isSharedDeviceCode(deviceCode)) {
+        const message = `Voucher type ${vchrTypeId} prints {DV}, the device code, but this document is numbered on the shared ${DEFAULT_DEVICE_CODE} counter, not per device.`;
+        (0, module_shared_utils_1.throwUnprocessable)(message, [
+            {
+                field: 'vchrTypeId',
+                code: sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN,
+                message,
+                rule: sequence_error_codes_1.SequenceRefusalRule.DEVICE_COUNTER,
+                params: { token: 'DV' },
+            },
+        ]);
+    }
+    return deviceCode.trim();
+}
+function formatHasDeviceToken(prefix, suffix) {
+    return [prefix, suffix].some((t) => scanFormatTokens(t).names.includes('DV'));
+}
+function isDeviceWideSeries(voucherType, deviceCode) {
+    if (voucherType.vchrGstDocNo !== true) {
+        return false;
+    }
+    if (deviceCode !== undefined && isSharedDeviceCode(deviceCode)) {
+        return false;
+    }
+    const prefix = voucherType.vchrNoPrefix ?? null;
+    const suffix = voucherType.vchrNoSuffix ?? null;
+    return formatHasDeviceToken(prefix, suffix) && !formatHasBranchToken(prefix, suffix);
+}
+const DEVICE_SERIES_LOCK_BRANCH = '*device-series*';
+async function deviceSeriesAnchorBranch(client, companyId) {
+    const rows = await client.$queryRaw `
+    SELECT br_id FROM public.branch_master
+     WHERE br_comp_id = ${companyId}::uuid AND br_is_deleted = false
+     ORDER BY br_created_on ASC NULLS LAST, br_id ASC
+     LIMIT 1`;
+    return Array.isArray(rows) && rows[0]?.br_id ? rows[0].br_id : null;
+}
+async function findDeviceSeries(client, scope) {
+    return client.accVoucherSeq.findFirst({
+        where: {
+            vchrTypeId: scope.vchrTypeId,
+            companyId: scope.companyId,
+            accYear: scope.accYear,
+            deviceCode: scope.deviceCode,
+            periodKey: scope.periodKey,
+        },
+        orderBy: [{ createdOn: 'asc' }, { id: 'asc' }],
+    });
+}
+async function acquireDeviceSeriesLock(tx, scope) {
+    await acquireVoucherScopeLock(tx, { ...scope, branchId: DEVICE_SERIES_LOCK_BRANCH });
+}
+async function findOrCreateDeviceSeries(tx, scope, voucherType) {
+    await acquireDeviceSeriesLock(tx, scope);
+    const existing = await findDeviceSeries(tx, scope);
+    if (existing) {
+        if (existing.isDeleted || !existing.isActive) {
+            const message = `Voucher sequence ${existing.id} for voucher type ${scope.vchrTypeId} (device ${scope.deviceCode}) is inactive. Reactivate it before creating documents in ${scope.accYear}.`;
+            (0, module_shared_utils_1.throwBadRequest)(message, [
+                { field: 'vchrTypeId', code: sequence_error_codes_1.SequenceErrorCode.INACTIVE, message },
+            ]);
+        }
+        return existing;
+    }
+    const anchor = await deviceSeriesAnchorBranch(tx, scope.companyId);
+    if (!anchor) {
+        const message = `Company ${scope.companyId} has no live branch to file device ${scope.deviceCode}'s series under.`;
+        (0, module_shared_utils_1.throwBadRequest)(message, [
+            { field: 'companyId', code: sequence_error_codes_1.SequenceErrorCode.BRANCH_NOT_FOUND, message },
+        ]);
+    }
+    return findOrCreateSequence(tx, { ...scope, branchId: anchor }, voucherType);
+}
+async function longestLiveDeviceCode(client, companyId) {
+    const rows = await client.$queryRaw `
+    SELECT btrim(dev_code) AS dev_code
+      FROM fixed.device_master
+     WHERE dev_is_deleted = false
+       AND dev_is_active = true
+       AND NULLIF(btrim(dev_code), '') IS NOT NULL
+       AND (${companyId}::uuid IS NULL
+            OR dev_company_id IS NULL
+            OR dev_company_id = ${companyId}::uuid)
+     ORDER BY length(btrim(dev_code)) DESC, upper(btrim(dev_code)) DESC
+     LIMIT 1`;
+    const code = Array.isArray(rows) ? rows[0]?.dev_code : undefined;
+    return typeof code === 'string' && code.trim() ? code.trim() : null;
 }
 function fillVoucherFormatTokens(text, values) {
     return fillFormatTokens(text, values);
@@ -422,18 +564,22 @@ function formatHasBranchToken(prefix, suffix) {
     return [prefix, suffix].some((t) => scanFormatTokens(t).names.includes('BR'));
 }
 async function assertCounterRules(tx, scope, voucherType, format, startNo) {
+    const gstDocNo = voucherType.vchrGstDocNo === true;
+    if (gstDocNo) {
+        assertGstDocNumber(firstVoucherNumber(format, startNo), scope.vchrTypeId, 'counter');
+    }
     if (voucherType.vchrGstSide !== exports.GST_OUTWARD_SIDE) {
         return;
     }
     const first = firstVoucherNumber(format, startNo);
-    if (first.length > exports.GST_DOC_NO_MAX_LENGTH) {
+    if (!gstDocNo && first.length > exports.GST_DOC_NO_MAX_LENGTH) {
         const message = `Voucher type ${scope.vchrTypeId} would number GST documents at this branch like "${first}" (${first.length} characters); a GST invoice number may have at most ${exports.GST_DOC_NO_MAX_LENGTH}.`;
         (0, module_shared_utils_1.throwUnprocessable)(message, [
             {
                 field: 'vchrTypeId',
                 code: sequence_error_codes_1.SequenceErrorCode.REFNO_TOO_LONG,
                 message,
-                rule: 'GST16',
+                rule: sequence_error_codes_1.SequenceRefusalRule.GST16,
                 params: { sample: first, len: String(first.length) },
             },
         ]);
@@ -460,6 +606,35 @@ async function assertCounterRules(tx, scope, voucherType, format, startNo) {
         const message = `Voucher type ${scope.vchrTypeId} has no {BR} in its number, and ${row.sharing} active branches of this company share this branch's GSTIN: their numbers would repeat.`;
         (0, module_shared_utils_1.throwUnprocessable)(message, [
             { field: 'vchrTypeId', code: sequence_error_codes_1.SequenceErrorCode.BR_REQUIRED, message },
+        ]);
+    }
+}
+function assertGstDocNumber(sample, vchrTypeId, when) {
+    const at = when === 'counter'
+        ? 'would number its first document here like'
+        : 'would number the next document';
+    if (sample.length > exports.GST_DOC_NO_MAX_LENGTH) {
+        const message = `Voucher type ${vchrTypeId} ${at} "${sample}" (${sample.length} characters); a GST document number may have at most ${exports.GST_DOC_NO_MAX_LENGTH}.`;
+        (0, module_shared_utils_1.throwUnprocessable)(message, [
+            {
+                field: 'vchrTypeId',
+                code: sequence_error_codes_1.SequenceErrorCode.REFNO_TOO_LONG,
+                message,
+                rule: sequence_error_codes_1.SequenceRefusalRule.GST16_DEVICE,
+                params: { sample, len: String(sample.length) },
+            },
+        ]);
+    }
+    if (!exports.GST_DOC_NO_PATTERN.test(sample)) {
+        const message = `Voucher type ${vchrTypeId} ${at} "${sample}"; a GST document number may hold only letters, digits, - and /.`;
+        (0, module_shared_utils_1.throwUnprocessable)(message, [
+            {
+                field: 'vchrTypeId',
+                code: sequence_error_codes_1.SequenceErrorCode.REFNO_TOO_LONG,
+                message,
+                rule: sequence_error_codes_1.SequenceRefusalRule.GST16_CHARS,
+                params: { sample },
+            },
         ]);
     }
 }

@@ -171,6 +171,7 @@ export declare function lineFactsOf(r: LineRow): BillLineFacts;
 export declare class SaleReturnBillReader {
     billHeader(c: Client, sbId: string, accYear: string): Promise<BillHeaderFacts | null>;
     billLines(c: Client, bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>): Promise<BillLineView[]>;
+    lockBillHeader(tx: Client, bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>): Promise<number>;
     lockBillLines(tx: Client, bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>): Promise<number>;
     lockBillCharges(tx: Client, bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>): Promise<number>;
     priorBack(c: Client, bill: Pick<BillHeaderFacts, 'sbId' | 'accYear'>, excludeSrId: string | null): Promise<Map<string, PriorBack>>;

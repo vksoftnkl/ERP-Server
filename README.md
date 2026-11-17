@@ -99,6 +99,19 @@ HTTPS_KEY_PATH=certs/server.key
 3. Restart the app and use:
 - `https://localhost:3010/api/v1`
 
+### Phone port (VKSMAN salesman app)
+
+The salesman phones can't trust a self-made certificate, so they sync over plain HTTP on a
+second port:
+
+```bash
+MOBILE_HTTP_PORT=3012
+```
+
+Only `GET /api/v1/health`, `POST /api/v1/auth/login` and `/api/v1/mobile/*` answer there
+(`PHONE_HTTP_ROUTES` in `src/main.ts`); every other route is a 404. Leave it empty or `0` to
+turn it off. Allow the port through the server PC's firewall (`sudo ufw allow 3012/tcp`).
+
 ## API endpoints
 
 - `GET /api/v1/health`

@@ -49,6 +49,7 @@ export interface SalesStockResult {
     svhId: string | null;
     rowsPosted: number;
     costByLine: Map<string, number>;
+    rateByLine?: Map<string, Prisma.Decimal>;
     lotByLine: Map<string, string | null>;
     cogsTotal: number;
 }

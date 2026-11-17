@@ -32,6 +32,7 @@ export interface VoucherTypeCounter {
     deviceCode: string;
     lastNo: string;
     lastRefno: string | null;
+    allBranches: boolean;
 }
 export interface VoucherTypePrintDesign {
     ppoId: string;

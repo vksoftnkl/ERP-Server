@@ -2670,6 +2670,15 @@ model AccVoucherHeader {
   avhCreatedBy           String?   @db.VarChar(50) @map("avh_created_by")
   avhModifiedOn          DateTime? @db.Timestamptz(6) @map("avh_modified_on")
   avhModifiedBy          String?   @db.VarChar(50) @map("avh_modified_by")
+  // ── Mobile upload (20261118120000_mobile_bills_receipts) ────────────────
+  /// The phone's own id for a receipt uploaded from the mobile app
+  /// (/mobile/receipts/create). A resend with the same (company, client uuid)
+  /// answers the receipt already saved. NULL on everything else, including the
+  /// receipt's own PDC and reversal vouchers: stamping it on a child would
+  /// collide with the parent. The year is in ux_avh_client_uuid only because a
+  /// unique index on a partitioned table must hold the partition key.
+  /// Not partial: a cancelled receipt keeps its uuid.
+  avhClientUuid          String?   @db.Uuid @map("avh_client_uuid")
   // Relations
   company                Company         @relation(fields: [avhCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_company")
   branch                 BranchMaster    @relation(fields: [avhBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_branch")
@@ -2689,6 +2698,7 @@ model AccVoucherHeader {
   pdcBounces             AccPdcRegister[]   @relation("PdcBounceVoucher")
   pdcCharges             AccPdcRegister[]   @relation("PdcChargeVoucher")
   @@id([avhVoucherId, avhAccYear], map: "pk_acc_voucher_header")
+  @@unique([avhCompanyId, avhClientUuid, avhAccYear], map: "ux_avh_client_uuid")
   @@map("acc_voucher_header")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migration
@@ -4492,6 +4502,7 @@ model DeviceMaster {
 
   txnStatusLogs   TxnStatusLog[]
   saleOrders      SaleOrder[]
+  customerVisits  CustomerVisit[] @relation("CustomerVisitDevice") // check-ins from this phone (/mobile/visits)
   stockVouchers   StockVoucher[] @relation("StockVoucherDevice")
   txnHolds        TxnHold[]     @relation("TxnHoldDevice")      // the till that parked the work
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
@@ -11330,6 +11341,7 @@ model Customer {
   saleQuotations       SaleQuotation[]
   saleBills            SaleBill[]
   saleOrders           SaleOrder[]
+  visits               CustomerVisit[] @relation("CustomerVisitCustomer")
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustomer")
   loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustomer")
@@ -11405,6 +11417,54 @@ model CustGroup {
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
   @@index([cgrCompanyId, cgrIsActive], map: "idx_cgr_active")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/customerVisit.prisma -----
+/// A salesman's check-in at a customer, uploaded from the mobile app
+/// (/mobile/visits/create; migration 20261118110000_mobile_orders_visits).
+///
+/// Insert-only. The phone stamps every check-in with its own uuid
+/// (cvClientUuid); a resend of the same (company, client uuid) answers the row
+/// already saved instead of writing a second one (ux_cv_client_uuid).
+/// The server fills the branch and the device from the registered phone, and
+/// cvUserId from the login when the upload carries a token.
+model CustomerVisit {
+  cvId           String    @id(map: "pk_customer_visit") @default(dbgenerated("uuidv7()")) @db.Uuid @map("cv_id")
+  cvCompanyId    String    @db.Uuid                @map("cv_company_id")
+  cvBranchId     String    @db.Uuid                @map("cv_branch_id")
+  cvDeviceId     String    @db.Uuid                @map("cv_device_id")
+  cvCustId       String    @db.Uuid                @map("cv_cust_id")
+  /// public.employee_master, as so_salesman_id names it.
+  cvSalesmanId   String    @db.Uuid                @map("cv_salesman_id")
+  cvUserId       String?   @db.Uuid                @map("cv_user_id")
+  /// shopClosed | noOrder | shopBusy | ownerAway | paymentPending | nextVisit
+  /// (ck_cv_reason_code): the phone's own words.
+  cvReasonCode   String    @db.VarChar(20)         @map("cv_reason_code")
+  cvRemarks      String?   @db.VarChar(500)        @map("cv_remarks")
+  cvLatitude     Decimal?  @db.Decimal(9, 6)       @map("cv_latitude")
+  cvLongitude    Decimal?  @db.Decimal(9, 6)       @map("cv_longitude")
+  /// Metres, as the phone reports it.
+  cvGpsAccuracy  Decimal?  @db.Decimal(10, 2)      @map("cv_gps_accuracy")
+  /// When the salesman checked in, by the phone's clock.
+  cvVisitAt      DateTime  @db.Timestamptz(6)      @map("cv_visit_at")
+  cvClientUuid   String    @db.Uuid                @map("cv_client_uuid")
+  cvSyncDate     DateTime? @db.Timestamptz(6)      @map("cv_sync_date")
+  cvCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("cv_created_on")
+  cvCreatedBy    String    @db.VarChar(50)         @map("cv_created_by")
+
+  device         DeviceMaster   @relation("CustomerVisitDevice", fields: [cvDeviceId], references: [devId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_device")
+  customer       Customer       @relation("CustomerVisitCustomer", fields: [cvCustId], references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_cust")
+  salesman       EmployeeMaster @relation("CustomerVisitSalesman", fields: [cvSalesmanId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_salesman")
+  // No FK for company / branch, as on sale_order.
+
+  @@unique([cvCompanyId, cvClientUuid], map: "ux_cv_client_uuid")
+  @@index([cvCustId, cvVisitAt(sort: Desc)], map: "ix_cv_cust_time")
+  @@index([cvSalesmanId, cvVisitAt(sort: Desc)], map: "ix_cv_salesman_time")
+  // DB-only: ix_sync_pending_customer_visit (partial). CHECK constraints
+  // (DB-only): ck_cv_reason_code, ck_cv_position, ck_cv_latitude,
+  // ck_cv_longitude, ck_cv_gps_accuracy.
+  @@map("customer_visit")
   @@schema("sales")
 }
 
@@ -11533,6 +11593,7 @@ model EmployeeMaster {
   saleBillsDriven      SaleBill[]                @relation("SaleBillDriver")
   saleBillsSupervised  SaleBill[]                @relation("SaleBillSupervisor")
   saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
+  customerVisits       CustomerVisit[]      @relation("CustomerVisitSalesman")
   txnHolds             TxnHold[]
   @@index([empCompanyId],    name: "idx_emp_company")
   @@index([empIsActive],     name: "idx_emp_active")
@@ -14008,6 +14069,17 @@ model SaleBill {
   // ── Temp credit (20260922000000) ────────────────────────────────────────
   tempCredits        AccTempCredit[] @relation("TempCreditBill")
 
+  // ── Mobile upload (20261118120000_mobile_bills_receipts) ────────────────
+  /// The phone's own id for a bill uploaded from the mobile app
+  /// (/mobile/bills/create). A resend with the same (company, client uuid)
+  /// answers the bill already saved; NULL on desktop bills. The year is in
+  /// ux_sb_client_uuid only because a unique index on a partitioned table must
+  /// hold the partition key: the server checks across years under a lock.
+  /// Not partial: a cancelled bill keeps its uuid. Set only on create, never
+  /// copied by amend / void / retender (they update the same row).
+  sbClientUuid       String?   @db.Uuid @map("sb_client_uuid")
+
+  @@unique([sbCompanyId, sbClientUuid, sbAccYear], map: "ux_sb_client_uuid")
   @@map("sale_bill")
   @@schema("sales")
 }
@@ -15387,7 +15459,15 @@ model SaleOrder {
   /// Who last held or released, as text like soModifiedBy.
   soDeliveryHoldBy     String?   @db.VarChar(50) @map("so_delivery_hold_by")
   soDeliveryHoldOn     DateTime? @db.Timestamptz(6) @map("so_delivery_hold_on")
+  // ── Mobile upload (20261118110000_mobile_orders_visits) ─────────────────
+  /// The phone's own id for an order uploaded from the mobile app
+  /// (/mobile/orders/create). A resend with the same (company, client uuid)
+  /// answers the order already saved; NULL on desktop orders. The year is in
+  /// ux_so_client_uuid only because a unique index on a partitioned table must
+  /// hold the partition key: the server checks across years under a lock.
+  soClientUuid         String?   @db.Uuid @map("so_client_uuid")
 
+  @@unique([soCompanyId, soClientUuid, soAccYear], map: "ux_so_client_uuid")
   @@map("sale_order")
   @@schema("sales")
 }

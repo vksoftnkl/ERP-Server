@@ -67,3 +67,20 @@ export declare function checkDeliveryNote(header: RuleHeader, lines: readonly Ru
 export declare function noteTotals(lines: readonly RuleLine[]): NoteTotals;
 export declare function noteLoad(header: Pick<RuleHeader, 'capacityKg'>, totals: NoteTotals): NoteLoad;
 export declare function firstRefusal(notes: readonly DeliveryNote[]): DeliveryNote | null;
+export declare function duplicateLineIds(lines: readonly {
+    sdniId?: string | null;
+}[]): DeliveryNote | null;
+export declare function yearChangedNote(noteYear: string, yearNow: string, refno: string | null, draft: boolean): DeliveryNote | null;
+export interface UndoLine {
+    noteLineNo: number;
+    field: string;
+    billRefno: string;
+    billLineNo: number;
+    unitName: string;
+    factor: Prisma.Decimal;
+    givenBase: Prisma.Decimal;
+    removeBase: Prisma.Decimal;
+    takenBase: Prisma.Decimal;
+    returnRefnos: readonly string[];
+}
+export declare function undoBelowReturned(lines: readonly UndoLine[]): DeliveryNote | null;

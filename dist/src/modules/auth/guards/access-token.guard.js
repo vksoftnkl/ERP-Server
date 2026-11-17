@@ -13,6 +13,7 @@ exports.AccessTokenGuard = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const public_decorator_1 = require("../../../common/decorators/public.decorator");
+const optional_auth_decorator_1 = require("../../../common/decorators/optional-auth.decorator");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const auth_epoch_service_1 = require("../../app-version/services/auth-epoch.service");
 const auth_session_service_1 = require("../auth-session.service");
@@ -45,6 +46,9 @@ let AccessTokenGuard = class AccessTokenGuard {
         }
         const accessToken = this.extractBearerToken(request);
         if (!accessToken) {
+            if (!request.headers.authorization && this.isOptionalAuth(context)) {
+                return true;
+            }
             throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Missing or invalid Authorization header', 'authorization', auth_error_codes_1.AuthErrorCode.AUTHORIZATION_MISSING));
         }
         request.user = this.tokenService.verifyAccessToken(accessToken);
@@ -56,6 +60,12 @@ let AccessTokenGuard = class AccessTokenGuard {
         this.requestContextService.setBranchId(request.user.branch_id);
         this.requestContextService.setDeviceId(request.user.device_id);
         return true;
+    }
+    isOptionalAuth(context) {
+        return (this.reflector.getAllAndOverride(optional_auth_decorator_1.IS_OPTIONAL_AUTH_KEY, [
+            context.getHandler(),
+            context.getClass(),
+        ]) === true);
     }
     extractBearerToken(request) {
         const authorizationHeader = request.headers.authorization;

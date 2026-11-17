@@ -44,6 +44,7 @@ exports.default = () => ({
             keyPath: process.env.HTTPS_KEY_PATH ?? '',
             passphrase: process.env.HTTPS_PASSPHRASE ?? '',
         },
+        mobileHttpPort: parseNumber(process.env.MOBILE_HTTP_PORT, 0),
     },
     database: {
         url: buildDatabaseUrl(),

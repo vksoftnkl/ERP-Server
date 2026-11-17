@@ -45,6 +45,20 @@ let GodownPositionService = class GodownPositionService {
     async export(q) {
         const rights = await this.assertRight('view', 'open the Godown Stock Position');
         this.assertAlso(rights, 'export', 'export the Godown Stock Position');
+        return this.exportPayload(q);
+    }
+    async printData(q, userId) {
+        const rights = await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId,
+            menuId: godown_position_types_1.GODOWN_POSITION_MENU_ID,
+            right: 'view',
+            codePrefix: godown_position_types_1.GODOWN_POSITION_CODE_PREFIX,
+            action: 'open the Godown Stock Position',
+        });
+        this.assertAlso(rights, 'print', 'print the Godown Stock Position');
+        return this.exportPayload(q);
+    }
+    async exportPayload(q) {
         const built = await this.build(q);
         return {
             head: built.head,

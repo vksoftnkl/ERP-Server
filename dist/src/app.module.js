@@ -83,6 +83,7 @@ const sale_loading_charges_module_1 = require("./modules/sales/sale-loading-char
 const city_module_1 = require("./modules/sales/city/city.module");
 const state_module_1 = require("./modules/sales/state/state.module");
 const customer_module_1 = require("./modules/sales/customer/customer.module");
+const mobile_modules_module_1 = require("./mobile-modules/mobile-modules.module");
 const customer_group_module_1 = require("./modules/sales/customer-group/customer-group.module");
 const sale_agent_module_1 = require("./modules/sales/sale-agent/sale-agent.module");
 const quotation_module_1 = require("./modules/sales/quotation/quotation.module");
@@ -267,6 +268,7 @@ exports.AppModule = AppModule = __decorate([
             sale_freight_charges_module_1.SaleFreightChargeModule,
             sale_loading_charges_module_1.SaleLoadingChargeModule,
             customer_module_1.CustomerModule,
+            mobile_modules_module_1.MobileModulesModule,
             customer_group_module_1.CustomerGroupModule,
             sale_agent_module_1.SaleAgentModule,
             quotation_module_1.QuotationModule,

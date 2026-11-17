@@ -35,7 +35,7 @@ exports.ReceiptModule = ReceiptModule = __decorate([
             open_items_service_1.OpenItemsService,
             receipt_exception_filter_1.ReceiptExceptionFilter,
         ],
-        exports: [open_items_service_1.OpenItemsService],
+        exports: [open_items_service_1.OpenItemsService, receipt_service_1.ReceiptService, receipt_posting_service_1.ReceiptPostingService],
     })
 ], ReceiptModule);
 //# sourceMappingURL=receipt.module.js.map

@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
+import { IS_OPTIONAL_AUTH_KEY } from '../../../common/decorators/optional-auth.decorator';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuthEpochService } from '../../app-version/services/auth-epoch.service';
 import { AuthSessionService } from '../auth-session.service';
@@ -33,6 +34,11 @@ export class AccessTokenGuard implements CanActivate {
     }
     const accessToken = this.extractBearerToken(request);
     if (!accessToken) {
+      // @OptionalAuth: no Authorization header at all = an anonymous call. A header
+      // that is there but malformed is still refused below, as on any route.
+      if (!request.headers.authorization && this.isOptionalAuth(context)) {
+        return true;
+      }
       throw new UnauthorizedException(
         authErrorBody(
           'Missing or invalid Authorization header',
@@ -53,6 +59,14 @@ export class AccessTokenGuard implements CanActivate {
     this.requestContextService.setBranchId(request.user.branch_id);
     this.requestContextService.setDeviceId(request.user.device_id);
     return true;
+  }
+  private isOptionalAuth(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean>(IS_OPTIONAL_AUTH_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
   private extractBearerToken(request: Request): string | null {
     const authorizationHeader = request.headers.authorization;

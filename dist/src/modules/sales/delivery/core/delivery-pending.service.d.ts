@@ -72,6 +72,10 @@ export declare class DeliveryPendingService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     linesByKeys(client: Client | null, keys: readonly BillLineKey[]): Promise<BillLineFacts[]>;
+    returnsTakenByLine(client: Client | null, keys: readonly BillLineKey[]): Promise<Map<string, {
+        takenBase: Prisma.Decimal;
+        refnos: string[];
+    }>>;
     linesOfBills(client: Client | null, bills: readonly BillKey[]): Promise<BillLineFacts[]>;
     private facts;
     bndByHolding(client: Client | null, scope: {

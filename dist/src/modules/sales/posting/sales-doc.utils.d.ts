@@ -54,6 +54,6 @@ export declare const SALES_MENU_ID: {
     readonly SALES_ORDER: 11;
     readonly SALE_RETURN: 13;
     readonly DELIVERY_CHALLAN: 182;
-    readonly DC_RETURN: 182;
+    readonly DC_RETURN: 251;
     readonly TEMP_CREDIT: 12;
 };

@@ -101,6 +101,7 @@ model Customer {
   saleQuotations       SaleQuotation[]
   saleBills            SaleBill[]
   saleOrders           SaleOrder[]
+  visits               CustomerVisit[] @relation("CustomerVisitCustomer")
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustomer")
   loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustomer")

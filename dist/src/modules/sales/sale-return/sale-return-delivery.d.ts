@@ -15,6 +15,7 @@ export interface NotTakenRow {
     factor: Dec;
     typed: Dec | null;
     unitName: string | null;
+    kept?: Dec | null;
 }
 export interface NotTakenBillLine {
     billItemId: string;
@@ -84,6 +85,14 @@ export declare function notTakenRowsOf(items: readonly DocRow[], money: {
         billAccYear: string | null;
     }[];
 }, unitNames: ReadonlyMap<string, string>): NotTakenRow[];
+export declare function withKeptNotTaken(rows: readonly NotTakenRow[], posted: ReadonlyMap<string, {
+    qty: Dec;
+    factor: Dec;
+}>): NotTakenRow[];
+export declare function postedNotTakenOf(items: readonly DocRow[]): Map<string, {
+    qty: Dec;
+    factor: Dec;
+}>;
 export declare function loadNotTakenLines(tx: Prisma.TransactionClient, pending: Pick<DeliveryPendingService, 'linesByKeys'>, rows: readonly NotTakenRow[], srId: string | null): Promise<Map<string, NotTakenBillLine>>;
 export declare function returnEventsOf(tx: Prisma.TransactionClient, srId: string): Promise<{
     live: Map<string, {

@@ -17,6 +17,7 @@ export declare function refuse(ctx: SalesGuardContext, code: string, message: st
     line?: number;
     statutory?: SalesGuardContext['refusals'][number]['statutory'];
     params?: SalesMessageParams;
+    rule?: string;
 }): void;
 export declare function info(ctx: SalesGuardContext, code: string, message: string, opts?: {
     field?: string;

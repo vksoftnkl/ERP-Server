@@ -38,6 +38,7 @@ export declare class SequenceService {
     private acquireLastNoScopeLock;
     private getNextLastNo;
     private buildLastNoScopeKey;
+    private deviceWideTypeIds;
     private toPayload;
     private normalizeUuid;
     private normalizeOptionalNullableUuid;

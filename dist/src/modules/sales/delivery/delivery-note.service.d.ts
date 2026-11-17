@@ -100,6 +100,11 @@ export declare class DeliveryNoteService {
     goodsBack(dto: GoodsBackDto): Promise<Record<string, unknown>>;
     private keysOf;
     private lockNote;
+    private findForWrite;
+    private lineIdFinding;
+    private frozenAt;
+    private assertNotFrozen;
+    private assertUndoAboveReturned;
     private lockBills;
     private assertDraft;
     private resolve;

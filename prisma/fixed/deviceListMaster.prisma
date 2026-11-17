@@ -31,6 +31,7 @@ model DeviceMaster {
 
   txnStatusLogs   TxnStatusLog[]
   saleOrders      SaleOrder[]
+  customerVisits  CustomerVisit[] @relation("CustomerVisitDevice") // check-ins from this phone (/mobile/visits)
   stockVouchers   StockVoucher[] @relation("StockVoucherDevice")
   txnHolds        TxnHold[]     @relation("TxnHoldDevice")      // the till that parked the work
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease

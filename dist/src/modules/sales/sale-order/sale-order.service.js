@@ -19,6 +19,7 @@ const till_session_id_1 = require("../../till/till-session-id");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
+const order_challan_draws_1 = require("./order-challan-draws");
 const sale_order_error_codes_1 = require("./types/sale-order-error-codes");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_errors_1 = require("../posting/sales.errors");
@@ -1120,6 +1121,7 @@ let SaleOrderService = class SaleOrderService {
                 amt: total.amt.plus(dec(item.sbiNetAmt)),
             });
         }
+        const challanByLineNo = await (0, order_challan_draws_1.challanDrawsOf)(tx, soAccYear, lines);
         const settledLines = lines.map((line) => {
             const stored = {
                 line,
@@ -1130,12 +1132,15 @@ let SaleOrderService = class SaleOrderService {
                 billedAmt: roundAmount(line.soiBilledAmt),
                 changed: false,
             };
-            if (!lineNos.has(line.soiLineNo) && !billedByLineNo.has(line.soiLineNo)) {
+            if (!lineNos.has(line.soiLineNo) &&
+                !billedByLineNo.has(line.soiLineNo) &&
+                !challanByLineNo.has(line.soiLineNo)) {
                 return stored;
             }
             const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: ZERO, amt: ZERO };
-            const delivered = roundQty(billed.qty);
-            const billedAmt = roundAmount(billed.amt);
+            const viaChallans = challanByLineNo.get(line.soiLineNo);
+            const delivered = roundQty(billed.qty.plus(viaChallans?.qty ?? ZERO));
+            const billedAmt = roundAmount(billed.amt.plus(viaChallans?.billedAmt ?? ZERO));
             const cancelled = stored.cancelled;
             let netQty = stored.netQty;
             let pending = roundQty(netQty.minus(delivered).minus(cancelled));
@@ -1181,7 +1186,7 @@ let SaleOrderService = class SaleOrderService {
                 originalRecord: this.toItemPayload(line),
                 modifiedRecord: this.toItemPayload(updated),
                 userId: actor,
-                notes: 'Order line fulfilment recomputed from its bills',
+                notes: 'Order line fulfilment recomputed from its bills and challans',
             }, tx);
             fulfilledLines.push({
                 soiId: line.soiId,
@@ -1285,7 +1290,7 @@ let SaleOrderService = class SaleOrderService {
             originalRecord: auditRecordOf(this.toPayload(order)),
             modifiedRecord: auditRecordOf(this.toPayload({ ...order, ...headerChanges })),
             userId: actor,
-            notes: `Order fulfilment recomputed from its bills (${fulfilledLines.length} line(s))`,
+            notes: `Order fulfilment recomputed from its bills and challans (${fulfilledLines.length} line(s))`,
         }, tx);
         return {
             soId,

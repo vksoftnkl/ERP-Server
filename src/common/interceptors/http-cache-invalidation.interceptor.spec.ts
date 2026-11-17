@@ -53,6 +53,27 @@ describe('HttpCacheInvalidationInterceptor', () => {
   });
 
   it.each([
+    ['POST', '/api/v1/mobile/customers/create'],
+    ['PUT', '/api/v1/mobile/customers/update'],
+    ['DELETE', '/api/v1/mobile/customers/delete?cusId=x'],
+  ])('announces a mobile %s %s as the desktop resource', async (method, url) => {
+    await firstValueFrom(interceptor.intercept(contextFor(method, url), handlerReturning(null)));
+
+    expect(invalidatePattern).toHaveBeenCalledWith('*');
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: 'customers', method }),
+    );
+  });
+
+  it('announces nothing for a bare /mobile write', async () => {
+    await firstValueFrom(
+      interceptor.intercept(contextFor('POST', '/api/v1/mobile'), handlerReturning(null)),
+    );
+
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it.each([
     '/api/v1/bills/validate',
     '/api/v1/print-render/preview',
     '/api/v1/gst/company-credentials/verify',

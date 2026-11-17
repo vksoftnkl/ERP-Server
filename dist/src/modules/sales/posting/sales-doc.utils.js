@@ -138,7 +138,7 @@ exports.SALES_MENU_ID = {
     SALES_ORDER: 11,
     SALE_RETURN: 13,
     DELIVERY_CHALLAN: 182,
-    DC_RETURN: 182,
+    DC_RETURN: 251,
     TEMP_CREDIT: 12,
 };
 //# sourceMappingURL=sales-doc.utils.js.map

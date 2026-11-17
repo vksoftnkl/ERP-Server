@@ -1,14 +1,17 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { BillReadService } from '../bill/bill-read.service';
+import { SaleOrderService } from '../sale-order/sale-order.service';
+import { StockReservationService } from '../posting/stock-reservation.service';
 import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
 import { DocRegisterService } from '../../../common/posting/doc-register.service';
 import { GstGatewayService } from '../posting/gst-gateway.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
-import { type DocKeys, type DocSpec } from '../posting/sales-doc-store';
+import { type DocKeys, type DocRow, type DocSpec } from '../posting/sales-doc-store';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
@@ -28,14 +31,26 @@ export declare class DeliveryChallanService {
     private readonly fulfilment;
     private readonly gst;
     private readonly billRead;
+    private readonly audit;
+    private readonly saleOrders;
+    private readonly reservations;
     private readonly store;
-    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, billRead: BillReadService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
+    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, billRead: BillReadService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService, saleOrders: SaleOrderService, reservations: StockReservationService);
+    private rederiveReservations;
+    private lockOrdersFirst;
+    private syncOrders;
+    private assertRight;
+    private existingKeys;
+    private writeRevision;
     private keys;
     save(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>>;
     saveAndPost(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>>;
     private draftRow;
+    private headerSplitHook;
+    private freeFromOrders;
     private draftHooks;
     get(keys: DocKeys): Promise<Record<string, unknown>>;
+    private documentOf;
     delete(dto: DeliveryChallanKeysDto): Promise<{
         sdcId: string;
         deleted: true;
@@ -47,7 +62,13 @@ export declare class DeliveryChallanService {
         accYear?: string | null;
     }): Promise<import("../bill/bill-read.service").OpenSourceDoc[]>;
     private payload;
+    private ewayOf;
     validate(dto: ValidateDeliveryChallanDto): Promise<Record<string, unknown>>;
+    private loadOf;
+    private amendPreview;
+    private stockDryRun;
+    private issueDryRun;
+    private stockLineOf;
     post(dto: PostDeliveryChallanDto): Promise<Record<string, unknown>>;
     private postDraftInTx;
     private afterPost;
@@ -62,3 +83,13 @@ export declare class DeliveryChallanService {
     convertPurpose(dto: ConvertPurposeDto): Promise<Record<string, unknown>>;
     transport(dto: DeliveryChallanTransportDto): Promise<Record<string, unknown>>;
 }
+export declare function dcUnitCostOf(i: DocRow, stock: {
+    costByLine: Map<string, number>;
+    rateByLine?: Map<string, Prisma.Decimal>;
+}): Prisma.Decimal;
+export declare function dcDisposalOf(items: readonly DocRow[]): {
+    billed: boolean;
+    returned: boolean;
+    open: boolean;
+};
+export declare function dcHeaderSplitOf(items: readonly DocRow[]): Record<string, string>;

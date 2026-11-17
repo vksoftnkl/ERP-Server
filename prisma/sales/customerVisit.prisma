@@ -1,0 +1,46 @@
+/// A salesman's check-in at a customer, uploaded from the mobile app
+/// (/mobile/visits/create; migration 20261118110000_mobile_orders_visits).
+///
+/// Insert-only. The phone stamps every check-in with its own uuid
+/// (cvClientUuid); a resend of the same (company, client uuid) answers the row
+/// already saved instead of writing a second one (ux_cv_client_uuid).
+/// The server fills the branch and the device from the registered phone, and
+/// cvUserId from the login when the upload carries a token.
+model CustomerVisit {
+  cvId           String    @id(map: "pk_customer_visit") @default(dbgenerated("uuidv7()")) @db.Uuid @map("cv_id")
+  cvCompanyId    String    @db.Uuid                @map("cv_company_id")
+  cvBranchId     String    @db.Uuid                @map("cv_branch_id")
+  cvDeviceId     String    @db.Uuid                @map("cv_device_id")
+  cvCustId       String    @db.Uuid                @map("cv_cust_id")
+  /// public.employee_master, as so_salesman_id names it.
+  cvSalesmanId   String    @db.Uuid                @map("cv_salesman_id")
+  cvUserId       String?   @db.Uuid                @map("cv_user_id")
+  /// shopClosed | noOrder | shopBusy | ownerAway | paymentPending | nextVisit
+  /// (ck_cv_reason_code): the phone's own words.
+  cvReasonCode   String    @db.VarChar(20)         @map("cv_reason_code")
+  cvRemarks      String?   @db.VarChar(500)        @map("cv_remarks")
+  cvLatitude     Decimal?  @db.Decimal(9, 6)       @map("cv_latitude")
+  cvLongitude    Decimal?  @db.Decimal(9, 6)       @map("cv_longitude")
+  /// Metres, as the phone reports it.
+  cvGpsAccuracy  Decimal?  @db.Decimal(10, 2)      @map("cv_gps_accuracy")
+  /// When the salesman checked in, by the phone's clock.
+  cvVisitAt      DateTime  @db.Timestamptz(6)      @map("cv_visit_at")
+  cvClientUuid   String    @db.Uuid                @map("cv_client_uuid")
+  cvSyncDate     DateTime? @db.Timestamptz(6)      @map("cv_sync_date")
+  cvCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("cv_created_on")
+  cvCreatedBy    String    @db.VarChar(50)         @map("cv_created_by")
+
+  device         DeviceMaster   @relation("CustomerVisitDevice", fields: [cvDeviceId], references: [devId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_device")
+  customer       Customer       @relation("CustomerVisitCustomer", fields: [cvCustId], references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_cust")
+  salesman       EmployeeMaster @relation("CustomerVisitSalesman", fields: [cvSalesmanId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cv_salesman")
+  // No FK for company / branch, as on sale_order.
+
+  @@unique([cvCompanyId, cvClientUuid], map: "ux_cv_client_uuid")
+  @@index([cvCustId, cvVisitAt(sort: Desc)], map: "ix_cv_cust_time")
+  @@index([cvSalesmanId, cvVisitAt(sort: Desc)], map: "ix_cv_salesman_time")
+  // DB-only: ix_sync_pending_customer_visit (partial). CHECK constraints
+  // (DB-only): ck_cv_reason_code, ck_cv_position, ck_cv_latitude,
+  // ck_cv_longitude, ck_cv_gps_accuracy.
+  @@map("customer_visit")
+  @@schema("sales")
+}

@@ -12,6 +12,7 @@ const audit_log_module_1 = require("../../audit-log/audit-log.module");
 const charge_detail_module_1 = require("../../master/charge-detail/charge-detail.module");
 const tender_detail_module_1 = require("../../accountsModule/tenderDetail/tender-detail.module");
 const posting_module_1 = require("../posting/posting.module");
+const sale_order_module_1 = require("../sale-order/sale-order.module");
 const dc_return_controller_1 = require("./dc-return.controller");
 const dc_return_exception_filter_1 = require("./dc-return-exception.filter");
 const dc_return_service_1 = require("./dc-return.service");
@@ -20,7 +21,7 @@ let DcReturnModule = class DcReturnModule {
 exports.DcReturnModule = DcReturnModule;
 exports.DcReturnModule = DcReturnModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule],
+        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule, sale_order_module_1.SaleOrderModule],
         controllers: [dc_return_controller_1.DcReturnController],
         providers: [dc_return_service_1.DcReturnService, dc_return_exception_filter_1.DcReturnExceptionFilter],
         exports: [dc_return_service_1.DcReturnService],

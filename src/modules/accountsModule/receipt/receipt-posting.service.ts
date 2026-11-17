@@ -64,7 +64,11 @@ import {
   ReceiptLedgerRole,
   VoucherStatus,
 } from './types/receipt-enum';
-import type { ReceiptErrorDetail, ReceiptPostPayload } from './types/receipt-api.types';
+import type {
+  ReceiptDraftPayload,
+  ReceiptErrorDetail,
+  ReceiptPostPayload,
+} from './types/receipt-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { CASH_TENDER_TYPE_ID, TillEventCode } from '../../till/types/till-enum';
 import { ACC } from './types/acc-error-codes';
@@ -110,7 +114,32 @@ import { VCH } from '../vouchers/vouchers.errors';
  * series has no gap.
  */
 
-const POST_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
+// Exported for a caller that owns the save-and-post transaction itself
+// (`saveAndPostInTransaction`, the mobile receipt upload): the same bounds.
+export const POST_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
+
+/**
+ * Decides a receipt's bill-wise settlement off the draft `saveAndPostInTransaction`
+ * has just saved, inside the same transaction.
+ */
+export type ReceiptSettlementOf = (
+  tx: Prisma.TransactionClient,
+  saved: ReceiptDraftPayload,
+) => Promise<Pick<PostReceiptDto, 'allocations' | 'onAccount'>>;
+
+/** Notes 106: a one-call post needs onAccount, the figure that proves both sides read the same receipt. */
+function requireOnAccount(dto: SaveDraftReceiptDto): void {
+  if (dto.onAccount === undefined || dto.onAccount === null) {
+    throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
+      {
+        field: 'onAccount',
+        code: ACC.INVALID,
+        message:
+          'onAccount is required when post is true — it is the figure that proves the client and the server read the same receipt',
+      },
+    ]);
+  }
+}
 
 /** One voucher being built, before it exists. */
 interface PlannedVoucher {
@@ -164,42 +193,61 @@ export class ReceiptPostingService {
    * and the post keeps its (the caller), as the two routes do today.
    */
   async saveAndPost(dto: SaveDraftReceiptDto): Promise<ReceiptPostPayload> {
-    if (dto.onAccount === undefined || dto.onAccount === null) {
-      throwAccountsBadRequest<ReceiptErrorDetail>('Validation failed', [
-        {
-          field: 'onAccount',
-          code: ACC.INVALID,
-          message:
-            'onAccount is required when post is true — it is the figure that proves the client and the server read the same receipt',
-        },
-      ]);
+    requireOnAccount(dto);
+    try {
+      return await this.prisma.$transaction(
+        (tx) => this.saveAndPostInTransaction(tx, dto),
+        POST_TRANSACTION_OPTIONS,
+      );
+    } catch (error) {
+      throw rethrowAllocationError(error);
+    }
+  }
+
+  /**
+   * `saveAndPost`'s draft + post, inside a transaction the CALLER owns: the
+   * mobile receipt upload holds its resend check and the client-uuid stamp in
+   * the same transaction. The caller is responsible for
+   * `rethrowAllocationError`, as with `postInTransaction`.
+   *
+   * `settle`, when given, decides `allocations` and `onAccount` off the draft
+   * just saved (the phone sends only the money, and the server fills the open
+   * bills in /receipts/open-items order). It runs between the draft and the
+   * post, so it sees the tender rows and the seeded other-ledger lines the
+   * post will read. Without it the body's own figures are the instruction,
+   * exactly as on `/receipts/create` with `post: true`.
+   */
+  async saveAndPostInTransaction(
+    tx: Prisma.TransactionClient,
+    dto: SaveDraftReceiptDto,
+    settle?: ReceiptSettlementOf,
+  ): Promise<ReceiptPostPayload> {
+    if (!settle) {
+      requireOnAccount(dto);
     }
     const userId = this.requestContext.getUserId();
     const draftActor = resolveActor(dto.avhUserId, userId) ?? DEFAULT_ACTOR;
     const postActor = userId ?? DEFAULT_ACTOR;
     const { post: _post, onAccount, otherLineBills, ...draft } = dto;
     void _post;
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const saved = await this.receiptService.saveInTransaction(tx, draft, draftActor);
-        return this.postInTransaction(
-          tx,
-          {
-            avhVoucherId: saved.header.avhVoucherId,
-            avhCompanyId: dto.avhCompanyId,
-            avhBranchId: dto.avhBranchId,
-            avhAccYear: dto.avhAccYear,
-            allocations: dto.allocations ?? [],
-            creditsApplied: dto.creditsApplied ?? [],
-            otherLineBills: otherLineBills ?? [],
-            onAccount,
-          },
-          postActor,
-        );
-      }, POST_TRANSACTION_OPTIONS);
-    } catch (error) {
-      throw rethrowAllocationError(error);
-    }
+    const saved = await this.receiptService.saveInTransaction(tx, draft, draftActor);
+    const settlement = settle
+      ? await settle(tx, saved)
+      : { allocations: dto.allocations ?? [], onAccount: onAccount as number };
+    return this.postInTransaction(
+      tx,
+      {
+        avhVoucherId: saved.header.avhVoucherId,
+        avhCompanyId: dto.avhCompanyId,
+        avhBranchId: dto.avhBranchId,
+        avhAccYear: dto.avhAccYear,
+        allocations: settlement.allocations,
+        creditsApplied: dto.creditsApplied ?? [],
+        otherLineBills: otherLineBills ?? [],
+        onAccount: settlement.onAccount,
+      },
+      postActor,
+    );
   }
 
   /**

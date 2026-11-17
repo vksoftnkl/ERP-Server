@@ -75,6 +75,7 @@ import { SaleLoadingChargeModule } from './modules/sales/sale-loading-charges/sa
 import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
+import { MobileModulesModule } from './mobile-modules/mobile-modules.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
 import { SaleAgentModule } from './modules/sales/sale-agent/sale-agent.module';
 import { QuotationModule } from './modules/sales/quotation/quotation.module';
@@ -259,6 +260,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     SaleFreightChargeModule,
     SaleLoadingChargeModule,
     CustomerModule,
+    // React Native app routes, /mobile/* (customers first).
+    MobileModulesModule,
     CustomerGroupModule,
     SaleAgentModule,
     QuotationModule,

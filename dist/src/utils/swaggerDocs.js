@@ -110,6 +110,12 @@ const stock_adjustment_module_1 = require("../modules/stocks/stock-adjustment/st
 const stock_posting_module_1 = require("../modules/stocks/posting/stock-posting.module");
 const txn_status_module_1 = require("../modules/txn-status/txn-status.module");
 const error_messages_module_1 = require("../modules/error-messages/error-messages.module");
+const mobile_customer_module_1 = require("../mobile-modules/customer/mobile-customer.module");
+const mobile_item_module_1 = require("../mobile-modules/item/mobile-item.module");
+const mobile_order_module_1 = require("../mobile-modules/order/mobile-order.module");
+const mobile_visit_module_1 = require("../mobile-modules/visit/mobile-visit.module");
+const mobile_bill_module_1 = require("../mobile-modules/bill/mobile-bill.module");
+const mobile_receipt_module_1 = require("../mobile-modules/receipt/mobile-receipt.module");
 exports.swaggerModuleDocuments = [
     {
         path: 'auth',
@@ -626,6 +632,58 @@ exports.swaggerModuleDocuments = [
         title: 'Customers API',
         description: 'Customers module endpoints',
         include: [customer_module_1.CustomerModule],
+    },
+    {
+        path: 'mobile-customers',
+        title: 'Mobile Customers API',
+        description: 'React Native app, /mobile/customers/*: paged list with search, filter chips (ALL / ' +
+            'OUTSTANDING / UNREGISTERED / INACTIVE), chip counts and the closing balance in the login ' +
+            'company; form options; get; create; PUT update; delete-check; delete. Writes go through ' +
+            'the desktop Customer service (same linked ledger, rules and CUSTOMER_* codes). Not cached',
+        include: [mobile_customer_module_1.MobileCustomerModule],
+    },
+    {
+        path: 'mobile-items',
+        title: 'Mobile Items API',
+        description: 'React Native app, /mobile/items/*: options (companies, item groups, brands, price ' +
+            'levels without Cost) and the paged list of items orderable for a company, with each ' +
+            "unit's iucId, factor, prices of levels 1-4, MRP, minimum, loading / freight charge " +
+            '(picked as /master-lookups/item-price picks them) and free saleable stock. No cost price',
+        include: [mobile_item_module_1.MobileItemModule],
+    },
+    {
+        path: 'mobile-orders',
+        title: 'Mobile Orders API',
+        description: 'React Native app, /mobile/orders/create: upload one sale order with its lines (the ' +
+            'desktop so* / soi* payload). The server fills device (registered phone), branch, acc ' +
+            'year and number; saved DRAFT; safe to resend (soClientUuid)',
+        include: [mobile_order_module_1.MobileOrderModule],
+    },
+    {
+        path: 'mobile-visits',
+        title: 'Mobile Visits API',
+        description: 'React Native app, /mobile/visits/create: a salesman check-in at a customer (reason ' +
+            'code, remarks, GPS fix, visit time) into sales.customer_visit; safe to resend (cvClientUuid)',
+        include: [mobile_visit_module_1.MobileVisitModule],
+    },
+    {
+        path: 'mobile-bills',
+        title: 'Mobile Bills API',
+        description: 'React Native app, /mobile/bills/*: options (the branch the phone bills in and its ' +
+            'godowns) and create: one credit bill with its lines (the desktop sb* / sbi* payload, ' +
+            "sbiGodownId per line), saved AND posted in one call through the desktop's save-and-post; " +
+            "VK Nex numbers it (the phone's number rides in sbUsrRefno); safe to resend (sbClientUuid)",
+        include: [mobile_bill_module_1.MobileBillModule],
+    },
+    {
+        path: 'mobile-receipts',
+        title: 'Mobile Receipts API',
+        description: 'React Native app, /mobile/receipts/*: options (the branch and the tenders a salesman may ' +
+            "collect with), open-bills (every customer's open bills, paged, in open-items order) and " +
+            'create: the money collected from one customer, saved AND posted in one ' +
+            "call through the desktop's save-and-post; the server fills the open bills oldest first " +
+            '(open-items order) and keeps the rest on account; safe to resend (avhClientUuid)',
+        include: [mobile_receipt_module_1.MobileReceiptModule],
     },
     {
         path: 'customer-groups',

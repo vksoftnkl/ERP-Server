@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("./env.preload");
 require("reflect-metadata");
 const node_fs_1 = require("node:fs");
+const node_http_1 = require("node:http");
 const node_path_1 = require("node:path");
 const compression = require("compression");
 const express_1 = require("express");
@@ -87,6 +88,16 @@ const buildHttpsOptions = () => {
         key: (0, node_fs_1.readFileSync)(resolvedKeyPath),
         passphrase: process.env.HTTPS_PASSPHRASE || undefined,
     };
+};
+const PHONE_HTTP_ROUTES = ['health', 'auth/login', 'reports/ledger-statement/vouchers'];
+const PHONE_HTTP_ROUTE_PREFIXES = ['mobile/', 'master-lookups/fiscal-years/by-company/'];
+const isPhoneHttpRoute = (url, apiBase) => {
+    const path = url.split('?')[0] ?? '';
+    if (path.includes('%') || /(^|\/)\.\.?(\/|$)/.test(path) || !path.startsWith(apiBase)) {
+        return false;
+    }
+    const route = path.slice(apiBase.length);
+    return PHONE_HTTP_ROUTES.includes(route) || PHONE_HTTP_ROUTE_PREFIXES.some((p) => route.startsWith(p));
 };
 const buildSwaggerConfig = (title, description) => new swagger_1.DocumentBuilder()
     .setTitle(title)
@@ -228,6 +239,30 @@ async function bootstrap() {
         swagger_1.SwaggerModule.setup(docsPath, app, moduleSwaggerDocument, { customJsStr: moduleSearchJs });
     }
     await app.listen(port, host);
+    const mobileHttpPort = configService.get('app.mobileHttpPort', 0);
+    if (mobileHttpPort && mobileHttpPort !== port) {
+        const apiVersion = configService.get('app.apiVersion', '1');
+        const phoneApiBase = `/${[apiPrefix, `v${apiVersion}`].filter(Boolean).join('/')}/`;
+        const expressApp = app.getHttpAdapter().getInstance();
+        const phoneServer = (0, node_http_1.createServer)((req, res) => {
+            if (isPhoneHttpRoute(req.url ?? '', phoneApiBase)) {
+                expressApp(req, res);
+                return;
+            }
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: 'Not available on the phone port' }));
+        });
+        phoneServer.on('error', (error) => {
+            logger.error(`Phone port ${mobileHttpPort} not opened: ${error.message}`, undefined, 'Bootstrap');
+        });
+        phoneServer.listen(mobileHttpPort, host, () => {
+            logger.log(`Phone sync (plain HTTP, phone routes only): http://${host}:${mobileHttpPort}${phoneApiBase}`, 'Bootstrap');
+        });
+        app.getHttpServer().once('close', () => {
+            phoneServer.closeAllConnections();
+            phoneServer.close();
+        });
+    }
     const appUrl = await app.getUrl();
     const docsUrl = buildAbsoluteUrl(appUrl, allDocsPath);
     const prisma = app.get(prisma_service_1.PrismaService);

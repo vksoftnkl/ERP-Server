@@ -94,11 +94,21 @@ let DeliveryNoteService = class DeliveryNoteService {
         const now = new Date();
         return this.prisma.$transaction(async (tx) => {
             const rights = await this.rights(tx);
-            const existing = dto.sdnId ? await this.lockNote(tx, dto.companyId, dto.sdnId) : null;
+            const existing = await this.findForWrite(tx, dto);
             this.assertRight(rights, existing ? 'edit' : 'create');
-            await (0, sales_guards_1.assertAccYearWritable)(tx, dto.companyId, dto.accYear, 'accYear');
+            if (!existing) {
+                const yearOff = (0, delivery_note_rules_1.yearChangedNote)(dto.accYear, accYearOf(istToday()), null, false);
+                if (yearOff) {
+                    (0, delivery_errors_1.raiseNote)(yearOff);
+                }
+            }
+            await (0, sales_guards_1.assertAccYearWritable)(tx, dto.companyId, (existing?.sdnAccYear ?? dto.accYear).trim(), 'accYear');
             if (existing) {
                 this.assertDraft(existing, dto.baseRevision);
+            }
+            const ids = await this.lineIdFinding(tx, dto, existing);
+            if (ids) {
+                (0, delivery_errors_1.raiseNote)(ids);
             }
             const r = await this.resolve(tx, dto, 'save', existing, rights);
             const first = (0, delivery_note_rules_1.firstRefusal)((0, delivery_note_rules_1.checkDeliveryNote)(r.header, r.lines, {
@@ -126,15 +136,24 @@ let DeliveryNoteService = class DeliveryNoteService {
             this.assertRight(rights, 'create');
         }
         return this.prisma.$transaction(async (tx) => {
-            const existing = dto.sdnId ? await this.reader.header(tx, { companyId: dto.companyId, sdnId: dto.sdnId }) : null;
+            const existing = await this.findForWrite(tx, dto);
             const r = await this.resolve(tx, dto, 'validate', existing, rights);
-            const notes = (0, delivery_note_rules_1.checkDeliveryNote)(r.header, r.lines, {
-                phase: 'validate',
-                companyId: dto.companyId,
-                branchId: dto.branchId,
-                canOverride: rights.override,
-                overrideWarnings: dto.overrideWarnings ?? [],
-            });
+            const ahead = [
+                await this.lineIdFinding(tx, dto, existing),
+                existing && existing.sdnStatus !== delivery_constants_1.DN_STATUS.DRAFT
+                    ? null
+                    : (0, delivery_note_rules_1.yearChangedNote)(existing?.sdnAccYear ?? dto.accYear, accYearOf(istToday()), existing?.sdnRefno ?? null, !!existing),
+            ].filter((n) => n !== null);
+            const notes = [
+                ...ahead,
+                ...(0, delivery_note_rules_1.checkDeliveryNote)(r.header, r.lines, {
+                    phase: 'validate',
+                    companyId: dto.companyId,
+                    branchId: dto.branchId,
+                    canOverride: rights.override,
+                    overrideWarnings: dto.overrideWarnings ?? [],
+                }),
+            ];
             const totals = (0, delivery_note_rules_1.noteTotals)(r.lines);
             const errors = notes.filter((n) => n.severity === 'REFUSE').map(delivery_errors_1.worded);
             return {
@@ -154,10 +173,19 @@ let DeliveryNoteService = class DeliveryNoteService {
         return this.prisma.$transaction(async (tx) => {
             const rights = await this.rights(tx);
             this.assertRight(rights, 'post');
-            await (0, sales_guards_1.assertAccYearWritable)(tx, dto.companyId, dto.accYear, 'accYear');
-            const existing = dto.sdnId ? await this.lockNote(tx, dto.companyId, dto.sdnId) : null;
+            const existing = await this.findForWrite(tx, dto);
             if (existing) {
                 this.assertDraft(existing, dto.baseRevision);
+            }
+            const yearNow = accYearOf(istToday());
+            const yearOff = (0, delivery_note_rules_1.yearChangedNote)(existing?.sdnAccYear ?? dto.accYear, yearNow, existing?.sdnRefno ?? null, !!existing);
+            if (yearOff) {
+                (0, delivery_errors_1.raiseNote)(yearOff);
+            }
+            await (0, sales_guards_1.assertAccYearWritable)(tx, dto.companyId, yearNow, 'accYear');
+            const ids = await this.lineIdFinding(tx, dto, existing);
+            if (ids) {
+                (0, delivery_errors_1.raiseNote)(ids);
             }
             await this.lockBills(tx, dto.lines.map((l) => ({ billId: l.billId, billAccYear: l.billAccYear })));
             const r = await this.resolve(tx, dto, 'post', existing, rights);
@@ -273,6 +301,7 @@ let DeliveryNoteService = class DeliveryNoteService {
                 (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_CANCEL_REASON_REQUIRED, 'Say why the note is cancelled', 'reason');
             }
             await (0, sales_guards_1.assertAccYearWritable)(tx, note.sdnCompanyId, note.sdnAccYear.trim(), 'accYear');
+            await this.assertNotFrozen(tx, note, 'CANCEL');
             const before = await this.reader.payload(tx, this.keysOf(note), rights);
             const items = await tx.saleDeliveryNoteItem.findMany({
                 where: { sdniNoteId: note.sdnId, sdniAccYear: note.sdnAccYear, sdniIsDeleted: false },
@@ -295,6 +324,14 @@ let DeliveryNoteService = class DeliveryNoteService {
            AND NOT EXISTS (SELECT 1 FROM sales.sale_delivery_event c
                             WHERE c.sde_reverses_id = g.sde_id AND c.sde_kind = 'CANCEL')`;
             const live = given.filter((g) => (0, delivery_pending_service_1.dec)(g.out_qty).greaterThan(0));
+            const noteLineOf = new Map(items.map((i) => [i.sdniId, i.sdniLineNo]));
+            await this.assertUndoAboveReturned(tx, live.map((g) => ({
+                billItemId: g.sde_bill_item_id,
+                billAccYear: g.sde_bill_acc_year,
+                removeBase: (0, delivery_pending_service_1.dec)(g.out_base),
+                noteLineNo: noteLineOf.get(g.sde_src_line_id) ?? 0,
+                field: 'sdnId',
+            })));
             if (live.length > 0) {
                 await tx.saleDeliveryEvent.createMany({
                     data: live.map((g) => ({
@@ -426,7 +463,8 @@ let DeliveryNoteService = class DeliveryNoteService {
             });
             const byId = new Map(items.map((i) => [i.sdniId, i]));
             const outByLine = await this.outByLine(tx, note.sdnId);
-            const asks = [];
+            const merged = new Map();
+            const sdeOwner = new Map();
             dto.lines.forEach((l, idx) => {
                 const item = byId.get(l.sdniId);
                 const qty = parseQty(l.qty);
@@ -434,20 +472,43 @@ let DeliveryNoteService = class DeliveryNoteService {
                 if (qty === null || qty.lessThan(0)) {
                     (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_QTY_NEGATIVE, `Line ${lineNo}: came back cannot be below 0`, `lines[${idx}].qty`, { n: lineNo }, lineNo, 'GOODS_BACK');
                 }
+                if (l.sdeId) {
+                    const owner = sdeOwner.get(l.sdeId);
+                    if (owner !== undefined && owner !== l.sdniId) {
+                        (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_LINE_DUPLICATE, `Line ${lineNo}: sdeId ${l.sdeId} is sent on two note lines`, `lines[${idx}].sdeId`, { n: lineNo }, lineNo);
+                    }
+                    sdeOwner.set(l.sdeId, l.sdniId);
+                }
                 if (qty.isZero()) {
                     return;
                 }
+                const prev = item ? merged.get(item.sdniId) : undefined;
+                const total = (prev?.qty ?? Z).plus(qty);
                 const max = item ? (outByLine.get(item.sdniId) ?? Z) : Z;
-                if (!item || qty.greaterThan(max)) {
-                    (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_GOODS_BACK_OVER, `Line ${lineNo}: ${q3(qty)} came back, but only ${q3(max)} were given on this note`, `lines[${idx}].qty`, { n: lineNo, qty: q3(qty), max: q3(max) }, lineNo);
+                if (!item || total.greaterThan(max)) {
+                    (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_GOODS_BACK_OVER, `Line ${lineNo}: ${q3(total)} came back, but only ${q3(max)} were given on this note`, `lines[${idx}].qty`, { n: lineNo, qty: q3(total), max: q3(max) }, lineNo);
                 }
-                asks.push({ item, qty, sdeId: l.sdeId });
+                merged.set(item.sdniId, {
+                    item,
+                    qty: total,
+                    sdeId: prev?.sdeId ?? l.sdeId,
+                    idx: prev?.idx ?? idx,
+                });
             });
+            const asks = [...merged.values()];
             if (asks.length === 0) {
                 (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_NO_LINES, 'Type a came-back quantity on at least one line', 'lines');
             }
+            await this.assertNotFrozen(tx, note, 'GOODS_BACK');
             const before = await this.reader.payload(tx, this.keysOf(note), rights);
             await this.lockBills(tx, billsOf(asks.map((a) => a.item)));
+            await this.assertUndoAboveReturned(tx, asks.map((a) => ({
+                billItemId: a.item.sdniBillItemId,
+                billAccYear: a.item.sdniBillAccYear,
+                removeBase: a.qty.times((0, delivery_pending_service_1.dec)(a.item.sdniToBaseFactor)).toDecimalPlaces(6),
+                noteLineNo: a.item.sdniLineNo,
+                field: `lines[${a.idx}].qty`,
+            })));
             const facts = await this.pending.linesByKeys(tx, asks.map((a) => ({ billItemId: a.item.sdniBillItemId, billAccYear: a.item.sdniBillAccYear })));
             const lineNoOf = new Map(facts.map((f) => [f.billItemId, f.lineNo]));
             await tx.saleDeliveryEvent.createMany({
@@ -505,6 +566,7 @@ let DeliveryNoteService = class DeliveryNoteService {
         const rows = await tx.$queryRaw `
       SELECT sdn_id, sdn_acc_year FROM sales.sale_delivery_note
        WHERE sdn_id = ${sdnId}::uuid AND sdn_company_id = ${companyId}::uuid
+         AND (${branchId ?? null}::uuid IS NULL OR sdn_branch_id = ${branchId ?? null}::uuid)
          AND sdn_is_deleted = false
        FOR UPDATE`;
         if (rows.length === 0) {
@@ -517,6 +579,112 @@ let DeliveryNoteService = class DeliveryNoteService {
             return null;
         }
         return note;
+    }
+    async findForWrite(tx, dto) {
+        if (!dto.sdnId) {
+            return null;
+        }
+        const note = await this.lockNote(tx, dto.companyId, dto.sdnId, dto.branchId);
+        if (note) {
+            return note;
+        }
+        const [used] = await tx.$queryRaw `
+      SELECT count(*)::int AS n FROM sales.sale_delivery_note WHERE sdn_id = ${dto.sdnId}::uuid`;
+        if (used && used.n > 0) {
+            (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_NOT_FOUND, `No delivery note ${dto.sdnId} in this branch`, 'sdnId');
+        }
+        return null;
+    }
+    async lineIdFinding(tx, dto, existing) {
+        const dup = (0, delivery_note_rules_1.duplicateLineIds)(dto.lines);
+        if (dup) {
+            return dup;
+        }
+        const ids = dto.lines.map((l) => l.sdniId).filter((x) => !!x);
+        if (ids.length === 0) {
+            return null;
+        }
+        const rows = await tx.$queryRaw `
+      SELECT sdni_id FROM sales.sale_delivery_note_item
+       WHERE sdni_id = ANY(${ids}::uuid[])
+         AND sdni_note_id <> ${existing?.sdnId ?? '00000000-0000-0000-0000-000000000000'}::uuid
+       LIMIT 1`;
+        if (rows.length === 0) {
+            return null;
+        }
+        const idx = dto.lines.findIndex((l) => l.sdniId === rows[0].sdni_id);
+        return (0, delivery_errors_1.note)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_LINE_DUPLICATE, 'REFUSE', `lines[${idx}].sdniId`, `Line ${idx + 1}: sdniId ${rows[0].sdni_id} is a line of another delivery note`, { n: idx + 1 }, idx + 1);
+    }
+    async frozenAt(tx, companyId, branchId, godownId) {
+        const [f] = await tx.$queryRaw `
+      SELECT c.svh_freeze_from, c.svh_freeze_to FROM stock.stock_voucher c
+       WHERE c.svh_company_id = ${companyId}::uuid AND c.svh_branch_id = ${branchId}::uuid
+         AND c.svh_voucher_type = 'PHYSICAL' AND c.svh_freeze_stock = true
+         AND c.svh_status = 'DRAFT' AND c.svh_is_deleted = false
+         AND COALESCE(c.svh_from_godown_id, c.svh_to_godown_id) = ${godownId}::uuid
+         AND now() BETWEEN c.svh_freeze_from AND c.svh_freeze_to
+       LIMIT 1`;
+        return f ? { from: (0, delivery_note_read_service_1.istClock)(f.svh_freeze_from), to: (0, delivery_note_read_service_1.istClock)(f.svh_freeze_to) } : null;
+    }
+    async assertNotFrozen(tx, note, event) {
+        const frozen = await this.frozenAt(tx, note.sdnCompanyId, note.sdnBranchId, note.sdnGodownId);
+        if (!frozen) {
+            return;
+        }
+        const godown = await this.reader.godownName(tx, note.sdnGodownId);
+        (0, delivery_errors_1.refuseWith)(delivery_constants_1.DELIVERY_ERROR_CODES.DN_GODOWN_FROZEN, `${godown} is frozen for a count from ${frozen.from} to ${frozen.to}`, 'sdnGodownId', { godown, from: frozen.from, to: frozen.to }, null, event);
+    }
+    async assertUndoAboveReturned(tx, asks) {
+        const byLine = new Map();
+        for (const a of asks) {
+            const key = `${a.billItemId}|${a.billAccYear.trim()}`;
+            const prev = byLine.get(key);
+            byLine.set(key, {
+                billItemId: a.billItemId,
+                billAccYear: a.billAccYear.trim(),
+                removeBase: (prev?.removeBase ?? Z).plus(a.removeBase),
+                noteLineNo: prev?.noteLineNo ?? a.noteLineNo,
+                field: prev?.field ?? a.field,
+            });
+        }
+        if (byLine.size === 0) {
+            return;
+        }
+        const taken = await this.pending.returnsTakenByLine(tx, [...byLine.values()]);
+        if (taken.size === 0) {
+            return;
+        }
+        const keys = [...byLine.values()].filter((b) => taken.has(`${b.billItemId}|${b.billAccYear}`));
+        const facts = await this.pending.linesByKeys(tx, keys);
+        const names = await this.reader.names(tx, {
+            itemIds: [],
+            unitIds: facts.map((f) => f.unitId),
+            godownIds: [],
+            lotIds: [],
+        });
+        const lines = facts
+            .map((f) => {
+            const key = `${f.billItemId}|${f.billAccYear.trim()}`;
+            const b = byLine.get(key);
+            const t = taken.get(key);
+            return {
+                noteLineNo: b.noteLineNo,
+                field: b.field,
+                billRefno: f.billRefno ?? f.billId,
+                billLineNo: f.lineNo,
+                unitName: names.units.get(f.unitId) ?? '',
+                factor: f.factor,
+                givenBase: f.givenBase,
+                removeBase: b.removeBase,
+                takenBase: t.takenBase,
+                returnRefnos: t.refnos,
+            };
+        })
+            .sort((a, b) => a.noteLineNo - b.noteLineNo);
+        const first = (0, delivery_note_rules_1.undoBelowReturned)(lines);
+        if (first) {
+            (0, delivery_errors_1.raiseNote)(first);
+        }
     }
     async lockBills(tx, bills) {
         const uniq = new Map(bills.map((b) => [`${b.billId}|${b.billAccYear.trim()}`, b]));
@@ -577,20 +745,9 @@ let DeliveryNoteService = class DeliveryNoteService {
             ? await tx.$queryRaw `
           SELECT veh_vehicle_no, veh_capacity_kg FROM public.vehicle_master WHERE veh_id = ${dto.sdnVehicleId}::uuid`
             : [];
-        let frozen = null;
-        if (phase !== 'save' && godownState === 'OK' && godownId) {
-            const [f] = await tx.$queryRaw `
-        SELECT c.svh_freeze_from, c.svh_freeze_to FROM stock.stock_voucher c
-         WHERE c.svh_company_id = ${dto.companyId}::uuid AND c.svh_branch_id = ${dto.branchId}::uuid
-           AND c.svh_voucher_type = 'PHYSICAL' AND c.svh_freeze_stock = true
-           AND c.svh_status = 'DRAFT' AND c.svh_is_deleted = false
-           AND COALESCE(c.svh_from_godown_id, c.svh_to_godown_id) = ${godownId}::uuid
-           AND now() BETWEEN c.svh_freeze_from AND c.svh_freeze_to
-         LIMIT 1`;
-            if (f) {
-                frozen = { from: (0, delivery_note_read_service_1.istClock)(f.svh_freeze_from), to: (0, delivery_note_read_service_1.istClock)(f.svh_freeze_to) };
-            }
-        }
+        const frozen = phase !== 'save' && godownState === 'OK' && godownId
+            ? await this.frozenAt(tx, dto.companyId, dto.branchId, godownId)
+            : null;
         const factsList = await this.pending.linesByKeys(tx, dto.lines.map((l) => ({ billItemId: l.billItemId, billAccYear: l.billAccYear })));
         const facts = new Map(factsList.map((f) => [f.billItemId, f]));
         const lotOf = (l) => l.lotId !== undefined && l.lotId !== null ? l.lotId : (facts.get(l.billItemId)?.lotId ?? null);
@@ -721,8 +878,8 @@ let DeliveryNoteService = class DeliveryNoteService {
         }
         const stored = existing
             ? await tx.saleDeliveryNoteItem.findMany({
-                where: { sdniNoteId: note.sdnId, sdniAccYear: note.sdnAccYear, sdniIsDeleted: false },
-                select: { sdniId: true },
+                where: { sdniNoteId: note.sdnId, sdniAccYear: note.sdnAccYear },
+                select: { sdniId: true, sdniIsDeleted: true },
             })
             : [];
         const keep = new Set();
@@ -756,7 +913,7 @@ let DeliveryNoteService = class DeliveryNoteService {
                 keep.add(l.sdniId);
                 await tx.saleDeliveryNoteItem.update({
                     where: { sdniId_sdniAccYear: { sdniId: l.sdniId, sdniAccYear: note.sdnAccYear } },
-                    data: { ...data, sdniModifiedOn: now, sdniModifiedBy: actor },
+                    data: { ...data, sdniIsDeleted: false, sdniModifiedOn: now, sdniModifiedBy: actor },
                 });
             }
             else {
@@ -776,7 +933,7 @@ let DeliveryNoteService = class DeliveryNoteService {
                 keep.add(row.sdniId);
             }
         }
-        const drop = stored.filter((s) => !keep.has(s.sdniId)).map((s) => s.sdniId);
+        const drop = stored.filter((s) => !s.sdniIsDeleted && !keep.has(s.sdniId)).map((s) => s.sdniId);
         if (drop.length > 0) {
             await tx.saleDeliveryNoteItem.updateMany({
                 where: { sdniId: { in: drop }, sdniAccYear: note.sdnAccYear },

@@ -13,6 +13,7 @@ const charge_detail_module_1 = require("../../master/charge-detail/charge-detail
 const tender_detail_module_1 = require("../../accountsModule/tenderDetail/tender-detail.module");
 const bill_module_1 = require("../bill/bill.module");
 const posting_module_1 = require("../posting/posting.module");
+const sale_order_module_1 = require("../sale-order/sale-order.module");
 const delivery_challan_controller_1 = require("./delivery-challan.controller");
 const delivery_challan_exception_filter_1 = require("./delivery-challan-exception.filter");
 const delivery_challan_service_1 = require("./delivery-challan.service");
@@ -21,7 +22,14 @@ let DeliveryChallanModule = class DeliveryChallanModule {
 exports.DeliveryChallanModule = DeliveryChallanModule;
 exports.DeliveryChallanModule = DeliveryChallanModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule, bill_module_1.BillModule],
+        imports: [
+            audit_log_module_1.AuditLogModule,
+            charge_detail_module_1.ChargeDetailModule,
+            tender_detail_module_1.TenderDetailModule,
+            posting_module_1.SalesPostingModule,
+            bill_module_1.BillModule,
+            sale_order_module_1.SaleOrderModule,
+        ],
         controllers: [delivery_challan_controller_1.DeliveryChallanController],
         providers: [delivery_challan_service_1.DeliveryChallanService, delivery_challan_exception_filter_1.DeliveryChallanExceptionFilter],
         exports: [delivery_challan_service_1.DeliveryChallanService],

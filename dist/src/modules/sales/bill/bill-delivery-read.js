@@ -5,6 +5,7 @@ exports.unitNamesOf = unitNamesOf;
 exports.billDeliveryRead = billDeliveryRead;
 exports.billGodownSlips = billGodownSlips;
 exports.oldPendingDeliveries = oldPendingDeliveries;
+exports.istTodayYmd = istTodayYmd;
 const client_1 = require("@prisma/client");
 const delivery_qr_1 = require("../delivery/core/delivery-qr");
 const bill_delivery_helper_1 = require("./bill-delivery.helper");
@@ -123,6 +124,7 @@ async function billGodownSlips(c, pending, bill) {
     }));
 }
 async function oldPendingDeliveries(c, q) {
+    const today = istTodayYmd();
     const rows = await c.$queryRaw `
     WITH op AS (
       SELECT b.sb_id, b.sb_acc_year, b.sb_bill_refno, b.sb_bill_date,
@@ -143,7 +145,7 @@ async function oldPendingDeliveries(c, q) {
          AND b.sb_delivery_status IN ('PENDING', 'PART', 'OUT')
          AND b.sb_is_deleted = false AND b.sb_status = 'POSTED'
          AND b.sb_delivery_mode IN ('PICKUP', 'DISPATCH')
-         AND b.sb_bill_date <= CURRENT_DATE - ${q.oldDays}::int
+         AND b.sb_bill_date < ${today}::date - ${q.oldDays}::int
          AND i.sbi_is_deleted = false AND i.sbi_is_service = false
          AND COALESCE(i.sbi_src_doc_type, '') <> 'DELIVERY_CHALLAN'
          AND i.sbi_bill_qty > 0
@@ -153,7 +155,7 @@ async function oldPendingDeliveries(c, q) {
       SELECT sb_id, sb_acc_year, sb_bill_refno, sb_bill_date, unit_name, SUM(pending_qty) AS q
         FROM op GROUP BY sb_id, sb_acc_year, sb_bill_refno, sb_bill_date, unit_name
     )
-    SELECT sb_id, sb_acc_year, sb_bill_refno, (CURRENT_DATE - sb_bill_date)::int AS days,
+    SELECT sb_id, sb_acc_year, sb_bill_refno, (${today}::date - sb_bill_date)::int AS days,
            string_agg(trim_scale(round(q, 3))::text || CASE WHEN unit_name <> '' THEN ' ' || unit_name ELSE '' END,
                       ' + ' ORDER BY unit_name) AS left_text
       FROM by_unit
@@ -167,6 +169,9 @@ async function oldPendingDeliveries(c, q) {
         days: Number(r.days),
         leftText: r.left_text ?? '',
     }));
+}
+function istTodayYmd() {
+    return new Date(todayUtcMidnight()).toISOString().slice(0, 10);
 }
 function todayUtcMidnight() {
     const ist = new Date(Date.now() + 330 * 60_000);

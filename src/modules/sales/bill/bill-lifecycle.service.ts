@@ -148,7 +148,9 @@ import {
  * cancel is a reversal, never a delete. An amend is unwind + re-apply +
  * re-post, one transaction, `sb_revision_no + 1`.
  */
-const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
+// Exported for a caller that owns the save-and-post transaction itself
+// (`saveAndPostInTx`, the mobile bill upload): the same bounds as /post.
+export const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
 
 type BillKeys = Pick<PostBillDto, 'sbId' | 'sbCompanyId' | 'sbBranchId' | 'sbAccYear'>;
 
@@ -157,6 +159,16 @@ interface PostResult {
   gdrId: string | null;
   einvoice: boolean;
   ewaybill: boolean;
+}
+
+/**
+ * What `saveAndPostInTx` hands back: the saved bill's keys, and what
+ * `afterSaveAndPost` needs once the caller's transaction has committed.
+ */
+export interface BillSavedAndPosted {
+  keys: BillKeys;
+  /** Null only when the bill was already POSTED (an idempotent /post). */
+  posted: PostResult | null;
 }
 
 @Injectable()
@@ -361,42 +373,63 @@ export class BillLifecycleService {
    * on a draft somebody saved on purpose are unchanged.
    */
   async saveAndPost(dto: SaveBillDto): Promise<BillPayload> {
-    const { post: _post, overrides, ...saveDto } = dto;
-    void _post;
-    this.bills.prepareSave(saveDto);
-    let posted: PostResult | null = null;
-    let keys: BillKeys | null = null;
+    let done: BillSavedAndPosted | null = null;
     try {
       await this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const saved = saveDto.sbId
-          ? await this.bills.updateBillInTx(tx, saveDto)
-          : await this.bills.createBillInTx(tx, saveDto);
-        keys = {
-          sbId: saved.sbId,
-          sbCompanyId: saved.sbCompanyId,
-          sbBranchId: saved.sbBranchId,
-          sbAccYear: saved.sbAccYear,
-        };
-        // Re-read under the row lock, exactly as /post does, so the post sees
-        // the row the save left rather than the object the create returned.
-        const bill = await this.bills.lockHeader(tx, keys);
-        posted = await this.postDraftInTx(
-          tx,
-          bill,
-          { overrides, adjustments: saveDto.adjustments },
-          now,
-        );
+        done = await this.saveAndPostInTx(tx, dto);
       }, POST_TX_OPTIONS);
     } catch (error: unknown) {
       this.bills.throwIfDuplicate(error);
       throw error;
     }
-    this.afterPost(posted);
-    const k = keys as unknown as BillKeys;
+    const result = done as unknown as BillSavedAndPosted;
+    this.afterSaveAndPost(result);
+    const k = result.keys;
     return this.withGodownSlips(
       await this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear),
     );
+  }
+
+  /**
+   * The draft save and the whole of `/post`, inside a transaction the CALLER
+   * owns: `saveAndPost` above, and the mobile bill upload, which keeps its
+   * resend check and the client-uuid stamp in the same transaction. It is
+   * the one-call path itself, so a refusal is /post's. The caller runs
+   * `afterSaveAndPost` once its transaction has committed, and maps a unique
+   * clash with `BillService.throwIfDuplicate`.
+   */
+  async saveAndPostInTx(
+    tx: Prisma.TransactionClient,
+    dto: SaveBillDto,
+  ): Promise<BillSavedAndPosted> {
+    const { post: _post, overrides, ...saveDto } = dto;
+    void _post;
+    this.bills.prepareSave(saveDto);
+    const now = new Date();
+    const saved = saveDto.sbId
+      ? await this.bills.updateBillInTx(tx, saveDto)
+      : await this.bills.createBillInTx(tx, saveDto);
+    const keys: BillKeys = {
+      sbId: saved.sbId,
+      sbCompanyId: saved.sbCompanyId,
+      sbBranchId: saved.sbBranchId,
+      sbAccYear: saved.sbAccYear,
+    };
+    // Re-read under the row lock, exactly as /post does, so the post sees
+    // the row the save left rather than the object the create returned.
+    const bill = await this.bills.lockHeader(tx, keys);
+    const posted = await this.postDraftInTx(
+      tx,
+      bill,
+      { overrides, adjustments: saveDto.adjustments },
+      now,
+    );
+    return { keys, posted };
+  }
+
+  /** After the caller's commit: what `saveAndPostInTx` leaves to do (the GST queue). */
+  afterSaveAndPost(done: BillSavedAndPosted): void {
+    this.afterPost(done.posted);
   }
 
   /**

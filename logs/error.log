@@ -21894,3 +21894,202 @@ The provided value for the column is too long for the column's type. Column: (no
     at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:504:9)
     at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:119:18)
 2026-11-16T03:05:38.743Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T08:52:59.773Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:10:18.115Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:20:59.490Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:21:07.199Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:33:10.744Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:33:29.079Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:33:36.969Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:39:06.421Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:48:04.880Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:48:13.706Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:48:41.468Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:48:53.624Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:52:05.165Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:52:13.513Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T10:55:54.324Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T11:00:33.721Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T11:03:30.761Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T11:11:53.624Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T12:01:35.136Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T12:07:11.175Z ERROR [ModuleExceptionFilter] POST /api/v1/delivery-challans/amend
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (gdr_source_module, gdr_source_doc_id, gdr_acc_year)=(SALES, 01a1e441-0c89-7ca8-88c4-38afb9f3a023, 2026-2027) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:76:19)
+    at async DeliveryChallanService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1054:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1351:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DeliveryChallanService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1253:5)
+    at async DeliveryChallanController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.controller.ts:101:47)
+2026-11-16T12:07:11.175Z ERROR [HttpError] 500 POST /api/v1/delivery-challans/amend code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T12:11:35.566Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T12:55:28.868Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T12:55:34.610Z ERROR [ModuleExceptionFilter] POST /api/v1/delivery-challans/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "acc_voucher_doc_detail_2026_2027" violates check constraint "chk_acc_voucher_doc_detail_supply_tax_logic"
+DETAIL: Failing row contains (01a1e46d-5bc0-7f1a-9548-68a41da23ac4, 01a1e46d-5bbf-7bbb-99f6-82e3342940f0, 01a1e46d-5bb9-7830-8eb4-8c2155fb45d6, 1, 2026-2027, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, TAXABLE, INTER_STATE, 01a0d242-56a9-7e80-95ea-4b6141872fa7, null, null, null, null, null, 01a0d242-56bf-7512-b62b-fed348185fcb, 1.000, 105.0000, 0.00, f, 105.00, 5.000, 01a090cd-4a59-7160-9ed7-0fdb34b747a2, 0.000, 0.000, 0.000, 0.000, 2.62, 2.62, 0.00, 0.00, 5.24, 0.00, 110.24, 110.24, null, null, null, null, null, t, f, null, 2026-11-16 18:25:34.490406+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:131:23)
+    at async DeliveryChallanService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1061:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:315:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DeliveryChallanService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:294:5)
+    at async DeliveryChallanController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.controller.ts:60:9)
+2026-11-16T12:55:34.611Z ERROR [HttpError] 500 POST /api/v1/delivery-challans/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-16T13:02:09.154Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T13:16:05.618Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-16T13:31:35.562Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T13:32:04.798Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-16T14:25:01.668Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:26:02.377Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:26:10.128Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:26:37.483Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:26:46.178Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:41:47.368Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:42:11.096Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:42:23.615Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:42:32.816Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-16T14:42:36.902Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T03:58:02.877Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:07:26.000Z ERROR [ModuleExceptionFilter] POST /api/v1/delivery-challans/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "acc_voucher_doc_detail_2026_2027" violates check constraint "chk_acc_voucher_doc_detail_non_taxable_zero"
+DETAIL: Failing row contains (01a1e7b0-301f-7a5d-bf5d-3cbecb0c43fa, 01a1e7b0-301e-73d8-b8b5-b68cde04a76a, 01a1e7b0-3017-7550-812d-f96b56f5ac98, 2, 2026-2027, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, EXEMPT, INTRA_STATE, 01a0d242-5613-71ef-93af-d41e1cca9f16, null, null, null, 33049990, null, 01a0d242-5642-7876-aa92-de4698650d9f, 2.000, 0.0000, 0.00, f, 0.00, 18.000, 01a090cd-4a59-71c8-b844-cc2fb2741293, 9.000, 9.000, 0.000, 0.000, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null, null, null, t, f, null, 2026-11-17 09:37:25.849684+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:146:23)
+    at async DeliveryChallanService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1096:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:319:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DeliveryChallanService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:298:5)
+    at async DeliveryChallanController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.controller.ts:60:9)
+2026-11-17T04:07:26.001Z ERROR [HttpError] 500 POST /api/v1/delivery-challans/create code=INTERNAL_ERROR platform=- build=- version=- device=01a14a14-a211-7f53-a5f4-668222f3dc44 company=- user=VKPOS
+2026-11-17T04:10:14.153Z ERROR [ModuleExceptionFilter] POST /api/v1/delivery-challans/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "acc_voucher_doc_detail_2026_2027" violates check constraint "chk_acc_voucher_doc_detail_non_taxable_zero"
+DETAIL: Failing row contains (01a1e7b2-c107-7961-85b8-40f23cd1dd42, 01a1e7b2-c106-77dc-b1f0-faff1c100e3f, 01a1e7b2-c0ff-7f9f-83dc-f5fdf2eff0e1, 2, 2026-2027, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, EXEMPT, INTRA_STATE, 01a0d242-5613-71ef-93af-d41e1cca9f16, null, null, null, 33049990, null, 01a0d242-5642-7876-aa92-de4698650d9f, 2.000, 0.0000, 0.00, f, 0.00, 18.000, 01a090cd-4a59-71c8-b844-cc2fb2741293, 9.000, 9.000, 0.000, 0.000, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null, null, null, t, f, null, 2026-11-17 09:40:14.022787+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:146:23)
+    at async DeliveryChallanService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1096:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:319:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DeliveryChallanService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:298:5)
+    at async DeliveryChallanController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.controller.ts:60:9)
+2026-11-17T04:10:14.154Z ERROR [HttpError] 500 POST /api/v1/delivery-challans/create code=INTERNAL_ERROR platform=- build=- version=- device=01a14a14-a211-7f53-a5f4-668222f3dc44 company=- user=VKPOS
+2026-11-17T04:13:02.866Z ERROR [ModuleExceptionFilter] POST /api/v1/delivery-challans/create
+PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `23514`. Message: `ERROR: new row for relation "acc_voucher_doc_detail_2026_2027" violates check constraint "chk_acc_voucher_doc_detail_non_taxable_zero"
+DETAIL: Failing row contains (01a1e7b5-5411-7d09-b1ab-606f8dc1a1d9, 01a1e7b5-5410-7c8b-b9a3-2aaa66f39064, 01a1e7b5-540a-7d1a-842a-995534e3d10f, 2, 2026-2027, 019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, EXEMPT, INTRA_STATE, 01a0d242-5613-71ef-93af-d41e1cca9f16, null, null, null, 33049990, null, 01a0d242-5642-7876-aa92-de4698650d9f, 2.000, 0.0000, 0.00, f, 0.00, 18.000, 01a090cd-4a59-71c8-b844-cc2fb2741293, 9.000, 9.000, 0.000, 0.000, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null, null, null, t, f, null, 2026-11-17 09:43:02.738851+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, null, null, null).`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:146:23)
+    at async DeliveryChallanService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:1096:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:319:14)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DeliveryChallanService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.service.ts:298:5)
+    at async DeliveryChallanController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/delivery-challan/delivery-challan.controller.ts:60:9)
+2026-11-17T04:13:02.867Z ERROR [HttpError] 500 POST /api/v1/delivery-challans/create code=INTERNAL_ERROR platform=- build=- version=- device=01a14a14-a211-7f53-a5f4-668222f3dc44 company=- user=VKPOS
+2026-11-17T04:17:06.238Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:17:21.304Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:17:27.747Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:17:40.983Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:30:56.476Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:31:15.814Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:33:00.138Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T04:50:17.325Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleBillItem.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1445:45
+
+  1442   BILL_ITEM_OPTIONAL_FIELDS,
+  1443   BILL_ITEM_DATE_TRANSFORMS,
+  1444 );
+→ 1445 const created = await tx.saleBillItem.create(
+Foreign key constraint violated on the constraint: `fk_sbi_price_level`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillService.syncItems (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1445:23)
+    at async BillService.createBillInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:900:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:365:13)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:361:7)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:116:9)
+2026-11-17T04:50:17.326Z ERROR [HttpError] 500 POST /api/v1/bills/create code=INTERNAL_ERROR platform=- build=- version=- device=01a14a14-a211-7f53-a5f4-668222f3dc44 company=- user=VKPOS
+2026-11-17T04:57:13.316Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:11:21.618Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:51:08.178Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:51:32.411Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:51:46.152Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:51:49.016Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:52:25.139Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:52:43.732Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:52:50.200Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:53:31.720Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:53:48.140Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:54:24.321Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:54:59.602Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:55:59.326Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:56:11.586Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:56:26.158Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:57:21.144Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:57:32.973Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:58:12.661Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T05:58:22.035Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:00:00.293Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:23:29.399Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:31:51.003Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:56:55.306Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:57:03.387Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T06:57:10.013Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:10:02.035Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:10:43.864Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:13:11.509Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:16:12.251Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:37:55.713Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T07:48:33.427Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:00:53.761Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:01:35.733Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:01:47.117Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:02:30.220Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:02:47.175Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:03:22.374Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:03:30.762Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:03:54.996Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:04:59.526Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:05:20.731Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:42:20.896Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:42:39.894Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:43:17.631Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T08:44:33.888Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012

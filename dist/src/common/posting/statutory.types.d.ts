@@ -15,6 +15,7 @@ export interface StatutoryLimit {
     effectiveTo: string | null;
     sourceRef: string | null;
     isCompanyOverride: boolean;
+    appliesTo: StatutoryAppliesTo;
 }
 export declare const STATUTORY_CODES: {
     readonly CASH_TXN_LIMIT_269ST: "CASH_TXN_LIMIT_269ST";

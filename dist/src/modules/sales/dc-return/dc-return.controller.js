@@ -30,6 +30,9 @@ let DcReturnController = class DcReturnController {
     async save(dto) {
         return ok(dto.sdrId ? 'DC return updated successfully' : 'DC return created successfully', await this.service.save(dto));
     }
+    async validate(dto) {
+        return ok('DC return validated', await this.service.validate(dto));
+    }
     async post(dto) {
         return ok('DC return posted successfully', await this.service.post(dto));
     }
@@ -47,8 +50,8 @@ let DcReturnController = class DcReturnController {
             accYear: sdrAccYear,
         }));
     }
-    async openLines(sdcId, sdcAccYear) {
-        return ok('Open challan lines fetched', await this.service.openLines(sdcId, sdcAccYear));
+    async openLines(q) {
+        return ok('Open challan lines fetched', await this.service.openLines(q));
     }
     async transport(dto) {
         return ok('Transport details saved', await this.service.transport(dto));
@@ -59,7 +62,12 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Create or update a DRAFT DC return (sdrDcId + sdrDcAccYear, lines with sdriDcItemId)',
+        summary: 'Create or update a DRAFT challan return (sdrDcId + sdrDcAccYear, lines with sdriDcItemId)',
+        description: 'Right CREATE (new) / EDIT (draft) on menu 251. Every line fact (item, unit, factor, lot, batch, rate, ' +
+            'cost, tax, HSN) and the party are copied from the challan; the client sends sdriDcItemId, sdriReturnQty, ' +
+            'sdriCondition, sdriGodownId (blank = the challan line\'s), sdriRemarks. Numbered per PC at the first save ' +
+            '(DR2627D14-00001). 422 SALES_DC_CHARGES_NOT_ALLOWED / SALES_DCR_LINE_NOT_ON_DC / SALES_DCR_DC_NOT_POSTED / ' +
+            'SEQUENCE_REFNO_TOO_LONG; 404 STOCK_DEVICE_NOT_FOUND.',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -67,10 +75,27 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], DcReturnController.prototype, "save", null);
 __decorate([
+    (0, common_1.Post)('validate'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Dry-run the post on the create body. Writes nothing.',
+        description: 'Right CREATE or EDIT on 251. data: {ok, refusals[], warnings[] (INFO SALES_DCR_DAMAGED_BUCKET), rights, ' +
+            'totals {lines, qty, weightKg, costBack}}. Refusals: SALES_DCR_DC_NOT_POSTED, SALES_DCR_LINE_NOT_ON_DC, ' +
+            'SALES_DCR_NO_LINES, SALES_DCR_REASON_REQUIRED, SALES_DC_CHARGES_NOT_ALLOWED, SALES_DCR_OVER_OPEN, ' +
+            'SALES_BACKDATE, SALES_DAY_CLOSED.',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dc_return_lifecycle_dto_1.ValidateDcReturnDto]),
+    __metadata("design:returntype", Promise)
+], DcReturnController.prototype, "validate", null);
+__decorate([
     (0, common_1.Post)('post'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Post: goods back in (DC_RETURN), COGS reversed under PERPETUAL, inward challan register row',
+        description: 'Right POST on 251. Answers the /get payload with challan {sdcId, sdcAccYear, refno, date, purpose, ageDays, ' +
+            'ageLevel, value, openBefore, openAfter}.',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -113,19 +138,24 @@ __decorate([
 __decorate([
     (0, common_1.Get)('open-lines'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'The challan lines still open for return' }),
-    (0, swagger_1.ApiQuery)({ name: 'sdcId' }),
-    (0, swagger_1.ApiQuery)({ name: 'sdcAccYear' }),
-    __param(0, (0, common_1.Query)('sdcId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('sdcAccYear')),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The challan and its lines still open for return (VIEW on 251, scoped to company + branch)',
+        description: 'data: challan {sdcId, sdcAccYear, refno, date, status, purpose, custId, custName, ageDays, ageLevel, value, ' +
+            'bills[] {sbId, accYear, refno, date, qty}}, lines[] {dcItemId, lineNo, itemId, itemCode, itemName, ' +
+            'itemUnitId, unitName, toBaseFactor, unitKg, godownId, godownName, lotId, lotNo, batchNo, bucket, dcQty, ' +
+            'billedQty, returnedQty, openQty, onDrafts, rate, costPrice, taxPerc}. Quantities are Decimal strings.',
+    }),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [dc_return_lifecycle_dto_1.DcReturnOpenLinesQueryDto]),
     __metadata("design:returntype", Promise)
 ], DcReturnController.prototype, "openLines", null);
 __decorate([
     (0, common_1.Put)('transport'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'The transport band (direction INWARD); refused after the e-way bill' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The transport band (direction INWARD, EDIT on 251); refused after the e-way bill. Answers /get.',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [dc_return_lifecycle_dto_1.DcReturnTransportDto]),

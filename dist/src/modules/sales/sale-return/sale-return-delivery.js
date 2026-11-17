@@ -4,6 +4,8 @@ exports.num = exports.DELIVERY_RETURN_CODES_ADDED = void 0;
 exports.resolveNotTaken = resolveNotTaken;
 exports.deliveryStatusOf = deliveryStatusOf;
 exports.notTakenRowsOf = notTakenRowsOf;
+exports.withKeptNotTaken = withKeptNotTaken;
+exports.postedNotTakenOf = postedNotTakenOf;
 exports.loadNotTakenLines = loadNotTakenLines;
 exports.returnEventsOf = returnEventsOf;
 exports.amendLockIssues = amendLockIssues;
@@ -37,7 +39,7 @@ function resolveNotTaken(rows, billLines, claim) {
             defaultBase = client_1.Prisma.Decimal.min(qtyBase, left);
         }
         const factor = r.factor.gt(0) ? r.factor : (0, sale_return_money_1.D)(1);
-        const defaultQty = down3(defaultBase.dividedBy(factor));
+        const defaultQty = r.kept ?? down3(defaultBase.dividedBy(factor));
         const resolvedQty = r.typed ?? defaultQty;
         const resolvedBase = resolvedQty.times(factor);
         if (key) {
@@ -52,13 +54,14 @@ function resolveNotTaken(rows, billLines, claim) {
             billPendingBase: pendingBase,
         });
         const unit = r.unitName ?? '';
-        if (r.typed !== null && r.typed.gt(r.qty)) {
+        const asked = r.typed ?? r.kept ?? null;
+        if (asked !== null && asked.gt(r.qty)) {
             byRule[0].push({
                 code: delivery_constants_1.DELIVERY_ERROR_CODES.DELIVERY_RETURN_OVER_QTY,
-                message: `Line ${r.lineNo}: ${fmt(r.typed)} ${unit} marked not taken, but only ${fmt(r.qty)} ${unit} are being returned`,
+                message: `Line ${r.lineNo}: ${fmt(asked)} ${unit} marked not taken, but only ${fmt(r.qty)} ${unit} are being returned`,
                 field: 'sriUndeliveredQty',
                 line: r.lineNo,
-                params: { n: r.lineNo, u: fmt(r.typed), unit, qty: fmt(r.qty) },
+                params: { n: r.lineNo, u: fmt(asked), unit, qty: fmt(r.qty) },
             });
         }
         if (claim && resolvedQty.gt(0)) {
@@ -183,6 +186,33 @@ function notTakenRowsOf(items, money, unitNames) {
             unitName: unitNames.get(item.sriItemUnitId) ?? null,
         };
     });
+}
+function withKeptNotTaken(rows, posted) {
+    return rows.map((r) => {
+        const p = r.sriId ? posted.get(r.sriId) : undefined;
+        if (!p) {
+            return r;
+        }
+        const was = p.factor.gt(0) ? p.factor : (0, sale_return_money_1.D)(1);
+        const factor = r.factor.gt(0) ? r.factor : (0, sale_return_money_1.D)(1);
+        const kept = p.qty.times(was).dividedBy(factor).toDecimalPlaces(3, client_1.Prisma.Decimal.ROUND_HALF_UP);
+        return { ...r, kept };
+    });
+}
+function postedNotTakenOf(items) {
+    const out = new Map();
+    for (const i of items) {
+        const id = i.sriId;
+        if (!id) {
+            continue;
+        }
+        const raw = i.sriUndeliveredQty;
+        out.set(id, {
+            qty: raw === undefined || raw === null || raw === '' ? sale_return_money_1.ZERO : (0, sale_return_money_1.D)(raw),
+            factor: (0, sale_return_money_1.D)(i.sriToBaseFactor || 1),
+        });
+    }
+    return out;
 }
 async function loadNotTakenLines(tx, pending, rows, srId) {
     const keys = new Map();

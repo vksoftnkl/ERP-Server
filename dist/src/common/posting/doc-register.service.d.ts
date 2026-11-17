@@ -10,6 +10,7 @@ export declare class DocRegisterService {
         companyEinvoiceFlag?: boolean;
         aatoAmount?: number | null;
         interState?: boolean;
+        ewayStateCode?: string | null;
     }): Promise<RegisterWriteResult>;
     registerIdOf(c: Prisma.TransactionClient, sourceDocId: string, accYear: string): Promise<string | null>;
     registerIdOfVoucher(c: Prisma.TransactionClient, voucherId: string, accYear: string): Promise<string | null>;

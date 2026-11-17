@@ -53,7 +53,7 @@ exports.BillModule = BillModule = __decorate([
             bill_voucher_type_service_1.BillVoucherTypeService,
             bill_exception_filter_1.BillExceptionFilter,
         ],
-        exports: [bill_service_1.BillService, bill_read_service_1.BillReadService],
+        exports: [bill_service_1.BillService, bill_read_service_1.BillReadService, bill_lifecycle_service_1.BillLifecycleService],
     })
 ], BillModule);
 //# sourceMappingURL=bill.module.js.map

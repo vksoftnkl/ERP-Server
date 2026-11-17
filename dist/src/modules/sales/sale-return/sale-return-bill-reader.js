@@ -221,6 +221,13 @@ class SaleReturnBillReader {
             netAmt: dec(r.sbi_net_amt),
         }));
     }
+    async lockBillHeader(tx, bill) {
+        const rows = await tx.$queryRaw `
+      SELECT sb_id FROM sales.sale_bill
+       WHERE sb_id = ${bill.sbId}::uuid AND sb_acc_year = ${bill.accYear}::char(9)
+         FOR UPDATE`;
+        return rows.length;
+    }
     async lockBillLines(tx, bill) {
         const rows = await tx.$queryRaw `
       SELECT sbi_id FROM sales.sale_bill_item

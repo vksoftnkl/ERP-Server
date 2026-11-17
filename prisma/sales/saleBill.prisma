@@ -244,6 +244,17 @@ model SaleBill {
   // ── Temp credit (20260922000000) ────────────────────────────────────────
   tempCredits        AccTempCredit[] @relation("TempCreditBill")
 
+  // ── Mobile upload (20261118120000_mobile_bills_receipts) ────────────────
+  /// The phone's own id for a bill uploaded from the mobile app
+  /// (/mobile/bills/create). A resend with the same (company, client uuid)
+  /// answers the bill already saved; NULL on desktop bills. The year is in
+  /// ux_sb_client_uuid only because a unique index on a partitioned table must
+  /// hold the partition key: the server checks across years under a lock.
+  /// Not partial: a cancelled bill keeps its uuid. Set only on create, never
+  /// copied by amend / void / retender (they update the same row).
+  sbClientUuid       String?   @db.Uuid @map("sb_client_uuid")
+
+  @@unique([sbCompanyId, sbClientUuid, sbAccYear], map: "ux_sb_client_uuid")
   @@map("sale_bill")
   @@schema("sales")
 }

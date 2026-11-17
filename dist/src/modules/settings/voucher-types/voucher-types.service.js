@@ -20,6 +20,7 @@ const rights_1 = require("../../../common/posting/rights");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_shared_utils_1 = require("../../../common/utils/module-shared.utils");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const print_design_usable_sql_1 = require("../print-template-assignment/print-design-usable.sql");
 const voucher_types_company_1 = require("./voucher-types-company");
@@ -160,14 +161,14 @@ let VoucherTypesService = class VoucherTypesService {
         const [billCount, inUse, counters, printDocType, offerBase, facts, vouchers, branches] = await Promise.all([
             this.billCount(client, row.vchrTypeId, company),
             this.inUse(client, row.vchrTypeId),
-            this.counters(client, row.vchrTypeId, company, accYear),
+            this.counters(client, row.vchrTypeId, company, accYear, (0, voucher_sequence_helper_1.isDeviceWideSeries)(row)),
             this.printDocType(client, base ?? row),
             (base ?? row).vchrTypeCode === voucher_types_rules_1.SALES_BILL_TYPE_CODE && row.vchrParentId == null
                 ? this.readOfferBase(client, company)
                 : Promise.resolve(null),
             this.numberingFacts(client, row, company, accYear, branch),
             this.voucherFacts(client, row.vchrTypeId, company, branch?.branchId ?? null, accYear),
-            this.branchStates(client, row.vchrTypeId, company, accYear),
+            this.branchStates(client, row.vchrTypeId, company, accYear, (0, voucher_sequence_helper_1.isDeviceWideSeries)(row)),
         ]);
         const printDesigns = printDocType
             ? await this.printDesigns(client, printDocType, company, row.vchrParentId == null)
@@ -365,15 +366,20 @@ let VoucherTypesService = class VoucherTypesService {
         const subject = existing ?? { ...base, vchrTypeId: 0, vchrParentId: target.vchrParentId };
         const screenNumbered = existing !== null && (0, voucher_types_rules_1.numberedByOf)(existing) === 'SCREEN';
         const gstOutward = !!base && (0, voucher_types_rules_1.isGstOutward)(base);
+        const gstDocNo = !!base && (0, voucher_types_rules_1.isGstDocNo)(base);
         const branch = await this.previewBranch(client, company, dto.branchId ?? null);
-        const facts = await this.numberingFacts(client, { ...subject, vchrGstSide: base?.vchrGstSide ?? subject.vchrGstSide }, company, accYear, branch);
+        const facts = await this.numberingFacts(client, {
+            ...subject,
+            vchrGstSide: base?.vchrGstSide ?? subject.vchrGstSide,
+            vchrGstDocNo: base?.vchrGstDocNo ?? subject.vchrGstDocNo,
+        }, company, accYear, branch);
         const verdict = (0, voucher_types_rules_1.checkNumbering)({
             mode: target.vchrNumberingMode,
             prefix: target.vchrNoPrefix,
             suffix: target.vchrNoSuffix,
             width: target.vchrNoWidth,
             startNo: target.vchrStartNo,
-        }, { ...facts, gstOutward });
+        }, { ...facts, gstOutward, gstDocNo });
         let preview = verdict.preview;
         if (screenNumbered) {
             errors.push(...(0, voucher_types_rules_1.lockedFieldChanges)(existing, {
@@ -691,7 +697,7 @@ let VoucherTypesService = class VoucherTypesService {
     }
     async numberingFacts(client, subject, company, accYear, previewBranch) {
         const scopeCompany = subject.vchrParentId == null && subject.vchrTypeId !== 0 ? null : company;
-        const [branches, seriesRows] = await Promise.all([
+        const [branches, seriesRows, deviceCode] = await Promise.all([
             this.branchRows(client, scopeCompany),
             client.accVoucherType.findMany({
                 where: scopeCompany
@@ -706,6 +712,7 @@ let VoucherTypesService = class VoucherTypesService {
                     vchrNoSuffix: true,
                 },
             }),
+            (0, voucher_sequence_helper_1.longestLiveDeviceCode)(client, scopeCompany),
         ]);
         const series = seriesRows
             .filter((r) => (0, voucher_types_rules_1.numberedByOf)(r) === 'COUNTER')
@@ -719,6 +726,8 @@ let VoucherTypesService = class VoucherTypesService {
             vchrTypeId: subject.vchrTypeId === 0 ? null : subject.vchrTypeId,
             accYear,
             gstOutward: (0, voucher_types_rules_1.isGstOutward)(subject),
+            gstDocNo: (0, voucher_types_rules_1.isGstDocNo)(subject),
+            deviceCode,
             branches,
             previewBranch,
             series,
@@ -754,7 +763,7 @@ let VoucherTypesService = class VoucherTypesService {
          AND (${company}::uuid IS NULL OR seq_company_id = ${company}::uuid)`;
         return (r?.n ?? 0) > 0;
     }
-    async counters(client, vchrTypeId, company, accYear) {
+    async counters(client, vchrTypeId, company, accYear, deviceWide = false) {
         const rows = await client.$queryRaw `
       SELECT s.seq_branch_id AS branch_id, b.br_name,
              upper(COALESCE(NULLIF(btrim(b.br_bill_prefix), ''), NULLIF(btrim(b.br_code), ''))) AS code,
@@ -771,6 +780,7 @@ let VoucherTypesService = class VoucherTypesService {
             deviceCode: r.device_code,
             lastNo: r.last_no.toString(),
             lastRefno: r.last_refno,
+            allBranches: deviceWide && r.device_code.trim().toUpperCase() !== 'MAIN',
         }));
     }
     async voucherFacts(client, vchrTypeId, company, branchId, accYear) {
@@ -796,13 +806,15 @@ let VoucherTypesService = class VoucherTypesService {
             lastVoucherDate: last?.vdate instanceof Date ? iso(last.vdate) : null,
         };
     }
-    async branchStates(client, vchrTypeId, company, accYear) {
+    async branchStates(client, vchrTypeId, company, accYear, deviceWide = false) {
         const rows = await client.$queryRaw `
       SELECT b.br_id, b.br_name, b.br_is_default,
              upper(COALESCE(NULLIF(btrim(b.br_bill_prefix), ''), NULLIF(btrim(b.br_code), ''))) AS code,
              EXISTS (SELECT 1 FROM accounts.acc_voucher_seq s
                       WHERE s.seq_vchr_type_id = ${vchrTypeId}::int AND s.seq_company_id = ${company}::uuid
-                        AND s.seq_branch_id = b.br_id AND s.seq_acc_year = ${accYear}
+                        AND (s.seq_branch_id = b.br_id
+                             OR (${deviceWide} AND upper(btrim(s.seq_device_code)) <> 'MAIN'))
+                        AND s.seq_acc_year = ${accYear}
                         AND s.seq_is_deleted = false) AS has_counter,
              lv.refno
         FROM public.branch_master b

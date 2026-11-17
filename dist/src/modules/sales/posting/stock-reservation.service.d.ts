@@ -45,6 +45,7 @@ export declare class StockReservationService {
         docId: string;
         lineNo: number;
     }, baseQty: number | Prisma.Decimal, actor: string, now: Date): Promise<void>;
+    rederiveOrderLines(tx: Prisma.TransactionClient, soId: string, lineNos: readonly number[], actor: string, now: Date): Promise<void>;
     private writeConsumed;
     private releaseGiveBack;
     private holdMore;

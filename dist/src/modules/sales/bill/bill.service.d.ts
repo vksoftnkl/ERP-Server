@@ -15,6 +15,7 @@ import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
 import { BillReadService } from './bill-read.service';
+export declare function lineLevelOf(level: number | null | undefined, billLevel: number): number;
 export declare class BillService {
     private readonly prisma;
     private readonly auditLogService;
@@ -85,6 +86,7 @@ export declare class BillService {
     private requireCustomerLedgerId;
     private logStatusChange;
     private toStatusEvent;
+    private resolveLineSources;
     private applyOptionalFields;
     private resolveGodowns;
     private resolveCompanyNegStock;

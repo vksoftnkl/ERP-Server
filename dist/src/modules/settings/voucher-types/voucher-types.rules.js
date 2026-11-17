@@ -1,11 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VT_DEFAULT_DELIVERY_MODE = exports.VT_DELIVERY_MODES = exports.sameValue = exports.NUMBERING_FIELDS = exports.BASE_LOCKED_FIELDS = exports.MIRROR_FIELDS = exports.START_NO_MAX = exports.WIDTH_MAX = exports.WIDTH_MIN = exports.ABBR_PATTERN = exports.ALLOWED_METHODS = exports.SCREEN_NUMBERED_CODES = exports.SALES_BILL_TYPE_CODE = exports.PARENT_TYPE_CODES = exports.VOUCHER_TYPES_TABLE_NAME = exports.VOUCHER_TYPES_AUDIT_SCREEN_NAME = exports.VOUCHER_TYPES_MENU_ID = void 0;
+exports.VT_DEFAULT_DELIVERY_MODE = exports.VT_DELIVERY_MODES = exports.sameValue = exports.NUMBERING_FIELDS = exports.BASE_LOCKED_FIELDS = exports.VT_NO_TOO_LONG_DOC_RULE = exports.MIRROR_FIELDS = exports.START_NO_MAX = exports.WIDTH_MAX = exports.WIDTH_MIN = exports.ABBR_PATTERN = exports.ALLOWED_METHODS = exports.SCREEN_NUMBERED_CODES = exports.SALES_BILL_TYPE_CODE = exports.PARENT_TYPE_CODES = exports.VOUCHER_TYPES_TABLE_NAME = exports.VOUCHER_TYPES_AUDIT_SCREEN_NAME = exports.VOUCHER_TYPES_MENU_ID = void 0;
 exports.kindOf = kindOf;
 exports.numberedByOf = numberedByOf;
 exports.isBaseType = isBaseType;
 exports.canHaveChildren = canHaveChildren;
 exports.isGstOutward = isGstOutward;
+exports.isGstDocNo = isGstDocNo;
 exports.printDocTypeOf = printDocTypeOf;
 exports.childTypeCode = childTypeCode;
 exports.issue = issue;
@@ -67,6 +68,7 @@ exports.MIRROR_FIELDS = [
     'vchrInstruments',
     'vchrTallyExportEnabled',
     'vchrTallyBaseVoucherType',
+    'vchrGstDocNo',
 ];
 function kindOf(t) {
     if (!t.vchrAffectsAccounts) {
@@ -88,6 +90,12 @@ function canHaveChildren(t) {
 function isGstOutward(t) {
     return t.vchrGstSide === voucher_sequence_helper_1.GST_OUTWARD_SIDE;
 }
+function isGstDocNo(t) {
+    return t.vchrGstDocNo === true;
+}
+exports.VT_NO_TOO_LONG_DOC_RULE = 'GST_DOC_NO';
+const KNOWN_TOKEN_TEXT = new RegExp(`\\{(${voucher_sequence_helper_1.KNOWN_FORMAT_TOKENS.join('|')})\\}`, 'g');
+const KNOWN_TOKEN_LIST = voucher_sequence_helper_1.KNOWN_FORMAT_TOKENS.map((t) => `{${t}}`).join(', ');
 function printDocTypeOf(base, basePurposeDocType) {
     if (basePurposeDocType) {
         return basePurposeDocType;
@@ -135,33 +143,50 @@ function checkNumbering(d, f) {
         scan.names.forEach((n) => names.add(n));
         if (scan.unknown !== undefined) {
             tokensOk = false;
-            errors.push(issue(sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN, field, `"${text}" holds an unknown code "${scan.unknown}". Only {FY}, {YY} and {BR} are known.`, { params: { token: scan.unknown.replace(/[{}]/g, ' ').trim() } }));
+            errors.push(issue(sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN, field, `"${text}" holds an unknown code "${scan.unknown}". Only ${KNOWN_TOKEN_LIST} are known.`, { params: { token: scan.unknown.replace(/[{}]/g, ' ').trim() } }));
         }
     }
     const yy = (0, voucher_sequence_helper_1.shortAccYear)(f.accYear);
-    if (tokensOk && names.has('YY') && yy === null) {
-        tokensOk = false;
-        errors.push(issue(sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN, 'vchrNoPrefix', `{YY} needs an accounting year shaped NNNN-NNNN, not "${f.accYear}".`, { params: { token: 'YY' } }));
+    const fyc = (0, voucher_sequence_helper_1.compactAccYear)(f.accYear);
+    for (const [token, value] of [
+        ['YY', yy],
+        ['FYC', fyc],
+    ]) {
+        if (tokensOk && names.has(token) && value === null) {
+            tokensOk = false;
+            errors.push(issue(sequence_error_codes_1.SequenceErrorCode.FORMAT_TOKEN_UNKNOWN, 'vchrNoPrefix', `{${token}} needs an accounting year shaped NNNN-NNNN, not "${f.accYear}".`, { params: { token } }));
+        }
     }
+    const gstLimited = f.gstOutward || f.gstDocNo === true;
+    const deviceCode = f.deviceCode?.trim() || null;
     if (d.mode !== client_1.VoucherNumberingMode.AUTO) {
         errors.push(issue(voucher_types_error_codes_1.VoucherTypeErrorCode.METHOD_GST_AUTO_ONLY, 'vchrNumberingMode', f.gstOutward
             ? 'A GST invoice or note must be numbered automatically.'
             : `Method ${d.mode} needs a number box on the document's screen; none has one yet (Automatic only).`, f.gstOutward ? {} : { rule: 'NO_NUMBER_BOX' }));
     }
     const usesBr = (0, voucher_sequence_helper_1.formatHasBranchToken)(d.prefix, d.suffix);
+    const usesDv = (0, voucher_sequence_helper_1.formatHasDeviceToken)(d.prefix, d.suffix);
     const sampleAt = (branchCode) => {
         if (!tokensOk) {
             return null;
         }
-        const values = { FY: f.accYear, YY: yy ?? '', BR: branchCode ?? '{BR}' };
+        const values = {
+            FY: f.accYear,
+            YY: yy ?? '',
+            FYC: fyc ?? '',
+            BR: branchCode ?? '{BR}',
+            DV: deviceCode ?? '{DV}',
+        };
         const prefix = (0, voucher_sequence_helper_1.fillVoucherFormatTokens)(d.prefix, values) ?? '';
         const suffix = (0, voucher_sequence_helper_1.fillVoucherFormatTokens)(d.suffix, values) ?? '';
         const first = (0, voucher_sequence_helper_1.firstVoucherNumber)({ prefix, suffix, noWidth: widthOk ? d.width : 1 }, startOk ? d.startNo : 1);
         return { prefix, suffix, first };
     };
-    const codes = usesBr
-        ? [...new Set(f.branches.map((b) => b.numberCode).filter((c) => !!c))]
-        : [null];
+    const codes = usesDv && deviceCode === null
+        ? []
+        : usesBr
+            ? [...new Set(f.branches.map((b) => b.numberCode).filter((c) => !!c))]
+            : [null];
     const samples = codes
         .map((c) => sampleAt(c))
         .filter((s) => s !== null);
@@ -174,19 +199,22 @@ function checkNumbering(d, f) {
         }
         else if (longest.first.length > voucher_sequence_helper_1.GST_DOC_NO_MAX_LENGTH) {
             const params = { sample: longest.first, len: String(longest.first.length) };
-            if (f.gstOutward) {
-                errors.push(issue(voucher_types_error_codes_1.VoucherTypeErrorCode.NO_TOO_LONG, 'vchrNoPrefix', `${longest.first} has ${longest.first.length} characters; a GST invoice number may have ${voucher_sequence_helper_1.GST_DOC_NO_MAX_LENGTH} at most.`, { params }));
+            if (gstLimited) {
+                const docNo = f.gstDocNo === true && !f.gstOutward;
+                errors.push(issue(voucher_types_error_codes_1.VoucherTypeErrorCode.NO_TOO_LONG, 'vchrNoPrefix', `${longest.first} has ${longest.first.length} characters; a GST ${docNo ? 'document' : 'invoice'} number may have ${voucher_sequence_helper_1.GST_DOC_NO_MAX_LENGTH} at most.`, docNo ? { params, rule: exports.VT_NO_TOO_LONG_DOC_RULE } : { params }));
             }
             else {
                 warnings.push(issue(voucher_types_error_codes_1.VoucherTypeWarningCode.NO_OVER_16, 'vchrNoPrefix', `${longest.first} has ${longest.first.length} characters: fine for this type, not for a GST invoice.`, { params }));
             }
         }
     }
-    if (f.gstOutward) {
-        const bare = [d.prefix, d.suffix].map((t) => (t ?? '').replace(/\{(FY|YY|BR)\}/g, '')).join('');
+    if (gstLimited) {
+        const bare = [d.prefix, d.suffix].map((t) => (t ?? '').replace(KNOWN_TOKEN_TEXT, '')).join('');
         if (tokensOk && !GST_DOC_NO_CHARS.test(bare)) {
             errors.push(issue(voucher_types_error_codes_1.VoucherTypeErrorCode.NO_BAD_CHAR, 'vchrNoPrefix', 'A GST invoice number may have only letters, digits, / and -.'));
         }
+    }
+    if (f.gstOutward) {
         if (!usesBr) {
             const shared = sharedGstin(f.branches);
             if (shared) {
@@ -210,8 +238,9 @@ function checkNumbering(d, f) {
             branchCode: f.previewBranch?.numberCode ?? null,
             branchName: f.previewBranch?.branchName ?? null,
             accYear: f.accYear,
-            gstLimit: f.gstOutward ? voucher_sequence_helper_1.GST_DOC_NO_MAX_LENGTH : null,
+            gstLimit: gstLimited ? voucher_sequence_helper_1.GST_DOC_NO_MAX_LENGTH : null,
             clashWith: clash?.vchrTypeName ?? null,
+            deviceCode,
         },
     };
 }

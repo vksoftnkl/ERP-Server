@@ -6,8 +6,13 @@ import { OpenItemsService } from './open-items.service';
 import { ReceiptService } from './receipt.service';
 import { PostReceiptDto } from './dto/post-receipt.dto';
 import type { SaveDraftReceiptDto } from './dto/save-receipt.dto';
-import type { ReceiptPostPayload } from './types/receipt-api.types';
+import type { ReceiptDraftPayload, ReceiptPostPayload } from './types/receipt-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
+export declare const POST_TRANSACTION_OPTIONS: {
+    maxWait: number;
+    timeout: number;
+};
+export type ReceiptSettlementOf = (tx: Prisma.TransactionClient, saved: ReceiptDraftPayload) => Promise<Pick<PostReceiptDto, 'allocations' | 'onAccount'>>;
 export declare class ReceiptPostingService {
     private readonly prisma;
     private readonly requestContext;
@@ -18,6 +23,7 @@ export declare class ReceiptPostingService {
     constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     post(dto: PostReceiptDto): Promise<ReceiptPostPayload>;
     saveAndPost(dto: SaveDraftReceiptDto): Promise<ReceiptPostPayload>;
+    saveAndPostInTransaction(tx: Prisma.TransactionClient, dto: SaveDraftReceiptDto, settle?: ReceiptSettlementOf): Promise<ReceiptPostPayload>;
     postInTransaction(tx: Prisma.TransactionClient, dto: PostReceiptDto, actor: string): Promise<ReceiptPostPayload>;
     private lockHeader;
     private assertStatusMayPost;

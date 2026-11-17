@@ -16,6 +16,7 @@ const data_change_service_1 = require("../data-changes/data-change.service");
 const cache_invalidation_service_1 = require("../redis/cache-invalidation.service");
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CACHE_SKIP_PATH_SEGMENTS = new Set(['auth', 'profile', 'health']);
+const MOBILE_PATH_SEGMENT = 'mobile';
 const READ_ONLY_WRITE_SUFFIXES = [
     '/validate',
     '/verify',
@@ -76,10 +77,11 @@ let HttpCacheInvalidationInterceptor = class HttpCacheInvalidationInterceptor {
             return undefined;
         }
         const segments = pathname.split('/').filter(Boolean);
-        if (segments.length < 3) {
+        const index = segments[2] === MOBILE_PATH_SEGMENT ? 3 : 2;
+        if (segments.length < index + 1) {
             return undefined;
         }
-        const resource = segments[2];
+        const resource = segments[index];
         if (CACHE_SKIP_PATH_SEGMENTS.has(resource)) {
             return undefined;
         }

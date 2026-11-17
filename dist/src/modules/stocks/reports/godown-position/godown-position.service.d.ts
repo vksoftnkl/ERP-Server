@@ -8,6 +8,8 @@ export declare class GodownPositionService {
     constructor(prisma: PrismaService, requestContext: RequestContextService);
     show(q: GodownPositionQueryDto): Promise<PositionPayload>;
     export(q: GodownPositionExportDto): Promise<PositionExportPayload>;
+    printData(q: GodownPositionQueryDto, userId: string | null): Promise<PositionExportPayload>;
+    private exportPayload;
     behind(q: GodownPositionBehindDto): Promise<BehindPayload>;
     private build;
     private scopeOf;

@@ -117,14 +117,22 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveDcReturnItemDto.prototype, "sdriDcLineNo", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    (0, dtoDecorators_1.RequiredUuid)(),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Ignored: copied from the challan line's item (challan plan decision 35).",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], SaveDcReturnItemDto.prototype, "sdriItemId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    (0, dtoDecorators_1.RequiredUuid)(),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Ignored: copied from the challan line's unit (challan plan decision 35).",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], SaveDcReturnItemDto.prototype, "sdriItemUnitId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
@@ -137,9 +145,13 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveDcReturnItemDto.prototype, "sdriHsnCode", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    (0, dtoDecorators_1.RequiredUuid)(),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Receive into: blank = the challan line's godown (Q14).",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], SaveDcReturnItemDto.prototype, "sdriGodownId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
