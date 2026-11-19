@@ -71,4 +71,10 @@ export type LogEntityChangeInput = {
   userId?: string | number | null;
   branchId?: string | null;
   notes?: string | null;
+  /**
+   * An `update` whose recorded labels did not change writes no row (review list 11-19:
+   * a print-template save that changed only a revision no longer adds an empty template
+   * row). Off by default: most masters log every save.
+   */
+  skipWhenUnchanged?: boolean;
 };

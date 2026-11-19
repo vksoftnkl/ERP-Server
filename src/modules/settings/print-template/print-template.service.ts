@@ -140,7 +140,48 @@ export class PrintTemplateService {
     if (!template) {
       this.throwNotFound('ptlId', ptlId, 'Print template not found');
     }
-    return toTemplatePayload(template);
+    return this.withUserNames(toTemplatePayload(template));
+  }
+
+  /**
+   * Review list 11-19 (62.4): the rail shows who made, changed and approved a revision by
+   * NAME. Added to the /get answer only, beside the uuid keys it keeps; the payload the
+   * audit records (toTemplatePayload / toVersionPayload) stays without them.
+   * Name = display name, else login name; a uuid naming no user gets null.
+   */
+  private async withUserNames(payload: PrintTemplatePayload): Promise<PrintTemplatePayload> {
+    const ids = [
+      payload.ptlCreatedBy,
+      payload.ptlModifiedBy,
+      ...payload.versions.flatMap((version) => [
+        version.ptvCreatedBy,
+        version.ptvModifiedBy,
+        version.ptvApprovedBy,
+      ]),
+    ].filter((id): id is string => typeof id === 'string' && USER_UUID_PATTERN.test(id));
+    const unique = [...new Set(ids)];
+    const users =
+      unique.length === 0
+        ? []
+        : await this.prisma.userMaster.findMany({
+            where: { usrId: { in: unique } },
+            select: { usrId: true, usrDisplayName: true, usrLoginName: true },
+          });
+    const nameById = new Map(
+      users.map((user) => [user.usrId, user.usrDisplayName?.trim() || user.usrLoginName]),
+    );
+    const nameOf = (id: string | null): string | null => (id ? (nameById.get(id) ?? null) : null);
+    return {
+      ...payload,
+      ptlCreatedByName: nameOf(payload.ptlCreatedBy),
+      ptlModifiedByName: nameOf(payload.ptlModifiedBy),
+      versions: payload.versions.map((version) => ({
+        ...version,
+        ptvCreatedByName: nameOf(version.ptvCreatedBy),
+        ptvModifiedByName: nameOf(version.ptvModifiedBy),
+        ptvApprovedByName: nameOf(version.ptvApprovedBy),
+      })),
+    };
   }
 
   /**
@@ -969,12 +1010,12 @@ export class PrintTemplateService {
 
     for (const plan of plans) {
       if (plan.deletes) {
-        await this.deleteVersion(tx, plan);
+        await this.deleteVersion(tx, template, plan);
         continue;
       }
 
       const version = plan.existing
-        ? await this.updateVersion(tx, plan)
+        ? await this.updateVersion(tx, template, plan)
         : await this.createVersion(tx, template, plan);
 
       if (plan.datasets) {
@@ -1025,7 +1066,7 @@ export class PrintTemplateService {
       'insert',
       VERSION_TABLE_NAME,
       version.ptvId,
-      `${version.ptvTemplateId} rev ${version.ptvRevNo}`,
+      revisionDisplayName(template, version.ptvRevNo),
       null,
       toVersionPayload(version, null),
       `Print template revision ${version.ptvRevNo} created as ${version.ptvStatus}`,
@@ -1035,6 +1076,7 @@ export class PrintTemplateService {
 
   private async updateVersion(
     tx: Prisma.TransactionClient,
+    template: TemplateRow,
     plan: VersionPlan,
   ): Promise<VersionRow> {
     const existing = plan.existing as VersionRow;
@@ -1091,7 +1133,7 @@ export class PrintTemplateService {
       plan.publishes ? 'approve' : 'update',
       VERSION_TABLE_NAME,
       updated.ptvId,
-      `${updated.ptvTemplateId} rev ${updated.ptvRevNo}`,
+      revisionDisplayName(template, updated.ptvRevNo),
       toVersionPayload(existing, null),
       toVersionPayload(updated, null),
       plan.publishes
@@ -1101,7 +1143,11 @@ export class PrintTemplateService {
     return updated;
   }
 
-  private async deleteVersion(tx: Prisma.TransactionClient, plan: VersionPlan): Promise<void> {
+  private async deleteVersion(
+    tx: Prisma.TransactionClient,
+    template: TemplateRow,
+    plan: VersionPlan,
+  ): Promise<void> {
     const existing = plan.existing as VersionRow;
     const modifiedOn = new Date();
     const actor = this.resolveWriteActor(plan.row.ptvModifiedBy);
@@ -1119,7 +1165,7 @@ export class PrintTemplateService {
       'cancel',
       VERSION_TABLE_NAME,
       existing.ptvId,
-      `${existing.ptvTemplateId} rev ${existing.ptvRevNo}`,
+      revisionDisplayName(template, existing.ptvRevNo),
       toVersionPayload(existing, null),
       toVersionPayload(updated, null),
       `Print template revision ${existing.ptvRevNo} soft deleted with its datasets`,
@@ -1391,6 +1437,9 @@ export class PrintTemplateService {
         modifiedRecord,
         userId: this.resolveAuditActor(),
         notes,
+        // Review list 11-19: a save that changed only a revision (or a dataset) writes no
+        // empty "update" row for the template, nor for an untouched revision / dataset.
+        skipWhenUnchanged: true,
       },
       tx,
     );
@@ -1423,3 +1472,10 @@ const numberOr = (value: Prisma.Decimal | null | undefined, fallback: number): n
 /** ptv_params is jsonb: null has to reach Prisma as DbNull, not as JS null. */
 const toJsonInput = (value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull =>
   value === null || value === undefined ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+
+/** A revision's name on the audit history (review list 11-19): the template's name, never its id. */
+function revisionDisplayName(template: Pick<TemplateRow, 'ptlName'>, revNo: number): string {
+  return `${template.ptlName} rev ${revNo}`;
+}
+
+const USER_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

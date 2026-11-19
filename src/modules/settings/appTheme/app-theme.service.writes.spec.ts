@@ -1,7 +1,8 @@
 import { HttpException } from '@nestjs/common';
 import { AppThemeMaster, AppThemeTemplate } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { AppThemeService } from './app-theme.service';
+import { createHash } from 'node:crypto';
+import { AppThemeService, templateTextDigest } from './app-theme.service';
 import { SaveAppThemeDto } from './dto/save-app-theme.dto';
 import { AppThemeErrorCode } from './types/app-theme-error-codes';
 
@@ -668,7 +669,7 @@ describe('AppThemeService — reads, writes and rights', () => {
       });
     });
 
-    it('writes the text, and the remarks only when sent, and audits both versions', async () => {
+    it('writes the text, and the remarks only when sent, and audits both versions by digest', async () => {
       await save({ tplRemarks: 'darker headers' });
 
       expect(prisma.appThemeTemplate.update).toHaveBeenCalledWith({
@@ -680,12 +681,32 @@ describe('AppThemeService — reads, writes and rights', () => {
           tplModifiedBy: USER_ID,
         },
       });
+      // Review list 11-19 (266.1): the audit keeps the text's SHA-256, size and line count,
+      // never the text itself (it was ~440 KB, written twice per save).
       expect(auditEntry()).toMatchObject({
         action: 'update',
         tableName: 'app theme template',
-        originalRecord: expect.objectContaining({ tplQss: templateRow().tplQss }),
-        modifiedRecord: expect.objectContaining({ tplQss: 'QDialog { color: {{text}}; }' }),
+        originalRecord: expect.objectContaining(templateTextDigest(templateRow().tplQss)),
+        modifiedRecord: expect.objectContaining({
+          stylesheetHash: createHash('sha256').update('QDialog { color: {{text}}; }').digest('hex'),
+          stylesheetSize: 28,
+          stylesheetLines: 1,
+        }),
       });
+      const entry = auditEntry() as { originalRecord: object; modifiedRecord: object };
+      expect(entry.originalRecord).not.toHaveProperty('tplQss');
+      expect(entry.modifiedRecord).not.toHaveProperty('tplQss');
+      expect(JSON.stringify(entry)).not.toContain('QDialog');
+    });
+
+    it('templateTextDigest counts bytes as UTF-8 and lines as the editor does', () => {
+      expect(templateTextDigest('')).toEqual({
+        stylesheetHash: createHash('sha256').update('').digest('hex'),
+        stylesheetSize: 0,
+        stylesheetLines: 0,
+      });
+      expect(templateTextDigest('a\nb\n')).toMatchObject({ stylesheetSize: 4, stylesheetLines: 3 });
+      expect(templateTextDigest('₹')).toMatchObject({ stylesheetSize: 3, stylesheetLines: 1 });
     });
   });
 });

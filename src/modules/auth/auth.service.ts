@@ -10,6 +10,12 @@ import { AuthEpochService } from '../app-version/services/auth-epoch.service';
 import { BuildPolicyService } from '../app-version/services/build-policy.service';
 import { ClientTrackingService } from '../app-version/services/client-tracking.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import {
+  DEVICE_AUDIT_SCREEN_NAME,
+  DEVICE_AUDIT_TABLE_NAME,
+  deviceAuditDisplayName,
+  toDeviceAuditRecord,
+} from '../fixed/device-list-master/device-audit.helper';
 import { ChangePasswordDto, ChangePasswordResultDto } from './dto/change-password.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -636,7 +642,7 @@ export class AuthService {
         );
       }
     }
-    return this.prisma.deviceMaster.update({
+    const updated = await this.prisma.deviceMaster.update({
       where: { devDeviceUid: lookupUid },
       data: {
         devUserId: user.usrId,
@@ -649,6 +655,48 @@ export class AuthService {
         ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
       },
     });
+    await this.auditDeviceMovedByLogin(existing, updated, user);
+    return updated;
+  }
+  /**
+   * Review list 11-19 (239.9): a login re-points the device at the user's company and
+   * branch, and the token's branch is the device's. That move is audited on the device
+   * (screen Device List Master) when it actually moves company, branch or type. The
+   * per-login touch is not: a new last user, IP or login time on every shift change is
+   * noise, and user_login_session already keeps who signed in where and when.
+   * A failed audit write never fails the login; it is logged.
+   */
+  private async auditDeviceMovedByLogin(
+    before: DeviceMaster,
+    after: DeviceMaster,
+    user: UserMaster,
+  ): Promise<void> {
+    const moved =
+      before.devCompanyId !== after.devCompanyId ||
+      before.devBranchId !== after.devBranchId ||
+      before.devDeviceType !== after.devDeviceType;
+    if (!moved) {
+      return;
+    }
+    try {
+      await this.auditLogService.logEntityChange({
+        action: 'update',
+        tableName: DEVICE_AUDIT_TABLE_NAME,
+        screenName: DEVICE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: after.devId,
+        displayName: deviceAuditDisplayName(after),
+        originalRecord: toDeviceAuditRecord(before),
+        modifiedRecord: toDeviceAuditRecord(after),
+        userId: user.usrId,
+        ...(after.devBranchId ? { branchId: after.devBranchId } : {}),
+        notes: `Device moved by the login of ${user.usrLoginName}`,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Device ${after.devDeviceUid} moved by the login of ${user.usrLoginName}; the audit row was not written: ${this.describeError(error)}`,
+      );
+    }
   }
   private describeBlockedDevice(device: DeviceMaster): string {
     // devBlockReason is often an empty string rather than NULL, so `??` alone

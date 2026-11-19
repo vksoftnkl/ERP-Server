@@ -83,6 +83,24 @@ export class PrintTemplateVersionPayloadDto {
   @ApiPropertyOptional({ type: String, nullable: true }) ptvCreatedBy!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) ptvModifiedOn!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) ptvModifiedBy!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'GET /get only: ptvCreatedBy by name (display name, else login name)',
+  })
+  ptvCreatedByName?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'GET /get only: ptvModifiedBy by name',
+  })
+  ptvModifiedByName?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'GET /get only: ptvApprovedBy by name',
+  })
+  ptvApprovedByName?: string | null;
   @ApiProperty({
     example: false,
     description: 'Derived: is this the revision the template currently publishes?',
@@ -132,6 +150,18 @@ export class PrintTemplatePayloadDto {
   @ApiPropertyOptional({ type: String, nullable: true }) ptlCreatedBy!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) ptlModifiedOn!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) ptlModifiedBy!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'GET /get only: ptlCreatedBy by name (display name, else login name)',
+  })
+  ptlCreatedByName?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'GET /get only: ptlModifiedBy by name',
+  })
+  ptlModifiedByName?: string | null;
   @ApiProperty({
     type: PrintTemplateVersionPayloadDto,
     isArray: true,

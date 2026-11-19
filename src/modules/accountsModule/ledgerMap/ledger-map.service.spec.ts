@@ -260,11 +260,13 @@ describe('LedgerMapService', () => {
         screenName: 'Posting Ledger Map',
         screenType: 'master',
         pk: ALM_ID,
-        displayName: 'DISCOUNT_ALLOWED',
+        // Review list 11-19 (250.2): the role's label first, its code beside it.
+        displayName: 'Discount allowed (DISCOUNT_ALLOWED)',
         originalRecord: null,
         modifiedRecord: {
           almId: ALM_ID,
           almRole: 'DISCOUNT_ALLOWED',
+          alrLabel: 'Discount allowed',
           almLedgerId: LEDGER_ID,
           almLedgerName: 'Discount Allowed A/c',
           almIsActive: true,
@@ -449,7 +451,7 @@ describe('LedgerMapService', () => {
       expect(entry).toMatchObject({
         action: 'update',
         pk: ALM_ID,
-        displayName: 'DISCOUNT_ALLOWED',
+        displayName: 'Discount allowed (DISCOUNT_ALLOWED)',
         notes: 'Posting ledger mapping re-pointed',
       });
       expect(entry.originalRecord).toMatchObject({ almLedgerId: LEDGER_ID });
@@ -533,9 +535,11 @@ describe('LedgerMapService', () => {
       expect(entry).toMatchObject({
         action: 'cancel',
         pk: ALM_ID,
-        displayName: 'PURCHASE_RETURN',
+        // The role row is read for its label (the mock answers with makeRole()'s).
+        displayName: 'Discount allowed (PURCHASE_RETURN)',
         notes: 'Posting ledger mapping removed',
       });
+      expect(entry.originalRecord).toMatchObject({ alrLabel: 'Discount allowed' });
       expect(entry.originalRecord).toMatchObject({ almIsActive: true, almIsDeleted: false });
       expect(entry.modifiedRecord).toMatchObject({ almIsActive: false, almIsDeleted: true });
       expect(client).toBe(prisma);

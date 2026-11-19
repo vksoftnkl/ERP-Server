@@ -114,6 +114,23 @@ describe('ItemsEanCodeMasterService', () => {
     expect(result.ean_id).toBe(EAN_ID);
   });
 
+  it('audits the unit under its column name, ean_uc_unit_id; the answer keeps ean_unit_id (review 11-19)', async () => {
+    prisma.itemEanCode.create.mockResolvedValue(makeRecord());
+
+    const result = await service.save({
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901234567890',
+    });
+
+    const [input] = (auditLogService.logEntityChange as jest.Mock).mock.calls[0] as [
+      { modifiedRecord: Record<string, unknown> },
+    ];
+    expect(input.modifiedRecord).toMatchObject({ ean_uc_unit_id: UNIT_ID, ean_code: '8901234567890' });
+    expect(input.modifiedRecord).not.toHaveProperty('ean_unit_id');
+    expect(result.ean_unit_id).toBe(UNIT_ID);
+  });
+
   it('updates an item ean code row when ean_id is provided', async () => {
     const existingRecord = makeRecord();
     const updatedRecord = makeRecord({ eanCode: '8901111111111' });

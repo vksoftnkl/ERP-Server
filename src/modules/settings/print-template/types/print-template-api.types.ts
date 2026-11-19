@@ -80,6 +80,11 @@ export interface PrintTemplateVersionPayload {
   ptvCreatedBy: string | null;
   ptvModifiedOn: string | null;
   ptvModifiedBy: string | null;
+  /// GET /print-templates/get only (review list 11-19, 62.4): the users above by name
+  /// (display name, else login name). Never in the audit snapshot.
+  ptvCreatedByName?: string | null;
+  ptvModifiedByName?: string | null;
+  ptvApprovedByName?: string | null;
   /// Derived: is this the revision ptl_published_rev_id currently names? The
   /// answer a designer needs before editing, since a published version is never
   /// UPDATEd.
@@ -125,6 +130,9 @@ export interface PrintTemplatePayload {
   ptlCreatedBy: string | null;
   ptlModifiedOn: string | null;
   ptlModifiedBy: string | null;
+  /// GET /print-templates/get only (review list 11-19, 62.4): by name. Never audited.
+  ptlCreatedByName?: string | null;
+  ptlModifiedByName?: string | null;
   versions: PrintTemplateVersionPayload[];
 }
 

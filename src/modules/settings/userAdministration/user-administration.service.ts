@@ -131,7 +131,7 @@ export class UserAdministrationService {
 
       const now = new Date();
 
-      await Promise.all([
+      const [, menuCount] = await Promise.all([
         tx.userMaster.updateMany({
           where: { usrId, usrIsDeleted: false },
           data: {
@@ -151,7 +151,9 @@ export class UserAdministrationService {
         }),
       ]);
 
-      const originalPayload = this.toPayloadWithoutMenus(existing);
+      // The menu rights go with the user; the row says how many rather than listing each
+      // one going (the Users & Rights audit keeps menu diffs for saves).
+      const originalPayload = this.toAuditRecord(existing, null);
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -159,11 +161,11 @@ export class UserAdministrationService {
           screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: usrId,
-          displayName: existing.usrDisplayName,
+          displayName: this.auditDisplayName(existing),
           originalRecord: originalPayload,
           modifiedRecord: { ...originalPayload, usrIsDeleted: true, usrIsActive: false },
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'User soft deleted along with all menu assignments',
+          notes: `User soft deleted along with all ${menuCount.count} menu assignments`,
         },
         tx,
       );
@@ -217,6 +219,7 @@ export class UserAdministrationService {
         );
 
         const payload = this.toPayload(created, menus);
+        const menuNames = await this.menuNamesOf(tx, menus);
 
         await this.auditLogService.logEntityChange(
           {
@@ -225,9 +228,9 @@ export class UserAdministrationService {
             screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
             screenType: 'master',
             pk: created.usrId,
-            displayName: created.usrDisplayName,
+            displayName: this.auditDisplayName(created),
             originalRecord: null,
-            modifiedRecord: payload,
+            modifiedRecord: this.toAuditRecord(created, this.menuRightsOf(menus, menuNames)),
             userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'User created with menu assignments',
           },
@@ -286,6 +289,13 @@ export class UserAdministrationService {
         this.applyOptionalUserFields(data, dto);
         await this.applyPin(data, dto);
 
+        // Review list 11-19 step 3: the rights BEFORE the save, so the audit diffs them menu
+        // by menu instead of recording the whole list "from null".
+        const menusBefore = await tx.userMenus.findMany({
+          where: { umUserId: usrId, umIsDeleted: false },
+          orderBy: { umMenuId: 'asc' },
+        });
+
         const updated = await tx.userMaster.update({ where: { usrId }, data });
 
         const menus =
@@ -297,12 +307,12 @@ export class UserAdministrationService {
                 now,
                 tx,
               )
-            : await tx.userMenus.findMany({
-                where: { umUserId: usrId, umIsDeleted: false },
-                orderBy: { umMenuId: 'asc' },
-              });
+            : menusBefore;
 
         const payload = this.toPayload(updated, menus);
+        const menuNames = await this.menuNamesOf(tx, [...menusBefore, ...menus]);
+        const rightsBefore = this.menuRightsOf(menusBefore, menuNames);
+        const rightsAfter = this.menuRightsOf(menus, menuNames);
 
         await this.auditLogService.logEntityChange(
           {
@@ -311,11 +321,11 @@ export class UserAdministrationService {
             screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
             screenType: 'master',
             pk: usrId,
-            displayName: updated.usrDisplayName,
-            originalRecord: this.toPayloadWithoutMenus(existing),
-            modifiedRecord: payload,
+            displayName: this.auditDisplayName(updated),
+            originalRecord: this.toAuditRecord(existing, rightsBefore),
+            modifiedRecord: this.toAuditRecord(updated, rightsAfter),
             userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-            notes: 'User updated',
+            notes: this.updateNotes(dto, existing, menusBefore, menus, menuNames),
           },
           tx,
         );
@@ -620,6 +630,95 @@ export class UserAdministrationService {
     if (dto.usrNotes !== undefined) data.usrNotes = dto.usrNotes;
   }
 
+  /** The history's name for a user: the display name, else the login name. */
+  private auditDisplayName(record: Pick<UserMaster, 'usrDisplayName' | 'usrLoginName'>): string {
+    return record.usrDisplayName?.trim() || record.usrLoginName;
+  }
+
+  /**
+   * What the User Administration audit records (its label map picks the fields): the
+   * user row with no hash of any kind (`pinSet` says only whether a PIN exists) and, when
+   * given, `menuRights` — the rights by menu NAME. `null` leaves the rights out (delete).
+   */
+  private toAuditRecord(
+    record: UserMaster,
+    menuRights: Record<string, string> | null,
+  ): Record<string, unknown> {
+    return {
+      ...this.toPayloadWithoutMenus(record),
+      pinSet: Boolean(record.usrPinHash),
+      ...(menuRights !== null ? { menuRights } : {}),
+    };
+  }
+
+  /** Menu id → name for these rows; a name two rows share keeps its id beside it. */
+  private async menuNamesOf(
+    tx: UserAdminWriteClient,
+    menus: readonly Pick<UserMenus, 'umMenuId'>[],
+  ): Promise<Map<number, string>> {
+    const menuIds = [...new Set(menus.map((menu) => menu.umMenuId))];
+    if (menuIds.length === 0) {
+      return new Map();
+    }
+    const rows = await tx.menu.findMany({
+      where: { menuId: { in: menuIds } },
+      select: { menuId: true, menuName: true },
+    });
+    const nameOf = (row: { menuId: number; menuName: string | null }) =>
+      row.menuName?.trim() || `Menu ${row.menuId}`;
+    const nameCount = new Map<string, number>();
+    for (const row of rows) {
+      nameCount.set(nameOf(row), (nameCount.get(nameOf(row)) ?? 0) + 1);
+    }
+    return new Map(
+      rows.map((row) => {
+        const name = nameOf(row);
+        return [row.menuId, (nameCount.get(name) ?? 0) > 1 ? `${name} (#${row.menuId})` : name];
+      }),
+    );
+  }
+
+  /** {"Sales Bill": "View, Create, Edit"} — the granted rights per menu, in screen order. */
+  private menuRightsOf(
+    menus: readonly UserMenus[],
+    menuNames: ReadonlyMap<number, string>,
+  ): Record<string, string> {
+    const rights: Record<string, string> = {};
+    for (const menu of [...menus].sort((a, b) => a.umMenuId - b.umMenuId)) {
+      const name = menuNames.get(menu.umMenuId) ?? `Menu ${menu.umMenuId}`;
+      rights[name] = grantedRights(menu).join(', ') || 'None';
+    }
+    return rights;
+  }
+
+  /**
+   * The row's note: what changed that the fields alone do not say. A password reset and a
+   * PIN change are named (never their values), and the rights change is spelled per menu:
+   * "Menu rights: Sales Bill: Edit off, Post on; Day Book: added (View)".
+   */
+  private updateNotes(
+    dto: SaveUserAdministrationDto,
+    existing: UserMaster,
+    menusBefore: readonly UserMenus[],
+    menusAfter: readonly UserMenus[],
+    menuNames: ReadonlyMap<number, string>,
+  ): string {
+    const notes = ['User updated'];
+    if (dto.usrPassword?.trim()) {
+      notes.push('password reset by an administrator');
+    }
+    if (dto.usrPin) {
+      notes.push(existing.usrPinHash ? 'PIN changed' : 'PIN set');
+    } else if (dto.usrPin !== undefined && existing.usrPinHash) {
+      notes.push('PIN cleared');
+    }
+    const rightsChange = describeMenuRightsChange(menusBefore, menusAfter, menuNames);
+    if (rightsChange) {
+      notes.push(`Menu rights: ${rightsChange}`);
+    }
+    return truncateNote(notes.join('; '));
+  }
+
   private toPayload(record: UserMaster, menus: UserMenus[]): UserAdminPayload {
     return {
       ...this.toPayloadWithoutMenus(record),
@@ -719,4 +818,66 @@ export class UserAdministrationService {
       UserAdminErrorCode.NOT_FOUND,
     );
   }
+}
+
+/** The eleven grantable rights in the order the rights grid shows them. */
+const MENU_RIGHT_FLAGS: readonly (readonly [keyof UserMenus, string])[] = [
+  ['umCanView', 'View'],
+  ['umCanCreate', 'Create'],
+  ['umCanEdit', 'Edit'],
+  ['umCanDelete', 'Delete'],
+  ['umCanPrint', 'Print'],
+  ['umCanExport', 'Export'],
+  ['umCanPost', 'Post'],
+  ['umCanCancel', 'Cancel'],
+  ['umCanAmend', 'Amend'],
+  ['umCanOverride', 'Override'],
+  ['umCanRetender', 'Retender'],
+];
+
+function grantedRights(menu: UserMenus): string[] {
+  return MENU_RIGHT_FLAGS.filter(([flag]) => menu[flag] === true).map(([, label]) => label);
+}
+
+/** "Sales Bill: Edit off, Post on; Day Book: added (View); Old Report: removed", or '' if none. */
+export function describeMenuRightsChange(
+  before: readonly UserMenus[],
+  after: readonly UserMenus[],
+  menuNames: ReadonlyMap<number, string>,
+): string {
+  const beforeById = new Map(before.map((menu) => [menu.umMenuId, menu]));
+  const afterById = new Map(after.map((menu) => [menu.umMenuId, menu]));
+  const menuIds = [...new Set([...beforeById.keys(), ...afterById.keys()])].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (const menuId of menuIds) {
+    const name = menuNames.get(menuId) ?? `Menu ${menuId}`;
+    const was = beforeById.get(menuId);
+    const now = afterById.get(menuId);
+    if (!was && now) {
+      parts.push(`${name}: added (${grantedRights(now).join(', ') || 'no rights'})`);
+      continue;
+    }
+    if (was && !now) {
+      parts.push(`${name}: removed`);
+      continue;
+    }
+    if (!was || !now) {
+      continue;
+    }
+    const flips = MENU_RIGHT_FLAGS.filter(([flag]) => was[flag] !== now[flag]).map(
+      ([flag, label]) => `${label} ${now[flag] === true ? 'on' : 'off'}`,
+    );
+    if (flips.length > 0) {
+      parts.push(`${name}: ${flips.join(', ')}`);
+    }
+  }
+  return parts.join('; ');
+}
+
+const MAX_NOTE_LENGTH = 4000;
+
+function truncateNote(note: string): string {
+  return note.length <= MAX_NOTE_LENGTH
+    ? note
+    : `${note.slice(0, MAX_NOTE_LENGTH - 15)} … (and more)`;
 }

@@ -41,8 +41,15 @@ import {
   nextDeviceCode,
   normalizeDeviceCode,
 } from './device-code.helper';
-const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
-const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
+import {
+  DEVICE_AUDIT_SCREEN_NAME,
+  DEVICE_AUDIT_TABLE_NAME,
+  deviceAuditDisplayName,
+  deviceSaveNotes,
+  toDeviceAuditRecord,
+} from './device-audit.helper';
+const DEVICE_LIST_MASTER_TABLE_NAME = DEVICE_AUDIT_TABLE_NAME;
+const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = DEVICE_AUDIT_SCREEN_NAME;
 const DEVICE_TYPE_VALUES = Object.values(DeviceType);
 const DEVICE_PLATFORM_VALUES = Object.values(DevicePlatform);
 const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
@@ -297,13 +304,11 @@ export class DeviceListMasterService {
           DeviceListMasterErrorCode.NOT_FOUND,
         );
       }
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
+      const originalRecord = toDeviceAuditRecord(existing);
+      const modifiedRecord = toDeviceAuditRecord({
         ...existing,
         devIsDeleted: true,
         devIsActive: false,
-        devModifiedOn: modifiedOn,
-        devModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -312,7 +317,7 @@ export class DeviceListMasterService {
           screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: devId,
-          displayName: existing.devDeviceUid,
+          displayName: deviceAuditDisplayName(existing),
           originalRecord,
           modifiedRecord,
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
@@ -365,9 +370,9 @@ export class DeviceListMasterService {
             screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
             screenType: 'master',
             pk: payload.devId,
-            displayName: payload.devDeviceUid,
+            displayName: deviceAuditDisplayName(created),
             originalRecord: null,
-            modifiedRecord: payload,
+            modifiedRecord: toDeviceAuditRecord(created),
             userId: createdBy,
             notes: 'Device created',
           },
@@ -453,14 +458,14 @@ export class DeviceListMasterService {
             screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
             screenType: 'master',
             pk: devId,
-            displayName: payload.devDeviceUid,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
+            displayName: deviceAuditDisplayName(updated),
+            originalRecord: toDeviceAuditRecord(existing),
+            modifiedRecord: toDeviceAuditRecord(updated),
             userId: resolveActor(
               saveDeviceListMasterDto.devEntryBy,
               this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             ),
-            notes: 'Device updated',
+            notes: deviceSaveNotes('Device updated', existing, updated),
           },
           tx,
         );

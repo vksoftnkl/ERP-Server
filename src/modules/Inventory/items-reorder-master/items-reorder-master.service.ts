@@ -274,8 +274,8 @@ export class ItemsReorderMasterService {
       );
     }
 
-    const originalRecord = this.toPayload(existing);
-    const modifiedRecord = this.toPayload({
+    const originalRecord = this.toAuditRecord(existing);
+    const modifiedRecord = this.toAuditRecord({
       ...existing,
       irIsDeleted: nextDeleted,
       irModifiedOn: modifiedOn,
@@ -334,7 +334,7 @@ export class ItemsReorderMasterService {
         pk: payload.ir_id,
         displayName: this.buildDisplayName(created),
         originalRecord: null,
-        modifiedRecord: payload,
+        modifiedRecord: this.toAuditRecord(created),
         userId: createdBy,
         notes: 'Item reorder created',
       },
@@ -390,8 +390,8 @@ export class ItemsReorderMasterService {
         screenType: 'master',
         pk: irId,
         displayName: this.buildDisplayName(updated),
-        originalRecord: this.toPayload(existing),
-        modifiedRecord: payload,
+        originalRecord: this.toAuditRecord(existing),
+        modifiedRecord: this.toAuditRecord(updated),
         userId: payload.ir_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         notes: 'Item reorder updated',
       },
@@ -504,6 +504,15 @@ export class ItemsReorderMasterService {
         },
       ]);
     }
+  }
+
+  /**
+   * What the audit records (review list 11-19): the payload, with the unit under its
+   * column's own name (inventory.item_reorders.ir_uc_unit_id) — the payload's ir_unit_id is the API's.
+   */
+  private toAuditRecord(record: ItemReorder): Record<string, unknown> {
+    const { ir_unit_id: unitId, ...rest } = this.toPayload(record);
+    return { ...rest, ir_uc_unit_id: unitId };
   }
 
   private toPayload(record: ItemReorder): ItemReorderPayload {

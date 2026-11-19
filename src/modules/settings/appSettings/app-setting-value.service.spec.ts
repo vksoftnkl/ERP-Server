@@ -88,6 +88,7 @@ type PrismaMock = {
 describe('AppSettingValueService', () => {
   let prisma: PrismaMock;
   let audit: { logEntityChange: jest.Mock };
+  let requestContext: { getUserId: jest.Mock; getBranchId: jest.Mock };
   let service: AppSettingValueService;
 
   beforeEach(() => {
@@ -108,10 +109,14 @@ describe('AppSettingValueService', () => {
       $queryRaw: jest.fn().mockResolvedValue([]),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    requestContext = {
+      getUserId: jest.fn().mockReturnValue(USER_ID),
+      getBranchId: jest.fn().mockReturnValue(null),
+    };
     service = new AppSettingValueService(
       prisma as unknown as PrismaService,
       audit as never,
-      { getUserId: jest.fn().mockReturnValue(USER_ID) } as never,
+      requestContext as never,
     );
   });
 
@@ -319,6 +324,7 @@ describe('AppSettingValueService', () => {
     });
 
     it('creates the override with the other id columns null, and audits it', async () => {
+      prisma.branchMaster.findFirst.mockResolvedValue({ brId: BRANCH_ID, brName: 'ZT Branch' });
       const [payload] = await service.save([branchOverride({ asvRemarks: '  festival  ' })]);
 
       expect(prisma.appSettingValue.findFirst).toHaveBeenCalledWith({
@@ -350,9 +356,27 @@ describe('AppSettingValueService', () => {
         tableName: 'app setting value',
         screenType: 'settings',
         branchId: BRANCH_ID,
-        displayName: `${KEY} @ BRANCH ${BRANCH_ID}`,
+        // Review list 11-19 (246.2): the setting's label and the target's NAME, and the
+        // record carries the label for the "Setting" field of the history.
+        displayName: `${defRow().asdLabel} @ Branch: ZT Branch`,
         notes: 'BRANCH override set',
-        modifiedRecord: payload,
+        modifiedRecord: { ...payload, asdLabel: defRow().asdLabel },
+      });
+    });
+
+    it('logs the session branch on a company override, which names no branch itself', async () => {
+      requestContext.getBranchId.mockReturnValue(BRANCH_ID);
+      prisma.company.findFirst.mockResolvedValue({ compId: COMPANY_ID, compName: 'ZT Company' });
+      await service.save([
+        branchOverride({
+          asvScope: AppSettingScope.COMPANY,
+          asvBranchId: undefined,
+          asvCompanyId: COMPANY_ID,
+        }),
+      ]);
+      expect(auditEntry()).toMatchObject({
+        branchId: BRANCH_ID,
+        displayName: `${defRow().asdLabel} @ Company: ZT Company`,
       });
     });
 

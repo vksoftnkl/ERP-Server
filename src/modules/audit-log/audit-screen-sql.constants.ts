@@ -10,6 +10,12 @@ const buildAuditSql = (from: string, fields: readonly AuditSqlField[]): string =
     `FROM ${from};`,
   ].join('\n');
 
+/**
+ * Review list 11-19 step 3 (user 2026-11-19): no screen records Sync Date, Modified On or
+ * Modified By — every save moves them, and log_date + log_user_name already say when and
+ * who. Created On / Created By stay (an insert row shows them). The history read drops the
+ * three from older rows' changed fields too (AuditLogService, NOISE_STAMP_LABELS).
+ */
 export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
   [
     'Units Master',
@@ -28,11 +34,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['unit_conversion', 'Conversion Factor'],
       ['unit_is_active', 'Is Active'],
       ['unit_is_deleted', 'Is Deleted'],
-      ['unit_sync_date', 'Sync Date'],
       ['unit_created_on', 'Created On'],
       ['unit_created_by', 'Created By'],
-      ['unit_modified_on', 'Modified On'],
-      ['unit_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -53,11 +56,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['itg_photo_url', 'Photo URL'],
       ['itg_is_active', 'Is Active'],
       ['itg_is_deleted', 'Is Deleted'],
-      ['itg_sync_date', 'Sync Date'],
       ['itg_created_on', 'Created On'],
       ['itg_created_by', 'Created By'],
-      ['itg_modified_on', 'Modified On'],
-      ['itg_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -74,11 +74,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['brand_photo_url', 'Photo URL'],
       ['brand_is_active', 'Is Active'],
       ['brand_is_deleted', 'Is Deleted'],
-      ['brand_sync_date', 'Sync Date'],
       ['brand_created_on', 'Created On'],
       ['brand_created_by', 'Created By'],
-      ['brand_modified_on', 'Modified On'],
-      ['brand_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -95,11 +92,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['category_photo_url', 'Photo URL'],
       ['category_is_active', 'Is Active'],
       ['category_is_deleted', 'Is Deleted'],
-      ['category_sync_date', 'Sync Date'],
       ['category_created_on', 'Created On'],
       ['category_created_by', 'Created By'],
-      ['category_modified_on', 'Modified On'],
-      ['category_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -119,11 +113,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['sec_photo_url', 'Photo URL'],
       ['sec_is_active', 'Is Active'],
       ['sec_is_deleted', 'Is Deleted'],
-      ['sec_sync_date', 'Sync Date'],
       ['sec_created_on', 'Created On'],
       ['sec_created_by', 'Created By'],
-      ['sec_modified_on', 'Modified On'],
-      ['sec_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -188,8 +179,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
         ['im.item_is_deleted', 'Is Deleted'],
         ['im.item_created_on', 'Created On'],
         ['im.item_created_by', 'Created By'],
-        ['im.item_modified_on', 'Modified On'],
-        ['im.item_modified_by', 'Modified By'],
         // Unit conversion
         ['iuc.iuc_unit_id', 'Unit ID'],
         ['iuc.iuc_base_unit_id', 'Unit Base Unit ID'],
@@ -244,11 +233,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['iuc_uom_remarks', 'UOM Remarks'],
       ['iuc_is_active', 'Is Active'],
       ['iuc_is_deleted', 'Is Deleted'],
-      ['iuc_sync_date', 'Sync Date'],
       ['iuc_created_on', 'Created On'],
       ['iuc_created_by', 'Created By'],
-      ['iuc_updated_on', 'Modified On'],
-      ['iuc_updated_by', 'Modified By'],
     ]),
   ],
   [
@@ -293,32 +279,29 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['ipm_cost_remarks', 'Cost Remarks'],
       ['ipm_is_active', 'Is Active'],
       ['ipm_is_deleted', 'Is Deleted'],
-      ['ipm_sync_date', 'Sync Date'],
       ['ipm_created_on', 'Created On'],
       ['ipm_created_by', 'Created By'],
-      ['ipm_updated_on', 'Modified On'],
-      ['ipm_updated_by', 'Modified By'],
     ]),
   ],
   [
+    // Review list 11-19: the unit column is ean_uc_unit_id (an item_unit_conversion id,
+    // read as the unit's name); the EAN service's audit record carries it by that name.
     'Item EAN Code Master',
     buildAuditSql('inventory.item_ean_codes', [
       ['ean_item_id', 'Item ID'],
-      ['ean_unit_id', 'Unit ID'],
+      ['ean_uc_unit_id', 'Unit ID'],
       ['ean_code', 'EAN / Barcode'],
       ['ean_is_default', 'Is Default'],
       ['ean_is_active', 'Is Active'],
       ['ean_is_deleted', 'Is Deleted'],
       ['ean_created_on', 'Created On'],
       ['ean_created_by', 'Created By'],
-      ['ean_modified_on', 'Modified On'],
-      ['ean_modified_by', 'Modified By'],
       ['ean_remarks', 'Remarks'],
     ]),
   ],
   [
     'Item Customer Rate Master',
-    buildAuditSql('public.cust_item_rates', [
+    buildAuditSql('sales.cust_item_rates', [
       ['csr_branch_id', 'Branch ID'],
       ['csr_customer_id', 'Customer ID'],
       ['csr_unit_rate_id', 'Unit Rate ID'],
@@ -334,20 +317,20 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['csr_is_deleted', 'Is Deleted'],
       ['csr_created_on', 'Created On'],
       ['csr_created_by', 'Created By'],
-      ['csr_modified_on', 'Modified On'],
-      ['csr_modified_by', 'Modified By'],
       ['csr_uploaded_at', 'Uploaded At'],
       ['csr_uploaded_by', 'Uploaded By'],
       ['csr_remarks', 'Remarks'],
     ]),
   ],
   [
+    // Review list 11-19: the unit column is ir_uc_unit_id (an item_unit_conversion id,
+    // read as the unit's name); the reorder service's audit record carries it by that name.
     'Item Reorder Master',
     buildAuditSql('inventory.item_reorders', [
       ['ir_branch_id', 'Branch ID'],
       ['ir_item_id', 'Item ID'],
       ['ir_godown_id', 'Godown ID'],
-      ['ir_unit_id', 'Unit ID'],
+      ['ir_uc_unit_id', 'Unit ID'],
       ['ir_min_level', 'Min Level'],
       ['ir_max_level', 'Max Level'],
       ['ir_reorder_level', 'Reorder Level'],
@@ -361,8 +344,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['ir_is_deleted', 'Is Deleted'],
       ['ir_created_on', 'Created On'],
       ['ir_created_by', 'Created By'],
-      ['ir_modified_on', 'Modified On'],
-      ['ir_modified_by', 'Modified By'],
       ['ir_remarks', 'Remarks'],
     ]),
   ],
@@ -387,8 +368,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['gdl_is_deleted', 'Is Deleted'],
       ['gdl_created_on', 'Created On'],
       ['gdl_created_by', 'Created By'],
-      ['gdl_modified_on', 'Modified On'],
-      ['gdl_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -416,11 +395,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['acc_group_affects_gross_profit', 'Affects Gross Profit'],
       ['acc_group_is_active', 'Is Active'],
       ['acc_group_is_deleted', 'Is Deleted'],
-      ['acc_group_sync_date', 'Sync Date'],
       ['acc_group_created_on', 'Created On'],
       ['acc_group_created_by', 'Created By'],
-      ['acc_group_modified_on', 'Modified On'],
-      ['acc_group_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -430,11 +406,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['cog_company_ids', 'Company IDs'],
       ['cog_is_active', 'Is Active'],
       ['cog_is_deleted', 'Is Deleted'],
-      ['cog_sync_date', 'Sync Date'],
       ['cog_created_on', 'Created On'],
       ['cog_created_by', 'Created By'],
-      ['cog_modified_on', 'Modified On'],
-      ['cog_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -450,24 +423,25 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['thm_remarks', 'Remarks'],
       ['thm_created_on', 'Created On'],
       ['thm_created_by', 'Created By'],
-      ['thm_modified_on', 'Modified On'],
-      ['thm_modified_by', 'Modified By'],
     ]),
   ],
   [
-    // The one stylesheet template every client fills (plan-app-theme-template.md):
-    // a save changes every screen at once, so its text is audited whole.
+    // The one stylesheet template every client fills (plan-app-theme-template.md).
+    // Review list 11-19 (266.1): the text itself (~440 KB) is no longer audited, twice per
+    // save; its SHA-256, size in bytes and line count are, so a change still shows and two
+    // saves of the same text can be told apart from a real edit. Rows written before keep
+    // the whole text under "Stylesheet".
     'App Theme Template',
     buildAuditSql('public.app_theme_template', [
       ['tpl_name', 'Template'],
-      ['tpl_qss', 'Stylesheet'],
+      ["encode(sha256(convert_to(tpl_qss, 'UTF8')), 'hex')", 'Stylesheet Hash'],
+      ['octet_length(tpl_qss)', 'Stylesheet Size'],
+      ['array_length(string_to_array(tpl_qss, chr(10)), 1)', 'Stylesheet Lines'],
       ['tpl_remarks', 'Remarks'],
       ['tpl_is_active', 'Is Active'],
       ['tpl_is_deleted', 'Is Deleted'],
       ['tpl_created_on', 'Created On'],
       ['tpl_created_by', 'Created By'],
-      ['tpl_modified_on', 'Modified On'],
-      ['tpl_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -497,9 +471,9 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['comp_support_email', 'Support Email'],
       ['comp_support_phone', 'Support Phone'],
       ['comp_website_name', 'Website'],
-      // Above "Fin Year From": the audit parser ends the select list at its
-      // "From", so nothing below it is recorded until the parser is fixed.
-      // The logo (up to ~700 KB of base64) is not audited.
+      // The logo and the signature image (comp_logo / comp_authorize_signature, base64
+      // text up to ~700 KB) are not audited. Every label is recorded since the parser
+      // fix of review list 11-19 G1 (a quoted "From" no longer ends the select list).
       ['comp_books_lock_date', 'Books Lock Date'],
       ['comp_signatory_name', 'Authorised Signatory'],
       ['comp_fin_year_from', 'Fin Year From'],
@@ -513,11 +487,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['comp_default', 'Is Default'],
       ['comp_is_active', 'Is Active'],
       ['comp_is_deleted', 'Is Deleted'],
-      ['comp_sync_date', 'Sync Date'],
       ['comp_created_on', 'Created On'],
       ['comp_created_by', 'Created By'],
-      ['comp_modified_on', 'Modified On'],
-      ['comp_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -565,48 +536,39 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['br_fssai_license_type', 'FSSAI License Type'],
       ['br_fssai_valid_upto', 'FSSAI Valid Upto'],
       ['br_is_deleted', 'Is Deleted'],
-      ['br_sync_date', 'Sync Date'],
       ['br_created_on', 'Created On'],
       ['br_created_by', 'Created By'],
-      ['br_modified_on', 'Modified On'],
-      ['br_modified_by', 'Modified By'],
     ]),
   ],
   [
     'Employee Department Master',
-    buildAuditSql('accounts.employee_departments', [
+    buildAuditSql('public.employee_departments', [
       ['edpt_name', 'Department Name'],
       ['edpt_alias', 'Alias'],
       ['edpt_code', 'Code'],
       ['edpt_remarks', 'Remarks'],
       ['edpt_is_active', 'Is Active'],
       ['edpt_is_deleted', 'Is Deleted'],
-      ['edpt_sync_date', 'Sync Date'],
       ['edpt_created_on', 'Created On'],
       ['edpt_created_by', 'Created By'],
-      ['edpt_modified_on', 'Modified On'],
-      ['edpt_modified_by', 'Modified By'],
     ]),
   ],
   [
     'Employee Designation Master',
-    buildAuditSql('accounts.employee_designations', [
+    buildAuditSql('public.employee_designations', [
       ['ed_name', 'Designation Name'],
       ['ed_code', 'Code'],
       ['ed_is_default', 'Is Default'],
       ['ed_remarks', 'Remarks'],
       ['ed_is_active', 'Is Active'],
       ['ed_is_deleted', 'Is Deleted'],
-      ['ed_sync_date', 'Sync Date'],
       ['ed_created_on', 'Created On'],
       ['ed_created_by', 'Created By'],
-      ['ed_modified_on', 'Modified On'],
-      ['ed_modified_by', 'Modified By'],
     ]),
   ],
   [
     'Employee Master',
-    buildAuditSql('sales.emp_master', [
+    buildAuditSql('public.employee_master', [
       ['emp_company_id', 'Company ID'],
       ['emp_branch_id', 'Branch ID'],
       ['emp_code', 'Employee Code'],
@@ -646,15 +608,15 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['emp_aadhar_no', 'Aadhaar'],
       ['emp_pf_no', 'PF No'],
       ['emp_esi_no', 'ESI No'],
+      // Review list 11-19 step 3: the staff advance ledger reads as its name. Shift,
+      // attendance constraint and holiday group ids are left out: no tables hold them yet.
+      ['emp_loan_ledger_id', 'Staff Advance Ledger'],
       ['emp_photo_url', 'Photo URL'],
       ['emp_remarks', 'Remarks'],
       ['emp_is_active', 'Is Active'],
       ['emp_is_deleted', 'Is Deleted'],
-      ['emp_sync_date', 'Sync Date'],
       ['emp_created_on', 'Created On'],
       ['emp_created_by', 'Created By'],
-      ['emp_modified_on', 'Modified On'],
-      ['emp_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -689,12 +651,9 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['led_aadhar_no', 'Aadhaar'],
       ['led_ecommerce_gstin', 'E-Commerce GSTIN'],
       ['led_is_sez', 'Is SEZ'],
-      ['led_holder_name', 'Account Holder'],
-      ['led_bank_name', 'Bank Name'],
-      ['led_bank_branch', 'Bank Branch'],
-      ['led_bank_ac_no', 'Bank Account No'],
-      ['led_bank_ifsc', 'Bank IFSC'],
-      ['led_upi_id', 'UPI ID'],
+      // Review list 11-19: no led_holder_name / led_bank_* / led_upi_id column exists (the
+      // labels recorded null on every row). A ledger's bank details are the rows of
+      // accounts.acc_ledger_bank_accounts, audited under "Ledger Bank Account".
       ['led_ob_amount', 'Opening Balance'],
       ['led_ob_type', 'Opening Balance Type'],
       ['led_ob_as_on', 'Opening Balance As On'],
@@ -707,11 +666,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['led_is_entry', 'Is Entry'],
       ['led_allow_sms', 'Allow SMS'],
       ['led_remarks', 'Remarks'],
-      ['led_sync_date', 'Sync Date'],
       ['led_created_on', 'Created On'],
       ['led_created_by', 'Created By'],
-      ['led_modified_on', 'Modified On'],
-      ['led_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -730,11 +686,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['lba_is_default', 'Is Default'],
       ['lba_is_active', 'Is Active'],
       ['lba_is_deleted', 'Is Deleted'],
-      ['lba_sync_date', 'Sync Date'],
       ['lba_created_on', 'Created On'],
       ['lba_created_by', 'Created By'],
-      ['lba_modified_on', 'Modified On'],
-      ['lba_modified_by', 'Modified By'],
       ['lba_remarks', 'Remarks'],
     ]),
   ],
@@ -761,51 +714,46 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['saa_phone', 'Phone'],
       ['saa_email', 'Email'],
       ['saa_gstin', 'GSTIN'],
-      ['saa_synced_on', 'Sync Date'],
       ['saa_is_active', 'Is Active'],
       ['saa_is_deleted', 'Is Deleted'],
       ['saa_created_on', 'Created On'],
       ['saa_created_by', 'Created By'],
-      ['saa_modified_on', 'Modified On'],
-      ['saa_modified_by', 'Modified By'],
       ['saa_remarks', 'Remarks'],
     ]),
   ],
   [
+    // Review list 11-19: the columns are ttm_* (the acc_ttm_type_* names never existed, so
+    // nothing was recorded). The table has no short name: its display name stands in.
     'Tender Type Master',
     buildAuditSql('accounts.acc_tender_types', [
-      ['acc_ttm_type_name', 'Tender Type Name'],
-      ['acc_ttm_type_short_name', 'Tender Type Short Name'],
-      ['acc_ttm_type_is_active', 'Is Active'],
-      ['acc_ttm_type_is_deleted', 'Is Deleted'],
-      ['acc_ttm_type_sync_date', 'Sync Date'],
-      ['acc_ttm_type_created_on', 'Created On'],
-      ['acc_ttm_type_created_by', 'Created By'],
-      ['acc_ttm_type_modified_on', 'Modified On'],
-      ['acc_ttm_type_modified_by', 'Modified By'],
+      ['ttm_type_name', 'Tender Type Name'],
+      ['ttm_display_name', 'Display Name'],
+      ['ttm_is_active', 'Is Active'],
+      ['ttm_is_deleted', 'Is Deleted'],
+      ['ttm_created_on', 'Created On'],
+      ['ttm_created_by', 'Created By'],
     ]),
   ],
   [
+    // Review list 11-19: the columns are tnd_* (the acc_tnd_* names never existed, so
+    // nothing was recorded). Tender Type ID and Ledger ID read as names.
     'Tender Master',
     buildAuditSql('accounts.acc_tender_master', [
-      ['acc_tnd_type_id', 'Tender Type ID'],
-      ['acc_tnd_tnd_name', 'Tender Name'],
-      ['acc_tnd_tnd_short_name', 'Tender Short Name'],
-      ['acc_tnd_tnd_ledger_id', 'Ledger ID'],
-      ['acc_tnd_tnd_min_amount', 'Min Amount'],
-      ['acc_tnd_tnd_max_amount', 'Max Amount'],
-      ['acc_tnd_tnd_display_position', 'Display Position'],
-      ['acc_tnd_tnd_surcharge_perc', 'Surcharge %'],
-      ['acc_tnd_tnd_edit_surcharge', 'Edit Surcharge'],
-      ['acc_tnd_tnd_edit_ledger', 'Edit Ledger'],
-      ['acc_tnd_tnd_is_active', 'Is Active'],
-      ['acc_tnd_tnd_is_deleted', 'Is Deleted'],
-      ['acc_tnd_tnd_sync_date', 'Sync Date'],
-      ['acc_tnd_tnd_created_on', 'Created On'],
-      ['acc_tnd_tnd_created_by', 'Created By'],
-      ['acc_tnd_tnd_modified_on', 'Modified On'],
-      ['acc_tnd_tnd_modified_by', 'Modified By'],
-      ['acc_tnd_tnd_remarks', 'Remarks'],
+      ['tnd_type_id', 'Tender Type ID'],
+      ['tnd_name', 'Tender Name'],
+      ['tnd_short_name', 'Tender Short Name'],
+      ['tnd_ledger_id', 'Ledger ID'],
+      ['tnd_min_amount', 'Min Amount'],
+      ['tnd_max_amount', 'Max Amount'],
+      ['tnd_display_position', 'Display Position'],
+      ['tnd_surcharge_perc', 'Surcharge %'],
+      ['tnd_edit_surcharge', 'Edit Surcharge'],
+      ['tnd_edit_ledger', 'Edit Ledger'],
+      ['tnd_is_active', 'Is Active'],
+      ['tnd_is_deleted', 'Is Deleted'],
+      ['tnd_created_on', 'Created On'],
+      ['tnd_created_by', 'Created By'],
+      ['tnd_remarks', 'Remarks'],
     ]),
   ],
   [
@@ -817,11 +765,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['spg_desc', 'Description'],
       ['spg_is_active', 'Is Active'],
       ['spg_is_deleted', 'Is Deleted'],
-      ['spg_sync_date', 'Sync Date'],
       ['spg_created_on', 'Created On'],
       ['spg_created_by', 'Created By'],
-      ['spg_modified_on', 'Modified On'],
-      ['spg_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -859,11 +804,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['sup_drug_liscence_no', 'Drug License No'],
       ['sup_is_active', 'Is Active'],
       ['sup_is_deleted', 'Is Deleted'],
-      ['sup_sync_date', 'Sync Date'],
       ['sup_created_on', 'Created On'],
       ['sup_created_by', 'Created By'],
-      ['sup_modified_on', 'Modified On'],
-      ['sup_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -886,7 +828,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['cgr_is_active', 'Is Active'],
       ['cgr_is_deleted', 'Is Deleted'],
       ['cgr_created_on', 'Created On'],
-      ['cgr_modified_on', 'Modified On'],
     ]),
   ],
   [
@@ -933,11 +874,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['cus_notes', 'Notes'],
       ['cus_is_active', 'Is Active'],
       ['cus_is_deleted', 'Is Deleted'],
-      ['cus_sync_date', 'Sync Date'],
       ['cus_created_on', 'Created On'],
       ['cus_created_by', 'Created By'],
-      ['cus_modified_on', 'Modified On'],
-      ['cus_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -949,11 +887,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['stm_order', 'Sort Order'],
       ['stm_is_active', 'Is Active'],
       ['stm_is_deleted', 'Is Deleted'],
-      ['stm_sync_date', 'Sync Date'],
       ['stm_created_on', 'Created On'],
       ['stm_created_by', 'Created By'],
-      ['stm_modified_on', 'Modified On'],
-      ['stm_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -966,11 +901,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['ctm_order', 'Sort Order'],
       ['ctm_is_active', 'Is Active'],
       ['ctm_is_deleted', 'Is Deleted'],
-      ['ctm_sync_date', 'Sync Date'],
       ['ctm_created_on', 'Created On'],
       ['ctm_created_by', 'Created By'],
-      ['ctm_modified_on', 'Modified On'],
-      ['ctm_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -985,11 +917,8 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['arm_collection_days', 'Collection Days'],
       ['arm_is_active', 'Is Active'],
       ['arm_is_deleted', 'Is Deleted'],
-      ['arm_sync_date', 'Sync Date'],
       ['arm_created_on', 'Created On'],
       ['arm_created_by', 'Created By'],
-      ['arm_modified_on', 'Modified On'],
-      ['arm_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -1008,8 +937,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['veh_is_deleted', 'Is Deleted'],
       ['veh_created_on', 'Created On'],
       ['veh_created_by', 'Created By'],
-      ['veh_modified_on', 'Modified On'],
-      ['veh_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -1033,8 +960,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['trn_is_deleted', 'Is Deleted'],
       ['trn_created_on', 'Created On'],
       ['trn_created_by', 'Created By'],
-      ['trn_modified_on', 'Modified On'],
-      ['trn_modified_by', 'Modified By'],
     ]),
   ],
   [
@@ -1062,8 +987,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['vchr_delivery_mode', 'Delivery Mode'],
       ['vchr_created_on', 'Created On'],
       ['vchr_created_by', 'Created By'],
-      ['vchr_updated_on', 'Modified On'],
-      ['vchr_updated_by', 'Modified By'],
     ]),
   ],
   [
@@ -1098,10 +1021,260 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['sdn_cancelled_by', 'Cancelled By'],
       ['sdn_created_on', 'Created On'],
       ['sdn_created_by', 'Created By'],
-      ['sdn_modified_on', 'Modified On'],
-      ['sdn_modified_by', 'Modified By'],
     ]),
   ],
+  // ── Review list 11-19 step 3, the audit batch ─────────────────────────────────────
+  // These screens record names, not ids (the "… ID" labels and the screen-scoped ones in
+  // AuditLogService resolve at read time), and leave out the stamps every save moves
+  // (Sync Date, Modified On / By: log_date and log_user_name already say when and who).
+  [
+    // Users & Rights, menu 58. Never a password or PIN hash: "PIN Set" says only whether a
+    // PIN exists. "Menu Rights" is the user's rights by menu NAME ({"Sales Bill": "View,
+    // Create, Edit"}), so a change diffs per menu; the service builds it, the sub-query
+    // below says what it holds.
+    'User Administration',
+    buildAuditSql('public.user_master u', [
+      ['u.usr_login_name', 'Login Name'],
+      ['u.usr_display_name', 'Display Name'],
+      ['u.usr_full_name', 'Full Name'],
+      ['u.usr_type', 'User Role'],
+      ['u.usr_company_id', 'Company ID'],
+      ['u.usr_branch_id', 'Branch ID'],
+      ['u.usr_employee_id', 'Employee ID'],
+      ['u.usr_mobile_no', 'Mobile No'],
+      ['u.usr_email', 'Email'],
+      ['u.usr_desktop_login', 'Desktop Login'],
+      ['u.usr_web_login', 'Web Login'],
+      ['u.usr_mobile_login', 'Mobile Login'],
+      ['u.usr_edit_date', 'Allow Edit Date'],
+      ['u.usr_edit_entry', 'Allow Edit Entry'],
+      ['u.usr_edit_rate', 'Allow Edit Rate'],
+      ['(u.usr_pin_hash IS NOT NULL)', 'PIN Set'],
+      ['u.usr_must_change_password', 'Must Change Password'],
+      ['u.usr_password_changed_on', 'Password Changed On'],
+      ['u.usr_password_expires_on', 'Password Expires On'],
+      ['u.usr_is_locked', 'Is Locked'],
+      ['u.usr_locked_on', 'Locked On'],
+      ['u.usr_locked_by', 'Locked By'],
+      ['u.usr_timezone', 'Time Zone'],
+      ['u.usr_language', 'Language'],
+      ['u.usr_avatar_url', 'Avatar URL'],
+      ['u.usr_notes', 'Notes'],
+      ['u.usr_is_active', 'Is Active'],
+      ['u.usr_is_deleted', 'Is Deleted'],
+      ['u.usr_created_on', 'Created On'],
+      ['u.usr_created_by', 'Created By'],
+      [
+        [
+          "(SELECT json_object_agg(m.menu_name, concat_ws(', ',",
+          "  CASE WHEN um.um_can_view THEN 'View' END,",
+          "  CASE WHEN um.um_can_create THEN 'Create' END,",
+          "  CASE WHEN um.um_can_edit THEN 'Edit' END,",
+          "  CASE WHEN um.um_can_delete THEN 'Delete' END,",
+          "  CASE WHEN um.um_can_print THEN 'Print' END,",
+          "  CASE WHEN um.um_can_export THEN 'Export' END,",
+          "  CASE WHEN um.um_can_post THEN 'Post' END,",
+          "  CASE WHEN um.um_can_cancel THEN 'Cancel' END,",
+          "  CASE WHEN um.um_can_amend THEN 'Amend' END,",
+          "  CASE WHEN um.um_can_override THEN 'Override' END,",
+          "  CASE WHEN um.um_can_retender THEN 'Retender' END",
+          '  ))',
+          '  FROM public.user_menus um',
+          '  JOIN fixed.menu_master m ON m.menu_id = um.um_menu_id',
+          '  WHERE um.um_user_id = u.usr_id AND um.um_is_deleted = false)',
+        ].join('\n'),
+        'Menu Rights',
+      ],
+    ]),
+  ],
+  [
+    // Devices, menu 239. The history's display name is the device name (else its code),
+    // never the uid. The per-login touch (last login / IP) is not audited.
+    'Device List Master',
+    buildAuditSql('fixed.device_master', [
+      ['dev_device_name', 'Device Name'],
+      ['dev_code', 'Device Code'],
+      ['dev_device_uid', 'Device UID'],
+      ['dev_device_type', 'Device Type'],
+      ['dev_platform', 'Platform'],
+      ['dev_company_id', 'Company ID'],
+      ['dev_branch_id', 'Branch ID'],
+      ['dev_user_id', 'User ID'],
+      ['dev_mac_address', 'MAC Address'],
+      ['dev_is_blocked', 'Is Blocked'],
+      ['dev_block_reason', 'Block Reason'],
+      ['dev_is_active', 'Is Active'],
+      ['dev_is_deleted', 'Is Deleted'],
+      ['dev_created_on', 'Created On'],
+      ['dev_created_by', 'Created By'],
+    ]),
+  ],
+  [
+    // Charges, menu 245 (labels as on the screen). Ledger and Tax Rate read as names.
+    'Charge Master',
+    buildAuditSql('public.charge_master', [
+      ['chg_name', 'Charge Name'],
+      ['chg_code', 'Charge Code'],
+      ['chg_module', 'Module'],
+      ['chg_role', 'Role'],
+      ['chg_method', 'Method'],
+      ['chg_type', 'Type'],
+      ['chg_apply_on', 'Apply On'],
+      ['chg_default_rate', 'Default Rate'],
+      ['chg_ledger_code', 'Ledger'],
+      ['chg_tax_apl', 'Tax Applicable'],
+      ['chg_tax_id', 'Tax Rate'],
+      ['chg_before_tax', 'Apply Before Tax'],
+      ['chg_sep_post', 'Separate Posting'],
+      ['chg_man_party', 'Party Mandatory'],
+      ['chg_on_bill', 'On Supplier Bill'],
+      ['chg_landing_cost', 'Landing Cost'],
+      ['chg_cost_alloc', 'Cost Allocation'],
+      ['chg_auto_apply', 'Auto Apply'],
+      ['chg_disp_order', 'Display Order'],
+      ['chg_is_active', 'Is Active'],
+      ['chg_is_deleted', 'Is Deleted'],
+      ['chg_created_on', 'Created On'],
+      ['chg_created_by', 'Created By'],
+    ]),
+  ],
+  [
+    // App Settings, menu 246: one override row. "Setting" is the catalogue label the
+    // screen shows; Company / Branch / Device / User ID read as names. A reset is the row
+    // going (Is Deleted).
+    'App Settings',
+    buildAuditSql(
+      [
+        'public.app_setting_value v',
+        'JOIN public.app_setting_def d ON d.asd_key = v.asv_setting_key',
+      ].join('\n'),
+      [
+        ['d.asd_label', 'Setting'],
+        ['v.asv_setting_key', 'Setting Key'],
+        ['v.asv_scope', 'Scope'],
+        ['v.asv_company_id', 'Company ID'],
+        ['v.asv_branch_id', 'Branch ID'],
+        ['v.asv_device_id', 'Device ID'],
+        ['v.asv_user_id', 'User ID'],
+        ['v.asv_value', 'Value'],
+        ['v.asv_remarks', 'Remarks'],
+        ['v.asv_is_deleted', 'Is Deleted'],
+        ['v.asv_created_on', 'Created On'],
+        ['v.asv_created_by', 'Created By'],
+      ],
+    ),
+  ],
+  [
+    // Print Templates, menu 62. One screen, three tables: a template row, a revision row
+    // and a dataset row are each audited under their own id, and each records only its
+    // own labels (AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY). The labels all three
+    // share read whichever column the row has (COALESCE). Purpose / Forked From read as
+    // names.
+    'Print Template',
+    buildAuditSql(
+      [
+        'public.print_template ptl',
+        'LEFT JOIN public.print_template_version ptv ON ptv.ptv_template_id = ptl.ptl_id',
+        'LEFT JOIN public.print_template_dataset ptd ON ptd.ptd_version_id = ptv.ptv_id',
+      ].join('\n'),
+      [
+        // The template
+        ['ptl.ptl_code', 'Template Code'],
+        ['ptl.ptl_name', 'Template Name'],
+        ['ptl.ptl_company_id', 'Company ID'],
+        ['ptl.ptl_purpose_id', 'Purpose'],
+        ['ptl.ptl_description', 'Description'],
+        ['ptl.ptl_forked_from_id', 'Forked From'],
+        ['ptl.ptl_forked_from_rev', 'Forked Revision'],
+        ['ptl.ptl_sort_order', 'Sort Order'],
+        ['ptl.ptl_is_active', 'Is Active'],
+        // A revision
+        ['ptv.ptv_rev_no', 'Revision'],
+        ['ptv.ptv_status', 'Revision Status'],
+        ['ptv.ptv_engine', 'Engine'],
+        ['ptv.ptv_paper_code', 'Paper'],
+        ['ptv.ptv_orientation', 'Orientation'],
+        ['ptv.ptv_width_mm', 'Width mm'],
+        ['ptv.ptv_height_mm', 'Height mm'],
+        ['ptv.ptv_margin_top_mm', 'Top Margin mm'],
+        ['ptv.ptv_margin_bottom_mm', 'Bottom Margin mm'],
+        ['ptv.ptv_margin_left_mm', 'Left Margin mm'],
+        ['ptv.ptv_margin_right_mm', 'Right Margin mm'],
+        ['ptv.ptv_columns', 'Columns'],
+        ['ptv.ptv_lang', 'Language'],
+        ['ptv.ptv_font_family', 'Font'],
+        ['ptv.ptv_params', 'Prompts'],
+        ['ptv.ptv_note', 'Revision Note'],
+        ['ptv.ptv_body', 'Layout'],
+        ['ptv.ptv_approved_on', 'Approved On'],
+        ['ptv.ptv_approved_by', 'Approved By'],
+        // A dataset
+        ['ptd.ptd_dataset_no', 'Dataset No'],
+        ['ptd.ptd_name', 'Dataset Name'],
+        ['ptd.ptd_label', 'Dataset Label'],
+        ['ptd.ptd_role', 'Dataset Role'],
+        ['ptd.ptd_source_kind', 'Dataset Source'],
+        ['ptd.ptd_provider_code', 'Dataset Provider'],
+        ['ptd.ptd_sql', 'Dataset SQL'],
+        ['ptd.ptd_parent_no', 'Parent Dataset No'],
+        ['ptd.ptd_link_fields', 'Link Fields'],
+        ['ptd.ptd_row_limit', 'Row Limit'],
+        ['ptd.ptd_timeout_ms', 'Timeout ms'],
+        ['ptd.ptd_sort_order', 'Dataset Sort Order'],
+        ['ptd.ptd_remarks', 'Dataset Remarks'],
+        // All three
+        ['COALESCE(ptl.ptl_is_deleted, ptv.ptv_is_deleted, ptd.ptd_is_deleted)', 'Is Deleted'],
+        ['COALESCE(ptl.ptl_created_on, ptv.ptv_created_on, ptd.ptd_created_on)', 'Created On'],
+        ['COALESCE(ptl.ptl_created_by, ptv.ptv_created_by, ptd.ptd_created_by)', 'Created By'],
+      ],
+    ),
+  ],
+  [
+    // Print Assignments, menu 248: which design a purpose prints with at a scope.
+    'Print Template Assignments',
+    buildAuditSql('public.print_template_assignment', [
+      ['pta_company_id', 'Company ID'],
+      ['pta_branch_id', 'Branch ID'],
+      ['pta_device_id', 'Device ID'],
+      ['pta_purpose_id', 'Purpose'],
+      ['pta_template_id', 'Template'],
+      ['pta_output_mode', 'Output'],
+      ['pta_printer_id', 'Printer'],
+      ['pta_printer_name', 'Printer Name'],
+      ['pta_copies', 'Copies'],
+      ['pta_remarks', 'Remarks'],
+      ['pta_is_active', 'Is Active'],
+      ['pta_is_deleted', 'Is Deleted'],
+      ['pta_created_on', 'Created On'],
+      ['pta_created_by', 'Created By'],
+    ]),
+  ],
+  [
+    // Ledger Mapping, menu 250: the posting role and the ledger it posts to (by name).
+    'Posting Ledger Map',
+    buildAuditSql(
+      [
+        'accounts.acc_ledger_map m',
+        'JOIN accounts.acc_ledger_role r ON r.alr_role = m.alm_role',
+      ].join('\n'),
+      [
+        ['m.alm_role', 'Role'],
+        ['r.alr_label', 'Role Name'],
+        ['m.alm_ledger_id', 'Ledger'],
+        ['m.alm_is_active', 'Is Active'],
+        ['m.alm_is_deleted', 'Is Deleted'],
+        ['m.alm_remarks', 'Remarks'],
+      ],
+    ),
+  ],
+]);
+
+/**
+ * Screens that audit rows of several tables under one name. A row records only the
+ * labels it has a key for, instead of every label with the other tables' ones null.
+ */
+export const AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY: ReadonlySet<string> = new Set([
+  'Print Template',
 ]);
 
 export const getAuditScreenSql = (screenName: string): string | undefined =>

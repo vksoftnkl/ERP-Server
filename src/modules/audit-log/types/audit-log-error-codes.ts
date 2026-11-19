@@ -28,6 +28,13 @@ export enum AuditLogErrorCode {
   DATE_INVALID = 'AUDIT_LOG_DATE_INVALID',
   /** List: date_from is after date_to. */
   DATE_RANGE_INVALID = 'AUDIT_LOG_DATE_RANGE_INVALID',
+  /**
+   * List (403, field `userId`): the caller may not read this history — no View right on
+   * the screen's menu (assertMenuRight, prefix AUDIT_LOG), none on Audit Logs (menu 106)
+   * for the all-screens list, or a screen no menu shows and the caller is no ADMIN /
+   * SUPER ADMIN.
+   */
+  RIGHT_VIEW = 'AUDIT_LOG_RIGHT_VIEW',
 }
 
 export interface AuditLogErrorDetail extends ModuleErrorDetail {

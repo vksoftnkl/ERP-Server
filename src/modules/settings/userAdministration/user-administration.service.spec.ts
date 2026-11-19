@@ -4,7 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
 import { UserAdminErrorCode, UserType } from './types/user-administration.enum';
-import { UserAdministrationService } from './user-administration.service';
+import { UserAdministrationService, describeMenuRightsChange } from './user-administration.service';
 
 // The real scrypt is slow and salted; a readable stand-in shows exactly what was hashed.
 jest.mock('../../../common/utils/secret-hash.utils', () => ({
@@ -654,21 +654,81 @@ describe('UserAdministrationService', () => {
       });
     });
 
-    it('audits the update against the stored row, without its menus', async () => {
+    // Review list 11-19 step 3 (58.12): the rights BEFORE and AFTER, by menu name, so the
+    // history diffs them per menu; never a hash; a note spells the change out.
+    it('audits the rights before and after by menu name, and never a hash', async () => {
+      lookups({ target: userRow({ usrPinHash: 'scrypt$old$pin' }) });
+      prisma.menu.findMany.mockImplementation(
+        async ({ where }: { where: { menuId: { in: number[] } } }) =>
+          where.menuId.in.map((menuId) => ({
+            menuId,
+            menuName: ({ 5: 'Sales Bill', 7: 'Day Book' } as Record<number, string>)[menuId],
+          })),
+      );
+      prisma.userMenus.findMany.mockResolvedValue([menuRow(5, { umCanEdit: true })]);
+
+      await update({
+        usrFullName: 'Cashier Number One',
+        usrPassword: 'newpass1',
+        usrPin: '4321',
+        menus: [
+          { umMenuId: 5, umCanView: true, umCanPost: true },
+          { umMenuId: 7, umCanView: true },
+        ],
+      });
+
+      const [entry] = audit.logEntityChange.mock.calls[0] as [Record<string, unknown>];
+      expect(entry).toMatchObject({
+        action: 'update',
+        pk: USER_ID,
+        displayName: 'Cashier One',
+        userId: CALLER_ID,
+        originalRecord: { menuRights: { 'Sales Bill': 'View, Edit' }, pinSet: true },
+        modifiedRecord: {
+          menuRights: { 'Sales Bill': 'View, Post', 'Day Book': 'View' },
+          pinSet: true,
+          usrFullName: 'Cashier Number One',
+        },
+        notes:
+          'User updated; password reset by an administrator; PIN changed; ' +
+          'Menu rights: Sales Bill: Edit off, Post on; Day Book: added (View)',
+      });
+      expect(entry.originalRecord).not.toHaveProperty('menus');
+      expect(JSON.stringify(entry)).not.toMatch(/scrypt|newpass1|4321/);
+    });
+
+    it('keeps the stored rights on both sides when menus is left out (no rights diff)', async () => {
       lookups({ target: userRow() });
 
-      const payload = await update({ usrFullName: 'Cashier Number One' });
+      await update({ usrFullName: 'Cashier Number One' });
 
-      expect(audit.logEntityChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'update',
-          pk: USER_ID,
-          originalRecord: expect.not.objectContaining({ menus: expect.anything() }) as object,
-          modifiedRecord: payload,
-          userId: CALLER_ID,
-        }),
-        prisma,
-      );
+      type Entry = {
+        originalRecord: { menuRights: unknown };
+        modifiedRecord: { menuRights: unknown };
+        notes: string;
+      };
+      const [entry] = audit.logEntityChange.mock.calls[0] as [Entry];
+      expect(entry.originalRecord.menuRights).toEqual({ 'Menu 5': 'View' });
+      expect(entry.modifiedRecord.menuRights).toEqual(entry.originalRecord.menuRights);
+      expect(entry.notes).toBe('User updated');
+    });
+  });
+
+  describe('describeMenuRightsChange', () => {
+    const names = new Map([
+      [5, 'Sales Bill'],
+      [7, 'Day Book'],
+      [9, 'Old Report'],
+    ]);
+    it('names each menu: rights on / off, added, removed; nothing when equal', () => {
+      expect(
+        describeMenuRightsChange(
+          [menuRow(5, { umCanEdit: true }), menuRow(9)],
+          [menuRow(5, { umCanPost: true }), menuRow(7, { umCanCreate: true })],
+          names,
+        ),
+      ).toBe('Sales Bill: Edit off, Post on; Day Book: added (View, Create); Old Report: removed');
+      expect(describeMenuRightsChange([menuRow(5)], [menuRow(5)], names)).toBe('');
     });
   });
 

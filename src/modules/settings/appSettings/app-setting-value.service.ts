@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppSettingDef, AppSettingValue, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditLogService, deviceDisplayName } from '../../audit-log/audit-log.service';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -190,24 +190,15 @@ export class AppSettingValueService {
         where: { asvId },
         data: { asvIsDeleted: true, asvModifiedOn: new Date(), asvModifiedBy: actor },
       });
-      await this.auditLogService.logEntityChange(
-        {
-          // The audit vocabulary is insert / update / approve / cancel — a soft
-          // delete is a 'cancel', the same word every other module uses for it.
-          action: 'cancel',
-          tableName: APP_SETTING_VALUE_TABLE_NAME,
-          screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
-          screenType: 'settings',
-          pk: asvId,
-          displayName: this.displayName(existing),
-          originalRecord: this.toPayload(existing),
-          modifiedRecord: this.toPayload(deleted),
-          userId: actor,
-          ...(existing.asvBranchId ? { branchId: existing.asvBranchId } : {}),
-          notes: `Override reset to the ${existing.asvScope} layer above`,
-        },
-        tx,
-      );
+      // The audit vocabulary is insert / update / approve / cancel — a soft
+      // delete is a 'cancel', the same word every other module uses for it.
+      await this.auditOverride(tx, {
+        action: 'cancel',
+        before: existing,
+        after: deleted,
+        actor,
+        notes: `Override reset to the ${existing.asvScope} layer above`,
+      });
       return { asvId, asvSettingKey: existing.asvSettingKey, deleted: true };
     });
   }
@@ -320,22 +311,14 @@ export class AppSettingValueService {
       },
     });
     const payload = this.toPayload(created);
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'New',
-        tableName: APP_SETTING_VALUE_TABLE_NAME,
-        screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
-        screenType: 'settings',
-        pk: payload.asvId,
-        displayName: this.displayName(created),
-        originalRecord: null,
-        modifiedRecord: payload,
-        userId: actor,
-        ...(created.asvBranchId ? { branchId: created.asvBranchId } : {}),
-        notes: `${asvScope} override set`,
-      },
-      tx as Prisma.TransactionClient,
-    );
+    await this.auditOverride(tx, {
+      action: 'New',
+      before: null,
+      after: created,
+      actor,
+      notes: `${asvScope} override set`,
+      label: def.asdLabel,
+    });
     return payload;
   }
 
@@ -389,23 +372,115 @@ export class AppSettingValueService {
     };
     const updated = await tx.appSettingValue.update({ where: { asvId: existing.asvId }, data });
     const payload = this.toPayload(updated);
+    await this.auditOverride(tx, {
+      action: 'update',
+      before: existing,
+      after: updated,
+      actor,
+      notes,
+    });
+    return payload;
+  }
+
+  /**
+   * One override's audit row (review list 11-19, 246.2). The 'App Settings' label map
+   * records the setting's LABEL, key, scope, its target (company / branch / device / user,
+   * shown by name), value and remarks; the display name reads "Round-off step @ Company:
+   * Acme Foods". The branch is logged on every row: the override's own branch, else the
+   * device's for a device override, else the branch of the session that made the change.
+   */
+  private async auditOverride(
+    tx: SettingsWriteClient,
+    change: {
+      action: 'New' | 'update' | 'cancel';
+      before: AppSettingValue | null;
+      after: AppSettingValue;
+      actor: string;
+      notes: string;
+      label?: string | null;
+    },
+  ): Promise<void> {
+    const { after } = change;
+    const label =
+      change.label ??
+      (
+        await tx.appSettingDef.findFirst({
+          where: { asdKey: after.asvSettingKey },
+          select: { asdLabel: true },
+        })
+      )?.asdLabel ??
+      null;
+    const target = await this.describeTarget(tx, after);
+    const branchId =
+      after.asvBranchId ?? target.branchId ?? this.requestContextService.getBranchId();
+    const settingName = label?.trim() || after.asvSettingKey;
+    const withLabel = (record: AppSettingValue) => ({
+      ...this.toPayload(record),
+      asdLabel: settingName,
+    });
     await this.auditLogService.logEntityChange(
       {
-        action: 'update',
+        action: change.action,
         tableName: APP_SETTING_VALUE_TABLE_NAME,
         screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
         screenType: 'settings',
-        pk: existing.asvId,
-        displayName: this.displayName(updated),
-        originalRecord: this.toPayload(existing),
-        modifiedRecord: payload,
-        userId: actor,
-        ...(updated.asvBranchId ? { branchId: updated.asvBranchId } : {}),
-        notes,
+        pk: after.asvId,
+        displayName: target.name
+          ? `${settingName} @ ${target.scope}: ${target.name}`
+          : `${settingName} @ ${target.scope}`,
+        originalRecord: change.before ? withLabel(change.before) : null,
+        modifiedRecord: withLabel(after),
+        userId: change.actor,
+        ...(branchId ? { branchId } : {}),
+        notes: change.notes,
       },
       tx as Prisma.TransactionClient,
     );
-    return payload;
+  }
+
+  /** The override's target as a reader names it, and the branch a device override sits in. */
+  private async describeTarget(
+    tx: SettingsWriteClient,
+    record: AppSettingValue,
+  ): Promise<{ scope: string; name: string | null; branchId: string | null }> {
+    const scope = record.asvScope.charAt(0) + record.asvScope.slice(1).toLowerCase();
+    if (record.asvCompanyId) {
+      const company = await tx.company.findFirst({
+        where: { compId: record.asvCompanyId },
+        select: { compName: true },
+      });
+      return { scope, name: company?.compName ?? record.asvCompanyId, branchId: null };
+    }
+    if (record.asvBranchId) {
+      const branch = await tx.branchMaster.findFirst({
+        where: { brId: record.asvBranchId },
+        select: { brName: true },
+      });
+      return { scope, name: branch?.brName ?? record.asvBranchId, branchId: record.asvBranchId };
+    }
+    if (record.asvDeviceId) {
+      const device = await tx.deviceMaster.findFirst({
+        where: { devId: record.asvDeviceId },
+        select: { devDeviceName: true, devCode: true, devDeviceUid: true, devBranchId: true },
+      });
+      return {
+        scope,
+        name: device ? deviceDisplayName(device) : record.asvDeviceId,
+        branchId: device?.devBranchId ?? null,
+      };
+    }
+    if (record.asvUserId) {
+      const user = await tx.userMaster.findFirst({
+        where: { usrId: record.asvUserId },
+        select: { usrDisplayName: true, usrLoginName: true },
+      });
+      return {
+        scope,
+        name: user ? user.usrDisplayName?.trim() || user.usrLoginName : record.asvUserId,
+        branchId: null,
+      };
+    }
+    return { scope, name: null, branchId: null };
   }
 
   // The catalog row this override answers to. A retired setting (asdIsActive =
@@ -644,14 +719,6 @@ export class AppSettingValueService {
   // box the screen has to put the message on.
   private fieldPath(index: number, field: string): string {
     return `data[${index}].${field}`;
-  }
-
-  private displayName(record: AppSettingValue): string {
-    const targetId =
-      record.asvCompanyId ?? record.asvBranchId ?? record.asvDeviceId ?? record.asvUserId;
-    return targetId
-      ? `${record.asvSettingKey} @ ${record.asvScope} ${targetId}`
-      : `${record.asvSettingKey} @ ${record.asvScope}`;
   }
 
   // `index` is absent on the delete path, which names one row and not an entry

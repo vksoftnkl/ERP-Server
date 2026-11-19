@@ -295,8 +295,8 @@ export class ItemsEanCodeMasterService {
       );
     }
 
-    const originalRecord = this.toPayload(existing);
-    const modifiedRecord = this.toPayload({
+    const originalRecord = this.toAuditRecord(existing);
+    const modifiedRecord = this.toAuditRecord({
       ...existing,
       eanIsDeleted: nextDeleted,
       eanModifiedOn: modifiedOn,
@@ -372,7 +372,7 @@ export class ItemsEanCodeMasterService {
         pk: payload.ean_id,
         displayName: payload.ean_code,
         originalRecord: null,
-        modifiedRecord: payload,
+        modifiedRecord: this.toAuditRecord(created),
         userId: createdBy,
         notes: 'Item EAN code created',
       },
@@ -455,8 +455,8 @@ export class ItemsEanCodeMasterService {
         screenType: 'master',
         pk: eanId,
         displayName: payload.ean_code,
-        originalRecord: this.toPayload(existing),
-        modifiedRecord: payload,
+        originalRecord: this.toAuditRecord(existing),
+        modifiedRecord: this.toAuditRecord(updated),
         userId: payload.ean_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         notes: 'Item EAN code updated',
       },
@@ -511,6 +511,15 @@ export class ItemsEanCodeMasterService {
         eanModifiedBy: actor,
       },
     });
+  }
+
+  /**
+   * What the audit records (review list 11-19): the payload, with the unit under its
+   * column's own name (inventory.item_ean_codes.ean_uc_unit_id) — the payload's ean_unit_id is the API's.
+   */
+  private toAuditRecord(record: ItemEanCode): Record<string, unknown> {
+    const { ean_unit_id: unitId, ...rest } = this.toPayload(record);
+    return { ...rest, ean_uc_unit_id: unitId };
   }
 
   private toPayload(record: ItemEanCode): ItemEanCodePayload {

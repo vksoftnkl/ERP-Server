@@ -311,19 +311,30 @@ describe('DeviceListMasterService', () => {
       });
     });
 
-    it('audits the new device under its uid', async () => {
+    // Review list 11-19 (239.9): the history names the device (name, else code, else uid),
+    // and the audit record leaves out the per-login / per-save stamps.
+    it('audits the new device under its name, without the per-save stamps', async () => {
       const payload = await service.save({ devDeviceUid: 'DESK-1' });
 
       expect(audit.logEntityChange).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'New',
           tableName: 'erp device master',
-          displayName: 'DESK-1',
+          displayName: 'Counter 1',
           originalRecord: null,
-          modifiedRecord: payload,
+          modifiedRecord: expect.objectContaining({
+            devId: payload.devId,
+            devDeviceUid: 'DESK-1',
+            devCode: payload.devCode,
+            devCompanyId: payload.devCompanyId,
+          }),
         }),
         prisma,
       );
+      const [entry] = audit.logEntityChange.mock.calls[0] as [{ modifiedRecord: object }];
+      for (const stamp of ['devLastIp', 'devSyncDate', 'devModifiedOn', 'devModifiedBy']) {
+        expect(entry.modifiedRecord).not.toHaveProperty(stamp);
+      }
       expect(payload.devModifiedOn).toBeNull();
     });
   });
@@ -478,8 +489,16 @@ describe('DeviceListMasterService', () => {
         expect.objectContaining({
           action: 'update',
           pk: DEVICE_ID,
-          originalRecord: expect.objectContaining({ devDeviceUid: 'DESK-0001' }),
-          modifiedRecord: payload,
+          displayName: 'Counter 1',
+          originalRecord: expect.objectContaining({
+            devDeviceUid: 'DESK-0001',
+            devIsBlocked: false,
+          }),
+          modifiedRecord: expect.objectContaining({
+            devDeviceUid: 'DESK-0002',
+            devIsBlocked: true,
+          }),
+          notes: 'Device updated; device blocked',
         }),
         prisma,
       );
@@ -609,7 +628,7 @@ describe('DeviceListMasterService', () => {
       expect(audit.logEntityChange).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'cancel',
-          displayName: 'DESK-0001',
+          displayName: 'Counter 1',
           modifiedRecord: expect.objectContaining({ devIsDeleted: true, devIsActive: false }),
         }),
         prisma,

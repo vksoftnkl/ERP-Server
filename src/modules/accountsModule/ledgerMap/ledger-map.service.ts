@@ -176,12 +176,22 @@ export class LedgerMapService {
           almModifiedBy: actor,
         },
       });
+      const roleRow = await tx.accLedgerRole.findUnique({
+        where: { alrRole: existing.almRole },
+        select: { alrLabel: true },
+      });
+      const roleLabel = roleRow?.alrLabel ?? null;
       await this.logChange(tx, {
         action: 'cancel',
         almId: existing.almId,
         role: existing.almRole,
-        originalRecord: this.toAuditRecord(existing),
-        modifiedRecord: { ...this.toAuditRecord(existing), almIsActive: false, almIsDeleted: true },
+        roleLabel,
+        originalRecord: this.toAuditRecord(existing, roleLabel),
+        modifiedRecord: {
+          ...this.toAuditRecord(existing, roleLabel),
+          almIsActive: false,
+          almIsDeleted: true,
+        },
         actor,
         notes: 'Posting ledger mapping removed',
       });
@@ -232,8 +242,9 @@ export class LedgerMapService {
       action: 'New',
       almId: created.almId,
       role: role.alrRole,
+      roleLabel: role.alrLabel,
       originalRecord: null,
-      modifiedRecord: this.toAuditRecord(created),
+      modifiedRecord: this.toAuditRecord(created, role.alrLabel),
       actor,
       notes: 'Posting ledger mapped',
     });
@@ -294,8 +305,9 @@ export class LedgerMapService {
       action: 'update',
       almId: updated.almId,
       role: role.alrRole,
-      originalRecord: this.toAuditRecord(existing),
-      modifiedRecord: this.toAuditRecord(updated),
+      roleLabel: role.alrLabel,
+      originalRecord: this.toAuditRecord(existing, role.alrLabel),
+      modifiedRecord: this.toAuditRecord(updated, role.alrLabel),
       actor,
       notes: 'Posting ledger mapping re-pointed',
     });
@@ -427,10 +439,15 @@ export class LedgerMapService {
     };
   }
 
-  private toAuditRecord(mapping: MappingRow): Record<string, unknown> {
+  /**
+   * The 'Posting Ledger Map' label map records Role, Role Name, Ledger (shown by name at
+   * read time), Active, Deleted and Remarks (review list 11-19, 250.2).
+   */
+  private toAuditRecord(mapping: MappingRow, roleLabel: string | null): Record<string, unknown> {
     return {
       almId: mapping.almId,
       almRole: mapping.almRole,
+      alrLabel: roleLabel,
       almLedgerId: mapping.almLedgerId,
       almLedgerName: mapping.ledger?.ledName ?? null,
       almIsActive: mapping.almIsActive,
@@ -445,6 +462,7 @@ export class LedgerMapService {
       action: AuditActionInput;
       almId: string;
       role: string;
+      roleLabel: string | null;
       originalRecord: Record<string, unknown> | null;
       modifiedRecord: Record<string, unknown>;
       actor: string;
@@ -458,7 +476,9 @@ export class LedgerMapService {
         screenName: LEDGER_MAP_AUDIT_SCREEN_NAME,
         screenType: 'master',
         pk: change.almId,
-        displayName: change.role,
+        displayName: change.roleLabel?.trim()
+          ? `${change.roleLabel.trim()} (${change.role})`
+          : change.role,
         originalRecord: change.originalRecord,
         modifiedRecord: change.modifiedRecord,
         userId: change.actor,

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppThemeMaster, AppThemeTemplate, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
+import { stylesheetDigest } from 'src/modules/audit-log/audit-text-digest';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { assertMenuRight, type MenuRight } from 'src/common/posting/rights';
 import {
@@ -650,12 +651,17 @@ export class AppThemeService {
     };
   }
 
-  /** The audit screen reads tpl_* names — the text before and after, whole. */
+  /**
+   * The audit screen reads tpl_* names. The stylesheet itself (~440 KB, and it went in
+   * twice per save) is not audited (review list 11-19, 266.1): its SHA-256, size in bytes
+   * and line count are, under "Stylesheet Hash / Size / Lines". A save that changed the
+   * text shows a new hash; the text of any revision is the editor's business, not audit's.
+   */
   private toTemplateAuditRecord(record: AppThemeTemplate): Record<string, unknown> {
     return {
       tplId: record.tplId,
       tplName: record.tplName,
-      tplQss: record.tplQss,
+      ...stylesheetDigest(record.tplQss),
       tplRemarks: record.tplRemarks,
       tplIsActive: record.tplIsActive,
       tplIsDeleted: record.tplIsDeleted,
@@ -758,3 +764,9 @@ export class AppThemeService {
     }
   }
 }
+
+/**
+ * What the audit keeps of a stylesheet: its SHA-256 (hex), UTF-8 size and line count. One
+ * rule with the history read, which shows older rows' whole text the same way.
+ */
+export const templateTextDigest = stylesheetDigest;

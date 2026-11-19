@@ -152,6 +152,12 @@ const buildService = (
     printTemplateAssignment: {
       findFirst: jest.fn((): Promise<{ ptaId: string } | null> => Promise.resolve(null)),
     },
+    // GET /get names the users (review list 11-19, 62.4): USER has no display name.
+    userMaster: {
+      findMany: jest.fn(() =>
+        Promise.resolve([{ usrId: USER, usrDisplayName: '', usrLoginName: 'VKPOS' }]),
+      ),
+    },
   };
 
   const prisma = {
@@ -224,6 +230,37 @@ describe('PrintTemplateService.getTemplateById', () => {
       ptlId: TEMPLATE_ID,
       ptlPurposeCode: 'SALE_INVOICE',
       ptlCreatedOn: CREATED_ON.toISOString(),
+    });
+  });
+
+  it('adds who made, changed and approved each revision by name, beside the uuid keys', async () => {
+    const OTHER = '01963d86-caf0-7b26-89f0-58ac380a2d61';
+    const { service, tx } = buildService({
+      template: templateRow({
+        ptlCreatedBy: USER,
+        ptlModifiedBy: OTHER,
+        versions: [versionRow({ ptvCreatedBy: USER, ptvApprovedBy: USER })],
+      }),
+    });
+
+    const payload = await service.getTemplateById(TEMPLATE_ID);
+
+    expect(tx.userMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(payload).toMatchObject({
+      ptlCreatedBy: USER,
+      ptlCreatedByName: 'VKPOS',
+      // A uuid naming no user answers null rather than the uuid again.
+      ptlModifiedBy: OTHER,
+      ptlModifiedByName: null,
+      versions: [
+        {
+          ptvCreatedBy: USER,
+          ptvCreatedByName: 'VKPOS',
+          ptvModifiedByName: null,
+          ptvApprovedBy: USER,
+          ptvApprovedByName: 'VKPOS',
+        },
+      ],
     });
   });
 });
@@ -390,6 +427,20 @@ describe('PrintTemplateService.saveTemplate — the header', () => {
         userId: USER,
       }),
       tx,
+    );
+  });
+
+  it('names a new revision on the audit history by the template name, never its id', async () => {
+    const { service, audit } = buildService();
+
+    await service.saveTemplate(save({ ...NEW_TEMPLATE, versions: [{ ptvBody: '{"bands":[]}' }] }));
+
+    expect(audit.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tableName: 'print template version',
+        displayName: 'Tax Invoice A4 rev 1',
+      }),
+      expect.anything(),
     );
   });
 
@@ -796,6 +847,22 @@ describe('PrintTemplateService.saveTemplate — the published pointer', () => {
       expect.objectContaining({
         data: expect.objectContaining({ ptlPublishedRevId: null }) as unknown,
       }),
+    );
+  });
+
+  it('asks the audit to skip an update row nothing recorded changed in (review 11-19)', async () => {
+    const { service, audit } = buildService({ template: twoRevisions() });
+
+    await service.saveTemplate(save({ ptlId: TEMPLATE_ID, ptlPublishedRevId: 'v2' }));
+
+    // The template's own "update" row: the audit drops it when no label moved.
+    expect(audit.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'update',
+        tableName: 'print template',
+        skipWhenUnchanged: true,
+      }),
+      expect.anything(),
     );
   });
 

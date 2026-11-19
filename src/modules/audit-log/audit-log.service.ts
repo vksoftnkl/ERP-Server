@@ -12,9 +12,14 @@ import {
 } from './types/audit-log.types';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
-import { getAuditScreenSql } from './audit-screen-sql.constants';
+import {
+  AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY,
+  getAuditScreenSql,
+} from './audit-screen-sql.constants';
 import { throwBadRequest } from '../../common/utils/module-shared.utils';
 import { AuditLogErrorCode, type AuditLogErrorDetail } from './types/audit-log-error-codes';
+import type { AuditReadScope } from './audit-log-access.service';
+import { stylesheetDigest } from './audit-text-digest';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
@@ -38,19 +43,30 @@ const AUDIT_LOG_SELECT = {
   logEntityId: true,
   logRevNo: true,
   logDeviceName: true,
-  auditScreen: { select: { screenName: true } },
+  auditScreen: { select: { screenName: true, screenType: true } },
 } satisfies Prisma.AuditLogSelect;
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
 type AuditLogListRecord = Prisma.AuditLogGetPayload<{
   select: typeof AUDIT_LOG_SELECT;
 }>;
 type AuditFieldDefinition = {
+  /** The first of `sourceFieldNames`, or null when the expression names no column. */
   sourceFieldName: string | null;
+  /**
+   * Every column the label may be read from, in order. One for a plain column;
+   * each argument of a `COALESCE(a, b, c)` for a label several tables share on a
+   * multi-table screen (Print Template: template, revision and dataset rows).
+   */
+  sourceFieldNames: string[];
   targetFieldName: string;
 };
 type ResolvedAuditScreen = {
   screenId: number;
   auditFields: AuditFieldDefinition[];
+  /** Multi-table screens record only the labels a row actually has (no null padding). */
+  presentFieldsOnly: boolean;
+  /** A document screen: its changed fields are kept whole (History reads its status keys). */
+  isTransaction: boolean;
 };
 type PreparedAuditLogListRecord = {
   record: AuditLogListRecord;
@@ -69,6 +85,8 @@ type AuditReferenceLookupType =
   | 'company'
   | 'customer'
   | 'customerGroup'
+  | 'device'
+  | 'employee'
   | 'employeeDepartment'
   | 'employeeDesignation'
   | 'godownGroup'
@@ -79,12 +97,16 @@ type AuditReferenceLookupType =
   | 'itemSection'
   | 'itemTax'
   | 'ledger'
+  | 'printPurpose'
+  | 'printTemplate'
+  | 'printerProfile'
   | 'state'
   | 'supplierGroup'
   | 'tenderType'
   | 'unit'
   | 'unitConversion'
-  | 'unitRate';
+  | 'unitRate'
+  | 'user';
 type AuditReferenceNameLookup = Partial<
   Record<AuditReferenceLookupType, ReadonlyMap<string, string>>
 >;
@@ -104,26 +126,36 @@ const createAuditReferenceTypeMap = (
     ),
   );
 const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
+  // Review list 11-19 step 3: who made / changed / approved a row reads as a person, on
+  // every screen. Only a uuid that names a user_master row is swapped; a stamp that holds
+  // a login name or anything else is shown as it was stored.
+  ['Approved By', 'user'],
   ['Area ID', 'area'],
   ['Base Unit ID', 'unit'],
   ['Branch ID', 'branch'],
   ['City ID', 'city'],
   ['Company ID', 'company'],
   ['Company IDs', 'company'],
+  ['Created By', 'user'],
   ['Customer Group ID', 'customerGroup'],
   ['Customer ID', 'customer'],
   ['Default Tax ID', 'itemTax'],
   ['Default UOM ID', 'unit'],
   ['Department ID', 'employeeDepartment'],
   ['Designation ID', 'employeeDesignation'],
+  ['Device ID', 'device'],
+  ['Employee ID', 'employee'],
   ['Item ID', 'item'],
   ['Ledger ID', 'ledger'],
+  ['Locked By', 'user'],
+  ['Modified By', 'user'],
   ['State ID', 'state'],
   ['Supplier Group ID', 'supplierGroup'],
   ['Tax ID', 'itemTax'],
   ['Tender Type ID', 'tenderType'],
   ['Unit ID', 'unit'],
   ['Unit Rate ID', 'unitRate'],
+  ['User ID', 'user'],
 ]);
 const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
   string,
@@ -197,6 +229,164 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
       ['Parent Section ID', 'itemSection'],
       ['Path IDs', 'itemSection'],
     ]),
+  ],
+  // Review list 11-19 step 3 (audit batch): the labels below hold ids the history shows by name.
+  [
+    'Charge Master',
+    createAuditReferenceTypeMap([
+      ['Ledger', 'ledger'],
+      ['Tax Rate', 'itemTax'],
+    ]),
+  ],
+  ['Employee Master', createAuditReferenceTypeMap([['Staff Advance Ledger', 'ledger']])],
+  ['Posting Ledger Map', createAuditReferenceTypeMap([['Ledger', 'ledger']])],
+  [
+    'Print Template',
+    createAuditReferenceTypeMap([
+      ['Purpose', 'printPurpose'],
+      ['Forked From', 'printTemplate'],
+    ]),
+  ],
+  [
+    'Print Template Assignments',
+    createAuditReferenceTypeMap([
+      ['Purpose', 'printPurpose'],
+      ['Template', 'printTemplate'],
+      ['Printer', 'printerProfile'],
+    ]),
+  ],
+]);
+/**
+ * Review list 11-19 H9 — personal numbers are masked in the history READ (every row, old
+ * and new): the stored audit keeps the value, as every other audited field does, and the
+ * view shows the last 4 only. Keyed by screen, then by label (normalised).
+ */
+const MASKED_AUDIT_FIELDS_BY_SCREEN = new Map<string, ReadonlySet<string>>([
+  [
+    'Employee Master',
+    new Set(['PAN', 'Aadhaar'].map((label) => normalizeAuditFieldLookupToken(label))),
+  ],
+]);
+/**
+ * Review list 11-19 step 3 (user 2026-11-19): Sync Date, Modified On and Modified By are no
+ * audited change on any screen — every save moves them, and log_date / log_user_name say
+ * when and who. Matched on the key's snake form: the label, or a raw column name such as
+ * compSyncDate / ipm_updated_on that a screen without a label map hands over.
+ */
+const NOISE_STAMP_KEY_PATTERN =
+  /(^|_)(sync_date|synced_on|modified_on|modified_by|updated_on|updated_by)$/;
+/** The App Theme Template screen (118), whose rows before 11-19 hold the whole stylesheet. */
+const THEME_TEMPLATE_SCREEN_NAME = 'App Theme Template';
+/** Where an older theme template row keeps the text: its label, or the raw column. */
+const STYLESHEET_TEXT_KEYS: ReadonlySet<string> = new Set(['Stylesheet', 'tplQss', 'tpl_qss']);
+/** A device as people know it: its name, else its code (D1, D2 …), else the uid. */
+export const deviceDisplayName = (device: {
+  devDeviceName: string | null;
+  devCode: string | null;
+  devDeviceUid: string;
+}): string => device.devDeviceName?.trim() || device.devCode?.trim() || device.devDeviceUid;
+const MASK_VISIBLE_TAIL = 4;
+/** "ABCDE1234F" → "XXXXXX234F"; four characters or fewer are masked whole. */
+export const maskAuditValue = (value: string): string => {
+  const text = value.trim();
+  if (!text) {
+    return value;
+  }
+  if (text.length <= MASK_VISIBLE_TAIL) {
+    return 'X'.repeat(text.length);
+  }
+  return 'X'.repeat(text.length - MASK_VISIBLE_TAIL) + text.slice(-MASK_VISIBLE_TAIL);
+};
+/**
+ * Same-screen history: one record on the screen is written under several primary keys,
+ * so the History button's `record_pk` is widened to all of them (the rows stay on the
+ * SAME screen id, unlike RELATED_AUDIT_SCREENS_BY_SCREEN_NAME). Answers for both
+ * `screen_id` and `screen_name`.
+ *  - Print Template: the template id brings its revisions' and datasets' rows.
+ *  - App Settings: a setting key (or one override's asvId) brings every override of
+ *    that key, deleted (reset) ones included — a reset and a new override is a new asvId.
+ *  - Posting Ledger Map: a role code (or one almId) brings every mapping of that role.
+ */
+type SameScreenRecordExpansion = (prisma: PrismaService, recordPk: string) => Promise<string[]>;
+const SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME = new Map<string, SameScreenRecordExpansion>([
+  [
+    'Print Template',
+    async (prisma, ptlId) => {
+      if (!UUID_PATTERN.test(ptlId)) {
+        return [];
+      }
+      const versions = await prisma.printTemplateVersion.findMany({
+        where: { ptvTemplateId: ptlId },
+        select: { ptvId: true },
+      });
+      const versionIds = versions.map((version) => version.ptvId);
+      if (versionIds.length === 0) {
+        return [];
+      }
+      const datasets = await prisma.printTemplateDataset.findMany({
+        where: { ptdVersionId: { in: versionIds } },
+        select: { ptdId: true },
+      });
+      return [...versionIds, ...datasets.map((dataset) => dataset.ptdId)];
+    },
+  ],
+  [
+    'App Settings',
+    async (prisma, recordPk) => {
+      let settingKey = recordPk;
+      let target: Prisma.AppSettingValueWhereInput = {};
+      if (UUID_PATTERN.test(recordPk)) {
+        const override = await prisma.appSettingValue.findUnique({
+          where: { asvId: recordPk },
+          select: {
+            asvSettingKey: true,
+            asvScope: true,
+            asvCompanyId: true,
+            asvBranchId: true,
+            asvDeviceId: true,
+            asvUserId: true,
+          },
+        });
+        if (!override) {
+          return [];
+        }
+        settingKey = override.asvSettingKey;
+        // One override's id = the history of that setting on that same target.
+        target = {
+          asvScope: override.asvScope,
+          asvCompanyId: override.asvCompanyId,
+          asvBranchId: override.asvBranchId,
+          asvDeviceId: override.asvDeviceId,
+          asvUserId: override.asvUserId,
+        };
+      }
+      const overrides = await prisma.appSettingValue.findMany({
+        where: { asvSettingKey: settingKey, ...target },
+        select: { asvId: true },
+      });
+      return overrides.map((override) => override.asvId);
+    },
+  ],
+  [
+    'Posting Ledger Map',
+    async (prisma, recordPk) => {
+      let role = recordPk.trim().toUpperCase();
+      if (UUID_PATTERN.test(recordPk)) {
+        const mapping = await prisma.accLedgerMap.findUnique({
+          where: { almId: recordPk },
+          select: { almRole: true },
+        });
+        if (!mapping) {
+          return [];
+        }
+        role = mapping.almRole;
+      }
+      const mappings = await prisma.accLedgerMap.findMany({
+        where: { almRole: role },
+        select: { almId: true },
+      });
+      return mappings.map((mapping) => mapping.almId);
+    },
   ],
 ]);
 /**
@@ -288,8 +478,13 @@ export class AuditLogService {
     // Snapshot SQL templates are intentionally disabled.
     return null;
   }
+  /**
+   * `scope` is the caller's read right (AuditLogAccessService.resolveReadScope, which the
+   * controller asks first): a list of screen ids narrows the rows to those screens.
+   */
   async list(
     queryDto: ListAuditLogQueryDto,
+    scope?: AuditReadScope,
   ): Promise<{ items: AuditLogListItem[]; meta: AuditLogListMeta }> {
     // ── 1. Sanitize pagination params ──────────────────────────────────────────
     const limit = Math.min(queryDto.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
@@ -299,6 +494,10 @@ export class AuditLogService {
 
     // ── 2. Build WHERE clause ──────────────────────────────────────────────────
     const where = await this.buildWhereClause(queryDto);
+    if (scope?.screenIds) {
+      // AND, so no other filter can widen it.
+      where.AND = [...this.whereAndOf(where), { logScreenId: { in: scope.screenIds } }];
+    }
 
     // ── 3. Consistent ORDER BY (must match the composite index) ───────────────
     const orderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
@@ -356,6 +555,13 @@ export class AuditLogService {
         next_cursor: nextCursor,
       },
     };
+  }
+
+  private whereAndOf(where: Prisma.AuditLogWhereInput): Prisma.AuditLogWhereInput[] {
+    if (!where.AND) {
+      return [];
+    }
+    return Array.isArray(where.AND) ? where.AND : [where.AND];
   }
 
   // ─── Extracted: WHERE builder ─────────────────────────────────────────────────
@@ -439,13 +645,23 @@ export class AuditLogService {
     if (!recordPk) {
       return screenName ? screenFilter : null;
     }
+    // The Qt History buttons ask by screen_id; the same-screen widening needs the name.
+    const expandScreenName =
+      screenName ??
+      (queryDto.screen_id !== undefined ? await this.screenNameOf(queryDto.screen_id) : null);
+    const expandSameScreen = expandScreenName
+      ? SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME.get(expandScreenName)
+      : undefined;
+    const ownPkFilter: Prisma.AuditLogWhereInput['logPk'] = expandSameScreen
+      ? { in: [...new Set([recordPk, ...(await expandSameScreen(this.prisma, recordPk))])] }
+      : recordPk;
     const relatedScreens = screenName
       ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(screenName)
       : undefined;
     // Child PKs are looked up by a UUID parent id; anything else can only be
     // the parent screen's own key.
     if (!relatedScreens || !UUID_PATTERN.test(recordPk)) {
-      return { ...screenFilter, logPk: recordPk };
+      return { ...screenFilter, logPk: ownPkFilter };
     }
     const relatedFilters = await Promise.all(
       relatedScreens.map(async (relatedScreen): Promise<Prisma.AuditLogWhereInput | null> => {
@@ -461,12 +677,19 @@ export class AuditLogService {
     );
     return {
       OR: [
-        { ...screenFilter, logPk: recordPk },
+        { ...screenFilter, logPk: ownPkFilter },
         ...relatedFilters.filter(
           (relatedFilter): relatedFilter is Prisma.AuditLogWhereInput => relatedFilter !== null,
         ),
       ],
     };
+  }
+  private async screenNameOf(screenId: number): Promise<string | null> {
+    const screen = await this.prisma.auditScreen.findFirst({
+      where: { screenId },
+      select: { screenName: true },
+    });
+    return screen?.screenName ?? null;
   }
   async createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
@@ -505,11 +728,13 @@ export class AuditLogService {
     const originalRecord = this.projectAuditRecord(
       this.toNullableJson(input.originalRecord),
       screen.auditFields,
+      screen.presentFieldsOnly,
     );
     const isModifiedRecordProvided = input.modifiedRecord !== undefined;
     let modifiedRecord = this.projectAuditRecord(
       this.toNullableJson(input.modifiedRecord),
       screen.auditFields,
+      screen.presentFieldsOnly,
     );
     if (!isModifiedRecordProvided) {
       const pk = this.normalizePk(input.pk);
@@ -524,6 +749,7 @@ export class AuditLogService {
             tx,
           ),
           screen.auditFields,
+          screen.presentFieldsOnly,
         );
       }
     }
@@ -569,7 +795,15 @@ export class AuditLogService {
         AuditLogErrorCode.RECORD_REQUIRED,
       );
     }
-    const changedFields = this.computeChangedFields(originalRecord, modifiedRecord);
+    const computedChangedFields = this.computeChangedFields(originalRecord, modifiedRecord);
+    // Review list 11-19 step 3: the stamps every save moves are no change (a screen with
+    // no label map still hands them over raw). Document screens keep theirs whole.
+    const changedFields = screen.isTransaction
+      ? computedChangedFields
+      : this.dropNoiseStamps(computedChangedFields);
+    if (action === 'update' && input.skipWhenUnchanged && this.isEmptyChange(changedFields)) {
+      return;
+    }
     await this.createAuditLog(
       {
         action,
@@ -702,6 +936,7 @@ export class AuditLogService {
         select: {
           screenId: true,
           screenName: true,
+          screenType: true,
           screenAuditSql: true,
         },
       });
@@ -716,6 +951,10 @@ export class AuditLogService {
       return {
         screenId: resolvedScreen.screenId,
         auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
+        presentFieldsOnly: AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(
+          existingScreen.screenName,
+        ),
+        isTransaction: existingScreen.screenType === 'transaction',
       };
     }
     const screenName = input.screenName?.trim();
@@ -730,6 +969,7 @@ export class AuditLogService {
       select: {
         screenId: true,
         screenName: true,
+        screenType: true,
         screenAuditSql: true,
       },
       orderBy: {
@@ -741,13 +981,18 @@ export class AuditLogService {
       return {
         screenId: resolvedScreen.screenId,
         auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
+        presentFieldsOnly: AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(
+          existingScreen.screenName,
+        ),
+        isTransaction: existingScreen.screenType === 'transaction',
       };
     }
     const screenAuditSql = getAuditScreenSql(screenName);
+    const screenType = this.normalizeScreenType(input.screenType);
     const createdScreen = await tx.auditScreen.create({
       data: {
         screenName,
-        screenType: this.normalizeScreenType(input.screenType),
+        screenType,
         screenStatus: true,
         screenAuditSql,
       },
@@ -759,6 +1004,8 @@ export class AuditLogService {
     return {
       screenId: createdScreen.screenId,
       auditFields: this.extractAuditFields(createdScreen.screenAuditSql),
+      presentFieldsOnly: AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(screenName),
+      isTransaction: screenType === 'transaction',
     };
   }
   private async syncAuditScreenSqlIfNeeded(
@@ -822,21 +1069,14 @@ export class AuditLogService {
     auditReferenceNameLookup: AuditReferenceNameLookup,
   ): AuditLogListItem {
     const { record, screenName } = preparedRecord;
-    const originalRecord = this.resolveAuditReferenceNames(
-      preparedRecord.originalRecord,
-      screenName,
-      auditReferenceNameLookup,
-    );
-    const modifiedRecord = this.resolveAuditReferenceNames(
-      preparedRecord.modifiedRecord,
-      screenName,
-      auditReferenceNameLookup,
-    );
-    const changedFields = this.resolveAuditReferenceNames(
-      preparedRecord.changedFields,
-      screenName,
-      auditReferenceNameLookup,
-    );
+    const maskedFields = MASKED_AUDIT_FIELDS_BY_SCREEN.get(screenName);
+    const forView = (value: Prisma.JsonValue | null): Prisma.JsonValue | null => {
+      const named = this.resolveAuditReferenceNames(value, screenName, auditReferenceNameLookup);
+      return maskedFields ? this.maskAuditFields(named, maskedFields) : named;
+    };
+    const originalRecord = forView(preparedRecord.originalRecord);
+    const modifiedRecord = forView(preparedRecord.modifiedRecord);
+    const changedFields = forView(preparedRecord.changedFields);
     const displayName =
       this.normalizeOptionalText(record.logDisplayName) ??
       this.findAuditDisplayName(modifiedRecord) ??
@@ -865,16 +1105,116 @@ export class AuditLogService {
       log_device_name: record.logDeviceName,
     };
   }
+  /** H9: the masked labels' text values, top level or as a diff's from / to, shown as last-4. */
+  private maskAuditFields(
+    value: Prisma.JsonValue | null,
+    maskedFields: ReadonlySet<string>,
+  ): Prisma.JsonValue | null {
+    if (value === null || !this.isJsonObject(value)) {
+      return value;
+    }
+    const maskLeaf = (leaf: Prisma.JsonValue): Prisma.JsonValue =>
+      typeof leaf === 'string' ? maskAuditValue(leaf) : leaf;
+    const masked: Prisma.JsonObject = {};
+    for (const [fieldName, fieldValue] of Object.entries(value)) {
+      const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
+      if (!maskedFields.has(this.normalizeAuditFieldLookup(fieldName))) {
+        // A whole-record snapshot ({from: null, to: {…}}) nests the fields one level down.
+        masked[fieldName] = this.isJsonObject(normalizedFieldValue)
+          ? this.maskAuditFields(normalizedFieldValue, maskedFields)
+          : normalizedFieldValue;
+        continue;
+      }
+      masked[fieldName] = this.isAuditDiffLeaf(normalizedFieldValue)
+        ? { from: maskLeaf(normalizedFieldValue.from), to: maskLeaf(normalizedFieldValue.to) }
+        : maskLeaf(normalizedFieldValue);
+    }
+    return masked;
+  }
   private prepareAuditLogListRecord(record: AuditLogListRecord): PreparedAuditLogListRecord {
     const screenName = record.auditScreen.screenName;
     const auditFields = this.extractAuditFields(getAuditScreenSql(screenName));
+    let originalRecord = this.renameAuditRecordFields(record.logOriginalRecord, auditFields);
+    let modifiedRecord = this.renameAuditRecordFields(record.logModifiedRecord, auditFields);
+    let changedFields = this.renameAuditRecordFields(record.logChangedFields, auditFields);
+    if (screenName === THEME_TEMPLATE_SCREEN_NAME) {
+      // Read side only: an older row's whole stylesheet text reads as the newer rows'
+      // Stylesheet Hash / Size / Lines. The stored row is not touched.
+      originalRecord = this.digestStylesheetText(originalRecord);
+      modifiedRecord = this.digestStylesheetText(modifiedRecord);
+      changedFields = this.digestStylesheetChange(changedFields);
+    }
+    if (record.auditScreen.screenType !== 'transaction') {
+      // Older rows of the masters still hold Sync Date / Modified On / Modified By.
+      changedFields = this.dropNoiseStamps(changedFields);
+    }
+    return { record, screenName, auditFields, originalRecord, modifiedRecord, changedFields };
+  }
+  /** A top-level change of a stamp every save moves: Sync Date, Modified On, Modified By. */
+  private isNoiseStampKey(key: string): boolean {
+    return NOISE_STAMP_KEY_PATTERN.test(this.toSnakeCase(key));
+  }
+  /** The changed fields without the noise stamps (labels, or raw column names). */
+  private dropNoiseStamps(changedFields: Prisma.JsonValue | null): Prisma.JsonValue | null {
+    if (changedFields === null || !this.isJsonObject(changedFields)) {
+      return changedFields;
+    }
+    return Object.fromEntries(
+      Object.entries(changedFields).filter(([key]) => !this.isNoiseStampKey(key)),
+    );
+  }
+  private isEmptyChange(changedFields: Prisma.JsonValue | null): boolean {
+    return (
+      changedFields === null ||
+      (this.isJsonObject(changedFields) && Object.keys(changedFields).length === 0)
+    );
+  }
+  /** A theme template record with the stylesheet's whole text: the text as its digest. */
+  private digestStylesheetText(record: Prisma.JsonValue | null): Prisma.JsonValue | null {
+    if (record === null || !this.isJsonObject(record)) {
+      return record;
+    }
+    const digested: Prisma.JsonObject = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (!STYLESHEET_TEXT_KEYS.has(key)) {
+        digested[key] = value ?? null;
+        continue;
+      }
+      Object.assign(digested, this.stylesheetDigestFields(value ?? null));
+    }
+    return digested;
+  }
+  /** The theme template's changed fields: a stylesheet text change as the digest values that moved. */
+  private digestStylesheetChange(changedFields: Prisma.JsonValue | null): Prisma.JsonValue | null {
+    if (changedFields === null || !this.isJsonObject(changedFields)) {
+      return changedFields;
+    }
+    const digested: Prisma.JsonObject = {};
+    for (const [key, value] of Object.entries(changedFields)) {
+      const change = value ?? null;
+      if (!STYLESHEET_TEXT_KEYS.has(key) || !this.isAuditDiffLeaf(change)) {
+        digested[key] = change;
+        continue;
+      }
+      const from = this.stylesheetDigestFields(change.from);
+      const to = this.stylesheetDigestFields(change.to);
+      for (const label of Object.keys(to)) {
+        if (from[label] !== to[label]) {
+          digested[label] = { from: from[label] ?? null, to: to[label] ?? null };
+        }
+      }
+    }
+    return digested;
+  }
+  private stylesheetDigestFields(text: Prisma.JsonValue | null): Prisma.JsonObject {
+    if (typeof text !== 'string') {
+      return { 'Stylesheet Hash': null, 'Stylesheet Size': null, 'Stylesheet Lines': null };
+    }
+    const digest = stylesheetDigest(text);
     return {
-      record,
-      screenName,
-      auditFields,
-      originalRecord: this.renameAuditRecordFields(record.logOriginalRecord, auditFields),
-      modifiedRecord: this.renameAuditRecordFields(record.logModifiedRecord, auditFields),
-      changedFields: this.renameAuditRecordFields(record.logChangedFields, auditFields),
+      'Stylesheet Hash': digest.stylesheetHash,
+      'Stylesheet Size': digest.stylesheetSize,
+      'Stylesheet Lines': digest.stylesheetLines,
     };
   }
   private renameAuditRecordFields(
@@ -901,9 +1241,7 @@ export class AuditLogService {
       return null;
     }
     for (const auditField of auditFields) {
-      const candidateFieldNames = [auditField.sourceFieldName, auditField.targetFieldName].filter(
-        (fieldName): fieldName is string => Boolean(fieldName),
-      );
+      const candidateFieldNames = [...auditField.sourceFieldNames, auditField.targetFieldName];
       for (const candidateFieldName of candidateFieldNames) {
         const candidateTokens = this.buildAuditFieldLookupTokens(candidateFieldName);
         if (candidateTokens.some((token) => lookupTokens.has(token))) {
@@ -1239,6 +1577,54 @@ export class AuditLogService {
         });
         return new Map(groups.map((group) => [group.cgrId, group.cgrName]));
       }
+      case 'device': {
+        const devices = await this.prisma.deviceMaster.findMany({
+          where: { devId: { in: [...ids] } },
+          select: { devId: true, devDeviceName: true, devCode: true, devDeviceUid: true },
+        });
+        return new Map(devices.map((device) => [device.devId, deviceDisplayName(device)]));
+      }
+      case 'employee': {
+        // Deleted employees too: the history names whoever the row pointed at then.
+        const employees = await this.prisma.employeeMaster.findMany({
+          where: { empId: { in: [...ids] } },
+          select: { empId: true, empName: true, empCode: true },
+        });
+        return new Map(
+          employees.map((employee) => [
+            employee.empId,
+            employee.empName?.trim() || employee.empCode?.trim() || employee.empId,
+          ]),
+        );
+      }
+      case 'printPurpose': {
+        const purposes = await this.prisma.printPurpose.findMany({
+          where: { ppoId: { in: [...ids] } },
+          select: { ppoId: true, ppoName: true },
+        });
+        return new Map(purposes.map((purpose) => [purpose.ppoId, purpose.ppoName]));
+      }
+      case 'printTemplate': {
+        const templates = await this.prisma.printTemplate.findMany({
+          where: { ptlId: { in: [...ids] } },
+          select: { ptlId: true, ptlName: true, ptlCode: true },
+        });
+        return new Map(
+          templates.map((template) => [
+            template.ptlId,
+            `${template.ptlName} (${template.ptlCode})`,
+          ]),
+        );
+      }
+      case 'printerProfile': {
+        const printers = await this.prisma.printerProfile.findMany({
+          where: { prfId: { in: [...ids] } },
+          select: { prfId: true, prfName: true },
+        });
+        return new Map(printers.map((printer) => [printer.prfId, printer.prfName]));
+      }
+      case 'user':
+        return this.getUserNameByIds(ids);
       case 'employeeDepartment': {
         const departments = await this.prisma.employeeDepartment.findMany({
           where: {
@@ -1524,6 +1910,7 @@ export class AuditLogService {
       }
     }
   }
+  /** A user's display name, else the login name (a blank display name is common). */
   private async getUserNameByIds(userIds: readonly string[]): Promise<Map<string, string>> {
     const users = await this.prisma.userMaster.findMany({
       where: {
@@ -1534,9 +1921,12 @@ export class AuditLogService {
       select: {
         usrId: true,
         usrDisplayName: true,
+        usrLoginName: true,
       },
     });
-    return new Map(users.map((user) => [user.usrId, user.usrDisplayName]));
+    return new Map(
+      users.map((user) => [user.usrId, user.usrDisplayName?.trim() || user.usrLoginName]),
+    );
   }
   private async getBranchNameByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
     const branches = await this.prisma.branchMaster.findMany({
@@ -1573,34 +1963,44 @@ export class AuditLogService {
         );
     }
   }
+  /**
+   * The stored shape of a record: one key per label, in label order. A label the record
+   * has no key for is stored as null, unless `presentFieldsOnly` (multi-table screens,
+   * where most labels belong to another table's rows), when it is left out.
+   */
   private projectAuditRecord(
     record: Prisma.JsonValue | null,
     auditFields: readonly AuditFieldDefinition[],
+    presentFieldsOnly = false,
   ): Prisma.JsonValue | null {
     if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
       return record;
     }
     const projectedRecord: Prisma.JsonObject = {};
     for (const auditField of auditFields) {
-      projectedRecord[auditField.targetFieldName] = this.resolveAuditFieldValue(record, auditField);
+      const key = this.findAuditFieldSourceKey(record, auditField);
+      if (key === null) {
+        if (!presentFieldsOnly) {
+          projectedRecord[auditField.targetFieldName] = null;
+        }
+        continue;
+      }
+      projectedRecord[auditField.targetFieldName] = record[key] ?? null;
     }
     return projectedRecord;
   }
-  private resolveAuditFieldValue(
+  /** The record key a label reads: its first source column present, else the label itself. */
+  private findAuditFieldSourceKey(
     record: Prisma.JsonObject,
     auditField: AuditFieldDefinition,
-  ): Prisma.JsonValue {
-    const sourceKey = auditField.sourceFieldName
-      ? this.findAuditFieldKey(record, auditField.sourceFieldName)
-      : null;
-    if (sourceKey) {
-      return record[sourceKey] ?? null;
+  ): string | null {
+    for (const sourceFieldName of auditField.sourceFieldNames) {
+      const sourceKey = this.findAuditFieldKey(record, sourceFieldName);
+      if (sourceKey) {
+        return sourceKey;
+      }
     }
-    const targetKey = this.findAuditFieldKey(record, auditField.targetFieldName);
-    if (!targetKey) {
-      return null;
-    }
-    return record[targetKey] ?? null;
+    return this.findAuditFieldKey(record, auditField.targetFieldName);
   }
   private findAuditFieldKey(record: Prisma.JsonObject, auditFieldName: string): string | null {
     const lookupTokens = new Set(this.buildAuditFieldLookupTokens(auditFieldName));
@@ -1636,11 +2036,11 @@ export class AuditLogService {
     if (!normalizedSql) {
       return [];
     }
-    const selectClauseMatch = normalizedSql.match(/^\s*select\s+([\s\S]+?)\s+from\b/i);
-    if (!selectClauseMatch) {
+    const selectClause = extractSelectList(normalizedSql);
+    if (selectClause === null) {
       return [];
     }
-    const fields = this.splitSelectClause(selectClauseMatch[1])
+    const fields = this.splitSelectClause(selectClause)
       .map((fieldExpression) => this.extractAuditFieldDefinition(fieldExpression))
       .filter((field): field is AuditFieldDefinition => Boolean(field));
     const seen = new Set<string>();
@@ -1653,37 +2053,7 @@ export class AuditLogService {
     });
   }
   private splitSelectClause(selectClause: string): string[] {
-    const fields: string[] = [];
-    let currentField = '';
-    let parenthesisDepth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (const character of selectClause) {
-      if (character === "'" && !insideDoubleQuote) {
-        insideSingleQuote = !insideSingleQuote;
-      } else if (character === '"' && !insideSingleQuote) {
-        insideDoubleQuote = !insideDoubleQuote;
-      } else if (!insideSingleQuote && !insideDoubleQuote) {
-        if (character === '(') {
-          parenthesisDepth += 1;
-        } else if (character === ')' && parenthesisDepth > 0) {
-          parenthesisDepth -= 1;
-        } else if (character === ',' && parenthesisDepth === 0) {
-          const field = currentField.trim();
-          if (field) {
-            fields.push(field);
-          }
-          currentField = '';
-          continue;
-        }
-      }
-      currentField += character;
-    }
-    const trailingField = currentField.trim();
-    if (trailingField) {
-      fields.push(trailingField);
-    }
-    return fields;
+    return splitTopLevel(selectClause, ',');
   }
   private extractAuditFieldDefinition(fieldExpression: string): AuditFieldDefinition | null {
     const normalizedExpression = fieldExpression.trim();
@@ -1699,8 +2069,10 @@ export class AuditLogService {
       if (!targetFieldName) {
         return null;
       }
+      const sourceFieldNames = this.extractSourceFieldNames(explicitAliasMatch.groups.source);
       return {
-        sourceFieldName: this.extractSourceFieldName(explicitAliasMatch.groups.source),
+        sourceFieldName: sourceFieldNames[0] ?? null,
+        sourceFieldNames,
         targetFieldName,
       };
     }
@@ -1710,8 +2082,20 @@ export class AuditLogService {
     }
     return {
       sourceFieldName,
+      sourceFieldNames: [sourceFieldName],
       targetFieldName: sourceFieldName,
     };
+  }
+  /** Each argument's column for `COALESCE(a, b, …)`, else the one column the expression ends in. */
+  private extractSourceFieldNames(expression: string): string[] {
+    const coalesceArguments = coalesceArgumentsOf(expression);
+    if (coalesceArguments) {
+      return coalesceArguments
+        .map((argument) => this.extractSourceFieldName(argument))
+        .filter((fieldName): fieldName is string => Boolean(fieldName));
+    }
+    const sourceFieldName = this.extractSourceFieldName(expression);
+    return sourceFieldName ? [sourceFieldName] : [];
   }
   private extractSourceFieldName(expression: string): string | null {
     const expressionWithoutCast = expression
@@ -1891,6 +2275,122 @@ export class AuditLogService {
     }
     return isIP(normalized) === 0 ? null : normalized;
   }
+}
+
+// ─── Audit field SQL scanning (review list 11-19 G1) ─────────────────────────
+//
+// The label SQL is read, never run: its select list says which record keys are kept and
+// what they are called. Quoted text ('…' literals, "…" labels) and bracketed text ((…)
+// sub-queries and calls, […] subscripts) are skipped, so a label such as "Fin Year From"
+// or a sub-query's own FROM can neither end the select list nor split a field.
+
+/**
+ * Calls `visit(index, depth)` for every character outside quotes, `depth` being the
+ * count of ( and [ open BEFORE that character. Stops early when `visit` returns true.
+ * A doubled quote ('' or "") inside quotes closes and reopens, which reads the same.
+ */
+function scanUnquoted(text: string, visit: (index: number, depth: number) => boolean | void): void {
+  let depth = 0;
+  let quote: "'" | '"' | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (visit(index, depth) === true) {
+      return;
+    }
+    if (character === '(' || character === '[') {
+      depth += 1;
+    } else if ((character === ')' || character === ']') && depth > 0) {
+      depth -= 1;
+    }
+  }
+}
+
+/** `text` cut at every top-level `separator` (outside quotes and brackets), trimmed, blanks dropped. */
+function splitTopLevel(text: string, separator: string): string[] {
+  const cuts: number[] = [];
+  scanUnquoted(text, (index, depth) => {
+    if (depth === 0 && text[index] === separator) {
+      cuts.push(index);
+    }
+  });
+  const parts: string[] = [];
+  let start = 0;
+  for (const cut of [...cuts, text.length]) {
+    const part = text.slice(start, cut).trim();
+    if (part) {
+      parts.push(part);
+    }
+    start = cut + 1;
+  }
+  return parts;
+}
+
+const SQL_WORD_CHARACTER = /[A-Za-z0-9_$]/;
+
+/**
+ * The select list of `SELECT <list> FROM …`: everything up to the first FROM keyword
+ * outside quotes and brackets. Null when the text is not a SELECT or has no such FROM.
+ */
+export function extractSelectList(sql: string): string | null {
+  const head = /^\s*select\s+/i.exec(sql);
+  if (!head) {
+    return null;
+  }
+  const body = sql.slice(head[0].length);
+  let end = -1;
+  scanUnquoted(body, (index, depth) => {
+    if (
+      depth === 0 &&
+      body.slice(index, index + 4).toLowerCase() === 'from' &&
+      !SQL_WORD_CHARACTER.test(body[index - 1] ?? ' ') &&
+      !SQL_WORD_CHARACTER.test(body[index + 4] ?? ' ')
+    ) {
+      end = index;
+      return true;
+    }
+    return false;
+  });
+  if (end < 0) {
+    return null;
+  }
+  const selectList = body.slice(0, end).trim();
+  return selectList || null;
+}
+
+/** The arguments of an expression that is exactly `COALESCE( … )` (any case, optional cast), else null. */
+function coalesceArgumentsOf(expression: string): string[] | null {
+  const text = expression
+    .trim()
+    .replace(/::\s*("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)(\[\])?\s*$/, '')
+    .trim();
+  const head = /^coalesce\s*\(/i.exec(text);
+  if (!head || !text.endsWith(')')) {
+    return null;
+  }
+  const open = head[0].length - 1;
+  let close = -1;
+  scanUnquoted(text, (index, depth) => {
+    if (index > open && depth === 1 && text[index] === ')') {
+      close = index;
+      return true;
+    }
+    return false;
+  });
+  // The paren that closes COALESCE must be the last character: "COALESCE(a) + b" is not one.
+  if (close !== text.length - 1) {
+    return null;
+  }
+  return splitTopLevel(text.slice(open + 1, close), ',');
 }
 
 /** Notes 119: an audit refusal — the same 400 and message as before, with its code. */
