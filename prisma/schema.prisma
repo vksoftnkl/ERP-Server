@@ -7080,7 +7080,7 @@ model Company {
   compDefault           Boolean   @default(false)                                   @map("comp_default")
   compIsActive          Boolean   @default(true)                                    @map("comp_is_active")
   compCurrencyCode      String    @default("INR") @db.Char(3)                       @map("comp_currency_code")
-  compCurrencySymbol    String?   @db.VarChar(10)                                   @map("comp_currency_symbol")
+  compCurrencySymbol    String?   @default("Rs.") @db.VarChar(10)                   @map("comp_currency_symbol")
   compLocaleCode        String    @default("en-IN") @db.VarChar(10)                 @map("comp_locale_code")
   compRemarks           String?   @default("")                                      @map("comp_remarks")
   // 10) Audit / Sync
@@ -7097,6 +7097,13 @@ model Company {
   compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
   /// Notes 72 C1: a switch like compTcsApplicable (was free TEXT nothing read).
   compTdsApplicable     Boolean   @default(false)                                   @map("comp_tds_applicable")
+  // Company + Branch master rework (20261119200000)
+  /// Udyam (MSME) No, UDYAM-XX-00-0000000 upper case; checked by the server.
+  compUdyamNo           String?   @db.VarChar(19)                                   @map("comp_udyam_no")
+  /// Logo as a data URL (base64): the same checks as compAuthorizeSignature.
+  compLogo              String?   @db.Text                                          @map("comp_logo")
+  /// Authorised signatory name + designation as printed, e.g. "R. Kumar, Proprietor".
+  compSignatoryName     String?   @db.VarChar(100)                                  @map("comp_signatory_name")
   // Relations
   stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]

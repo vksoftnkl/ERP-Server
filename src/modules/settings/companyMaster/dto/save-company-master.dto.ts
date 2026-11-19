@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Length,
   MaxLength,
   Min,
   ValidateIf,
@@ -24,9 +25,9 @@ import {
   NullableUuid,
   OptionalBoolean,
   OptionalUpperString,
-  UpperString,
 } from 'src/common/dto/dtoDecorators';
 import { GST_REG_TYPES } from '../../shared/gst-registration';
+import { upperStateCode } from '../../shared/registered-address';
 
 /** ck_comp_aato_class — the annual aggregate turnover band (notes 72 A2). */
 export const COMPANY_AATO_CLASSES = ['LE_1_5CR', 'LE_5CR', 'LE_10CR', 'GT_10CR'] as const;
@@ -55,7 +56,15 @@ export class SaveCompanyMasterDto {
   })
   @NullableUuid()
   compId?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description:
+      'Blank on CREATE: the server makes one from compName (plan C1) — the initials of its ' +
+      'words, skipping PRIVATE, PVT, LIMITED, LTD, THE, AND and &, padded from the first word ' +
+      'to 3, at most 6, A-Z 0-9; 2, 3, … added when taken ("MT Demo Traders" → MDT, MDT2). ' +
+      'A typed code is kept as typed (409 COMPANY_CODE_DUPLICATE when taken).',
+  })
   @NullableString(20)
   compCode?: string | null;
   @ApiProperty()
@@ -65,7 +74,11 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compShort?: string | null;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Required when compGstRegType is REGULAR, COMPOSITION or SEZ (400 COMPANY_LEGAL_NAME_REQUIRED).',
+  })
   @NullableString()
   compLegalName?: string | null;
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
@@ -112,15 +125,29 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compState?: string | null;
-  @ApiProperty({ maxLength: 2 })
-  @UpperString(2)
+  @ApiProperty({
+    maxLength: 2,
+    description:
+      'Two characters, upper-cased. Blank or null: 400 COMPANY_ADDRESS_REQUIRED (field ' +
+      'compStateCode) for a REGULAR / COMPOSITION / SEZ company, else COMPANY_STATE_CODE_INVALID.',
+  })
+  @Transform(upperStateCode)
+  @ValidateIf((dto: SaveCompanyMasterDto) => dto.compStateCode !== '')
+  @IsString()
+  @Length(2, 2)
   compStateCode!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      '100000 – 999999 when given (400 COMPANY_PIN_INVALID). Required for a REGULAR / ' +
+      'COMPOSITION / SEZ company, as are compAddr1, compCity and compStateCode: one ' +
+      'COMPANY_ADDRESS_REQUIRED error per missing key, its field the key (plan I1). District is optional.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  compPin?: number;
+  compPin?: number | null;
 
   @ApiPropertyOptional({ maxLength: 60 })
   @IsOptional()
@@ -223,7 +250,9 @@ export class SaveCompanyMasterDto {
     format: 'date',
     nullable: true,
     description:
-      "Accepted and IGNORED: the lock date belongs to the fiscal year. GET returns the current year's fy_lock_date.",
+      'Books lock date (companys.comp_books_lock_date), saved and returned as sent; null clears ' +
+      'it. Nothing enforces it yet (plan Q1: the next job). It is not the fiscal year’s ' +
+      'fy_lock_date, which locks a whole year and is set elsewhere.',
   })
   @NullableDate()
   compBooksLockDate?: Date | null;
@@ -311,11 +340,19 @@ export class SaveCompanyMasterDto {
   @NullableUuid()
   compBankId?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 50, nullable: true, description: INFORMATIONAL })
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+  })
   @NullableString(50)
   compPriceFixing?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true, description: INFORMATIONAL })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+  })
   @NullableString(20)
   compPrefixCode?: string | null;
 
@@ -339,7 +376,11 @@ export class SaveCompanyMasterDto {
   @OptionalUpperString(3)
   compCurrencyCode?: string;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    description: 'Blank or absent on CREATE: "Rs." (plan C5). On update it is saved as sent.',
+  })
   @NullableString(10)
   compCurrencySymbol?: string | null;
 
@@ -361,4 +402,34 @@ export class SaveCompanyMasterDto {
   })
   @NullableString()
   compAuthorizeSignature?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 19,
+    nullable: true,
+    example: 'UDYAM-TN-01-0012345',
+    description:
+      'Udyam (MSME) registration no: trimmed and upper-cased, then UDYAM-XX-00-0000000 ' +
+      '(2 letters, 2 digits, 7 digits), else 400 COMPANY_UDYAM_INVALID. null or "" clears it.',
+  })
+  @NullableUpperMaxString()
+  compUdyamNo?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Company logo, the same rules as compAuthorizeSignature: a data URL or bare base64 of a ' +
+      'PNG, JPEG, GIF or WebP, at most 512 KB, the kind read from the bytes (400 ' +
+      'COMPANY_LOGO_NOT_BASE64 / _TOO_LARGE / _NOT_IMAGE). GET returns a data URL. null or "" clears it.',
+  })
+  @NullableString()
+  compLogo?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    example: 'R. Kumar, Proprietor',
+    description: 'Authorised signatory name and designation as printed. Trimmed; "" clears it.',
+  })
+  @NullableString(100)
+  compSignatoryName?: string | null;
 }

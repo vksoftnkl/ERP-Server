@@ -27,6 +27,14 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
+import { lockCodeSeries } from '../shared/code-series-lock';
+import {
+  PIN_MAX,
+  PIN_MIN,
+  isBlank,
+  isGstRegistered,
+  isValidPin,
+} from '../shared/registered-address';
 import { BranchMasterErrorCode } from './types/branch-master-error-codes';
 import { GodownsMasterService } from 'src/modules/Inventory/godowns-master/godowns-master.service';
 
@@ -143,6 +151,96 @@ const BRANCH_IN_USE_REFERENCES: readonly LiveReference[] = [
 ];
 const describeUse = (used: Array<{ label: string; count: number }>) =>
   used.map((ref) => `${ref.count} ${ref.label}`).join(', ');
+/** Plan I1 (18/11) — what a GSTIN holder's seller address must have, in screen order. */
+const BRANCH_ADDRESS_KEYS = ['brAddr1', 'brCity', 'brStateCode', 'brPin'] as const;
+/** Plan B5 — what {BR} prints when set: 1 – 4 letters or digits. */
+const BILL_PREFIX_PATTERN = /^[A-Z0-9]{1,4}$/;
+/** br_code is varchar(20); the Main Branch code is the company code + 2 digits. */
+const BRANCH_CODE_MAX_LENGTH = 20;
+/**
+ * Notes 78 / plan C9 — what a branch takes from its company: on the Main
+ * Branch seed, and on every company save while the branch is the company's
+ * only live branch (C9b). The same copy rules as the share's
+ * 45_main_branch_seed.sql.
+ */
+function companyBranchFields(company: Company) {
+  return {
+    brAddr1: company.compAddr1,
+    brAddr2: company.compAddr2,
+    brAddr3: company.compAddr3,
+    brCity: company.compCity,
+    brDistrict: company.compDistrict,
+    brState: company.compState,
+    brStateCode: company.compStateCode,
+    brPin: company.compPin,
+    brCountry: company.compCountry,
+    brRegionAddr1: company.compRegionAddr1,
+    brRegionAddr2: company.compRegionAddr2,
+    brRegionAddr3: company.compRegionAddr3,
+    brRegionCity: company.compRegionCity,
+    brRegionDistrict: company.compRegionDistrict,
+    brRegionState: company.compRegionState,
+    brRegionCountry: company.compRegionCountry,
+    brTel: company.compTel,
+    brPhone: company.compPhone,
+    brMail: company.compMail,
+    brGstinNo: company.compGstinNo,
+    brGstRegType: company.compGstRegType,
+    brPanNo: company.compPanNo,
+  } satisfies Partial<BranchMaster>;
+}
+type CompanyBranchFields = ReturnType<typeof companyBranchFields>;
+type CompanyBranchField = keyof CompanyBranchFields;
+/**
+ * Plan C9b (user, 19/11) — a company save copies onto its only branch just
+ * what changed in that save, a group at a time, so the branch never holds half
+ * of one. The tax group brings the address group along: the registered
+ * address goes with the GSTIN, and a branch that becomes a GSTIN holder must
+ * meet the address rule (I1). The state is in both.
+ */
+const BRANCH_COPY_TAX_GROUP: readonly CompanyBranchField[] = [
+  'brGstinNo',
+  'brGstRegType',
+  'brPanNo',
+  'brStateCode',
+  'brState',
+];
+const BRANCH_COPY_ADDRESS_GROUP: readonly CompanyBranchField[] = [
+  'brAddr1',
+  'brAddr2',
+  'brAddr3',
+  'brCity',
+  'brDistrict',
+  'brPin',
+  'brStateCode',
+  'brState',
+  'brCountry',
+  'brRegionAddr1',
+  'brRegionAddr2',
+  'brRegionAddr3',
+  'brRegionCity',
+  'brRegionDistrict',
+  'brRegionState',
+  'brRegionCountry',
+];
+/** Each copied on its own, only when it changed. */
+const BRANCH_COPY_CONTACT_FIELDS: readonly CompanyBranchField[] = ['brTel', 'brPhone', 'brMail'];
+/** The branch fields a company save from `before` to `after` copies (plan C9b, 19/11). */
+export function companyChangesToCopy(before: Company, after: Company): CompanyBranchField[] {
+  const was = companyBranchFields(before);
+  const now = companyBranchFields(after);
+  const changed = (key: CompanyBranchField) => was[key] !== now[key];
+  const keys = new Set<CompanyBranchField>();
+  const taxChanged = BRANCH_COPY_TAX_GROUP.some(changed);
+  if (taxChanged) {
+    BRANCH_COPY_TAX_GROUP.forEach((key) => keys.add(key));
+  }
+  if (taxChanged || BRANCH_COPY_ADDRESS_GROUP.some(changed)) {
+    BRANCH_COPY_ADDRESS_GROUP.forEach((key) => keys.add(key));
+  }
+  BRANCH_COPY_CONTACT_FIELDS.filter(changed).forEach((key) => keys.add(key));
+  return [...keys];
+}
 type BranchMasterWriteClient = SettingsWriteClient;
 @Injectable()
 export class BranchMasterService {
@@ -319,9 +417,11 @@ export class BranchMasterService {
    * CompanyMasterService.createCompany() in the same transaction as the
    * company and its first fiscal year. Its state, GSTIN, PAN, registration
    * type, address and contacts are the company's (the same copy rules as the
-   * share's 45_main_branch_seed.sql); brCode stays NULL, being unique across
-   * all companies. It is the company's default branch and holds the company's
-   * first godown, 'Main Godown', as its default godown.
+   * share's 45_main_branch_seed.sql). Plan C9a (18/11): its brCode is the
+   * company code + "01" ("02", "03", … while another branch holds it — br_code
+   * is unique across all companies); none when the company has no code. The
+   * Bill Prefix stays blank. It is the company's default branch and holds the
+   * company's first godown, 'Main Godown', as its default godown.
    */
   async seedMainBranch(
     tx: BranchMasterWriteClient,
@@ -329,6 +429,7 @@ export class BranchMasterService {
     actor: string,
     now: Date,
   ): Promise<SeededMainBranch> {
+    const brCode = company.compCode ? await this.nextMainBranchCode(tx, company.compCode) : null;
     const created = await tx.branchMaster.create({
       data: {
         brCompId: company.compId,
@@ -336,28 +437,8 @@ export class BranchMasterService {
         brType: MAIN_BRANCH_TYPE,
         brIsDefault: true,
         brIsActive: true,
-        brAddr1: company.compAddr1,
-        brAddr2: company.compAddr2,
-        brAddr3: company.compAddr3,
-        brCity: company.compCity,
-        brDistrict: company.compDistrict,
-        brState: company.compState,
-        brStateCode: company.compStateCode,
-        brPin: company.compPin,
-        brCountry: company.compCountry,
-        brRegionAddr1: company.compRegionAddr1,
-        brRegionAddr2: company.compRegionAddr2,
-        brRegionAddr3: company.compRegionAddr3,
-        brRegionCity: company.compRegionCity,
-        brRegionDistrict: company.compRegionDistrict,
-        brRegionState: company.compRegionState,
-        brRegionCountry: company.compRegionCountry,
-        brTel: company.compTel,
-        brPhone: company.compPhone,
-        brMail: company.compMail,
-        brGstinNo: company.compGstinNo,
-        brGstRegType: company.compGstRegType,
-        brPanNo: company.compPanNo,
+        ...(brCode ? { brCode } : {}),
+        ...companyBranchFields(company),
         brCreatedOn: now,
         brCreatedBy: actor,
         brModifiedOn: now,
@@ -388,9 +469,87 @@ export class BranchMasterService {
     return {
       brId: branch.brId,
       brName: branch.brName,
+      brCode: branch.brCode,
       gdlId: godown.gdl_id,
       gdlName: godown.gdl_name,
     };
+  }
+  /**
+   * Plan C9b — called by CompanyMasterService on a company update, in its
+   * transaction, with the company row before and after the save. While the
+   * company has exactly ONE live branch, that branch takes what changed in
+   * THIS save (companyChangesToCopy, user 19/11: the tax group with the
+   * address group, the address group, each phone / mail on its own), audited
+   * as a branch save. A deliberate branch edit of anything the save left alone
+   * stays. Nothing happens with two or more live branches, or when the branch
+   * already holds what would be copied.
+   * @returns the branch id when it was changed, else null.
+   */
+  async syncOnlyBranch(
+    tx: BranchMasterWriteClient,
+    before: Company,
+    after: Company,
+    actor: string,
+    now: Date,
+  ): Promise<string | null> {
+    const keys = companyChangesToCopy(before, after);
+    if (!keys.length) {
+      return null;
+    }
+    const live = await tx.branchMaster.findMany({
+      where: { brCompId: after.compId, brIsDeleted: false },
+      take: 2,
+    });
+    if (live.length !== 1) {
+      return null;
+    }
+    const [existing] = live;
+    const fields = companyBranchFields(after);
+    if (keys.every((key) => existing[key] === fields[key])) {
+      return null;
+    }
+    const copy = Object.fromEntries(
+      keys.map((key) => [key, fields[key]]),
+    ) as Partial<CompanyBranchFields>;
+    const updated = await tx.branchMaster.update({
+      where: { brId: existing.brId },
+      data: { ...copy, brModifiedOn: now, brModifiedBy: actor },
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: BRANCH_MASTER_TABLE_NAME,
+        screenName: BRANCH_MASTER_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: String(updated.brId),
+        displayName: updated.brName,
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: this.toPayload(updated),
+        userId: actor,
+        notes: 'Copied from its company (the company’s only branch)',
+      },
+      tx,
+    );
+    return updated.brId;
+  }
+  /**
+   * Plan C9a — the company code + "01", else "02", "03" … : the first no
+   * branch holds in any case (deleted ones included: the unique index covers
+   * them). The company code is cut so the whole fits br_code.
+   */
+  private async nextMainBranchCode(tx: BranchMasterWriteClient, compCode: string): Promise<string> {
+    const base = compCode.trim().slice(0, BRANCH_CODE_MAX_LENGTH - 2);
+    const rows = await tx.branchMaster.findMany({
+      where: { brCode: { startsWith: base, mode: 'insensitive' } },
+      select: { brCode: true },
+    });
+    const taken = new Set(rows.map((row) => (row.brCode ?? '').toUpperCase()));
+    let n = 1;
+    const codeOf = (k: number) => `${base}${String(k).padStart(2, '0')}`;
+    while (taken.has(codeOf(n).toUpperCase())) {
+      n++;
+    }
+    return codeOf(n);
   }
   private async createBranch(
     saveBranchMasterDto: SaveBranchMasterDto,
@@ -398,6 +557,7 @@ export class BranchMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
+        this.assertRegistrationRules(saveBranchMasterDto, null);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
         const panFromGstin = this.assertGstin(
           saveBranchMasterDto.brGstinNo ?? null,
@@ -406,6 +566,7 @@ export class BranchMasterService {
         );
         await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName);
+        await this.lockCodeSeriesFor(tx, saveBranchMasterDto.brCode);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
         if (saveBranchMasterDto.brIsDefault === true) {
           await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId);
@@ -462,6 +623,7 @@ export class BranchMasterService {
           this.throwNotFound(brId);
         }
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
+        this.assertRegistrationRules(saveBranchMasterDto, existing);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
         // C7 against what the branch will hold: an omitted GSTIN or PAN keeps the stored one.
         const panFromGstin = this.assertGstin(
@@ -489,6 +651,7 @@ export class BranchMasterService {
         }
         await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName, brId);
+        await this.lockCodeSeriesFor(tx, saveBranchMasterDto.brCode);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
         if (saveBranchMasterDto.brIsDefault === true) {
           await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId, brId);
@@ -626,6 +789,19 @@ export class BranchMasterService {
           },
         ],
       );
+    }
+  }
+  /**
+   * Review N2 (19/11) — a typed Branch Code is checked and written under the
+   * lock company creates take (lockCodeSeries), so it cannot race the Main
+   * Branch code a create is choosing. No code, no lock.
+   */
+  private async lockCodeSeriesFor(
+    tx: BranchMasterWriteClient,
+    brCode: string | null | undefined,
+  ): Promise<void> {
+    if (brCode) {
+      await lockCodeSeries(tx);
     }
   }
   private async ensureCodeIsUnique(
@@ -861,6 +1037,50 @@ export class BranchMasterService {
     return (await countLiveReferences(tx, BRANCH_IN_USE_REFERENCES, brId)).filter(
       (ref) => ref.count > 0,
     );
+  }
+  /**
+   * Plan I1 / B5 (18/11), against what the branch will hold after this save
+   * (on update a key not sent keeps the stored value). A REGULAR, COMPOSITION
+   * or SEZ branch (its own brGstRegType) needs the seller address of an
+   * e-invoice / e-way bill: one BRANCH_ADDRESS_REQUIRED per missing key,
+   * `field` = that key; the district is optional. A pin or Bill Prefix that
+   * is SENT must have its form. Every refusal comes back in one 400.
+   */
+  private assertRegistrationRules(dto: SaveBranchMasterDto, existing: BranchMaster | null): void {
+    const sent = dto as unknown as Record<string, unknown>;
+    const stored = existing as unknown as Record<string, unknown> | null;
+    const after = (key: string): unknown =>
+      sent[key] !== undefined ? sent[key] : stored ? stored[key] : null;
+    const errors: BranchMasterErrorDetail[] = [];
+    const regType = after('brGstRegType') as string | null;
+    if (isGstRegistered(regType)) {
+      for (const key of BRANCH_ADDRESS_KEYS) {
+        if (isBlank(after(key))) {
+          errors.push({
+            field: key,
+            message: `${key} is required for a ${regType} branch (the e-invoice / e-way seller address)`,
+            code: BranchMasterErrorCode.ADDRESS_REQUIRED,
+          });
+        }
+      }
+    }
+    if (typeof dto.brPin === 'number' && !isValidPin(dto.brPin)) {
+      errors.push({
+        field: 'brPin',
+        message: `brPin must be 6 digits, ${PIN_MIN} to ${PIN_MAX}; it is ${dto.brPin}`,
+        code: BranchMasterErrorCode.PIN_INVALID,
+      });
+    }
+    if (typeof dto.brBillPrefix === 'string' && !BILL_PREFIX_PATTERN.test(dto.brBillPrefix)) {
+      errors.push({
+        field: 'brBillPrefix',
+        message: 'brBillPrefix must be 1 to 4 letters or digits',
+        code: BranchMasterErrorCode.BILL_PREFIX_INVALID,
+      });
+    }
+    if (errors.length) {
+      this.throwBadRequest('Validation failed', errors);
+    }
   }
   /**
    * Notes 72 C7 — the GSTIN must be of the branch's own state and PAN.

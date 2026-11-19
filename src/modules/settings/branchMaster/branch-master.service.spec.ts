@@ -1,7 +1,12 @@
 import { HttpException } from '@nestjs/common';
 import { BranchMaster, Company, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { BranchMasterService, MAIN_BRANCH_NAME, MAIN_BRANCH_TYPE } from './branch-master.service';
+import {
+  BranchMasterService,
+  MAIN_BRANCH_NAME,
+  MAIN_BRANCH_TYPE,
+  companyChangesToCopy,
+} from './branch-master.service';
 import { SaveBranchMasterDto } from './dto/save-branch-master.dto';
 import { BranchMasterErrorCode } from './types/branch-master-error-codes';
 
@@ -91,6 +96,7 @@ type Where = Record<string, unknown>;
 type PrismaMock = {
   branchMaster: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
@@ -127,6 +133,8 @@ describe('BranchMasterService', () => {
           if ('brIsDefault' in where) return clash.otherDefault ? { brId: 'other' } : null;
           return stored;
         }),
+        // The Main Branch code's read of the codes taken (C9a) and the only-branch read (C9b).
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async ({ data }: { data: Partial<BranchMaster> }) => branchRow(data)),
         update: jest.fn(async ({ data }: { data: Partial<BranchMaster> }) => ({
           ...(stored ?? branchRow()),
@@ -280,6 +288,49 @@ describe('BranchMasterService', () => {
       await create();
 
       expect(prisma.branchMaster.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    describe('a typed code waits on the company code-series lock (review N2, 19/11)', () => {
+      const lockSql = () =>
+        (prisma.$queryRaw.mock.calls as Array<[TemplateStringsArray]>).map(([sql]) =>
+          sql.join('?'),
+        );
+      const codeReadOrder = () =>
+        prisma.branchMaster.findFirst.mock.calls.findIndex(
+          ([args]: [{ where: Where }]) => 'brCode' in args.where,
+        );
+
+      it('on create, before the code is checked', async () => {
+        await create({ brCode: 'AN01' });
+
+        expect(lockSql()).toEqual([
+          expect.stringContaining(
+            "pg_advisory_xact_lock(hashtext('public.companys'), hashtext('comp_code'))",
+          ),
+        ]);
+        expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+          prisma.branchMaster.findFirst.mock.invocationCallOrder[codeReadOrder()],
+        );
+      });
+
+      it('on update, before the code is checked', async () => {
+        stored = branchRow();
+
+        await update({ brCode: 'AN01' });
+
+        expect(lockSql()).toHaveLength(1);
+        expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+          prisma.branchMaster.findFirst.mock.invocationCallOrder[codeReadOrder()],
+        );
+      });
+
+      it('not without a code', async () => {
+        await create({ brCode: null } as unknown as Partial<SaveBranchMasterDto>);
+        stored = branchRow();
+        await update();
+
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
     });
 
     it('answers a unique-index race (P2002) with a 409 on brCode', async () => {
@@ -774,8 +825,9 @@ describe('BranchMasterService', () => {
         brModifiedOn: now,
         brModifiedBy: USER_ID,
       });
-      // brCode is unique across every company, so the seed leaves it unset.
+      // A company without a code gives its Main Branch none (plan C9a).
       expect(createdData()).not.toHaveProperty('brCode');
+      expect(prisma.branchMaster.findMany).not.toHaveBeenCalled();
       expect(godowns.seedMainGodown).toHaveBeenCalledWith(prisma, BRANCH_ID, USER_ID, now);
       expect(prisma.branchMaster.update).toHaveBeenCalledWith({
         where: { brId: BRANCH_ID },
@@ -784,6 +836,7 @@ describe('BranchMasterService', () => {
       expect(seeded).toEqual({
         brId: BRANCH_ID,
         brName: MAIN_BRANCH_NAME,
+        brCode: null,
         gdlId: GODOWN_ID,
         gdlName: 'Main Godown',
       });
@@ -793,6 +846,488 @@ describe('BranchMasterService', () => {
         notes: 'Seeded on company create',
         modifiedRecord: expect.objectContaining({ brDefaultGodownId: GODOWN_ID }),
       });
+    });
+
+    describe('its Branch Code (plan C9a, 18/11)', () => {
+      const seed = () =>
+        service.seedMainBranch(
+          prisma as never,
+          { ...company, compCode: 'MDT' } as Company,
+          USER_ID,
+          new Date('2026-11-19T05:00:00.000Z'),
+        );
+      beforeEach(() => {
+        prisma.branchMaster.update.mockImplementation(
+          async ({ data }: { data: Partial<BranchMaster> }) =>
+            branchRow({ brName: MAIN_BRANCH_NAME, ...createdData(), ...data }),
+        );
+      });
+
+      it('is the company code + "01", with no Bill Prefix', async () => {
+        const seeded = await seed();
+
+        expect(prisma.branchMaster.findMany).toHaveBeenCalledWith({
+          where: { brCode: { startsWith: 'MDT', mode: 'insensitive' } },
+          select: { brCode: true },
+        });
+        expect(createdData().brCode).toBe('MDT01');
+        expect(createdData()).not.toHaveProperty('brBillPrefix');
+        expect(seeded.brCode).toBe('MDT01');
+      });
+
+      it('takes 02, 03, … while a branch of any company holds it, in any case', async () => {
+        prisma.branchMaster.findMany.mockResolvedValue([
+          { brCode: 'mdt01' },
+          { brCode: 'MDT02' },
+          { brCode: 'MDT2' },
+        ]);
+
+        await seed();
+
+        expect(createdData().brCode).toBe('MDT03');
+      });
+
+      it('cuts a long company code so the whole fits br_code (20)', async () => {
+        await service.seedMainBranch(
+          prisma as never,
+          { ...company, compCode: 'ABCDEFGHIJKLMNOPQRST' } as Company,
+          USER_ID,
+          new Date(),
+        );
+
+        expect(createdData().brCode).toBe('ABCDEFGHIJKLMNOPQR01');
+      });
+    });
+  });
+
+  describe('syncOnlyBranch (plan C9b; copy only what changed, user 19/11)', () => {
+    const company = {
+      compId: COMPANY_ID,
+      compStateCode: '33',
+      compCountry: 'India',
+      compAddr1: '12 Mount Road',
+      compAddr2: 'Anna Salai',
+      compAddr3: null,
+      compCity: 'Chennai',
+      compDistrict: 'Chennai',
+      compState: 'Tamil Nadu',
+      compPin: 600002,
+      compRegionAddr1: null,
+      compRegionAddr2: null,
+      compRegionAddr3: null,
+      compRegionCity: null,
+      compRegionDistrict: null,
+      compRegionState: null,
+      compRegionCountry: null,
+      compTel: '044-1234',
+      compPhone: '9840012345',
+      compMail: 'office@zeta.example',
+      compGstinNo: GSTIN,
+      compGstRegType: 'REGULAR',
+      compPanNo: PAN,
+      compLogo: null,
+    } as Company;
+    /**
+     * The only branch: the company's tax and contacts, but a godown address
+     * typed on the Branch screen on purpose.
+     */
+    const godown = branchRow({
+      brName: MAIN_BRANCH_NAME,
+      brIsDefault: true,
+      brCode: 'MDT01',
+      brAddr1: '7 Godown Street',
+      brAddr2: null,
+      brCity: 'Ambattur',
+      brDistrict: 'Tiruvallur',
+      brState: 'Tamil Nadu',
+      brStateCode: '33',
+      brPin: 600053,
+      brCountry: 'India',
+      brTel: '044-1234',
+      brPhone: '9840012345',
+      brMail: 'office@zeta.example',
+      brGstinNo: GSTIN,
+      brGstRegType: 'REGULAR',
+      brPanNo: PAN,
+    });
+    /** The company's address group as the branch would hold it. */
+    const ADDRESS = {
+      brAddr1: '12 Mount Road',
+      brAddr2: 'Anna Salai',
+      brAddr3: null,
+      brCity: 'Chennai',
+      brDistrict: 'Chennai',
+      brPin: 600002,
+      brStateCode: '33',
+      brState: 'Tamil Nadu',
+      brCountry: 'India',
+      brRegionAddr1: null,
+      brRegionAddr2: null,
+      brRegionAddr3: null,
+      brRegionCity: null,
+      brRegionDistrict: null,
+      brRegionState: null,
+      brRegionCountry: null,
+    };
+    const now = new Date('2026-11-19T05:00:00.000Z');
+    const sync = (after: Partial<Company>, branch: BranchMaster = godown) => {
+      prisma.branchMaster.findMany.mockResolvedValue([branch]);
+      stored = branch;
+      return service.syncOnlyBranch(
+        prisma as never,
+        company,
+        { ...company, ...after } as Company,
+        USER_ID,
+        now,
+      );
+    };
+
+    it('copies the whole address group, and nothing else, when only the address changed', async () => {
+      const changed = await sync({ compAddr1: '14 Mount Road', compPin: 600006 });
+
+      expect(prisma.branchMaster.findMany).toHaveBeenCalledWith({
+        where: { brCompId: COMPANY_ID, brIsDeleted: false },
+        take: 2,
+      });
+      expect(changed).toBe(BRANCH_ID);
+      expect(prisma.branchMaster.update).toHaveBeenCalledWith({
+        where: { brId: BRANCH_ID },
+        data: {
+          ...ADDRESS,
+          brAddr1: '14 Mount Road',
+          brPin: 600006,
+          brModifiedOn: now,
+          brModifiedBy: USER_ID,
+        },
+      });
+      // The code, name, bill prefix, default flag, tax and contacts stay.
+      for (const key of [
+        'brCode',
+        'brBillPrefix',
+        'brGstinNo',
+        'brPanNo',
+        'brTel',
+        'brPhone',
+        'brMail',
+      ]) {
+        expect(updatedData()).not.toHaveProperty(key);
+      }
+      expect(auditEntry()).toMatchObject({
+        action: 'update',
+        tableName: 'branch master',
+        pk: BRANCH_ID,
+        userId: USER_ID,
+        originalRecord: expect.objectContaining({ brAddr1: '7 Godown Street', brCity: 'Ambattur' }),
+        modifiedRecord: expect.objectContaining({ brAddr1: '14 Mount Road', brCity: 'Chennai' }),
+        notes: 'Copied from its company (the company’s only branch)',
+      });
+    });
+
+    it('copies the tax group with the whole address group when the GSTIN, PAN or reg type changed', async () => {
+      const unregistered = branchRow({
+        ...godown,
+        brGstinNo: null,
+        brGstRegType: 'UNREGISTERED',
+        brPanNo: null,
+      });
+
+      await sync({}, unregistered);
+      expect(prisma.branchMaster.update).not.toHaveBeenCalled();
+
+      await sync({ compGstRegType: 'COMPOSITION' }, unregistered);
+
+      expect(updatedData()).toEqual({
+        ...ADDRESS,
+        brGstinNo: GSTIN,
+        brGstRegType: 'COMPOSITION',
+        brPanNo: PAN,
+        brModifiedOn: now,
+        brModifiedBy: USER_ID,
+      });
+      expect(auditEntry().modifiedRecord).toMatchObject({
+        brGstinNo: GSTIN,
+        brGstRegType: 'COMPOSITION',
+        brPanNo: PAN,
+        brAddr1: '12 Mount Road',
+      });
+    });
+
+    it('treats the state as tax: a state change brings the tax and address groups', async () => {
+      await sync({ compState: 'TAMIL NADU' });
+
+      expect(updatedData()).toEqual({
+        ...ADDRESS,
+        brState: 'TAMIL NADU',
+        brGstinNo: GSTIN,
+        brGstRegType: 'REGULAR',
+        brPanNo: PAN,
+        brModifiedOn: now,
+        brModifiedBy: USER_ID,
+      });
+    });
+
+    it('copies a changed phone alone, keeping the branch’s own address', async () => {
+      await sync({ compPhone: '9840099999' });
+
+      expect(updatedData()).toEqual({
+        brPhone: '9840099999',
+        brModifiedOn: now,
+        brModifiedBy: USER_ID,
+      });
+    });
+
+    it('copies the telephone and mail each only when it changed', async () => {
+      await sync({ compMail: 'accounts@zeta.example' });
+
+      expect(updatedData()).toEqual({
+        brMail: 'accounts@zeta.example',
+        brModifiedOn: now,
+        brModifiedBy: USER_ID,
+      });
+    });
+
+    it('copies nothing, and reads no branch, on a save that changed none of them (a logo)', async () => {
+      const changed = await sync({
+        compLogo: 'data:image/png;base64,iVBORw0KGgo=',
+      } as Partial<Company>);
+
+      expect(changed).toBeNull();
+      expect(prisma.branchMaster.findMany).not.toHaveBeenCalled();
+      expect(prisma.branchMaster.update).not.toHaveBeenCalled();
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('leaves the branches alone once the company has two or more', async () => {
+      prisma.branchMaster.findMany.mockResolvedValue([branchRow(), branchRow({ brId: 'other' })]);
+
+      const changed = await service.syncOnlyBranch(
+        prisma as never,
+        company,
+        { ...company, compCity: 'Madurai' } as Company,
+        USER_ID,
+        now,
+      );
+
+      expect(changed).toBeNull();
+      expect(prisma.branchMaster.update).not.toHaveBeenCalled();
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a company with no live branch', async () => {
+      const changed = await service.syncOnlyBranch(
+        prisma as never,
+        company,
+        { ...company, compCity: 'Madurai' } as Company,
+        USER_ID,
+        now,
+      );
+
+      expect(changed).toBeNull();
+      expect(prisma.branchMaster.update).not.toHaveBeenCalled();
+    });
+
+    it('writes and audits nothing when the branch already holds what would be copied', async () => {
+      const changed = await sync(
+        { compAddr1: '7 Godown Street', compCity: 'Ambattur' },
+        {
+          ...godown,
+          ...ADDRESS,
+          brAddr1: '7 Godown Street',
+          brCity: 'Ambattur',
+        },
+      );
+
+      expect(changed).toBeNull();
+      expect(prisma.branchMaster.update).not.toHaveBeenCalled();
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('also clears what the company cleared', async () => {
+      await sync({
+        compPhone: null,
+        compGstinNo: null,
+        compPanNo: null,
+        compGstRegType: 'UNREGISTERED',
+      });
+
+      expect(updatedData()).toMatchObject({
+        brPhone: null,
+        brGstinNo: null,
+        brPanNo: null,
+        brGstRegType: 'UNREGISTERED',
+        brAddr1: '12 Mount Road',
+      });
+      expect(updatedData()).not.toHaveProperty('brTel');
+    });
+
+    it('between the groups covers every field the Main Branch seed copies', () => {
+      const all = {
+        ...company,
+        compAddr1: 'x',
+        compAddr2: 'x',
+        compAddr3: 'x',
+        compCity: 'x',
+        compDistrict: 'x',
+        compState: 'x',
+        compStateCode: 'XX',
+        compPin: 1,
+        compCountry: 'x',
+        compRegionAddr1: 'x',
+        compRegionAddr2: 'x',
+        compRegionAddr3: 'x',
+        compRegionCity: 'x',
+        compRegionDistrict: 'x',
+        compRegionState: 'x',
+        compRegionCountry: 'x',
+        compTel: 'x',
+        compPhone: 'x',
+        compMail: 'x',
+        compGstinNo: 'x',
+        compGstRegType: 'x',
+        compPanNo: 'x',
+      } as Company;
+
+      expect(companyChangesToCopy(company, all).sort()).toEqual(
+        [
+          ...Object.keys(ADDRESS),
+          'brTel',
+          'brPhone',
+          'brMail',
+          'brGstinNo',
+          'brGstRegType',
+          'brPanNo',
+        ].sort(),
+      );
+      expect(companyChangesToCopy(company, { ...company })).toEqual([]);
+    });
+  });
+
+  describe('seller address of a GSTIN holder, pin and bill prefix (plan I1 / B5, 18/11)', () => {
+    const REGISTERED: Partial<SaveBranchMasterDto> = {
+      brGstRegType: 'REGULAR',
+      brAddr1: '4 Gandhi Road',
+      brCity: 'Coimbatore',
+      brPin: 641001,
+    };
+
+    it.each(['REGULAR', 'COMPOSITION', 'SEZ'])(
+      'refuses a %s branch without them, one error per key, district not asked',
+      async (regType) => {
+        const refusal = await refusalOf(
+          create({ brGstRegType: regType, brStateCode: '', brDistrict: null }),
+        );
+
+        expect(refusal.status).toBe(400);
+        expect(errorsOf(refusal)).toEqual([
+          {
+            field: 'brAddr1',
+            code: BranchMasterErrorCode.ADDRESS_REQUIRED,
+            message: `brAddr1 is required for a ${regType} branch (the e-invoice / e-way seller address)`,
+          },
+          expect.objectContaining({
+            field: 'brCity',
+            code: BranchMasterErrorCode.ADDRESS_REQUIRED,
+          }),
+          expect.objectContaining({
+            field: 'brStateCode',
+            code: BranchMasterErrorCode.ADDRESS_REQUIRED,
+          }),
+          expect.objectContaining({ field: 'brPin', code: BranchMasterErrorCode.ADDRESS_REQUIRED }),
+        ]);
+        expect(prisma.branchMaster.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('saves a REGULAR branch that has them all, without a district', async () => {
+      await create({ ...REGISTERED, brDistrict: null });
+
+      expect(createdData()).toMatchObject({
+        brAddr1: '4 Gandhi Road',
+        brCity: 'Coimbatore',
+        brPin: 641001,
+      });
+    });
+
+    it.each([undefined, null, 'UNREGISTERED'])(
+      'asks nothing of a branch whose registration is %p',
+      async (regType) => {
+        await create({ brGstRegType: regType });
+
+        expect(prisma.branchMaster.create).toHaveBeenCalled();
+      },
+    );
+
+    it('a blank state of an unregistered branch is still a bad state code', async () => {
+      const refusal = await refusalOf(create({ brStateCode: '' }));
+
+      expect(errorsOf(refusal)).toEqual([
+        expect.objectContaining({
+          field: 'brStateCode',
+          code: BranchMasterErrorCode.STATE_CODE_INVALID,
+        }),
+      ]);
+    });
+
+    it('judges an update by what the branch will hold: unsent keys keep the stored ones', async () => {
+      stored = branchRow({
+        brGstRegType: 'REGULAR',
+        brAddr1: '4 Gandhi Road',
+        brCity: 'Coimbatore',
+        brPin: 641001,
+      });
+
+      await update({ brPhone: '9840012345' });
+      const refusal = await refusalOf(update({ brAddr1: '  ' }));
+
+      expect(prisma.branchMaster.update).toHaveBeenCalledTimes(1);
+      expect(errorsOf(refusal)).toEqual([
+        expect.objectContaining({ field: 'brAddr1', code: BranchMasterErrorCode.ADDRESS_REQUIRED }),
+      ]);
+    });
+
+    it.each([99999, 1000000, 0])('refuses the pin %p, whatever the registration', async (pin) => {
+      const refusal = await refusalOf(create({ brPin: pin }));
+
+      expect(errorsOf(refusal)).toEqual([
+        {
+          field: 'brPin',
+          code: BranchMasterErrorCode.PIN_INVALID,
+          message: `brPin must be 6 digits, 100000 to 999999; it is ${pin}`,
+        },
+      ]);
+    });
+
+    it.each(['C', 'CBE', 'CB01', '1234'])('takes the bill prefix %p', async (prefix) => {
+      await create({ brBillPrefix: prefix });
+
+      expect(createdData().brBillPrefix).toBe(prefix);
+    });
+
+    it.each(['CBE01', 'C-1', 'CB E', 'cbe'])('refuses the bill prefix %p', async (prefix) => {
+      const refusal = await refusalOf(create({ brBillPrefix: prefix }));
+
+      expect(errorsOf(refusal)).toEqual([
+        {
+          field: 'brBillPrefix',
+          code: BranchMasterErrorCode.BILL_PREFIX_INVALID,
+          message: 'brBillPrefix must be 1 to 4 letters or digits',
+        },
+      ]);
+    });
+
+    it('lets the bill prefix be cleared, and reports every refusal in one 400', async () => {
+      await create({ brBillPrefix: null });
+      expect(createdData().brBillPrefix).toBeNull();
+
+      const refusal = await refusalOf(
+        create({ ...REGISTERED, brCity: null, brPin: 12345, brBillPrefix: 'TOOLONG' }),
+      );
+
+      expect(errorsOf(refusal).map(({ field, code }) => ({ field, code }))).toEqual([
+        { field: 'brCity', code: BranchMasterErrorCode.ADDRESS_REQUIRED },
+        { field: 'brPin', code: BranchMasterErrorCode.PIN_INVALID },
+        { field: 'brBillPrefix', code: BranchMasterErrorCode.BILL_PREFIX_INVALID },
+      ]);
     });
   });
 });

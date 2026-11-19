@@ -54,7 +54,9 @@ Both `GET /get` and `DELETE /delete` take `brId` as a query parameter validated 
 - **Branch code uniqueness** is global (across all rows), case-insensitive, and only checked when
   `brCode` is provided (`ensureCodeIsUnique`) → conflict on `brCode`. The DB also enforces a
   `@unique` constraint on `br_code`; a raced unique-constraint violation is mapped by
-  `handleWriteError` (`throwOnUniqueConstraintError`).
+  `handleWriteError` (`throwOnUniqueConstraintError`). A save that sets `brCode` first takes the
+  company code-series advisory lock (`settings/shared/code-series-lock.ts`, review N2 19/11), so a
+  typed code cannot race the Main Branch code a company create is choosing.
 
 ### Soft delete
 
@@ -92,3 +94,16 @@ tables (each only when the corresponding id is set):
   with any of the above.
 - **GST** — `brGstRegType` is REGULAR / COMPOSITION / UNREGISTERED / SEZ; the GSTIN must match
   `brStateCode` and `brPanNo` (a blank PAN is filled from it).
+- **Seller address (plan 18/11 I1)** — a REGULAR / COMPOSITION / SEZ branch needs `brAddr1`,
+  `brCity`, `brStateCode`, `brPin` (one `BRANCH_ADDRESS_REQUIRED` per missing key, `field` = the
+  key; district optional), judged on what the row holds after the save. A sent `brPin` must be
+  100000–999999 (`BRANCH_PIN_INVALID`).
+- **Bill Prefix (plan B5)** — optional; upper-cased, then 1–4 letters or digits
+  (`BRANCH_BILL_PREFIX_INVALID`). Blank → `{BR}` prints the Branch Code.
+- **Main Branch (plan C9)** — `seedMainBranch` gives it `brCode` = company code + `01` (`02`, `03` …
+  while any branch holds it; none when the company has no code), Bill Prefix blank.
+  `syncOnlyBranch(tx, before, after, …)` copies onto a company's only live branch just what the
+  company save changed (user 19/11, `companyChangesToCopy`): the tax group (GSTIN, reg type, PAN,
+  state code / state) with the whole address group; the address group (lines 1–3, city, district,
+  pin, state, country, region address) whole; telephone, phone and mail each on its own. A save
+  that changes none of them (a logo) copies nothing, so a deliberate branch edit stays.

@@ -348,6 +348,116 @@ describe('AuditLogService', () => {
     });
   });
 
+  describe('Company and Branch Master labels (review S1 / S2, 19/11)', () => {
+    /** The labels the parser keeps: those before the first word "from". */
+    const labelsKept = (screenName: string) => {
+      const sql = getAuditScreenSql(screenName) ?? '';
+      const head = sql.slice(0, sql.search(/\sfrom\b/i));
+      return [...head.matchAll(/AS "([^"]+)"/g)].map((match) => match[1]);
+    };
+    const logUpdate = async (
+      screenName: string,
+      originalRecord: Record<string, unknown>,
+      modifiedRecord: Record<string, unknown>,
+    ) => {
+      prisma.auditScreen.findFirst.mockResolvedValue({
+        screenId: 30,
+        screenName,
+        screenAuditSql: getAuditScreenSql(screenName),
+      });
+      prisma.auditLog.create.mockResolvedValue({ logId: '019c6f6c-be87-7a11-8905-36092c46fd06' });
+      await service.logEntityChange({
+        action: 'update',
+        tableName: screenName,
+        screenName,
+        originalRecord: originalRecord as never,
+        modifiedRecord: modifiedRecord as never,
+        pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+      });
+      return getCreateArgs(prisma).data;
+    };
+
+    it('Company Master keeps Books Lock Date and Authorised Signatory above "Fin Year From", and no logo', async () => {
+      expect(labelsKept('Company Master')).toEqual(
+        expect.arrayContaining(['Books Lock Date', 'Authorised Signatory', 'Udyam No']),
+      );
+      expect(getAuditScreenSql('Company Master')).not.toMatch(/comp_logo|"Logo"/);
+
+      const data = await logUpdate(
+        'Company Master',
+        {
+          compName: 'Zeta Traders',
+          compBooksLockDate: null,
+          compSignatoryName: null,
+          compLogo: null,
+        },
+        {
+          compName: 'Zeta Traders',
+          compBooksLockDate: '2026-06-30T00:00:00.000Z',
+          compSignatoryName: 'R. Kumar, Proprietor',
+          compLogo: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      );
+
+      expect(data.logModifiedRecord).toMatchObject({
+        'Books Lock Date': '2026-06-30T00:00:00.000Z',
+        'Authorised Signatory': 'R. Kumar, Proprietor',
+      });
+      expect(JSON.stringify(data.logModifiedRecord)).not.toContain('base64');
+      expect(Object.keys(data.logChangedFields as object)).toEqual([
+        'Books Lock Date',
+        'Authorised Signatory',
+      ]);
+    });
+
+    it('Branch Master records GSTIN, GST Reg Type, PAN and the region address; no label holds "from"', async () => {
+      const sql = getAuditScreenSql('Branch Master') ?? '';
+      const labels = [...sql.matchAll(/AS "([^"]+)"/g)].map((match) => match[1]);
+      expect(labels.filter((label) => /\bfrom\b/i.test(label))).toEqual([]);
+      expect(labelsKept('Branch Master')).toEqual(labels);
+      expect(labels).toEqual(
+        expect.arrayContaining([
+          'GSTIN',
+          'GST Reg Type',
+          'PAN',
+          'Region Name',
+          'Region Address 1',
+          'Region Address 2',
+          'Region Address 3',
+          'Region City',
+          'Region District',
+          'Region State',
+          'Region Country',
+        ]),
+      );
+
+      const data = await logUpdate(
+        'Branch Master',
+        {
+          brName: 'Main Branch',
+          brGstinNo: null,
+          brGstRegType: 'UNREGISTERED',
+          brPanNo: null,
+          brRegionCity: null,
+        },
+        {
+          brName: 'Main Branch',
+          brGstinNo: '33ABCDE1234F1Z5',
+          brGstRegType: 'REGULAR',
+          brPanNo: 'ABCDE1234F',
+          brRegionCity: 'Madurai',
+        },
+      );
+
+      expect(data.logChangedFields).toEqual({
+        GSTIN: { from: null, to: '33ABCDE1234F1Z5' },
+        'GST Reg Type': { from: 'UNREGISTERED', to: 'REGULAR' },
+        PAN: { from: null, to: 'ABCDE1234F' },
+        'Region City': { from: null, to: 'Madurai' },
+      });
+    });
+  });
+
   it('logEntityChange creates missing audit screens with configured screenAuditSql', async () => {
     prisma.auditScreen.findFirst.mockResolvedValue(null);
     prisma.auditScreen.create.mockResolvedValue({

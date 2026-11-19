@@ -46,4 +46,22 @@ export enum CompanyMasterErrorCode {
   SIGNATURE_NOT_IMAGE = 'COMPANY_SIGNATURE_NOT_IMAGE',
   /** compStylesheetId names a theme that is inactive or deleted. */
   THEME_INACTIVE = 'COMPANY_THEME_INACTIVE',
+  /** A REGULAR, COMPOSITION or SEZ company has no compLegalName (plan C8, 18/11). */
+  LEGAL_NAME_REQUIRED = 'COMPANY_LEGAL_NAME_REQUIRED',
+  /**
+   * A REGULAR, COMPOSITION or SEZ company lacks an address key the e-invoice /
+   * e-way seller block needs (plan I1). One error per missing key; `field` is
+   * that key: compAddr1, compCity, compStateCode or compPin.
+   */
+  ADDRESS_REQUIRED = 'COMPANY_ADDRESS_REQUIRED',
+  /** compPin is given but is not 100000 – 999999. */
+  PIN_INVALID = 'COMPANY_PIN_INVALID',
+  /** compUdyamNo is not UDYAM-XX-00-0000000. */
+  UDYAM_INVALID = 'COMPANY_UDYAM_INVALID',
+  /** compLogo is not (valid) base64. */
+  LOGO_NOT_BASE64 = 'COMPANY_LOGO_NOT_BASE64',
+  /** compLogo is over the size limit. */
+  LOGO_TOO_LARGE = 'COMPANY_LOGO_TOO_LARGE',
+  /** compLogo is not a PNG, JPEG, GIF or WebP image. */
+  LOGO_NOT_IMAGE = 'COMPANY_LOGO_NOT_IMAGE',
 }

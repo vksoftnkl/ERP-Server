@@ -2,7 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { Company, FiscalYear, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
-import { CompanyMasterService } from './company-master.service';
+import { CompanyMasterService, companyCodeBase } from './company-master.service';
 import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
 import { CompanyMasterErrorCode } from './types/company-master-error-codes';
 
@@ -89,6 +89,9 @@ const companyRow = (overrides: Partial<Company> = {}): Company => ({
   compLocaleCode: 'en-IN',
   compRemarks: null,
   compAuthorizeSignature: null,
+  compUdyamNo: null,
+  compLogo: null,
+  compSignatoryName: null,
   compIsDeleted: false,
   compSyncDate: null,
   compCreatedOn: STAMP,
@@ -159,6 +162,7 @@ type Where = Record<string, unknown>;
 type PrismaMock = {
   company: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
@@ -174,7 +178,7 @@ describe('CompanyMasterService', () => {
   let prisma: PrismaMock;
   let audit: { logEntityChange: jest.Mock };
   let context: { getUserId: jest.Mock };
-  let branches: { seedMainBranch: jest.Mock };
+  let branches: { seedMainBranch: jest.Mock; syncOnlyBranch: jest.Mock };
   let service: CompanyMasterService;
   /** What the existence reads (get / update / delete / restore) find. */
   let stored: Company | null;
@@ -192,6 +196,8 @@ describe('CompanyMasterService', () => {
           if ('compGstinNo' in where) return clash.gstin ? { compId: 'other' } : null;
           return stored;
         }),
+        // The auto code's read of the codes already taken (plan C1).
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async ({ data }: { data: Partial<Company> }) => companyRow(data)),
         update: jest.fn(async ({ data }: { data: Partial<Company> }) => ({
           ...(stored ?? companyRow()),
@@ -211,7 +217,10 @@ describe('CompanyMasterService', () => {
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     context = { getUserId: jest.fn().mockReturnValue(USER_ID) };
-    branches = { seedMainBranch: jest.fn().mockResolvedValue(MAIN_BRANCH) };
+    branches = {
+      seedMainBranch: jest.fn().mockResolvedValue(MAIN_BRANCH),
+      syncOnlyBranch: jest.fn().mockResolvedValue(null),
+    };
     service = new CompanyMasterService(
       prisma as unknown as PrismaService,
       audit as never,
@@ -253,6 +262,9 @@ describe('CompanyMasterService', () => {
         compCreatedOn: expect.any(Date),
         compCreatedBy: USER_ID,
         compShort: 'ZT',
+        // Plan C1 / C5: no code and no symbol sent.
+        compCode: 'ZTE',
+        compCurrencySymbol: 'Rs.',
       });
       expect(yearData()).toEqual({
         compId: COMPANY_ID,
@@ -297,10 +309,12 @@ describe('CompanyMasterService', () => {
       expect(createdData()).toMatchObject({ compStateCode: 'TN', compCreatedBy: DEFAULT_ACTOR });
     });
 
-    it('never writes the lock date, which belongs to the fiscal year', async () => {
-      await create({ compBooksLockDate: day('2026-06-30') });
+    it('saves the books lock date as sent (plan 18/11 Q1), and no fiscal-year lock', async () => {
+      const payload = await create({ compBooksLockDate: day('2026-06-30') });
 
-      expect(createdData()).not.toHaveProperty('compBooksLockDate');
+      expect(createdData().compBooksLockDate).toEqual(day('2026-06-30'));
+      expect(yearData()).not.toHaveProperty('fyLockDate');
+      expect(payload.compBooksLockDate).toBe(day('2026-06-30').toISOString());
     });
 
     it('refuses a blank name', async () => {
@@ -367,6 +381,64 @@ describe('CompanyMasterService', () => {
       expect(refusal.status).toBe(409);
       expect(errorsOf(refusal)).toEqual([
         expect.objectContaining({ field: 'compName', code: CompanyMasterErrorCode.DUPLICATE }),
+      ]);
+    });
+
+    it.each([
+      ['comp_code', ['comp_code'], 'compCode', CompanyMasterErrorCode.CODE_DUPLICATE],
+      [
+        'comp_code (index name)',
+        'companys_comp_code_key',
+        'compCode',
+        CompanyMasterErrorCode.CODE_DUPLICATE,
+      ],
+      ['comp_name', ['comp_name'], 'compName', CompanyMasterErrorCode.DUPLICATE],
+      ['comp_gstin_no', ['comp_gstin_no'], 'compGstinNo', CompanyMasterErrorCode.GSTIN_DUPLICATE],
+      ['the Main Branch br_code', ['br_code'], 'compCode', CompanyMasterErrorCode.DUPLICATE],
+    ])(
+      'answers a race on %s by what the index covers (review N2)',
+      async (_, target, field, code) => {
+        prisma.company.create.mockRejectedValue(
+          Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target } }),
+        );
+
+        const refusal = await refusalOf(create());
+
+        expect(refusal.status).toBe(409);
+        expect(errorsOf(refusal)).toEqual([expect.objectContaining({ field, code })]);
+      },
+    );
+
+    it('answers a Main Branch code raced in the seed (P2002 on br_code) off the name', async () => {
+      branches.seedMainBranch.mockRejectedValue(
+        Object.assign(new Error('Unique constraint failed'), {
+          code: 'P2002',
+          meta: { target: ['br_code'] },
+        }),
+      );
+
+      const refusal = await refusalOf(create());
+
+      expect(refusal.status).toBe(409);
+      expect(errorsOf(refusal)).toEqual([
+        expect.objectContaining({ field: 'compCode', code: CompanyMasterErrorCode.DUPLICATE }),
+      ]);
+    });
+
+    it('answers a raw-query 23505 on comp_code (P2010) the same way', async () => {
+      prisma.company.update.mockRejectedValue(
+        Object.assign(new Error('Raw query failed'), {
+          code: 'P2010',
+          meta: { code: '23505', message: 'Key (comp_code)=(ZQV) already exists.' },
+        }),
+      );
+      stored = companyRow();
+
+      const refusal = await refusalOf(update());
+
+      expect(refusal.status).toBe(409);
+      expect(errorsOf(refusal)).toEqual([
+        expect.objectContaining({ field: 'compCode', code: CompanyMasterErrorCode.CODE_DUPLICATE }),
       ]);
     });
 
@@ -666,6 +738,378 @@ describe('CompanyMasterService', () => {
     });
   });
 
+  describe('the generated company code (plan C1, 18/11)', () => {
+    it.each([
+      ['MT Demo Traders', 'MDT'],
+      ['SUGI TRADERS', 'STU'],
+      ['Zeta Traders', 'ZTE'],
+      ['Amazon Retail India Private Limited', 'ARI'],
+      ['The Chennai Silks', 'CSH'],
+      ['A & B Traders', 'ABT'],
+      ['Ram and Sons Pvt Ltd', 'RSA'],
+      ['Seven Seas Shipping Logistics Export Import Agencies', 'SSSLEI'],
+      ['1st Choice', '1CS'],
+      ['ZT-CO-77', 'ZTC'],
+      ['Kumar', 'KUM'],
+      ['Om', 'OM'],
+      ['The Limited', 'TLH'],
+    ])('makes %p → %p', (name, code) => {
+      expect(companyCodeBase(name)).toBe(code);
+    });
+
+    it('makes none from a name with no letter or digit', () => {
+      expect(companyCodeBase('&& --')).toBeNull();
+    });
+
+    it('gives a company created without a code its initials, under the code lock', async () => {
+      const payload = await create({ compName: 'MT Demo Traders' });
+
+      expect(prisma.company.findMany).toHaveBeenCalledWith({
+        where: { compCode: { startsWith: 'MDT', mode: 'insensitive' } },
+        select: { compCode: true },
+      });
+      expect(createdData().compCode).toBe('MDT');
+      expect(payload.compCode).toBe('MDT');
+      // The advisory lock is taken before the codes are read.
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.company.findMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('adds 2, 3, … while the code is taken in any case, deleted companies included', async () => {
+      prisma.company.findMany.mockResolvedValue([
+        { compCode: 'MDT' },
+        { compCode: 'mdt2' },
+        { compCode: 'MDT10' },
+      ]);
+
+      await create({ compName: 'MT Demo Traders' });
+
+      expect(createdData().compCode).toBe('MDT3');
+    });
+
+    it('keeps a typed code as typed and reads no taken codes', async () => {
+      await create({ compName: 'MT Demo Traders', compCode: 'ACME' });
+
+      expect(createdData().compCode).toBe('ACME');
+      expect(prisma.company.findMany).not.toHaveBeenCalled();
+    });
+
+    it('leaves the code empty when the name gives none', async () => {
+      await create({ compName: '&& --' });
+
+      expect(createdData()).not.toHaveProperty('compCode');
+    });
+
+    it('makes no code on update', async () => {
+      stored = companyRow({ compCode: null });
+
+      await update({ compCode: null });
+
+      expect(updatedData().compCode).toBeNull();
+      expect(prisma.company.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the currency symbol (plan C5)', () => {
+    it.each([undefined, null])('is "Rs." on create when %p is sent', async (value) => {
+      await create({ compCurrencySymbol: value });
+
+      expect(createdData().compCurrencySymbol).toBe('Rs.');
+    });
+
+    it('keeps the symbol a create sends', async () => {
+      await create({ compCurrencySymbol: '₹' });
+
+      expect(createdData().compCurrencySymbol).toBe('₹');
+    });
+
+    it('is saved as sent on update, null included', async () => {
+      stored = companyRow({ compCurrencySymbol: 'Rs.' });
+
+      await update({ compCurrencySymbol: null });
+
+      expect(updatedData().compCurrencySymbol).toBeNull();
+    });
+  });
+
+  describe('legal name and seller address of a GSTIN holder (plan C8 / I1)', () => {
+    const REGISTERED: Partial<SaveCompanyMasterDto> = {
+      compGstRegType: 'REGULAR',
+      compLegalName: 'Zeta Traders Private Limited',
+      compAddr1: '12 Mount Road',
+      compCity: 'Chennai',
+      compPin: 600002,
+    };
+
+    it.each(['REGULAR', 'COMPOSITION', 'SEZ'])(
+      'refuses a %s company without them, one error per key, district not asked',
+      async (regType) => {
+        const refusal = await refusalOf(
+          create({ compGstRegType: regType, compStateCode: '', compDistrict: null }),
+        );
+
+        expect(refusal.status).toBe(400);
+        expect(errorsOf(refusal).map(({ field, code }) => ({ field, code }))).toEqual([
+          { field: 'compLegalName', code: CompanyMasterErrorCode.LEGAL_NAME_REQUIRED },
+          { field: 'compAddr1', code: CompanyMasterErrorCode.ADDRESS_REQUIRED },
+          { field: 'compCity', code: CompanyMasterErrorCode.ADDRESS_REQUIRED },
+          { field: 'compStateCode', code: CompanyMasterErrorCode.ADDRESS_REQUIRED },
+          { field: 'compPin', code: CompanyMasterErrorCode.ADDRESS_REQUIRED },
+        ]);
+        expect(prisma.company.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('counts blank text as missing', async () => {
+      const refusal = await refusalOf(
+        create({ ...REGISTERED, compLegalName: '  ', compCity: ' ' }),
+      );
+
+      expect(errorsOf(refusal).map(({ field }) => field)).toEqual(['compLegalName', 'compCity']);
+    });
+
+    it('saves a REGULAR company that has them all, without a district', async () => {
+      await create({ ...REGISTERED, compDistrict: null });
+
+      expect(createdData()).toMatchObject({
+        compLegalName: 'Zeta Traders Private Limited',
+        compAddr1: '12 Mount Road',
+        compCity: 'Chennai',
+        compPin: 600002,
+      });
+    });
+
+    it.each([undefined, null, 'UNREGISTERED'])(
+      'asks nothing of a company whose registration is %p',
+      async (regType) => {
+        await create({ compGstRegType: regType });
+
+        expect(prisma.company.create).toHaveBeenCalled();
+      },
+    );
+
+    it('judges an update by what the company will hold: unsent keys keep the stored ones', async () => {
+      stored = companyRow({
+        compGstRegType: 'REGULAR',
+        compLegalName: 'Zeta Traders Private Limited',
+        compAddr1: '12 Mount Road',
+        compCity: 'Chennai',
+        compPin: 600002,
+      });
+
+      await update({ compPhone: '9840012345' });
+
+      expect(prisma.company.update).toHaveBeenCalled();
+    });
+
+    it('refuses an update that clears a key of a stored REGULAR company', async () => {
+      stored = companyRow({
+        compGstRegType: 'REGULAR',
+        compLegalName: 'Zeta Traders Private Limited',
+        compAddr1: '12 Mount Road',
+        compCity: 'Chennai',
+        compPin: 600002,
+      });
+
+      const refusal = await refusalOf(update({ compCity: null, compPin: null }));
+
+      expect(errorsOf(refusal)).toEqual([
+        {
+          field: 'compCity',
+          code: CompanyMasterErrorCode.ADDRESS_REQUIRED,
+          message:
+            'compCity is required for a REGULAR company (the e-invoice / e-way seller address)',
+        },
+        expect.objectContaining({
+          field: 'compPin',
+          code: CompanyMasterErrorCode.ADDRESS_REQUIRED,
+        }),
+      ]);
+      expect(prisma.company.update).not.toHaveBeenCalled();
+      expect(branches.syncOnlyBranch).not.toHaveBeenCalled();
+    });
+
+    it('refuses an update that makes a bare company REGULAR', async () => {
+      stored = companyRow({ compGstRegType: 'UNREGISTERED' });
+
+      const refusal = await refusalOf(update({ compGstRegType: 'REGULAR' }));
+
+      expect(errorsOf(refusal).map(({ field }) => field)).toEqual([
+        'compLegalName',
+        'compAddr1',
+        'compCity',
+        'compPin',
+      ]);
+    });
+
+    it.each([99999, 1000000, 0, 12345])(
+      'refuses the pin %p, whatever the registration',
+      async (pin) => {
+        const refusal = await refusalOf(create({ compPin: pin }));
+
+        expect(errorsOf(refusal)).toEqual([
+          {
+            field: 'compPin',
+            code: CompanyMasterErrorCode.PIN_INVALID,
+            message: `compPin must be 6 digits, 100000 to 999999; it is ${pin}`,
+          },
+        ]);
+      },
+    );
+
+    it('reports a bad pin of a REGULAR company as a bad pin, not a missing one', async () => {
+      const refusal = await refusalOf(create({ ...REGISTERED, compPin: 60002 }));
+
+      expect(errorsOf(refusal).map(({ code }) => code)).toEqual([
+        CompanyMasterErrorCode.PIN_INVALID,
+      ]);
+    });
+
+    it('accepts the pin limits', async () => {
+      await create({ compPin: 100000 });
+      await create({ compPin: 999999 });
+
+      expect(prisma.company.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('the Udyam No (plan 18/11)', () => {
+    it('saves one of the form UDYAM-XX-00-0000000', async () => {
+      const payload = await create({ compUdyamNo: 'UDYAM-TN-01-0012345' });
+
+      expect(createdData().compUdyamNo).toBe('UDYAM-TN-01-0012345');
+      expect(payload.compUdyamNo).toBe('UDYAM-TN-01-0012345');
+    });
+
+    it.each([
+      'UDYAM-TN-1-0012345',
+      'UDYAM-T1-01-0012345',
+      'UDYAM-TN-01-001234',
+      'UDYAM-TN-01-00123456',
+      'TN-01-0012345',
+      'UDYAM TN 01 0012345',
+    ])('refuses %p', async (value) => {
+      const refusal = await refusalOf(create({ compUdyamNo: value }));
+
+      expect(errorsOf(refusal)).toEqual([
+        {
+          field: 'compUdyamNo',
+          code: CompanyMasterErrorCode.UDYAM_INVALID,
+          message: 'compUdyamNo must look like UDYAM-XX-00-0000000',
+        },
+      ]);
+    });
+
+    it('clears it with null and keeps it when not sent', async () => {
+      stored = companyRow({ compUdyamNo: 'UDYAM-TN-01-0012345' });
+
+      await update({ compUdyamNo: null });
+      await update();
+
+      expect(updatedData().compUdyamNo).toBeNull();
+      expect(
+        (prisma.company.update.mock.calls[1][0] as { data: Record<string, unknown> }).data,
+      ).not.toHaveProperty('compUdyamNo');
+    });
+  });
+
+  describe('the logo (plan 18/11: the signature’s rules, its own codes)', () => {
+    it.each([
+      ['PNG', PNG, 'image/png'],
+      ['JPEG', JPEG, 'image/jpeg'],
+      ['GIF', GIF, 'image/gif'],
+      ['WebP', WEBP, 'image/webp'],
+    ])('stores bare %s base64 as a data URL of its kind', async (_label, base64, type) => {
+      const payload = await create({ compLogo: base64 });
+
+      expect(createdData().compLogo).toBe(`data:${type};base64,${base64}`);
+      expect(payload.compLogo).toBe(`data:${type};base64,${base64}`);
+    });
+
+    it.each([
+      [
+        'a data URL that is not base64',
+        'data:image/png,abc',
+        CompanyMasterErrorCode.LOGO_NOT_BASE64,
+      ],
+      [
+        'characters outside base64',
+        `${PNG.slice(0, -4)}@@@@`,
+        CompanyMasterErrorCode.LOGO_NOT_BASE64,
+      ],
+      [
+        'an image over 512 KB',
+        Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(512 * 1024)]).toString(
+          'base64',
+        ),
+        CompanyMasterErrorCode.LOGO_TOO_LARGE,
+      ],
+      [
+        'bytes that are no supported image',
+        Buffer.from('hello world!').toString('base64'),
+        CompanyMasterErrorCode.LOGO_NOT_IMAGE,
+      ],
+    ])('refuses %s', async (_label, value, code) => {
+      const refusal = await refusalOf(create({ compLogo: value }));
+
+      expect(refusal.status).toBe(400);
+      expect(errorsOf(refusal)).toEqual([expect.objectContaining({ field: 'compLogo', code })]);
+      expect((refusal.body as { message: string }).message).toBe('Invalid logo image');
+    });
+
+    it('clears it with "" and keeps it when not sent', async () => {
+      stored = companyRow({ compLogo: `data:image/png;base64,${PNG}` });
+
+      await update({ compLogo: '' });
+      await update();
+
+      expect(updatedData().compLogo).toBeNull();
+      expect(
+        (prisma.company.update.mock.calls[1][0] as { data: Record<string, unknown> }).data,
+      ).not.toHaveProperty('compLogo');
+    });
+  });
+
+  describe('the authorised signatory name (plan 18/11 Q2)', () => {
+    it('saves and returns it', async () => {
+      const payload = await create({ compSignatoryName: 'R. Kumar, Proprietor' });
+
+      expect(createdData().compSignatoryName).toBe('R. Kumar, Proprietor');
+      expect(payload).toMatchObject({
+        compSignatoryName: 'R. Kumar, Proprietor',
+        compUdyamNo: null,
+        compLogo: null,
+      });
+    });
+  });
+
+  describe('the only branch follows its company (plan C9b)', () => {
+    it('hands the company before and after the save to the branch service inside the transaction', async () => {
+      stored = companyRow({ compCity: 'Chennai' });
+
+      await update({ compCity: 'Madurai' });
+
+      // The branch takes only what changed between the two (user 19/11).
+      expect(branches.syncOnlyBranch).toHaveBeenCalledWith(
+        prisma,
+        stored,
+        expect.objectContaining({ compId: COMPANY_ID, compCity: 'Madurai' }),
+        USER_ID,
+        expect.any(Date),
+      );
+      expect(branches.syncOnlyBranch.mock.invocationCallOrder[0]).toBeGreaterThan(
+        prisma.company.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not run on create, where the Main Branch is seeded instead', async () => {
+      await create();
+
+      expect(branches.syncOnlyBranch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('update', () => {
     it('refuses an id with no live company', async () => {
       const refusal = await refusalOf(update());
@@ -676,7 +1120,7 @@ describe('CompanyMasterService', () => {
       ]);
     });
 
-    it('ignores the year dates and lock date, and reports the current year instead (C2)', async () => {
+    it('ignores the year dates and reports the current year (C2), but saves the lock date (18/11)', async () => {
       stored = companyRow();
       prisma.fiscalYear.findFirst.mockResolvedValue(
         yearRow({ fyBooksBeginDate: day('2026-05-01'), fyLockDate: day('2026-06-30') }),
@@ -686,7 +1130,7 @@ describe('CompanyMasterService', () => {
         compFinYearFrom: day('2020-01-01'),
         compFinYearTo: day('2020-12-31'),
         compBooksBeginFrom: day('2020-02-01'),
-        compBooksLockDate: day('2020-01-31'),
+        compBooksLockDate: day('2026-09-30'),
       });
 
       expect(updatedData()).toEqual({
@@ -695,6 +1139,7 @@ describe('CompanyMasterService', () => {
         compStylesheetId: undefined,
         compModifiedOn: expect.any(Date),
         compModifiedBy: USER_ID,
+        compBooksLockDate: day('2026-09-30'),
       });
       expect(prisma.fiscalYear.create).not.toHaveBeenCalled();
       expect(prisma.fiscalYear.findFirst).toHaveBeenCalledWith({
@@ -704,7 +1149,8 @@ describe('CompanyMasterService', () => {
         compFinYearFrom: day('2026-04-01').toISOString(),
         compFinYearTo: day('2027-03-31').toISOString(),
         compBooksBeginFrom: day('2026-05-01').toISOString(),
-        compBooksLockDate: day('2026-06-30').toISOString(),
+        // The company's own column, not the year's fy_lock_date (2026-06-30).
+        compBooksLockDate: day('2026-09-30').toISOString(),
       });
     });
 
@@ -777,7 +1223,8 @@ describe('CompanyMasterService', () => {
         ...companyRow({ compBankId: BANK_ID, compStylesheetId: 4 }),
         stylesheet: { thmName: 'Ocean' },
       } as Company;
-      prisma.fiscalYear.findFirst.mockResolvedValue(yearRow());
+      // The year's whole-year lock is not the company's Books Lock Date.
+      prisma.fiscalYear.findFirst.mockResolvedValue(yearRow({ fyLockDate: day('2026-06-30') }));
 
       const payload = await service.getById(COMPANY_ID);
 

@@ -80,6 +80,12 @@ export interface CompanyMasterPayload {
   compLocaleCode: string;
   compRemarks: string | null;
   compAuthorizeSignature: string | null;
+  /** Plan 18/11: UDYAM-XX-00-0000000, upper case. */
+  compUdyamNo: string | null;
+  /** Plan 18/11: the logo as a data URL (data:image/png;base64,...). */
+  compLogo: string | null;
+  /** Plan 18/11: the authorised signatory's name and designation. */
+  compSignatoryName: string | null;
   compIsDeleted: boolean;
   compSyncDate: string | null;
   compCreatedOn: string;

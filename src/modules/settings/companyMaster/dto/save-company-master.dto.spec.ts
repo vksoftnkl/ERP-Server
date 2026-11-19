@@ -74,4 +74,35 @@ describe('SaveCompanyMasterDto', () => {
   it('refuses a negative intra-state e-way limit', () => {
     expect(erroredFields({ compEwayIntraLimit: -1 })).toEqual(['compEwayIntraLimit']);
   });
+
+  it('lets a blank or null state through as "", for the service to word (plan I1)', () => {
+    expect(dtoOf({ compStateCode: null }).compStateCode).toBe('');
+    expect(dtoOf({ compStateCode: '  ' }).compStateCode).toBe('');
+    expect(erroredFields({ compStateCode: null })).toEqual([]);
+    expect(erroredFields({ compStateCode: '' })).toEqual([]);
+    expect(erroredFields({ compStateCode: 'T' })).toEqual(['compStateCode']);
+  });
+
+  it('reads the pin as a number and lets it be null', () => {
+    expect(dtoOf({ compPin: '600002' }).compPin).toBe(600002);
+    expect(erroredFields({ compPin: null })).toEqual([]);
+    expect(erroredFields({ compPin: 'six' })).toEqual(['compPin']);
+  });
+
+  it('trims and upper-cases the Udyam No, and turns blank into null (plan 18/11)', () => {
+    const dto = dtoOf({ compUdyamNo: ' udyam-tn-01-0012345 ' });
+
+    expect(validateSync(dto)).toEqual([]);
+    expect(dto.compUdyamNo).toBe('UDYAM-TN-01-0012345');
+    expect(dtoOf({ compUdyamNo: '' }).compUdyamNo).toBeNull();
+  });
+
+  it('takes the logo as text and holds the signatory name to 100 characters', () => {
+    expect(erroredFields({ compLogo: 'data:image/png;base64,AAAA' })).toEqual([]);
+    expect(dtoOf({ compLogo: '' }).compLogo).toBeNull();
+    expect(dtoOf({ compSignatoryName: ' R. Kumar, Proprietor ' }).compSignatoryName).toBe(
+      'R. Kumar, Proprietor',
+    );
+    expect(erroredFields({ compSignatoryName: 'x'.repeat(101) })).toEqual(['compSignatoryName']);
+  });
 });

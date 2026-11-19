@@ -20,6 +20,7 @@ import {
   throwSettingsNotFound,
   toNullableNumber,
   toNumber,
+  violatedConstraintOf,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import {
@@ -27,6 +28,14 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
+import { lockCodeSeries } from '../shared/code-series-lock';
+import {
+  PIN_MAX,
+  PIN_MIN,
+  isBlank,
+  isGstRegistered,
+  isValidPin,
+} from '../shared/registered-address';
 import { CompanyMasterErrorCode } from './types/company-master-error-codes';
 import { BranchMasterService } from '../branchMaster/branch-master.service';
 
@@ -66,8 +75,12 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compSupportPhone',
   'compWebsiteName',
   // compFinYearFrom / compFinYearTo / compBooksBeginFrom seed the first fiscal
-  // year on create and are ignored on update; compBooksLockDate is ignored
-  // always — the year owns its dates and its lock (notes 72 A1 / C2).
+  // year on create and are ignored on update — the year owns its dates (notes
+  // 72 A1 / C2).
+  // Plan 18/11 Q1: the Books Lock Date is the company's own column again,
+  // saved and returned as sent; nothing enforces it yet (the next job). The
+  // year's fy_lock_date (a whole-year lock) is not touched here.
+  'compBooksLockDate',
   'compGstApplicable',
   'compTcsApplicable',
   'compTdsApplicable',
@@ -93,8 +106,65 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compCurrencySymbol',
   'compLocaleCode',
   'compRemarks',
-  // compAuthorizeSignature is validated and normalised on its own (C5).
+  'compUdyamNo',
+  'compSignatoryName',
+  // compAuthorizeSignature and compLogo are validated and normalised on their
+  // own (C5, plan 18/11).
 ];
+/** Plan I1 — what a GSTIN holder's seller address must have, in screen order. */
+const COMPANY_ADDRESS_KEYS = ['compAddr1', 'compCity', 'compStateCode', 'compPin'] as const;
+/** Plan 18/11 — the Udyam (MSME) registration number. */
+const UDYAM_PATTERN = /^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$/;
+/** Plan C5 — what a new company's currency symbol is when none is sent. */
+export const DEFAULT_CURRENCY_SYMBOL = 'Rs.';
+
+/** Plan C1 — the words a generated company code skips. */
+const CODE_SKIP_WORDS: ReadonlySet<string> = new Set([
+  'PRIVATE',
+  'PVT',
+  'LIMITED',
+  'LTD',
+  'THE',
+  'AND',
+  '&',
+]);
+const CODE_MIN_LENGTH = 3;
+const CODE_MAX_LENGTH = 6;
+
+/**
+ * Plan C1 (18/11) — the code a company gets when none is typed: the initials
+ * of its name's words (PRIVATE, PVT, LIMITED, LTD, THE, AND and & skipped;
+ * each word kept to A-Z 0-9), at most 6, padded to at least 3 with the next
+ * letters of the first word (then of the next ones). "MT Demo Traders" → MDT,
+ * "SUGI TRADERS" → STU. null when the name holds no A-Z / 0-9 at all. The
+ * caller adds 2, 3, … while the code is taken.
+ */
+export function companyCodeBase(name: string): string | null {
+  const words = name
+    .toUpperCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^A-Z0-9]/g, ''))
+    .filter(Boolean);
+  const kept = words.filter((word) => !CODE_SKIP_WORDS.has(word));
+  // A name made of skip words only ("The Limited") still gets a code.
+  const source = kept.length ? kept : words;
+  if (!source.length) {
+    return null;
+  }
+  let code = source
+    .map((word) => word[0])
+    .join('')
+    .slice(0, CODE_MAX_LENGTH);
+  for (const word of source) {
+    for (let i = 1; i < word.length && code.length < CODE_MIN_LENGTH; i++) {
+      code += word[i];
+    }
+    if (code.length >= CODE_MIN_LENGTH) {
+      break;
+    }
+  }
+  return code;
+}
 
 /**
  * What keeps a company from being deleted (notes 72 B2). Its FKs are RESTRICT,
@@ -123,9 +193,9 @@ const COMPANY_DELETE_REFERENCES: readonly LiveReference[] = [
   },
 ];
 
-/** C5 — the signature image: at most this many bytes once decoded. */
+/** C5 — a company image (signature, logo): at most this many bytes once decoded. */
 const SIGNATURE_MAX_BYTES = 512 * 1024;
-/** C5 — the image kinds a signature may be, told by their first bytes. */
+/** C5 — the image kinds a company image may be, told by their first bytes. */
 const SIGNATURE_IMAGE_TYPES: ReadonlyArray<readonly [string, (bytes: Buffer) => boolean]> = [
   ['image/png', (b) => b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))],
   ['image/jpeg', (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
@@ -137,6 +207,30 @@ const SIGNATURE_IMAGE_TYPES: ReadonlyArray<readonly [string, (bytes: Buffer) => 
       b.subarray(8, 12).toString('latin1') === 'WEBP',
   ],
 ];
+/** Which field a company image arrives in, and the codes its refusals carry. */
+interface CompanyImageRule {
+  field: 'compAuthorizeSignature' | 'compLogo';
+  title: string;
+  notBase64: CompanyMasterErrorCode;
+  tooLarge: CompanyMasterErrorCode;
+  notImage: CompanyMasterErrorCode;
+}
+/** Notes 72 C5 — the authorised signature image. */
+const SIGNATURE_IMAGE: CompanyImageRule = {
+  field: 'compAuthorizeSignature',
+  title: 'Invalid signature image',
+  notBase64: CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+  tooLarge: CompanyMasterErrorCode.SIGNATURE_TOO_LARGE,
+  notImage: CompanyMasterErrorCode.SIGNATURE_NOT_IMAGE,
+};
+/** Plan 18/11 — the company logo: the signature's rules, its own codes. */
+const LOGO_IMAGE: CompanyImageRule = {
+  field: 'compLogo',
+  title: 'Invalid logo image',
+  notBase64: CompanyMasterErrorCode.LOGO_NOT_BASE64,
+  tooLarge: CompanyMasterErrorCode.LOGO_TOO_LARGE,
+  notImage: CompanyMasterErrorCode.LOGO_NOT_IMAGE,
+};
 
 /** The first fiscal year a new company is created with (notes 72 A1). */
 interface FirstYear {
@@ -155,6 +249,48 @@ const aprilYearOf = (date: Date) =>
 const isFirstApril = (date: Date) => date.getUTCMonth() === 3 && date.getUTCDate() === 1;
 const isThirtyFirstMarch = (date: Date) => date.getUTCMonth() === 2 && date.getUTCDate() === 31;
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+
+/**
+ * Review N2 (19/11) — the 409 a unique-index race answers, by what the index
+ * covers (violatedConstraintOf: its columns or its name, e.g. `comp_code` or
+ * `companys_comp_code_key`). The Main Branch's br_code is seeded inside a
+ * company create and is made from the company code, so its clash points at
+ * compCode, never at the name.
+ */
+export function uniqueRaceDetail(target: string | null): CompanyMasterErrorDetail {
+  const covers = (column: string) =>
+    (target ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .includes(column);
+  if (covers('compcode')) {
+    return {
+      field: 'compCode',
+      message: 'Another company took this code at the same moment',
+      code: CompanyMasterErrorCode.CODE_DUPLICATE,
+    };
+  }
+  if (covers('compgstinno')) {
+    return {
+      field: 'compGstinNo',
+      message: 'Another company took this GSTIN at the same moment',
+      code: CompanyMasterErrorCode.GSTIN_DUPLICATE,
+    };
+  }
+  if (covers('brcode')) {
+    return {
+      field: 'compCode',
+      message:
+        'Another branch took the Main Branch code made from this company code at the same moment; save again',
+      code: CompanyMasterErrorCode.DUPLICATE,
+    };
+  }
+  return {
+    field: 'compName',
+    message: 'Duplicate company unique value is not allowed',
+    code: CompanyMasterErrorCode.DUPLICATE,
+  };
+}
 
 type CompanyWriteClient = SettingsWriteClient;
 @Injectable()
@@ -328,6 +464,7 @@ export class CompanyMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
+        this.assertRegistrationRules(saveCompanyMasterDto, null);
         const compStateCode = this.normalizeLengthCode(
           saveCompanyMasterDto.compStateCode,
           2,
@@ -339,9 +476,18 @@ export class CompanyMasterService {
           compStateCode,
           saveCompanyMasterDto.compPanNo ?? null,
         );
-        const signature = this.normalizeSignature(saveCompanyMasterDto.compAuthorizeSignature);
+        const signature = this.normalizeImage(
+          saveCompanyMasterDto.compAuthorizeSignature,
+          SIGNATURE_IMAGE,
+        );
+        const logo = this.normalizeImage(saveCompanyMasterDto.compLogo, LOGO_IMAGE);
+        // Plan C1 / C9a: one create at a time picks the next free company code
+        // and Main Branch code, so two creates never pick the same one.
+        await lockCodeSeries(tx);
         await this.ensureNameIsUnique(tx, compName);
-        await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
+        const typedCode = saveCompanyMasterDto.compCode ?? null;
+        await this.ensureCodeIsUnique(tx, typedCode);
+        const autoCode = typedCode ? null : await this.nextCompanyCode(tx, compName);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null);
         await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
         if (saveCompanyMasterDto.compDefault === true) {
@@ -361,11 +507,21 @@ export class CompanyMasterService {
           compCreatedBy: actor,
         };
         this.applyOptionalFields(data, saveCompanyMasterDto);
+        if (autoCode) {
+          data.compCode = autoCode;
+        }
+        // C5: the column default fills an omitted column only, not a sent null.
+        if (!data.compCurrencySymbol) {
+          data.compCurrencySymbol = DEFAULT_CURRENCY_SYMBOL;
+        }
         if (panFromGstin) {
           data.compPanNo = panFromGstin;
         }
         if (signature !== undefined) {
           data.compAuthorizeSignature = signature;
+        }
+        if (logo !== undefined) {
+          data.compLogo = logo;
         }
         const created = await tx.company.create({ data });
         // A1 — a company is usable from the moment it exists: the year list at
@@ -434,6 +590,7 @@ export class CompanyMasterService {
           this.throwNotFound(compId);
         }
         const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
+        this.assertRegistrationRules(saveCompanyMasterDto, existing);
         const compStateCode = this.normalizeLengthCode(
           saveCompanyMasterDto.compStateCode,
           2,
@@ -450,7 +607,11 @@ export class CompanyMasterService {
             ? saveCompanyMasterDto.compPanNo
             : existing.compPanNo,
         );
-        const signature = this.normalizeSignature(saveCompanyMasterDto.compAuthorizeSignature);
+        const signature = this.normalizeImage(
+          saveCompanyMasterDto.compAuthorizeSignature,
+          SIGNATURE_IMAGE,
+        );
+        const logo = this.normalizeImage(saveCompanyMasterDto.compLogo, LOGO_IMAGE);
         await this.ensureNameIsUnique(tx, compName, compId);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null, compId);
@@ -462,12 +623,14 @@ export class CompanyMasterService {
         if (saveCompanyMasterDto.compDefault === true) {
           await this.clearDefaultCompany(tx, compId);
         }
+        const now = new Date();
+        const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const data: Prisma.CompanyUncheckedUpdateInput = {
           compName,
           compStateCode,
           compStylesheetId: saveCompanyMasterDto.compStylesheetId,
-          compModifiedOn: new Date(),
-          compModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          compModifiedOn: now,
+          compModifiedBy: actor,
         };
         this.applyOptionalFields(data, saveCompanyMasterDto);
         if (panFromGstin) {
@@ -476,12 +639,18 @@ export class CompanyMasterService {
         if (signature !== undefined) {
           data.compAuthorizeSignature = signature;
         }
+        if (logo !== undefined) {
+          data.compLogo = logo;
+        }
         const updated = await tx.company.update({
           where: {
             compId,
           },
           data,
         });
+        // Plan C9b: while the company has only one live branch, that branch
+        // takes what this save changed (address / GSTIN group, phones, mail).
+        await this.branchMasterService.syncOnlyBranch(tx, existing, updated, actor, now);
         const year = await this.currentYear(tx, compId);
         const payload = this.toPayload(updated, undefined, year);
         await this.auditLogService.logEntityChange(
@@ -660,9 +829,10 @@ export class CompanyMasterService {
   }
   /**
    * @param year the company's current fiscal year. Its begin / end /
-   *   books-begin / lock date are what compFinYearFrom / compFinYearTo /
-   *   compBooksBeginFrom / compBooksLockDate report (notes 72 C2); without one
-   *   the companys columns are reported as stored.
+   *   books-begin dates are what compFinYearFrom / compFinYearTo /
+   *   compBooksBeginFrom report (notes 72 C2); without one the companys
+   *   columns are reported as stored. compBooksLockDate is always the
+   *   company's own column (plan 18/11 Q1), not the year's fy_lock_date.
    */
   private toPayload(
     record: Company,
@@ -677,7 +847,8 @@ export class CompanyMasterService {
     const booksBeginFrom = year
       ? (year.fyBooksBeginDate ?? year.fyBeginDate)
       : record.compBooksBeginFrom;
-    const booksLockDate = year ? year.fyLockDate : record.compBooksLockDate;
+    // Plan 18/11 Q1: the company's own Books Lock Date, as saved.
+    const booksLockDate = record.compBooksLockDate;
     return {
       compId: record.compId,
       compCode: record.compCode,
@@ -747,6 +918,9 @@ export class CompanyMasterService {
       compLocaleCode: record.compLocaleCode,
       compRemarks: record.compRemarks,
       compAuthorizeSignature: record.compAuthorizeSignature,
+      compUdyamNo: record.compUdyamNo,
+      compLogo: record.compLogo,
+      compSignatoryName: record.compSignatoryName,
       compIsDeleted: record.compIsDeleted,
       compSyncDate: record.compSyncDate ? record.compSyncDate.toISOString() : null,
       compCreatedOn: record.compCreatedOn.toISOString(),
@@ -755,13 +929,15 @@ export class CompanyMasterService {
       compModifiedBy: record.compModifiedBy,
     };
   }
+  /**
+   * A unique index the checks above did not catch (a race), told apart by
+   * what it covers (review N2, 19/11): the company code, the GSTIN, the Main
+   * Branch code seeded with a create (it is made from the company code), else
+   * the name.
+   */
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<CompanyMasterErrorDetail>(error, 'Company already exists', [
-      {
-        field: 'compName',
-        message: 'Duplicate company unique value is not allowed',
-        code: CompanyMasterErrorCode.DUPLICATE,
-      },
+      uniqueRaceDetail(violatedConstraintOf(error)),
     ]);
   }
   /** The company's current fiscal year, if it has one. */
@@ -906,60 +1082,137 @@ export class CompanyMasterService {
     return check.panFromGstin;
   }
   /**
-   * Notes 72 C5 — the authorised signature, as a data URL of a real image.
-   * Accepts a data URL or bare base64; the image kind is read from the bytes,
-   * not from what the caller claims. undefined = not sent (kept), null / "" =
-   * cleared.
+   * Notes 72 C5 — a company image (the authorised signature; the logo since
+   * plan 18/11), as a data URL of a real image. Accepts a data URL or bare
+   * base64; the image kind is read from the bytes, not from what the caller
+   * claims. undefined = not sent (kept), null / "" = cleared. Each field
+   * refuses under its own codes (`rule`).
    */
-  private normalizeSignature(value: string | null | undefined): string | null | undefined {
+  private normalizeImage(
+    value: string | null | undefined,
+    rule: CompanyImageRule,
+  ): string | null | undefined {
     if (value === undefined) {
       return undefined;
     }
     if (value === null || !value.trim()) {
       return null;
     }
-    const field = 'compAuthorizeSignature';
+    const { field, title } = rule;
     const dataUrl = /^data:([^;,]*)((?:;[^;,]*)*),(.*)$/s.exec(value.trim());
     if (dataUrl && !dataUrl[2].split(';').includes('base64')) {
-      this.throwBadRequest('Invalid signature image', [
+      this.throwBadRequest(title, [
         {
           field,
           message: `${field} must be base64-encoded`,
-          code: CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+          code: rule.notBase64,
         },
       ]);
     }
     const base64 = (dataUrl ? dataUrl[3] : value).replace(/\s+/g, '');
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length % 4 !== 0) {
-      this.throwBadRequest('Invalid signature image', [
+      this.throwBadRequest(title, [
         {
           field,
           message: `${field} must be valid base64 content`,
-          code: CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+          code: rule.notBase64,
         },
       ]);
     }
     const bytes = Buffer.from(base64, 'base64');
     if (bytes.length > SIGNATURE_MAX_BYTES) {
-      this.throwBadRequest('Invalid signature image', [
+      this.throwBadRequest(title, [
         {
           field,
           message: `${field} must be at most ${SIGNATURE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes.length / 1024)} KB`,
-          code: CompanyMasterErrorCode.SIGNATURE_TOO_LARGE,
+          code: rule.tooLarge,
         },
       ]);
     }
     const type = SIGNATURE_IMAGE_TYPES.find(([, isType]) => isType(bytes))?.[0];
     if (!type) {
-      this.throwBadRequest('Invalid signature image', [
+      this.throwBadRequest(title, [
         {
           field,
           message: `${field} must be a PNG, JPEG, GIF or WebP image`,
-          code: CompanyMasterErrorCode.SIGNATURE_NOT_IMAGE,
+          code: rule.notImage,
         },
       ]);
     }
     return `data:${type};base64,${bytes.toString('base64')}`;
+  }
+  /**
+   * Plan C8 / I1 (18/11) and the pin / Udyam forms, against what the company
+   * will hold after this save (on update a key not sent keeps the stored
+   * value). A REGULAR, COMPOSITION or SEZ company needs its Legal Name and the
+   * seller address of an e-invoice / e-way bill: one COMPANY_ADDRESS_REQUIRED
+   * per missing key, `field` = that key. A pin or Udyam No that is SENT must
+   * have its form. Every refusal comes back in one 400, in screen order.
+   */
+  private assertRegistrationRules(dto: SaveCompanyMasterDto, existing: Company | null): void {
+    const sent = dto as unknown as Record<string, unknown>;
+    const stored = existing as unknown as Record<string, unknown> | null;
+    const after = (key: string): unknown =>
+      sent[key] !== undefined ? sent[key] : stored ? stored[key] : null;
+    const errors: CompanyMasterErrorDetail[] = [];
+    const regType = after('compGstRegType') as string | null;
+    if (isGstRegistered(regType)) {
+      if (isBlank(after('compLegalName'))) {
+        errors.push({
+          field: 'compLegalName',
+          message: `compLegalName is required for a ${regType} company`,
+          code: CompanyMasterErrorCode.LEGAL_NAME_REQUIRED,
+        });
+      }
+      for (const key of COMPANY_ADDRESS_KEYS) {
+        if (isBlank(after(key))) {
+          errors.push({
+            field: key,
+            message: `${key} is required for a ${regType} company (the e-invoice / e-way seller address)`,
+            code: CompanyMasterErrorCode.ADDRESS_REQUIRED,
+          });
+        }
+      }
+    }
+    if (typeof dto.compPin === 'number' && !isValidPin(dto.compPin)) {
+      errors.push({
+        field: 'compPin',
+        message: `compPin must be 6 digits, ${PIN_MIN} to ${PIN_MAX}; it is ${dto.compPin}`,
+        code: CompanyMasterErrorCode.PIN_INVALID,
+      });
+    }
+    if (typeof dto.compUdyamNo === 'string' && !UDYAM_PATTERN.test(dto.compUdyamNo)) {
+      errors.push({
+        field: 'compUdyamNo',
+        message: 'compUdyamNo must look like UDYAM-XX-00-0000000',
+        code: CompanyMasterErrorCode.UDYAM_INVALID,
+      });
+    }
+    if (errors.length) {
+      this.throwBadRequest('Validation failed', errors);
+    }
+  }
+  /**
+   * Plan C1 — the code for a company created without one: companyCodeBase()
+   * of its name, then 2, 3, … until no company (deleted ones included: the
+   * unique index covers them) holds it in any case. null when the name gives
+   * no code.
+   */
+  private async nextCompanyCode(tx: CompanyWriteClient, compName: string): Promise<string | null> {
+    const base = companyCodeBase(compName);
+    if (!base) {
+      return null;
+    }
+    const rows = await tx.company.findMany({
+      where: { compCode: { startsWith: base, mode: 'insensitive' } },
+      select: { compCode: true },
+    });
+    const taken = new Set(rows.map((row) => (row.compCode ?? '').toUpperCase()));
+    let code = base;
+    for (let n = 2; taken.has(code); n++) {
+      code = `${base}${n}`;
+    }
+    return code;
   }
   private throwNotFound(compId: string): never {
     throwSettingsNotFound<CompanyMasterErrorDetail>(

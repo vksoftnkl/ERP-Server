@@ -23,6 +23,13 @@ export class CompanySeededMainBranchDto {
   @ApiProperty({ example: 'Main Branch' })
   brName!: string;
 
+  @ApiPropertyOptional({
+    example: 'MDT01',
+    nullable: true,
+    description: 'The company code + "01" (02, 03 … when taken); null when the company has no code.',
+  })
+  brCode!: string | null;
+
   @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac3' })
   gdlId!: string;
 
@@ -145,7 +152,10 @@ export class CompanyMasterPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   compBooksBeginFrom!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The company’s own Books Lock Date (comp_books_lock_date), as saved; not enforced yet.',
+  })
   compBooksLockDate!: string | null;
 
   @ApiProperty()
@@ -237,6 +247,18 @@ export class CompanyMasterPayloadDto {
     description: 'The signature image as a data URL (data:image/...;base64,...).',
   })
   compAuthorizeSignature!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'UDYAM-TN-01-0012345' })
+  compUdyamNo!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The company logo as a data URL (data:image/png;base64,...).',
+  })
+  compLogo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'R. Kumar, Proprietor' })
+  compSignatoryName!: string | null;
 
   @ApiProperty()
   compIsDeleted!: boolean;

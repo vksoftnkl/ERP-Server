@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import {
   NullableDate,
   NullableEmail,
@@ -10,9 +20,9 @@ import {
   NullableUpperString,
   NullableUuid,
   OptionalBoolean,
-  UpperString,
 } from 'src/common/dto/dtoDecorators';
 import { GST_REG_TYPES } from '../../shared/gst-registration';
+import { upperStateCode } from '../../shared/registered-address';
 
 /** Notes 72 C4: stored, and drives nothing yet. */
 const INFORMATIONAL =
@@ -47,7 +57,11 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableString(150)
   brMailingName?: string | null;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Off the Qt screen since 18/11; optional, kept when not sent.',
+  })
   @NullableString(100)
   brAlias?: string | null;
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
@@ -80,14 +94,28 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   brState?: string | null;
-  @ApiProperty({ maxLength: 2 })
-  @UpperString(2)
+  @ApiProperty({
+    maxLength: 2,
+    description:
+      'Two characters, upper-cased. Blank or null: 400 BRANCH_ADDRESS_REQUIRED (field ' +
+      'brStateCode) for a REGULAR / COMPOSITION / SEZ branch, else BRANCH_STATE_CODE_INVALID.',
+  })
+  @Transform(upperStateCode)
+  @ValidateIf((dto: SaveBranchMasterDto) => dto.brStateCode !== '')
+  @IsString()
+  @Length(2, 2)
   brStateCode!: string;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      '100000 – 999999 when given (400 BRANCH_PIN_INVALID). Required for a REGULAR / ' +
+      'COMPOSITION / SEZ branch (brGstRegType), as are brAddr1, brCity and brStateCode: one ' +
+      'BRANCH_ADDRESS_REQUIRED error per missing key, its field the key (plan I1). District is optional.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  brPin?: number;
+  brPin?: number | null;
   @ApiPropertyOptional({ maxLength: 60 })
   @IsOptional()
   @IsString()
@@ -132,10 +160,21 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableEmail(150)
   brMail?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true, description: INFORMATIONAL })
-  @NullableString(20)
+  @ApiPropertyOptional({
+    maxLength: 4,
+    nullable: true,
+    example: 'CBE',
+    description:
+      'What {BR} prints in bill numbers; blank = the Branch Code (plan B5). Trimmed and ' +
+      'upper-cased, then 1 – 4 letters or digits, else 400 BRANCH_BILL_PREFIX_INVALID.',
+  })
+  @NullableUpperMaxString()
   brBillPrefix?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true, description: INFORMATIONAL })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+  })
   @NullableString(20)
   brInvoiceSeriesPrefix?: string | null;
   @ApiPropertyOptional({ maxLength: 300, nullable: true, description: INFORMATIONAL })
@@ -144,10 +183,17 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ nullable: true, description: INFORMATIONAL })
   @NullableString()
   brTerms?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true, description: INFORMATIONAL })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+  })
   @NullableString(20)
   brRoundingMode?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: INFORMATIONAL })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+  })
   @NullableNumber()
   brRoundingValue?: number;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })

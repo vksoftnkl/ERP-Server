@@ -4369,7 +4369,7 @@ the e-invoice applicability rows in StatutoryLimit.']
   compDefault Boolean [not null, default: false]
   compIsActive Boolean [not null, default: true]
   compCurrencyCode String [not null, default: 'INR']
-  compCurrencySymbol String
+  compCurrencySymbol String [default: 'Rs.']
   compLocaleCode String [not null, default: 'en-IN']
   compRemarks String [default: '']
   compIsDeleted Boolean [not null, default: false]
@@ -4384,6 +4384,9 @@ the e-invoice applicability rows in StatutoryLimit.']
   compBooksLockDate DateTime
   compAuthorizeSignature String
   compTdsApplicable Boolean [not null, default: false, note: 'Notes 72 C1: a switch like compTcsApplicable (was free TEXT nothing read).']
+  compUdyamNo String [note: 'Udyam (MSME) No, UDYAM-XX-00-0000000 upper case; checked by the server.']
+  compLogo String [note: 'Logo as a data URL (base64): the same checks as compAuthorizeSignature.']
+  compSignatoryName String [note: 'Authorised signatory name + designation as printed, e.g. "R. Kumar, Proprietor".']
   stylesheet app_theme_master
   branches branch_master [not null]
   accGroupMasters acc_group_master [not null]

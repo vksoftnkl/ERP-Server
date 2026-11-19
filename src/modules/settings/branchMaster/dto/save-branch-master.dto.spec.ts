@@ -55,4 +55,24 @@ describe('SaveBranchMasterDto', () => {
     expect(dto.brFssaiValidUpto).toEqual(new Date('2027-01-31T00:00:00.000Z'));
     expect(erroredFields({ brDefaultGodownId: 'main' })).toEqual(['brDefaultGodownId']);
   });
+
+  it('lets a blank or null state through as "", for the service to word (plan I1)', () => {
+    expect(dtoOf({ brStateCode: null }).brStateCode).toBe('');
+    expect(erroredFields({ brStateCode: null })).toEqual([]);
+    expect(erroredFields({ brStateCode: '' })).toEqual([]);
+  });
+
+  it('trims and upper-cases the bill prefix, and turns blank into null (plan B5)', () => {
+    const dto = dtoOf({ brBillPrefix: ' cbe ' });
+
+    expect(validateSync(dto)).toEqual([]);
+    expect(dto.brBillPrefix).toBe('CBE');
+    expect(dtoOf({ brBillPrefix: '' }).brBillPrefix).toBeNull();
+    // Its form (1 – 4 letters or digits) is the service's BRANCH_BILL_PREFIX_INVALID.
+    expect(erroredFields({ brBillPrefix: 'TOO-LONG' })).toEqual([]);
+  });
+
+  it('lets the pin be null', () => {
+    expect(erroredFields({ brPin: null })).toEqual([]);
+  });
 });

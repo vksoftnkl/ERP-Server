@@ -71,17 +71,43 @@ CRUD API for the **company master** — the tenant / legal company entity that o
   transaction, OPEN and current, always 1 April – 31 March (the derivation of
   `prisma/seed/Fiscal_Year_Seed.sql`): the year beginning on `compFinYearFrom` (must be a 1 April),
   else ending on `compFinYearTo` (must be the following 31 March), else containing
-  `compBooksBeginFrom`, else today; books from `compBooksBeginFrom` (inside the year) or 1 April. On update those three and
-  `compBooksLockDate` are ignored; GET reports the current year's begin / end / books-begin / lock
-  date (C2).
+  `compBooksBeginFrom`, else today; books from `compBooksBeginFrom` (inside the year) or 1 April. On update those three
+  are ignored; GET reports the current year's begin / end / books-begin dates (C2).
+- **Books Lock Date (plan 18/11 Q1)** — `compBooksLockDate` is the company's own
+  `comp_books_lock_date`, saved and returned as sent (null clears it). Nothing enforces it yet
+  (the next job); it is not the year's `fy_lock_date`.
 - **GST (notes 72 C3 / C7)** — `compGstRegType` is REGULAR / COMPOSITION / UNREGISTERED / SEZ
   (`ck_comp_gst_reg_type`). The GSTIN's state digits must equal `compStateCode` and its PAN
   `compPanNo`; a blank PAN is filled from it.
 - **Also (notes 72)** — `compAatoClass`, `compDcPurposes`, `compTdsApplicable` (boolean since C1);
   `compAuthorizeSignature` is a PNG / JPEG / GIF / WebP of at most 512 KB, stored and returned as
   a data URL (C5).
-- A residual unique-constraint DB error is mapped by `handleWriteError` to a `compName`
-  conflict response.
+- **Company + Branch rework (plan 18/11, `admin/plan-company-branch-master-2026-11-18.md`)**
+  - *C1 code* — a create without `compCode` gets one from `compName` (`companyCodeBase`): the
+    initials of its words (PRIVATE, PVT, LIMITED, LTD, THE, AND, & skipped; A–Z 0–9 only), at
+    most 6, padded to 3 from the first word; `2`, `3`, … added while any company (deleted ones
+    too) holds it in any case ("MT Demo Traders" → MDT, MDT2). Creates queue on an advisory lock
+    so two never pick the same code. A typed code is kept as typed; update never generates one.
+  - *C5* — `compCurrencySymbol` blank or absent on create → `Rs.`.
+  - *C8 / I1* — a REGULAR / COMPOSITION / SEZ company needs `compLegalName`
+    (`COMPANY_LEGAL_NAME_REQUIRED`) and `compAddr1`, `compCity`, `compStateCode`, `compPin`
+    (one `COMPANY_ADDRESS_REQUIRED` per missing key, `field` = the key; district optional), judged
+    on what the row holds after the save. A sent `compPin` must be 100000–999999
+    (`COMPANY_PIN_INVALID`). All come back in one 400.
+  - *New fields* — `compUdyamNo` (upper-cased, `UDYAM-XX-00-0000000`, `COMPANY_UDYAM_INVALID`),
+    `compLogo` (the signature's image rules, `COMPANY_LOGO_NOT_BASE64 / _TOO_LARGE / _NOT_IMAGE`),
+    `compSignatoryName` (text, 100). The print block `company.profile` has `udyam_no`, `logo`,
+    `signatory_name`.
+  - *C9a* — the seeded Main Branch gets `brCode` = company code + `01` (`02`, `03` … when taken);
+    returned as `compMainBranch.brCode`. *C9b* — while the company has exactly one live branch,
+    a company update copies onto it only what that save changed, by group (user 19/11): tax
+    (GSTIN, reg type, PAN, state) + the whole address; the address alone; telephone, phone, mail
+    each alone. Same transaction, audited as a Branch Master update; nothing to copy, no write.
+- A residual unique-constraint DB error (a race) is mapped by `handleWriteError` /
+  `uniqueRaceDetail` by what the index covers (review N2, 19/11): `comp_code` →
+  `COMPANY_CODE_DUPLICATE` on `compCode`, `comp_gstin_no` → `COMPANY_GSTIN_DUPLICATE` on
+  `compGstinNo`, the seeded Main Branch's `br_code` → `COMPANY_DUPLICATE` on `compCode`, anything
+  else (the name) → `COMPANY_DUPLICATE` on `compName`.
 
 ## Audit logging
 

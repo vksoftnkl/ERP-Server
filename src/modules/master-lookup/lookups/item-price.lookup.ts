@@ -661,7 +661,11 @@ export class ItemPriceLookup {
           })
         : Promise.resolve(null),
       company_id
-        ? this.prisma.company.findFirst({ where: { compId: company_id } })
+        ? this.prisma.company.findFirst({
+            where: { compId: company_id },
+            // The row holds the logo and signature images (up to ~700 KB each).
+            select: { compGstApplicable: true, compNegStkApl: true },
+          })
         : Promise.resolve(null),
       customer_id && headline
         ? this.prisma.custItemRate.findFirst({

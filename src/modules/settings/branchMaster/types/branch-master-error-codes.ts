@@ -38,4 +38,14 @@ export enum BranchMasterErrorCode {
   GSTIN_STATE_MISMATCH = 'BRANCH_GSTIN_STATE_MISMATCH',
   /** brPanNo does not match the PAN inside brGstinNo. */
   PAN_GSTIN_MISMATCH = 'BRANCH_PAN_GSTIN_MISMATCH',
+  /**
+   * A REGULAR, COMPOSITION or SEZ branch lacks an address key the e-invoice /
+   * e-way seller block needs (plan I1, 18/11). One error per missing key;
+   * `field` is that key: brAddr1, brCity, brStateCode or brPin.
+   */
+  ADDRESS_REQUIRED = 'BRANCH_ADDRESS_REQUIRED',
+  /** brPin is given but is not 100000 – 999999. */
+  PIN_INVALID = 'BRANCH_PIN_INVALID',
+  /** brBillPrefix is not 1 – 4 letters or digits (plan B5). */
+  BILL_PREFIX_INVALID = 'BRANCH_BILL_PREFIX_INVALID',
 }

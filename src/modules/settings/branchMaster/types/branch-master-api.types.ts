@@ -18,6 +18,8 @@ export type BranchMasterSuccessResponse<
 export interface SeededMainBranch {
   brId: string;
   brName: string;
+  /** Plan C9a (18/11): the company code + "01" (02, 03 … when taken); null when the company has no code. */
+  brCode: string | null;
   gdlId: string;
   gdlName: string;
 }
