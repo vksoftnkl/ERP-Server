@@ -35,11 +35,15 @@ import { API_VERSION } from '../../../common/constants/api-version';
 
 // Notes 125 §3: no longer @Public — the SUPER ADMIN guard has to know who is calling, and an
 // anonymous caller could create users. Both clients send the login token on these routes.
+// Review list 11-19 S2: every route is also judged on the caller's Users & Rights (menu 58) row:
+// create = Create, update = Edit, delete = Delete, get = View (except the caller's own row).
 @ApiTags('User Administration')
 @ApiBearerAuth('access-token')
 @ApiForbiddenResponse({
   type: UserAdminErrorResponseDto,
   description:
+    'USER_RIGHT_CREATE / USER_RIGHT_EDIT / USER_RIGHT_DELETE / USER_RIGHT_VIEW (field userId) — the ' +
+    'caller lacks that right on Users & Rights (menu 58). ' +
     'USER_ROLE_RESERVED — only a SUPER ADMIN makes a user SUPER ADMIN, or changes / deletes one',
 })
 @CacheTTL(1)
@@ -53,7 +57,9 @@ export class UserAdministrationController {
   @ApiOperation({
     summary: 'Create or update user with menu permissions (by usrId presence)',
     description:
-      'Omit usrId to create a new user. Provide usrId to update. ' +
+      'Omit usrId to create a new user (menu 58 Create right). Provide usrId to update (menu 58 Edit ' +
+      "right, the caller's own row included: a user changes their own password through " +
+      'POST /auth/change-password). ' +
       'The menus array fully replaces existing menu assignments: omit the field entirely to leave menus unchanged on update.',
   })
   @ApiCreatedResponse({ type: UserAdminSuccessSingleDto })
@@ -73,7 +79,10 @@ export class UserAdministrationController {
 
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get user by id including all active menu permissions' })
+  @ApiOperation({
+    summary: 'Get user by id including all active menu permissions',
+    description: "The caller's own row needs no right; any other user's needs menu 58 View.",
+  })
   @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserAdminSuccessSingleDto })
   @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })
@@ -91,7 +100,10 @@ export class UserAdministrationController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete user and all their menu assignments by usrId' })
+  @ApiOperation({
+    summary: 'Soft delete user and all their menu assignments by usrId',
+    description: 'Needs menu 58 Delete right.',
+  })
   @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserAdminSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })

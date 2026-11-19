@@ -106,19 +106,25 @@ export class SaveChargeMasterDto {
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   chgIsActive?: boolean;
+  // Review list 11-19 S3: still declared only so an older client that sends them is not refused
+  // (the house ValidationPipe forbids undeclared keys). The server never reads them.
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
+    deprecated: true,
     description:
-      'Audit user who created the charge; defaults to the authenticated user when omitted',
+      'IGNORED. The server always records the signed-in user as the creator. Accepted only so ' +
+      'older clients that still send it keep working; do not send it.',
   })
   @OptionalUuid()
   chgCreatedBy?: string;
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
+    deprecated: true,
     description:
-      'Audit user who last modified the charge; defaults to the authenticated user when omitted',
+      'IGNORED. The server always records the signed-in user as the last modifier (nothing on ' +
+      'create). Accepted only so older clients that still send it keep working; do not send it.',
   })
   @OptionalUuid()
   chgModifiedBy?: string;

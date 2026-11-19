@@ -22,8 +22,10 @@ global guard then enforces those tokens on every non-public route.
 
 | File | Purpose |
 | --- | --- |
-| [auth.module.ts](auth.module.ts) | Module wiring — imports `UsersModule` + `ConfigModule`, **exports `TokenService` and `AuthSessionService`** for reuse (e.g. the global guard) |
-| [auth.controller.ts](auth.controller.ts) | HTTP routes (`login`, `refresh`) + Swagger docs; pulls `user-agent` / `x-app-version` headers off the request |
+| [auth.module.ts](auth.module.ts) | Module wiring — imports `UsersModule` + `ConfigModule` + `AuditLogModule` (change-password audit), **exports `TokenService` and `AuthSessionService`** for reuse (e.g. the global guard) |
+| [auth.controller.ts](auth.controller.ts) | HTTP routes (`login`, `refresh`, `change-password`) + Swagger docs; pulls `user-agent` / `x-app-version` headers off the request |
+| [dto/change-password.dto.ts](dto/change-password.dto.ts) | Change-password body (`currentPassword`, `newPassword`) and its response models |
+| [auth.change-password.spec.ts](auth.change-password.spec.ts) | Unit tests for `changePassword` |
 | [auth.service.ts](auth.service.ts) | Credential validation, scrypt password check, device resolution, token issuance orchestration, login-session persistence |
 | [auth-session.service.ts](auth-session.service.ts) | Redis-backed token session store — create, assert-active, and revoke |
 | [token.service.ts](token.service.ts) | Signs and verifies HS256 access/refresh tokens; defines the token claim/payload types |
@@ -39,13 +41,40 @@ global guard then enforces those tokens on every non-public route.
 
 ## Endpoints
 
-Both endpoints are marked `@Public()` (they bypass the global access-token guard) and return
-HTTP `200` with a [LoginResponseDto](dto/login-response.dto.ts).
+`login` and `refresh` are marked `@Public()` (they bypass the global access-token guard) and
+return HTTP `200` with a [LoginResponseDto](dto/login-response.dto.ts). `change-password` is NOT
+public: the user is the access token's.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/login` | Validate `usrLoginName` + `usrPassword`, issue a fresh access **and** refresh token, resolve/update the device, and record a login session. |
 | `POST` | `/refresh` | Exchange a still-active `refresh_token` for a new access token (the same refresh token is returned). |
+| `POST` | `/change-password` | The signed-in user changes their OWN password (review list 11-19, task 1). See below. |
+
+## Change password (review list 11-19, task 1)
+
+`POST /auth/change-password` `{ currentPassword, newPassword }` → `200 { success, message, data:
+{ usrId, usrPasswordChangedOn, usrMustChangePassword: false } }`
+([change-password.dto.ts](dto/change-password.dto.ts)).
+
+- The user comes from the token only. Any other body key (a `usrId`) is 400 `VALIDATION_WHITELIST`.
+- `currentPassword` is checked by the login's own `verifyPassword`; wrong → **400**
+  `AUTH_CURRENT_PASSWORD_WRONG` on `currentPassword` (a 400, not a 401, so a client does not
+  take it for an expired session).
+- `newPassword`: at least 4 characters (`MIN_NEW_PASSWORD_LENGTH`), spaces at either end not
+  counted, no other rule (U7) →
+  else 400 `AUTH_NEW_PASSWORD_TOO_SHORT`; equal to the current one → 400 `AUTH_NEW_PASSWORD_SAME`
+  (both on `newPassword`). Stored exactly as sent (no trim), as login reads it.
+- A user deactivated, deleted or locked since login → 401 `AUTH_USER_INACTIVE`.
+- On success: new scrypt hash, `usr_password_changed_on = now`, `usr_must_change_password = false`,
+  modified on/by = the user; one audit row (screen "User Administration", notes "Password changed
+  by the user (current password checked)") holding only the change date and the flag, never a
+  password or a hash. The write is keyed on the hash just verified, so a password changed
+  meanwhile is not overwritten. The calling session stays signed in.
+- **U9 hook:** `noteWrongCurrentPassword()` is where review step 5 counts wrong tries / locks after
+  5 in 15 minutes. Today it only logs (nothing counted, nothing locked).
+- Users & Rights' admin route (`/user-administration/create` with `usrId`) now needs the menu-58
+  Edit right even for the caller's own row, so this is the only self-service path.
 
 > There is **no logout endpoint**. Session revocation exists as `revokeAccessTokenSession` on
 > [auth-session.service.ts](auth-session.service.ts) (and the service is exported), but no HTTP

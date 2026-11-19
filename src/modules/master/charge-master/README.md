@@ -26,6 +26,11 @@ migration `20260724120000_create_charge_master`).
     `chgName`. It is unpaginated — the master is small by design.
 - **Soft delete** — sets `chg_is_deleted = true` / `chg_is_active = false`; rows
   are never physically removed and are excluded from all reads.
+- **Audit users are the server's** (review list 11-19 S3) — `chg_created_by` is
+  always the signed-in user, `chg_modified_by` too on update and delete; create
+  leaves `chg_modified_on` / `chg_modified_by` NULL. The body keys
+  `chgCreatedBy` / `chgModifiedBy` are still declared (older Qt sends them) but
+  ignored, so a client can no longer forge the creator.
 - **Enum-style fields** (`chgModule`, `chgRole`, `chgMethod`, `chgType`,
   `chgApplyOn`, `chgCostAlloc`) are upper-cased on input and validated against
   the value sets in `types/charge-master-api.types.ts` — by the DTO's `@IsIn`

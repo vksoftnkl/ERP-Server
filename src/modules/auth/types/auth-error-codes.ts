@@ -48,6 +48,15 @@ export enum AuthErrorCode {
   DEVICE_BLOCKED = 'AUTH_DEVICE_BLOCKED',
   /** Login device lookup: the device is inactive or deleted. */
   DEVICE_UNAVAILABLE = 'AUTH_DEVICE_UNAVAILABLE',
+  /**
+   * POST /auth/change-password (400, field `currentPassword`): the current password does not
+   * match. A 400, not a 401, so the client does not take it for an expired session.
+   */
+  CURRENT_PASSWORD_WRONG = 'AUTH_CURRENT_PASSWORD_WRONG',
+  /** POST /auth/change-password (400, field `newPassword`): under 6 characters, spaces at the ends not counted (U7). */
+  NEW_PASSWORD_TOO_SHORT = 'AUTH_NEW_PASSWORD_TOO_SHORT',
+  /** POST /auth/change-password (400, field `newPassword`): the new password is the current one. */
+  NEW_PASSWORD_SAME = 'AUTH_NEW_PASSWORD_SAME',
 }
 
 export interface AuthErrorDetail extends ModuleErrorDetail {

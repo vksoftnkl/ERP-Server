@@ -10,6 +10,12 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
+import {
+  grantMenuRights,
+  restoreMenuRights,
+  USERS_RIGHTS_MENU,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
 
 /**
  * The five transaction rights, end to end — and the capability that says where
@@ -58,8 +64,12 @@ describe('user_menus transaction rights + menu_verbs (e2e, live DB)', () => {
   let app: INestApplication;
   let http: ReturnType<typeof request>;
   let userId: string;
+  let rights: MenuRightsMemo | undefined;
 
   beforeAll(async () => {
+    // Review list 11-19 S2: /user-administration checks the caller's Users & Rights (58) row.
+    // tester1 holds none; granted here, put back exactly in afterAll (run --runInBand).
+    rights = await grantMenuRights(prisma, [USERS_RIGHTS_MENU], ACTOR);
     const claims: AccessTokenPayload = {
       sub: ACTOR,
       user_name: 'tester1',
@@ -108,6 +118,7 @@ describe('user_menus transaction rights + menu_verbs (e2e, live DB)', () => {
         userId,
       );
     }
+    await restoreMenuRights(prisma, rights);
     await app?.close();
     await prisma.$disconnect();
   }, 60_000);

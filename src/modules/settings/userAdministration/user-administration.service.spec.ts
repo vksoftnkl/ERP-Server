@@ -117,8 +117,26 @@ type PrismaMock = {
   employeeMaster: { findFirst: jest.Mock };
   company: { findFirst: jest.Mock };
   branchMaster: { findFirst: jest.Mock };
+  /** loadRights (common/posting/rights.ts): the caller's user_menus row for menu 58. */
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
+
+type Right = 'view' | 'create' | 'edit' | 'delete';
+/** A user_menus row as loadRights reads it: the rights named are true, every other flag false. */
+const rightsRow = (...granted: Right[]) => ({
+  um_can_view: granted.includes('view'),
+  um_can_create: granted.includes('create'),
+  um_can_edit: granted.includes('edit'),
+  um_can_delete: granted.includes('delete'),
+  um_can_print: false,
+  um_can_export: false,
+  um_can_post: false,
+  um_can_cancel: false,
+  um_can_amend: false,
+  um_can_override: false,
+  um_can_retender: false,
+});
 
 /**
  * What the four user_master reads of a save answer: the row being edited, the
@@ -177,6 +195,8 @@ describe('UserAdministrationService', () => {
       employeeMaster: { findFirst: jest.fn().mockResolvedValue(null) },
       company: { findFirst: jest.fn().mockResolvedValue({ compName: 'Zeta Traders' }) },
       branchMaster: { findFirst: jest.fn().mockResolvedValue({ brName: 'Main' }) },
+      // The caller holds all four menu-58 rights unless a test says otherwise.
+      $queryRaw: jest.fn().mockResolvedValue([rightsRow('view', 'create', 'edit', 'delete')]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     lookups({});
@@ -243,12 +263,20 @@ describe('UserAdministrationService', () => {
       expect(JSON.stringify(payload)).not.toContain('4321');
     });
 
-    it('stamps the default actor when no user is logged in', async () => {
+    // Review list 11-19 S2: a call with no user in the request context has no rights, exactly
+    // as a user with no menu-58 row (it used to save as DEFAULT_ACTOR).
+    it('refuses a create when no user is logged in (no user, no rights)', async () => {
       context.getUserId.mockReturnValue(null);
 
-      await create();
+      const refusal = await refusalOf(create());
 
-      expect(createdData().usrCreatedBy).toBe(DEFAULT_ACTOR);
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ field: 'userId', code: UserAdminErrorCode.RIGHT_CREATE }] },
+      });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.userMaster.create).not.toHaveBeenCalled();
+      expect(DEFAULT_ACTOR).toBeTruthy();
     });
 
     it('refuses a login name another live user holds, compared case-insensitively', async () => {
@@ -641,6 +669,123 @@ describe('UserAdministrationService', () => {
         }),
         prisma,
       );
+    });
+  });
+
+  // Review list 11-19 S2: the token alone used to be enough for every route here.
+  describe('menu-58 rights (review list 11-19 S2)', () => {
+    const OTHER_ID = '019c6f6c-be87-7a11-8905-36092c46f1aa';
+    const grant = (...granted: Right[]) =>
+      prisma.$queryRaw.mockResolvedValue([rightsRow(...granted)]);
+    const noRow = () => prisma.$queryRaw.mockResolvedValue([]);
+
+    it.each([
+      ['create', () => create(), UserAdminErrorCode.RIGHT_CREATE, ['view', 'edit', 'delete']],
+      ['update', () => update(), UserAdminErrorCode.RIGHT_EDIT, ['view', 'create', 'delete']],
+      [
+        'update of the caller themselves (password, rights)',
+        () => service.save({ usrId: CALLER_ID, usrLoginName: 'me', usrPassword: 'newpass1' }),
+        UserAdminErrorCode.RIGHT_EDIT,
+        ['view', 'create', 'delete'],
+      ],
+      [
+        'delete',
+        () => service.softDelete(USER_ID),
+        UserAdminErrorCode.RIGHT_DELETE,
+        ['view', 'create', 'edit'],
+      ],
+      [
+        'get of another user',
+        () => service.getById(USER_ID),
+        UserAdminErrorCode.RIGHT_VIEW,
+        ['create', 'edit', 'delete'],
+      ],
+    ] as [string, () => Promise<unknown>, UserAdminErrorCode, Right[]][])(
+      'refuses a %s without its right (403 %s), before anything is read or written',
+      async (_what, call, code, others) => {
+        lookups({ target: userRow() });
+        grant(...others);
+
+        const refusal = await refusalOf(call());
+
+        expect(refusal).toMatchObject({
+          status: 403,
+          body: { errors: [{ field: 'userId', code }] },
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.userMaster.findFirst).not.toHaveBeenCalled();
+        expect(prisma.userMaster.create).not.toHaveBeenCalled();
+        expect(prisma.userMaster.update).not.toHaveBeenCalled();
+        expect(prisma.userMaster.updateMany).not.toHaveBeenCalled();
+        expect(hashSecret).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses everything to a caller with no menu-58 row at all', async () => {
+      noRow();
+      lookups({ target: userRow() });
+
+      for (const call of [() => create(), () => update(), () => service.softDelete(USER_ID)]) {
+        expect((await refusalOf(call())).status).toBe(403);
+      }
+    });
+
+    it('reads the rights of the caller on menu 58', async () => {
+      await create();
+
+      const [, userIdArg, menuIdArg] = prisma.$queryRaw.mock.calls[0] as unknown[];
+      expect(userIdArg).toBe(CALLER_ID);
+      expect(menuIdArg).toBe(58);
+    });
+
+    it.each([
+      ['create', () => create(), ['create']],
+      ['update', () => update(), ['edit']],
+      ['delete', () => service.softDelete(USER_ID), ['delete']],
+    ] as [string, () => Promise<unknown>, Right[]][])(
+      'lets a %s through with only its own right',
+      async (_what, call, granted) => {
+        lookups({ target: userRow() });
+        grant(...granted);
+
+        await expect(call()).resolves.toBeDefined();
+      },
+    );
+
+    it("reads the caller's own row with no right at all (main window, My Profile)", async () => {
+      context.getUserId.mockReturnValue(USER_ID);
+      noRow();
+      prisma.userMaster.findFirst.mockResolvedValue({ ...userRow(), userMenus: [menuRow(7)] });
+
+      await expect(service.getById(USER_ID.toUpperCase())).resolves.toMatchObject({
+        usrId: USER_ID,
+      });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it("reads another user's row with the View right", async () => {
+      grant('view');
+      prisma.userMaster.findFirst.mockResolvedValue({
+        ...userRow({ usrId: OTHER_ID }),
+        userMenus: [],
+      });
+
+      await expect(service.getById(OTHER_ID)).resolves.toMatchObject({ usrId: OTHER_ID });
+    });
+
+    it('keeps the SUPER ADMIN rule on top of the right', async () => {
+      grant('view', 'create', 'edit', 'delete');
+      lookups({
+        target: userRow({ usrType: UserType.SUPER_ADMIN, usrLoginName: 'vk' }),
+        callerType: UserType.ADMIN,
+      });
+
+      const refusal = await refusalOf(update({ usrPassword: 'reset1' }));
+
+      expect(refusal).toMatchObject({
+        status: 403,
+        body: { errors: [{ code: UserAdminErrorCode.ROLE_RESERVED }] },
+      });
     });
   });
 

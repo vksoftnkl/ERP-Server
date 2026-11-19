@@ -15,6 +15,7 @@ import { BuildPolicyService } from '../app-version/services/build-policy.service
 import type { ClientInstallationService } from '../app-version/services/client-installation.service';
 import { ClientTrackingService } from '../app-version/services/client-tracking.service';
 import type { LegacyUsageService } from '../app-version/services/legacy-usage.service';
+import type { AuditLogService } from '../audit-log/audit-log.service';
 import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
@@ -308,6 +309,8 @@ describe('AuthService', () => {
       ),
       buildPolicy,
       authEpoch,
+      // Only /auth/change-password writes an audit row (auth.change-password.spec.ts).
+      { logEntityChange: jest.fn() } as unknown as AuditLogService,
     );
   });
   it('returns token when credentials are valid', async () => {

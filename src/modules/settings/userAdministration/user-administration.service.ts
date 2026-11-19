@@ -21,9 +21,14 @@ import { hashSecret } from 'src/common/utils/secret-hash.utils';
 import { UserAdminErrorCode, UserType } from './types/user-administration.enum';
 import { callerIsSuperAdmin } from './super-admin';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { assertMenuRight, MenuRight } from '../../../common/posting/rights';
 
 const USER_MASTER_TABLE_NAME = 'user_master';
 const USER_ADMIN_AUDIT_SCREEN_NAME = 'User Administration';
+/** Users & Rights (fixed.menu_master 58): every route here is judged on the caller's row for it. */
+export const USER_ADMIN_MENU_ID = 58;
+/** assertMenuRight codes: USER_RIGHT_VIEW / _CREATE / _EDIT / _DELETE (UserAdminErrorCode.RIGHT_*). */
+const USER_ADMIN_RIGHT_PREFIX = 'USER';
 
 type UserAdminWriteClient = SettingsWriteClient;
 
@@ -35,14 +40,28 @@ export class UserAdministrationService {
     private readonly requestContextService: RequestContextService,
   ) {}
 
+  // Review list 11-19 S2: the token alone used to be enough, so any signed-in user (a cashier)
+  // could set another user's password, raise a role or grant themselves menus. Now the caller
+  // needs the menu-58 right first, before any other check answers: Create for a new user, Edit
+  // for a save with usrId — the caller's own row included, since a user changes their own
+  // password through POST /auth/change-password (current password checked), not here.
   async save(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
     if (dto.usrId) {
+      await this.assertRight('edit', 'change users');
       return this.updateUser(dto);
     }
+    await this.assertRight('create', 'create users');
     return this.createUser(dto);
   }
 
+  // A user's own row is always readable: the main window loads the signed-in user's grants
+  // from it (MenuWindow::loadMyPermissions) and My Profile shows it. Anyone else's row needs
+  // the menu-58 View right (the Users & Rights screen: edit, Copy rights).
   async getById(usrId: string): Promise<UserAdminPayload> {
+    const callerId = this.requestContextService.getUserId();
+    if (!callerId || usrId.toLowerCase() !== callerId.toLowerCase()) {
+      await this.assertRight('view', 'open other users');
+    }
     const record = await this.prisma.userMaster.findFirst({
       where: { usrId, usrIsDeleted: false },
       include: {
@@ -100,6 +119,7 @@ export class UserAdministrationService {
   }
 
   async softDelete(usrId: string): Promise<{ usrId: string; deleted: true }> {
+    await this.assertRight('delete', 'delete users');
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.userMaster.findFirst({
         where: { usrId, usrIsDeleted: false },
@@ -306,6 +326,21 @@ export class UserAdministrationService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+
+  /**
+   * 403 USER_RIGHT_<RIGHT> (field `userId`) unless the caller holds `right` on
+   * Users & Rights (menu 58). No SUPER ADMIN bypass, as on every menu gate: the
+   * SUPER ADMIN rules below apply on top of this one, never instead of it.
+   */
+  private async assertRight(right: MenuRight, action: string): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContextService.getUserId(),
+      menuId: USER_ADMIN_MENU_ID,
+      right,
+      codePrefix: USER_ADMIN_RIGHT_PREFIX,
+      action,
+    });
   }
 
   /**

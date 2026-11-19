@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Req, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -11,6 +12,7 @@ import { clientInfoOf } from '../../common/client-info/client-info';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto, ChangePasswordResponseDto } from './dto/change-password.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -50,6 +52,27 @@ export class AuthController {
     @Req() request: Request,
   ): Promise<LoginResponseDto> {
     return this.authService.refresh(refreshTokenDto.refresh_token, clientInfoOf(request));
+  }
+  // Review list 11-19, task 1: NOT @Public — the user is the access token's.
+  @Post('change-password')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: "Change the signed-in user's own password (current password checked)",
+    description:
+      'The user comes from the access token only; a usrId in the body is refused ' +
+      '(VALIDATION_WHITELIST). 400 AUTH_CURRENT_PASSWORD_WRONG (field currentPassword), ' +
+      '400 AUTH_NEW_PASSWORD_TOO_SHORT / AUTH_NEW_PASSWORD_SAME (field newPassword), ' +
+      '401 AUTH_USER_INACTIVE when the account was deactivated, deleted or locked since login. ' +
+      'Clears usr_must_change_password; this session stays signed in.',
+  })
+  @ApiOkResponse({ type: ChangePasswordResponseDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+  async changePassword(@Body() dto: ChangePasswordDto): Promise<ChangePasswordResponseDto> {
+    const data = await this.authService.changePassword(dto);
+    return { success: true, message: 'Password changed', data };
   }
   private extractHeader(headerValue: string | string[] | undefined): string | null {
     if (typeof headerValue === 'string') {

@@ -218,8 +218,6 @@ describe('ChargeMasterService', () => {
         chgLedgerCode: LEDGER_ID,
         chgCreatedOn: expect.any(Date) as Date,
         chgCreatedBy: USER_ID,
-        chgModifiedOn: expect.any(Date) as Date,
-        chgModifiedBy: USER_ID,
         chgCode: 'FRT',
         chgRole: 'FREIGHT',
         chgType: 'ADD',
@@ -230,15 +228,24 @@ describe('ChargeMasterService', () => {
       });
     });
 
-    it('takes the body audit users over the request user', async () => {
+    // Review list 11-19 S3: a client could forge who made a charge. The body keys are still
+    // accepted (older Qt sends them) but never read.
+    it('ignores body audit users: the creator is always the request user', async () => {
       const other = '019c6f6c-be87-7a11-8905-36092c46f6aa';
 
       await service.save(saveDto({ chgCreatedBy: other, chgModifiedBy: other }));
 
-      expect(prisma.chargeMaster.create.mock.calls[0][0].data).toMatchObject({
-        chgCreatedBy: other,
-        chgModifiedBy: other,
-      });
+      const { data } = prisma.chargeMaster.create.mock.calls[0][0];
+      expect(data!.chgCreatedBy).toBe(USER_ID);
+      expect(JSON.stringify(data)).not.toContain(other);
+    });
+
+    it('leaves modified on / by empty on create', async () => {
+      await service.save(saveDto());
+
+      const { data } = prisma.chargeMaster.create.mock.calls[0][0];
+      expect(data).not.toHaveProperty('chgModifiedOn');
+      expect(data).not.toHaveProperty('chgModifiedBy');
     });
 
     it('stamps the default actor when there is no user at all', async () => {
@@ -501,6 +508,17 @@ describe('ChargeMasterService', () => {
       });
       expect(data).not.toHaveProperty('chgCreatedOn');
       expect(prisma.chargeMaster.create).not.toHaveBeenCalled();
+    });
+
+    it('ignores a body chgModifiedBy / chgCreatedBy on update: the modifier is the request user', async () => {
+      const other = '019c6f6c-be87-7a11-8905-36092c46f6aa';
+
+      await service.save(updateDto({ chgCreatedBy: other, chgModifiedBy: other }));
+
+      const { data } = prisma.chargeMaster.update.mock.calls[0][0];
+      expect(data!.chgModifiedBy).toBe(USER_ID);
+      expect(data).not.toHaveProperty('chgCreatedBy');
+      expect(JSON.stringify(data)).not.toContain(other);
     });
 
     // A stored rate retired since must not block an edit that leaves it alone.

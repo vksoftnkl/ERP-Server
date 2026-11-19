@@ -25,6 +25,8 @@ export const PAYMENT_MENU = 100;
 export const PHYSICAL_STOCK_MENU = 45;
 /** Stock Transfer ("Godown Transfer") — every /stock/transfer route (not /receive) since notes 153 E3. */
 export const STOCK_TRANSFER_MENU = 41;
+/** Users & Rights — every /user-administration route since review list 11-19 S2 (own-row GET excepted). */
+export const USERS_RIGHTS_MENU = 58;
 
 const FLAGS = [
   'um_can_view',

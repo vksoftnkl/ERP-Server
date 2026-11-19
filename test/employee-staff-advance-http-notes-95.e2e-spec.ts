@@ -17,6 +17,7 @@ import {
   prisma,
   type Masters,
 } from './helpers/payment-e2e';
+import { USERS_RIGHTS_MENU } from './helpers/menu-rights';
 
 /**
  * NOTES 95 — the acceptance list, over HTTP against the live database:
@@ -62,7 +63,8 @@ let empId: string;
 let ledId: string;
 
 beforeAll(async () => {
-  await fixtures.grantRights([PAYMENT_MENU]);
+  // Users & Rights (58): /user-administration checks the menu right since review list 11-19 S2.
+  await fixtures.grantRights([PAYMENT_MENU, USERS_RIGHTS_MENU]);
   masters = await loadMasters();
   app = await bootApp();
 });

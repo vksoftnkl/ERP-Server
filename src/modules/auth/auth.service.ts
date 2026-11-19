@@ -1,13 +1,16 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { DeviceMaster, Prisma, UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { ClientInfo, ClientPlatform } from '../../common/client-info/client-info';
 import { RequestContextService } from '../../common/request-context/request-context.service';
+import { hashSecret } from '../../common/utils/secret-hash.utils';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuthEpochService } from '../app-version/services/auth-epoch.service';
 import { BuildPolicyService } from '../app-version/services/build-policy.service';
 import { ClientTrackingService } from '../app-version/services/client-tracking.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { ChangePasswordDto, ChangePasswordResultDto } from './dto/change-password.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
@@ -27,6 +30,11 @@ type LoginRequestMetadata = {
 };
 /** Part B Step 2: the login body's `app_version`, superseded by the X-App-Version header. */
 export const LEGACY_LOGIN_APP_VERSION_FIELD = 'auth.login.app_version';
+/** Review list 11-19 U7: the only rule for a new password (spaces at either end not counted). */
+export const MIN_NEW_PASSWORD_LENGTH = 4;
+/** The audit screen a password change files under: the user's own row of Users & Rights. */
+const PASSWORD_AUDIT_SCREEN_NAME = 'User Administration';
+const PASSWORD_AUDIT_TABLE_NAME = 'user_master';
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -38,6 +46,7 @@ export class AuthService {
     private readonly clientTracking: ClientTrackingService,
     private readonly buildPolicy: BuildPolicyService,
     private readonly authEpoch: AuthEpochService,
+    private readonly auditLogService: AuditLogService,
   ) {}
   async login(
     loginAuthDto: LoginAuthDto,
@@ -265,6 +274,145 @@ export class AuthService {
       device_type: null,
     };
   }
+  /**
+   * POST /auth/change-password (review list 11-19, task 1): the signed-in user
+   * changes their OWN password. The user is the access token's, never a body
+   * key. The current password is checked with the same verifier as /auth/login
+   * (verifyPassword below), then:
+   *  - wrong current password → 400 AUTH_CURRENT_PASSWORD_WRONG (currentPassword);
+   *  - under 4 characters (U7, changed to 4 by the user 11-19) → 400 AUTH_NEW_PASSWORD_TOO_SHORT (newPassword);
+   *  - same as the current one → 400 AUTH_NEW_PASSWORD_SAME (newPassword);
+   *  - a user deleted / deactivated / locked since the token was issued →
+   *    401 AUTH_USER_INACTIVE (as /auth/refresh).
+   * On success the new hash is stored, usr_must_change_password cleared and one
+   * audit row written that holds the change date and the flag, never a password
+   * or a hash. The session that called stays signed in.
+   */
+  async changePassword(dto: ChangePasswordDto): Promise<ChangePasswordResultDto> {
+    const usrId = this.requestContextService.getUserId();
+    if (!usrId) {
+      // The guard already refuses a call without a token; this is the belt to its braces.
+      throw new UnauthorizedException(
+        authErrorBody(
+          'Missing or invalid Authorization header',
+          'authorization',
+          AuthErrorCode.AUTHORIZATION_MISSING,
+        ),
+      );
+    }
+    const user = await this.prisma.userMaster.findFirst({
+      where: { usrId, usrIsDeleted: false, usrIsActive: true, usrIsLocked: false },
+      select: {
+        usrId: true,
+        usrLoginName: true,
+        usrDisplayName: true,
+        usrPasswordHash: true,
+        usrPasswordChangedOn: true,
+        usrMustChangePassword: true,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException(
+        authErrorBody('User is no longer active', 'authorization', AuthErrorCode.USER_INACTIVE),
+      );
+    }
+    if (!(await this.verifyPassword(dto.currentPassword, user.usrPasswordHash))) {
+      this.noteWrongCurrentPassword(user);
+      throw new BadRequestException(
+        authErrorBody(
+          'The current password is wrong',
+          'currentPassword',
+          AuthErrorCode.CURRENT_PASSWORD_WRONG,
+        ),
+      );
+    }
+    if (dto.newPassword.trim().length < MIN_NEW_PASSWORD_LENGTH) {
+      throw new BadRequestException(
+        authErrorBody(
+          `The new password needs at least ${MIN_NEW_PASSWORD_LENGTH} characters`,
+          'newPassword',
+          AuthErrorCode.NEW_PASSWORD_TOO_SHORT,
+        ),
+      );
+    }
+    if (await this.verifyPassword(dto.newPassword, user.usrPasswordHash)) {
+      throw new BadRequestException(
+        authErrorBody(
+          'The new password is the same as the current one',
+          'newPassword',
+          AuthErrorCode.NEW_PASSWORD_SAME,
+        ),
+      );
+    }
+
+    const newHash = await hashSecret(dto.newPassword);
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      // Keyed on the hash just verified: a password changed by someone else in between
+      // (another session, an admin reset) is not overwritten on the strength of the old one.
+      const written = await tx.userMaster.updateMany({
+        where: { usrId, usrIsDeleted: false, usrPasswordHash: user.usrPasswordHash },
+        data: {
+          usrPasswordHash: newHash,
+          usrPasswordChangedOn: now,
+          usrMustChangePassword: false,
+          usrModifiedOn: now,
+          usrModifiedBy: usrId,
+        },
+      });
+      if (written.count === 0) {
+        throw new BadRequestException(
+          authErrorBody(
+            'The current password is wrong',
+            'currentPassword',
+            AuthErrorCode.CURRENT_PASSWORD_WRONG,
+          ),
+        );
+      }
+      // Only the two fields a change moves. No password, no hash (the admin route's audit
+      // keeps them out the same way: toPayloadWithoutMenus carries usrPinSet, never a hash).
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: PASSWORD_AUDIT_TABLE_NAME,
+          screenName: PASSWORD_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: usrId,
+          displayName: user.usrDisplayName?.trim() || user.usrLoginName,
+          originalRecord: {
+            usrPasswordChangedOn: user.usrPasswordChangedOn?.toISOString() ?? null,
+            usrMustChangePassword: user.usrMustChangePassword,
+          },
+          modifiedRecord: {
+            usrPasswordChangedOn: now.toISOString(),
+            usrMustChangePassword: false,
+          },
+          userId: usrId,
+          notes: 'Password changed by the user (current password checked)',
+        },
+        tx,
+      );
+    });
+    return {
+      usrId,
+      usrPasswordChangedOn: now.toISOString(),
+      usrMustChangePassword: false,
+    };
+  }
+
+  /**
+   * THE HOOK FOR U9 (review list 11-19, build step 5: "lock after 5 wrong in
+   * 15 minutes, admin unlocks"). A wrong current password on /auth/change-password
+   * is a guessed password like a failed login, so step 5 counts it here, beside
+   * incrementFailedLogin(). Deliberately log-only until then: nothing is counted
+   * and nothing locks.
+   */
+  private noteWrongCurrentPassword(user: Pick<UserMaster, 'usrId' | 'usrLoginName'>): void {
+    this.logger.warn(
+      `Change password refused for '${user.usrLoginName}' (${user.usrId}): current password mismatch.`,
+    );
+  }
+
   private async findLoginUser(
     userName: string,
     deviceType?: string | null,

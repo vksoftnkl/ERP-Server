@@ -48,4 +48,13 @@ export enum UserAdminErrorCode {
   EMPLOYEE_INACTIVE = 'USER_EMPLOYEE_INACTIVE',
   /** usrEmployeeId is already linked to another active user. */
   EMPLOYEE_LINKED = 'USER_EMPLOYEE_LINKED',
+  /**
+   * Review list 11-19 S2 (403, field `userId`): the caller lacks the right on Users & Rights
+   * (menu 58). Raised by assertMenuRight with prefix USER, so the strings are built there;
+   * listed here so the catalogue is complete. GET of the caller's own row needs no right.
+   */
+  RIGHT_VIEW = 'USER_RIGHT_VIEW',
+  RIGHT_CREATE = 'USER_RIGHT_CREATE',
+  RIGHT_EDIT = 'USER_RIGHT_EDIT',
+  RIGHT_DELETE = 'USER_RIGHT_DELETE',
 }

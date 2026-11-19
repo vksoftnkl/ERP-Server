@@ -120,6 +120,26 @@ Defined in [types/user-administration.enum.ts](types/user-administration.enum.ts
   user may approve is their 285 grant. `MANAGER` was renamed `STORE MANAGER` (migration
   `20261016110000`) and is refused now (400).
 
+## Menu-58 rights on every route (review list 11-19 S2)
+
+Until 11-19 the login token alone was enough, so any signed-in user (a cashier) could set another
+user's password, raise a role or grant themselves menus. Now `assertMenuRight` (common/posting/rights.ts)
+judges the caller's `user_menus` row for **Users & Rights (menu 58)** first, before any other
+check answers: **403**, field `userId`, code `USER_RIGHT_<RIGHT>`.
+
+| Route | Right |
+| --- | --- |
+| `POST /create` without `usrId` | Create (`USER_RIGHT_CREATE`) |
+| `POST /create` with `usrId` (the caller's own row included) | Edit (`USER_RIGHT_EDIT`) |
+| `DELETE /delete` | Delete (`USER_RIGHT_DELETE`) |
+| `GET /get` of another user | View (`USER_RIGHT_VIEW`) |
+| `GET /get` of the caller's own row | none: the Qt main window loads its grants from it, My Profile shows it |
+
+No SUPER ADMIN bypass: the SUPER ADMIN rules below apply on top. A user changes their own
+password through `POST /auth/change-password` (current password checked), not here. e2e suites
+that call these routes grant their stubbed caller menu 58 (`USERS_RIGHTS_MENU`,
+test/helpers/menu-rights.ts) and run `--runInBand`.
+
 ## SUPER ADMIN is VK Softwares' own (notes 125 §3)
 
 Never a client's role. Judged on the caller's own `user_master.usr_type` (active, not deleted),

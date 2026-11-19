@@ -1,3 +1,5 @@
+import { Reflector } from '@nestjs/core';
+import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { DeviceListMasterController } from './device-list-master.controller';
 import { DeviceListMasterService } from './device-list-master.service';
 import { DeviceListMasterPayload } from './types/device-list-master-api.types';
@@ -67,5 +69,24 @@ describe('DeviceListMasterController', () => {
       data: { devId: DEVICE_ID, deleted: true },
     });
     expect(service.softDelete).toHaveBeenCalledWith(DEVICE_ID);
+  });
+
+  // Review list 11-19 S1: the whole controller was @Public, so anyone who could reach the
+  // server could create, list or delete devices. AccessTokenGuard skips only what carries
+  // IS_PUBLIC_KEY, on the class or on the handler.
+  it('is not public: no route here skips the login token', () => {
+    const reflector = new Reflector();
+    // Read off the prototype as plain functions: only their metadata is looked at, never called.
+    const proto = DeviceListMasterController.prototype as unknown as Record<
+      string,
+      (...args: never[]) => unknown
+    >;
+    const handlers = ['save', 'list', 'getById', 'remove'].map((name) => proto[name]);
+    expect(handlers.every(Boolean)).toBe(true);
+    for (const handler of handlers) {
+      expect(
+        reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [handler, DeviceListMasterController]),
+      ).toBeFalsy();
+    }
   });
 });

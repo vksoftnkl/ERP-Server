@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -19,8 +20,9 @@ import {
   ApiOperation,
   ApiQuery,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Public } from '../../../common/decorators/public.decorator';
+import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { DeviceListMasterExceptionFilter } from './device-list-master-exception.filter';
 import {
   DeviceListMasterErrorResponseDto,
@@ -38,8 +40,17 @@ import {
   DeviceListMasterSuccessResponse,
 } from './types/device-list-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-@Public()
+
+// Review list 11-19 S1: no longer @Public. Every route needs the login token
+// (401 AUTH_AUTHORIZATION_MISSING without one). No caller reaches these routes
+// before login: the desktop login only sends its device id to /auth/login, and
+// phones resolve their device inside /mobile/* (mobile-scope.ts), not here.
 @ApiTags('Device List Master')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({
+  type: HttpErrorResponseDto,
+  description: 'AUTH_AUTHORIZATION_MISSING / AUTH_ACCESS_TOKEN_* — every route needs a login token',
+})
 @CacheTTL(1)
 @Controller('device-list-masters')
 @UseFilters(DeviceListMasterExceptionFilter)

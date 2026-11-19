@@ -14,6 +14,7 @@ import {
 } from '../src/modules/settings/employeeMaster/staff-advance-ledger.service';
 import { UserAdministrationService } from '../src/modules/settings/userAdministration/user-administration.service';
 import { SaveUserAdministrationDto } from '../src/modules/settings/userAdministration/dto/save-user-administration.dto';
+import { grantMenuRights, USERS_RIGHTS_MENU } from './helpers/menu-rights';
 
 /**
  * NOTES 95 — the staff advance ledger is created with the employee (§A), and the till PIN and
@@ -89,6 +90,9 @@ describe('Notes 95 — staff advance ledger with the employee, till PIN on the u
     const [user] = await tx.$queryRaw<Array<{ usr_id: string }>>`
       SELECT usr_id FROM public.user_master WHERE usr_is_deleted = false LIMIT 1`;
     userId = user.usr_id;
+    // Review list 11-19 S2: /user-administration wants the caller's Users & Rights (58)
+    // rights. Granted inside this transaction, so the rollback takes the grant away too.
+    await grantMenuRights(tx as unknown as PrismaClient, [USERS_RIGHTS_MENU], userId);
     otherCompanyId = (
       await tx.company.findFirstOrThrow({
         where: { compIsDeleted: false, NOT: { compId: COMPANY } },

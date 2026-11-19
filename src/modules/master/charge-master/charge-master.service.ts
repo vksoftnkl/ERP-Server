@@ -227,10 +227,12 @@ export class ChargeMasterService {
       chgMethod: saveChargeMasterDto.chgMethod,
       chgApplyOn: saveChargeMasterDto.chgApplyOn,
       chgLedgerCode: saveChargeMasterDto.chgLedgerCode,
+      // Review list 11-19 S3: the creator is always the signed-in user. A body
+      // chgCreatedBy / chgModifiedBy is accepted (older Qt builds still send them)
+      // and ignored, so a client can no longer forge who made a charge. Modified
+      // on/by stay empty until the first edit, as on the other masters.
       chgCreatedOn: now,
-      chgCreatedBy: saveChargeMasterDto.chgCreatedBy ?? actor,
-      chgModifiedOn: now,
-      chgModifiedBy: saveChargeMasterDto.chgModifiedBy ?? actor,
+      chgCreatedBy: actor,
     };
     this.applyOptionalFields(data, saveChargeMasterDto);
     data.chgCode = normalizedCode;
@@ -315,7 +317,8 @@ export class ChargeMasterService {
           chgApplyOn: saveChargeMasterDto.chgApplyOn,
           chgLedgerCode: saveChargeMasterDto.chgLedgerCode,
           chgModifiedOn: new Date(),
-          chgModifiedBy: saveChargeMasterDto.chgModifiedBy ?? actor,
+          // Review list 11-19 S3: always the signed-in user; a body chgModifiedBy is ignored.
+          chgModifiedBy: actor,
         };
         this.applyOptionalFields(data, saveChargeMasterDto);
         data.chgCode = nextCode;

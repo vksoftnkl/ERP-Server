@@ -5,7 +5,11 @@ company / branch / user and can be blocked or tied to login sessions.
 
 - **Base route:** `device-list-masters` (API-versioned per route via `@Version(API_VERSION)`)
 - **Swagger tag:** `Device List Master`
-- **Auth:** Bearer `access-token` (required)
+- **Auth:** Bearer `access-token` (required). The controller was `@Public()` until review list
+  11-19 S1, so anyone who reached the server could create, list or delete devices; now every route
+  answers 401 `AUTH_AUTHORIZATION_MISSING` without a token. No client calls these routes before
+  login (the desktop sends its device id to `/auth/login` only; phones are resolved inside
+  `/mobile/*`). No menu-239 rights check yet: any signed-in user still passes.
 - **Response cache:** controller-level `@CacheTTL(1)`
 - **Primary table:** `device_master` (`fixed` schema) — PK `devId` (`dev_id`)
 

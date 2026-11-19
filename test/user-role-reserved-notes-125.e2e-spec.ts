@@ -1,7 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 
-import { as, bootIdentityApp } from './helpers/identity-app';
+import { as, bootIdentityApp, PRATHAP, TESTER } from './helpers/identity-app';
+import {
+  grantMenuRights,
+  restoreMenuRights,
+  TESTER1,
+  USERS_RIGHTS_MENU,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
 import { BRANCH, COMPANY, prisma } from './helpers/payment-e2e';
 
 /**
@@ -48,7 +55,14 @@ async function create(who: string, name: string, usrType: string): Promise<reque
   return res;
 }
 
+// Review list 11-19 S2: every /user-administration route checks the caller's Users & Rights
+// (58) row. tester1 and prathap act here, so both get the four rights; `tester` keeps none and
+// proves the refusals. Put back exactly in afterAll (run --runInBand).
+const rights: MenuRightsMemo[] = [];
+
 beforeAll(async () => {
+  rights.push(await grantMenuRights(prisma, [USERS_RIGHTS_MENU], TESTER1));
+  rights.push(await grantMenuRights(prisma, [USERS_RIGHTS_MENU], PRATHAP));
   app = await bootIdentityApp();
 });
 
@@ -56,6 +70,9 @@ afterAll(async () => {
   if (made.length > 0) {
     await prisma.$executeRaw`DELETE FROM public.user_menus WHERE um_user_id = ANY(${made}::uuid[])`;
     await prisma.$executeRaw`DELETE FROM public.user_master WHERE usr_id = ANY(${made}::uuid[])`;
+  }
+  for (const memo of rights) {
+    await restoreMenuRights(prisma, memo);
   }
   await app?.close();
   await prisma.$disconnect();
@@ -181,5 +198,66 @@ describe('§3 · SUPER ADMIN is reserved', () => {
     expect(reset.status).toBe(403);
     const ok = await http().get('/api/v1/users').set('Authorization', as('tester1', ''));
     expect(ok.status).toBe(200);
+  });
+});
+
+describe('Review list 11-19 S2 · menu-58 rights (tester holds none)', () => {
+  let targetId: string;
+
+  beforeAll(async () => {
+    const [row] = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM public.user_menus
+       WHERE um_user_id = ${TESTER}::uuid AND um_menu_id = ${USERS_RIGHTS_MENU} AND um_is_deleted = false`;
+    expect(row.n).toBe(0);
+    const res = await create('tester1', 'target', 'CASHIER');
+    expect(res.status).toBe(201);
+    targetId = res.body.data.usrId;
+  });
+
+  it('create without the Create right → 403 USER_RIGHT_CREATE, nothing made', async () => {
+    const login = `zt-role125-${tag}-by-tester`;
+    const res = await save('tester', { usrLoginName: login, usrPassword: 'Str0ng!Passw0rd' });
+    expect(res.status).toBe(403);
+    expect(firstError(res)).toEqual(
+      expect.objectContaining({ code: 'USER_RIGHT_CREATE', field: 'userId' }),
+    );
+    const [row] = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM public.user_master WHERE usr_login_name = ${login}`;
+    expect(row.n).toBe(0);
+  });
+
+  it('update (another user, or themselves) without the Edit right → 403 USER_RIGHT_EDIT', async () => {
+    for (const body of [
+      { usrId: targetId, usrLoginName: `zt-role125-${tag}-target`, usrPassword: 'N3w!Passw0rd' },
+      { usrId: TESTER, usrLoginName: 'tester', usrType: 'ADMIN' },
+    ]) {
+      const res = await save('tester', body);
+      expect(res.status).toBe(403);
+      expect(firstError(res).code).toBe('USER_RIGHT_EDIT');
+    }
+  });
+
+  it('delete without the Delete right → 403 USER_RIGHT_DELETE', async () => {
+    const res = await http()
+      .delete(`${BASE}/delete`)
+      .query({ usrId: targetId })
+      .set('Authorization', as('tester', ''));
+    expect(res.status).toBe(403);
+    expect(firstError(res).code).toBe('USER_RIGHT_DELETE');
+  });
+
+  it("get of another user needs View (403 USER_RIGHT_VIEW); the caller's own row does not", async () => {
+    const other = await http()
+      .get(`${BASE}/get`)
+      .query({ usrId: targetId })
+      .set('Authorization', as('tester', ''));
+    expect(other.status).toBe(403);
+    expect(firstError(other).code).toBe('USER_RIGHT_VIEW');
+    const own = await http()
+      .get(`${BASE}/get`)
+      .query({ usrId: TESTER })
+      .set('Authorization', as('tester', ''));
+    expect(own.status).toBe(200);
+    expect(own.body.data.usrId).toBe(TESTER);
   });
 });
