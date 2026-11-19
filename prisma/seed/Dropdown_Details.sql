@@ -12,6 +12,8 @@
 -- 20261118100000_dc_dc_return inserts it.
 -- 48 PRINT PURPOSES - DESKTOP returns ppo_company_id (Voucher Types decision 61) as migration
 -- 20261116130000_print_purpose_dropdown_company sets it.
+-- 8 company and 5 branch list active, not-deleted rows only, regional SQL NULL (review list
+-- 11-19, D1 / 239.1) as migration 20261119213000_company_branch_dropdowns_active_only sets them.
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -34,13 +36,11 @@ VALUES
 	FROM sales.state_master;$seed$::text)
     ,(3 , 'customerGroups'           , 'customer group', 'cgr_name'            , 'ASC'      , 2 , true , 20  , NULL     , NULL                , 'system', $seed$SELECT cgr_id, cgr_name, cgr_alias FROM sales.cust_groups WHERE cgr_is_deleted = false AND cgr_is_active = true$seed$, $seed$SELECT cgr_id, cgr_name, cgr_alias FROM sales.cust_groups WHERE cgr_is_deleted = false AND cgr_is_active = true$seed$)
     ,(4 , 'city master'              , 'city master', 'City id'             , 'ASC'      , 2 , true , 20  , NULL     , 'city master'       , 'system', $seed$SELECT ctm_id, ctm_name, ctm_alias FROM sales.city_master$seed$, $seed$SELECT ctm_id, ctm_name, ctm_alias,FROM sales.city_master;$seed$)
-    ,(5 , 'branch'                   , 'branch master', 'Branch id'           , 'ASC'      , 2 , false, 10  , NULL     , NULL                , 'system', $seed$SELECT br_id, br_name FROM public.branch_master WHERE br_is_deleted = false$seed$, $seed$SELECT br_id, br_name,
-	FROM accounts.branch_master;$seed$)
+    ,(5 , 'branch'                   , 'Branch pickers (lookup module branches): active and not deleted branches of every company, by name. Devices Branch combo.', 'br_name'             , 'ASC'      , 2 , false, 10  , NULL     , NULL                , 'system', $seed$SELECT br_id, br_name FROM public.branch_master WHERE br_is_deleted = false AND br_is_active = true ORDER BY br_name, br_id$seed$, NULL)
     ,(6 , 'items'                    , 'items', 'Item id'             , 'ASC'      , 2 , true , 10  , NULL     , 'items'             , 'system', $seed$SELECT item_id, item_branch_id, item_code, item_sku, item_name_en, item_name_ta, item_alias FROM inventory.item_master$seed$, $seed$SELECT item_id, item_branch_id, item_code, item_sku, item_name_en, item_name_ta, item_alias, 
 	FROM inventory.item_master;$seed$)
     ,(7 , 'companyGroups'            , 'Master lookup for active company groups', 'cog_group_name'      , 'ASC'      , 20, true , NULL, NULL     , NULL                , 'system', $seed$SELECT cog_group_id, cog_group_name FROM public.company_group_master WHERE cog_is_deleted = false AND cog_is_active = true$seed$, NULL)
-    ,(8 , 'company'                  , 'company master', 'company id'          , 'ASC'      , 10, true , 20  , NULL     , NULL                , 'system', $seed$SELECT comp_name, comp_id FROM public.companys$seed$, $seed$SELECT  comp_name,comp_id, 
-	FROM accounts.companys;$seed$)
+    ,(8 , 'company'                  , 'Company pickers (lookup module companies): active and not deleted companies, by name. Main-window company switch, Devices, App Settings, Loyalty Scheme, Print Assignments.', 'comp_name'           , 'ASC'      , 10, true , 20  , NULL     , NULL                , 'system', $seed$SELECT comp_name, comp_id FROM public.companys WHERE comp_is_active = true AND comp_is_deleted = false ORDER BY comp_name, comp_id$seed$, NULL)
     ,(9 , 'state code'               , 'state code', 'state name'          , 'ASC'      , 11, true , 20  , NULL     , NULL                , 'system', $seed$SELECT state_code, state_name FROM fixed.state_codes$seed$, $seed$SELECT state_code, state_name, 
 	FROM fixed.state_codes;$seed$)
     ,(10, 'Area'                     , 'area master', 'Area short'          , 'ASC'      , 10, true , 32  , NULL     , NULL                , 'system', $seed$SELECT arm_id, arm_name, arm_alias, arm_short
