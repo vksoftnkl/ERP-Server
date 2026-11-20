@@ -1276,6 +1276,97 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ],
     ),
   ],
+  [
+    // GST Rates, menu 40 (inventory review 11-20). One screen, two tables: a rate row and
+    // each ledger line are audited under their own id, and each records only its own
+    // labels (AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY). The labels both share read
+    // whichever column the row has (COALESCE). Supersedes / Ledger read as names.
+    'Tax Rate Master',
+    buildAuditSql(
+      [
+        'inventory.tax_rate_master tax',
+        'LEFT JOIN inventory.tax_rate_ledger trl ON trl.trl_tax_id = tax.tax_id',
+      ].join('\n'),
+      [
+        // The rate
+        ['tax.tax_name', 'Tax Name'],
+        ['tax.tax_code', 'Tax Code'],
+        ['tax.tax_sort_order', 'Sort Order'],
+        ['tax.tax_taxability', 'Taxability'],
+        ['tax.tax_is_reverse_charge', 'Reverse Charge'],
+        ['tax.tax_rate_perc', 'GST Rate %'],
+        ['tax.tax_cgst_perc', 'CGST %'],
+        ['tax.tax_sgst_perc', 'SGST %'],
+        ['tax.tax_igst_perc', 'IGST %'],
+        ['tax.tax_cess_basis', 'Cess Basis'],
+        ['tax.tax_cess_perc', 'Cess %'],
+        ['tax.tax_cess_per_unit', 'Cess Per Unit'],
+        ['tax.tax_acess_basis', 'Additional Cess Basis'],
+        ['tax.tax_acess_perc', 'Additional Cess %'],
+        ['tax.tax_acess_per_unit', 'Additional Cess Per Unit'],
+        ['tax.tax_supersedes_id', 'Supersedes'],
+        // A ledger line
+        ['trl.trl_role', 'Ledger Role'],
+        ['trl.trl_supply_nature', 'Supply Nature'],
+        ['trl.trl_ledger_id', 'Ledger'],
+        ['trl.trl_remarks', 'Remarks'],
+        // Both
+        ['COALESCE(tax.tax_is_active, trl.trl_is_active)', 'Is Active'],
+        ['COALESCE(tax.tax_is_deleted, trl.trl_is_deleted)', 'Is Deleted'],
+        ['COALESCE(tax.tax_created_on, trl.trl_created_on)', 'Created On'],
+        ['COALESCE(tax.tax_created_by, trl.trl_created_by)', 'Created By'],
+      ],
+    ),
+  ],
+  [
+    // Tracking Presets, menu 249 (inventory review 11-20). Labels as on the screen.
+    'Stock Track Preset',
+    buildAuditSql('stock.stock_track_preset', [
+      ['spt_code', 'Code'],
+      ['spt_name', 'Name'],
+      ['spt_description', 'Description'],
+      ['spt_company_id', 'Company ID'],
+      ['spt_sort_order', 'Sort Order'],
+      ['spt_track_batch', 'Track Batch'],
+      ['spt_track_expiry', 'Track Expiry'],
+      ['spt_track_mrp', 'Track MRP'],
+      ['spt_track_sale_price', 'Track Sale Price'],
+      ['spt_track_serial', 'Track Serial No'],
+      ['spt_track_supplier', 'Track Supplier'],
+      ['spt_valuation_method', 'Valuation'],
+      ['spt_issue_strategy', 'Issue Order'],
+      ['spt_allow_negative', 'Negative Stock'],
+      ['spt_shelf_life_days', 'Shelf Life Days'],
+      ['spt_near_expiry_days', 'Near Expiry Warning Days'],
+      ['spt_ageing_basis', 'Ageing Basis'],
+      ['spt_block_expired_sale', 'Do Not Sell Expired Stock'],
+      ['spt_remarks', 'Remarks'],
+      ['spt_is_active', 'Is Active'],
+      ['spt_is_deleted', 'Is Deleted'],
+      ['spt_created_on', 'Created On'],
+      ['spt_created_by', 'Created By'],
+    ]),
+  ],
+  [
+    // Stock Reasons, menu 293 (inventory review 11-20). Labels as on the screen; the
+    // Ledger reads as its name.
+    'Stock Reason Master',
+    buildAuditSql('stock.stock_reason_master', [
+      ['srm_code', 'Code'],
+      ['srm_name', 'Name'],
+      ['srm_company_id', 'Company ID'],
+      ['srm_direction', 'Way'],
+      ['srm_sort_order', 'Sort Order'],
+      ['srm_allowed_txn_types', 'Used On'],
+      ['srm_gl_ledger_id', 'Ledger'],
+      ['srm_require_remarks', 'Remarks Required'],
+      ['srm_remarks', 'Notes'],
+      ['srm_is_active', 'Is Active'],
+      ['srm_is_deleted', 'Is Deleted'],
+      ['srm_created_on', 'Created On'],
+      ['srm_created_by', 'Created By'],
+    ]),
+  ],
 ]);
 
 /**
@@ -1284,6 +1375,7 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
  */
 export const AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY: ReadonlySet<string> = new Set([
   'Print Template',
+  'Tax Rate Master',
 ]);
 
 export const getAuditScreenSql = (screenName: string): string | undefined =>

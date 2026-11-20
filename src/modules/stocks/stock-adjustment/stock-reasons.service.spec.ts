@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { PrismaService } from 'src/database/prisma/prisma.service';
+import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { StockErrorCode } from '../types/stock-error-codes';
 import {
   DeactivateStockReasonDto,
@@ -59,6 +60,19 @@ const queryRawOver = (db: FakeDb) =>
     if (sql.includes('FROM accounts.acc_ledger_master')) return db.ledgers;
     if (sql.includes('AS cited')) return db.existing;
     if (sql.includes('INSERT INTO stock.stock_reason_master')) return [{ srm_id: NEW_ID }];
+    // The audit's snapshot of one row (inventory review 11-20).
+    if (sql.includes('srm_created_by') && sql.includes('FROM stock.stock_reason_master')) {
+      return [
+        {
+          srm_id: SRM_ID,
+          srm_code: 'THEFT',
+          srm_name: 'Theft',
+          srm_is_active: true,
+          srm_created_on: new Date('2026-11-20T05:00:00.000Z'),
+          srm_created_by: USER_ID,
+        },
+      ];
+    }
     if (sql.includes('SELECT srm_id FROM stock.stock_reason_master')) return db.clash;
     throw new Error(`unrouted query: ${sql.slice(0, 80)}`);
   });
@@ -86,8 +100,9 @@ async function refusalOf(promise: Promise<unknown>): Promise<{ status: number; b
 
 describe('StockReasonsService', () => {
   let db: FakeDb;
-  let prisma: { $queryRaw: jest.Mock; $executeRaw: jest.Mock };
+  let prisma: { $queryRaw: jest.Mock; $executeRaw: jest.Mock; $transaction: jest.Mock };
   let context: { getUserId: jest.Mock };
+  let audit: { logEntityChange: jest.Mock };
   let service: StockReasonsService;
 
   beforeEach(() => {
@@ -99,9 +114,18 @@ describe('StockReasonsService', () => {
       existing: [{ srm_company_id: COMPANY_ID, srm_code: 'THEFT', cited: 0n }],
       clash: [],
     };
-    prisma = { $queryRaw: queryRawOver(db), $executeRaw: jest.fn().mockResolvedValue(1) };
+    prisma = {
+      $queryRaw: queryRawOver(db),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
+    };
     context = { getUserId: jest.fn().mockReturnValue(USER_ID) };
-    service = new StockReasonsService(prisma as unknown as PrismaService, context as never);
+    audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    service = new StockReasonsService(
+      prisma as unknown as PrismaService,
+      context as never,
+      audit as unknown as AuditLogService,
+    );
   });
 
   const queriesMatching = (marker: string) =>
@@ -506,6 +530,62 @@ describe('StockReasonsService', () => {
   });
 
   // ── deactivate ────────────────────────────────────────────────────────────
+  // ── audit (inventory review 11-20) ───────────────────────────────────────
+  describe('audit', () => {
+    const auditInputs = () => audit.logEntityChange.mock.calls.map(([input]) => input);
+
+    it('logs a create on the Stock Reason Master screen, inside the write', async () => {
+      await service.save(saveDto());
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(audit.logEntityChange.mock.calls[0][1]).toBe(prisma);
+      expect(auditInputs()[0]).toMatchObject({
+        action: 'insert',
+        screenName: 'Stock Reason Master',
+        screenType: 'master',
+        pk: NEW_ID,
+        displayName: 'Theft',
+        originalRecord: null,
+        modifiedRecord: { srm_code: 'THEFT', srm_created_on: '2026-11-20T05:00:00.000Z' },
+        userId: USER_ID,
+      });
+    });
+
+    it('logs an update with the row before and after', async () => {
+      await service.save(saveDto({ srmId: SRM_ID }));
+
+      expect(auditInputs()[0]).toMatchObject({
+        action: 'update',
+        pk: SRM_ID,
+        originalRecord: { srm_code: 'THEFT' },
+        modifiedRecord: { srm_code: 'THEFT' },
+        notes: 'Stock reason updated',
+      });
+    });
+
+    it('logs a deactivate, a reactivate and a delete', async () => {
+      const dto = (plain: Record<string, unknown> = {}) =>
+        plainToInstance(DeactivateStockReasonDto, { companyId: COMPANY_ID, srmId: SRM_ID, ...plain });
+      await service.deactivate(dto({ reactivate: true }));
+      await service.deactivate(dto());
+      db.list = [listRow({}, 2n)];
+      await service.deactivate(dto());
+
+      expect(auditInputs().map((input) => [input.action, input.notes])).toEqual([
+        ['update', 'Stock reason reactivated'],
+        ['cancel', 'Stock reason deleted'],
+        ['update', 'Stock reason deactivated'],
+      ]);
+    });
+
+    it('logs nothing for a refused save', async () => {
+      db.clash = [{ srm_id: SRM_ID }];
+      await service.save(saveDto()).catch(() => undefined);
+
+      expect(audit.logEntityChange).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deactivate', () => {
     const deactivateDto = (plain: Record<string, unknown> = {}) =>
       plainToInstance(DeactivateStockReasonDto, { companyId: COMPANY_ID, srmId: SRM_ID, ...plain });

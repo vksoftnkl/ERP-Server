@@ -30,6 +30,13 @@ export const COMPANY_CODE_RULE: InitialsCodeRule = {
 export const DEPARTMENT_CODE_RULE: InitialsCodeRule = COMPANY_CODE_RULE;
 
 /**
+ * Inventory masters review (20/11/2026) — a blank Short Name of an Item Group,
+ * Brand, Section, Category or Godown: initials, 3 to 6, the Company rule as it
+ * is; a clash takes 2, 3 …
+ */
+export const MASTER_SHORT_NAME_RULE: InitialsCodeRule = COMPANY_CODE_RULE;
+
+/**
  * Review step 5 — Employee codes: a person's initials, 3 to 6, padded as the
  * Company rule pads. No skip words: they are words of firm names.
  * Suresh Krishna → SKU, RAMESH → RAM.

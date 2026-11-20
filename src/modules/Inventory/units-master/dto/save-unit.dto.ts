@@ -21,6 +21,8 @@ import {
 
 /** The decimals the units screen offers (notes 139 B5). */
 export const MAX_UNIT_DECIMAL_COUNT = 3;
+/** Inventory review 11-20 (point 38.3): a new unit's decimals when the save gives none. */
+export const NEW_UNIT_DECIMAL_COUNT = 3;
 
 export class SaveUnitDto {
   @ApiPropertyOptional({
@@ -58,7 +60,12 @@ export class SaveUnitDto {
   @NullableString(100)
   unit_description?: string | null;
 
-  @ApiPropertyOptional({ default: 0, minimum: 0, maximum: MAX_UNIT_DECIMAL_COUNT })
+  @ApiPropertyOptional({
+    default: NEW_UNIT_DECIMAL_COUNT,
+    minimum: 0,
+    maximum: MAX_UNIT_DECIMAL_COUNT,
+    description: 'Left out (or blank) on a create = 3; on an edit = keep the stored count.',
+  })
   @NullableInteger(0)
   @Max(MAX_UNIT_DECIMAL_COUNT)
   unit_decimal_count?: number;

@@ -27,6 +27,31 @@ export const EMPLOYEE_CODE_SERIES: CodeSeries = {
   table: 'public.employee_master',
   column: 'emp_code',
 };
+/**
+ * Inventory masters review (20/11/2026): the Short Name a blank one is made
+ * from the name for (Item Group, Brand, Section, Category, Godown).
+ */
+export const ITEM_GROUP_SHORT_SERIES: CodeSeries = {
+  table: 'inventory.item_group_master',
+  column: 'itg_short',
+};
+export const ITEM_BRAND_SHORT_SERIES: CodeSeries = {
+  table: 'inventory.item_brand_master',
+  column: 'brand_short',
+};
+export const ITEM_SECTION_SHORT_SERIES: CodeSeries = {
+  table: 'inventory.item_section_master',
+  column: 'sec_short',
+};
+export const ITEM_CATEGORY_SHORT_SERIES: CodeSeries = {
+  table: 'inventory.item_category_master',
+  column: 'category_short',
+};
+/** One lock for every branch's godowns; the clash itself is judged per branch. */
+export const GODOWN_SHORT_SERIES: CodeSeries = {
+  table: 'inventory.godown_locations',
+  column: 'gdl_short',
+};
 
 /**
  * One transaction at a time reads and takes a code of `series`. Held until the

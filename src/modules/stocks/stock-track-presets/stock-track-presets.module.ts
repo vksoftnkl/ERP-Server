@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { StockTrackPresetsController } from './stock-track-presets.controller';
 import { StockTrackPresetsService } from './stock-track-presets.service';
 /**
@@ -9,6 +10,7 @@ import { StockTrackPresetsService } from './stock-track-presets.service';
  * company merge — see preset-merge.ts, which StockTrackPolicyService shares.
  */
 @Module({
+  imports: [AuditLogModule],
   controllers: [StockTrackPresetsController],
   providers: [StockTrackPresetsService],
   exports: [StockTrackPresetsService],

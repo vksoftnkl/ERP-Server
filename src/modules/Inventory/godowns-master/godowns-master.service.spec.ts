@@ -156,6 +156,42 @@ describe('GodownsMasterService', () => {
     expect(result.gdl_name).toBe('Rack A1');
   });
 
+  describe('Short Name made from the name (inventory review 11-20)', () => {
+    const lockCalls = () =>
+      prisma.$queryRaw.mock.calls.filter(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'),
+      );
+
+    it('a create with a blank Short Name takes the initials, free in its branch only', async () => {
+      prisma.godownLocation.create.mockResolvedValue(makeRecord());
+      prisma.godownLocation.findMany.mockResolvedValueOnce([makeRecord({ gdlShort: 'ZMG' })]);
+      await service.save({ gdl_branch_id: BRANCH_ID, gdl_name: 'Zt Main Godown', gdl_short: null });
+      expect(prisma.godownLocation.findMany.mock.calls[0][0]).toEqual({
+        where: {
+          gdlBranchId: BRANCH_ID,
+          gdlIsDeleted: false,
+          gdlShort: { startsWith: 'ZMG', mode: 'insensitive' },
+        },
+        select: { gdlShort: true },
+      });
+      expect(prisma.godownLocation.create.mock.calls[0][0].data.gdlShort).toBe('ZMG2');
+      expect(lockCalls()[0].slice(1)).toEqual(['inventory.godown_locations', 'gdl_short']);
+    });
+
+    it('an edit that sends it empty judges the clash in the branch it is saved under', async () => {
+      const existing = makeRecord({ gdlShort: 'OLD' });
+      prisma.godownLocation.findFirst.mockResolvedValue(existing);
+      prisma.godownLocation.update.mockResolvedValue(existing);
+      await service.save({ gdl_id: GDL_ID, gdl_short: null });
+      expect(prisma.godownLocation.findMany.mock.calls[0][0].where).toMatchObject({
+        gdlBranchId: existing.gdlBranchId,
+        NOT: { gdlId: GDL_ID },
+      });
+      // Left-out name: the stored one ('Rack A1') makes it.
+      expect(prisma.godownLocation.update.mock.calls[0][0].data.gdlShort).toBe('RAA');
+    });
+  });
+
   it('creates a godown location from legacy godown_* payload keys', async () => {
     const created = makeRecord({
       gdlName: 'Rack Legacy',
@@ -338,6 +374,8 @@ describe('GodownsMasterService', () => {
       gdl_branch_id: BRANCH_ID,
       gdl_name: 'Rack B1',
       gdl_parent_id: PARENT_ID,
+      // A typed Short Name: this test is about the path cache, not the made one.
+      gdl_short: 'RB1',
     });
 
     expect(result.gdl_id).toBe(CHILD_ID);

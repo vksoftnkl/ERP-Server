@@ -107,6 +107,35 @@ describe('ItemsCategoryMasterService', () => {
     );
   });
 
+  describe('Short Name made from the name (inventory review 11-20)', () => {
+    const lockCall = () =>
+      prisma.$queryRaw.mock.calls.find(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'),
+      );
+
+    it('a create with a blank one takes the initials; a live clash (any case) the next number', async () => {
+      prisma.categoryMaster.create.mockResolvedValue(makeRecord());
+      prisma.categoryMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.categoryMaster.findMany.mockResolvedValueOnce([makeRecord({ categoryShort: 'zfv' })]);
+      await service.save({ category_name: 'Zt Fresh Vegetables', category_short: null });
+      expect(prisma.categoryMaster.findMany.mock.calls[0][0]).toEqual({
+        where: { categoryIsDeleted: false, categoryShort: { startsWith: 'ZFV', mode: 'insensitive' } },
+        select: { categoryShort: true },
+      });
+      expect(prisma.categoryMaster.create.mock.calls[0][0].data.categoryShort).toBe('ZFV2');
+      expect(lockCall()?.slice(1)).toEqual(['inventory.item_category_master', 'category_short']);
+    });
+
+    it('an edit that sends it empty gets one, its own row left out of the clash', async () => {
+      prisma.categoryMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.categoryMaster.update.mockResolvedValue(makeRecord());
+      await service.save({ category_id: ITEM_CATEGORY_ID, category_name: 'Zt Fresh Vegetables', category_short: '  ' });
+      expect(prisma.categoryMaster.findMany.mock.calls[0][0].where).toMatchObject({
+        NOT: { categoryId: ITEM_CATEGORY_ID },
+      });
+      expect(prisma.categoryMaster.update.mock.calls[0][0].data.categoryShort).toBe('ZFV');
+    });
+  });
   it('creates a root item category and stores self category_id in category_path_ids_cache', async () => {
     const createdRecord = makeRecord({ categoryPathIdsCache: [] });
     const createdWithPath = makeRecord({ categoryPathIdsCache: [ITEM_CATEGORY_ID] });
@@ -232,6 +261,8 @@ describe('ItemsCategoryMasterService', () => {
     const result = await service.save({
       category_name: 'Child Category',
       category_parent_id: PARENT_CATEGORY_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      category_short: 'CHC',
     });
 
     expect(result.category_id).toBe(CHILD_CATEGORY_ID);
@@ -283,6 +314,8 @@ describe('ItemsCategoryMasterService', () => {
     await service.save({
       category_name: 'Child Category',
       category_parent_id: PARENT_CATEGORY_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      category_short: 'CHC',
     });
 
     expect(prisma.categoryMaster.update).toHaveBeenCalledTimes(1);

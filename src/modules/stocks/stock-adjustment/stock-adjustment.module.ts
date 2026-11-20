@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppSettingsModule } from '../../settings/appSettings/app-settings.module';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { StockVoucherModule } from '../stock-voucher/stock-voucher.module';
 import { StockAdjustmentController } from './stock-adjustment.controller';
 import { StockAdjustmentService } from './stock-adjustment.service';
@@ -13,7 +14,7 @@ import { StockReasonsService } from './stock-reasons.service';
  * (plan-nestjs-stock-adjustments §0).
  */
 @Module({
-  imports: [StockVoucherModule, AppSettingsModule],
+  imports: [StockVoucherModule, AppSettingsModule, AuditLogModule],
   controllers: [StockAdjustmentController, StockReasonsController],
   providers: [StockAdjustmentService, StockReasonsService],
   exports: [StockAdjustmentService, StockReasonsService],

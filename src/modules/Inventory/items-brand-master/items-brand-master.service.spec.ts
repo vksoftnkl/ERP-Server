@@ -114,6 +114,35 @@ describe('ItemsBrandMasterService', () => {
     );
   });
 
+  describe('Short Name made from the name (inventory review 11-20)', () => {
+    const lockCall = () =>
+      prisma.$queryRaw.mock.calls.find(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'),
+      );
+
+    it('a create with a blank one takes the initials; a live clash (any case) the next number', async () => {
+      prisma.itemBrandMaster.create.mockResolvedValue(makeRecord());
+      prisma.itemBrandMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.itemBrandMaster.findMany.mockResolvedValueOnce([makeRecord({ brand_short: 'zfv' })]);
+      await service.save({ brand_name: 'Zt Fresh Vegetables', brand_short: null });
+      expect(prisma.itemBrandMaster.findMany.mock.calls[0][0]).toEqual({
+        where: { brand_is_deleted: false, brand_short: { startsWith: 'ZFV', mode: 'insensitive' } },
+        select: { brand_short: true },
+      });
+      expect(prisma.itemBrandMaster.create.mock.calls[0][0].data.brand_short).toBe('ZFV2');
+      expect(lockCall()?.slice(1)).toEqual(['inventory.item_brand_master', 'brand_short']);
+    });
+
+    it('an edit that sends it empty gets one, its own row left out of the clash', async () => {
+      prisma.itemBrandMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.itemBrandMaster.update.mockResolvedValue(makeRecord());
+      await service.save({ brand_id: BRAND_ID, brand_name: 'Zt Fresh Vegetables', brand_short: '  ' });
+      expect(prisma.itemBrandMaster.findMany.mock.calls[0][0].where).toMatchObject({
+        NOT: { brand_id: BRAND_ID },
+      });
+      expect(prisma.itemBrandMaster.update.mock.calls[0][0].data.brand_short).toBe('ZFV');
+    });
+  });
   it('creates a root item brand and stores self brand_id in brand_path_ids', async () => {
     const createdRecord = makeRecord({ brand_path_ids: [] });
     const createdWithPath = makeRecord({ brand_path_ids: [BRAND_ID] });
@@ -239,6 +268,8 @@ describe('ItemsBrandMasterService', () => {
     const result = await service.save({
       brand_name: 'Child Brand',
       brand_parent_id: PARENT_BRAND_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      brand_short: 'CHB',
     });
 
     expect(result.brand_id).toBe(CHILD_BRAND_ID);
@@ -287,6 +318,8 @@ describe('ItemsBrandMasterService', () => {
     await service.save({
       brand_name: 'Child Brand',
       brand_parent_id: PARENT_BRAND_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      brand_short: 'CHB',
     });
 
     expect(prisma.itemBrandMaster.update).toHaveBeenCalledTimes(1);

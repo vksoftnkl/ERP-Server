@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { StockTrackPreset } from '@prisma/client';
+import { Prisma, StockTrackPreset } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { GetStockTrackPresetsQueryDto } from './dto/get-stock-track-presets-query.dto';
 import { throwNotFound, type ModuleErrorDetail } from 'src/common/utils/module-shared.utils';
 import {
@@ -56,6 +57,44 @@ interface PresetUsage {
 }
 
 const NO_USAGE: PresetUsage = { items: 0, groups: 0, activeItems: 0, activeGroups: 0 };
+
+/** Inventory review 11-20: the audit screen (audit.audit_screen 168) and its table name. */
+export const PRESET_AUDIT_SCREEN_NAME = 'Stock Track Preset';
+const PRESET_AUDIT_TABLE_NAME = 'stock track preset';
+
+/**
+ * The row as the audit records it: every column by its own name, which the
+ * screen's labels (AUDIT_SCREEN_SQL_BY_NAME) read. Modified / Sync stamps are
+ * left out (review list 11-19 step 3).
+ */
+export function presetAuditRecord(record: StockTrackPreset): Record<string, unknown> {
+  return {
+    spt_id: record.sptId,
+    spt_company_id: record.sptCompanyId,
+    spt_code: record.sptCode,
+    spt_name: record.sptName,
+    spt_description: record.sptDescription,
+    spt_sort_order: record.sptSortOrder,
+    spt_track_batch: record.sptTrackBatch,
+    spt_track_expiry: record.sptTrackExpiry,
+    spt_track_mrp: record.sptTrackMrp,
+    spt_track_sale_price: record.sptTrackSalePrice,
+    spt_track_serial: record.sptTrackSerial,
+    spt_track_supplier: record.sptTrackSupplier,
+    spt_valuation_method: record.sptValuationMethod,
+    spt_issue_strategy: record.sptIssueStrategy,
+    spt_allow_negative: record.sptAllowNegative,
+    spt_shelf_life_days: record.sptShelfLifeDays,
+    spt_near_expiry_days: record.sptNearExpiryDays,
+    spt_ageing_basis: record.sptAgeingBasis,
+    spt_block_expired_sale: record.sptBlockExpiredSale,
+    spt_remarks: record.sptRemarks,
+    spt_is_active: record.sptIsActive,
+    spt_is_deleted: record.sptIsDeleted,
+    spt_created_on: record.sptCreatedOn ? record.sptCreatedOn.toISOString() : null,
+    spt_created_by: record.sptCreatedBy,
+  };
+}
 
 const TRACK_COLUMN: Record<PresetTrackField, keyof StockTrackPreset> = {
   trackBatch: 'sptTrackBatch',
@@ -168,6 +207,7 @@ export class StockTrackPresetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
+    private readonly auditLogService: AuditLogService,
   ) {}
   /**
    * The presets a company may pick from: its own, plus every shared one it has
@@ -312,14 +352,25 @@ export class StockTrackPresetsService {
     };
     let saved: StockTrackPreset;
     try {
-      saved = existing
-        ? await this.prisma.stockTrackPreset.update({
-            where: { sptId: existing.sptId },
-            data: { ...data, sptModifiedOn: now, sptModifiedBy: author },
-          })
-        : await this.prisma.stockTrackPreset.create({
-            data: { ...data, sptCompanyId: dto.companyId, sptCreatedOn: now, sptCreatedBy: author },
-          });
+      // Inventory review 11-20: the row and its audit row are written together.
+      saved = await this.prisma.$transaction(async (tx) => {
+        const written = existing
+          ? await tx.stockTrackPreset.update({
+              where: { sptId: existing.sptId },
+              data: { ...data, sptModifiedOn: now, sptModifiedBy: author },
+            })
+          : await tx.stockTrackPreset.create({
+              data: { ...data, sptCompanyId: dto.companyId, sptCreatedOn: now, sptCreatedBy: author },
+            });
+        await this.audit(
+          tx,
+          existing ? 'update' : 'insert',
+          existing,
+          written,
+          existing ? 'Stock track preset updated' : 'Stock track preset created',
+        );
+        return written;
+      });
     } catch (error) {
       // ux_spt_code, when a second save of the same code got in between.
       if (isUniqueConstraintError(error)) {
@@ -347,11 +398,46 @@ export class StockTrackPresetsService {
         },
       ]);
     }
-    const saved = await this.prisma.stockTrackPreset.update({
-      where: { sptId: existing.sptId },
-      data: { sptIsActive: dto.reactivate === true, sptModifiedOn: new Date(), sptModifiedBy: this.author() },
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const written = await tx.stockTrackPreset.update({
+        where: { sptId: existing.sptId },
+        data: { sptIsActive: dto.reactivate === true, sptModifiedOn: new Date(), sptModifiedBy: this.author() },
+      });
+      await this.audit(
+        tx,
+        'update',
+        existing,
+        written,
+        dto.reactivate ? 'Stock track preset reactivated' : 'Stock track preset deactivated',
+      );
+      return written;
     });
     return this.toPayload(saved, true, usage);
+  }
+
+  /** One audit row on the Stock Track Preset screen, in the write's transaction. */
+  private async audit(
+    tx: Prisma.TransactionClient,
+    action: 'insert' | 'update',
+    before: StockTrackPreset | null,
+    after: StockTrackPreset,
+    notes: string,
+  ): Promise<void> {
+    await this.auditLogService.logEntityChange(
+      {
+        action,
+        tableName: PRESET_AUDIT_TABLE_NAME,
+        screenName: PRESET_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: after.sptId,
+        displayName: after.sptName,
+        originalRecord: before ? presetAuditRecord(before) : null,
+        modifiedRecord: presetAuditRecord(after),
+        userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        notes,
+      },
+      tx,
+    );
   }
 
   /** The company's own live preset, or the refusal: shared 409, missing / another company's 404. */

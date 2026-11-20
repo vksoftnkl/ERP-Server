@@ -16,6 +16,8 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { GODOWN_SHORT_SERIES } from 'src/modules/settings/shared/code-series-lock';
+import { isEmptyShortName, shortNameFromName } from '../utils/short-from-name';
 import {
   GODOWN_TREE,
   assertDeleteState,
@@ -227,6 +229,11 @@ export class GodownsMasterService {
           gdlCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveGodownDto);
+        // Inventory review 11-20: a blank Short Name is made from the name,
+        // free among the branch's live godowns.
+        if (!saveGodownDto.gdl_short?.trim()) {
+          data.gdlShort = await this.shortFromName(tx, gdlName, gdlBranchId, null);
+        }
 
         const created = await tx.godownLocation.create({ data });
         await this.ensureSelfInPath(tx, created.gdlId);
@@ -371,6 +378,16 @@ export class GodownsMasterService {
           }
 
           data.gdlName = saveGodownDto.gdl_name.trim();
+        }
+        // Inventory review 11-20: a Short Name sent empty is made from the
+        // name, free among the live godowns of the branch it is saved under.
+        if (isEmptyShortName(saveGodownDto.gdl_short)) {
+          data.gdlShort = await this.shortFromName(
+            tx,
+            saveGodownDto.gdl_name?.trim() || existing.gdlName,
+            gdlBranchId,
+            gdlId,
+          );
         }
 
         if (Object.keys(data).length === 0) {
@@ -552,6 +569,26 @@ export class GodownsMasterService {
     return record;
   }
 
+  /** A Short Name made from the name: initials, else the first free suffix in the branch. */
+  private shortFromName(
+    tx: GodownLocationWriteClient,
+    name: string,
+    branchId: string,
+    exceptId: string | null,
+  ): Promise<string | null> {
+    return shortNameFromName(tx, GODOWN_SHORT_SERIES, name, async (base) => {
+      const rows = await tx.godownLocation.findMany({
+        where: {
+          gdlBranchId: branchId,
+          gdlIsDeleted: false,
+          gdlShort: { startsWith: base, mode: 'insensitive' },
+          ...(exceptId ? { NOT: { gdlId: exceptId } } : {}),
+        },
+        select: { gdlShort: true },
+      });
+      return rows.map((row) => row.gdlShort);
+    });
+  }
   /** Notes 139 B1 — gdl_branch_id has no foreign key; an unknown id was stored. */
   private async assertBranchLive(tx: GodownLocationWriteClient, branchId: string): Promise<void> {
     const branch = await tx.branchMaster.findFirst({

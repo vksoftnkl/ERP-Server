@@ -64,7 +64,7 @@ SELECT v.* FROM (VALUES
     -- ============ Item Section Master (id 37) ============
     ,(15, 37 , 'section master'             , 'basic'            , 1, true, 'Web'    , 'system')
     -- ============ Unit Master (id 38) ============
-    ,(6 , 38 , 'PACK UNIT DETAILS'          , 'MAIN SECTION'     , 1, true, 'Desktop', 'system')
+    ,(6 , 38 , 'unit'                       , 'Unit'             , 1, true, 'Desktop', 'system')
     ,(16, 38 , 'unit master'                , 'basic'            , 1, true, 'Web'    , 'system')
     -- ============ Godown Master (id 39) ============
     ,(17, 39 , 'Godown master'              , 'basic'            , 1, true, 'Web'    , 'system')

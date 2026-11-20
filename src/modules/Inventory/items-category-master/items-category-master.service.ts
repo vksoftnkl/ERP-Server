@@ -13,6 +13,8 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { ITEM_CATEGORY_SHORT_SERIES } from 'src/modules/settings/shared/code-series-lock';
+import { isEmptyShortName, shortNameFromName } from '../utils/short-from-name';
 import {
   ITEM_CATEGORY_TREE,
   assertDeleteState,
@@ -211,6 +213,10 @@ export class ItemsCategoryMasterService {
           categoryCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveItemCategoryDto);
+        // Inventory review 11-20: a blank Short Name is made from the name.
+        if (!saveItemCategoryDto.category_short?.trim()) {
+          data.categoryShort = await this.shortFromName(tx, data.categoryName, null);
+        }
         const created = await tx.categoryMaster.create({ data });
         await this.ensureSelfInPath(tx, created.categoryId);
         if (saveItemCategoryDto.category_parent_id) {
@@ -313,6 +319,14 @@ export class ItemsCategoryMasterService {
           categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemCategoryDto);
+        // Inventory review 11-20: a Short Name sent empty is made from the name.
+        if (isEmptyShortName(saveItemCategoryDto.category_short)) {
+          data.categoryShort = await this.shortFromName(
+            tx,
+            saveItemCategoryDto.category_name.trim(),
+            categoryId,
+          );
+        }
         const updated = await tx.categoryMaster.update({
           where: {
             categoryId,
@@ -356,6 +370,24 @@ export class ItemsCategoryMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /** A Short Name made from the name: initials, else the first free suffix among live categories. */
+  private shortFromName(
+    tx: ItemCategoryWriteClient,
+    name: string,
+    exceptId: string | null,
+  ): Promise<string | null> {
+    return shortNameFromName(tx, ITEM_CATEGORY_SHORT_SERIES, name, async (base) => {
+      const rows = await tx.categoryMaster.findMany({
+        where: {
+          categoryIsDeleted: false,
+          categoryShort: { startsWith: base, mode: 'insensitive' },
+          ...(exceptId ? { NOT: { categoryId: exceptId } } : {}),
+        },
+        select: { categoryShort: true },
+      });
+      return rows.map((row) => row.categoryShort);
+    });
   }
   private async ensureParentExists(parentId: string, tx: ItemCategoryWriteClient): Promise<void> {
     const parent = await tx.categoryMaster.findFirst({

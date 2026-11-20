@@ -14,6 +14,8 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
+import { ITEM_GROUP_SHORT_SERIES } from 'src/modules/settings/shared/code-series-lock';
+import { isEmptyShortName, shortNameFromName } from '../utils/short-from-name';
 import {
   ITEM_GROUP_TREE,
   assertDeleteState,
@@ -224,6 +226,10 @@ export class ItemsGroupMasterService {
           itgCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveItemGroupDto);
+        // Inventory review 11-20: a blank Short Name is made from the name.
+        if (!saveItemGroupDto.itg_short?.trim()) {
+          data.itgShort = await this.shortFromName(tx, data.itgName, null);
+        }
         const created = await tx.itemGroupMaster.create({ data, include: TRACK_PRESET_INCLUDE });
         await this.ensureSelfInPath(tx, created.itgId);
         // Same transaction as the group: a GROUP-scope track policy and the
@@ -332,6 +338,10 @@ export class ItemsGroupMasterService {
           itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemGroupDto);
+        // Inventory review 11-20: a Short Name sent empty is made from the name.
+        if (isEmptyShortName(saveItemGroupDto.itg_short)) {
+          data.itgShort = await this.shortFromName(tx, saveItemGroupDto.itg_name.trim(), itgId);
+        }
         const updated = await tx.itemGroupMaster.update({
           where: {
             itgId,
@@ -381,6 +391,24 @@ export class ItemsGroupMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /** A Short Name made from the name: initials, else the first free suffix among live groups. */
+  private shortFromName(
+    tx: ItemGroupWriteClient,
+    name: string,
+    exceptId: string | null,
+  ): Promise<string | null> {
+    return shortNameFromName(tx, ITEM_GROUP_SHORT_SERIES, name, async (base) => {
+      const rows = await tx.itemGroupMaster.findMany({
+        where: {
+          itgIsDeleted: false,
+          itgShort: { startsWith: base, mode: 'insensitive' },
+          ...(exceptId ? { NOT: { itgId: exceptId } } : {}),
+        },
+        select: { itgShort: true },
+      });
+      return rows.map((row) => row.itgShort);
+    });
   }
   private async ensureParentExists(parentId: string, tx: ItemGroupWriteClient): Promise<void> {
     const parent = await tx.itemGroupMaster.findFirst({

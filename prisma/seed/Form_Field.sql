@@ -33,14 +33,14 @@ SELECT v.* FROM (VALUES
     -- ============ Item Brand Master / basic (id 2) ============
     ,(5  , 2 , 'name'                        , 'name'                    , 'name', 1 , true , 'system')
     -- ============ Unit Master / MAIN SECTION (id 6) ============
-    ,(12 , 6 , 'unit_is_pack_unit'           , 'Pack Unit'               , NULL, 1 , true , 'system')
-    ,(13 , 6 , 'unit_base_unit_id'           , 'Base Unit'               , NULL, 2 , true , 'system')
-    ,(14 , 6 , 'unit_conversion'             , 'Conversion'              , NULL, 3 , true , 'system')
-    ,(15 , 6 , 'unit_loading'                , 'Loading charge'          , NULL, 4 , true , 'system')
-    ,(16 , 6 , 'unit_unloading'              , 'Unloading charge'        , NULL, 5 , true , 'system')
-    ,(17 , 6 , 'unit_attach_charge'          , 'Attach Charge'           , NULL, 6 , true , 'system')
-    ,(18 , 6 , 'unit_description'            , 'Unit Description'        , NULL, 7 , true , 'system')
-    ,(19 , 6 , 'unit_is_active'              , 'Active'                  , NULL, 8 , true , 'system')
+    ,(12 , 6 , 'unit_is_pack_unit'           , 'Pack Unit'               , NULL, 6 , false , 'system')
+    ,(13 , 6 , 'unit_base_unit_id'           , 'Base Unit'               , NULL, 7 , false , 'system')
+    ,(14 , 6 , 'unit_conversion'             , 'Conversion'              , NULL, 8 , false , 'system')
+    ,(15 , 6 , 'unit_loading'                , 'Loading charge'          , NULL, 9 , true , 'system')
+    ,(16 , 6 , 'unit_unloading'              , 'Unloading charge'        , NULL, 10 , true , 'system')
+    ,(17 , 6 , 'unit_attach_charge'          , 'Attach Charge'           , NULL, 11 , true , 'system')
+    ,(18 , 6 , 'unit_description'            , 'Unit Description'        , NULL, 12 , true , 'system')
+    ,(19 , 6 , 'unit_is_active'              , 'Active'                  , NULL, 13 , true , 'system')
     -- ============ State Master / basic (id 7) ============
     ,(20 , 7 , 'state_name'                  , 'State name'              , '', 1 , true , 'system')
     ,(21 , 7 , 'state_alias'                 , 'Alias'                   , '', 2 , true , 'system')

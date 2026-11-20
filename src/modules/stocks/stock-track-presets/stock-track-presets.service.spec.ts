@@ -1,6 +1,7 @@
 import { Prisma, StockTrackPreset } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
   lockedFieldErrors,
   presetRuleErrors,
@@ -55,7 +56,9 @@ describe('StockTrackPresetsService', () => {
       update: jest.Mock;
     };
     $queryRaw: jest.Mock;
+    $transaction: jest.Mock;
   };
+  let audit: { logEntityChange: jest.Mock };
   let usage: Record<string, Partial<{ items: number; groups: number; active_items: number; active_groups: number }>>;
   beforeEach(() => {
     prisma = {
@@ -80,7 +83,9 @@ describe('StockTrackPresetsService', () => {
           ids.map((id) => ({ spt_id: id, items: 0, groups: 0, active_items: 0, active_groups: 0, ...usage[id] })),
         ),
       ),
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
+    audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     usage = {};
     service = new StockTrackPresetsService(
       prisma as unknown as PrismaService,
@@ -88,6 +93,7 @@ describe('StockTrackPresetsService', () => {
         getCompanyId: () => COMPANY_ID,
         getUserId: () => '01000000-0000-7000-8000-0000000000a1',
       } as unknown as RequestContextService,
+      audit as unknown as AuditLogService,
     );
   });
   it('asks only for the company and shared rows, active and not deleted', async () => {
@@ -381,6 +387,58 @@ describe('StockTrackPresetsService', () => {
       const { status, errors } = await refusal(service.save({ companyId: COMPANY_ID, code: 'DAIRY', name: 'Dairy' }));
       expect(status).toBe(409);
       expect(errors[0].code).toBe('STOCK_PRESET_CODE_TAKEN');
+    });
+
+    describe('audit (inventory review 11-20)', () => {
+      it('logs a create on the Stock Track Preset screen, column by column, inside the write', async () => {
+        await service.save({ companyId: COMPANY_ID, code: 'DAIRY', name: 'Dairy', trackBatch: true, trackExpiry: true });
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+        const [input, tx] = audit.logEntityChange.mock.calls[0];
+        expect(tx).toBe(prisma);
+        expect(input).toMatchObject({
+          action: 'insert',
+          screenName: 'Stock Track Preset',
+          screenType: 'master',
+          pk: 'created',
+          displayName: 'Dairy',
+          originalRecord: null,
+          userId: '01000000-0000-7000-8000-0000000000a1',
+        });
+        expect(input.modifiedRecord).toMatchObject({
+          spt_code: 'DAIRY',
+          spt_track_batch: true,
+          spt_valuation_method: 'LOT_ACTUAL',
+          spt_created_by: '01000000-0000-7000-8000-0000000000a1',
+        });
+        // Modified / Sync stamps are no audited change (review list 11-19 step 3).
+        expect(input.modifiedRecord).not.toHaveProperty('spt_modified_by');
+        expect(input.modifiedRecord).not.toHaveProperty('spt_sync_date');
+      });
+
+      it('logs an update with the row before and after', async () => {
+        prisma.stockTrackPreset.findUnique.mockResolvedValue(own());
+        await service.save({ companyId: COMPANY_ID, sptId: OWN_ID, name: 'Dairy (chilled)' });
+        const [input] = audit.logEntityChange.mock.calls[0];
+        expect(input).toMatchObject({ action: 'update', pk: OWN_ID, notes: 'Stock track preset updated' });
+        expect(input.originalRecord).toMatchObject({ spt_name: 'Dairy' });
+        expect(input.modifiedRecord).toMatchObject({ spt_name: 'Dairy (chilled)' });
+      });
+
+      it('logs a deactivate and a reactivate', async () => {
+        prisma.stockTrackPreset.findUnique.mockResolvedValue(own());
+        await service.deactivate({ companyId: COMPANY_ID, sptId: OWN_ID });
+        await service.deactivate({ companyId: COMPANY_ID, sptId: OWN_ID, reactivate: true });
+        const inputs = audit.logEntityChange.mock.calls.map(([input]) => input);
+        expect(inputs.map((i) => [i.action, i.notes, i.modifiedRecord.spt_is_active])).toEqual([
+          ['update', 'Stock track preset deactivated', false],
+          ['update', 'Stock track preset reactivated', true],
+        ]);
+      });
+
+      it('logs nothing for a refused save', async () => {
+        await service.save({ companyId: COMPANY_ID }).catch(() => undefined);
+        expect(audit.logEntityChange).not.toHaveBeenCalled();
+      });
     });
 
     describe('deactivate', () => {

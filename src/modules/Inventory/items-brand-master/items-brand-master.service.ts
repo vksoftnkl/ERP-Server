@@ -13,6 +13,8 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { ITEM_BRAND_SHORT_SERIES } from 'src/modules/settings/shared/code-series-lock';
+import { isEmptyShortName, shortNameFromName } from '../utils/short-from-name';
 import {
   ITEM_BRAND_TREE,
   assertDeleteState,
@@ -204,6 +206,10 @@ export class ItemsBrandMasterService {
           brand_created_by: createdBy,
         };
         this.applyOptionalFields(data, saveItemBrandDto);
+        // Inventory review 11-20: a blank Short Name is made from the name.
+        if (!saveItemBrandDto.brand_short?.trim()) {
+          data.brand_short = await this.shortFromName(tx, data.brand_name, null);
+        }
         const created = await tx.itemBrandMaster.create({ data });
         await this.ensureSelfInPath(tx, created.brand_id);
         if (saveItemBrandDto.brand_parent_id) {
@@ -299,6 +305,10 @@ export class ItemsBrandMasterService {
           brand_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemBrandDto);
+        // Inventory review 11-20: a Short Name sent empty is made from the name.
+        if (isEmptyShortName(saveItemBrandDto.brand_short)) {
+          data.brand_short = await this.shortFromName(tx, saveItemBrandDto.brand_name.trim(), brandId);
+        }
         const updated = await tx.itemBrandMaster.update({
           where: {
             brand_id: brandId,
@@ -342,6 +352,24 @@ export class ItemsBrandMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /** A Short Name made from the name: initials, else the first free suffix among live brands. */
+  private shortFromName(
+    tx: ItemBrandWriteClient,
+    name: string,
+    exceptId: string | null,
+  ): Promise<string | null> {
+    return shortNameFromName(tx, ITEM_BRAND_SHORT_SERIES, name, async (base) => {
+      const rows = await tx.itemBrandMaster.findMany({
+        where: {
+          brand_is_deleted: false,
+          brand_short: { startsWith: base, mode: 'insensitive' },
+          ...(exceptId ? { NOT: { brand_id: exceptId } } : {}),
+        },
+        select: { brand_short: true },
+      });
+      return rows.map((row) => row.brand_short);
+    });
   }
   private async ensureParentExists(parentId: string, tx: ItemBrandWriteClient): Promise<void> {
     const parent = await tx.itemBrandMaster.findFirst({

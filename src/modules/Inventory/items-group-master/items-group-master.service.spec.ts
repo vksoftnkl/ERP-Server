@@ -205,6 +205,66 @@ describe('ItemsGroupMasterService', () => {
     expect(updateArgs.data.itgModifiedBy).toBe(DEFAULT_ACTOR);
     expect(result.itg_name).toBe('Updated Group');
   });
+  describe('Short Name made from the name (inventory review 11-20)', () => {
+    const lockCalls = () =>
+      prisma.$queryRaw.mock.calls.filter(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'),
+      );
+    const created = () => makeRecord({ itgName: 'Zt Fresh Vegetables', itgPathIdsCache: [] });
+
+    it('a create with a blank Short Name takes the initials, under the series lock', async () => {
+      prisma.itemGroupMaster.create.mockResolvedValue(created());
+      prisma.itemGroupMaster.findFirst.mockResolvedValue(created());
+      await service.save({ itg_name: 'Zt Fresh Vegetables', itg_short: null });
+      expect(prisma.itemGroupMaster.create.mock.calls[0][0].data.itgShort).toBe('ZFV');
+      expect(prisma.itemGroupMaster.findMany.mock.calls[0][0]).toEqual({
+        where: { itgIsDeleted: false, itgShort: { startsWith: 'ZFV', mode: 'insensitive' } },
+        select: { itgShort: true },
+      });
+      expect(lockCalls()[0].slice(1)).toEqual(['inventory.item_group_master', 'itg_short']);
+    });
+
+    it('a clash with a live group, any case, takes the first free number', async () => {
+      prisma.itemGroupMaster.create.mockResolvedValue(created());
+      prisma.itemGroupMaster.findFirst.mockResolvedValue(created());
+      prisma.itemGroupMaster.findMany.mockResolvedValueOnce([
+        makeRecord({ itgShort: 'zfv' }),
+        makeRecord({ itgShort: 'ZFV2' }),
+      ]);
+      await service.save({ itg_name: 'Zt Fresh Vegetables' });
+      expect(prisma.itemGroupMaster.create.mock.calls[0][0].data.itgShort).toBe('ZFV3');
+    });
+
+    it('a typed Short Name is stored as typed, with no lock', async () => {
+      prisma.itemGroupMaster.create.mockResolvedValue(created());
+      prisma.itemGroupMaster.findFirst.mockResolvedValue(created());
+      await service.save({ itg_name: 'Zt Fresh Vegetables', itg_short: 'VEG' });
+      expect(prisma.itemGroupMaster.create.mock.calls[0][0].data.itgShort).toBe('VEG');
+      expect(lockCalls()).toHaveLength(0);
+    });
+
+    it('an edit that sends it empty gets one, its own row left out of the clash', async () => {
+      const existing = makeRecord({ itgShort: 'OLD' });
+      prisma.itemGroupMaster.findFirst.mockResolvedValue(existing);
+      prisma.itemGroupMaster.update.mockResolvedValue(existing);
+      await service.save({ itg_id: ITEM_GROUP_ID, itg_name: 'Zt Fresh Vegetables', itg_short: null });
+      expect(prisma.itemGroupMaster.update.mock.calls[0][0].data.itgShort).toBe('ZFV');
+      expect(prisma.itemGroupMaster.findMany.mock.calls[0][0].where).toEqual({
+        itgIsDeleted: false,
+        itgShort: { startsWith: 'ZFV', mode: 'insensitive' },
+        NOT: { itgId: ITEM_GROUP_ID },
+      });
+    });
+
+    it('an edit that leaves it out keeps the stored one (no back-fill)', async () => {
+      const existing = makeRecord({ itgShort: null });
+      prisma.itemGroupMaster.findFirst.mockResolvedValue(existing);
+      prisma.itemGroupMaster.update.mockResolvedValue(existing);
+      await service.save({ itg_id: ITEM_GROUP_ID, itg_name: 'Zt Fresh Vegetables' });
+      expect(prisma.itemGroupMaster.update.mock.calls[0][0].data.itgShort).toBeUndefined();
+      expect(lockCalls()).toHaveLength(0);
+    });
+  });
   it('rejects duplicate name with 409', async () => {
     prisma.itemGroupMaster.create.mockRejectedValue({ code: 'P2002' });
     const input: SaveItemGroupDto = {
@@ -274,6 +334,8 @@ describe('ItemsGroupMasterService', () => {
     const result = await service.save({
       itg_name: 'Child Group',
       itg_parent_id: PARENT_GROUP_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      itg_short: 'CHG',
     });
 
     expect(result.itg_id).toBe(CHILD_GROUP_ID);
@@ -320,6 +382,8 @@ describe('ItemsGroupMasterService', () => {
     await service.save({
       itg_name: 'Child Group',
       itg_parent_id: PARENT_GROUP_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      itg_short: 'CHG',
     });
 
     expect(prisma.itemGroupMaster.update).toHaveBeenCalledTimes(1);

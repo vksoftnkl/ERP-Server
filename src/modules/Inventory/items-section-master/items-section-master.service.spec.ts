@@ -109,6 +109,35 @@ describe('ItemsSectionMasterService', () => {
     );
   });
 
+  describe('Short Name made from the name (inventory review 11-20)', () => {
+    const lockCall = () =>
+      prisma.$queryRaw.mock.calls.find(([strings]) =>
+        (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'),
+      );
+
+    it('a create with a blank one takes the initials; a live clash (any case) the next number', async () => {
+      prisma.itemSectionMaster.create.mockResolvedValue(makeRecord());
+      prisma.itemSectionMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.itemSectionMaster.findMany.mockResolvedValueOnce([makeRecord({ secShort: 'zfv' })]);
+      await service.save({ sec_name: 'Zt Fresh Vegetables', sec_short: null });
+      expect(prisma.itemSectionMaster.findMany.mock.calls[0][0]).toEqual({
+        where: { secIsDeleted: false, secShort: { startsWith: 'ZFV', mode: 'insensitive' } },
+        select: { secShort: true },
+      });
+      expect(prisma.itemSectionMaster.create.mock.calls[0][0].data.secShort).toBe('ZFV2');
+      expect(lockCall()?.slice(1)).toEqual(['inventory.item_section_master', 'sec_short']);
+    });
+
+    it('an edit that sends it empty gets one, its own row left out of the clash', async () => {
+      prisma.itemSectionMaster.findFirst.mockResolvedValue(makeRecord());
+      prisma.itemSectionMaster.update.mockResolvedValue(makeRecord());
+      await service.save({ sec_id: ITEM_SECTION_ID, sec_name: 'Zt Fresh Vegetables', sec_short: '  ' });
+      expect(prisma.itemSectionMaster.findMany.mock.calls[0][0].where).toMatchObject({
+        NOT: { secId: ITEM_SECTION_ID },
+      });
+      expect(prisma.itemSectionMaster.update.mock.calls[0][0].data.secShort).toBe('ZFV');
+    });
+  });
   it('creates a root item section and stores self sec_id in sec_path_ids', async () => {
     const createdRecord = makeRecord({ secPathIds: [] });
     const createdWithPath = makeRecord({ secPathIds: [ITEM_SECTION_ID] });
@@ -239,6 +268,8 @@ describe('ItemsSectionMasterService', () => {
     const result = await service.save({
       sec_name: 'Child Section',
       sec_parent_id: PARENT_SECTION_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      sec_short: 'CHS',
     });
 
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
@@ -292,6 +323,8 @@ describe('ItemsSectionMasterService', () => {
     await service.save({
       sec_name: 'Child Section',
       sec_parent_id: PARENT_SECTION_ID,
+      // A typed Short Name: this test is about the path caches, not the made one.
+      sec_short: 'CHS',
     });
 
     expect(prisma.itemSectionMaster.update).toHaveBeenCalledTimes(1);

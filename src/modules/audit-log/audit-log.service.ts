@@ -157,6 +157,13 @@ const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
   ['Unit Rate ID', 'unitRate'],
   ['User ID', 'user'],
 ]);
+/**
+ * Inventory review 11-20: a raw stamp a screen with no label map hands over (tax_created_by,
+ * trlModifiedBy, sptCreatedBy …) reads as a person too. Matched on the key's snake form,
+ * after the label maps; only a uuid that names a user_master row is swapped.
+ */
+const USER_STAMP_KEY_PATTERN =
+  /(^|_)(created_by|modified_by|updated_by|approved_by|locked_by|deleted_by|cancelled_by)$/;
 const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
   string,
   ReadonlyMap<string, AuditReferenceLookupType>
@@ -255,6 +262,15 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
       ['Printer', 'printerProfile'],
     ]),
   ],
+  // Inventory review 11-20.
+  [
+    'Tax Rate Master',
+    createAuditReferenceTypeMap([
+      ['Supersedes', 'itemTax'],
+      ['Ledger', 'ledger'],
+    ]),
+  ],
+  ['Stock Reason Master', createAuditReferenceTypeMap([['Ledger', 'ledger']])],
 ]);
 /**
  * Review list 11-19 H9 — personal numbers are masked in the history READ (every row, old
@@ -309,6 +325,7 @@ export const maskAuditValue = (value: string): string => {
  *  - App Settings: a setting key (or one override's asvId) brings every override of
  *    that key, deleted (reset) ones included — a reset and a new override is a new asvId.
  *  - Posting Ledger Map: a role code (or one almId) brings every mapping of that role.
+ *  - Tax Rate Master: the rate id brings its ledger lines' rows.
  */
 type SameScreenRecordExpansion = (prisma: PrismaService, recordPk: string) => Promise<string[]>;
 const SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME = new Map<string, SameScreenRecordExpansion>([
@@ -389,6 +406,21 @@ const SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME = new Map<string, SameScreenRe
         select: { almId: true },
       });
       return mappings.map((mapping) => mapping.almId);
+    },
+  ],
+  [
+    // Inventory review 11-20: a rate's History brings its ledger lines' rows (each is
+    // audited under its own trl_id), the removed ones included.
+    'Tax Rate Master',
+    async (prisma, taxId) => {
+      if (!UUID_PATTERN.test(taxId)) {
+        return [];
+      }
+      const lines = await prisma.taxRateLedger.findMany({
+        where: { trlTaxId: taxId },
+        select: { trlId: true },
+      });
+      return lines.map((line) => line.trlId);
     },
   ],
 ]);
@@ -1422,7 +1454,11 @@ export class AuditLogService {
     if (screenResolver?.has(normalizedFieldName)) {
       return screenResolver.get(normalizedFieldName) ?? null;
     }
-    return GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName) ?? null;
+    const globalType = GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName);
+    if (globalType) {
+      return globalType;
+    }
+    return USER_STAMP_KEY_PATTERN.test(this.toSnakeCase(fieldName)) ? 'user' : null;
   }
   private isValidAuditReferenceId(lookupType: AuditReferenceLookupType, value: string): boolean {
     if (lookupType === 'tenderType') {

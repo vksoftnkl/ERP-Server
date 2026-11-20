@@ -13,6 +13,8 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { ITEM_SECTION_SHORT_SERIES } from 'src/modules/settings/shared/code-series-lock';
+import { isEmptyShortName, shortNameFromName } from '../utils/short-from-name';
 import {
   ITEM_SECTION_TREE,
   assertDeleteState,
@@ -212,6 +214,10 @@ export class ItemsSectionMasterService {
         };
 
         this.applyOptionalFields(data, saveItemSectionDto);
+        // Inventory review 11-20: a blank Short Name is made from the name.
+        if (!saveItemSectionDto.sec_short?.trim()) {
+          data.secShort = await this.shortFromName(tx, data.secName, null);
+        }
         const created = await tx.itemSectionMaster.create({ data });
         await this.ensureSelfInPath(tx, created.secId);
 
@@ -313,6 +319,10 @@ export class ItemsSectionMasterService {
           secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemSectionDto);
+        // Inventory review 11-20: a Short Name sent empty is made from the name.
+        if (isEmptyShortName(saveItemSectionDto.sec_short)) {
+          data.secShort = await this.shortFromName(tx, saveItemSectionDto.sec_name.trim(), secId);
+        }
         const updated = await tx.itemSectionMaster.update({ where: { secId }, data });
 
         await this.ensureSelfInPath(tx, secId);
@@ -352,6 +362,24 @@ export class ItemsSectionMasterService {
     }
   }
 
+  /** A Short Name made from the name: initials, else the first free suffix among live sections. */
+  private shortFromName(
+    tx: ItemSectionWriteClient,
+    name: string,
+    exceptId: string | null,
+  ): Promise<string | null> {
+    return shortNameFromName(tx, ITEM_SECTION_SHORT_SERIES, name, async (base) => {
+      const rows = await tx.itemSectionMaster.findMany({
+        where: {
+          secIsDeleted: false,
+          secShort: { startsWith: base, mode: 'insensitive' },
+          ...(exceptId ? { NOT: { secId: exceptId } } : {}),
+        },
+        select: { secShort: true },
+      });
+      return rows.map((row) => row.secShort);
+    });
+  }
   private async ensureParentExists(
     parentId: string,
     tx: ItemSectionWriteClient,

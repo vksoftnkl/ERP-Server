@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Unit } from '@prisma/client';
-import { SaveUnitDto } from './dto/save-unit.dto';
+import { NEW_UNIT_DECIMAL_COUNT, SaveUnitDto } from './dto/save-unit.dto';
 import { UnitDetailPayload, UnitErrorDetail, UnitPayload } from './types/unit-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -254,6 +254,11 @@ export class UnitsMasterService {
       unit_created_by: createdBy,
     };
     this.applyOptionalFields(data, saveUnitDto);
+    // Inventory review 11-20 (point 38.3): a new unit given no decimals takes
+    // NEW_UNIT_DECIMAL_COUNT; stored units keep theirs.
+    if (saveUnitDto.unit_decimal_count === undefined || saveUnitDto.unit_decimal_count === null) {
+      data.unit_decimal_count = NEW_UNIT_DECIMAL_COUNT;
+    }
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.assertReferences(tx, saveUnitDto, null);
@@ -489,7 +494,8 @@ export class UnitsMasterService {
     }
     if (hasOwnProperty(saveUnitDto, 'unit_description'))
       data.unit_description = saveUnitDto.unit_description;
-    if (hasOwnProperty(saveUnitDto, 'unit_decimal_count'))
+    // A blank (null) count is no instruction: the column is NOT NULL.
+    if (saveUnitDto.unit_decimal_count !== undefined && saveUnitDto.unit_decimal_count !== null)
       data.unit_decimal_count = saveUnitDto.unit_decimal_count;
     if (hasOwnProperty(saveUnitDto, 'unit_weight')) data.unit_weight = saveUnitDto.unit_weight;
     if (hasOwnProperty(saveUnitDto, 'unit_loading')) data.unit_loading = saveUnitDto.unit_loading;

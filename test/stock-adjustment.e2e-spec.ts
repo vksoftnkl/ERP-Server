@@ -155,7 +155,9 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     // No grace on expiry write-offs: only lots that HAVE expired.
     const settings = { resolveEffective: async () => [] } as unknown as AppSettingValueService;
     service = new StockAdjustmentService(transactional(tx), voucherService, ctx, settings);
-    reasonsService = new StockReasonsService(transactional(tx), ctx);
+    reasonsService = new StockReasonsService(transactional(tx), ctx, {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+    } as unknown as AuditLogService);
     fixture = await createFixture();
     await tx.$queryRaw`SELECT accounts.fn_seed_ledger_map()`;
     reasons = await loadReasons();

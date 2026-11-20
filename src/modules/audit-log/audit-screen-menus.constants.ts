@@ -25,6 +25,8 @@ export const AUDIT_SCREEN_MENUS: ReadonlyMap<string, readonly number[]> = new Ma
       ['Godown Location Master', [39]],
       ['Tax Rate Master', [40]],
       ['Category Master', [240]],
+      ['Stock Track Preset', [249]],
+      ['Stock Reason Master', [293]],
       ['Item Size Master', [291]],
       ['Item Colour Master', [292]],
       // Item Master and the child rows its History pulls in (one item, one trail).
