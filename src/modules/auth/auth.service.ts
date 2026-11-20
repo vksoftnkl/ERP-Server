@@ -21,7 +21,7 @@ import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
 import { SignedAccessToken, SignedRefreshToken, TokenService } from './token.service';
-import { AuthErrorCode, authErrorBody } from './types/auth-error-codes';
+import { AuthErrorCode, authErrorBody, type AuthErrorDetail } from './types/auth-error-codes';
 const scryptAsync = promisify(nodeScrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
 type LoginRequestMetadata = {
@@ -70,30 +70,50 @@ export class AuthService {
     const platform: ClientPlatform | null =
       client?.platform ?? this.resolveLoginChannel(loginAuthDto.device_type);
     this.buildPolicy.assertClientBuild(platform, client?.build ?? null);
-    const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
+    /*
+     * Review step 6 (U9): the user is found by login name WHATEVER its state (a live row
+     * before a deleted one), the password is checked, and only then the state. A wrong
+     * password or an unknown name is AUTH_INVALID_CREDENTIALS exactly as before, so a guesser
+     * learns nothing; a RIGHT password on a blocked account is told why (inactive / deleted,
+     * locked, channel off). The failed-login counter moves exactly as it always did: only for
+     * an account the old filter let through (live, active, unlocked, channel open).
+     */
+    const user = await this.findLoginUser(loginAuthDto.usrLoginName);
     if (!user) {
       await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
       throw new UnauthorizedException(
         authErrorBody('Invalid credentials', 'credentials', AuthErrorCode.INVALID_CREDENTIALS),
       );
     }
+    const blocked = this.loginBlock(user, loginAuthDto.device_type);
     const isPasswordValid = await this.verifyPassword(
       loginAuthDto.usrPassword,
       user.usrPasswordHash,
     );
     if (!isPasswordValid) {
       this.logger.warn(
-        `Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch.`,
+        `Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch` +
+          (blocked ? ` (and ${blocked.reason}).` : '.'),
       );
-      try {
-        await this.incrementFailedLogin(user.usrId);
-      } catch (error: unknown) {
-        this.logger.warn(
-          `Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`,
-        );
+      if (!blocked) {
+        try {
+          await this.incrementFailedLogin(user.usrId);
+        } catch (error: unknown) {
+          this.logger.warn(
+            `Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`,
+          );
+        }
       }
       throw new UnauthorizedException(
         authErrorBody('Invalid credentials', 'credentials', AuthErrorCode.INVALID_CREDENTIALS),
+      );
+    }
+    if (blocked) {
+      this.logger.warn(
+        `Login refused for '${user.usrLoginName}' (${user.usrId}): password right, ${blocked.reason}.`,
+      );
+      throw new UnauthorizedException(
+        authErrorBody(blocked.message, 'credentials', blocked.code, blocked.extra),
       );
     }
     // Device validation is disabled: an unregistered, blocked or inactive device
@@ -133,6 +153,8 @@ export class AuthService {
       // a header-less refresh is checked against.
       ep: this.authEpoch.current(),
       platform,
+      // Review step 6 (U8): only on a session whose password an administrator reset.
+      ...(user.usrMustChangePassword ? { pwc: true } : {}),
     };
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.usrId,
@@ -190,6 +212,8 @@ export class AuthService {
       dev_branch_id: device?.devBranchId ?? null,
       dev_user_id: device?.devUserId ?? null,
       device_type: device?.devDeviceType ?? null,
+      mustChangePassword: user.usrMustChangePassword === true,
+      ...rateLockOf(user),
     };
     // Part B Step 2: record the build and attach the update notice, but only
     // for a client that sent X-App-Platform + X-App-Build. onLogin never
@@ -228,13 +252,23 @@ export class AuthService {
         usrIsActive: true,
         usrIsLocked: false,
       },
-      select: { usrType: true, usrCompanyId: true },
+      select: {
+        usrType: true,
+        usrCompanyId: true,
+        usrMustChangePassword: true,
+        usrEditRate: true,
+        usrMaxDiscPerc: true,
+      },
     });
     if (!user) {
       throw new UnauthorizedException(
         authErrorBody('User is no longer active', 'refresh_token', AuthErrorCode.USER_INACTIVE),
       );
     }
+    // Review step 6 (U8): a must-change session stays one until the password is changed. A
+    // session that logged in normally is never turned into one by a later admin reset: the
+    // reset takes effect at the next login.
+    const mustChangePassword = refreshPayload.pwc === true && user.usrMustChangePassword === true;
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: refreshPayload.sub,
       user_name: refreshPayload.user_name,
@@ -249,6 +283,7 @@ export class AuthService {
       device_id: refreshPayload.device_id,
       ep: refreshPayload.ep ?? 0,
       platform: refreshPayload.platform ?? null,
+      ...(mustChangePassword ? { pwc: true } : {}),
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,
@@ -278,6 +313,8 @@ export class AuthService {
       dev_branch_id: null,
       dev_user_id: null,
       device_type: null,
+      mustChangePassword,
+      ...rateLockOf(user),
     };
   }
   /**
@@ -407,11 +444,9 @@ export class AuthService {
   }
 
   /**
-   * THE HOOK FOR U9 (review list 11-19, build step 5: "lock after 5 wrong in
-   * 15 minutes, admin unlocks"). A wrong current password on /auth/change-password
-   * is a guessed password like a failed login, so step 5 counts it here, beside
-   * incrementFailedLogin(). Deliberately log-only until then: nothing is counted
-   * and nothing locks.
+   * A wrong current password on /auth/change-password. Log-only: the user decided (review
+   * step 6, 20/11) that nothing locks an account automatically, and the failed-login counter
+   * keeps its old meaning (failed LOGINS of a usable account), so nothing is counted here.
    */
   private noteWrongCurrentPassword(user: Pick<UserMaster, 'usrId' | 'usrLoginName'>): void {
     this.logger.warn(
@@ -419,43 +454,86 @@ export class AuthService {
     );
   }
 
-  private async findLoginUser(
-    userName: string,
-    deviceType?: string | null,
-  ): Promise<UserMaster | null> {
+  /**
+   * Review step 6 (U9): the user of this login name, whatever its state, so a right password
+   * on a blocked account can be told why. A live row wins over deleted ones (a deleted user's
+   * name may be reused); among deleted rows only the latest is tried, so a login attempt costs
+   * one password check, as before.
+   */
+  private async findLoginUser(userName: string): Promise<UserMaster | null> {
     const normalizedUserName = userName.trim();
     if (!normalizedUserName) {
       return null;
     }
     return this.prisma.userMaster.findFirst({
-      where: {
-        usrLoginName: { equals: normalizedUserName, mode: 'insensitive' },
-        usrIsDeleted: false,
-        usrIsActive: true,
-        usrIsLocked: false,
-        ...this.buildLoginChannelFilter(deviceType),
-      },
+      where: { usrLoginName: { equals: normalizedUserName, mode: 'insensitive' } },
+      orderBy: [
+        { usrIsDeleted: 'asc' },
+        { usrModifiedOn: { sort: 'desc', nulls: 'last' } },
+        { usrCreatedOn: 'desc' },
+      ],
     });
   }
-  // Every login used to require usrWebLogin, so a desktop or mobile client was
-  // rejected with 'Invalid credentials' whenever web access happened to be off —
-  // even though its own channel flag was on. Gate on the flag for the channel the
-  // client actually logged in from.
-  private buildLoginChannelFilter(deviceType?: string | null): Prisma.UserMasterWhereInput {
-    switch (this.resolveLoginChannel(deviceType)) {
-      case 'web':
-        return { usrWebLogin: true };
-      case 'mobile':
-        return { usrMobileLogin: true };
-      case 'desktop':
-        return { usrDesktopLogin: true };
-      default:
-        // The client did not say where it is logging in from; accept the user as
-        // long as at least one channel is open to them.
-        return {
-          OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
-        };
+  /**
+   * Why this account may not log in on this channel, or null when it may — the filter the
+   * login query used to apply, now judged after the password (review step 6, U9). Inactive
+   * or deleted first (never worded "deleted"), then locked, then the channel. Every login
+   * used to require usrWebLogin; the gate is the flag of the channel the client logged in
+   * from, and a client that names none needs any one channel open.
+   */
+  private loginBlock(
+    user: Pick<
+      UserMaster,
+      | 'usrIsDeleted'
+      | 'usrIsActive'
+      | 'usrIsLocked'
+      | 'usrWebLogin'
+      | 'usrDesktopLogin'
+      | 'usrMobileLogin'
+    >,
+    deviceType?: string | null,
+  ): {
+    code: AuthErrorCode;
+    message: string;
+    reason: string;
+    extra: Pick<AuthErrorDetail, 'channel'>;
+  } | null {
+    if (user.usrIsDeleted || !user.usrIsActive) {
+      return {
+        code: AuthErrorCode.USER_INACTIVE,
+        message: 'This account is not active',
+        reason: user.usrIsDeleted ? 'user is deleted' : 'user is inactive',
+        extra: {},
+      };
     }
+    if (user.usrIsLocked) {
+      return {
+        code: AuthErrorCode.USER_LOCKED,
+        message: 'This account is locked',
+        reason: 'user is locked',
+        extra: {},
+      };
+    }
+    const channel = this.resolveLoginChannel(deviceType);
+    const open =
+      channel === 'web'
+        ? user.usrWebLogin
+        : channel === 'mobile'
+          ? user.usrMobileLogin
+          : channel === 'desktop'
+            ? user.usrDesktopLogin
+            : user.usrWebLogin || user.usrDesktopLogin || user.usrMobileLogin;
+    if (open) {
+      return null;
+    }
+    return {
+      code: AuthErrorCode.CHANNEL_DISABLED,
+      message: channel
+        ? `${channel[0].toUpperCase()}${channel.slice(1)} login is not allowed for this account`
+        : 'This account may not log in from any kind of device',
+      reason: channel ? `${channel} login is disabled` : 'all login channels are disabled',
+      extra: channel ? { channel } : {},
+    };
   }
   private resolveLoginChannel(deviceType?: string | null): 'web' | 'mobile' | 'desktop' | null {
     const normalized = deviceType?.trim().toLowerCase();
@@ -789,4 +867,21 @@ export class AuthService {
     }
     return 'unknown error';
   }
+}
+
+/**
+ * Review step 6: the signed-in user's own Sale Bill rate / discount lock, read off the user
+ * row at login / refresh, so the client can lock its Rate, Disc and price-level controls. The
+ * server enforces it on every save regardless (sales/bill/bill-rate-discount-lock.ts).
+ */
+function rateLockOf(
+  user: Pick<UserMaster, 'usrEditRate' | 'usrMaxDiscPerc'>,
+): Pick<LoginResponseDto, 'usrEditRate' | 'usrMaxDiscPerc'> {
+  return {
+    usrEditRate: user.usrEditRate === true,
+    usrMaxDiscPerc:
+      user.usrMaxDiscPerc === null || user.usrMaxDiscPerc === undefined
+        ? null
+        : new Prisma.Decimal(user.usrMaxDiscPerc).toFixed(2),
+  };
 }

@@ -57,4 +57,23 @@ export enum UserAdminErrorCode {
   RIGHT_CREATE = 'USER_RIGHT_CREATE',
   RIGHT_EDIT = 'USER_RIGHT_EDIT',
   RIGHT_DELETE = 'USER_RIGHT_DELETE',
+  /** Review step 6 (U10, 409 on usrId): POST /restore on a user that is not deleted. */
+  NOT_DELETED = 'USER_NOT_DELETED',
+  /**
+   * Review step 6 (U10, 409 on usrLoginName, detail `loginName`): POST /restore while a live
+   * user now holds the deleted user's login name (any case).
+   */
+  RESTORE_LOGIN_TAKEN = 'USER_RESTORE_LOGIN_TAKEN',
+  /**
+   * Review step 6 (U8, 400): a password an administrator sets (create, edit, reset-password)
+   * has under 4 characters, spaces at either end not counted. Field usrPassword / newPassword.
+   */
+  PASSWORD_TOO_SHORT = 'USER_PASSWORD_TOO_SHORT',
+  /** Review step 6 (400, field usrMaxDiscPerc): not a number from 0 to 100 (null / "" = no limit). */
+  MAX_DISC_INVALID = 'USER_MAX_DISC_INVALID',
+  /**
+   * Review step 6 (U8, 400 on newPassword): POST /reset-password sent a password AND
+   * generate: true. Type one, or ask for one; not both.
+   */
+  RESET_PASSWORD_CHOICE = 'USER_RESET_PASSWORD_CHOICE',
 }

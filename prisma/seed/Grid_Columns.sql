@@ -471,7 +471,7 @@ SELECT v.* FROM (VALUES
     ,('019f172f-f94a-7b56-ac17-c56987b83593', 62 , 5 , 'Role'               , 'usr_type'                  , 'Text'          , 12.00 , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f94b-7296-90be-be5ef95eeeb7', 62 , 6 , 'Active'             , 'usr_is_active'             , 'Text'          , 9.00  , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f94b-7954-bea2-38830bdc66f5', 62 , 7 , 'Locked'             , 'usr_is_locked'             , 'NumberTS'      , 9.00  , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f172f-f94c-7058-9d2f-2163ec406caf', 62 , 8 , 'Last Login'         , 'usr_last_login_on'         , 'DateTime'      , 14.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f172f-f94c-7058-9d2f-2163ec406caf', 62 , 8 , 'Last Login'         , 'usr_last_login_on'         , 'Text'          , 14.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ MAIN LIST - SUPPLIERS (id 63) ============
     ,('019f1774-ff5b-7c23-a2ad-6ec62620572c', 63 , 1 , '#'                  , 'sup_id'                    , 'Text'          , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1774-ff5c-7d9f-87c2-ab8acac87162', 63 , 2 , 'Short'              , 'sup_short'                 , 'Text'          , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')

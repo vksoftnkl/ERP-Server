@@ -6,6 +6,10 @@
 -- fulfilment of a challan that is not POSTED reads '—' (fix of 2026-11-17). Grids 219-221 are
 -- in DC_Grids_219_221.sql.
 --
+-- 62 MAIN LIST - COMPUTER USERS as migration 20261120110000_users_step6_show_deleted_disc_limit
+-- leaves it: Show deleted through the token iusr_is_deleted (read as text; unsent = live
+-- users) and Last Login as IST 12-hour text.
+--
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
 -- dollar-quoted below ($seed$...$seed$) so quotes and newlines survive verbatim --
@@ -505,9 +509,9 @@ ORDER BY spg_name$seed$)
     usr_type,
     usr_is_active,
     usr_is_locked,
-    usr_last_login_on
+    to_char(usr_last_login_on AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY HH12:MI AM') AS usr_last_login_on
 FROM public.user_master
-WHERE usr_is_deleted = false
+WHERE usr_is_deleted = COALESCE(substring(lower('iusr_is_deleted'::text) FROM '^(true|false)$')::boolean, false)
 ORDER BY usr_display_name$seed$)
     ,(63 , 'MAIN LIST - SUPPLIERS', NULL, NULL              , 'Ascending' , 'Desktop', true , false, 'system', $seed$SELECT
     sup_id,

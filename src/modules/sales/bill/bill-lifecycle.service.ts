@@ -254,6 +254,8 @@ export class BillLifecycleService {
         )),
       );
       await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+      // Review step 6 (U6): the acting user's rate / discount lock, as the save judges it.
+      guard.refusals.push(...(await this.bills.rateDiscountDryRun(tx, dto, chargeTypes)));
       // Delivery tracking Q8 (§8.4 item 1): the customer's oldest bill with
       // goods still in the godown past sales.delivery_old_days. A warning
       // only, never a block — so it is never routed through warn(), which

@@ -178,6 +178,22 @@ export const SALES_ERROR_CODES = {
   CREDIT_LIMIT: 'SALES_CREDIT_LIMIT',
   RATE_BELOW_MIN: 'SALES_RATE_BELOW_MIN',
   DISC_CAP: 'SALES_DISC_CAP',
+  /**
+   * Review step 6 (U6, D7-D12) — the acting user's rate / discount lock on the Sale Bill
+   * (403, sales/bill/bill-rate-discount-lock.ts). Without usr_edit_rate: a line rate that is
+   * not the one the item gives ({line}), any typed discount (line: {line}; bill: none). With
+   * it: a typed discount over usr_max_disc_perc ({line, max} / {max}).
+   */
+  RATE_CHANGE_NOT_ALLOWED: 'SALES_RATE_CHANGE_NOT_ALLOWED',
+  DISC_NOT_ALLOWED: 'SALES_DISC_NOT_ALLOWED',
+  LINE_DISC_OVER_USER_MAX: 'SALES_LINE_DISC_OVER_USER_MAX',
+  BILL_DISC_OVER_USER_MAX: 'SALES_BILL_DISC_OVER_USER_MAX',
+  /**
+   * Review step 6 (user 20/11): without usr_edit_rate, a price level the bill does not give by
+   * default (the customer's own, else sales.default_price_level; an order / challan line's
+   * own) — {line} (field items), or the bill's own level (field sbPriceLevel, no line).
+   */
+  PRICE_LEVEL_NOT_ALLOWED: 'SALES_PRICE_LEVEL_NOT_ALLOWED',
   TENDER_DAILY_LIMIT: 'SALES_TENDER_DAILY_LIMIT',
   TENDER_MIN_MAX: 'SALES_TENDER_MIN_MAX',
   LOYALTY_CAP: 'SALES_LOYALTY_CAP',

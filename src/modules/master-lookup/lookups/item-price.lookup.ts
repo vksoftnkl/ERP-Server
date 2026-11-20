@@ -22,44 +22,35 @@ import {
 } from '../types/master-lookup-api.types';
 import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
 import { MasterLookupErrorCode } from '../types/master-lookup-error-codes';
-import { nextIucIdInCycle, priceForLevel, selectUnitRate } from '../utils/item-price.utils';
+import { nextIucIdInCycle, priceForLevel } from '../utils/item-price.utils';
 import {
-  HEADLINE_KEY,
-  bucketKeyOfRow,
-  isHeadlineKey,
-  livePriceRows,
   resolveEffectivePrice,
   sameBucket,
   type BucketKey,
   type PriceCallerScope,
-  type ResolvedPrice,
 } from '../../Inventory/items-price-master/price-resolver';
 import { todayIso } from '../../Inventory/items-price-master/price-bucket.service';
 import {
+  pricedBuckets,
+  rankedQtySlabs,
+  resolveSaleLinePrice,
+  type QtyPriceSettingReader,
+  type SaleLinePriceMiss,
+} from '../../Inventory/items-price-master/sale-line-price';
+import {
   bucketKeyFor,
-  readBucketTrackFlags,
   type BucketTrackFlags,
 } from '../../stocks/stock-voucher/stock-voucher-posting.helper';
 import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
 import { branchDefaultGodownId } from '../../../common/utils/sale-line-godown.utils';
-import {
-  isApplyQtyPricesOn,
-  qtySlabOf,
-  slabSpecificity,
-  slabsFor,
-} from '../../Inventory/items-qty-price-master/qty-slab.rules';
+import { slabSpecificity } from '../../Inventory/items-qty-price-master/qty-slab.rules';
 
 /**
  * What the lookup asks of the settings resolver (AppSettingValueService) — for
  * `sales.apply_qty_prices`. Absent (a unit test, a bare e2e), the setting's
- * seeded default stands: On.
+ * seeded default stands: On. Lives with the shared resolver since review step 6.
  */
-export interface QtyPriceSettingReader {
-  resolveEffective(scope: {
-    companyId?: string;
-    branchId?: string;
-  }): Promise<ReadonlyArray<{ asdKey: string; value: string | null }>>;
-}
+export type { QtyPriceSettingReader };
 
 /**
  * The posting roles the payload names a ledger for, keyed by the payload field.
@@ -143,37 +134,19 @@ export class ItemPriceLookup {
     iucId: string,
     docDate: string,
   ): Promise<ItemQtySlabPayload[]> {
-    if (query.price_level < 1 || query.price_level > 4) {
-      return [];
-    }
-    const rows = await this.prisma.itemQtyPrice.findMany({
-      where: {
-        iqpItemId: query.item_id,
-        iqpItemUnitId: iucId,
-        iqpIsDeleted: false,
-        iqpIsActive: true,
+    const ranked = await rankedQtySlabs(
+      this.prisma,
+      {
+        itemId: query.item_id,
+        iucId,
+        companyId: query.company_id ?? null,
+        branchId: query.branch_id ?? null,
+        partyId: query.customer_id ?? null,
+        priceLevel: query.price_level,
+        onDate: docDate,
       },
-      orderBy: [{ iqpFromQty: 'asc' }, { iqpId: 'asc' }],
-    });
-    const ranked = slabsFor(rows.map(qtySlabOf), {
-      companyId: query.company_id ?? null,
-      branchId: query.branch_id ?? null,
-      partyId: query.customer_id ?? null,
-      priceLevel: query.price_level,
-      onDate: docDate,
-    });
-    if (!ranked.length) {
-      return [];
-    }
-    if (this.settings) {
-      const effective = await this.settings.resolveEffective({
-        companyId: query.company_id,
-        branchId: query.branch_id,
-      });
-      if (!isApplyQtyPricesOn(effective)) {
-        return [];
-      }
-    }
+      this.settings,
+    );
     const amount = (value: Prisma.Decimal | null) => (value === null ? null : value.toNumber());
     return ranked.map((slab) => ({
       iqp_id: slab.iqpId,
@@ -382,32 +355,6 @@ export class ItemPriceLookup {
   }
 
   /**
-   * The line's own bucket values, unblanked: a held lot's MRP / sale price when
-   * `lot_id` is given (they ARE the key — `mrp` / `sale_price` are ignored),
-   * else what the line typed. The lot must belong to the item.
-   */
-  private async lineBucketValues(
-    query: ItemPriceLookupQueryDto,
-  ): Promise<{ mrp: number | null; salePrice: number | null }> {
-    if (!query.lot_id) {
-      return { mrp: query.mrp ?? null, salePrice: query.sale_price ?? null };
-    }
-    const lot = await this.prisma.stockLot.findFirst({
-      where: { sltId: query.lot_id, sltItemId: query.item_id },
-      select: { sltMrp: true, sltSalePrice: true },
-    });
-    if (!lot) {
-      throwMasterNotFound<MasterErrorDetail>(
-        'Lot not found',
-        'lot_id',
-        `No lot ${query.lot_id} found for item ${query.item_id}`,
-        MasterLookupErrorCode.LOT_NOT_FOUND,
-      );
-    }
-    return { mrp: toNullableNumber(lot.sltMrp), salePrice: toNullableNumber(lot.sltSalePrice) };
-  }
-
-  /**
    * §3.3 `buckets[]` — every live bucket at this scope that has stock, each
    * with the prices it resolves to. 16q Q24 without the F12 screen.
    *
@@ -417,59 +364,6 @@ export class ItemPriceLookup {
    * one bucket today. SALEABLE only — damaged or quarantined stock is not
    * sold, so its MRP is not a choice the till should offer.
    */
-  /**
-   * The live bucket rows of one unit this caller can see, one per bucket — the
-   * row the resolver would answer for that bucket — dearest MRP first, then
-   * dearest sale price.
-   */
-  private pricedBuckets(
-    unitRows: PriceRowWithUnit[],
-    docDate: string,
-    caller: PriceCallerScope,
-  ): Array<{ key: BucketKey; row: PriceRowWithUnit; answer: ResolvedPrice<PriceRowWithUnit> }> {
-    const keys: BucketKey[] = [];
-    for (const row of livePriceRows(unitRows, docDate, caller)) {
-      const key = bucketKeyOfRow(row);
-      if (!isHeadlineKey(key) && !keys.some((known) => sameBucket(known, key))) {
-        keys.push(key);
-      }
-    }
-    return keys
-      .map((key) => {
-        const answer = resolveEffectivePrice(unitRows, key, docDate, caller)!;
-        return { key, row: answer.row, answer };
-      })
-      .sort(
-        (a, b) =>
-          (b.key.mrp ?? -1) - (a.key.mrp ?? -1) ||
-          (b.key.salePrice ?? -1) - (a.key.salePrice ?? -1),
-      );
-  }
-
-  /**
-   * Notes 71 B2 — a line with no MRP yet, on an item priced ONLY per MRP (every
-   * row a bucket, no headline). Without this the lookup was a 404 and the
-   * screen had nothing to offer: an item priced on the item card but not yet
-   * received could not go on a bill at all.
-   *
-   * The answer is PROVISIONAL, and only for that case: the dearest bucket at the
-   * most specific scope — the rule the opening seed uses, and the one an
-   * operator notices is wrong. `buckets[]` then lists every priced bucket, so a
-   * screen with several opens its picker and re-asks with `mrp`. A line that
-   * typed an MRP no row prices still gets the 404, naming what is priced.
-   */
-  private provisionalBucket(
-    unitRows: PriceRowWithUnit[],
-    key: BucketKey,
-    docDate: string,
-    caller: PriceCallerScope,
-  ): ResolvedPrice<PriceRowWithUnit> | null {
-    if (!isHeadlineKey(key)) {
-      return null;
-    }
-    return this.pricedBuckets(unitRows, docDate, caller)[0]?.answer ?? null;
-  }
-
   private async resolveStockBuckets(
     query: ItemPriceLookupQueryDto,
     policy: BucketTrackFlags,
@@ -511,9 +405,7 @@ export class ItemPriceLookup {
     // quantity 0, so a screen can still put the item on a bill (and the grid's
     // own rule — Q25 — shows the priced rows of an item with no stock too).
     if (!merged.length) {
-      merged.push(
-        ...this.pricedBuckets(unitRows, docDate, caller).map(({ key }) => ({ key, qty: 0 })),
-      );
+      merged.push(...pricedBuckets(unitRows, docDate, caller).map(({ key }) => ({ key, qty: 0 })));
     }
     return merged.map(({ key, qty }) => {
       const answer = resolveEffectivePrice(unitRows, key, docDate, caller);
@@ -536,108 +428,90 @@ export class ItemPriceLookup {
     });
   }
 
+  /** The coded 404 the lookup has always answered for a line the shared resolver could not price. */
+  private throwPriceMiss(answer: SaleLinePriceMiss, query: ItemPriceLookupQueryDto): never {
+    const { item_id, unit_id } = query;
+    switch (answer.reason) {
+      case 'ITEM_NOT_FOUND':
+        return throwMasterNotFound<MasterErrorDetail>(
+          'Item not found',
+          'item_id',
+          `No active item found for id ${item_id}`,
+          MasterLookupErrorCode.ITEM_NOT_FOUND,
+        );
+      case 'PRICE_NOT_FOUND':
+        return throwMasterNotFound<MasterErrorDetail>(
+          'Item price not found',
+          unit_id ? 'unit_id' : 'item_id',
+          unit_id
+            ? `No active price row found for item ${item_id} and unit ${unit_id}`
+            : `No active price row configured for item ${item_id}`,
+          MasterLookupErrorCode.PRICE_NOT_FOUND,
+        );
+      case 'LOT_NOT_FOUND':
+        return throwMasterNotFound<MasterErrorDetail>(
+          'Lot not found',
+          'lot_id',
+          `No lot ${query.lot_id} found for item ${item_id}`,
+          MasterLookupErrorCode.LOT_NOT_FOUND,
+        );
+      case 'BUCKET_PRICE_NOT_FOUND': {
+        const { key } = answer;
+        const priced = answer.priced.map((k) =>
+          k.mrp !== null ? `MRP ${k.mrp}` : `sale price ${k.salePrice}`,
+        );
+        return throwMasterNotFound<MasterErrorDetail>(
+          'Item price not found',
+          key.mrp !== null
+            ? 'mrp'
+            : key.salePrice !== null
+              ? 'sale_price'
+              : unit_id
+                ? 'unit_id'
+                : 'item_id',
+          `No active price row for item ${item_id} at ${
+            key.mrp !== null
+              ? `MRP ${key.mrp}`
+              : key.salePrice !== null
+                ? `sale price ${key.salePrice}`
+                : 'this unit'
+          }, and no headline row to fall back to` +
+            (priced.length ? `. Priced: ${priced.join(', ')}.` : '.'),
+          MasterLookupErrorCode.BUCKET_PRICE_NOT_FOUND,
+        );
+      }
+    }
+  }
+
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
     const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
     const priceLevel = query.price_level;
     const regional = query.regional ?? false;
     const docDate = query.doc_date?.slice(0, 10) ?? todayIso();
-    // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
-    //    branch_id is optional: without it the item and its price rows are
-    //    resolved across every branch. A NULL branch on a row means "applies to
-    //    every branch", so a branch-scoped lookup takes those rows as well; the
-    //    same holds for company. Every bucket of the item comes back — the
-    //    resolver below picks among them.
-    const [itemRecord, priceRows] = await Promise.all([
-      this.prisma.itemMaster.findFirst({
-        where: {
-          itemId: item_id,
-          ...(branch_id ? { OR: [{ itemBranchId: branch_id }, { itemBranchId: null }] } : {}),
-          itemIsDeleted: false,
-        },
-      }),
-      this.prisma.itemPriceMaster.findMany({
-        where: {
-          ipmItemId: item_id,
-          AND: [
-            ...(branch_id ? [{ OR: [{ ipmBranchId: branch_id }, { ipmBranchId: null }] }] : []),
-            ...(company_id ? [{ OR: [{ ipmCompanyId: company_id }, { ipmCompanyId: null }] }] : []),
-          ],
-          ipmIsDeleted: false,
-        },
-        include: { itemUnitConversion: { include: { unit: true } } },
-        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
-      }),
-    ]);
-    if (!itemRecord) {
-      throwMasterNotFound<MasterErrorDetail>(
-        'Item not found',
-        'item_id',
-        `No active item found for id ${item_id}`,
-        MasterLookupErrorCode.ITEM_NOT_FOUND,
-      );
-    }
-    const caller: PriceCallerScope = { companyId: company_id ?? null, branchId: branch_id ?? null };
-    const liveRows = livePriceRows(priceRows, docDate, caller);
-    // 2. Pick the unit: an explicit unit wins, otherwise the legacy unit-slno
-    //    rule (retail item → highest slno, else base row, slno 0). The row
-    //    within the unit is the resolver's choice, below.
-    const unitPick = selectUnitRate(liveRows, itemRecord.itemRetailItem, unit_id);
-    if (!unitPick) {
-      throwMasterNotFound<MasterErrorDetail>(
-        'Item price not found',
-        unit_id ? 'unit_id' : 'item_id',
-        unit_id
-          ? `No active price row found for item ${item_id} and unit ${unit_id}`
-          : `No active price row configured for item ${item_id}`,
-        MasterLookupErrorCode.PRICE_NOT_FOUND,
-      );
-    }
-    const unitRows = liveRows.filter((row) => row.ipmUcUnitId === unitPick.ipmUcUnitId);
-    // 3. The bucket key: the lot's identity when the line holds one, else what
-    //    the line carries — then blanked by the policy in force on the
-    //    document's date, so an untracked item always asks for its headline.
-    const [policy] = await readBucketTrackFlags(
-      this.prisma,
-      [
-        {
-          itemId: item_id,
-          companyId: company_id ?? itemRecord.itemCompanyId,
-          branchId: branch_id ?? itemRecord.itemBranchId,
-        },
-      ],
+    // 1–3. Item, unit, bucket, row and customer rate: the shared resolver (review step 6,
+    //    D12), so the Sale Bill's rate lock prices a line exactly as this answer does.
+    //    branch_id is optional: without it the item and its price rows are resolved across
+    //    every branch; a NULL branch / company on a row applies to every one. An explicit
+    //    unit wins, else the legacy unit-slno rule (retail item → highest slno, else the
+    //    base row). The bucket key is the lot's identity when the line holds one, else what
+    //    the line carries, blanked by the policy in force on the document's date, so an
+    //    untracked item always asks for its headline.
+    const answer = await resolveSaleLinePrice(this.prisma, {
+      itemId: item_id,
+      unitId: unit_id ?? null,
+      companyId: company_id ?? null,
+      branchId: branch_id ?? null,
+      customerId: customer_id ?? null,
+      priceLevel,
       docDate,
-    );
-    const key = bucketKeyFor(policy, await this.lineBucketValues(query));
-    const resolved =
-      resolveEffectivePrice(unitRows, key, docDate, caller) ??
-      this.provisionalBucket(unitRows, key, docDate, caller);
-    if (!resolved) {
-      const priced = this.pricedBuckets(unitRows, docDate, caller).map(({ key: k }) =>
-        k.mrp !== null ? `MRP ${k.mrp}` : `sale price ${k.salePrice}`,
-      );
-      throwMasterNotFound<MasterErrorDetail>(
-        'Item price not found',
-        key.mrp !== null
-          ? 'mrp'
-          : key.salePrice !== null
-            ? 'sale_price'
-            : unit_id
-              ? 'unit_id'
-              : 'item_id',
-        `No active price row for item ${item_id} at ${
-          key.mrp !== null
-            ? `MRP ${key.mrp}`
-            : key.salePrice !== null
-              ? `sale price ${key.salePrice}`
-              : 'this unit'
-        }, and no headline row to fall back to` +
-          (priced.length ? `. Priced: ${priced.join(', ')}.` : '.'),
-        MasterLookupErrorCode.BUCKET_PRICE_NOT_FOUND,
-      );
+      mrp: query.mrp ?? null,
+      salePrice: query.sale_price ?? null,
+      lotId: query.lot_id ?? null,
+    });
+    if (!answer.ok) {
+      this.throwPriceMiss(answer, query);
     }
-    const rate = resolved.row;
-    // Customer rates are per item and unit, not per MRP: always the headline's.
-    const headline = resolveEffectivePrice(unitRows, HEADLINE_KEY, docDate, caller);
+    const { item: itemRecord, caller, unitRows, policy, resolved, rate } = answer;
     // Legacy `isale_no`: an explicit sale godown overrides the rate's own godown.
     // A rate with no godown falls back to the branch default — the same rule
     // /quotations/get stamps its lines with (notes 51, sale-line-godown.utils).
@@ -649,7 +523,7 @@ export class ItemPriceLookup {
     // The rate's unit now arrives with the row, via its conversion.
     const unit = rate.itemUnitConversion.unit;
     const rateUnitId = rate.itemUnitConversion.iucUnitId;
-    const [godown, tax, company, custRate, reorder, stockSum, loading] = await Promise.all([
+    const [godown, tax, company, reorder, stockSum, loading] = await Promise.all([
       godownId
         ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
         : Promise.resolve(null),
@@ -665,16 +539,6 @@ export class ItemPriceLookup {
             where: { compId: company_id },
             // The row holds the logo and signature images (up to ~700 KB each).
             select: { compGstApplicable: true, compNegStkApl: true },
-          })
-        : Promise.resolve(null),
-      customer_id && headline
-        ? this.prisma.custItemRate.findFirst({
-            where: {
-              csrUnitRateId: headline.row.ipmId,
-              csrCustomerId: customer_id,
-              csrIsDeleted: false,
-              csrIsActive: true,
-            },
           })
         : Promise.resolve(null),
       // ir_unit_id and ipm_uc_unit_id both hold an iuc_id, so these match directly.
@@ -709,12 +573,9 @@ export class ItemPriceLookup {
     // Without a company there is nothing to switch GST off, so the item's own
     // tax block stands; a supplied company still decides as before.
     const gstApplicable = company_id ? (company?.compGstApplicable ?? false) : true;
-    const basePrice = priceForLevel(rate, priceLevel);
     // Legacy: the customer rate discount applies ONLY to the A/B/C/D sales
-    // prices (levels 1–4), never to max/min/cost (levels 5/6/7).
-    const customerDiscQty =
-      custRate && priceLevel >= 1 && priceLevel <= 4 ? toNumber(custRate.csrDiscQty) : 0;
-    const salesPrice = basePrice - customerDiscQty;
+    // prices (levels 1–4), never to max/min/cost (levels 5/6/7) — the resolver's rule.
+    const salesPrice = answer.salesPrice;
     // Legacy `iregional`: regional name falls back to English when unset.
     const itemName = regional
       ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)

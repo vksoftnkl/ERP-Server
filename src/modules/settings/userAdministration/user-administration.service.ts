@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserMaster, UserMenus } from '@prisma/client';
+import { randomInt } from 'node:crypto';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { SaveUserAdministrationDto, SaveUserMenuDto } from './dto/save-user-administration.dto';
+import {
+  ResetUserPasswordDto,
+  SaveUserAdministrationDto,
+  SaveUserMenuDto,
+} from './dto/save-user-administration.dto';
 import {
   UserAdminErrorDetail,
   UserAdminPayload,
+  UserAdminResetPasswordResult,
+  UserAdminRestoreResult,
+  UserAdminUnlockResult,
   UserMenuPayload,
 } from './types/user-administration-api.types';
 import {
@@ -29,6 +37,17 @@ const USER_ADMIN_AUDIT_SCREEN_NAME = 'User Administration';
 export const USER_ADMIN_MENU_ID = 58;
 /** assertMenuRight codes: USER_RIGHT_VIEW / _CREATE / _EDIT / _DELETE (UserAdminErrorCode.RIGHT_*). */
 const USER_ADMIN_RIGHT_PREFIX = 'USER';
+/**
+ * Review step 6 (U7 / U8): the one rule for a password an administrator sets (create, edit,
+ * reset), the same as POST /auth/change-password's (MIN_NEW_PASSWORD_LENGTH there): at least
+ * 4 characters, spaces at either end not counted.
+ */
+export const MIN_ADMIN_PASSWORD_LENGTH = 4;
+/** Review step 6 (U8): the length of a password POST /reset-password generates. */
+export const GENERATED_PASSWORD_LENGTH = 8;
+/** No 0/O, 1/l/I: a generated password is read out to the user, often over the phone. */
+const GENERATED_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+const MAX_DISC_PERC_MAX = new Prisma.Decimal(100);
 
 type UserAdminWriteClient = SettingsWriteClient;
 
@@ -174,6 +193,339 @@ export class UserAdministrationService {
     });
   }
 
+  /**
+   * POST /user-administration/reset-password (review step 6, U8). Menu-58 Edit right. The
+   * administrator types a password (at least 4 characters) or asks for one (`generate`: 8
+   * random characters, answered ONCE in `generatedPassword`, never stored or audited). The
+   * user must change it at the next login (usr_must_change_password = true): the login then
+   * answers mustChangePassword: true and that session may only change it. A SUPER ADMIN user
+   * is reset only by a SUPER ADMIN (assertMayTouch). The lock and the failed-login counter are
+   * left alone (Unlock clears them). The audit row says who reset it, never the value.
+   */
+  async resetPassword(dto: ResetUserPasswordDto): Promise<UserAdminResetPasswordResult> {
+    await this.assertRight('edit', 'reset passwords');
+    const typed = dto.newPassword?.trim() ?? '';
+    if (dto.generate === true && typed.length > 0) {
+      throwSettingsBadRequest<UserAdminErrorDetail>('Type a password or generate one, not both', [
+        {
+          field: 'newPassword',
+          message: 'newPassword was sent together with generate: true; send one of them',
+          code: UserAdminErrorCode.RESET_PASSWORD_CHOICE,
+        },
+      ]);
+    }
+    if (dto.generate !== true) {
+      assertPasswordLength(dto.newPassword ?? '', 'newPassword');
+    }
+    const generatedPassword = dto.generate === true ? generatePassword() : null;
+    const password = generatedPassword ?? typed;
+    const actorId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.userMaster.findFirst({
+        where: { usrId: dto.usrId, usrIsDeleted: false },
+      });
+      if (!existing) {
+        this.throwNotFound(dto.usrId);
+      }
+      await this.assertMayTouch(tx, existing, 'reset the password of');
+      const now = new Date();
+      await tx.userMaster.update({
+        where: { usrId: dto.usrId },
+        data: {
+          usrPasswordHash: await hashSecret(password),
+          usrPasswordChangedOn: now,
+          usrMustChangePassword: true,
+          usrModifiedOn: now,
+          usrModifiedBy: actorId,
+        },
+      });
+      const admin = await this.actorLoginName(tx, actorId);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: USER_MASTER_TABLE_NAME,
+          screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: dto.usrId,
+          displayName: this.auditDisplayName(existing),
+          // The two fields a reset moves. No password, no hash, not even its length.
+          originalRecord: {
+            usrPasswordChangedOn: existing.usrPasswordChangedOn?.toISOString() ?? null,
+            usrMustChangePassword: existing.usrMustChangePassword,
+          },
+          modifiedRecord: {
+            usrPasswordChangedOn: now.toISOString(),
+            usrMustChangePassword: true,
+          },
+          userId: actorId,
+          notes:
+            `Password reset by ${admin} (${generatedPassword ? 'generated' : 'typed'}); ` +
+            'the user must change it at the next login',
+        },
+        tx,
+      );
+      return {
+        usrId: existing.usrId,
+        usrLoginName: existing.usrLoginName,
+        usrMustChangePassword: true,
+        usrPasswordChangedOn: now.toISOString(),
+        generatedPassword,
+      };
+    });
+  }
+
+  /**
+   * POST /user-administration/unlock (review step 6). Menu-58 Edit right. Clears the lock
+   * (usr_is_locked, usr_locked_on, usr_locked_by) and the failed-login counter. Nothing locks
+   * an account automatically (user, 20/11), so this undoes a lock set some other way. A user
+   * with nothing to clear answers changed: false and writes no row. A SUPER ADMIN user is
+   * unlocked only by a SUPER ADMIN.
+   */
+  async unlock(usrId: string): Promise<UserAdminUnlockResult> {
+    await this.assertRight('edit', 'unlock users');
+    const actorId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.userMaster.findFirst({ where: { usrId, usrIsDeleted: false } });
+      if (!existing) {
+        this.throwNotFound(usrId);
+      }
+      await this.assertMayTouch(tx, existing, 'unlock');
+      const result: UserAdminUnlockResult = {
+        usrId,
+        usrIsLocked: false,
+        usrFailedLoginCount: 0,
+        usrLockedOn: null,
+        usrLockedBy: null,
+        changed: false,
+      };
+      const before = {
+        usrIsLocked: existing.usrIsLocked,
+        usrLockedOn: existing.usrLockedOn?.toISOString() ?? null,
+        usrLockedBy: existing.usrLockedBy,
+        usrFailedLoginCount: existing.usrFailedLoginCount,
+      };
+      if (
+        !before.usrIsLocked &&
+        before.usrLockedOn === null &&
+        before.usrLockedBy === null &&
+        before.usrFailedLoginCount === 0
+      ) {
+        return result;
+      }
+      const now = new Date();
+      await tx.userMaster.update({
+        where: { usrId },
+        data: {
+          usrIsLocked: false,
+          usrLockedOn: null,
+          usrLockedBy: null,
+          usrFailedLoginCount: 0,
+          usrModifiedOn: now,
+          usrModifiedBy: actorId,
+        },
+      });
+      const admin = await this.actorLoginName(tx, actorId);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: USER_MASTER_TABLE_NAME,
+          screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: usrId,
+          displayName: this.auditDisplayName(existing),
+          originalRecord: before,
+          modifiedRecord: {
+            usrIsLocked: false,
+            usrLockedOn: null,
+            usrLockedBy: null,
+            usrFailedLoginCount: 0,
+          },
+          userId: actorId,
+          notes:
+            `${before.usrIsLocked ? 'Unlocked' : 'Failed logins cleared'} by ${admin}` +
+            ` (failed logins were ${before.usrFailedLoginCount})`,
+        },
+        tx,
+      );
+      return { ...result, changed: true };
+    });
+  }
+
+  /**
+   * POST /user-administration/restore (review step 6, U10; user 20/11: bring the old rights
+   * back). Menu-58 Delete right (the right that removed the user brings it back). The user
+   * comes back INACTIVE, WITH the menu rights the delete took away — and only those:
+   *   the delete (softDelete) stamps the user row and every user_menus row it soft-deletes
+   *   with ONE `now` and ONE actor, and a deleted user cannot be saved, reset or unlocked
+   *   after, so the deleted user's usr_modified_on / usr_modified_by still name that delete.
+   *   The rows revived are this user's deleted rows with um_modified_on = usr_modified_on (and
+   *   um_modified_by = usr_modified_by). Rows an earlier save removed carry that save's stamp
+   *   and stay removed; a row whose menu is no longer active stays removed too.
+   * 404 USER_NOT_FOUND (no such id), 409 USER_NOT_DELETED (live), 409 USER_RESTORE_LOGIN_TAKEN
+   * (a live user now holds the login name, any case; detail `loginName`). A SUPER ADMIN user
+   * is restored only by a SUPER ADMIN.
+   */
+  async restore(usrId: string): Promise<UserAdminRestoreResult> {
+    await this.assertRight('delete', 'restore users');
+    const actorId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.userMaster.findFirst({ where: { usrId } });
+        if (!existing) {
+          this.throwNotFound(usrId);
+        }
+        if (!existing.usrIsDeleted) {
+          throwSettingsConflict<UserAdminErrorDetail>('User is not deleted', [
+            {
+              field: 'usrId',
+              message: `${existing.usrLoginName} is not deleted; only a deleted user can be restored`,
+              code: UserAdminErrorCode.NOT_DELETED,
+            },
+          ]);
+        }
+        await this.assertMayTouch(tx, existing, 'restore');
+        const holder = await tx.userMaster.findFirst({
+          where: {
+            usrLoginName: { equals: existing.usrLoginName.trim(), mode: 'insensitive' },
+            usrIsDeleted: false,
+            NOT: { usrId },
+          },
+          select: { usrLoginName: true },
+        });
+        if (holder) {
+          this.throwRestoreLoginTaken(holder.usrLoginName);
+        }
+        const now = new Date();
+        const restored = await tx.userMaster.updateMany({
+          where: { usrId, usrIsDeleted: true },
+          data: {
+            usrIsDeleted: false,
+            usrIsActive: false,
+            usrModifiedOn: now,
+            usrModifiedBy: actorId,
+          },
+        });
+        if (restored.count === 0) {
+          this.throwNotFound(usrId);
+        }
+        const { revived, leftOut } = await this.reviveDeletedRights(tx, existing, actorId, now);
+        const menuNames = await this.menuNamesOf(tx, revived);
+        const admin = await this.actorLoginName(tx, actorId);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: USER_MASTER_TABLE_NAME,
+            screenName: USER_ADMIN_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: usrId,
+            displayName: this.auditDisplayName(existing),
+            originalRecord: this.toAuditRecord(existing, {}),
+            modifiedRecord: this.toAuditRecord(
+              { ...existing, usrIsDeleted: false, usrIsActive: false },
+              this.menuRightsOf(revived, menuNames),
+            ),
+            userId: actorId,
+            notes: truncateNote(
+              `User restored by ${admin}: inactive, with the ${revived.length} menu rights ` +
+                'the delete removed' +
+                (leftOut > 0 ? `; ${leftOut} of a menu no longer active left out` : ''),
+            ),
+          },
+          tx,
+        );
+        return {
+          usrId,
+          usrLoginName: existing.usrLoginName,
+          usrIsDeleted: false,
+          usrIsActive: false,
+          menuCount: revived.length,
+        };
+      });
+    } catch (error: unknown) {
+      // Two restores (or a create) racing for one login name: the live-name index answers.
+      if (isLoginNameClash(error)) {
+        this.throwRestoreLoginTaken(null);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The user_menus rows the user's delete soft-deleted (same stamp as the deleted user row,
+   * see restore), brought back as they were; a row of a menu no longer active is left out.
+   */
+  private async reviveDeletedRights(
+    tx: UserAdminWriteClient,
+    deleted: Pick<UserMaster, 'usrId' | 'usrModifiedOn' | 'usrModifiedBy'>,
+    actorId: string,
+    now: Date,
+  ): Promise<{ revived: UserMenus[]; leftOut: number }> {
+    if (!deleted.usrModifiedOn) {
+      return { revived: [], leftOut: 0 };
+    }
+    const removedByDelete = await tx.userMenus.findMany({
+      where: {
+        umUserId: deleted.usrId,
+        umIsDeleted: true,
+        umModifiedOn: deleted.usrModifiedOn,
+        ...(deleted.usrModifiedBy ? { umModifiedBy: deleted.usrModifiedBy } : {}),
+      },
+      orderBy: { umMenuId: 'asc' },
+    });
+    if (removedByDelete.length === 0) {
+      return { revived: [], leftOut: 0 };
+    }
+    const active = new Set(
+      (
+        await tx.menu.findMany({
+          where: {
+            menuId: { in: [...new Set(removedByDelete.map((row) => row.umMenuId))] },
+            menuIsActive: true,
+          },
+          select: { menuId: true },
+        })
+      ).map((menu) => menu.menuId),
+    );
+    const revive = removedByDelete.filter((row) => active.has(row.umMenuId));
+    if (revive.length > 0) {
+      await tx.userMenus.updateMany({
+        where: { umId: { in: revive.map((row) => row.umId) }, umIsDeleted: true },
+        data: { umIsDeleted: false, umModifiedOn: now, umModifiedBy: actorId },
+      });
+    }
+    return {
+      revived: revive.map((row) => ({
+        ...row,
+        umIsDeleted: false,
+        umModifiedOn: now,
+        umModifiedBy: actorId,
+      })),
+      leftOut: removedByDelete.length - revive.length,
+    };
+  }
+
+  private throwRestoreLoginTaken(loginName: string | null): never {
+    throwSettingsConflict<UserAdminErrorDetail>('Login name in use', [
+      {
+        field: 'usrLoginName',
+        message: loginName
+          ? `Another user now has the login name ${loginName}`
+          : 'Another user now has this login name',
+        code: UserAdminErrorCode.RESTORE_LOGIN_TAKEN,
+        ...(loginName ? { loginName } : {}),
+      },
+    ]);
+  }
+
+  /** The acting administrator's login name for an audit note (their id when it has none). */
+  private async actorLoginName(tx: UserAdminWriteClient, actorId: string): Promise<string> {
+    const row = await tx.userMaster.findFirst({
+      where: { usrId: actorId },
+      select: { usrLoginName: true },
+    });
+    return row?.usrLoginName ?? actorId;
+  }
+
   private async createUser(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
     if (!dto.usrPassword?.trim()) {
       throwSettingsBadRequest<UserAdminErrorDetail>('Validation failed', [
@@ -184,6 +536,8 @@ export class UserAdministrationService {
         },
       ]);
     }
+    assertPasswordLength(dto.usrPassword, 'usrPassword');
+    const maxDiscPerc = parseMaxDiscPerc(dto.usrMaxDiscPerc);
 
     try {
       return this.prisma.$transaction(async (tx) => {
@@ -206,7 +560,7 @@ export class UserAdministrationService {
           usrCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
-        this.applyOptionalUserFields(data, dto);
+        this.applyOptionalUserFields(data, dto, maxDiscPerc);
         await this.applyPin(data, dto);
 
         const created = await tx.userMaster.create({ data });
@@ -247,6 +601,10 @@ export class UserAdministrationService {
 
   private async updateUser(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
     const usrId = dto.usrId!;
+    if (dto.usrPassword?.trim()) {
+      assertPasswordLength(dto.usrPassword, 'usrPassword');
+    }
+    const maxDiscPerc = parseMaxDiscPerc(dto.usrMaxDiscPerc);
 
     try {
       return this.prisma.$transaction(async (tx) => {
@@ -283,10 +641,13 @@ export class UserAdministrationService {
         if (dto.usrPassword?.trim()) {
           data.usrPasswordHash = await hashSecret(dto.usrPassword.trim());
           data.usrPasswordChangedOn = now;
-          data.usrMustChangePassword = false;
+          // Review step 6 (U8): a password the administrator types for someone is a reset —
+          // the user must change it at the next login. A usrMustChangePassword sent with the
+          // save (the screen's own tick) still decides: applyOptionalUserFields runs after.
+          data.usrMustChangePassword = true;
         }
 
-        this.applyOptionalUserFields(data, dto);
+        this.applyOptionalUserFields(data, dto, maxDiscPerc);
         await this.applyPin(data, dto);
 
         // Review list 11-19 step 3: the rights BEFORE the save, so the audit diffs them menu
@@ -380,7 +741,7 @@ export class UserAdministrationService {
   private async assertMayTouch(
     tx: UserAdminWriteClient,
     target: Pick<UserMaster, 'usrType' | 'usrLoginName'>,
-    action: 'change' | 'delete',
+    action: 'change' | 'delete' | 'restore' | 'unlock' | 'reset the password of',
   ): Promise<void> {
     if (target.usrType !== UserType.SUPER_ADMIN) {
       return;
@@ -601,10 +962,15 @@ export class UserAdministrationService {
     data.usrPinHash = dto.usrPin ? await hashSecret(dto.usrPin) : null;
   }
 
+  /**
+   * `maxDiscPerc` is parseMaxDiscPerc's answer for the DTO: undefined = key omitted (keep).
+   */
   private applyOptionalUserFields(
     data: Prisma.UserMasterUncheckedCreateInput | Prisma.UserMasterUncheckedUpdateInput,
     dto: SaveUserAdministrationDto,
+    maxDiscPerc: Prisma.Decimal | null | undefined,
   ): void {
+    if (maxDiscPerc !== undefined) data.usrMaxDiscPerc = maxDiscPerc;
     if (dto.usrCompanyId !== undefined) data.usrCompanyId = dto.usrCompanyId;
     if (dto.usrBranchId !== undefined) data.usrBranchId = dto.usrBranchId;
     if (dto.usrEmployeeId !== undefined) data.usrEmployeeId = dto.usrEmployeeId;
@@ -751,6 +1117,10 @@ export class UserAdministrationService {
       usrEditDate: record.usrEditDate,
       usrEditEntry: record.usrEditEntry,
       usrEditRate: record.usrEditRate,
+      usrMaxDiscPerc:
+        record.usrMaxDiscPerc === null || record.usrMaxDiscPerc === undefined
+          ? null
+          : new Prisma.Decimal(record.usrMaxDiscPerc).toFixed(2),
       usrDesktopLogin: record.usrDesktopLogin,
       usrWebLogin: record.usrWebLogin,
       usrMobileLogin: record.usrMobileLogin,
@@ -880,4 +1250,74 @@ function truncateNote(note: string): string {
   return note.length <= MAX_NOTE_LENGTH
     ? note
     : `${note.slice(0, MAX_NOTE_LENGTH - 15)} … (and more)`;
+}
+
+/**
+ * Review step 6 (U8): 400 USER_PASSWORD_TOO_SHORT on `field` unless the password has at least
+ * MIN_ADMIN_PASSWORD_LENGTH characters, spaces at either end not counted.
+ */
+function assertPasswordLength(password: string, field: string): void {
+  if (password.trim().length >= MIN_ADMIN_PASSWORD_LENGTH) {
+    return;
+  }
+  throwSettingsBadRequest<UserAdminErrorDetail>('Password too short', [
+    {
+      field,
+      message: `The password needs at least ${MIN_ADMIN_PASSWORD_LENGTH} characters`,
+      code: UserAdminErrorCode.PASSWORD_TOO_SHORT,
+    },
+  ]);
+}
+
+/** Review step 6 (U8): GENERATED_PASSWORD_LENGTH characters off a CSPRNG, no look-alikes. */
+export function generatePassword(length = GENERATED_PASSWORD_LENGTH): string {
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += GENERATED_PASSWORD_ALPHABET[randomInt(GENERATED_PASSWORD_ALPHABET.length)];
+  }
+  return out;
+}
+
+/**
+ * Review step 6 (D6): usrMaxDiscPerc as the column will hold it. undefined = the key was
+ * omitted (keep the stored value); null or "" = no limit; else a number from 0 to 100, kept
+ * to 2 decimals (numeric(5,2), ck_usr_max_disc_perc). Anything else: 400 USER_MAX_DISC_INVALID.
+ */
+export function parseMaxDiscPerc(value: unknown): Prisma.Decimal | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || (typeof value === 'string' && value.trim() === '')) {
+    return null;
+  }
+  let parsed: Prisma.Decimal | null = null;
+  if (
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    (typeof value === 'string' && /^\s*[+-]?(\d+(\.\d*)?|\.\d+)\s*$/.test(value))
+  ) {
+    parsed = new Prisma.Decimal(typeof value === 'string' ? value.trim() : value);
+  }
+  if (parsed === null || parsed.isNegative() || parsed.gt(MAX_DISC_PERC_MAX)) {
+    throwSettingsBadRequest<UserAdminErrorDetail>('Wrong discount limit', [
+      {
+        field: 'usrMaxDiscPerc',
+        message: 'Max discount % must be from 0 to 100, or empty for no limit',
+        code: UserAdminErrorCode.MAX_DISC_INVALID,
+      },
+    ]);
+  }
+  const rounded = parsed.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  // 99.999 rounds to 100.00 (allowed); -0.001 was refused above.
+  return rounded;
+}
+
+/** A unique clash on the login name, from Prisma (P2002) or a raw query (P2010 / 23505). */
+function isLoginNameClash(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+  if (error.code === 'P2002') {
+    return true;
+  }
+  return error.code === 'P2010' && (error.meta as { code?: string } | undefined)?.code === '23505';
 }

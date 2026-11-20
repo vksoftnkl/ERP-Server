@@ -4,6 +4,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   ParseUUIDPipe,
   Post,
   Query,
@@ -25,12 +27,24 @@ import {
 import {
   UserAdminErrorResponseDto,
   UserAdminSuccessDeleteDto,
+  UserAdminSuccessResetPasswordDto,
+  UserAdminSuccessRestoreDto,
   UserAdminSuccessSingleDto,
+  UserAdminSuccessUnlockDto,
 } from './dto/user-administration-response.dto';
-import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
+import {
+  ResetUserPasswordDto,
+  SaveUserAdministrationDto,
+} from './dto/save-user-administration.dto';
 import { UserAdministrationExceptionFilter } from './user-administration-exception.filter';
 import { UserAdministrationService } from './user-administration.service';
-import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
+import {
+  UserAdminPayload,
+  UserAdminResetPasswordResult,
+  UserAdminRestoreResult,
+  UserAdminSuccessResponse,
+  UserAdminUnlockResult,
+} from './types/user-administration-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
 // Notes 125 §3: no longer @Public — the SUPER ADMIN guard has to know who is calling, and an
@@ -117,5 +131,77 @@ export class UserAdministrationController {
       message: 'User deleted successfully',
       data,
     };
+  }
+
+  // Review step 6 (U8). The password travels in the body, never a query string.
+  @Post('reset-password')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Reset a user's password (typed or generated); the user must change it at next login",
+    description:
+      'Menu 58 Edit right (403 USER_RIGHT_EDIT). Send newPassword (at least 4 characters, ' +
+      'spaces at either end not counted: 400 USER_PASSWORD_TOO_SHORT) or generate: true (8 ' +
+      'random characters, answered ONCE in generatedPassword); both = 400 ' +
+      'USER_RESET_PASSWORD_CHOICE. Sets usrMustChangePassword: the next login answers ' +
+      'mustChangePassword: true. 404 USER_NOT_FOUND (no live user), 403 USER_ROLE_RESERVED ' +
+      '(a SUPER ADMIN user, caller not one). The lock and the failed-login count are left as ' +
+      'they are (POST /unlock). The audit row names the administrator, never the password.',
+  })
+  @ApiOkResponse({ type: UserAdminSuccessResetPasswordDto })
+  @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })
+  @ApiNotFoundResponse({ type: UserAdminErrorResponseDto })
+  async resetPassword(
+    @Body() dto: ResetUserPasswordDto,
+  ): Promise<UserAdminSuccessResponse<UserAdminResetPasswordResult>> {
+    const data = await this.userAdministrationService.resetPassword(dto);
+    return { success: true, message: 'Password reset', data };
+  }
+
+  // Review step 6.
+  @Post('unlock')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Unlock a user: clear the lock and the failed-login count',
+    description:
+      'Menu 58 Edit right (403 USER_RIGHT_EDIT). Clears usrIsLocked, usrLockedOn, usrLockedBy ' +
+      'and usrFailedLoginCount; one audit row. Nothing to clear = changed: false, no row. ' +
+      '404 USER_NOT_FOUND (no live user), 403 USER_ROLE_RESERVED (a SUPER ADMIN user).',
+  })
+  @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: UserAdminSuccessUnlockDto })
+  @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })
+  @ApiNotFoundResponse({ type: UserAdminErrorResponseDto })
+  async unlock(
+    @Query('usrId', new ParseUUIDPipe({ version: '7' })) usrId: string,
+  ): Promise<UserAdminSuccessResponse<UserAdminUnlockResult>> {
+    const data = await this.userAdministrationService.unlock(usrId);
+    return { success: true, message: data.changed ? 'User unlocked' : 'Nothing to unlock', data };
+  }
+
+  // Review step 6 (U10).
+  @Post('restore')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Restore a deleted user (it comes back inactive, with the rights the delete removed)',
+    description:
+      'Menu 58 Delete right (403 USER_RIGHT_DELETE). The user comes back INACTIVE, with the ' +
+      'menu rights its delete removed (menuCount; rights an earlier save removed, and rows of a ' +
+      'menu no longer active, stay removed). 404 USER_NOT_FOUND, 409 ' +
+      'USER_NOT_DELETED, 409 USER_RESTORE_LOGIN_TAKEN (a live user now has the login name; ' +
+      'detail loginName), 403 USER_ROLE_RESERVED (a SUPER ADMIN user). One audit row.',
+  })
+  @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: UserAdminSuccessRestoreDto })
+  @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })
+  @ApiNotFoundResponse({ type: UserAdminErrorResponseDto })
+  @ApiConflictResponse({ type: UserAdminErrorResponseDto })
+  async restore(
+    @Query('usrId', new ParseUUIDPipe({ version: '7' })) usrId: string,
+  ): Promise<UserAdminSuccessResponse<UserAdminRestoreResult>> {
+    const data = await this.userAdministrationService.restore(usrId);
+    return { success: true, message: 'User restored', data };
   }
 }

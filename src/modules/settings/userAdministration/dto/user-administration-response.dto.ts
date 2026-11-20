@@ -173,8 +173,16 @@ export class UserAdminPayloadDto {
   @ApiProperty()
   usrEditEntry!: boolean;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Screen label "Allow rate / discount change" (review step 6)' })
   usrEditRate!: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12.50',
+    description: 'Max discount % on a Sale Bill (each line and the bill discount); null = no limit',
+  })
+  usrMaxDiscPerc!: string | null;
 
   @ApiProperty()
   usrDesktopLogin!: boolean;
@@ -259,4 +267,109 @@ export class UserAdminSuccessDeleteDto {
 
   @ApiProperty({ type: UserAdminDeleteResultDto })
   data!: UserAdminDeleteResultDto;
+}
+
+/** POST /user-administration/reset-password — review step 6 (U8). */
+export class UserAdminResetPasswordResultDto {
+  @ApiProperty({ format: 'uuid' })
+  usrId!: string;
+
+  @ApiProperty()
+  usrLoginName!: string;
+
+  @ApiProperty({ example: true, description: 'Always true: the user changes it at the next login' })
+  usrMustChangePassword!: true;
+
+  @ApiProperty({ format: 'date-time' })
+  usrPasswordChangedOn!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'k7Hq2mXa',
+    description:
+      'Only when generate: true — the new password, answered this ONCE (never stored, logged or ' +
+      'audited; nobody can read it back). null when the administrator typed it.',
+  })
+  generatedPassword!: string | null;
+}
+
+/** POST /user-administration/unlock — review step 6. */
+export class UserAdminUnlockResultDto {
+  @ApiProperty({ format: 'uuid' })
+  usrId!: string;
+
+  @ApiProperty({ example: false })
+  usrIsLocked!: false;
+
+  @ApiProperty({ example: 0 })
+  usrFailedLoginCount!: 0;
+
+  @ApiProperty({ type: String, nullable: true, example: null })
+  usrLockedOn!: null;
+
+  @ApiProperty({ type: String, nullable: true, example: null })
+  usrLockedBy!: null;
+
+  @ApiProperty({
+    description:
+      'false = it was neither locked nor counting failed logins: nothing changed, no audit row',
+  })
+  changed!: boolean;
+}
+
+/** POST /user-administration/restore — review step 6 (U10). */
+export class UserAdminRestoreResultDto {
+  @ApiProperty({ format: 'uuid' })
+  usrId!: string;
+
+  @ApiProperty()
+  usrLoginName!: string;
+
+  @ApiProperty({ example: false })
+  usrIsDeleted!: false;
+
+  @ApiProperty({ example: false, description: 'A restored user always comes back INACTIVE' })
+  usrIsActive!: false;
+
+  @ApiProperty({
+    example: 12,
+    description:
+      'How many menu rights rows came back: exactly the ones the delete removed (a row of a ' +
+      'menu that is no longer active is left out)',
+  })
+  menuCount!: number;
+}
+
+export class UserAdminSuccessResetPasswordDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Password reset' })
+  message!: string;
+
+  @ApiProperty({ type: UserAdminResetPasswordResultDto })
+  data!: UserAdminResetPasswordResultDto;
+}
+
+export class UserAdminSuccessUnlockDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'User unlocked' })
+  message!: string;
+
+  @ApiProperty({ type: UserAdminUnlockResultDto })
+  data!: UserAdminUnlockResultDto;
+}
+
+export class UserAdminSuccessRestoreDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'User restored' })
+  message!: string;
+
+  @ApiProperty({ type: UserAdminRestoreResultDto })
+  data!: UserAdminRestoreResultDto;
 }

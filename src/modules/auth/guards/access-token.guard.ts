@@ -1,8 +1,16 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { IS_OPTIONAL_AUTH_KEY } from '../../../common/decorators/optional-auth.decorator';
+import { PASSWORD_CHANGE_ALLOWED_KEY } from '../../../common/decorators/password-change-allowed.decorator';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuthEpochService } from '../../app-version/services/auth-epoch.service';
 import { AuthSessionService } from '../auth-session.service';
@@ -19,6 +27,8 @@ export class AccessTokenGuard implements CanActivate {
     private readonly authSessionService: AuthSessionService,
     private readonly requestContextService: RequestContextService,
     private readonly authEpoch: AuthEpochService,
+    // Review step 6 (U8): read only for a session whose token says its password must change.
+    private readonly prisma: PrismaService,
   ) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -58,7 +68,42 @@ export class AccessTokenGuard implements CanActivate {
     this.requestContextService.setCompanyId(request.user.company_id);
     this.requestContextService.setBranchId(request.user.branch_id);
     this.requestContextService.setDeviceId(request.user.device_id);
+    if (request.user.pwc === true && !this.isPasswordChangeAllowed(context)) {
+      await this.assertPasswordChanged(request.user.sub);
+    }
     return true;
+  }
+  /**
+   * Review step 6 (U8): a session that logged in on an administrator's reset password may
+   * call only the routes marked @AllowWhilePasswordChangeRequired (POST /auth/change-password)
+   * until the user has changed it. The token cannot say it has been changed, so the user row
+   * decides: a session that changed its password goes on without logging in again. Every
+   * other session (no `pwc` claim) never reads the table here.
+   * 403 AUTH_PASSWORD_CHANGE_REQUIRED, never 401: a client refreshes and retries on a 401.
+   */
+  private async assertPasswordChanged(usrId: string): Promise<void> {
+    const user = await this.prisma.userMaster.findUnique({
+      where: { usrId },
+      select: { usrMustChangePassword: true },
+    });
+    if (user?.usrMustChangePassword === false) {
+      return;
+    }
+    throw new ForbiddenException(
+      authErrorBody(
+        'Your password was reset: change it before you go on',
+        'authorization',
+        AuthErrorCode.PASSWORD_CHANGE_REQUIRED,
+      ),
+    );
+  }
+  private isPasswordChangeAllowed(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean>(PASSWORD_CHANGE_ALLOWED_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
   private isOptionalAuth(context: ExecutionContext): boolean {
     return (

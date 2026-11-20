@@ -432,6 +432,8 @@ type AccBillStub = {
 type AccBillDeleteStub = AccBillStub & { ablDocRefno: string | null };
 type PrismaMock = {
   customer: { findFirst: jest.Mock<Promise<unknown>, unknown[]> };
+  // Review step 6 (U6): the acting user's rate / discount lock reads the user's two flags.
+  userMaster: { findUnique: jest.Mock<Promise<unknown>, unknown[]> };
   saleBill: {
     create: jest.Mock<Promise<SaleBill>, [BillCreateArgs]>;
     findFirst: jest.Mock<Promise<SaleBill | null>, unknown[]>;
@@ -585,6 +587,13 @@ const makePrismaMock = (): PrismaMock => {
   const prisma: PrismaMock = {
     customer: {
       findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    // Every real user on 20/11: the right, no limit — the lock reads nothing more
+    // (bill-rate-discount-lock.spec.ts covers the lock itself).
+    userMaster: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({ usrId: 'u', usrEditRate: true, usrMaxDiscPerc: null }),
+      ),
     },
     saleBill: {
       // Prisma accepts a number for a BigInt column on write but always reads

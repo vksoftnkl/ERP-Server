@@ -10044,6 +10044,11 @@ model UserMaster {
   usrModifiedOn          DateTime? @db.Timestamptz() @map("usr_modified_on")
   usrModifiedBy          String?   @db.Uuid @map("usr_modified_by")
 
+  // ── Review step 6 (migration 20261120110000; physically after usr_modified_by) ────────
+  // Highest typed discount % (line and bill) this user may give; NULL = no limit, 0 … 100
+  // (ck_usr_max_disc_perc, DB-only). usrEditRate above = "Allow rate / discount change".
+  usrMaxDiscPerc         Decimal?  @db.Decimal(5, 2) @map("usr_max_disc_perc")
+
   // ── Relations ──────────────────────────────────────────────────────────────
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]

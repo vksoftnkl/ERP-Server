@@ -67,7 +67,11 @@ const harness = (opts: {
       })),
     },
     tenderMasters: jest.fn(async () => new Map()),
-    bills: { chargeTypesOf: jest.fn(async () => new Map()) },
+    bills: {
+      chargeTypesOf: jest.fn(async () => new Map()),
+      // Review step 6: the rate / discount lock's dry run (bill-rate-discount-lock.spec.ts).
+      rateDiscountDryRun: jest.fn(async () => []),
+    },
     runGuards,
     proposals: jest.fn(async () => ({})),
     config: {

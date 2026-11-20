@@ -82,10 +82,25 @@ import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
 import { throwSalesLocked } from '../posting/sales.errors';
-import { SALES_ERROR_CODES } from '../posting/types/posting.types';
+import { SALES_ERROR_CODES, type SalesRefusal } from '../posting/types/posting.types';
 import { SaleBillErrorCode } from './types/sale-bill-error-codes';
 import { num, TENDER_TYPE } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
+import {
+  asSalesRefusals,
+  isLockExempt,
+  lockChargeOf,
+  lockHeaderOf,
+  lockLineOfDto,
+  lockLineOfStored,
+  rateDiscountRefusalsFor,
+  readRateLockUser,
+  throwRateDiscountRefusals,
+  type LockOptions,
+  type RateLockUser,
+} from './bill-rate-discount-lock';
+import { APPLY_QTY_PRICES_SETTING_KEY } from '../../Inventory/items-qty-price-master/qty-slab.rules';
+import type { QtyPriceSettingReader } from '../../Inventory/items-price-master/sale-line-price';
 import { loadSetOffCredits, splitSetOffs } from '../../../common/posting/bill-adjustment.helper';
 import { decodeTempCredit, encodeTempCreditTenders, toTempCreditDto } from './bill-temp-credit';
 import {
@@ -467,6 +482,8 @@ const EMPTY_LINE_CONTEXT: BillLineContext = {
   godownById: new Map(),
   companyAllowsNegStock: null,
 };
+/** The Sale Bill screen's starting price level (fixed default 1, set down to the device). */
+const DEFAULT_PRICE_LEVEL_SETTING_KEY = 'sales.default_price_level';
 @Injectable()
 export class BillService {
   constructor(
@@ -918,6 +935,9 @@ export class BillService {
       createdBy,
       BILL_CHARGE_AUDIT,
     );
+    // Review step 6 (U6): the acting user's rate / discount lock, on what was just written.
+    // A refusal rolls the whole create back (no number consumed).
+    await this.assertRateDiscountLock(tx, await this.rateLockUserOf(tx), created, items, null);
     const tenders = await this.tenderDetailService.syncDocumentTenders(
       tx,
       this.toTenderScope(scope, saveBillDto.tenders),
@@ -1072,6 +1092,10 @@ export class BillService {
     const priorItems = await tx.saleBillItem.findMany({
       where: { sbiBillId: existing.sbId, sbiIsDeleted: false },
     });
+    // Review step 6 (U6): the lock judges only what THIS save changed, so it needs the
+    // charges as they stood before it (read only for a user the lock applies to).
+    const lockUser = await this.rateLockUserOf(tx);
+    const priorCharges = lockUser ? await this.storedCharges(tx, existing.sbId) : [];
     const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
     await this.fillChargeTypes(tx, saveBillDto.charges);
     const charges = await this.chargeDetailService.syncDocumentCharges(
@@ -1081,6 +1105,11 @@ export class BillService {
       modifiedBy,
       BILL_CHARGE_AUDIT,
     );
+    await this.assertRateDiscountLock(tx, lockUser, updated, items, {
+      items: priorItems,
+      charges: priorCharges,
+      header: existing,
+    });
     const tenders = await this.tenderDetailService.syncDocumentTenders(
       tx,
       this.toTenderScope(scope, saveBillDto.tenders),
@@ -1139,6 +1168,168 @@ export class BillService {
     // branch / IFSC / MICR (notes 48, bil00721).
     return { updated: { ...updated, sbDraftCheques: draftCheques }, items };
   }
+  /**
+   * Review step 6 (U6, D7-D12): the acting user — the access token's, never a body key — when
+   * the Sale Bill rate / discount lock applies to them, else null (the right and no limit:
+   * nothing to judge, no price read). Every Sale Bill write runs through createBillInTx or
+   * applySaveInTx (/bills/create, the one-call save-and-post, /bills/amend, the mobile bill
+   * upload), so this is the one place the lock is enforced.
+   */
+  private async rateLockUserOf(tx: Prisma.TransactionClient): Promise<RateLockUser | null> {
+    const user = await readRateLockUser(tx, this.requestContextService.getUserId());
+    return isLockExempt(user) ? null : user;
+  }
+
+  private storedCharges(tx: Prisma.TransactionClient, sbId: string) {
+    return tx.transactionChargeDetail.findMany({
+      where: {
+        cdDocType: BILL_CHARGE_DOC_TYPE,
+        cdDocId: sbId,
+        cdIsDeleted: false,
+        cdIsActive: true,
+      },
+    });
+  }
+
+  /**
+   * 403 SALES_RATE_CHANGE_NOT_ALLOWED / SALES_DISC_NOT_ALLOWED / SALES_LINE_DISC_OVER_USER_MAX
+   * / SALES_BILL_DISC_OVER_USER_MAX (bill-rate-discount-lock.ts) on the bill as this save
+   * leaves it, judged against what it held before (`prior`; null on a create).
+   */
+  private async assertRateDiscountLock(
+    tx: Prisma.TransactionClient,
+    user: RateLockUser | null,
+    bill: SaleBill,
+    items: SaleBillItem[],
+    prior: {
+      items: SaleBillItem[];
+      charges: Array<Parameters<typeof lockChargeOf>[0]>;
+      header: SaleBill;
+    } | null,
+  ): Promise<void> {
+    if (!user) {
+      return;
+    }
+    const charges = await this.storedCharges(tx, bill.sbId);
+    const header = lockHeaderOf(bill);
+    const refusals = await rateDiscountRefusalsFor(
+      tx,
+      user,
+      {
+        header,
+        lines: items.map(lockLineOfStored),
+        charges: charges.map(lockChargeOf),
+        priorLines: (prior?.items ?? []).map(lockLineOfStored),
+        priorCharges: (prior?.charges ?? []).map(lockChargeOf),
+        priorHeaderDisc: prior ? lockHeaderOf(prior.header).headerDisc : new Prisma.Decimal(0),
+        priorHeaderLevel: prior ? prior.header.sbPriceLevel : null,
+      },
+      this.lockOptions(),
+    );
+    throwRateDiscountRefusals(refusals);
+  }
+
+  /**
+   * /bills/validate (review step 6, U6): what the save would refuse on the acting user's rate
+   * / discount lock, as REFUSE entries — read only, nothing written. Lines, charges and the
+   * header discounts not sent are the stored ones, as the save would keep them.
+   */
+  async rateDiscountDryRun(
+    tx: Prisma.TransactionClient,
+    dto: SaveBillDto,
+    chargeTypes: ReadonlyMap<string, string>,
+  ): Promise<SalesRefusal[]> {
+    const user = await this.rateLockUserOf(tx);
+    if (!user) {
+      return [];
+    }
+    const existing = dto.sbId
+      ? await tx.saleBill.findFirst({ where: { sbId: dto.sbId, sbIsDeleted: false } })
+      : null;
+    const priorItems = existing
+      ? await tx.saleBillItem.findMany({ where: { sbiBillId: existing.sbId, sbiIsDeleted: false } })
+      : [];
+    const priorCharges = existing ? await this.storedCharges(tx, existing.sbId) : [];
+    const headerLevel = dto.sbPriceLevel ?? existing?.sbPriceLevel ?? 1;
+    const header = lockHeaderOf({
+      sbCompanyId: dto.sbCompanyId,
+      sbBranchId: dto.sbBranchId,
+      sbDeviceId: dto.sbDeviceId ?? existing?.sbDeviceId ?? null,
+      sbPriceLevel: headerLevel,
+      sbCustId: dto.sbCustId !== undefined ? dto.sbCustId : (existing?.sbCustId ?? null),
+      sbBillDate: dto.sbBillDate ?? existing?.sbBillDate ?? null,
+      sbDiscAlterBase:
+        dto.sbDiscAlterBase !== undefined
+          ? dto.sbDiscAlterBase
+          : (existing?.sbDiscAlterBase ?? null),
+      sbAddlDisc1: dto.sbAddlDisc1 !== undefined ? dto.sbAddlDisc1 : existing?.sbAddlDisc1,
+      sbAddlDisc2: dto.sbAddlDisc2 !== undefined ? dto.sbAddlDisc2 : existing?.sbAddlDisc2,
+      sbCashDisc: dto.sbCashDisc !== undefined ? dto.sbCashDisc : existing?.sbCashDisc,
+    });
+    const refusals = await rateDiscountRefusalsFor(
+      tx,
+      user,
+      {
+        header,
+        lines:
+          dto.items !== undefined
+            ? dto.items.map((line, index) => lockLineOfDto(line, index, headerLevel))
+            : priorItems.map(lockLineOfStored),
+        charges:
+          dto.charges !== undefined
+            ? dto.charges.map((c) =>
+                lockChargeOf({
+                  ...c,
+                  cdType: c.cdType ?? (c.cdChgId ? chargeTypes.get(c.cdChgId) : undefined) ?? 'ADD',
+                }),
+              )
+            : priorCharges.map(lockChargeOf),
+        priorLines: priorItems.map(lockLineOfStored),
+        priorCharges: priorCharges.map(lockChargeOf),
+        priorHeaderDisc: existing ? lockHeaderOf(existing).headerDisc : new Prisma.Decimal(0),
+        priorHeaderLevel: existing ? existing.sbPriceLevel : null,
+      },
+      this.lockOptions(),
+    );
+    return asSalesRefusals(refusals);
+  }
+
+  /** The lock's settings: the qty-slab switch, and the bill's default price level. */
+  private lockOptions(): LockOptions {
+    return {
+      qtyPriceSetting: this.qtyPriceSetting(),
+      defaultPriceLevel: async (header) => {
+        const values = await this.salesContext.values(
+          header.companyId,
+          header.branchId,
+          header.deviceId,
+          [DEFAULT_PRICE_LEVEL_SETTING_KEY],
+        );
+        const level = Number(values[DEFAULT_PRICE_LEVEL_SETTING_KEY]);
+        return Number.isInteger(level) && level > 0 ? level : null;
+      },
+    };
+  }
+
+  /** `sales.apply_qty_prices` through the sales settings resolver, for the lock's slab rates. */
+  private qtyPriceSetting(): QtyPriceSettingReader {
+    return {
+      resolveEffective: async (scope) =>
+        scope.companyId && scope.branchId
+          ? [
+              {
+                asdKey: APPLY_QTY_PRICES_SETTING_KEY,
+                value: await this.salesContext.setting(
+                  scope.companyId,
+                  scope.branchId,
+                  APPLY_QTY_PRICES_SETTING_KEY,
+                ),
+              },
+            ]
+          : [],
+    };
+  }
+
   /**
    * HANDOVER §2.1: the walk-in customer keeps whatever `sbCust*` the client
    * typed; a listed customer's `sbCust*` are copied from the master unless

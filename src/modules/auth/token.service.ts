@@ -27,6 +27,13 @@ export type AccessTokenClaims = {
   // verifyRefreshToken always fill both.
   ep?: number;
   platform?: ClientPlatform | null;
+  /**
+   * Review step 6 (U8): present and true only when the session logged in on a password an
+   * administrator reset (usr_must_change_password). AccessTokenGuard then lets the session
+   * call POST /auth/change-password and nothing else until the flag is cleared. Absent on
+   * every other token, so their payloads are exactly what they were.
+   */
+  pwc?: boolean;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
@@ -187,6 +194,7 @@ export class TokenService {
     const deviceId = payload.device_id;
     const epoch = payload.ep;
     const platform = payload.platform;
+    const passwordChange = payload.pwc;
     if (typeof sub !== 'string' || sub.length === 0) {
       throw this.invalidToken(expectedType);
     }
@@ -234,6 +242,9 @@ export class TokenService {
     if (platform !== undefined && platform !== null && typeof platform !== 'string') {
       throw this.invalidToken(expectedType);
     }
+    if (passwordChange !== undefined && typeof passwordChange !== 'boolean') {
+      throw this.invalidToken(expectedType);
+    }
     const normalizedPayload = {
       sub,
       user_name: userName,
@@ -244,6 +255,7 @@ export class TokenService {
       device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
       ep: typeof epoch === 'number' ? epoch : 0,
       platform: typeof platform === 'string' ? parsePlatform(platform) : null,
+      ...(passwordChange === true ? { pwc: true } : {}),
       iat: issuedAt,
       exp: expiresAt,
       typ: expectedType,

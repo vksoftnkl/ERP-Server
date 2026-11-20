@@ -45,6 +45,7 @@ const userRow = (overrides: Partial<UserMaster> = {}): UserMaster => ({
   usrEditDate: false,
   usrEditEntry: false,
   usrEditRate: false,
+  usrMaxDiscPerc: null,
   usrDesktopLogin: true,
   usrWebLogin: true,
   usrMobileLogin: false,
@@ -542,8 +543,10 @@ describe('UserAdministrationService', () => {
       });
     });
 
-    it('resets a password to its hash, stamps the change and lifts must-change', async () => {
-      lookups({ target: userRow({ usrMustChangePassword: true }) });
+    // Review step 6 (U8): a password the administrator types for someone is a reset — the
+    // user must change it at the next login (it used to lift the flag).
+    it('resets a password to its hash, stamps the change and sets must-change', async () => {
+      lookups({ target: userRow({ usrMustChangePassword: false }) });
 
       const payload = await update({ usrPassword: 'n3w-secret' });
 
@@ -551,10 +554,18 @@ describe('UserAdministrationService', () => {
       expect(updatedData()).toMatchObject({
         usrPasswordHash: 'hashed:n3w-secret',
         usrPasswordChangedOn: expect.any(Date),
-        usrMustChangePassword: false,
+        usrMustChangePassword: true,
         usrModifiedBy: CALLER_ID,
       });
       expect(JSON.stringify(payload)).not.toContain('n3w-secret');
+    });
+
+    it("an explicit usrMustChangePassword sent with the password still decides (the screen's tick)", async () => {
+      lookups({ target: userRow() });
+
+      await update({ usrPassword: 'n3w-secret', usrMustChangePassword: false });
+
+      expect(updatedData()).toMatchObject({ usrMustChangePassword: false });
     });
 
     it('leaves the password and PIN alone when neither is sent', async () => {

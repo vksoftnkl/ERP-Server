@@ -181,7 +181,10 @@ export class SaveUserAdministrationDto {
 
   @ApiPropertyOptional({
     description:
-      'Plain-text password. Required on create; optional on update (omit to keep existing).',
+      'Plain-text password, at least 4 characters (spaces at either end not counted; ' +
+      '400 USER_PASSWORD_TOO_SHORT). Required on create; optional on update (omit to keep ' +
+      'the existing one). On an update it is an administrator reset (review step 6, U8): the ' +
+      'user must change it at the next login unless usrMustChangePassword: false is sent.',
   })
   @IsOptional()
   @IsString()
@@ -231,9 +234,29 @@ export class SaveUserAdministrationDto {
   @OptionalBoolean()
   usrEditEntry?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Screen label "Allow rate / discount change" (review step 6). Off: on a Sale Bill this ' +
+      'user may not change a line rate from the one the item gives, nor give any discount. ' +
+      'On: may, up to usrMaxDiscPerc.',
+  })
   @OptionalBoolean()
   usrEditRate?: boolean;
+
+  // Review step 6 (U6, D6-D9): the user's highest discount % on a Sale Bill, for each line and
+  // for the bill-level discount. Judged by the service (USER_MAX_DISC_INVALID), not here, so
+  // a string, a number or null all reach it.
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12.50',
+    description:
+      'Max discount % on a Sale Bill (each line, and the bill discount): 0 to 100, at most 2 ' +
+      'decimals kept. null or "" = no limit. Omit the key to keep the stored value. ' +
+      'A string or a number. 400 USER_MAX_DISC_INVALID otherwise.',
+  })
+  @IsOptional()
+  usrMaxDiscPerc?: string | number | null;
 
   @ApiPropertyOptional()
   @OptionalBoolean()
@@ -266,4 +289,33 @@ export class SaveUserAdministrationDto {
   @ValidateNested({ each: true })
   @Type(() => SaveUserMenuDto)
   menus?: SaveUserMenuDto[];
+}
+
+/**
+ * POST /user-administration/reset-password (review step 6, U8): an administrator sets another
+ * user's password, typed or generated, and the user must change it at the next login.
+ */
+export class ResetUserPasswordDto {
+  @ApiProperty({ format: 'uuid', description: 'The user whose password is reset' })
+  @IsUUID('all')
+  usrId!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'The password the administrator typed: at least 4 characters, spaces at either end not ' +
+      'counted (400 USER_PASSWORD_TOO_SHORT). Leave it out (or null / "") with generate: true.',
+  })
+  @IsOptional()
+  @IsString()
+  newPassword?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'true = the server makes a random 8-character password and answers it ONCE, in ' +
+      'generatedPassword. Sent together with a newPassword: 400 USER_RESET_PASSWORD_CHOICE.',
+  })
+  @OptionalBoolean()
+  generate?: boolean;
 }

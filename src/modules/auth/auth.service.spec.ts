@@ -38,6 +38,11 @@ const LEGACY_LOGIN_RESPONSE = {
   dev_branch_id: null,
   dev_user_id: null,
   device_type: null,
+  // Review step 6 (U8): additive, always there; true only after an administrator's reset.
+  mustChangePassword: false,
+  // Review step 6: the user's own rate / discount lock, off the user row (additive).
+  usrEditRate: false,
+  usrMaxDiscPerc: null,
 };
 const UPDATE_NOTICE = {
   platform: 'desktop',
@@ -143,6 +148,7 @@ const makeUser = (overrides: Partial<UserMaster> = {}): UserMaster => ({
   usrEditDate: false,
   usrEditEntry: false,
   usrEditRate: false,
+  usrMaxDiscPerc: null,
   usrDesktopLogin: true,
   usrWebLogin: true,
   usrMobileLogin: false,
@@ -336,16 +342,19 @@ describe('AuthService', () => {
       dev_branch_id: null,
       dev_user_id: null,
       device_type: null,
+      mustChangePassword: false,
+      usrEditRate: false,
+      usrMaxDiscPerc: null,
     });
+    // Review step 6 (U9): the user is found by name whatever its state (live first); the
+    // state is judged only after the password.
     expect(prismaService.userMaster.findFirst).toHaveBeenCalledWith({
-      where: {
-        usrLoginName: { equals: 'john.doe', mode: 'insensitive' },
-        usrIsDeleted: false,
-        usrIsActive: true,
-        usrIsLocked: false,
-        // no device type given: any channel open to the user will do
-        OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
-      },
+      where: { usrLoginName: { equals: 'john.doe', mode: 'insensitive' } },
+      orderBy: [
+        { usrIsDeleted: 'asc' },
+        { usrModifiedOn: { sort: 'desc', nulls: 'last' } },
+        { usrCreatedOn: 'desc' },
+      ],
     });
     expect(tokenService.signAccessToken).toHaveBeenCalledWith({
       sub: TEST_USER_ID,
@@ -431,6 +440,9 @@ describe('AuthService', () => {
       dev_branch_id: null,
       dev_user_id: null,
       device_type: null,
+      mustChangePassword: false,
+      usrEditRate: false,
+      usrMaxDiscPerc: null,
     });
     expect(authSessionService.storeTokenSession).toHaveBeenCalled();
     expect(prismaService.userLoginSession.create).toHaveBeenCalled();

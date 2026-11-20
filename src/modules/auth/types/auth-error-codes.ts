@@ -13,8 +13,26 @@ import {
 export enum AuthErrorCode {
   /** Login: no usable user by that login name on this channel, or the password does not match. */
   INVALID_CREDENTIALS = 'AUTH_INVALID_CREDENTIALS',
-  /** Refresh: the user was deleted, deactivated or locked since the token was issued. */
+  /**
+   * Refresh / change-password: the user was deleted, deactivated or locked since the token was
+   * issued. Login (review step 6, U9): the password was RIGHT but the account is inactive or
+   * deleted (the message never says "deleted").
+   */
   USER_INACTIVE = 'AUTH_USER_INACTIVE',
+  /** Login (review step 6, U9): the password was right but the account is locked (Unlock on menu 58). */
+  USER_LOCKED = 'AUTH_USER_LOCKED',
+  /**
+   * Login (review step 6, U9): the password was right but the account may not log in on this
+   * channel. The detail carries `channel` (desktop | web | mobile) for the wording variant; a
+   * login that named no device type and whose account has every channel off carries none.
+   */
+  CHANNEL_DISABLED = 'AUTH_CHANNEL_DISABLED',
+  /**
+   * 403 on every guarded route except POST /auth/change-password (review step 6, U8): the
+   * session logged in on a password an administrator reset (usr_must_change_password), and the
+   * user has not changed it yet. A 403, never a 401, so a client does not refresh and retry.
+   */
+  PASSWORD_CHANGE_REQUIRED = 'AUTH_PASSWORD_CHANGE_REQUIRED',
   /** A guarded route was called with no `Authorization: Bearer <token>` header (or a malformed one). */
   AUTHORIZATION_MISSING = 'AUTH_AUTHORIZATION_MISSING',
   /** The access token does not verify: malformed, bad signature, or claims of the wrong shape/type. */
@@ -53,7 +71,7 @@ export enum AuthErrorCode {
    * match. A 400, not a 401, so the client does not take it for an expired session.
    */
   CURRENT_PASSWORD_WRONG = 'AUTH_CURRENT_PASSWORD_WRONG',
-  /** POST /auth/change-password (400, field `newPassword`): under 6 characters, spaces at the ends not counted (U7). */
+  /** POST /auth/change-password (400, field `newPassword`): under 4 characters, spaces at the ends not counted (U7). */
   NEW_PASSWORD_TOO_SHORT = 'AUTH_NEW_PASSWORD_TOO_SHORT',
   /** POST /auth/change-password (400, field `newPassword`): the new password is the current one. */
   NEW_PASSWORD_SAME = 'AUTH_NEW_PASSWORD_SAME',
@@ -61,6 +79,8 @@ export enum AuthErrorCode {
 
 export interface AuthErrorDetail extends ModuleErrorDetail {
   code: AuthErrorCode;
+  /** AUTH_CHANNEL_DISABLED only: desktop | web | mobile, the wording variant `channel=<value>`. */
+  channel?: string;
 }
 
 /**
@@ -72,6 +92,7 @@ export function authErrorBody(
   message: string,
   field: string,
   code: AuthErrorCode,
+  extra: Pick<AuthErrorDetail, 'channel'> = {},
 ): ModuleErrorResponse<AuthErrorDetail> {
-  return buildErrorResponse<AuthErrorDetail>(message, [{ field, message, code }]);
+  return buildErrorResponse<AuthErrorDetail>(message, [{ field, message, code, ...extra }]);
 }
