@@ -245,6 +245,15 @@ LEFT JOIN public.companys      c ON c.comp_id = d.dev_company_id
 LEFT JOIN public.branch_master b ON b.br_id   = d.dev_branch_id
 LEFT JOIN public.user_master   u ON u.usr_id  = d.dev_user_id
 WHERE COALESCE(d.dev_is_deleted, false) = false
+  AND (CASE ('status')::text
+         WHEN 'Active Devices'   THEN COALESCE(d.dev_is_active, false)
+         WHEN 'Inactive Devices' THEN NOT COALESCE(d.dev_is_active, false)
+         ELSE true END)
+  AND (CASE upper(('idev_type')::text)
+         WHEN 'PC'     THEN upper(COALESCE(d.dev_device_type, '')) IN ('PC', 'DESKTOP')
+         WHEN 'MOBILE' THEN upper(COALESCE(d.dev_device_type, '')) = 'MOBILE'
+         WHEN 'WEB'    THEN upper(COALESCE(d.dev_device_type, '')) = 'WEB'
+         ELSE true END)
 ORDER BY c.comp_name NULLS FIRST, b.br_name NULLS FIRST, d.dev_device_name$seed$)
     ,(33 , 'Grid -master', NULL, 'Grid name'       , 'Ascending' , 'web'    , true , false, 'system', $seed$Select Grid_Id, Grid_Name, Grid_Device_Type, Grid_Sort_Column, Grid_Sort_Order, Grid_Description, Grid_Status
     From Fixed.Grid_Details
