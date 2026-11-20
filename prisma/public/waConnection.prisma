@@ -1,0 +1,62 @@
+/// WhatsApp option B: this server's link to wa-relay (migration
+/// 20261119100000_whatsapp, plan whatsapp-plan-v1-2026-11-17.md §3.1).
+///
+/// One live row per company on this server; no row = not activated. The
+/// install key is stored AES-256-GCM encrypted (WA_CRED_KEY, the gcm:v<n>:
+/// envelope of GstCryptoService), never in clear. NO sync column on purpose:
+/// the row describes this install's link only and must never be pushed to a
+/// cloud over another install's row.
+model WaConnection {
+  wacId              String    @id(map: "pk_wa_connection") @default(dbgenerated("uuidv7()")) @db.Uuid @map("wac_id")
+  wacCompanyId       String    @db.Uuid                                  @map("wac_company_id")
+  /// ACTIVATED | CONNECTING | CONNECTED | DISCONNECTED | SUSPENDED (ck_wac_state).
+  wacState           String    @default("ACTIVATED") @db.VarChar(14)     @map("wac_state")
+  /// The relay this key belongs to (WA_RELAY_URL at activation).
+  wacRelayUrl        String    @db.VarChar(200)                          @map("wac_relay_url")
+  wacShopCode        String    @db.VarChar(12)                           @map("wac_shop_code")
+  /// The relay's install id (a re-key code returns the same one).
+  wacInstallId       String    @db.Uuid                                  @map("wac_install_id")
+  /// gcm:v<n>:iv:tag:ct
+  wacKeyEnc          String                                              @map("wac_key_enc")
+  /// >= 1 (ck_wac_key_ver).
+  wacKeyVersion      Int       @default(1) @db.SmallInt                  @map("wac_key_version")
+  /// The key's first 8 characters, for display.
+  wacKeyPrefix       String    @db.VarChar(12)                           @map("wac_key_prefix")
+  wacKeyIssuedOn     DateTime  @db.Timestamptz(6)                        @map("wac_key_issued_on")
+  wacDisplayName     String?   @db.VarChar(150)                          @map("wac_display_name")
+  wacDisplayPhone    String?   @db.VarChar(30)                           @map("wac_display_phone")
+  wacWabaId          String?   @db.VarChar(40)                           @map("wac_waba_id")
+  wacPhoneNumberId   String?   @db.VarChar(40)                           @map("wac_phone_number_id")
+  /// GREEN / YELLOW / RED / UNKNOWN, as Meta says.
+  wacQuality         String?   @db.VarChar(10)                           @map("wac_quality")
+  /// Unique customers per 24 h, as the relay reports; NULL = unknown / unlimited.
+  wacMsgLimit        Int?                                                @map("wac_msg_limit")
+  wacConnectedOn     DateTime? @db.Timestamptz(6)                        @map("wac_connected_on")
+  /// The last relay event id applied (GET /v1/events?after=<cursor>).
+  wacEventCursor     BigInt    @default(0)                               @map("wac_event_cursor")
+  wacLastPollOn      DateTime? @db.Timestamptz(6)                        @map("wac_last_poll_on")
+  wacLastPollOkOn    DateTime? @db.Timestamptz(6)                        @map("wac_last_poll_ok_on")
+  wacLastPollError   String?   @db.VarChar(200)                          @map("wac_last_poll_error")
+  /// Only the process holding an unexpired lease pulls events (decision 20).
+  wacPollLeaseUntil  DateTime? @db.Timestamptz(6)                        @map("wac_poll_lease_until")
+  /// pid@host
+  wacPollLeaseBy     String?   @db.VarChar(60)                           @map("wac_poll_lease_by")
+  wacFastPollUntil   DateTime? @db.Timestamptz(6)                        @map("wac_fast_poll_until")
+  wacIsDeleted       Boolean   @default(false)                           @map("wac_is_deleted")
+  wacCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)        @map("wac_created_on")
+  wacCreatedBy       String    @db.VarChar(60)                           @map("wac_created_by")
+  wacModifiedOn      DateTime? @db.Timestamptz(6)                        @map("wac_modified_on")
+  wacModifiedBy      String?   @db.VarChar(60)                           @map("wac_modified_by")
+
+  company            Company   @relation("WaConnectionCompany", fields: [wacCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_wac_company")
+
+  // DB-only (partial, which Prisma cannot express):
+  //   CREATE UNIQUE INDEX ux_wac_company ON public.wa_connection (wac_company_id)
+  //       WHERE wac_is_deleted = false;
+  // Safe offline: the table never syncs.
+  //
+  // CHECK constraints (DB-only): ck_wac_state, ck_wac_key_ver.
+
+  @@map("wa_connection")
+  @@schema("public")
+}

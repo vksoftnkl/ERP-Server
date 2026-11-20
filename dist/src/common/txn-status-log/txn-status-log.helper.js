@@ -73,6 +73,8 @@ var TxnStatusEvent;
     TxnStatusEvent["MERGED"] = "MERGED";
     TxnStatusEvent["GOODS_BACK"] = "GOODS_BACK";
     TxnStatusEvent["DELIVERY_MODE"] = "DELIVERY_MODE";
+    TxnStatusEvent["WHATSAPP_SENT"] = "WHATSAPP_SENT";
+    TxnStatusEvent["WHATSAPP_FAILED"] = "WHATSAPP_FAILED";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

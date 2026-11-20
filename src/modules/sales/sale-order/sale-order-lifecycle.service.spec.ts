@@ -1137,3 +1137,71 @@ describe('SaleOrderLifecycleService', () => {
     });
   });
 });
+
+describe('SaleOrderLifecycleService — WhatsApp on Post (whatsapp-plan-v1 decision 17)', () => {
+  const build = (status: string, hook?: { fire: jest.Mock }) => {
+    const order = orderRow({ soStatus: status } as Partial<SaleOrder>);
+    const calls: string[] = [];
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ so_id: ORDER_ID }]),
+      saleOrder: { findFirst: jest.fn().mockResolvedValue(order), update: jest.fn().mockResolvedValue({}) },
+      saleOrderItem: {
+        findMany: jest.fn().mockResolvedValue([lineRow()]),
+        update: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      $transaction: jest.fn(async (callback: (tx: unknown) => unknown) => {
+        const out = await callback(prisma);
+        calls.push('commit');
+        return out;
+      }),
+    };
+    if (hook) {
+      hook.fire.mockImplementation(async () => {
+        calls.push('fire');
+        return { wmlId: 'w', accYear: ACC_YEAR, status: 'SENDING', errorCode: null };
+      });
+    }
+    const service = new SaleOrderLifecycleService(
+      prisma as unknown as PrismaService,
+      { orderAmountsOf: jest.fn().mockReturnValue(AMOUNTS) } as never,
+      { resolve: jest.fn().mockResolvedValue({ actor: USER_ID, actorName: LOGIN_NAME, rights: { post: true } }) } as never,
+      { reserve: jest.fn().mockResolvedValue({ reserved: new Map([[LINE_1, 10]]), warnings: [] }) } as never,
+      { logEntityChange: jest.fn() } as never,
+      hook as never,
+    );
+    return { service, calls };
+  };
+
+  it('fires once the transaction has committed and answers its block; the post body may untick it', async () => {
+    const hook = { fire: jest.fn() };
+    const { service, calls } = build('DRAFT', hook);
+    await expect(service.post({ ...KEYS, waOnPost: undefined })).resolves.toEqual({
+      soStatus: 'CONFIRMED',
+      warnings: [],
+      whatsapp: { wmlId: 'w', accYear: ACC_YEAR, status: 'SENDING', errorCode: null },
+    });
+    expect(calls).toEqual(['commit', 'fire']);
+    expect(hook.fire).toHaveBeenCalledWith(
+      expect.objectContaining({ docType: 'SALES_ORDER', docId: ORDER_ID, vchrTypeId: 4, waOnPost: null }),
+    );
+    const unticked = { fire: jest.fn() };
+    await build('DRAFT', unticked).service.post({ ...KEYS, waOnPost: false });
+    // The hook gets the flag; WaAfterPostService answers null for false (its own spec).
+    expect(unticked.fire).toHaveBeenCalledWith(expect.objectContaining({ waOnPost: false }));
+  });
+
+  it('a repeat on a CONFIRMED order sends nothing', async () => {
+    const hook = { fire: jest.fn() };
+    const { service } = build('CONFIRMED', hook);
+    await expect(service.post(KEYS)).resolves.toEqual({ soStatus: 'CONFIRMED', warnings: [] });
+    expect(hook.fire).not.toHaveBeenCalled();
+  });
+
+  it('a hook with nothing to say leaves the answer as before (no whatsapp key)', async () => {
+    const hook = { fire: jest.fn() };
+    const { service } = build('DRAFT', hook);
+    hook.fire.mockResolvedValue(null);
+    await expect(service.post(KEYS)).resolves.toEqual({ soStatus: 'CONFIRMED', warnings: [] });
+  });
+});

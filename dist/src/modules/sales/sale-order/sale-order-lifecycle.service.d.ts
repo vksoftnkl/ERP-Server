@@ -1,3 +1,4 @@
+import { WaPostHook, type WaPostBlock } from '../../whatsapp/hook/wa-post-hook';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -13,13 +14,17 @@ export declare class SaleOrderLifecycleService {
     private readonly salesContext;
     private readonly reservations;
     private readonly audit;
-    constructor(prisma: PrismaService, orders: SaleOrderService, salesContext: SalesContextService, reservations: StockReservationService, audit: AuditLogService);
+    private readonly waHook?;
+    constructor(prisma: PrismaService, orders: SaleOrderService, salesContext: SalesContextService, reservations: StockReservationService, audit: AuditLogService, waHook?: WaPostHook | undefined);
     post(dto: PostSaleOrderDto): Promise<{
         soStatus: string;
         warnings: ReservationShort[];
+        whatsapp?: WaPostBlock;
     }>;
+    private whatsappAfterPost;
     saveAndPost(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
         warnings: ReservationShort[];
+        whatsapp?: WaPostBlock;
     }>;
     save(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
         warnings: ReservationShort[];
@@ -31,6 +36,7 @@ export declare class SaleOrderLifecycleService {
     postInTx(tx: Prisma.TransactionClient, dto: SaleOrderKeysDto, now: Date): Promise<{
         soStatus: string;
         warnings: ReservationShort[];
+        confirmedNow?: boolean;
     }>;
     cancel(dto: CancelSaleOrderDto): Promise<{
         soStatus: string;

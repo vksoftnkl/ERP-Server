@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { WaPostHook, type WaPostBlock } from '../../whatsapp/hook/wa-post-hook';
 import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -55,6 +56,8 @@ import {
  * (CANCELLED → SALES_DOC_CANCELLED, the rest → SALES_DOC_NOT_DRAFT).
  */
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' } as const;
+/** Sales Order's voucher type id (4): WhatsApp on Post sends when the company's whatsapp.on_post_types lists it. */
+const SO_VOUCHER_TYPE = 4;
 /** The statuses whose lines hold stock reservations (a DRAFT holds none). */
 const RESERVING_STATUSES: readonly string[] = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
 
@@ -66,11 +69,47 @@ export class SaleOrderLifecycleService {
     private readonly salesContext: SalesContextService,
     private readonly reservations: StockReservationService,
     private readonly audit: AuditLogService,
+    // WhatsApp on Post (whatsapp-plan-v1 decision 17): fired after the commit,
+    // never throws. Optional so a unit test's bare service needs none.
+    @Optional() private readonly waHook?: WaPostHook,
   ) {}
 
-  async post(dto: PostSaleOrderDto): Promise<{ soStatus: string; warnings: ReservationShort[] }> {
+  async post(
+    dto: PostSaleOrderDto,
+  ): Promise<{ soStatus: string; warnings: ReservationShort[]; whatsapp?: WaPostBlock }> {
     const now = new Date();
-    return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now), ORDER_TX_OPTIONS);
+    const keys: SaleOrderKeysDto = {
+      soId: dto.soId,
+      soCompanyId: dto.soCompanyId,
+      soBranchId: dto.soBranchId,
+      soAccYear: dto.soAccYear,
+    };
+    const { confirmedNow, ...result } = await this.prisma.$transaction(
+      (tx) => this.postInTx(tx, keys, now),
+      ORDER_TX_OPTIONS,
+    );
+    const whatsapp = confirmedNow ? await this.whatsappAfterPost(keys, dto.waOnPost) : null;
+    return whatsapp ? { ...result, whatsapp } : result;
+  }
+
+  /**
+   * WhatsApp on Post (whatsapp-plan-v1 §5.2): after the commit, only for an
+   * order this call confirmed (a repeat sends nothing). Never throws.
+   */
+  private async whatsappAfterPost(
+    keys: SaleOrderKeysDto,
+    waOnPost: boolean | undefined,
+  ): Promise<WaPostBlock | null> {
+    if (!this.waHook) return null;
+    return this.waHook.fire({
+      docType: 'SALES_ORDER',
+      docId: keys.soId,
+      accYear: keys.soAccYear,
+      companyId: keys.soCompanyId,
+      branchId: keys.soBranchId,
+      vchrTypeId: SO_VOUCHER_TYPE,
+      waOnPost: waOnPost ?? null,
+    });
   }
 
   /**
@@ -84,8 +123,8 @@ export class SaleOrderLifecycleService {
    */
   async saveAndPost(
     dto: SaveSaleOrderDto,
-  ): Promise<SaleOrderPayload & { warnings: ReservationShort[] }> {
-    const { post: _post, ...rest } = dto;
+  ): Promise<SaleOrderPayload & { warnings: ReservationShort[]; whatsapp?: WaPostBlock }> {
+    const { post: _post, waOnPost, ...rest } = dto;
     void _post;
     const saveDto = rest as SaveSaleOrderDto;
     delete (saveDto as unknown as Record<string, unknown>).soStatus;
@@ -93,6 +132,7 @@ export class SaleOrderLifecycleService {
     const now = new Date();
     let keys: SaleOrderKeysDto | null = null;
     let warnings: ReservationShort[] = [];
+    let confirmedNow = false;
     try {
       await this.prisma.$transaction(async (tx) => {
         // An edit of a CONFIRMED order (the Qt entry sends its status back,
@@ -114,15 +154,18 @@ export class SaleOrderLifecycleService {
           soBranchId: saved.soBranchId,
           soAccYear: saved.soAccYear,
         };
-        warnings = [...reserveWarnings, ...(await this.postInTx(tx, keys, now)).warnings];
+        const posted = await this.postInTx(tx, keys, now);
+        confirmedNow = posted.confirmedNow === true;
+        warnings = [...reserveWarnings, ...posted.warnings];
       }, ORDER_TX_OPTIONS);
     } catch (error: unknown) {
       this.orders.throwIfDuplicate(error);
       throw error;
     }
     const k = keys as unknown as SaleOrderKeysDto;
+    const whatsapp = confirmedNow ? await this.whatsappAfterPost(k, waOnPost) : null;
     const payload = await this.orders.getById(k.soId, k.soCompanyId, k.soBranchId, k.soAccYear);
-    return { ...payload, warnings };
+    return whatsapp ? { ...payload, warnings, whatsapp } : { ...payload, warnings };
   }
 
   /**
@@ -269,7 +312,7 @@ export class SaleOrderLifecycleService {
     tx: Prisma.TransactionClient,
     dto: SaleOrderKeysDto,
     now: Date,
-  ): Promise<{ soStatus: string; warnings: ReservationShort[] }> {
+  ): Promise<{ soStatus: string; warnings: ReservationShort[]; confirmedNow?: boolean }> {
     const order = await this.lock(tx, dto);
     // Already confirmed (CONFIRMED, or the older PARTIAL): answered as it is,
     // a harmless repeat. A save-and-confirm over such an order has moved its
@@ -366,7 +409,9 @@ export class SaleOrderLifecycleService {
       },
       tx,
     );
-    return { soStatus: ORDER_STATUS.CONFIRMED, warnings };
+    // confirmedNow: this call moved the order DRAFT → CONFIRMED (WhatsApp on Post
+    // fires only then; a repeat on a CONFIRMED order answers without it).
+    return { soStatus: ORDER_STATUS.CONFIRMED, warnings, confirmedNow: true };
   }
 
   async cancel(dto: CancelSaleOrderDto): Promise<{ soStatus: string; cancelledLines: number }> {

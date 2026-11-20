@@ -1,0 +1,83 @@
+import { Prisma } from '@prisma/client';
+import { WaSendService, type WaSendOutcome } from './wa-send.service';
+import { WaStore } from './wa-store.service';
+import { type WaDocType } from './wa.constants';
+type Raw = Pick<Prisma.TransactionClient, '$queryRaw'>;
+interface LogRow {
+    wml_id: string;
+    wml_acc_year: string;
+    wml_company_id: string;
+    wml_branch_id: string | null;
+    wml_kind: string;
+    wml_trigger: string;
+    wml_batch_id: string | null;
+    wml_src_doc_type: string | null;
+    wml_src_doc_id: string | null;
+    wml_src_acc_year: string | null;
+    wml_src_doc_refno: string | null;
+    wml_vchr_type_id: number | null;
+    wml_party_id: string | null;
+    wml_party_name: string | null;
+    wml_as_on: Date | null;
+    wml_phone: string | null;
+    wml_phone_source: string | null;
+    wml_template_name: string | null;
+    wml_lang_wanted: string | null;
+    wml_lang_sent: string | null;
+    wml_lang_note: string | null;
+    wml_params: unknown;
+    wml_pdf_version_id: string | null;
+    wml_pdf_bytes: number | null;
+    wml_pdf_filename: string | null;
+    wml_status: string;
+    wml_sending_on: Date | null;
+    wml_sent_on: Date | null;
+    wml_delivered_on: Date | null;
+    wml_read_on: Date | null;
+    wml_failed_on: Date | null;
+    wml_error_code: string | null;
+    wml_meta_error_code: number | null;
+    wml_error_text: string | null;
+    wml_meta_message_id: string | null;
+    wml_try_no: number;
+    wml_retry_of: string | null;
+    wml_reply: string | null;
+    wml_reply_on: Date | null;
+    wml_gap_override: boolean;
+    wml_override_reason: string | null;
+    wml_cost_rate: Prisma.Decimal | null;
+    wml_cost_gst_pct: Prisma.Decimal | null;
+    wml_user_name: string | null;
+    wml_purged_on: Date | null;
+    wml_created_on: Date;
+    doc_status: string | null;
+}
+export declare class WaMessagesService {
+    private readonly store;
+    private readonly sends;
+    constructor(store: WaStore, sends: WaSendService);
+    send(dto: {
+        companyId: string;
+        branchId: string;
+        docType: WaDocType;
+        docId: string;
+        docAccYear: string;
+        phone?: string | null;
+        lang?: string | null;
+    }): Promise<WaSendOutcome>;
+    retry(dto: {
+        companyId: string;
+        wmlId: string;
+        accYear: string;
+        confirmResend?: boolean;
+    }): Promise<WaSendOutcome>;
+    loadRow(companyId: string, wmlId: string, accYear: string, client?: Raw): Promise<LogRow>;
+    private lockRoot;
+    private chain;
+}
+export declare function typedInPopup(row: {
+    wml_phone_source: string | null;
+    wml_phone: string | null;
+    wml_params: unknown;
+}): boolean;
+export {};

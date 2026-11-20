@@ -172,6 +172,7 @@ class SaveSaleOrderDto {
     charges;
     tenders;
     post;
+    waOnPost;
 }
 exports.SaveSaleOrderDto = SaveSaleOrderDto;
 __decorate([
@@ -1028,4 +1029,11 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveSaleOrderDto.prototype, "post", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: "Only read with post: true. WhatsApp on Post for this order: absent = the company's setting (whatsapp.on_post_types lists 4), false = not this one, true = send.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSaleOrderDto.prototype, "waOnPost", void 0);
 //# sourceMappingURL=save-sale-order.dto.js.map

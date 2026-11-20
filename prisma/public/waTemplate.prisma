@@ -1,0 +1,46 @@
+/// WhatsApp option B: mirror of the relay's message templates for one company
+/// (migration 20261119100000_whatsapp, plan §3.1), refreshed from
+/// GET /v1/connection: nex_bill_v1, nex_payment_reminder_v1, nex_receipt_v1,
+/// nex_order_confirm_v1 in en / ta, and hello_world in en_US.
+///
+/// NO sync column on purpose (never pushed to a cloud). The plan's
+/// wat_synced_on is named wat_pulled_on: a timestamp named *synced_on would
+/// make public.v_sync_tables list this table and the registry expect it as
+/// the sync column.
+model WaTemplate {
+  watId          String    @id(map: "pk_wa_template") @default(dbgenerated("uuidv7()")) @db.Uuid @map("wat_id")
+  watCompanyId   String    @db.Uuid                                  @map("wat_company_id")
+  watName        String    @db.VarChar(60)                           @map("wat_name")
+  /// ^[a-z]{2}(_[A-Z]{2})?$ (ck_wat_lang): en, ta, en_US.
+  watLang        String    @db.VarChar(8)                            @map("wat_lang")
+  /// BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wat_purpose).
+  watPurpose     String    @db.VarChar(10)                           @map("wat_purpose")
+  /// UTILITY / MARKETING / AUTHENTICATION, as Meta files it (Meta may move one).
+  watCategory    String?   @db.VarChar(20)                           @map("wat_category")
+  /// APPROVED | PENDING | REJECTED | PAUSED | DISABLED | NOT_SUBMITTED (ck_wat_status).
+  watStatus      String    @db.VarChar(14)                           @map("wat_status")
+  watReason      String?   @db.VarChar(300)                          @map("wat_reason")
+  /// The text as submitted (shop name written in).
+  watBody        String?                                             @map("wat_body")
+  /// The named parameters, in order.
+  watParams      Json      @default("[]") @db.JsonB                  @map("wat_params")
+  /// NONE | DOCUMENT (ck_wat_header_kind).
+  watHeaderKind  String    @default("NONE") @db.VarChar(10)          @map("wat_header_kind")
+  watButtons     Json      @default("[]") @db.JsonB                  @map("wat_buttons")
+  /// When Meta last changed the status.
+  watStatusOn    DateTime? @db.Timestamptz(6)                        @map("wat_status_on")
+  /// When this row was last refreshed from the relay.
+  watPulledOn    DateTime  @default(now()) @db.Timestamptz(6)        @map("wat_pulled_on")
+  watCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)        @map("wat_created_on")
+
+  company        Company   @relation("WaTemplateCompany", fields: [watCompanyId], references: [compId], onUpdate: Cascade, onDelete: Cascade, map: "fk_wat_company")
+
+  // Not synced, so this UNIQUE cannot clash between sites.
+  @@unique([watCompanyId, watName, watLang], map: "ux_wat_company_name_lang")
+
+  // CHECK constraints (DB-only): ck_wat_lang, ck_wat_purpose, ck_wat_status,
+  //   ck_wat_header_kind.
+
+  @@map("wa_template")
+  @@schema("public")
+}

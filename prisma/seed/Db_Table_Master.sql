@@ -24,8 +24,8 @@
 --
 -- Ids are written out, in blocks of 100 per module (1xx core, 2xx UI, 3xx
 -- audit/system, 4xx accounts, 5xx till, 6xx sales, 7xx loyalty, 8xx purchase,
--- 9xx inventory, 10xx stock, 11xx GST, 12xx print, 13xx transport), so a new
--- table takes a free id in its module's block.
+-- 9xx inventory, 10xx stock, 11xx GST, 12xx print, 13xx transport, 14xx
+-- WhatsApp), so a new table takes a free id in its module's block.
 --
 -- A NEW TABLE: add its row here in the same change as its migration. Until
 -- then public.v_db_table_master_drift lists it as UNREGISTERED and
@@ -280,7 +280,12 @@ SELECT v.id, v.sch, v.tbl, v.parent, v.name, v.kind, v.module, v.prefix, v.sync_
     -- 1300s TRANSPORT
     (1301, 'public',     'transporter_master',         NULL,  'Transporter',                      'MASTER',      'TRANSPORT', 'trn_',              'trn_sync_date',            149,   'EDITABLE',    NULL,  true,   'GSTIN or TRANSIN on an e-way bill.'),
     (1302, 'public',     'vehicle_master',             NULL,  'Vehicle',                          'MASTER',      'TRANSPORT', 'veh_',              'veh_sync_date',            125,   'EDITABLE',    NULL,  true,   NULL),
-    (1310, 'public',     'txn_transport_detail',       NULL,  'Document Transport',               'TRANSACTION', 'TRANSPORT', 'ttd_',              'ttd_sync_date',            NULL,  'EDITABLE',    NULL,  true,   'The transport band of every goods-moving document; no single header, so no parent.')
+    (1310, 'public',     'txn_transport_detail',       NULL,  'Document Transport',               'TRANSACTION', 'TRANSPORT', 'ttd_',              'ttd_sync_date',            NULL,  'EDITABLE',    NULL,  true,   'The transport band of every goods-moving document; no single header, so no parent.'),
+    -- 1400s WHATSAPP (20261119100000_whatsapp). The two per-install tables have no sync column
+    -- on purpose: they describe this server's link to wa-relay and never push to a cloud.
+    (1401, 'public',     'wa_connection',              NULL,  'WhatsApp Connection',              'SETTING',     'WHATSAPP',  'wac_',              NULL,                       307,   'EDITABLE',    NULL,  true,   'This server''s link to wa-relay, one live row per company: state, shop code, install key (encrypted), the connected number, the event cursor and the poll lease. Never syncs.'),
+    (1402, 'public',     'wa_template',                NULL,  'WhatsApp Template',                'METADATA',    'WHATSAPP',  'wat_',              NULL,                       307,   'DERIVED',     NULL,  true,   'Mirror of the relay''s message templates per company (name x language), with Meta''s approval status. Never syncs.'),
+    (1403, 'public',     'wa_message_log',             NULL,  'WhatsApp Message Log',             'LOG',         'WHATSAPP',  'wml_',              'wml_sync_date',            309,   'EDITABLE',    NULL,  true,   'One row per WhatsApp send try (bill, order, receipt, payment reminder, test) with its statuses, reason and cost; details purged after whatsapp.log_retention_years.')
   ) AS v(id, sch, tbl, parent, name, kind, module, prefix, sync_col, menu, write_mode, keep_days, active, descr)
  WHERE to_regclass(format('%I.%I', v.sch, v.tbl)) IS NOT NULL
 ON CONFLICT (dtm_id) DO UPDATE SET

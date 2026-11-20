@@ -1,4 +1,10 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrintTemplate, PrintTemplateDataset, PrintTemplateVersion } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import {
@@ -69,6 +75,14 @@ import { PrintRenderErrorCode } from './types/print-render-error-codes';
  * were rendered; a client-side renderer would make that pointer a claim about
  * something the server never saw.
  */
+
+/** WhatsApp decision 16: the design a WhatsApp PDF uses, tried in this order. */
+export const WHATSAPP_ASSIGNMENT_LADDER = ['WHATSAPP', 'PDF', 'PRINT'] as const;
+
+/** The ladder's "nothing assigned at this mode" (PTA NONE_RESOLVES is a 404). */
+function isNotFound(error: unknown): boolean {
+  return error instanceof NotFoundException;
+}
 
 interface RevisionBundle {
   readonly template: PrintTemplate;
@@ -306,6 +320,119 @@ export class PrintRenderService {
         outputMode: resolution.ptaOutputMode,
       },
     };
+  }
+
+  // ─── WhatsApp ──────────────────────────────────────────────────────────
+
+  /**
+   * WhatsApp plan §5.1 / decision 16 — the PDF a WhatsApp message carries.
+   *
+   * The purpose is named by CODE (the company's own fork of it first, else the
+   * shipped one). The design is the assignment ladder's winner for output mode
+   * WHATSAPP, else PDF, else PRINT — a counter that never set a WhatsApp design
+   * still sends the paper it prints. It is rendered as a PDF, one copy (the
+   * purpose's first copy label), and **no print_log row is written**:
+   * plg_output_mode has no WHATSAPP (conflict §12.2); the message log keeps the
+   * revision id instead.
+   *
+   * Never throws: `{ ok: false, reason }` — NO_DESIGN when no assignment
+   * resolves, nothing is published, or the winner cannot make a PDF (a thermal
+   * GRID design); FAILED for anything the render itself refused. Supplied
+   * params the revision does not declare are dropped, so one call shape serves
+   * every design of the purpose.
+   */
+  async renderForWhatsApp(request: {
+    purposeCode: string;
+    context: RenderContext;
+    params: Record<string, unknown>;
+  }): Promise<
+    | { ok: true; bytes: Buffer; versionId: string; templateCode: string; assignmentMode: string }
+    | { ok: false; reason: 'NO_DESIGN' | 'FAILED'; message: string }
+  > {
+    try {
+      const context = await this.withCurrentAccYear(request.context);
+      const purpose = await this.prisma.printPurpose.findFirst({
+        where: {
+          ppoCode: request.purposeCode,
+          ppoIsDeleted: false,
+          ppoIsActive: true,
+          OR: [{ ppoCompanyId: null }, { ppoCompanyId: context.companyId }],
+        },
+        orderBy: [{ ppoCompanyId: { sort: 'asc', nulls: 'last' } }],
+        select: { ppoId: true, ppoDocType: true },
+      });
+      if (!purpose) {
+        return { ok: false, reason: 'NO_DESIGN', message: `No print purpose ${request.purposeCode}` };
+      }
+      let resolution: Awaited<ReturnType<PrintTemplateAssignmentService['resolve']>> | null = null;
+      for (const outputMode of WHATSAPP_ASSIGNMENT_LADDER) {
+        try {
+          resolution = await this.assignments.resolve({
+            purposeId: purpose.ppoId,
+            companyId: context.companyId,
+            branchId: context.branchId ?? undefined,
+            deviceId: context.deviceId ?? undefined,
+            outputMode,
+          });
+          break;
+        } catch (error) {
+          if (!isNotFound(error)) throw error;
+        }
+      }
+      if (!resolution || !resolution.publishedRevId) {
+        return {
+          ok: false,
+          reason: 'NO_DESIGN',
+          message: resolution
+            ? `${resolution.ptaTemplateCode ?? resolution.ptaTemplateId} has no published revision`
+            : `No ${WHATSAPP_ASSIGNMENT_LADDER.join(' / ')} assignment resolves for ${request.purposeCode}`,
+        };
+      }
+      const bundle = await this.loadVersion(resolution.publishedRevId, context.companyId);
+      const built = this.build(bundle);
+      if (built.layoutMode !== 'GRAPHIC') {
+        return {
+          ok: false,
+          reason: 'NO_DESIGN',
+          message: `${bundle.template.ptlCode} is a ${built.layoutMode} (roll) design and cannot make a PDF`,
+        };
+      }
+      const declared = new Set(
+        (Array.isArray(bundle.version.ptvParams) ? (bundle.version.ptvParams as { name?: unknown }[]) : [])
+          .map((p) => (typeof p?.name === 'string' ? p.name : ''))
+          .filter(Boolean),
+      );
+      const params = Object.fromEntries(
+        Object.entries(request.params).filter(([name]) => declared.has(name)),
+      );
+      const outcome = await this.renderDefinition({
+        bundle,
+        definition: built.definition,
+        layoutMode: built.layoutMode,
+        context,
+        params,
+        requestedMode: 'PDF',
+        copies: 1,
+        copyLabels: resolution.copyLabels.slice(0, 1),
+        docType: purpose.ppoDocType,
+      });
+      return {
+        ok: true,
+        bytes: outcome.bytes,
+        versionId: outcome.versionId,
+        templateCode: bundle.template.ptlCode,
+        assignmentMode: resolution.ptaOutputMode,
+      };
+    } catch (error) {
+      const message =
+        error instanceof HttpException
+          ? JSON.stringify(error.getResponse()).slice(0, 280)
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      this.logger.warn(`WhatsApp render of ${request.purposeCode} failed: ${message}`);
+      return { ok: false, reason: 'FAILED', message };
+    }
   }
 
   // ─── Record ────────────────────────────────────────────────────────────

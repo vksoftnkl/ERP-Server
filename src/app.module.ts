@@ -87,6 +87,8 @@ import { DeliveryChallanModule } from './modules/sales/delivery-challan/delivery
 import { DcReturnModule } from './modules/sales/dc-return/dc-return.module';
 import { SaleReturnModule } from './modules/sales/sale-return/sale-return.module';
 import { DeliveryModule } from './modules/sales/delivery/delivery.module';
+import { WaPostHookModule } from './modules/whatsapp/hook/wa-post-hook';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { TempCreditModule } from './modules/sales/temp-credit/temp-credit.module';
 import { TxnHoldModule } from './modules/sales/txn-hold/txn-hold.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
@@ -278,6 +280,9 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     SaleReturnModule,
     // Delivery tracking phase 1: /delivery-notes/* (menu 305), /deliveries/* (304).
     DeliveryModule,
+    // WhatsApp option B (whatsapp-plan-v1): the global on-post hook, then /whatsapp/* (307-309).
+    WaPostHookModule,
+    WhatsappModule,
     TempCreditModule,
     TxnHoldModule,
     BankListModule,

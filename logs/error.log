@@ -22093,3 +22093,71 @@ Foreign key constraint violated on the constraint: `fk_sbi_price_level`
 2026-11-17T08:42:39.894Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
 2026-11-17T08:43:17.631Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
 2026-11-17T08:44:33.888Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T13:58:39.041Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T13:58:45.476Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:03:42.838Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:07:25.169Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:07:36.480Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:07:51.337Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:08:01.833Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:08:15.254Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:08:29.165Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:09:11.258Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:09:16.391Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:10:06.406Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:10:12.303Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:11:13.095Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:13:13.147Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:13:36.681Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:15:21.009Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:16:15.130Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:16:40.660Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:17:20.081Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:17:29.661Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:17:41.411Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:17:50.750Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:20:06.963Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:20:30.572Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:21:14.473Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:21:21.073Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:21:55.637Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:22:05.474Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:22:15.346Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:22:31.340Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:23:48.067Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:23:57.022Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:24:09.710Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:24:29.876Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:24:47.543Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:25:27.204Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:25:37.987Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:26:22.734Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:27:50.374Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:28:13.671Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:28:18.983Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:29:47.882Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:31:22.259Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-17T14:32:21.893Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:13:46.294Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:24:26.705Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:24:36.147Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:26:02.023Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:26:19.215Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:26:36.823Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:26:49.810Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:26:58.944Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:27:10.509Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:29:03.882Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:29:39.307Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:30:03.089Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:30:15.678Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:34:43.122Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:36:36.280Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:36.317Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:37.443Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:37.479Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:37.488Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:37.523Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:36:38.289Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T04:40:34.218Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T04:42:51.452Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012

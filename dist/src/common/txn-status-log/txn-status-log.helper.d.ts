@@ -64,7 +64,9 @@ export declare enum TxnStatusEvent {
     PRIORITY_CHANGED = "PRIORITY_CHANGED",
     MERGED = "MERGED",
     GOODS_BACK = "GOODS_BACK",
-    DELIVERY_MODE = "DELIVERY_MODE"
+    DELIVERY_MODE = "DELIVERY_MODE",
+    WHATSAPP_SENT = "WHATSAPP_SENT",
+    WHATSAPP_FAILED = "WHATSAPP_FAILED"
 }
 export declare enum TxnStatusNotifyChannel {
     SMS = "SMS",

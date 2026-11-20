@@ -8,9 +8,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaleOrderLifecycleService = void 0;
 const common_1 = require("@nestjs/common");
+const wa_post_hook_1 = require("../../whatsapp/hook/wa-post-hook");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -26,6 +30,7 @@ const sale_order_service_1 = require("./sale-order.service");
 const sale_order_tx_options_1 = require("./sale-order-tx.options");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' };
+const SO_VOUCHER_TYPE = 4;
 const RESERVING_STATUSES = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
 let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     prisma;
@@ -33,19 +38,42 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     salesContext;
     reservations;
     audit;
-    constructor(prisma, orders, salesContext, reservations, audit) {
+    waHook;
+    constructor(prisma, orders, salesContext, reservations, audit, waHook) {
         this.prisma = prisma;
         this.orders = orders;
         this.salesContext = salesContext;
         this.reservations = reservations;
         this.audit = audit;
+        this.waHook = waHook;
     }
     async post(dto) {
         const now = new Date();
-        return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now), sale_order_tx_options_1.ORDER_TX_OPTIONS);
+        const keys = {
+            soId: dto.soId,
+            soCompanyId: dto.soCompanyId,
+            soBranchId: dto.soBranchId,
+            soAccYear: dto.soAccYear,
+        };
+        const { confirmedNow, ...result } = await this.prisma.$transaction((tx) => this.postInTx(tx, keys, now), sale_order_tx_options_1.ORDER_TX_OPTIONS);
+        const whatsapp = confirmedNow ? await this.whatsappAfterPost(keys, dto.waOnPost) : null;
+        return whatsapp ? { ...result, whatsapp } : result;
+    }
+    async whatsappAfterPost(keys, waOnPost) {
+        if (!this.waHook)
+            return null;
+        return this.waHook.fire({
+            docType: 'SALES_ORDER',
+            docId: keys.soId,
+            accYear: keys.soAccYear,
+            companyId: keys.soCompanyId,
+            branchId: keys.soBranchId,
+            vchrTypeId: SO_VOUCHER_TYPE,
+            waOnPost: waOnPost ?? null,
+        });
     }
     async saveAndPost(dto) {
-        const { post: _post, ...rest } = dto;
+        const { post: _post, waOnPost, ...rest } = dto;
         void _post;
         const saveDto = rest;
         delete saveDto.soStatus;
@@ -53,6 +81,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         const now = new Date();
         let keys = null;
         let warnings = [];
+        let confirmedNow = false;
         try {
             await this.prisma.$transaction(async (tx) => {
                 let saved;
@@ -71,7 +100,9 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                     soBranchId: saved.soBranchId,
                     soAccYear: saved.soAccYear,
                 };
-                warnings = [...reserveWarnings, ...(await this.postInTx(tx, keys, now)).warnings];
+                const posted = await this.postInTx(tx, keys, now);
+                confirmedNow = posted.confirmedNow === true;
+                warnings = [...reserveWarnings, ...posted.warnings];
             }, sale_order_tx_options_1.ORDER_TX_OPTIONS);
         }
         catch (error) {
@@ -79,8 +110,9 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
             throw error;
         }
         const k = keys;
+        const whatsapp = confirmedNow ? await this.whatsappAfterPost(k, waOnPost) : null;
         const payload = await this.orders.getById(k.soId, k.soCompanyId, k.soBranchId, k.soAccYear);
-        return { ...payload, warnings };
+        return whatsapp ? { ...payload, warnings, whatsapp } : { ...payload, warnings };
     }
     async save(dto) {
         if (!dto.soId) {
@@ -209,7 +241,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
             userId: ctx.actor,
             notes: 'Order confirmed',
         }, tx);
-        return { soStatus: ORDER_STATUS.CONFIRMED, warnings };
+        return { soStatus: ORDER_STATUS.CONFIRMED, warnings, confirmedNow: true };
     }
     async cancel(dto) {
         const now = new Date();
@@ -415,11 +447,13 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
 exports.SaleOrderLifecycleService = SaleOrderLifecycleService;
 exports.SaleOrderLifecycleService = SaleOrderLifecycleService = __decorate([
     (0, common_1.Injectable)(),
+    __param(5, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         sale_order_service_1.SaleOrderService,
         sales_context_service_1.SalesContextService,
         stock_reservation_service_1.StockReservationService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        wa_post_hook_1.WaPostHook])
 ], SaleOrderLifecycleService);
 function capReservedQty(dto, lines) {
     if (!dto.items) {

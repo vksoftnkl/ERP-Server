@@ -1,0 +1,122 @@
+/// WhatsApp option B: one row per send try (migration 20261119100000_whatsapp,
+/// plan §3.1, §5.2). Written by the sends (SENDING / SKIPPED, in their own
+/// short transaction), updated by the statuses the poller pulls from the relay.
+///
+/// LIST-partitioned by wmlAccYear = the company's accounting year on the SEND
+/// date (public.ensure_acc_year_partitions creates the partitions). Syncs from
+/// offline sites: uuidv7 PK, no other UNIQUE. Statuses arrive in any order, so
+/// there is no CHECK across the status columns: SENT < DELIVERED < READ, and
+/// FAILED replaces only SENDING / SENT. wmlId is also the relay clientRef.
+/// Retention (whatsapp.log_retention_years) nulls the number, params, Meta
+/// ids, error text and party name and sets wmlPurgedOn; the counts stay.
+model WaMessageLog {
+  wmlId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("wml_id")
+  /// THE PARTITION KEY (ck_wml_acc_year: YYYY-YYYY, consecutive years).
+  wmlAccYear         String    @db.Char(9)                               @map("wml_acc_year")
+  wmlCompanyId       String    @db.Uuid                                  @map("wml_company_id")
+  /// The document's branch; the sender's branch for reminders.
+  wmlBranchId        String?   @db.Uuid                                  @map("wml_branch_id")
+  /// BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wml_kind).
+  wmlKind            String    @db.VarChar(10)                           @map("wml_kind")
+  /// ON_POST | MANUAL | BULK | RETRY | TEST (ck_wml_trigger).
+  wmlTrigger         String    @db.VarChar(8)                            @map("wml_trigger")
+  /// One bulk send.
+  wmlBatchId         String?   @db.Uuid                                  @map("wml_batch_id")
+
+  // ── The document (BILL / ORDER / RECEIPT have one: ck_wml_doc) ─────────
+  /// NULL | SALE_BILL | SALES_ORDER | RECEIPT (ck_wml_src_doc_type).
+  wmlSrcDocType      String?   @db.VarChar(30)                           @map("wml_src_doc_type")
+  /// sb_id / so_id / avh_voucher_id.
+  wmlSrcDocId        String?   @db.Uuid                                  @map("wml_src_doc_id")
+  /// The document's own year.
+  wmlSrcAccYear      String?   @db.Char(9)                               @map("wml_src_acc_year")
+  wmlSrcDocRefno     String?   @db.VarChar(100)                          @map("wml_src_doc_refno")
+  wmlVchrTypeId      Int?                                                @map("wml_vchr_type_id")
+
+  // ── The party and the number ───────────────────────────────────────────
+  /// led_id (one partyId); NULL only for TEST (ck_wml_party).
+  wmlPartyId         String?   @db.Uuid                                  @map("wml_party_id")
+  wmlPartyName       String?   @db.VarChar(150)                          @map("wml_party_name")
+  /// Reminders: the statement date.
+  wmlAsOn            DateTime? @db.Date                                  @map("wml_as_on")
+  /// Normalised digits, e.g. 919865322154.
+  wmlPhone           String?   @db.VarChar(16)                           @map("wml_phone")
+  /// NULL | WHATSAPP | PHONE1 | PHONE2 | TYPED (ck_wml_phone_source).
+  wmlPhoneSource     String?   @db.VarChar(8)                            @map("wml_phone_source")
+
+  // ── What was sent ──────────────────────────────────────────────────────
+  wmlTemplateName    String?   @db.VarChar(60)                           @map("wml_template_name")
+  wmlLangWanted      String?   @db.VarChar(8)                            @map("wml_lang_wanted")
+  wmlLangSent        String?   @db.VarChar(8)                            @map("wml_lang_sent")
+  /// e.g. "ta not approved yet: sent in English".
+  wmlLangNote        String?   @db.VarChar(120)                          @map("wml_lang_note")
+  /// The values sent (purged after the retention).
+  wmlParams          Json?     @db.JsonB                                 @map("wml_params")
+  /// The print_template_version rendered (no print_log row, decision 16).
+  wmlPdfVersionId    String?   @db.Uuid                                  @map("wml_pdf_version_id")
+  wmlPdfBytes        Int?                                                @map("wml_pdf_bytes")
+  wmlPdfFilename     String?   @db.VarChar(100)                          @map("wml_pdf_filename")
+
+  // ── Status (any order; each time set once) ─────────────────────────────
+  /// SKIPPED | SENDING | SENT | DELIVERED | READ | FAILED (ck_wml_status).
+  wmlStatus          String    @db.VarChar(10)                           @map("wml_status")
+  wmlSendingOn       DateTime? @db.Timestamptz(6)                        @map("wml_sending_on")
+  wmlSentOn          DateTime? @db.Timestamptz(6)                        @map("wml_sent_on")
+  wmlDeliveredOn     DateTime? @db.Timestamptz(6)                        @map("wml_delivered_on")
+  wmlReadOn          DateTime? @db.Timestamptz(6)                        @map("wml_read_on")
+  wmlFailedOn        DateTime? @db.Timestamptz(6)                        @map("wml_failed_on")
+  /// A WA_* code; required when SKIPPED / FAILED (ck_wml_error).
+  wmlErrorCode       String?   @db.VarChar(30)                           @map("wml_error_code")
+  wmlMetaErrorCode   Int?                                                @map("wml_meta_error_code")
+  wmlErrorText       String?   @db.VarChar(300)                          @map("wml_error_text")
+  /// wamid
+  wmlMetaMessageId   String?   @db.VarChar(128)                          @map("wml_meta_message_id")
+  wmlRelayMsgId      String?   @db.Uuid                                  @map("wml_relay_msg_id")
+  /// >= 1 (ck_wml_try_no).
+  wmlTryNo           Int       @default(1) @db.SmallInt                  @map("wml_try_no")
+  /// The earlier try's wmlId.
+  wmlRetryOf         String?   @db.Uuid                                  @map("wml_retry_of")
+  /// NULL | PAID_ALREADY | STOP_REMINDERS | STOP_ALL (ck_wml_reply).
+  wmlReply           String?   @db.VarChar(16)                           @map("wml_reply")
+  wmlReplyOn         DateTime? @db.Timestamptz(6)                        @map("wml_reply_on")
+  /// A reminder sent inside the gap, after the confirm.
+  wmlGapOverride     Boolean   @default(false)                           @map("wml_gap_override")
+  wmlOverrideReason  String?   @db.VarChar(200)                          @map("wml_override_reason")
+  /// whatsapp.rate_per_message at send time.
+  wmlCostRate        Decimal?  @db.Decimal(10, 4)                        @map("wml_cost_rate")
+  /// whatsapp.rate_gst_percent at send time.
+  wmlCostGstPct      Decimal?  @db.Decimal(5, 2)                         @map("wml_cost_gst_pct")
+  /// As sde_device_id.
+  wmlDeviceId        String?                                             @map("wml_device_id")
+  wmlUserId          String?   @db.Uuid                                  @map("wml_user_id")
+  wmlUserName        String?   @db.VarChar(60)                           @map("wml_user_name")
+  wmlPurgedOn        DateTime? @db.Timestamptz(6)                        @map("wml_purged_on")
+  wmlIsDeleted       Boolean   @default(false)                           @map("wml_is_deleted")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  wmlSyncDate        DateTime? @db.Timestamptz(6)                        @map("wml_sync_date")
+  wmlCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)        @map("wml_created_on")
+  wmlCreatedBy       String    @db.VarChar(60)                           @map("wml_created_by")
+  wmlModifiedOn      DateTime? @db.Timestamptz(6)                        @map("wml_modified_on")
+
+  // No FK (plan §3.1): a log row is history and syncs on its own.
+
+  @@id([wmlId, wmlAccYear], map: "pk_wa_message_log")
+
+  // None UNIQUE: nothing here can clash when two sites' rows meet at sync.
+  @@index([wmlCompanyId, wmlCreatedOn(sort: Desc)], map: "ix_wml_company_time")
+  @@index([wmlSrcDocType, wmlSrcDocId], map: "ix_wml_doc")
+  @@index([wmlCompanyId, wmlPartyId, wmlKind, wmlCreatedOn(sort: Desc)], map: "ix_wml_party_kind")
+
+  // DB-only (partial, which Prisma cannot express):
+  //   ix_wml_meta    (wml_meta_message_id) WHERE wml_meta_message_id IS NOT NULL
+  //   ix_wml_batch   (wml_batch_id)        WHERE wml_batch_id IS NOT NULL
+  //   ix_wml_sending (wml_created_on)      WHERE wml_status = 'SENDING'
+  //   ix_sync_pending_wa_message_log (wml_id, wml_acc_year) WHERE wml_sync_date IS NULL
+  //
+  // CHECK constraints (DB-only): ck_wml_acc_year, ck_wml_kind, ck_wml_trigger,
+  //   ck_wml_src_doc_type, ck_wml_phone_source, ck_wml_status, ck_wml_try_no,
+  //   ck_wml_reply, ck_wml_doc, ck_wml_party, ck_wml_error.
+
+  @@map("wa_message_log")
+  @@schema("public")
+}

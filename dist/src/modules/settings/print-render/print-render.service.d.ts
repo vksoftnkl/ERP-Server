@@ -9,6 +9,7 @@ import { PdfKitRenderer } from './engine/renderers/pdfkit.renderer';
 import { PrintLogService } from './print-log.service';
 import { RecordableOutputMode } from './print-render.constants';
 import { RenderContext, RenderOutcome } from './types/print-render-api.types';
+export declare const WHATSAPP_ASSIGNMENT_LADDER: readonly ["WHATSAPP", "PDF", "PRINT"];
 export interface PreviewRequest {
     readonly versionId: string;
     readonly context: RenderContext;
@@ -59,6 +60,21 @@ export declare class PrintRenderService {
     constructor(prisma: PrismaService, datasetRunner: DatasetRunnerService, assignments: PrintTemplateAssignmentService, printLog: PrintLogService, layout: LayoutEngine, pdf: PdfKitRenderer, escpos: EscPosRenderer, escp: EscPRenderer);
     preview(request: PreviewRequest): Promise<RenderOutcome>;
     print(request: PrintRequest): Promise<PrintOutcome>;
+    renderForWhatsApp(request: {
+        purposeCode: string;
+        context: RenderContext;
+        params: Record<string, unknown>;
+    }): Promise<{
+        ok: true;
+        bytes: Buffer;
+        versionId: string;
+        templateCode: string;
+        assignmentMode: string;
+    } | {
+        ok: false;
+        reason: 'NO_DESIGN' | 'FAILED';
+        message: string;
+    }>;
     recordPrint(request: RecordPrintRequest): Promise<string[]>;
     private withCurrentAccYear;
     private renderDefinition;

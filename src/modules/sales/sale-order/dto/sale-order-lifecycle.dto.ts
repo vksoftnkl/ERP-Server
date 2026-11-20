@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsNotEmpty } from 'class-validator';
-import { RequiredInteger, RequiredUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
+import { OptionalBoolean, RequiredInteger, RequiredUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
 import { SaveSaleOrderDto } from './save-sale-order.dto';
 
 /** HANDOVER §3 — the four keys of an existing order. */
@@ -23,7 +23,14 @@ export class SaleOrderKeysDto {
   soAccYear!: string;
 }
 
-export class PostSaleOrderDto extends SaleOrderKeysDto {}
+export class PostSaleOrderDto extends SaleOrderKeysDto {
+  @ApiPropertyOptional({
+    description:
+      "WhatsApp on Post for this order (whatsapp-plan-v1 §5.3): absent = the company's setting (whatsapp.on_post_types lists 4), false = not this one, true = send.",
+  })
+  @OptionalBoolean()
+  waOnPost?: boolean;
+}
 
 export class CancelSaleOrderDto extends SaleOrderKeysDto {
   @ApiProperty({ maxLength: 250 })

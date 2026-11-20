@@ -63,6 +63,13 @@ exports.envValidationSchema = Joi.object({
     }),
     CLOUD_SYNC_INTERVAL_SECONDS: Joi.number().integer().min(5).default(60),
     CLOUD_SYNC_BATCH_SIZE: Joi.number().integer().min(1).max(10000).default(500),
+    WA_RELAY_URL: Joi.string()
+        .uri({ scheme: ['http', 'https'] })
+        .allow('')
+        .optional(),
+    WA_CRED_KEY: Joi.string().allow('').optional(),
+    WA_CRED_KEY_VERSION: Joi.number().integer().min(1).max(32767).empty('').optional(),
+    WA_POLL_IN_TEST: Joi.string().allow('').optional(),
     JWT_SECRET: Joi.when('NODE_ENV', {
         is: 'test',
         then: Joi.string().min(16).default('test-jwt-secret-change-me'),

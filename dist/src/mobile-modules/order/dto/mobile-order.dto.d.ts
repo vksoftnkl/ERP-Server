@@ -3,7 +3,7 @@ import { SaveSaleOrderItemDto } from "../../../modules/sales/sale-order/dto/save
 declare const MobileOrderLineDto_base: import("@nestjs/common").Type<Omit<SaveSaleOrderItemDto, "soiId" | "soiOrderId" | "soiCompanyId" | "soiBranchId" | "soiTenantId" | "soiAccYear" | "soiCreatedBy" | "soiModifiedBy">>;
 export declare class MobileOrderLineDto extends MobileOrderLineDto_base {
 }
-declare const CreateMobileOrderDto_base: import("@nestjs/common").Type<Omit<SaveSaleOrderDto, "items" | "charges" | "tenders" | "post" | "soId" | "soBranchId" | "soTenantId" | "soAccYear" | "soSessionId" | "soDeviceId" | "soOrderSlno" | "soOrderRefno" | "soUserId" | "soStatus" | "soCreatedBy" | "soModifiedBy">>;
+declare const CreateMobileOrderDto_base: import("@nestjs/common").Type<Omit<SaveSaleOrderDto, "charges" | "items" | "soId" | "soBranchId" | "soTenantId" | "soAccYear" | "soSessionId" | "soDeviceId" | "soOrderSlno" | "soOrderRefno" | "soStatus" | "post" | "tenders" | "soCreatedBy" | "soModifiedBy" | "soUserId">>;
 export declare class CreateMobileOrderDto extends CreateMobileOrderDto_base {
     soClientUuid: string;
     deviceUid: string;

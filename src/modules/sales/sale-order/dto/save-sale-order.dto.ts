@@ -672,4 +672,11 @@ export class SaveSaleOrderDto {
   })
   @OptionalBoolean()
   post?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Only read with post: true. WhatsApp on Post for this order: absent = the company's setting (whatsapp.on_post_types lists 4), false = not this one, true = send.",
+  })
+  @OptionalBoolean()
+  waOnPost?: boolean;
 }

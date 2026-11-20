@@ -43,8 +43,16 @@ __decorate([
     __metadata("design:type", String)
 ], SaleOrderKeysDto.prototype, "soAccYear", void 0);
 class PostSaleOrderDto extends SaleOrderKeysDto {
+    waOnPost;
 }
 exports.PostSaleOrderDto = PostSaleOrderDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: "WhatsApp on Post for this order (whatsapp-plan-v1 §5.3): absent = the company's setting (whatsapp.on_post_types lists 4), false = not this one, true = send.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], PostSaleOrderDto.prototype, "waOnPost", void 0);
 class CancelSaleOrderDto extends SaleOrderKeysDto {
     reason;
 }

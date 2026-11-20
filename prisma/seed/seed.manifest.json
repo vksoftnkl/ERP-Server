@@ -159,6 +159,10 @@
       "description": "fixed.grid_details + fixed.grid_columns for the Challan Return (menu 251) grids 219 (MAIN LIST - DC RETURNS) and 220 (POPUP - CHALLANS TO RETURN) and the challan's 221 (CHALLAN - USED ON); the same rows as migration 20261118100000, pinned column ids; after Grid_Details.sql / Grid_Columns.sql, which do not carry them"
     },
     {
+      "file": "WhatsApp_Grid_222.sql",
+      "description": "fixed.grid_details + fixed.grid_columns for grid 222 (MAIN LIST - WHATSAPP LOG), the WhatsApp Log (menu 309); the same rows as migration 20261119100000_whatsapp, pinned column ids; after Grid_Details.sql / Grid_Columns.sql, which do not carry it"
+    },
+    {
       "file": "Sale_Order_Widget_Config_Menu11_Desktop.sql",
       "description": "fixed.form_section + fixed.form_field for menu 11 (Sales Order), platform Desktop: 6 sections / 27 fields for the Qt screen's Visibility Settings, matched by name, ids from the sequences; the same rows as migration 20261110200000; after Menu_Master.sql (FK) and Form_Section.sql / Form_Field.sql"
     },

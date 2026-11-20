@@ -136,4 +136,5 @@ export declare class SaveSaleOrderDto {
     charges?: SaveChargeDetailDto[];
     tenders?: SaveTenderDetailDto[];
     post?: boolean;
+    waOnPost?: boolean;
 }

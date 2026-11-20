@@ -10,7 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var PrintRenderService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PrintRenderService = void 0;
+exports.PrintRenderService = exports.WHATSAPP_ASSIGNMENT_LADDER = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -25,6 +25,10 @@ const pdfkit_renderer_1 = require("./engine/renderers/pdfkit.renderer");
 const print_log_service_1 = require("./print-log.service");
 const print_render_constants_1 = require("./print-render.constants");
 const print_render_error_codes_1 = require("./types/print-render-error-codes");
+exports.WHATSAPP_ASSIGNMENT_LADDER = ['WHATSAPP', 'PDF', 'PRINT'];
+function isNotFound(error) {
+    return error instanceof common_1.NotFoundException;
+}
 let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
     prisma;
     datasetRunner;
@@ -138,6 +142,90 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
                 outputMode: resolution.ptaOutputMode,
             },
         };
+    }
+    async renderForWhatsApp(request) {
+        try {
+            const context = await this.withCurrentAccYear(request.context);
+            const purpose = await this.prisma.printPurpose.findFirst({
+                where: {
+                    ppoCode: request.purposeCode,
+                    ppoIsDeleted: false,
+                    ppoIsActive: true,
+                    OR: [{ ppoCompanyId: null }, { ppoCompanyId: context.companyId }],
+                },
+                orderBy: [{ ppoCompanyId: { sort: 'asc', nulls: 'last' } }],
+                select: { ppoId: true, ppoDocType: true },
+            });
+            if (!purpose) {
+                return { ok: false, reason: 'NO_DESIGN', message: `No print purpose ${request.purposeCode}` };
+            }
+            let resolution = null;
+            for (const outputMode of exports.WHATSAPP_ASSIGNMENT_LADDER) {
+                try {
+                    resolution = await this.assignments.resolve({
+                        purposeId: purpose.ppoId,
+                        companyId: context.companyId,
+                        branchId: context.branchId ?? undefined,
+                        deviceId: context.deviceId ?? undefined,
+                        outputMode,
+                    });
+                    break;
+                }
+                catch (error) {
+                    if (!isNotFound(error))
+                        throw error;
+                }
+            }
+            if (!resolution || !resolution.publishedRevId) {
+                return {
+                    ok: false,
+                    reason: 'NO_DESIGN',
+                    message: resolution
+                        ? `${resolution.ptaTemplateCode ?? resolution.ptaTemplateId} has no published revision`
+                        : `No ${exports.WHATSAPP_ASSIGNMENT_LADDER.join(' / ')} assignment resolves for ${request.purposeCode}`,
+                };
+            }
+            const bundle = await this.loadVersion(resolution.publishedRevId, context.companyId);
+            const built = this.build(bundle);
+            if (built.layoutMode !== 'GRAPHIC') {
+                return {
+                    ok: false,
+                    reason: 'NO_DESIGN',
+                    message: `${bundle.template.ptlCode} is a ${built.layoutMode} (roll) design and cannot make a PDF`,
+                };
+            }
+            const declared = new Set((Array.isArray(bundle.version.ptvParams) ? bundle.version.ptvParams : [])
+                .map((p) => (typeof p?.name === 'string' ? p.name : ''))
+                .filter(Boolean));
+            const params = Object.fromEntries(Object.entries(request.params).filter(([name]) => declared.has(name)));
+            const outcome = await this.renderDefinition({
+                bundle,
+                definition: built.definition,
+                layoutMode: built.layoutMode,
+                context,
+                params,
+                requestedMode: 'PDF',
+                copies: 1,
+                copyLabels: resolution.copyLabels.slice(0, 1),
+                docType: purpose.ppoDocType,
+            });
+            return {
+                ok: true,
+                bytes: outcome.bytes,
+                versionId: outcome.versionId,
+                templateCode: bundle.template.ptlCode,
+                assignmentMode: resolution.ptaOutputMode,
+            };
+        }
+        catch (error) {
+            const message = error instanceof common_1.HttpException
+                ? JSON.stringify(error.getResponse()).slice(0, 280)
+                : error instanceof Error
+                    ? error.message
+                    : String(error);
+            this.logger.warn(`WhatsApp render of ${request.purposeCode} failed: ${message}`);
+            return { ok: false, reason: 'FAILED', message };
+        }
     }
     async recordPrint(request) {
         const context = await this.withCurrentAccYear(request.context);

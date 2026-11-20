@@ -210,6 +210,11 @@ VALUES
     -- 306 Godown Stock Position (20261117100000_delivery_tracking, plan-delivery-tracking-p1 Q1):
     -- per godown, what is on the shelf = owned + billed not delivered, today only.
     ,( 306,  300, 'Godown Stock Position'                , NULL                  , true ,  30.00, NULL, NULL, NULL, true , false)
+    -- 308 Payment Reminders (after Party Outstanding) and 309 WhatsApp Log (20261119100000_whatsapp,
+    -- plan whatsapp/whatsapp-plan-v1-2026-11-17.md §3.4, decision 19): seeded HIDDEN; the deferred
+    -- Qt phase shows them. Verbs below.
+    ,( 308,    6, 'Payment Reminders'                    , NULL                  , false,   7.60, NULL, NULL, NULL, true , false)
+    ,( 309,    6, 'WhatsApp Log'                         , NULL                  , false,  25.00, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , false,   0.50, NULL, NULL, NULL, true , false)
     ,( 284,  137, 'Day Book by Tender'                   , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,( 144,  137, 'Ledger Monthly Summary'               , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
@@ -243,6 +248,9 @@ VALUES
     -- child series (Retail / Wholesale ...), between 62 Print Templates and 248
     -- Print Assignments. Verbs: the column default.
     ,( 303,   60, 'Voucher Types'                        , NULL                  , true ,  75.00, NULL, NULL, NULL, true , false)
+    -- 307 WhatsApp (20261119100000_whatsapp, plan §3.4): connection, settings and the on-post
+    -- ticks, between 248 Print Assignments and 266 App Themes; seeded HIDDEN (decision 19).
+    ,( 307,   60, 'WhatsApp'                             , NULL                  , false,  85.00, NULL, NULL, NULL, true , false)
 ON CONFLICT (menu_id) DO NOTHING;
 
 -- ── menu_verbs for the rows this file adds after 20260922170000 ─────────────
@@ -448,6 +456,20 @@ UPDATE fixed.menu_master m
    SET menu_verbs = v.verbs::text[]
   FROM (VALUES (182, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,AMEND,OVERRIDE}'),
                (251, '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- WhatsApp (20261119100000_whatsapp, plan §3.4 / §5.4, Q13): 307 VIEW sees the connection and
+-- sends a test, EDIT activates / connects / disconnects and saves the settings and ticks; 308
+-- Payment Reminders VIEW lists, PRINT / EXPORT the list, POST sends (the new right, given to
+-- nobody at first); 309 WhatsApp Log VIEW / EXPORT, POST retries. The migration sets the same
+-- lists; this catches a fresh database. Same guard as above.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (307, '{VIEW,EDIT}'),
+               (308, '{VIEW,PRINT,EXPORT,POST}'),
+               (309, '{VIEW,EXPORT,POST}')
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';

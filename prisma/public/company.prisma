@@ -177,6 +177,10 @@ model Company {
   aatoYears             CompanyAato[]             @relation("CompanyAatoCompany")
   partyTaxCertificates  AccPartyTaxCertificate[]  @relation("PartyTaxCertificateCompany")
 
+  // ── WhatsApp (20261119100000) ───────────────────────────────────────────
+  waConnections         WaConnection[]            @relation("WaConnectionCompany")
+  waTemplates           WaTemplate[]              @relation("WaTemplateCompany")
+
   @@map("companys")
   @@schema("public")
 }

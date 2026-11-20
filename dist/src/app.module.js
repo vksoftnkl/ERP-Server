@@ -95,6 +95,8 @@ const delivery_challan_module_1 = require("./modules/sales/delivery-challan/deli
 const dc_return_module_1 = require("./modules/sales/dc-return/dc-return.module");
 const sale_return_module_1 = require("./modules/sales/sale-return/sale-return.module");
 const delivery_module_1 = require("./modules/sales/delivery/delivery.module");
+const wa_post_hook_1 = require("./modules/whatsapp/hook/wa-post-hook");
+const whatsapp_module_1 = require("./modules/whatsapp/whatsapp.module");
 const temp_credit_module_1 = require("./modules/sales/temp-credit/temp-credit.module");
 const txn_hold_module_1 = require("./modules/sales/txn-hold/txn-hold.module");
 const bank_list_module_1 = require("./modules/fixed/bank-list/bank-list.module");
@@ -280,6 +282,8 @@ exports.AppModule = AppModule = __decorate([
             dc_return_module_1.DcReturnModule,
             sale_return_module_1.SaleReturnModule,
             delivery_module_1.DeliveryModule,
+            wa_post_hook_1.WaPostHookModule,
+            whatsapp_module_1.WhatsappModule,
             temp_credit_module_1.TempCreditModule,
             txn_hold_module_1.TxnHoldModule,
             bank_list_module_1.BankListModule,

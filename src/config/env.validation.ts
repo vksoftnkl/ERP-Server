@@ -74,6 +74,17 @@ export const envValidationSchema = Joi.object({
   }),
   CLOUD_SYNC_INTERVAL_SECONDS: Joi.number().integer().min(5).default(60),
   CLOUD_SYNC_BATCH_SIZE: Joi.number().integer().min(1).max(10000).default(500),
+  // WhatsApp option B (src/modules/whatsapp): VK's wa-relay, and the key that encrypts the
+  // relay install key at rest (WA_CRED_KEY: 32 bytes, 64 hex). All optional: a server
+  // without them answers WA_RELAY_NOT_SET / WA_KEY_MISSING on activation. WA_POLL_IN_TEST=1
+  // runs the relay poller under NODE_ENV=test.
+  WA_RELAY_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow('')
+    .optional(),
+  WA_CRED_KEY: Joi.string().allow('').optional(),
+  WA_CRED_KEY_VERSION: Joi.number().integer().min(1).max(32767).empty('').optional(),
+  WA_POLL_IN_TEST: Joi.string().allow('').optional(),
   JWT_SECRET: Joi.when('NODE_ENV', {
     is: 'test',
     then: Joi.string().min(16).default('test-jwt-secret-change-me'),

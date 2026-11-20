@@ -27,6 +27,13 @@ model AccLedgerMaster {
   ledPhone1                String?   @db.VarChar(20)                                  @map("led_phone1")
   ledPhone2                String?   @db.VarChar(20)                                  @map("led_phone2")
   ledWhatsappNo            String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
+  // WhatsApp (20261119100000, Q6 / Q7): the party's message language and opt-out dates
+  /// en | ta (ck_led_wa_lang); NULL = the company setting whatsapp.default_language
+  ledWaLang                String?   @db.VarChar(5)                                   @map("led_wa_lang")
+  /// Set by the "Stop reminders" tap (or by hand): reminders skipped; cleared only by Allow again
+  ledWaRemindersOffOn      DateTime? @db.Timestamptz                                  @map("led_wa_reminders_off_on")
+  /// Set by a typed STOP: every WhatsApp message skipped; cleared only by Allow again
+  ledWaAllOffOn            DateTime? @db.Timestamptz                                  @map("led_wa_all_off_on")
   // 4) Address (Mailing)
   ledAddr1                 String?   @db.VarChar(200)                                 @map("led_addr1")
   ledAddr2                 String?   @db.VarChar(200)                                 @map("led_addr2")

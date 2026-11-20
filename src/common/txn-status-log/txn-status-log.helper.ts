@@ -132,6 +132,12 @@ export enum TxnStatusEvent {
   // Delivery tracking: a posted bill's Pickup ↔ Dispatch switch
   // (/deliveries/mode; from / to = the modes, remarks = the reason).
   DELIVERY_MODE = 'DELIVERY_MODE',
+  // WhatsApp (plan whatsapp-plan-v1 §5.2 step 9): a bill / order / receipt was
+  // sent (or failed to send) on WhatsApp. from = to = the document's status,
+  // unchanged; tsl_notify_channel WHATSAPP, tsl_notify_ref = the wa_message_log
+  // wml_id.
+  WHATSAPP_SENT = 'WHATSAPP_SENT',
+  WHATSAPP_FAILED = 'WHATSAPP_FAILED',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

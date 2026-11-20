@@ -541,6 +541,13 @@ model AccLedgerMaster {
   ledPhone1                String?   @db.VarChar(20)                                  @map("led_phone1")
   ledPhone2                String?   @db.VarChar(20)                                  @map("led_phone2")
   ledWhatsappNo            String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
+  // WhatsApp (20261119100000, Q6 / Q7): the party's message language and opt-out dates
+  /// en | ta (ck_led_wa_lang); NULL = the company setting whatsapp.default_language
+  ledWaLang                String?   @db.VarChar(5)                                   @map("led_wa_lang")
+  /// Set by the "Stop reminders" tap (or by hand): reminders skipped; cleared only by Allow again
+  ledWaRemindersOffOn      DateTime? @db.Timestamptz                                  @map("led_wa_reminders_off_on")
+  /// Set by a typed STOP: every WhatsApp message skipped; cleared only by Allow again
+  ledWaAllOffOn            DateTime? @db.Timestamptz                                  @map("led_wa_all_off_on")
   // 4) Address (Mailing)
   ledAddr1                 String?   @db.VarChar(200)                                 @map("led_addr1")
   ledAddr2                 String?   @db.VarChar(200)                                 @map("led_addr2")
@@ -2968,6 +2975,10 @@ model AccVoucherType {
   vchrPrintPurposeId         String?              @db.Uuid @map("vchr_print_purpose_id")
   /// Print right after posting (Ctrl+Enter), never after a draft save
   vchrPrintAfterPost         Boolean              @default(false) @map("vchr_print_after_post")
+  /// WhatsApp on Post (20261119100000, Q3): after a post of this type commits, the server sends
+  /// the document on WhatsApp unless the post said waOnPost = false. Phase 1: Sales Bill and its
+  /// child types, Sales Order, Receipt (Bill-wise). All false to start
+  vchrWhatsappAfterPost      Boolean              @default(false) @map("vchr_whatsapp_after_post")
   /// Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
   /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
   /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type
@@ -7188,6 +7199,10 @@ model Company {
   aatoYears             CompanyAato[]             @relation("CompanyAatoCompany")
   partyTaxCertificates  AccPartyTaxCertificate[]  @relation("PartyTaxCertificateCompany")
 
+  // ── WhatsApp (20261119100000) ───────────────────────────────────────────
+  waConnections         WaConnection[]            @relation("WaConnectionCompany")
+  waTemplates           WaTemplate[]              @relation("WaTemplateCompany")
+
   @@map("companys")
   @@schema("public")
 }
@@ -10223,6 +10238,242 @@ model VehicleMaster {
   ewayBills         AccVoucherDocEwaybill[] @relation("EwayBillVehicle")
 
   @@map("vehicle_master")
+  @@schema("public")
+}
+
+// ----- prisma/public/waConnection.prisma -----
+/// WhatsApp option B: this server's link to wa-relay (migration
+/// 20261119100000_whatsapp, plan whatsapp-plan-v1-2026-11-17.md §3.1).
+///
+/// One live row per company on this server; no row = not activated. The
+/// install key is stored AES-256-GCM encrypted (WA_CRED_KEY, the gcm:v<n>:
+/// envelope of GstCryptoService), never in clear. NO sync column on purpose:
+/// the row describes this install's link only and must never be pushed to a
+/// cloud over another install's row.
+model WaConnection {
+  wacId              String    @id(map: "pk_wa_connection") @default(dbgenerated("uuidv7()")) @db.Uuid @map("wac_id")
+  wacCompanyId       String    @db.Uuid                                  @map("wac_company_id")
+  /// ACTIVATED | CONNECTING | CONNECTED | DISCONNECTED | SUSPENDED (ck_wac_state).
+  wacState           String    @default("ACTIVATED") @db.VarChar(14)     @map("wac_state")
+  /// The relay this key belongs to (WA_RELAY_URL at activation).
+  wacRelayUrl        String    @db.VarChar(200)                          @map("wac_relay_url")
+  wacShopCode        String    @db.VarChar(12)                           @map("wac_shop_code")
+  /// The relay's install id (a re-key code returns the same one).
+  wacInstallId       String    @db.Uuid                                  @map("wac_install_id")
+  /// gcm:v<n>:iv:tag:ct
+  wacKeyEnc          String                                              @map("wac_key_enc")
+  /// >= 1 (ck_wac_key_ver).
+  wacKeyVersion      Int       @default(1) @db.SmallInt                  @map("wac_key_version")
+  /// The key's first 8 characters, for display.
+  wacKeyPrefix       String    @db.VarChar(12)                           @map("wac_key_prefix")
+  wacKeyIssuedOn     DateTime  @db.Timestamptz(6)                        @map("wac_key_issued_on")
+  wacDisplayName     String?   @db.VarChar(150)                          @map("wac_display_name")
+  wacDisplayPhone    String?   @db.VarChar(30)                           @map("wac_display_phone")
+  wacWabaId          String?   @db.VarChar(40)                           @map("wac_waba_id")
+  wacPhoneNumberId   String?   @db.VarChar(40)                           @map("wac_phone_number_id")
+  /// GREEN / YELLOW / RED / UNKNOWN, as Meta says.
+  wacQuality         String?   @db.VarChar(10)                           @map("wac_quality")
+  /// Unique customers per 24 h, as the relay reports; NULL = unknown / unlimited.
+  wacMsgLimit        Int?                                                @map("wac_msg_limit")
+  wacConnectedOn     DateTime? @db.Timestamptz(6)                        @map("wac_connected_on")
+  /// The last relay event id applied (GET /v1/events?after=<cursor>).
+  wacEventCursor     BigInt    @default(0)                               @map("wac_event_cursor")
+  wacLastPollOn      DateTime? @db.Timestamptz(6)                        @map("wac_last_poll_on")
+  wacLastPollOkOn    DateTime? @db.Timestamptz(6)                        @map("wac_last_poll_ok_on")
+  wacLastPollError   String?   @db.VarChar(200)                          @map("wac_last_poll_error")
+  /// Only the process holding an unexpired lease pulls events (decision 20).
+  wacPollLeaseUntil  DateTime? @db.Timestamptz(6)                        @map("wac_poll_lease_until")
+  /// pid@host
+  wacPollLeaseBy     String?   @db.VarChar(60)                           @map("wac_poll_lease_by")
+  wacFastPollUntil   DateTime? @db.Timestamptz(6)                        @map("wac_fast_poll_until")
+  wacIsDeleted       Boolean   @default(false)                           @map("wac_is_deleted")
+  wacCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)        @map("wac_created_on")
+  wacCreatedBy       String    @db.VarChar(60)                           @map("wac_created_by")
+  wacModifiedOn      DateTime? @db.Timestamptz(6)                        @map("wac_modified_on")
+  wacModifiedBy      String?   @db.VarChar(60)                           @map("wac_modified_by")
+
+  company            Company   @relation("WaConnectionCompany", fields: [wacCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_wac_company")
+
+  // DB-only (partial, which Prisma cannot express):
+  //   CREATE UNIQUE INDEX ux_wac_company ON public.wa_connection (wac_company_id)
+  //       WHERE wac_is_deleted = false;
+  // Safe offline: the table never syncs.
+  //
+  // CHECK constraints (DB-only): ck_wac_state, ck_wac_key_ver.
+
+  @@map("wa_connection")
+  @@schema("public")
+}
+
+// ----- prisma/public/waMessageLog.prisma -----
+/// WhatsApp option B: one row per send try (migration 20261119100000_whatsapp,
+/// plan §3.1, §5.2). Written by the sends (SENDING / SKIPPED, in their own
+/// short transaction), updated by the statuses the poller pulls from the relay.
+///
+/// LIST-partitioned by wmlAccYear = the company's accounting year on the SEND
+/// date (public.ensure_acc_year_partitions creates the partitions). Syncs from
+/// offline sites: uuidv7 PK, no other UNIQUE. Statuses arrive in any order, so
+/// there is no CHECK across the status columns: SENT < DELIVERED < READ, and
+/// FAILED replaces only SENDING / SENT. wmlId is also the relay clientRef.
+/// Retention (whatsapp.log_retention_years) nulls the number, params, Meta
+/// ids, error text and party name and sets wmlPurgedOn; the counts stay.
+model WaMessageLog {
+  wmlId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("wml_id")
+  /// THE PARTITION KEY (ck_wml_acc_year: YYYY-YYYY, consecutive years).
+  wmlAccYear         String    @db.Char(9)                               @map("wml_acc_year")
+  wmlCompanyId       String    @db.Uuid                                  @map("wml_company_id")
+  /// The document's branch; the sender's branch for reminders.
+  wmlBranchId        String?   @db.Uuid                                  @map("wml_branch_id")
+  /// BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wml_kind).
+  wmlKind            String    @db.VarChar(10)                           @map("wml_kind")
+  /// ON_POST | MANUAL | BULK | RETRY | TEST (ck_wml_trigger).
+  wmlTrigger         String    @db.VarChar(8)                            @map("wml_trigger")
+  /// One bulk send.
+  wmlBatchId         String?   @db.Uuid                                  @map("wml_batch_id")
+
+  // ── The document (BILL / ORDER / RECEIPT have one: ck_wml_doc) ─────────
+  /// NULL | SALE_BILL | SALES_ORDER | RECEIPT (ck_wml_src_doc_type).
+  wmlSrcDocType      String?   @db.VarChar(30)                           @map("wml_src_doc_type")
+  /// sb_id / so_id / avh_voucher_id.
+  wmlSrcDocId        String?   @db.Uuid                                  @map("wml_src_doc_id")
+  /// The document's own year.
+  wmlSrcAccYear      String?   @db.Char(9)                               @map("wml_src_acc_year")
+  wmlSrcDocRefno     String?   @db.VarChar(100)                          @map("wml_src_doc_refno")
+  wmlVchrTypeId      Int?                                                @map("wml_vchr_type_id")
+
+  // ── The party and the number ───────────────────────────────────────────
+  /// led_id (one partyId); NULL only for TEST (ck_wml_party).
+  wmlPartyId         String?   @db.Uuid                                  @map("wml_party_id")
+  wmlPartyName       String?   @db.VarChar(150)                          @map("wml_party_name")
+  /// Reminders: the statement date.
+  wmlAsOn            DateTime? @db.Date                                  @map("wml_as_on")
+  /// Normalised digits, e.g. 919865322154.
+  wmlPhone           String?   @db.VarChar(16)                           @map("wml_phone")
+  /// NULL | WHATSAPP | PHONE1 | PHONE2 | TYPED (ck_wml_phone_source).
+  wmlPhoneSource     String?   @db.VarChar(8)                            @map("wml_phone_source")
+
+  // ── What was sent ──────────────────────────────────────────────────────
+  wmlTemplateName    String?   @db.VarChar(60)                           @map("wml_template_name")
+  wmlLangWanted      String?   @db.VarChar(8)                            @map("wml_lang_wanted")
+  wmlLangSent        String?   @db.VarChar(8)                            @map("wml_lang_sent")
+  /// e.g. "ta not approved yet: sent in English".
+  wmlLangNote        String?   @db.VarChar(120)                          @map("wml_lang_note")
+  /// The values sent (purged after the retention).
+  wmlParams          Json?     @db.JsonB                                 @map("wml_params")
+  /// The print_template_version rendered (no print_log row, decision 16).
+  wmlPdfVersionId    String?   @db.Uuid                                  @map("wml_pdf_version_id")
+  wmlPdfBytes        Int?                                                @map("wml_pdf_bytes")
+  wmlPdfFilename     String?   @db.VarChar(100)                          @map("wml_pdf_filename")
+
+  // ── Status (any order; each time set once) ─────────────────────────────
+  /// SKIPPED | SENDING | SENT | DELIVERED | READ | FAILED (ck_wml_status).
+  wmlStatus          String    @db.VarChar(10)                           @map("wml_status")
+  wmlSendingOn       DateTime? @db.Timestamptz(6)                        @map("wml_sending_on")
+  wmlSentOn          DateTime? @db.Timestamptz(6)                        @map("wml_sent_on")
+  wmlDeliveredOn     DateTime? @db.Timestamptz(6)                        @map("wml_delivered_on")
+  wmlReadOn          DateTime? @db.Timestamptz(6)                        @map("wml_read_on")
+  wmlFailedOn        DateTime? @db.Timestamptz(6)                        @map("wml_failed_on")
+  /// A WA_* code; required when SKIPPED / FAILED (ck_wml_error).
+  wmlErrorCode       String?   @db.VarChar(30)                           @map("wml_error_code")
+  wmlMetaErrorCode   Int?                                                @map("wml_meta_error_code")
+  wmlErrorText       String?   @db.VarChar(300)                          @map("wml_error_text")
+  /// wamid
+  wmlMetaMessageId   String?   @db.VarChar(128)                          @map("wml_meta_message_id")
+  wmlRelayMsgId      String?   @db.Uuid                                  @map("wml_relay_msg_id")
+  /// >= 1 (ck_wml_try_no).
+  wmlTryNo           Int       @default(1) @db.SmallInt                  @map("wml_try_no")
+  /// The earlier try's wmlId.
+  wmlRetryOf         String?   @db.Uuid                                  @map("wml_retry_of")
+  /// NULL | PAID_ALREADY | STOP_REMINDERS | STOP_ALL (ck_wml_reply).
+  wmlReply           String?   @db.VarChar(16)                           @map("wml_reply")
+  wmlReplyOn         DateTime? @db.Timestamptz(6)                        @map("wml_reply_on")
+  /// A reminder sent inside the gap, after the confirm.
+  wmlGapOverride     Boolean   @default(false)                           @map("wml_gap_override")
+  wmlOverrideReason  String?   @db.VarChar(200)                          @map("wml_override_reason")
+  /// whatsapp.rate_per_message at send time.
+  wmlCostRate        Decimal?  @db.Decimal(10, 4)                        @map("wml_cost_rate")
+  /// whatsapp.rate_gst_percent at send time.
+  wmlCostGstPct      Decimal?  @db.Decimal(5, 2)                         @map("wml_cost_gst_pct")
+  /// As sde_device_id.
+  wmlDeviceId        String?                                             @map("wml_device_id")
+  wmlUserId          String?   @db.Uuid                                  @map("wml_user_id")
+  wmlUserName        String?   @db.VarChar(60)                           @map("wml_user_name")
+  wmlPurgedOn        DateTime? @db.Timestamptz(6)                        @map("wml_purged_on")
+  wmlIsDeleted       Boolean   @default(false)                           @map("wml_is_deleted")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  wmlSyncDate        DateTime? @db.Timestamptz(6)                        @map("wml_sync_date")
+  wmlCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)        @map("wml_created_on")
+  wmlCreatedBy       String    @db.VarChar(60)                           @map("wml_created_by")
+  wmlModifiedOn      DateTime? @db.Timestamptz(6)                        @map("wml_modified_on")
+
+  // No FK (plan §3.1): a log row is history and syncs on its own.
+
+  @@id([wmlId, wmlAccYear], map: "pk_wa_message_log")
+
+  // None UNIQUE: nothing here can clash when two sites' rows meet at sync.
+  @@index([wmlCompanyId, wmlCreatedOn(sort: Desc)], map: "ix_wml_company_time")
+  @@index([wmlSrcDocType, wmlSrcDocId], map: "ix_wml_doc")
+  @@index([wmlCompanyId, wmlPartyId, wmlKind, wmlCreatedOn(sort: Desc)], map: "ix_wml_party_kind")
+
+  // DB-only (partial, which Prisma cannot express):
+  //   ix_wml_meta    (wml_meta_message_id) WHERE wml_meta_message_id IS NOT NULL
+  //   ix_wml_batch   (wml_batch_id)        WHERE wml_batch_id IS NOT NULL
+  //   ix_wml_sending (wml_created_on)      WHERE wml_status = 'SENDING'
+  //   ix_sync_pending_wa_message_log (wml_id, wml_acc_year) WHERE wml_sync_date IS NULL
+  //
+  // CHECK constraints (DB-only): ck_wml_acc_year, ck_wml_kind, ck_wml_trigger,
+  //   ck_wml_src_doc_type, ck_wml_phone_source, ck_wml_status, ck_wml_try_no,
+  //   ck_wml_reply, ck_wml_doc, ck_wml_party, ck_wml_error.
+
+  @@map("wa_message_log")
+  @@schema("public")
+}
+
+// ----- prisma/public/waTemplate.prisma -----
+/// WhatsApp option B: mirror of the relay's message templates for one company
+/// (migration 20261119100000_whatsapp, plan §3.1), refreshed from
+/// GET /v1/connection: nex_bill_v1, nex_payment_reminder_v1, nex_receipt_v1,
+/// nex_order_confirm_v1 in en / ta, and hello_world in en_US.
+///
+/// NO sync column on purpose (never pushed to a cloud). The plan's
+/// wat_synced_on is named wat_pulled_on: a timestamp named *synced_on would
+/// make public.v_sync_tables list this table and the registry expect it as
+/// the sync column.
+model WaTemplate {
+  watId          String    @id(map: "pk_wa_template") @default(dbgenerated("uuidv7()")) @db.Uuid @map("wat_id")
+  watCompanyId   String    @db.Uuid                                  @map("wat_company_id")
+  watName        String    @db.VarChar(60)                           @map("wat_name")
+  /// ^[a-z]{2}(_[A-Z]{2})?$ (ck_wat_lang): en, ta, en_US.
+  watLang        String    @db.VarChar(8)                            @map("wat_lang")
+  /// BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wat_purpose).
+  watPurpose     String    @db.VarChar(10)                           @map("wat_purpose")
+  /// UTILITY / MARKETING / AUTHENTICATION, as Meta files it (Meta may move one).
+  watCategory    String?   @db.VarChar(20)                           @map("wat_category")
+  /// APPROVED | PENDING | REJECTED | PAUSED | DISABLED | NOT_SUBMITTED (ck_wat_status).
+  watStatus      String    @db.VarChar(14)                           @map("wat_status")
+  watReason      String?   @db.VarChar(300)                          @map("wat_reason")
+  /// The text as submitted (shop name written in).
+  watBody        String?                                             @map("wat_body")
+  /// The named parameters, in order.
+  watParams      Json      @default("[]") @db.JsonB                  @map("wat_params")
+  /// NONE | DOCUMENT (ck_wat_header_kind).
+  watHeaderKind  String    @default("NONE") @db.VarChar(10)          @map("wat_header_kind")
+  watButtons     Json      @default("[]") @db.JsonB                  @map("wat_buttons")
+  /// When Meta last changed the status.
+  watStatusOn    DateTime? @db.Timestamptz(6)                        @map("wat_status_on")
+  /// When this row was last refreshed from the relay.
+  watPulledOn    DateTime  @default(now()) @db.Timestamptz(6)        @map("wat_pulled_on")
+  watCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)        @map("wat_created_on")
+
+  company        Company   @relation("WaTemplateCompany", fields: [watCompanyId], references: [compId], onUpdate: Cascade, onDelete: Cascade, map: "fk_wat_company")
+
+  // Not synced, so this UNIQUE cannot clash between sites.
+  @@unique([watCompanyId, watName, watLang], map: "ux_wat_company_name_lang")
+
+  // CHECK constraints (DB-only): ck_wat_lang, ck_wat_purpose, ck_wat_status,
+  //   ck_wat_header_kind.
+
+  @@map("wa_template")
   @@schema("public")
 }
 

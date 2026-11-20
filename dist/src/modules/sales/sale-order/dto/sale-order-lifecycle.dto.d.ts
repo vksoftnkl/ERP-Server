@@ -6,6 +6,7 @@ export declare class SaleOrderKeysDto {
     soAccYear: string;
 }
 export declare class PostSaleOrderDto extends SaleOrderKeysDto {
+    waOnPost?: boolean;
 }
 export declare class CancelSaleOrderDto extends SaleOrderKeysDto {
     reason: string;
