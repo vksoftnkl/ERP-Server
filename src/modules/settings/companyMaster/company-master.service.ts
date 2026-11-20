@@ -28,7 +28,8 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
-import { lockCodeSeries } from '../shared/code-series-lock';
+import { COMPANY_CODE_SERIES, lockCodeSeries } from '../shared/code-series-lock';
+import { COMPANY_CODE_RULE, initialsCode, nextFreeCode } from '../shared/code-from-name';
 import {
   PIN_MAX,
   PIN_MIN,
@@ -118,52 +119,17 @@ const UDYAM_PATTERN = /^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$/;
 /** Plan C5 — what a new company's currency symbol is when none is sent. */
 export const DEFAULT_CURRENCY_SYMBOL = 'Rs.';
 
-/** Plan C1 — the words a generated company code skips. */
-const CODE_SKIP_WORDS: ReadonlySet<string> = new Set([
-  'PRIVATE',
-  'PVT',
-  'LIMITED',
-  'LTD',
-  'THE',
-  'AND',
-  '&',
-]);
-const CODE_MIN_LENGTH = 3;
-const CODE_MAX_LENGTH = 6;
-
 /**
  * Plan C1 (18/11) — the code a company gets when none is typed: the initials
  * of its name's words (PRIVATE, PVT, LIMITED, LTD, THE, AND and & skipped;
  * each word kept to A-Z 0-9), at most 6, padded to at least 3 with the next
  * letters of the first word (then of the next ones). "MT Demo Traders" → MDT,
  * "SUGI TRADERS" → STU. null when the name holds no A-Z / 0-9 at all. The
- * caller adds 2, 3, … while the code is taken.
+ * caller adds 2, 3, … while the code is taken. The generator lives in
+ * settings/shared/code-from-name.ts since HR review step 5 (20/11).
  */
 export function companyCodeBase(name: string): string | null {
-  const words = name
-    .toUpperCase()
-    .split(/\s+/)
-    .map((word) => word.replace(/[^A-Z0-9]/g, ''))
-    .filter(Boolean);
-  const kept = words.filter((word) => !CODE_SKIP_WORDS.has(word));
-  // A name made of skip words only ("The Limited") still gets a code.
-  const source = kept.length ? kept : words;
-  if (!source.length) {
-    return null;
-  }
-  let code = source
-    .map((word) => word[0])
-    .join('')
-    .slice(0, CODE_MAX_LENGTH);
-  for (const word of source) {
-    for (let i = 1; i < word.length && code.length < CODE_MIN_LENGTH; i++) {
-      code += word[i];
-    }
-    if (code.length >= CODE_MIN_LENGTH) {
-      break;
-    }
-  }
-  return code;
+  return initialsCode(name, COMPANY_CODE_RULE);
 }
 
 /**
@@ -483,7 +449,7 @@ export class CompanyMasterService {
         const logo = this.normalizeImage(saveCompanyMasterDto.compLogo, LOGO_IMAGE);
         // Plan C1 / C9a: one create at a time picks the next free company code
         // and Main Branch code, so two creates never pick the same one.
-        await lockCodeSeries(tx);
+        await lockCodeSeries(tx, COMPANY_CODE_SERIES);
         await this.ensureNameIsUnique(tx, compName);
         const typedCode = saveCompanyMasterDto.compCode ?? null;
         await this.ensureCodeIsUnique(tx, typedCode);
@@ -1199,20 +1165,13 @@ export class CompanyMasterService {
    * no code.
    */
   private async nextCompanyCode(tx: CompanyWriteClient, compName: string): Promise<string | null> {
-    const base = companyCodeBase(compName);
-    if (!base) {
-      return null;
-    }
-    const rows = await tx.company.findMany({
-      where: { compCode: { startsWith: base, mode: 'insensitive' } },
-      select: { compCode: true },
+    return nextFreeCode(companyCodeBase(compName), async (base) => {
+      const rows = await tx.company.findMany({
+        where: { compCode: { startsWith: base, mode: 'insensitive' } },
+        select: { compCode: true },
+      });
+      return rows.map((row) => row.compCode);
     });
-    const taken = new Set(rows.map((row) => (row.compCode ?? '').toUpperCase()));
-    let code = base;
-    for (let n = 2; taken.has(code); n++) {
-      code = `${base}${n}`;
-    }
-    return code;
   }
   private throwNotFound(compId: string): never {
     throwSettingsNotFound<CompanyMasterErrorDetail>(

@@ -259,12 +259,15 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
 /**
  * Review list 11-19 H9 — personal numbers are masked in the history READ (every row, old
  * and new): the stored audit keeps the value, as every other audited field does, and the
- * view shows the last 4 only. Keyed by screen, then by label (normalised).
+ * view shows the last 4 only. Keyed by screen, then by label (normalised). HR review
+ * step 5 (20/11) adds the bank account number, with the same intent.
  */
 const MASKED_AUDIT_FIELDS_BY_SCREEN = new Map<string, ReadonlySet<string>>([
   [
     'Employee Master',
-    new Set(['PAN', 'Aadhaar'].map((label) => normalizeAuditFieldLookupToken(label))),
+    new Set(
+      ['PAN', 'Aadhaar', 'Bank Account No'].map((label) => normalizeAuditFieldLookupToken(label)),
+    ),
   ],
 ]);
 /**

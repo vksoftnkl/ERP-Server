@@ -11494,6 +11494,8 @@ model EmployeeDepartment{
   employees     EmployeeMaster[]
 
   @@index([edptIsActive], name: "idx_edpt_active")
+  // DB-only (partial, so not declared here): ux_edpt_code UNIQUE (lower(edpt_code))
+  // WHERE edpt_code IS NOT NULL AND edpt_code <> '' AND edpt_is_deleted = false (20261120100000).
   @@map("employee_departments")
   @@schema("public")
 }
@@ -11517,6 +11519,8 @@ model EmployeeDesignation {
   employees     EmployeeMaster[]
 
   @@index([edIsActive], name: "idx_ed_active")
+  // DB-only (partial, so not declared here): ux_ed_code UNIQUE (lower(ed_code))
+  // WHERE ed_code IS NOT NULL AND ed_code <> '' AND ed_is_deleted = false (20261120100000).
   @@map("employee_designations")
   @@schema("public")
 }
@@ -11552,7 +11556,8 @@ model EmployeeMaster {
   empDesignationId     String?   @db.Uuid                                          @map("emp_designation_id")
   // Employment Lifecycle
   empEmploymentType    String?   @db.VarChar(20)                                  @map("emp_employment_type")
-  empStatus            String?   @db.VarChar(20)                                  @map("emp_status")
+  /// Working or Resigned; blank = Working (20261120100000). No CHECK: the server normalises.
+  empStatus            String?   @default("Working") @db.VarChar(20)              @map("emp_status")
   empJoinedOn          DateTime? @db.Date                                          @map("emp_joined_on")
   empProbationEndOn    DateTime? @db.Date                                          @map("emp_probation_end_on")
   empConfirmationOn    DateTime? @db.Date                                          @map("emp_confirmation_on")
@@ -11591,6 +11596,16 @@ model EmployeeMaster {
   empCreatedBy         String?   @db.VarChar(100)                                 @map("emp_created_by")
   empModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("emp_modified_on")
   empModifiedBy        String?   @db.VarChar(100)                                 @map("emp_modified_by")
+  // HR review step 5 (20261120100000): bank, UAN, emergency contact. Physically
+  // the last columns, so listed here. All optional; the server checks the forms.
+  empBankName          String?   @db.VarChar(200)                                 @map("emp_bank_name")
+  empBankAccountNo     String?   @db.VarChar(50)                                  @map("emp_bank_account_no")
+  /// IFSC, 11 characters (AAAA0XXXXXX), upper case.
+  empBankIfsc          String?   @db.VarChar(11)                                  @map("emp_bank_ifsc")
+  /// UAN, the PF universal account no (12 digits).
+  empUanNo             String?   @db.VarChar(20)                                  @map("emp_uan_no")
+  empEmergencyContactName  String? @db.VarChar(200)                               @map("emp_emergency_contact_name")
+  empEmergencyContactPhone String? @db.VarChar(20)                                @map("emp_emergency_contact_phone")
   // Relations
   company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
@@ -11606,6 +11621,8 @@ model EmployeeMaster {
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
   @@index([empDesignationId],name: "idx_emp_designation")
+  // DB-only (partial, so not declared here): ux_emp_code UNIQUE (lower(emp_code))
+  // WHERE emp_code IS NOT NULL AND emp_code <> '' AND emp_is_deleted = false (20261120100000).
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemEmployee")
 

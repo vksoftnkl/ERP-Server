@@ -34,9 +34,17 @@ CRUD API for **employee designations** — the job-title / rank master used to c
   updating a missing/deleted id returns not-found.
 - `edName` is **required** (max 150) and normalized before persistence
   (`normalizeRequiredName`).
-- Optional fields (`edCode`, `edIsDefault`, `edRemarks`, `edIsActive`) are only written when the
+- Optional fields (`edCode`, `edRemarks`, `edIsActive`) are only written when the
   key is present on the payload (`hasOwnProperty`); `edCode` and `edRemarks` are normalized to
   `null` when blank.
+- **Auto code (HR review step 5, 20/11/2026):** a designation **created** with a blank `edCode` gets
+  its whole name, upper case, letters and digits only, at most 20 (Driver → `DRIVER`, Sales Manager →
+  `SALESMANAGER`), then `2`, `3`, … while a live designation holds it in any case. Read and written
+  under `lockCodeSeries(tx, DESIGNATION_CODE_SERIES)` (`settings/shared/code-from-name.ts`,
+  `code-series-lock.ts`). An edit never makes a code; a blank one clears it. Initials are not used:
+  the driver dropdown 76 matches the code `DRIVER`.
+- **Default Designation is gone (H6):** `edIsDefault` is still accepted (so an older client is not
+  refused) and ignored; it is no longer answered. The column stays, at its default `false`.
 - Each write runs inside a Prisma `$transaction` covering the row change plus its audit entry.
 
 ## Business rules
@@ -45,12 +53,11 @@ CRUD API for **employee designations** — the job-title / rank master used to c
   duplicate raises a conflict on `edName`.
 - **Code uniqueness** among non-deleted rows, case-insensitive, only checked when `edCode` is
   provided (`ensureCodeIsUnique`); a duplicate raises a conflict on `edCode`.
-- A residual DB unique-constraint violation is remapped to a conflict response
-  (`throwOnUniqueConstraintError` in `handleWriteError`).
-- **At most one default** (`edIsDefault`): setting a designation as default first clears the
-  existing default (`clearDefaultDesignation`, excluding the current row on update).
-- **Soft delete only** — deleting flags `edIsDeleted = true`, `edIsActive = false`,
-  `edIsDefault = false`; rows are never hard-deleted. Delete is **blocked** when active
+- The DB backstop is the partial unique index `ux_ed_code` (lower(ed_code), live rows, non-blank).
+  A race onto it answers 409 `DESIGNATION_CODE_DUPLICATE` on `edCode`; any other unique violation
+  409 `DESIGNATION_DUPLICATE`.
+- **Soft delete only** — deleting flags `edIsDeleted = true`, `edIsActive = false`; rows are
+  never hard-deleted. Delete is **blocked** when active
   employees still reference the designation (`employeeMaster.count` on `empDesignationId` with
   `empIsDeleted = false` > 0 → bad request).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /

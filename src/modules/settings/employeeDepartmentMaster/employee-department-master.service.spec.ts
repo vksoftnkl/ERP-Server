@@ -1,5 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import { EmployeeDepartment } from '@prisma/client';
+import { EmployeeDepartment, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { EmployeeDepartmentMasterService } from './employee-department-master.service';
@@ -42,13 +42,23 @@ type FindFirstArgs = { where: Record<string, unknown>; select?: unknown };
 type PrismaMock = {
   employeeDepartment: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
   };
   employeeMaster: { count: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
+
+/** What Prisma throws when a write breaks a unique index. */
+const uniqueViolation = (target: unknown) =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target },
+  });
 
 describe('EmployeeDepartmentMasterService', () => {
   let prisma: PrismaMock;
@@ -66,6 +76,7 @@ describe('EmployeeDepartmentMasterService', () => {
     prisma = {
       employeeDepartment: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async ({ data }: { data: Partial<EmployeeDepartment> }) =>
           departmentRow(data),
         ),
@@ -75,6 +86,7 @@ describe('EmployeeDepartmentMasterService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       employeeMaster: { count: jest.fn().mockResolvedValue(0) },
+      $queryRaw: jest.fn().mockResolvedValue([{ locked: 1 }]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
@@ -126,12 +138,51 @@ describe('EmployeeDepartmentMasterService', () => {
       expect(createdData().edptCreatedBy).toBe(DEFAULT_ACTOR);
     });
 
-    it('stores blank optional text as null and skips the code check for it', async () => {
+    it('stores blank optional text as null and makes a blank code from the name, under the lock', async () => {
       await service.save({ edptName: 'Accounts', edptCode: '  ', edptAlias: '', edptRemarks: null });
 
-      expect(createdData()).toMatchObject({ edptCode: null, edptAlias: null, edptRemarks: null });
-      // Only the name was checked for a duplicate.
+      expect(createdData()).toMatchObject({ edptCode: 'ACC', edptAlias: null, edptRemarks: null });
+      // Only the name was checked for a duplicate; the code came from the live codes read.
       expect(prisma.employeeDepartment.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.employeeDepartment.findMany).toHaveBeenCalledWith({
+        where: { edptIsDeleted: false, edptCode: { startsWith: 'ACC', mode: 'insensitive' } },
+        select: { edptCode: true },
+      });
+      const [sql, ...keys] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+      expect(sql.join('?')).toContain(
+        'pg_advisory_xact_lock(hashtext(?::text), hashtext(?::text))',
+      );
+      expect(keys).toEqual(['public.employee_departments', 'edpt_code']);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.employeeDepartment.findMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it.each([
+      ['Human Resources', [], 'HRU'],
+      ['Accounts', [{ edptCode: 'acc' }, { edptCode: 'ACC2' }], 'ACC3'],
+      ['Sales and Marketing', [], 'SMA'],
+    ])('makes %p a code by the Company rule: %p taken → %p', async (edptName, taken, code) => {
+      prisma.employeeDepartment.findMany.mockResolvedValue(taken);
+
+      await service.save({ edptName });
+
+      expect(createdData().edptCode).toBe(code);
+    });
+
+    it('answers a race onto ux_edpt_code as DEPARTMENT_CODE_DUPLICATE on edptCode', async () => {
+      prisma.employeeDepartment.create.mockRejectedValue(
+        uniqueViolation(['lower((edpt_code)::text)']),
+      );
+
+      const refusal = await refusalOf(service.save({ edptName: 'Accounts' }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: {
+          errors: [{ field: 'edptCode', code: EmployeeDepartmentMasterErrorCode.CODE_DUPLICATE }],
+        },
+      });
     });
 
     it('writes edptIsActive only when it is sent', async () => {
@@ -201,10 +252,22 @@ describe('EmployeeDepartmentMasterService', () => {
       expect(prisma.employeeDepartment.update).not.toHaveBeenCalled();
     });
 
+    it('never makes a code on an edit: a blank one clears it, with no lock', async () => {
+      storedRow(departmentRow());
+
+      await service.save({ edptId: DEPT_ID, edptName: 'Accounts', edptCode: '' });
+
+      expect(updatedCall().data.edptCode).toBeNull();
+      expect(prisma.employeeDepartment.findMany).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
     it('checks name and code against every department but itself', async () => {
       storedRow(departmentRow());
 
       await service.save({ edptId: DEPT_ID, edptName: 'Finance', edptCode: 'FIN' });
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 
       const checks = prisma.employeeDepartment.findFirst.mock.calls
         .map(([args]) => args as FindFirstArgs)

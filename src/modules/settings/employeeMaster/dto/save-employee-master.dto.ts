@@ -1,13 +1,14 @@
 import { Transform } from 'class-transformer';
 import {
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
-  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -17,6 +18,16 @@ import {
   NullableUuid,
   OptionalBoolean,
 } from 'src/common/dto/dtoDecorators';
+import { NullableUpperPattern } from 'src/common/party/party-gstin';
+import {
+  COMMISSION_TYPES,
+  EMPLOYEE_COMMISSION_VALUE_PATTERN,
+  EMPLOYEE_IFSC_PATTERN,
+  EMPLOYEE_STATUSES,
+  EMPLOYEE_STATUS_WORKING,
+  EMPLOYMENT_TYPES,
+  canonicalListValue,
+} from '../types/employee-master-values';
 
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {
@@ -48,30 +59,23 @@ const toOptionalNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
-const toNullableNumber = (value: unknown): number | null | undefined => {
-  if (value === undefined) {
-    return undefined;
+/**
+ * HR review step 5 — emp_commission_value as text, so the service makes a
+ * Prisma.Decimal of it with no float in between (money-decimal rule). A JSON
+ * number is taken as its own text; blank is null (= cleared).
+ */
+const toCommissionValueText = (value: unknown): unknown => {
+  if (value === undefined || value === null) {
+    return value;
   }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
+    return Number.isFinite(value) ? value.toString() : value;
   }
-
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : null;
+    return trimmed ? trimmed : null;
   }
-
-  return null;
+  return value;
 };
 
 export class SaveEmployeeMasterDto {
@@ -83,7 +87,13 @@ export class SaveEmployeeMasterDto {
   @IsUUID('all')
   empId?: string;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Blank (absent or null) on create = the logged-in company (from the token). On an edit, ' +
+      'null clears it and absent keeps it.',
+  })
   @NullableUuid()
   empCompanyId?: string | null;
 
@@ -91,7 +101,14 @@ export class SaveEmployeeMasterDto {
   @NullableUuid()
   empBranchId?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 60, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 60,
+    nullable: true,
+    description:
+      'Blank on create: made from the name (initials, 3 to 6 letters; RAM2 … when taken: ' +
+      'Suresh Krishna → SKU). Unique among live employees in any case (409 ' +
+      'EMPLOYEE_CODE_DUPLICATE). An edit never makes one; blank clears it.',
+  })
   @NullableString(60)
   empCode?: string | null;
 
@@ -170,12 +187,27 @@ export class SaveEmployeeMasterDto {
   @NullableUuid()
   empDesignationId?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableString(20)
+  @ApiPropertyOptional({
+    enum: EMPLOYMENT_TYPES,
+    nullable: true,
+    description:
+      'Any case is stored in this spelling. Blank = not stated (null). Else 400 VALIDATION_IS_IN.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => canonicalListValue(value, EMPLOYMENT_TYPES, null))
+  @IsIn([...EMPLOYMENT_TYPES])
   empEmploymentType?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableString(20)
+  @ApiPropertyOptional({
+    enum: EMPLOYEE_STATUSES,
+    nullable: true,
+    description:
+      'Any case is stored as Working / Resigned. Blank (null or "") = Working; absent on create = ' +
+      'Working, absent on an edit = unchanged. Else 400 VALIDATION_IS_IN.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => canonicalListValue(value, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_WORKING))
+  @IsIn([...EMPLOYEE_STATUSES])
   empStatus?: string | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
@@ -214,17 +246,30 @@ export class SaveEmployeeMasterDto {
   @OptionalBoolean()
   empHasCommission?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableString(20)
+  @ApiPropertyOptional({
+    enum: COMMISSION_TYPES,
+    nullable: true,
+    description:
+      'Any case is stored in this spelling. Blank = not stated (null). Else 400 VALIDATION_IS_IN.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => canonicalListValue(value, COMMISSION_TYPES, null))
+  @IsIn([...COMMISSION_TYPES])
   empCommissionType?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '2.5',
+    description:
+      'numeric(12,3): a decimal string or a number, 0 or more, up to 3 decimals (else 400 ' +
+      'VALIDATION_MATCHES). Kept as Prisma.Decimal; blank = null.',
+  })
   @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
-  empCommissionValue?: number | null;
+  @Transform(({ value }) => toCommissionValueText(value))
+  @IsString()
+  @Matches(EMPLOYEE_COMMISSION_VALUE_PATTERN)
+  empCommissionValue?: string | null;
 
   @ApiProperty({ maxLength: 10 })
   @Transform(({ value }) => toRequiredTrimmedString(value))
@@ -269,6 +314,45 @@ export class SaveEmployeeMasterDto {
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   @NullableString(30)
   empEsiNo?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: 'UAN (PF universal account no).',
+  })
+  @NullableString(20)
+  empUanNo?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  empBankName?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description: 'Shown as the last 4 only in the history (audit) view.',
+  })
+  @NullableString(50)
+  empBankAccountNo?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 11,
+    nullable: true,
+    pattern: EMPLOYEE_IFSC_PATTERN.source,
+    example: 'SBIN0001234',
+    description:
+      'Upper-cased, then 4 letters, a 0 and 6 letters or digits (else 400 VALIDATION_IS_IFSC).',
+  })
+  @NullableUpperPattern(11, 'isIfsc', EMPLOYEE_IFSC_PATTERN, 'an 11-character IFSC (SBIN0001234)')
+  empBankIfsc?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  empEmergencyContactName?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  empEmergencyContactPhone?: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

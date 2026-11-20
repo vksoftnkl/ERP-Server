@@ -26,11 +26,13 @@ export class EmployeeDesignationMasterPayloadDto {
   @ApiProperty()
   edName!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Made from the name on create when sent blank: the whole name, upper case, letters and ' +
+      'digits only, at most 20, then 2, 3, … when taken (Driver → DRIVER). Never made on an edit.',
+  })
   edCode!: string | null;
-
-  @ApiProperty()
-  edIsDefault!: boolean;
 
   @ApiPropertyOptional({ nullable: true })
   edRemarks!: string | null;

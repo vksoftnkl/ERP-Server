@@ -17,11 +17,23 @@ export class SaveEmployeeDesignationMasterDto {
   @MaxLength(150)
   edName!: string;
 
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description:
+      'Blank on create: made from the name (whole name, upper case, letters and digits, at most ' +
+      '20; DRIVER2 … when taken). Unique among live designations in any case (409 ' +
+      'DESIGNATION_CODE_DUPLICATE). An edit never makes one; blank clears it.',
+  })
   @NullableString(50)
   edCode?: string | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    deprecated: true,
+    description:
+      'IGNORED since HR review step 5 (20/11/2026): Default Designation was removed. Still ' +
+      'accepted so an older client is not refused; nothing is written.',
+  })
   @OptionalBoolean()
   edIsDefault?: boolean;
 

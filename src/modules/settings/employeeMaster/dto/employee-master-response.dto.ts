@@ -29,8 +29,8 @@ export class EmployeeMasterPayloadDto {
   @ApiProperty({ format: 'uuid' })
   empId!: string;
 
-  @ApiProperty({ example: 1 })
-  empCompanyId!: number;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  empCompanyId!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
@@ -120,10 +120,13 @@ export class EmployeeMasterPayloadDto {
   })
   empDesignationName?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['Permanent', 'Contract', 'Daily Wage', 'Apprentice'],
+  })
   empEmploymentType!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, enum: ['Working', 'Resigned'], example: 'Working' })
   empStatus!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -153,11 +156,16 @@ export class EmployeeMasterPayloadDto {
   @ApiProperty()
   empHasCommission!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, enum: ['Percent', 'Amount'] })
   empCommissionType!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  empCommissionValue!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '2.500',
+    description: 'numeric(12,3) as a decimal string with 3 decimals (money-decimal rule).',
+  })
+  empCommissionValue!: string | null;
 
   @ApiProperty()
   empSalaryType!: string;
@@ -182,6 +190,24 @@ export class EmployeeMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   empEsiNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  empUanNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  empBankName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  empBankAccountNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'SBIN0001234' })
+  empBankIfsc!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  empEmergencyContactName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  empEmergencyContactPhone!: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

@@ -110,7 +110,16 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
     employees: simpleFetcher(
       () =>
         prisma.employeeMaster.findMany({
-          where: { empIsDeleted: false, empIsActive: true },
+          // HR review step 5: a Resigned employee is out of every staff list, as in
+          // the dropdowns 38 / 72 / 76 (any case; a NULL status is not Resigned).
+          where: {
+            empIsDeleted: false,
+            empIsActive: true,
+            OR: [
+              { empStatus: null },
+              { NOT: { empStatus: { equals: 'Resigned', mode: 'insensitive' } } },
+            ],
+          },
           select: { empId: true, empName: true },
           orderBy: [{ empName: 'asc' }, { empId: 'asc' }],
         }),

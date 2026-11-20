@@ -27,7 +27,7 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
-import { lockCodeSeries } from '../shared/code-series-lock';
+import { COMPANY_CODE_SERIES, lockCodeSeries } from '../shared/code-series-lock';
 import {
   PIN_MAX,
   PIN_MIN,
@@ -801,7 +801,7 @@ export class BranchMasterService {
     brCode: string | null | undefined,
   ): Promise<void> {
     if (brCode) {
-      await lockCodeSeries(tx);
+      await lockCodeSeries(tx, COMPANY_CODE_SERIES);
     }
   }
   private async ensureCodeIsUnique(

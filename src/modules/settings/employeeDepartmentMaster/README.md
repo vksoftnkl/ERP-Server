@@ -48,8 +48,13 @@ grouped under. Supports create/update, single-record fetch, and soft delete.
   raises a **conflict** on `edptName`.
 - **Code uniqueness** — when a code is supplied, case-insensitive across non-deleted rows
   (`ensureCodeIsUnique`); a clash raises a **conflict** on `edptCode`.
-- DB unique-constraint violations are re-mapped to a conflict response (`handleWriteError` /
-  `throwOnUniqueConstraintError`).
+- **Auto code (HR review step 5, 20/11/2026):** a department **created** with a blank `edptCode`
+  gets the Company rule's initials of its name (`initialsCode(name, DEPARTMENT_CODE_RULE)`:
+  Accounts → `ACC`, Human Resources → `HRU`), then `2`, `3`, … while a live department holds it in
+  any case, under `lockCodeSeries(tx, DEPARTMENT_CODE_SERIES)`. An edit never makes a code.
+- The DB backstop is the partial unique index `ux_edpt_code` (lower(edpt_code), live rows,
+  non-blank). A race onto it answers 409 `DEPARTMENT_CODE_DUPLICATE` on `edptCode`; any other
+  unique violation 409 `DEPARTMENT_DUPLICATE` (`handleWriteError`).
 
 ## Soft delete
 

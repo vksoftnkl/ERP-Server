@@ -16,6 +16,8 @@ model EmployeeDesignation {
   employees     EmployeeMaster[]
 
   @@index([edIsActive], name: "idx_ed_active")
+  // DB-only (partial, so not declared here): ux_ed_code UNIQUE (lower(ed_code))
+  // WHERE ed_code IS NOT NULL AND ed_code <> '' AND ed_is_deleted = false (20261120100000).
   @@map("employee_designations")
   @@schema("public")
 }

@@ -20,7 +20,12 @@ export enum EmployeeMasterErrorCode {
   SALARY_TYPE_REQUIRED = 'EMPLOYEE_SALARY_TYPE_REQUIRED',
   /** empPhoto is not a valid base64 string. */
   PHOTO_INVALID = 'EMPLOYEE_PHOTO_INVALID',
-  /** The database refused the save on a unique index (e.g. a duplicate employee code). */
+  /**
+   * Another live employee already has this Employee Code (any case): the save's
+   * check, or ux_emp_code when two saves race (HR review step 5, 20/11/2026).
+   */
+  CODE_DUPLICATE = 'EMPLOYEE_CODE_DUPLICATE',
+  /** The database refused the save on a unique index the checks above did not cover. */
   DUPLICATE = 'EMPLOYEE_DUPLICATE',
   /** The database refused the save on a foreign key: a referenced row does not exist. */
   RELATION_NOT_FOUND = 'EMPLOYEE_RELATION_NOT_FOUND',

@@ -1,5 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import { EmployeeDesignation } from '@prisma/client';
+import { EmployeeDesignation, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { EmployeeDesignationMasterService } from './employee-designation-master.service';
 import { EmployeeDesignationMasterErrorCode } from './types/employee-designation-master-error-codes';
@@ -41,13 +41,23 @@ type FindFirstArgs = { where: Record<string, unknown>; select?: unknown };
 type PrismaMock = {
   employeeDesignation: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
   };
   employeeMaster: { count: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
+
+/** What Prisma throws when a write breaks a unique index. */
+const uniqueViolation = (target: unknown) =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target },
+  });
 
 describe('EmployeeDesignationMasterService', () => {
   let prisma: PrismaMock;
@@ -64,6 +74,7 @@ describe('EmployeeDesignationMasterService', () => {
     prisma = {
       employeeDesignation: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async ({ data }: { data: Partial<EmployeeDesignation> }) =>
           designationRow(data),
         ),
@@ -73,6 +84,7 @@ describe('EmployeeDesignationMasterService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       employeeMaster: { count: jest.fn().mockResolvedValue(0) },
+      $queryRaw: jest.fn().mockResolvedValue([{ locked: 1 }]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
@@ -109,31 +121,74 @@ describe('EmployeeDesignationMasterService', () => {
       });
     });
 
-    it('leaves the other defaults alone when this one is not the default', async () => {
-      await service.save({ edName: 'Cashier', edIsDefault: false });
+    it.each([true, false])(
+      'ignores edIsDefault %p: Default Designation is gone (HR review step 5, H6)',
+      async (edIsDefault) => {
+        const payload = await service.save({ edName: 'Cashier', edCode: 'CSH', edIsDefault });
 
-      expect(prisma.employeeDesignation.updateMany).not.toHaveBeenCalled();
-      expect(createdData().edIsDefault).toBe(false);
-    });
+        expect(prisma.employeeDesignation.updateMany).not.toHaveBeenCalled();
+        expect(createdData()).not.toHaveProperty('edIsDefault');
+        expect(payload).not.toHaveProperty('edIsDefault');
+      },
+    );
 
-    it('takes the default from every other live designation before it claims it', async () => {
-      await service.save({ edName: 'Cashier', edIsDefault: true });
+    it('makes a blank code from the whole name, under the code lock, and skips the code check', async () => {
+      await service.save({ edName: 'Sales Manager', edCode: '', edRemarks: '  ' });
 
-      expect(prisma.employeeDesignation.updateMany).toHaveBeenCalledWith({
-        where: { edIsDeleted: false, edIsDefault: true },
-        data: { edIsDefault: false, edModifiedOn: expect.any(Date), edModifiedBy: USER_ID },
+      expect(createdData()).toMatchObject({ edCode: 'SALESMANAGER', edRemarks: null });
+      expect(prisma.employeeDesignation.findMany).toHaveBeenCalledWith({
+        where: { edIsDeleted: false, edCode: { startsWith: 'SALESMANAGER', mode: 'insensitive' } },
+        select: { edCode: true },
       });
-      expect(createdData().edIsDefault).toBe(true);
-      expect(prisma.employeeDesignation.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
-        prisma.employeeDesignation.create.mock.invocationCallOrder[0],
+      // Only the name was checked for a duplicate.
+      expect(prisma.employeeDesignation.findFirst).toHaveBeenCalledTimes(1);
+      const [sql, ...keys] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+      expect(sql.join('?')).toContain(
+        'pg_advisory_xact_lock(hashtext(?::text), hashtext(?::text))',
+      );
+      expect(keys).toEqual(['public.employee_designations', 'ed_code']);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.employeeDesignation.findMany.mock.invocationCallOrder[0],
       );
     });
 
-    it('stores a blank code as null and skips the code check for it', async () => {
-      await service.save({ edName: 'Cashier', edCode: '', edRemarks: '  ' });
+    it('keeps the driver list working: Driver becomes DRIVER, a second one DRIVER2', async () => {
+      prisma.employeeDesignation.findMany.mockResolvedValue([{ edCode: 'driver' }]);
 
-      expect(createdData()).toMatchObject({ edCode: null, edRemarks: null });
-      expect(prisma.employeeDesignation.findFirst).toHaveBeenCalledTimes(1);
+      await service.save({ edName: 'Driver' });
+
+      expect(createdData().edCode).toBe('DRIVER2');
+    });
+
+    it('leaves the code empty when the name holds no letter or digit', async () => {
+      await service.save({ edName: '--' });
+
+      expect(createdData()).not.toHaveProperty('edCode');
+      expect(prisma.employeeDesignation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('answers a race onto ux_ed_code as DESIGNATION_CODE_DUPLICATE on edCode', async () => {
+      prisma.employeeDesignation.create.mockRejectedValue(uniqueViolation('ux_ed_code'));
+
+      const refusal = await refusalOf(service.save({ edName: 'Driver' }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: {
+          errors: [{ field: 'edCode', code: EmployeeDesignationMasterErrorCode.CODE_DUPLICATE }],
+        },
+      });
+    });
+
+    it('answers a unique violation it cannot place as DESIGNATION_DUPLICATE', async () => {
+      prisma.employeeDesignation.create.mockRejectedValue(uniqueViolation(['led_code']));
+
+      const refusal = await refusalOf(service.save({ edName: 'Driver' }));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ code: EmployeeDesignationMasterErrorCode.DUPLICATE }] },
+      });
     });
 
     it('refuses a blank name', async () => {
@@ -194,15 +249,19 @@ describe('EmployeeDesignationMasterService', () => {
       expect(prisma.employeeDesignation.update).not.toHaveBeenCalled();
     });
 
-    it('takes the default from every designation but itself', async () => {
+    it('ignores edIsDefault and never makes a code on an edit', async () => {
       storedRow(designationRow());
 
-      await service.save({ edId: DESIG_ID, edName: 'Cashier', edIsDefault: true });
+      await service.save({ edId: DESIG_ID, edName: 'Cashier', edCode: '', edIsDefault: true });
 
-      expect(prisma.employeeDesignation.updateMany).toHaveBeenCalledWith({
-        where: { edIsDeleted: false, edIsDefault: true, edId: { not: DESIG_ID } },
-        data: { edIsDefault: false, edModifiedOn: expect.any(Date), edModifiedBy: USER_ID },
-      });
+      expect(prisma.employeeDesignation.updateMany).not.toHaveBeenCalled();
+      expect(prisma.employeeDesignation.findMany).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      const { data } = prisma.employeeDesignation.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.edCode).toBeNull();
+      expect(data).not.toHaveProperty('edIsDefault');
     });
 
     it('checks name and code against every designation but itself, then writes and audits', async () => {
@@ -210,6 +269,8 @@ describe('EmployeeDesignationMasterService', () => {
 
       const payload = await service.save({ edId: DESIG_ID, edName: 'Head Cashier', edCode: 'HC' });
 
+      // A typed code is checked under the code lock.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       const checks = prisma.employeeDesignation.findFirst.mock.calls
         .map(([args]) => args as FindFirstArgs)
         .filter((args) => args.select)
@@ -247,12 +308,14 @@ describe('EmployeeDesignationMasterService', () => {
     it('returns the live designation', async () => {
       prisma.employeeDesignation.findFirst.mockResolvedValue(designationRow({ edIsDefault: true }));
 
-      await expect(service.getById(DESIG_ID)).resolves.toMatchObject({
+      const payload = await service.getById(DESIG_ID);
+
+      expect(payload).toMatchObject({
         edId: DESIG_ID,
-        edIsDefault: true,
         edSyncDate: null,
         edModifiedOn: STAMP.toISOString(),
       });
+      expect(payload).not.toHaveProperty('edIsDefault');
     });
 
     it('refuses an id with no live designation', async () => {
@@ -306,7 +369,7 @@ describe('EmployeeDesignationMasterService', () => {
       expect(audit.logEntityChange).not.toHaveBeenCalled();
     });
 
-    it('marks it deleted, inactive and no longer the default, and audits it as a cancel', async () => {
+    it('marks it deleted and inactive (the default flag is left alone), and audits it as a cancel', async () => {
       prisma.employeeDesignation.findFirst.mockResolvedValue(designationRow({ edIsDefault: true }));
 
       await expect(service.softDelete(DESIG_ID)).resolves.toEqual({
@@ -318,7 +381,6 @@ describe('EmployeeDesignationMasterService', () => {
         data: {
           edIsDeleted: true,
           edIsActive: false,
-          edIsDefault: false,
           edModifiedOn: expect.any(Date),
           edModifiedBy: USER_ID,
         },
@@ -326,8 +388,8 @@ describe('EmployeeDesignationMasterService', () => {
       expect(auditEntry()).toMatchObject({
         action: 'cancel',
         displayName: 'Cashier',
-        originalRecord: expect.objectContaining({ edIsDefault: true }),
-        modifiedRecord: expect.objectContaining({ edIsDeleted: true, edIsDefault: false }),
+        originalRecord: expect.objectContaining({ edIsDeleted: false }),
+        modifiedRecord: expect.objectContaining({ edIsDeleted: true, edIsActive: false }),
       });
     });
   });

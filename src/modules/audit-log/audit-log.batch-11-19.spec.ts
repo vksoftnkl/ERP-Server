@@ -346,6 +346,37 @@ describe('AuditLogService — audit batch (review list 11-19 step 3)', () => {
     expect(JSON.stringify(item)).not.toMatch(/ABCDE1234F|ABCDE9876F|123412341234/);
   });
 
+  it('HR step 5: the bank account number is masked like PAN; Is Default is no designation label', async () => {
+    const item = await listOne('Employee Master', {
+      original: { 'Employee Name': 'ZT Ravi', 'Bank Account No': null, IFSC: null },
+      modified: {
+        'Employee Name': 'ZT Ravi',
+        'Bank Account No': '00112233445566',
+        IFSC: 'SBIN0001234',
+      },
+      changed: {
+        'Bank Account No': { from: null, to: '00112233445566' },
+        IFSC: { from: null, to: 'SBIN0001234' },
+      },
+    });
+    expect(item.log_changed_fields).toEqual({
+      'Bank Account No': { from: null, to: 'XXXXXXXXXX5566' },
+      IFSC: { from: null, to: 'SBIN0001234' },
+    });
+    expect(JSON.stringify(item)).not.toMatch(/00112233445566/);
+    expect(labelsOf('Employee Master')).toEqual(
+      expect.arrayContaining([
+        'UAN',
+        'Bank Name',
+        'Bank Account No',
+        'IFSC',
+        'Emergency Contact Name',
+        'Emergency Contact Phone',
+      ]),
+    );
+    expect(labelsOf('Employee Designation Master')).not.toContain('Is Default');
+  });
+
   it('HR audit SQL names the real public tables', () => {
     expect(getAuditScreenSql('Employee Master')).toMatch(/FROM public\.employee_master;/);
     expect(getAuditScreenSql('Employee Department Master')).toMatch(

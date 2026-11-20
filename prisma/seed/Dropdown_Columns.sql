@@ -1,5 +1,8 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (205 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (215 rows).
 --
+-- 72 EMPLOYEES BY DESIGNATION: its four columns (the live uuids 01a1789c-...) copied from the live
+-- rows (review step 5, decision 5, 2026-11-20); the dropdown was registered from the share file
+-- grids/dropdown_72_employees_by_designation.json and never seeded before.
 -- 75 QTY PRICE - SELLING LEVELS: its two columns (pinned uuids ...0750 / ...0751) as migration
 -- 20261106160000_qty_price_layout_fixes inserts them.
 -- 76 VEHICLE DRIVERS: its five columns (pinned uuids ...0760 - ...0764) as migration
@@ -281,6 +284,11 @@ SELECT v.* FROM (VALUES
     ,('01a1b2c0-7300-7000-8000-000000000731', 73, 1, 'Terms'               , 'pte_name'          , 'Terms'               , 'text'   , 65.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7300-7000-8000-000000000732', 73, 2, 'Code'                , 'pte_code'          , 'Code'                , 'text'   , 25.00 , 'Left'  , true , true , 'system')
     ,('01a1b2c0-7300-7000-8000-000000000733', 73, 3, 'Text'                , 'pte_terms_text'    , 'Text'                , 'text'   , NULL  , 'Left'  , false, false, 'system')
+    -- ============ EMPLOYEES BY DESIGNATION (id 72) ============
+    ,('01a1789c-9a7f-7d92-873c-4e8a02abb3e5', 72, 0, '#'                   , 'emp_id'            , NULL                  , 'Text'   , 10.00 , NULL    , false, false, 'system')
+    ,('01a1789c-9a81-71eb-b742-9461aa034fe3', 72, 1, 'Code'                , 'emp_code'          , NULL                  , 'Text'   , 20.00 , NULL    , true , true , 'system')
+    ,('01a1789c-9a81-7a1f-85aa-0046a819097f', 72, 2, 'Employee'            , 'emp_name'          , NULL                  , 'Text'   , 50.00 , NULL    , true , true , 'system')
+    ,('01a1789c-9a82-718e-87e9-39f73a60c35a', 72, 3, 'Designation'         , 'emp_designation'   , NULL                  , 'Text'   , 30.00 , NULL    , true , false, 'system')
     -- ============ QTY PRICE - SELLING LEVELS (id 75) ============
     ,('01a1b2c0-7500-7000-8000-000000000750', 75, 0, '#'                   , 'ipl_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     ,('01a1b2c0-7500-7000-8000-000000000751', 75, 1, 'Level Name'          , 'ipl_name'          , NULL                  , 'Text'   , 100.00, 'Left'  , true , true , 'system')

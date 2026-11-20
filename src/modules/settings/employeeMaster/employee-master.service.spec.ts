@@ -12,6 +12,7 @@ const DEPT_ID = '019c6f6c-be87-7a11-8905-36092c46e404';
 const DESIG_ID = '019c6f6c-be87-7a11-8905-36092c46e405';
 const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46e406';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46e407';
+const TOKEN_COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46e409';
 const STAMP = new Date('2026-10-01T04:30:00.000Z');
 
 const employeeRow = (overrides: Partial<EmployeeMaster> = {}): EmployeeMaster => ({
@@ -58,6 +59,12 @@ const employeeRow = (overrides: Partial<EmployeeMaster> = {}): EmployeeMaster =>
   empAadharNo: null,
   empPfNo: null,
   empEsiNo: null,
+  empUanNo: null,
+  empBankName: null,
+  empBankAccountNo: null,
+  empBankIfsc: null,
+  empEmergencyContactName: null,
+  empEmergencyContactPhone: null,
   empLoanLedgerId: LEDGER_ID,
   empPhotoUrl: null,
   empPhoto: null,
@@ -97,8 +104,17 @@ type PrismaMock = {
   employeeDepartment: { findFirst: jest.Mock };
   employeeDesignation: { findFirst: jest.Mock };
   accLedgerMaster: { findFirst: jest.Mock; findUniqueOrThrow: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
+
+/** What Prisma throws when a write breaks a unique index. */
+const uniqueViolation = (target: unknown) =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target },
+  });
 
 const baseDto = (overrides: Partial<SaveEmployeeMasterDto> = {}): SaveEmployeeMasterDto => ({
   empCompanyId: COMPANY_ID,
@@ -110,7 +126,7 @@ const baseDto = (overrides: Partial<SaveEmployeeMasterDto> = {}): SaveEmployeeMa
 describe('EmployeeMasterService', () => {
   let prisma: PrismaMock;
   let audit: { logEntityChange: jest.Mock };
-  let context: { getUserId: jest.Mock };
+  let context: { getUserId: jest.Mock; getCompanyId: jest.Mock };
   let ledgers: {
     settle: jest.Mock;
     liveLedgerOf: jest.Mock;
@@ -140,10 +156,14 @@ describe('EmployeeMasterService', () => {
           .fn()
           .mockResolvedValue({ ledId: LEDGER_ID, ledName: 'Ravi Kumar - Staff Advance' }),
       },
+      $queryRaw: jest.fn().mockResolvedValue([{ locked: 1 }]),
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
     audit = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
-    context = { getUserId: jest.fn().mockReturnValue(USER_ID) };
+    context = {
+      getUserId: jest.fn().mockReturnValue(USER_ID),
+      getCompanyId: jest.fn().mockReturnValue(TOKEN_COMPANY_ID),
+    };
     ledgers = {
       // The ledger service hands back the row pointing at its ledger.
       settle: jest.fn(async (_tx: unknown, record: EmployeeMaster) => ({
@@ -179,6 +199,7 @@ describe('EmployeeMasterService', () => {
         empCreatedOn: expect.any(Date),
         empCreatedBy: USER_ID,
         empCode: 'E01',
+        empStatus: 'Working',
       });
       expect(ledgers.settle).toHaveBeenCalledWith(
         prisma,
@@ -270,6 +291,8 @@ describe('EmployeeMasterService', () => {
     });
 
     it('checks no company, department or designation that was not sent', async () => {
+      context.getCompanyId.mockReturnValue(null);
+
       await service.save(baseDto({ empCompanyId: null, empDepartmentId: null }));
 
       expect(prisma.company.findFirst).not.toHaveBeenCalled();
@@ -308,6 +331,168 @@ describe('EmployeeMasterService', () => {
       },
     );
 
+    it.each([null, undefined])(
+      'gives a new employee sent with company %p the logged-in company (user 20/11)',
+      async (empCompanyId) => {
+        await service.save(baseDto({ empCompanyId }));
+
+        expect(prisma.company.findFirst).toHaveBeenCalledWith({
+          where: { compId: TOKEN_COMPANY_ID, compIsDeleted: false },
+          select: { compId: true },
+        });
+        expect(createdData().empCompanyId).toBe(TOKEN_COMPANY_ID);
+      },
+    );
+
+    describe('the Employee Code (HR review step 5)', () => {
+      it('makes a blank code from the initials, among live codes, under the code lock', async () => {
+        await service.save(baseDto({ empName: 'Suresh Krishna', empCode: null }));
+
+        expect(prisma.employeeMaster.findMany).toHaveBeenCalledWith({
+          where: { empIsDeleted: false, empCode: { startsWith: 'SKU', mode: 'insensitive' } },
+          select: { empCode: true },
+        });
+        expect(createdData().empCode).toBe('SKU');
+        const [sql, ...keys] = prisma.$queryRaw.mock.calls[0] as [
+          TemplateStringsArray,
+          ...unknown[],
+        ];
+        expect(sql.join('?')).toContain(
+          'pg_advisory_xact_lock(hashtext(?::text), hashtext(?::text))',
+        );
+        expect(keys).toEqual(['public.employee_master', 'emp_code']);
+        expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+          prisma.employeeMaster.findMany.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('adds 2, 3 … while the code is taken in any case: a second RAMESH is RAM2', async () => {
+        prisma.employeeMaster.findMany.mockResolvedValue([{ empCode: 'ram' }, { empCode: 'RAMA' }]);
+
+        await service.save(baseDto({ empName: 'RAMESH' }));
+
+        expect(createdData().empCode).toBe('RAM2');
+      });
+
+      it('refuses a typed code another live employee holds, in any case', async () => {
+        prisma.employeeMaster.findFirst.mockResolvedValue({ empId: 'other' });
+
+        const refusal = await refusalOf(service.save(baseDto({ empCode: 'ztd1' })));
+
+        expect(prisma.employeeMaster.findFirst).toHaveBeenCalledWith({
+          where: { empIsDeleted: false, empCode: { equals: 'ztd1', mode: 'insensitive' } },
+          select: { empId: true },
+        });
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: {
+            errors: [{ field: 'empCode', code: EmployeeMasterErrorCode.CODE_DUPLICATE }],
+          },
+        });
+        expect(prisma.employeeMaster.create).not.toHaveBeenCalled();
+      });
+
+      it('answers a race onto ux_emp_code as EMPLOYEE_CODE_DUPLICATE on empCode', async () => {
+        prisma.employeeMaster.create.mockRejectedValue(uniqueViolation('ux_emp_code'));
+
+        const refusal = await refusalOf(service.save(baseDto()));
+
+        expect(refusal).toMatchObject({
+          status: 409,
+          body: {
+            errors: [{ field: 'empCode', code: EmployeeMasterErrorCode.CODE_DUPLICATE }],
+          },
+        });
+      });
+
+      it('never makes a code on an edit; a typed one is checked against everyone else', async () => {
+        prisma.employeeMaster.findFirst.mockImplementation(async (args: { select?: unknown }) =>
+          args.select ? null : employeeRow(),
+        );
+
+        await service.save(baseDto({ empId: EMP_ID, empCode: '' }));
+        await service.save(baseDto({ empId: EMP_ID, empCode: 'E02' }));
+
+        const [[cleared], [typed]] = prisma.employeeMaster.update.mock.calls as Array<
+          [{ data: Record<string, unknown> }]
+        >;
+        expect(cleared.data.empCode).toBeNull();
+        expect(typed.data.empCode).toBe('E02');
+        expect(prisma.employeeMaster.findMany).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+        expect(prisma.employeeMaster.findFirst).toHaveBeenCalledWith({
+          where: {
+            empIsDeleted: false,
+            empCode: { equals: 'E02', mode: 'insensitive' },
+            empId: { not: EMP_ID },
+          },
+          select: { empId: true },
+        });
+      });
+    });
+
+    it.each([
+      [undefined, 'Working'],
+      [null, 'Working'],
+      ['', 'Working'],
+      ['resigned', 'Resigned'],
+      ['WORKING', 'Working'],
+    ])('stores the status %p of a new employee as %p', async (empStatus, stored) => {
+      await service.save(baseDto({ empStatus }));
+
+      expect(createdData().empStatus).toBe(stored);
+    });
+
+    it('keeps the commission value as a Decimal and answers it with 3 decimals', async () => {
+      const payload = await service.save(
+        baseDto({
+          empHasCommission: true,
+          empCommissionType: 'Percent',
+          empCommissionValue: '2.5',
+        }),
+      );
+
+      expect(createdData().empCommissionValue).toEqual(new Prisma.Decimal('2.5'));
+      expect(payload).toMatchObject({
+        empHasCommission: true,
+        empCommissionType: 'Percent',
+        empCommissionValue: '2.500',
+      });
+    });
+
+    it('clears the commission type and value when Has Commission is sent unticked (user 20/11)', async () => {
+      const payload = await service.save(
+        baseDto({
+          empHasCommission: false,
+          empCommissionType: 'Percent',
+          empCommissionValue: '2.5',
+        }),
+      );
+
+      expect(createdData()).toMatchObject({
+        empHasCommission: false,
+        empCommissionType: null,
+        empCommissionValue: null,
+      });
+      expect(payload).toMatchObject({ empCommissionType: null, empCommissionValue: null });
+    });
+
+    it('writes and answers the bank, UAN and emergency contact fields', async () => {
+      const fields = {
+        empUanNo: '100200300400',
+        empBankName: 'State Bank of India',
+        empBankAccountNo: '00112233445566',
+        empBankIfsc: 'SBIN0001234',
+        empEmergencyContactName: 'Lakshmi',
+        empEmergencyContactPhone: '9840012345',
+      };
+
+      const payload = await service.save(baseDto(fields));
+
+      expect(createdData()).toMatchObject(fields);
+      expect(payload).toMatchObject(fields);
+    });
+
     it('answers money columns as numbers', async () => {
       const payload = await service.save(baseDto());
 
@@ -331,6 +516,68 @@ describe('EmployeeMasterService', () => {
       expect(prisma.employeeMaster.update).not.toHaveBeenCalled();
     });
 
+    it.each([
+      [null, 'Working'],
+      ['RESIGNED', 'Resigned'],
+    ])('stores an edited status %p as %p', async (empStatus, stored) => {
+      prisma.employeeMaster.findFirst.mockResolvedValue(employeeRow());
+
+      await service.save(baseDto({ empId: EMP_ID, empStatus }));
+
+      const { data } = prisma.employeeMaster.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.empStatus).toBe(stored);
+    });
+
+    it('clears the commission on an edit that unticks Has Commission', async () => {
+      prisma.employeeMaster.findFirst.mockResolvedValue(
+        employeeRow({
+          empHasCommission: true,
+          empCommissionType: 'Amount',
+          empCommissionValue: new Prisma.Decimal('150'),
+        }),
+      );
+
+      await service.save(baseDto({ empId: EMP_ID, empHasCommission: false }));
+
+      const { data } = prisma.employeeMaster.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).toMatchObject({
+        empHasCommission: false,
+        empCommissionType: null,
+        empCommissionValue: null,
+      });
+    });
+
+    it('leaves the commission alone on an edit that does not send Has Commission', async () => {
+      prisma.employeeMaster.findFirst.mockResolvedValue(employeeRow({ empHasCommission: true }));
+
+      await service.save(baseDto({ empId: EMP_ID, empCommissionValue: '3' }));
+
+      const { data } = prisma.employeeMaster.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).not.toHaveProperty('empHasCommission');
+      expect(data).not.toHaveProperty('empCommissionType');
+      expect(data.empCommissionValue).toEqual(new Prisma.Decimal('3'));
+    });
+
+    it('keeps a company left out on an edit, and clears one sent null', async () => {
+      prisma.employeeMaster.findFirst.mockResolvedValue(employeeRow());
+
+      await service.save(baseDto({ empId: EMP_ID, empCompanyId: undefined }));
+      await service.save(baseDto({ empId: EMP_ID, empCompanyId: null }));
+
+      const [[kept], [cleared]] = prisma.employeeMaster.update.mock.calls as Array<
+        [{ data: Record<string, unknown> }]
+      >;
+      expect(kept.data.empCompanyId).toBeUndefined();
+      expect(cleared.data.empCompanyId).toBeNull();
+      expect(context.getCompanyId).not.toHaveBeenCalled();
+    });
+
     it('writes the row, then settles the ledger against the row before the update', async () => {
       const existing = employeeRow();
       prisma.employeeMaster.findFirst.mockResolvedValue(existing);
@@ -338,6 +585,7 @@ describe('EmployeeMasterService', () => {
       const payload = await service.save(
         baseDto({ empId: EMP_ID, empName: 'Ravi K', empMobile1: '98400 12345' }),
       );
+      // No status sent: the stored one stays (nothing written).
 
       expect(prisma.employeeMaster.update).toHaveBeenCalledWith({
         where: { empId: EMP_ID },

@@ -22,6 +22,9 @@ import {
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { DESIGNATION_CODE_MAX_LENGTH, nextFreeCode, wholeNameCode } from '../shared/code-from-name';
+import { DESIGNATION_CODE_SERIES, lockCodeSeries } from '../shared/code-series-lock';
+import { isUniqueViolationOf } from '../shared/unique-violation';
 
 const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee designations';
 const EMPLOYEE_DESIGNATION_MASTER_AUDIT_SCREEN_NAME = 'Employee Designation Master';
@@ -99,7 +102,6 @@ export class EmployeeDesignationMasterService {
         data: {
           edIsDeleted: true,
           edIsActive: false,
-          edIsDefault: false,
           edModifiedOn: modifiedOn,
           edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
@@ -114,7 +116,6 @@ export class EmployeeDesignationMasterService {
         ...existing,
         edIsDeleted: true,
         edIsActive: false,
-        edIsDefault: false,
         edModifiedOn: modifiedOn,
         edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
@@ -146,17 +147,18 @@ export class EmployeeDesignationMasterService {
     saveEmployeeDesignationMasterDto: SaveEmployeeDesignationMasterDto,
   ): Promise<EmployeeDesignationMasterPayload> {
     try {
-      return this.prisma.$transaction(async (tx) => {
+      // `return await`: a write refused inside the transaction must reach the catch below.
+      return await this.prisma.$transaction(async (tx) => {
         const edName = this.normalizeRequiredName(saveEmployeeDesignationMasterDto.edName);
-        const edCode = normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
+        const typedCode = normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
         const edRemarks = normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
 
+        // HR review step 5: one save at a time reads and takes a designation code.
+        await lockCodeSeries(tx, DESIGNATION_CODE_SERIES);
         await this.ensureNameIsUnique(tx, edName);
-        await this.ensureCodeIsUnique(tx, edCode);
-
-        if (saveEmployeeDesignationMasterDto.edIsDefault === true) {
-          await this.clearDefaultDesignation(tx);
-        }
+        await this.ensureCodeIsUnique(tx, typedCode);
+        // A designation created with a blank Code gets its whole name as one.
+        const edCode = typedCode ?? (await this.nextDesignationCode(tx, edName));
 
         const now = new Date();
         const data: Prisma.EmployeeDesignationUncheckedCreateInput = {
@@ -165,12 +167,11 @@ export class EmployeeDesignationMasterService {
           edCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
-        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
+        if (edCode !== null) {
           data.edCode = edCode;
         }
-        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
-          data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
-        }
+        // HR review step 5 (H6): Default Designation is gone. edIsDefault is still
+        // accepted from an older client and ignored; the column keeps its default.
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
           data.edRemarks = edRemarks;
         }
@@ -211,7 +212,7 @@ export class EmployeeDesignationMasterService {
     const edId = saveEmployeeDesignationMasterDto.edId!;
 
     try {
-      return this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.employeeDesignation.findFirst({
           where: {
             edId,
@@ -228,11 +229,11 @@ export class EmployeeDesignationMasterService {
         const edRemarks = normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
 
         await this.ensureNameIsUnique(tx, edName, edId);
-        await this.ensureCodeIsUnique(tx, edCode, edId);
-
-        if (saveEmployeeDesignationMasterDto.edIsDefault === true) {
-          await this.clearDefaultDesignation(tx, edId);
+        // An edit never makes a code; a typed one is checked under the series lock.
+        if (edCode) {
+          await lockCodeSeries(tx, DESIGNATION_CODE_SERIES);
         }
+        await this.ensureCodeIsUnique(tx, edCode, edId);
 
         const data: Prisma.EmployeeDesignationUncheckedUpdateInput = {
           edName,
@@ -242,9 +243,6 @@ export class EmployeeDesignationMasterService {
 
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
           data.edCode = edCode;
-        }
-        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
-          data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
         }
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
           data.edRemarks = edRemarks;
@@ -367,27 +365,23 @@ export class EmployeeDesignationMasterService {
     }
   }
 
-  private async clearDefaultDesignation(
+  /**
+   * HR review step 5 (Q1) — the code of a designation created without one: its
+   * whole name, upper case, letters and digits only, at most 20 (Driver →
+   * DRIVER, Sales Manager → SALESMANAGER; the driver list matches DRIVER), then
+   * 2, 3, … until no LIVE designation holds it in any case (ux_ed_code covers
+   * live rows only). null when the name gives no code.
+   */
+  private async nextDesignationCode(
     tx: EmployeeDesignationWriteClient,
-    excludeEdId?: string,
-  ): Promise<void> {
-    await tx.employeeDesignation.updateMany({
-      where: {
-        edIsDeleted: false,
-        edIsDefault: true,
-        ...(excludeEdId
-          ? {
-              edId: {
-                not: excludeEdId,
-              },
-            }
-          : {}),
-      },
-      data: {
-        edIsDefault: false,
-        edModifiedOn: new Date(),
-        edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-      },
+    edName: string,
+  ): Promise<string | null> {
+    return nextFreeCode(wholeNameCode(edName, DESIGNATION_CODE_MAX_LENGTH), async (base) => {
+      const rows = await tx.employeeDesignation.findMany({
+        where: { edIsDeleted: false, edCode: { startsWith: base, mode: 'insensitive' } },
+        select: { edCode: true },
+      });
+      return rows.map((row) => row.edCode);
     });
   }
 
@@ -405,7 +399,6 @@ export class EmployeeDesignationMasterService {
       edId: record.edId,
       edName: record.edName,
       edCode: record.edCode,
-      edIsDefault: record.edIsDefault,
       edRemarks: record.edRemarks,
       edIsActive: record.edIsActive,
       edIsDeleted: record.edIsDeleted,
@@ -418,6 +411,19 @@ export class EmployeeDesignationMasterService {
   }
 
   private handleWriteError(error: unknown): void {
+    // HR review step 5: two saves raced past the code check onto ux_ed_code.
+    if (isUniqueViolationOf(error, 'ux_ed_code', 'ed_code')) {
+      throwSettingsConflict<EmployeeDesignationMasterErrorDetail>(
+        'Employee designation code already exists',
+        [
+          {
+            field: 'edCode',
+            message: 'Another designation took this code at the same moment',
+            code: EmployeeDesignationMasterErrorCode.CODE_DUPLICATE,
+          },
+        ],
+      );
+    }
     throwOnUniqueConstraintError<EmployeeDesignationMasterErrorDetail>(
       error,
       'Employee designation already exists',

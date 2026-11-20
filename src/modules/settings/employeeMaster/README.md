@@ -90,3 +90,25 @@ department and designation.
 - Errors use `{ success: false, message, errors: [{ field, message }] }` via the settings-layer
   helpers (`throwSettingsBadRequest`, `throwSettingsNotFound`, `throwOnUniqueConstraintError`)
   and the module's `EmployeeMasterExceptionFilter`.
+
+## HR review step 5 (20/11/2026)
+
+- **Employee Code:** blank on **create** → the initials of the name, 3 to 6, padded from the first
+  word (Suresh Krishna → `SKU`, RAMESH → `RAM`, a second one `RAM2`), among live employees, under
+  `lockCodeSeries(tx, EMPLOYEE_CODE_SERIES)`. Never made on an edit. A typed code another live
+  employee holds in any case is 409 `EMPLOYEE_CODE_DUPLICATE` on `empCode` (service check; the
+  partial unique index `ux_emp_code` is the backstop and maps to the same code).
+- **Company:** blank (`null` / absent) on create = the logged-in company from the token.
+- **Status:** stored `Working` / `Resigned`; blank = `Working`; any case accepted; anything else
+  400 `VALIDATION_IS_IN`. Resigned employees are left out of the master-lookup `employees` list
+  and refused as a vehicle driver (as dropdowns 38 / 72 / 76).
+- **Fixed lists:** Employment Type Permanent / Contract / Daily Wage / Apprentice; Commission Type
+  Percent / Amount (any case or spacing in, this spelling stored; else `VALIDATION_IS_IN`).
+- **New fields:** `empUanNo`, `empBankName`, `empBankAccountNo` (masked to the last 4 in the
+  history read), `empBankIfsc` (upper-cased, AAAA0XXXXXX, else `VALIDATION_IS_IFSC`),
+  `empEmergencyContactName`, `empEmergencyContactPhone`.
+- **Has Commission sent `false`** (create or edit) stores Commission Type and Value as null, whatever
+  else was sent (user 20/11). Left out of an edit, all three stay as they are. Type / Value are not
+  required when it is ticked.
+- **Commission value** travels as a decimal string (`"2.500"` out; a string or number in, up to 3
+  decimals) and is written as `Prisma.Decimal`.

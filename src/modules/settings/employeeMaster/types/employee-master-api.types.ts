@@ -52,7 +52,8 @@ export interface EmployeeMasterPayload {
   empOvertimeAllowed: boolean;
   empHasCommission: boolean;
   empCommissionType: string | null;
-  empCommissionValue: number | null;
+  /** numeric(12,3) as a decimal string, 3 decimals ('2.500'). */
+  empCommissionValue: string | null;
   empSalaryType: string;
   empSalaryAmount: number;
   empBataAmount: number;
@@ -61,6 +62,12 @@ export interface EmployeeMasterPayload {
   empAadharNo: string | null;
   empPfNo: string | null;
   empEsiNo: string | null;
+  empUanNo: string | null;
+  empBankName: string | null;
+  empBankAccountNo: string | null;
+  empBankIfsc: string | null;
+  empEmergencyContactName: string | null;
+  empEmergencyContactPhone: string | null;
   empLoanLedgerId: string | null;
   empLoanLedgerName?: string | null;
   empPhotoUrl: string | null;

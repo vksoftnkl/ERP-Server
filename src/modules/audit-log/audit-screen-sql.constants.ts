@@ -558,7 +558,7 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
     buildAuditSql('public.employee_designations', [
       ['ed_name', 'Designation Name'],
       ['ed_code', 'Code'],
-      ['ed_is_default', 'Is Default'],
+      // HR review step 5 (H6): Default Designation was removed; ed_is_default is no longer written.
       ['ed_remarks', 'Remarks'],
       ['ed_is_active', 'Is Active'],
       ['ed_is_deleted', 'Is Deleted'],
@@ -608,6 +608,14 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['emp_aadhar_no', 'Aadhaar'],
       ['emp_pf_no', 'PF No'],
       ['emp_esi_no', 'ESI No'],
+      // HR review step 5 (migration 20261120100000). Bank Account No is masked in the
+      // history read like PAN / Aadhaar (MASKED_AUDIT_FIELDS_BY_SCREEN).
+      ['emp_uan_no', 'UAN'],
+      ['emp_bank_name', 'Bank Name'],
+      ['emp_bank_account_no', 'Bank Account No'],
+      ['emp_bank_ifsc', 'IFSC'],
+      ['emp_emergency_contact_name', 'Emergency Contact Name'],
+      ['emp_emergency_contact_phone', 'Emergency Contact Phone'],
       // Review list 11-19 step 3: the staff advance ledger reads as its name. Shift,
       // attendance constraint and holiday group ids are left out: no tables hold them yet.
       ['emp_loan_ledger_id', 'Staff Advance Ledger'],

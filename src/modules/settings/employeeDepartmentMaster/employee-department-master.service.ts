@@ -22,6 +22,9 @@ import {
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { DEPARTMENT_CODE_RULE, initialsCode, nextFreeCode } from '../shared/code-from-name';
+import { DEPARTMENT_CODE_SERIES, lockCodeSeries } from '../shared/code-series-lock';
+import { isUniqueViolationOf } from '../shared/unique-violation';
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
 type EmployeeDepartmentWriteClient = SettingsWriteClient;
@@ -127,20 +130,25 @@ export class EmployeeDepartmentMasterService {
     saveEmployeeDepartmentMasterDto: SaveEmployeeDepartmentMasterDto,
   ): Promise<EmployeeDepartmentMasterPayload> {
     try {
-      return this.prisma.$transaction(async (tx) => {
+      // `return await`: a write refused inside the transaction must reach the catch below.
+      return await this.prisma.$transaction(async (tx) => {
         const edptName = this.normalizeRequiredName(saveEmployeeDepartmentMasterDto.edptName);
-        const edptCode = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
+        const typedCode = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
         const edptAlias = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
         const edptRemarks = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptRemarks);
+        // HR review step 5: one save at a time reads and takes a department code.
+        await lockCodeSeries(tx, DEPARTMENT_CODE_SERIES);
         await this.ensureNameIsUnique(tx, edptName);
-        await this.ensureCodeIsUnique(tx, edptCode);
+        await this.ensureCodeIsUnique(tx, typedCode);
+        // A department created with a blank Code gets one made from its name.
+        const edptCode = typedCode ?? (await this.nextDepartmentCode(tx, edptName));
         const now = new Date();
         const data: Prisma.EmployeeDepartmentUncheckedCreateInput = {
           edptName,
           edptCreatedOn: now,
           edptCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
-        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
+        if (edptCode !== null) {
           data.edptCode = edptCode;
         }
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
@@ -181,7 +189,7 @@ export class EmployeeDepartmentMasterService {
   ): Promise<EmployeeDepartmentMasterPayload> {
     const edptId = saveEmployeeDepartmentMasterDto.edptId!;
     try {
-      return this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.employeeDepartment.findFirst({
           where: {
             edptId,
@@ -196,6 +204,10 @@ export class EmployeeDepartmentMasterService {
         const edptAlias = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
         const edptRemarks = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptRemarks);
         await this.ensureNameIsUnique(tx, edptName, edptId);
+        // An edit never makes a code; a typed one is checked under the series lock.
+        if (edptCode) {
+          await lockCodeSeries(tx, DEPARTMENT_CODE_SERIES);
+        }
         await this.ensureCodeIsUnique(tx, edptCode, edptId);
         const data: Prisma.EmployeeDepartmentUncheckedUpdateInput = {
           edptName,
@@ -320,6 +332,25 @@ export class EmployeeDepartmentMasterService {
       );
     }
   }
+  /**
+   * HR review step 5 — the code of a department created without one: the
+   * Company rule's initials of its name (Accounts → ACC), then 2, 3, … until
+   * no LIVE department holds it in any case (ux_edpt_code covers live rows
+   * only, so a deleted department frees its code). null when the name gives
+   * no code.
+   */
+  private async nextDepartmentCode(
+    tx: EmployeeDepartmentWriteClient,
+    edptName: string,
+  ): Promise<string | null> {
+    return nextFreeCode(initialsCode(edptName, DEPARTMENT_CODE_RULE), async (base) => {
+      const rows = await tx.employeeDepartment.findMany({
+        where: { edptIsDeleted: false, edptCode: { startsWith: base, mode: 'insensitive' } },
+        select: { edptCode: true },
+      });
+      return rows.map((row) => row.edptCode);
+    });
+  }
   private normalizeRequiredName(value: string): string {
     return normalizeRequiredText<EmployeeDepartmentMasterErrorDetail>(
       value,
@@ -345,6 +376,19 @@ export class EmployeeDepartmentMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
+    // HR review step 5: two saves raced past the code check onto ux_edpt_code.
+    if (isUniqueViolationOf(error, 'ux_edpt_code', 'edpt_code')) {
+      throwSettingsConflict<EmployeeDepartmentMasterErrorDetail>(
+        'Employee department code already exists',
+        [
+          {
+            field: 'edptCode',
+            message: 'Another department took this code at the same moment',
+            code: EmployeeDepartmentMasterErrorCode.CODE_DUPLICATE,
+          },
+        ],
+      );
+    }
     throwOnUniqueConstraintError<EmployeeDepartmentMasterErrorDetail>(
       error,
       'Employee department already exists',

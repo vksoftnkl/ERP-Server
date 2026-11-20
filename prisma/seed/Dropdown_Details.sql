@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (66 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (68 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
@@ -14,6 +14,11 @@
 -- 20261116130000_print_purpose_dropdown_company sets it.
 -- 8 company and 5 branch list active, not-deleted rows only, regional SQL NULL (review list
 -- 11-19, D1 / 239.1) as migration 20261119213000_company_branch_dropdowns_active_only sets them.
+-- 38 EMPLOYEES, 72 EMPLOYEES BY DESIGNATION and 76 VEHICLE DRIVERS leave out Resigned employees,
+-- 76 matches the designation by code or name DRIVER (review list 11-19, H5) as migration
+-- 20261120100000_hr_masters_codes_status_fields sets them. 72 (registered from the share file
+-- grids/dropdown_72_employees_by_designation.json, never seeded before) is copied from the live row
+-- after that migration (review step 5, decision 5, 2026-11-20).
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -262,7 +267,7 @@ ORDER BY tax_name;$seed$, NULL)
 FROM fixed.hsn_master
 WHERE hsn_is_active = true
 ORDER BY hsn_code;$seed$, NULL)
-    ,(38, 'EMPLOYEES'                , NULL, 'emp_name'            , 'asc'      , 10, false, 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT
+    ,(38, 'EMPLOYEES'                , 'Staff picker: active, not deleted, not Resigned employees of the branch iemp_branch_id plus the branch-less ones, by name. Param iemp_branch_id, cast to uuid, so always sent.', 'emp_name'            , 'asc'      , 10, false, 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT
     emp_id,
     emp_code,
     emp_name,
@@ -270,6 +275,7 @@ ORDER BY hsn_code;$seed$, NULL)
 FROM public.employee_master
 WHERE emp_is_active = true
     AND emp_is_deleted = false
+    AND upper(btrim(COALESCE(emp_status, ''))) <> 'RESIGNED'
     AND (
         emp_branch_id IS NULL
         OR emp_branch_id = iemp_branch_id::uuid
@@ -497,6 +503,32 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
                  WHERE r.acc_group_name = 'Loans & Advances (Asset)'
                    AND r.acc_group_company_id IS NULL)
  ORDER BY l.led_name$seed$, NULL)
+    ,(72, 'EMPLOYEES BY DESIGNATION', 'Crew pickers (GRN Supervisor / Loadmen, transfer Loading / Unloading, shortage receipt, payees). Params iemp_branch_id and iemp_role - ALWAYS sent, compared as text. iemp_role matches the designation code or name (LOADMAN / DRIVER / SUPERVISOR); '''' = everyone. Lists the branch''s employees and the branch-less employees of the branch''s company; Resigned employees are left out. While no one (not Resigned) holds that designation the list falls back to every such employee (a new company is never stuck with an empty picker) - unless iemp_strict = ''Y'' (GRN Supervisor): then only the designation.', 'emp_name'            , 'asc'      , 10, false, 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT
+	e.emp_id,
+	e.emp_code,
+	e.emp_name,
+	d.ed_name AS emp_designation
+FROM public.employee_master e
+LEFT JOIN public.employee_designations d ON d.ed_id = e.emp_designation_id AND d.ed_is_deleted = false
+WHERE e.emp_is_active = true AND e.emp_is_deleted = false
+  AND upper(btrim(COALESCE(e.emp_status, ''))) <> 'RESIGNED'
+  AND (e.emp_branch_id::text = 'iemp_branch_id'
+       OR (e.emp_branch_id IS NULL
+           AND e.emp_company_id = (SELECT b.br_comp_id FROM public.branch_master b WHERE b.br_id::text = 'iemp_branch_id')))
+  AND ('iemp_role' = ''
+       OR upper(d.ed_code) = upper('iemp_role')
+       OR upper(d.ed_name) = upper('iemp_role')
+       OR ('iemp_strict' <> 'Y' AND NOT EXISTS (
+            SELECT 1
+            FROM public.employee_master e2
+            JOIN public.employee_designations d2 ON d2.ed_id = e2.emp_designation_id AND d2.ed_is_deleted = false
+            WHERE e2.emp_is_active = true AND e2.emp_is_deleted = false
+              AND upper(btrim(COALESCE(e2.emp_status, ''))) <> 'RESIGNED'
+              AND (e2.emp_branch_id::text = 'iemp_branch_id'
+                   OR (e2.emp_branch_id IS NULL
+                       AND e2.emp_company_id = (SELECT b2.br_comp_id FROM public.branch_master b2 WHERE b2.br_id::text = 'iemp_branch_id')))
+              AND (upper(d2.ed_code) = upper('iemp_role') OR upper(d2.ed_name) = upper('iemp_role')))))
+ORDER BY e.emp_name$seed$, NULL)
     ,(73, 'PO TERMS'                 , 'Purchase order terms (purchase.pur_terms): live and active, this company''s and the shared ones, by sort then name. pte_terms_text (hidden) fills the PO terms box. Param icompany_id, always sent. Migration 20261029130000 inserts the same row.', NULL                  , 'Ascending', 12, true , 0   , 'Desktop', 'pte_name'          , 'system', $seed$SELECT pte_id,
        pte_name,
        pte_code,
@@ -513,17 +545,20 @@ ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
    AND "price_lvl_isDeleted" = false
    AND price_lvl_id BETWEEN 1 AND 4
  ORDER BY price_lvl_id$seed$, NULL)
-    ,(76, 'VEHICLE DRIVERS', 'Vehicle Master (menu 125) Driver picker: this company''s active employees with designation DRIVER (everyone while nobody holds it), with their mobile. Param idrv_company_id, always sent.', 'emp_name'            , 'asc'      , 10, true , 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT e.emp_id, e.emp_code, e.emp_name, e.emp_mobile1, b.br_name AS emp_branch
+    ,(76, 'VEHICLE DRIVERS', 'Vehicle Master (menu 125) Driver picker: this company''s active, not Resigned employees whose designation code or name is DRIVER (everyone while nobody holds it), with their mobile. Param idrv_company_id, always sent.', 'emp_name'            , 'asc'      , 10, true , 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT e.emp_id, e.emp_code, e.emp_name, e.emp_mobile1, b.br_name AS emp_branch
   FROM public.employee_master e
   LEFT JOIN public.branch_master b ON b.br_id = e.emp_branch_id
   LEFT JOIN public.employee_designations d ON d.ed_id = e.emp_designation_id AND d.ed_is_deleted = false
  WHERE e.emp_is_active = true AND e.emp_is_deleted = false
+   AND upper(btrim(COALESCE(e.emp_status, ''))) <> 'RESIGNED'
    AND e.emp_company_id::text = 'idrv_company_id'
-   AND (upper(d.ed_code) = 'DRIVER'
+   AND (upper(d.ed_code) = 'DRIVER' OR upper(d.ed_name) = 'DRIVER'
         OR NOT EXISTS (SELECT 1 FROM public.employee_master e2
                          JOIN public.employee_designations d2 ON d2.ed_id = e2.emp_designation_id AND d2.ed_is_deleted = false
                         WHERE e2.emp_is_active = true AND e2.emp_is_deleted = false
-                          AND e2.emp_company_id::text = 'idrv_company_id' AND upper(d2.ed_code) = 'DRIVER'))
+                          AND upper(btrim(COALESCE(e2.emp_status, ''))) <> 'RESIGNED'
+                          AND e2.emp_company_id::text = 'idrv_company_id'
+                          AND (upper(d2.ed_code) = 'DRIVER' OR upper(d2.ed_name) = 'DRIVER')))
  ORDER BY e.emp_name$seed$, NULL)
     ,(77, 'ITEMS BY COMPANY', 'Item Ledger (menu 301) Item picker: one row per item, not deleted (inactive ones included), this company''s or shared (item_company_id NULL), as the item-ledger routes accept them; by name. Searches code, name, barcode and SKU. Param icompany_id, always sent; compared as text, never cast.', 'item_name_en'        , 'asc'      , 12, true , 0   , 'Desktop', 'item_name_en'      , 'system', $seed$SELECT item_id,
        COALESCE(item_code, '') AS item_code,

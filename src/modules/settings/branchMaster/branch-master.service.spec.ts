@@ -304,10 +304,10 @@ describe('BranchMasterService', () => {
         await create({ brCode: 'AN01' });
 
         expect(lockSql()).toEqual([
-          expect.stringContaining(
-            "pg_advisory_xact_lock(hashtext('public.companys'), hashtext('comp_code'))",
-          ),
+          expect.stringContaining('pg_advisory_xact_lock(hashtext(?::text), hashtext(?::text))'),
         ]);
+        // The company series' key: hashtext('public.companys'), hashtext('comp_code').
+        expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual(['public.companys', 'comp_code']);
         expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
           prisma.branchMaster.findFirst.mock.invocationCallOrder[codeReadOrder()],
         );

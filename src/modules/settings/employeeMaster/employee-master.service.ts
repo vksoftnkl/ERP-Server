@@ -12,19 +12,28 @@ import {
 import { StaffAdvanceLedgerService } from './staff-advance-ledger.service';
 import { EmployeeMasterErrorCode } from './types/employee-master-error-codes';
 import {
+  EMPLOYEE_STATUSES,
+  EMPLOYEE_STATUS_WORKING,
+  canonicalListValue,
+} from './types/employee-master-values';
+import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
   applyPresentFields,
   buildSettingsErrorResponse,
   isForeignKeyConstraintError,
+  normalizeNullableString,
   normalizeRequiredText,
   throwOnUniqueConstraintError,
   throwSettingsBadRequest,
+  throwSettingsConflict,
   throwSettingsNotFound,
-  toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { EMPLOYEE_CODE_RULE, initialsCode, nextFreeCode } from '../shared/code-from-name';
+import { EMPLOYEE_CODE_SERIES, lockCodeSeries } from '../shared/code-series-lock';
+import { isUniqueViolationOf } from '../shared/unique-violation';
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
@@ -69,6 +78,13 @@ const EMPLOYEE_MASTER_OPTIONAL_FIELDS = [
   'empAadharNo',
   'empPfNo',
   'empEsiNo',
+  // HR review step 5 (migration 20261120100000).
+  'empUanNo',
+  'empBankName',
+  'empBankAccountNo',
+  'empBankIfsc',
+  'empEmergencyContactName',
+  'empEmergencyContactPhone',
   // empLoanLedgerId is not copied as given: StaffAdvanceLedgerService.settle decides it.
   'empPhotoUrl',
   'empPhoto',
@@ -302,7 +318,8 @@ export class EmployeeMasterService {
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
   ): Promise<EmployeeMasterPayload> {
     try {
-      return this.prisma.$transaction(async (tx) => {
+      // `return await`: a write refused inside the transaction must reach the catch below.
+      return await this.prisma.$transaction(async (tx) => {
         const empName = this.normalizeRequiredValue(
           saveEmployeeMasterDto.empName,
           'empName',
@@ -313,18 +330,31 @@ export class EmployeeMasterService {
           'empSalaryType',
           EmployeeMasterErrorCode.SALARY_TYPE_REQUIRED,
         );
-        await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
+        // User 20/11: a new employee saved with no company is the logged-in company's
+        // (Company may be hidden on the screen; the driver list filters by company).
+        const empCompanyId =
+          saveEmployeeMasterDto.empCompanyId ?? this.requestContextService.getCompanyId() ?? null;
+        await this.ensureCompanyExists(empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
+        // HR review step 5: one save at a time reads and takes an employee code; a
+        // blank one is made from the name (Suresh Krishna → SKU, a second RAM → RAM2).
+        await lockCodeSeries(tx, EMPLOYEE_CODE_SERIES);
+        const typedCode = normalizeNullableString(saveEmployeeMasterDto.empCode) ?? null;
+        await this.ensureCodeIsUnique(tx, typedCode);
+        const empCode = typedCode ?? (await this.nextEmployeeCode(tx, empName));
         const now = new Date();
         const data: Prisma.EmployeeMasterUncheckedCreateInput = {
-          empCompanyId: saveEmployeeMasterDto.empCompanyId,
+          empCompanyId,
           empName,
           empSalaryType,
           empCreatedOn: now,
           empCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
+        data.empCode = empCode;
+        // H5: a new employee is Working unless sent as Resigned.
+        data.empStatus = this.statusOf(saveEmployeeMasterDto.empStatus);
         const created = await this.staffAdvanceLedgers.settle(
           tx,
           await tx.employeeMaster.create({ data }),
@@ -359,7 +389,7 @@ export class EmployeeMasterService {
   ): Promise<EmployeeMasterPayload> {
     const empId = saveEmployeeMasterDto.empId!;
     try {
-      return this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.employeeMaster.findFirst({
           where: {
             empId,
@@ -382,6 +412,13 @@ export class EmployeeMasterService {
         await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
+        // HR review step 5: an edit never makes a code; a typed one is checked under
+        // the series lock, against every live employee but this one.
+        const typedCode = normalizeNullableString(saveEmployeeMasterDto.empCode);
+        if (typedCode) {
+          await lockCodeSeries(tx, EMPLOYEE_CODE_SERIES);
+          await this.ensureCodeIsUnique(tx, typedCode, empId);
+        }
         const data: Prisma.EmployeeMasterUncheckedUpdateInput = {
           empCompanyId: saveEmployeeMasterDto?.empCompanyId,
           empName,
@@ -390,6 +427,13 @@ export class EmployeeMasterService {
           empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
+        if (typedCode !== undefined) {
+          data.empCode = typedCode;
+        }
+        // H5: a status sent blank reads Working; one left out stays as it is.
+        if (saveEmployeeMasterDto.empStatus !== undefined) {
+          data.empStatus = this.statusOf(saveEmployeeMasterDto.empStatus);
+        }
         const updated = await this.staffAdvanceLedgers.settle(
           tx,
           await tx.employeeMaster.update({
@@ -423,6 +467,64 @@ export class EmployeeMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+  /**
+   * HR review step 5 (H5) — the stored status: Working / Resigned in that
+   * spelling, blank (or not sent) = Working. The house ValidationPipe has
+   * already refused any other value (VALIDATION_IS_IN).
+   */
+  private statusOf(value: string | null | undefined): string {
+    const status = canonicalListValue(value ?? null, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_WORKING);
+    return typeof status === 'string' ? status : EMPLOYEE_STATUS_WORKING;
+  }
+  /**
+   * HR review step 5 (point 2) — an Employee Code is unique among LIVE
+   * employees in any case (ux_emp_code: a deleted employee frees its code).
+   * Blank is allowed, any number of times.
+   */
+  private async ensureCodeIsUnique(
+    tx: EmployeeMasterWriteClient,
+    empCode: string | null,
+    excludeEmpId?: string,
+  ): Promise<void> {
+    if (!empCode) {
+      return;
+    }
+    const clash = await tx.employeeMaster.findFirst({
+      where: {
+        empIsDeleted: false,
+        empCode: { equals: empCode, mode: 'insensitive' },
+        ...(excludeEmpId ? { empId: { not: excludeEmpId } } : {}),
+      },
+      select: { empId: true },
+    });
+    if (clash) {
+      throwSettingsConflict<EmployeeMasterErrorDetail>('Employee code already exists', [
+        {
+          field: 'empCode',
+          message: 'Duplicate empCode is not allowed',
+          code: EmployeeMasterErrorCode.CODE_DUPLICATE,
+        },
+      ]);
+    }
+  }
+  /**
+   * HR review step 5 (point 1, Q2) — the code of an employee created without
+   * one: the initials of the name, 3 to 6, padded from the first word
+   * (Suresh Krishna → SKU, RAMESH → RAM), then 2, 3, … until no LIVE employee
+   * holds it in any case. null when the name gives no code.
+   */
+  private async nextEmployeeCode(
+    tx: EmployeeMasterWriteClient,
+    empName: string,
+  ): Promise<string | null> {
+    return nextFreeCode(initialsCode(empName, EMPLOYEE_CODE_RULE), async (base) => {
+      const rows = await tx.employeeMaster.findMany({
+        where: { empIsDeleted: false, empCode: { startsWith: base, mode: 'insensitive' } },
+        select: { empCode: true },
+      });
+      return rows.map((row) => row.empCode);
+    });
   }
   private async ensureCompanyExists(
     compId: string | null | undefined,
@@ -508,7 +610,16 @@ export class EmployeeMasterService {
   ): void {
     applyPresentFields(data, saveEmployeeMasterDto, EMPLOYEE_MASTER_OPTIONAL_FIELDS, {
       empPhoto: (value) => this.decodePhoto(value as string | null | undefined),
+      // Money-decimal rule: the DTO keeps the figure as text, so no float in between.
+      empCommissionValue: (value) =>
+        value === null || value === '' ? null : new Prisma.Decimal(value as string),
     });
+    // User 20/11: Has Commission sent unticked clears the stored Commission Type and
+    // Value, whatever else was sent. Left out of an edit, all three stay as they are.
+    if (saveEmployeeMasterDto.empHasCommission === false) {
+      data.empCommissionType = null;
+      data.empCommissionValue = null;
+    }
   }
   private normalizeRequiredValue(value: string, field: string, code: EmployeeMasterErrorCode): string {
     return normalizeRequiredText<EmployeeMasterErrorDetail>(
@@ -588,7 +699,7 @@ export class EmployeeMasterService {
       empOvertimeAllowed: record.empOvertimeAllowed,
       empHasCommission: record.empHasCommission,
       empCommissionType: record.empCommissionType,
-      empCommissionValue: toNullableNumber(record.empCommissionValue),
+      empCommissionValue: record.empCommissionValue ? record.empCommissionValue.toFixed(3) : null,
       empSalaryType: record.empSalaryType,
       empSalaryAmount: toNumber(record.empSalaryAmount),
       empBataAmount: toNumber(record.empBataAmount),
@@ -597,6 +708,12 @@ export class EmployeeMasterService {
       empAadharNo: record.empAadharNo,
       empPfNo: record.empPfNo,
       empEsiNo: record.empEsiNo,
+      empUanNo: record.empUanNo,
+      empBankName: record.empBankName,
+      empBankAccountNo: record.empBankAccountNo,
+      empBankIfsc: record.empBankIfsc,
+      empEmergencyContactName: record.empEmergencyContactName,
+      empEmergencyContactPhone: record.empEmergencyContactPhone,
       empLoanLedgerId: record.empLoanLedgerId,
       empPhotoUrl: record.empPhotoUrl,
       empPhoto: record.empPhoto ? Buffer.from(record.empPhoto).toString('base64') : null,
@@ -611,6 +728,16 @@ export class EmployeeMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
+    // HR review step 5: two saves raced past the code check onto ux_emp_code.
+    if (isUniqueViolationOf(error, 'ux_emp_code', 'emp_code')) {
+      throwSettingsConflict<EmployeeMasterErrorDetail>('Employee code already exists', [
+        {
+          field: 'empCode',
+          message: 'Another employee took this code at the same moment',
+          code: EmployeeMasterErrorCode.CODE_DUPLICATE,
+        },
+      ]);
+    }
     throwOnUniqueConstraintError<EmployeeMasterErrorDetail>(error, 'Employee already exists', [
       {
         field: 'empCode',

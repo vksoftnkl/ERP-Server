@@ -16,7 +16,6 @@ export interface EmployeeDesignationMasterPayload {
   edId: string;
   edName: string;
   edCode: string | null;
-  edIsDefault: boolean;
   edRemarks: string | null;
   edIsActive: boolean;
   edIsDeleted: boolean;
